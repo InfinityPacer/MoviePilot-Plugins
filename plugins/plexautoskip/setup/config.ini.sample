@@ -1,0 +1,44 @@
+[Plex.tv]
+username = 
+password = 
+token = 
+servername = 
+
+[Server]
+address = 
+ssl = True
+port = 32400
+
+[Security]
+ignore-certs = False
+
+[Skip]
+mode = skip
+tags = intro, commercial, advertisement, credits
+types = movie, episode
+ignored-libraries = 
+last-chapter = 0.0
+unwatched = True
+first-episode-series = Watched
+first-episode-season = Always
+first-safe-tags = 
+last-episode-series = Watched
+last-episode-season = Always
+last-safe-tags = 
+next = False
+
+[Binge]
+ignore-skip-for = 0
+safe-tags = 
+same-show-only = False
+skip-next-max = 0
+
+[Offsets]
+start = 3000
+end = 1000
+tags = intro
+command = 500
+
+[Volume]
+low = 0
+high = 100

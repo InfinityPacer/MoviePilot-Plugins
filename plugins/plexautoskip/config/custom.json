@@ -1,0 +1,19 @@
+{
+    "markers": {},
+    "offsets": {},
+    "tags": {},
+    "allowed": {
+        "users": [],
+        "clients": [],
+        "keys": [],
+        "skip-next": []
+    },
+    "blocked": {
+        "users": [],
+        "clients": [],
+        "keys": [],
+        "skip-next": []
+    },
+    "clients": {},
+    "mode": {}
+}
