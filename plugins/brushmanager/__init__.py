@@ -299,7 +299,7 @@ class BrushManager(_PluginBase):
                                                         'component': 'VSwitch',
                                                         'props': {
                                                             'model': 'notify',
-                                                            'label': '发送通知',
+                                                            'label': '开启通知',
                                                         }
                                                     }
                                                 ]
@@ -1039,4 +1039,4 @@ class BrushManager(_PluginBase):
         记录错误日志并发送系统通知
         """
         logger.error(message)
-        self.systemmessage.put(message)
+        self.systemmessage.put(message, title="刷流种子整理")

@@ -299,4 +299,4 @@ class HistoryClear(_PluginBase):
         记录日志并发送系统通知
         """
         logger.info(message)
-        self.systemmessage.put(message)
+        self.systemmessage.put(message, title="历史记录清理")
