@@ -844,7 +844,7 @@ class TorrentClassifier(_PluginBase):
         """获取默认配置"""
         return """####### 配置说明 begin #######
 # 1. 本配置文件用于管理种子文件的自动分类和标签管理，采用数组形式以支持多种筛选和应用规则。
-# 2. 配置文件中的「torrent_source」定义了种子的来源筛选条件；「target_torrent」定义了应对匹配种子执行的操作。
+# 2. 配置文件中的「torrent_source」定义了种子的来源筛选条件；「torrent_target」定义了应对匹配种子执行的操作。
 # 3. 每个配置条目以「-」开头，表示配置文件的数组元素。
 # 4. 「remove_tags」字段支持使用特殊值「@all」，代表移除所有标签。
 # 5. 「auto_category」启用时开启QBittorrent的「自动Torrent管理」，并忽略「change_directory」配置项。
