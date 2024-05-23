@@ -165,5 +165,17 @@
         "history": {
             "v1.0": "增加插件自定义排序插件，支持将插件按自定义顺序排序"
         }
+    },
+    "TorrentClassifier": {
+        "name": "种子关键字分类整理",
+        "description": "通过匹配种子关键字进行自定义分类。",
+        "labels": "下载管理",
+        "version": "1.0",
+        "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/TorrentClassifier.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "增加种子关键字分类整理插件，支持通过匹配种子关键字进行自定义分类"
+        }
     }
 }

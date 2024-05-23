@@ -1,5 +1,6 @@
 import datetime
 import io
+import re
 import threading
 import time
 from threading import Event
@@ -15,7 +16,7 @@ from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
-from app.plugins.torrentclassifier.classifierconfig import ClassifierConfig, SeedSource, TargetSeed
+from app.plugins.torrentclassifier.classifierconfig import ClassifierConfig, TorrentFilter, TorrentTarget
 from app.schemas import NotificationType
 
 lock = threading.Lock()
@@ -94,7 +95,7 @@ class TorrentClassifier(_PluginBase):
 
         if self._onlyonce:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-            self._scheduler.add_job(func=self.__torrent_classifier, trigger='date',
+            self._scheduler.add_job(func=self.torrent_classifier, trigger='date',
                                     run_date=datetime.datetime.now(
                                         tz=pytz.timezone(settings.TZ)) + datetime.timedelta(seconds=3)
                                     )
@@ -293,14 +294,11 @@ class TorrentClassifier(_PluginBase):
         if self._enabled and self._cron:
             services.append({
                 "id": "TorrentClassifier",
-                "name": "种子关键字分类定时整理",
+                "name": "种子关键字分类整理",
                 "trigger": CronTrigger.from_crontab(self._cron),
-                "func": self.__torrent_classifier,
+                "func": self.torrent_classifier,
                 "kwargs": {}
             })
-
-        if not services:
-            logger.info("PlexEdition定时服务未开启")
 
         return services
 
@@ -319,46 +317,35 @@ class TorrentClassifier(_PluginBase):
         except Exception as e:
             print(str(e))
 
-    def __torrent_classifier(self):
+    def torrent_classifier(self):
         """
         整理选择的种子进行入库操作
         """
         with lock:
-            logger.info("开始准备整理入库任务 ...")
-            if not self._torrent_hashes:
-                logger.info("没有选择任何种子，取消整理")
-                return
-
             downloader = self.__get_downloader()
             if not downloader:
                 self.__log_and_notify_error("连接下载器出错，请检查连接")
                 return
 
-            torrents, error = downloader.get_torrents(ids=self._torrent_hashes)
+            torrents, error = downloader.get_torrents()
             if error:
                 self.__log_and_notify_error("连接下载器出错，请检查连接")
                 return
 
             if not torrents:
-                self.__log_and_notify_error("在下载器中没有获取到对应的种子，请检查刷流任务，"
-                                            "可尝试开启刷流插件的「下载器监控」同步种子状态")
+                logger.info("无法在下载器中找到种子，取消整理")
+                return
 
-            logger.info(f"当前选择的种子数量为 {len(self._torrent_hashes)}，"
-                        f"实际在下载器中获取到的种子数量为 {len(torrents)}")
-
-            torrent_hash_titles = self.__get_all_hashes_and_titles(torrents)
-
-            logger.info(f"准备为 {len(torrent_hash_titles)} 个种子进行整理任务，种子详情为 {torrent_hash_titles}")
+            logger.info(f"在下载器中获取到的种子数量为 {len(torrents)} ，正在准备进行分类整理")
 
             torrent_datas = self.__get_all_hashes_and_torrents(torrents)
 
             if self._downloader == "qbittorrent":
-                self.__organize_for_qb(torrent_hash_titles=torrent_hash_titles, torrent_datas=torrent_datas)
-                self.__run_after_organize()
+                self.__torrent_classifier_for_qb(torrent_datas=torrent_datas)
             else:
                 logger.warn("当前只支持qbittorrent")
 
-    def __organize_for_qb(self, torrent_hash_titles: dict, torrent_datas):
+    def __torrent_classifier_for_qb(self, torrent_datas: dict):
         """针对QB进行种子整理"""
         # 获取下载器实例
         downloader = self.__get_downloader()
@@ -369,109 +356,198 @@ class TorrentClassifier(_PluginBase):
         success_titles = []
         failed_titles = []
 
-        # 遍历所有种子
-        for torrent_hash, torrent_title in torrent_hash_titles.items():
+        classifier_torrents = self.__get_should_classifier_torrents(torrent_datas=torrent_datas)
+        if classifier_torrents:
+            logger.info(f"已获取到满足过滤方案的种子共 {len(classifier_torrents)} 个，继续整理")
+            torrent_info = "\n".join(
+                f"{self.__get_torrent_title(torrent=torrent)}({torrent_hash})"
+                for torrent_hash, (torrent, _) in classifier_torrents.items()
+            )
+            logger.debug(f"正在准备整理的种子信息 \n {torrent_info}")
+        else:
+            logger.info("没有获取到任何满足过滤方案的种子，取消后续整理")
+            return
+
+        for torrent_hash, (torrent, config) in classifier_torrents.items():
+            config: ClassifierConfig
+            torrent_target = config.torrent_target
             success = True
 
-            if self._remove_brush_tag:
+            torrent_title = self.__get_torrent_title(torrent=torrent)
+            torrent_category = self.__get_torrent_category(torrent=torrent)
+            torrent_tags = self.__get_torrent_tags(torrent=torrent)
+
+            torrent_key = f"{torrent_title}({torrent_hash})"
+            logger.info(f"正在准备整理种子 {torrent_key}")
+
+            if torrent_target.remove_tags:
+                remove_tags = []
                 try:
-                    logger.info(f"正在为种子「{torrent_title}」[{torrent_hash}] 移除「{self._brush_tag}」标签")
-                    remove_result = downloader.remove_torrents_tag(ids=[torrent_hash], tag=self._brush_tag)
+                    # 检查是否需要移除所有标签
+                    if '@all' in torrent_target.remove_tags:
+                        remove_tags = torrent_tags
+                        logger.info(f"正在为种子移除所有标签")
+                    else:
+                        remove_tags = torrent_target.remove_tags
+                        logger.info(f"正在为种子移除「{torrent_target.remove_tags}」标签")
+
+                    remove_result = downloader.remove_torrents_tag(ids=torrent_hash, tag=remove_tags)
                     if not remove_result:
-                        raise Exception(f"「{self._brush_tag}」标签移除失败，请检查下载器连接")
-                    logger.info(f"标签移除成功 - {torrent_hash}")
+                        raise Exception(f"标签移除失败，请检查下载器连接")
+                    logger.info(f"标签「{remove_tags}」移除成功")
                 except Exception as e:
-                    logger.error(f"移除标签失败，种子哈希：{torrent_hash}，错误：{str(e)}")
+                    logger.error(f"标签「{remove_tags}」移除失败，错误：{str(e)}")
                     success = False
 
-            if self._mp_tag and success:
+            if torrent_target.add_tags and success:
                 try:
-                    logger.info(f"正在为种子「{torrent_title}」[{torrent_hash}] "
-                                f"添加「{settings.TORRENT_TAG}」标签并移除「{self._organize_tag}」标签")
-                    remove_result = downloader.remove_torrents_tag(ids=[torrent_hash], tag=self._organize_tag)
-                    if not remove_result:
-                        raise Exception(f"「{self._organize_tag}」标签移除失败，请检查下载器连接")
-                    downloader.set_torrents_tag(ids=[torrent_hash], tags=[settings.TORRENT_TAG])
-                    logger.info(f"MP标签添加成功 - {torrent_hash}")
+                    logger.info(f"正在为种子添加「{torrent_target.add_tags}」标签")
+                    downloader.set_torrents_tag(ids=torrent_hash, tags=torrent_target.add_tags)
+                    logger.info(f"标签「{torrent_target.add_tags}」添加成功")
                 except Exception as e:
-                    logger.error(f"设置MP标签失败，种子哈希：{torrent_hash}，错误：{str(e)}")
+                    logger.error(f"标签「{torrent_target.add_tags}」添加失败，错误：{str(e)}")
                     success = False
 
-            if self._tag and success:
+            if torrent_target.change_category and success:
                 try:
-                    logger.info(f"正在为种子「{torrent_title}」[{torrent_hash}] "
-                                f"添加「{self._tag}」标签")
-                    downloader.set_torrents_tag(ids=[torrent_hash], tags=[self._tag])
-                    logger.info(f"标签添加成功 - {torrent_hash}")
-                except Exception as e:
-                    logger.error(f"设置标签失败，种子哈希：{torrent_hash}，错误：{str(e)}")
-                    success = False
-
-            if self._category and success:
-                try:
-                    logger.info(f"正在为种子「{torrent_title}」[{torrent_hash}] 设置「{self._category}」分类")
+                    logger.info(f"正在为种子设置「{torrent_target.change_category}」分类")
                     try:
-                        downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash, category=self._category)
+                        downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash,
+                                                             category=torrent_target.change_category)
                     except Exception as e:
-                        logger.warn(f"种子 「{torrent_title}」[{torrent_hash}] "
-                                    f"设置分类 {self._category} 失败：{str(e)}, 尝试创建分类再设置")
-                        downloader.qbc.torrents_create_category(name=self._category, save_path=self._move_path)
-                        downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash, category=self._category)
-                    logger.info(f"分类设置成功 - {torrent_hash}")
+                        logger.warn(f"种子设置分类 {torrent_target.change_category} 失败：{str(e)}, 尝试创建分类再设置")
+                        downloader.qbc.torrents_create_category(name=torrent_target.change_category,
+                                                                save_path=torrent_target.change_directory)
+                        downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash,
+                                                             category=torrent_target.change_category)
+                    logger.info(f"分类「{torrent_target.change_category}」设置成功")
                 except Exception as e:
-                    logger.error(f"设置分类失败，种子哈希：{torrent_hash}，错误：{str(e)}")
+                    logger.error(f"分类「{torrent_target.change_category}」设置失败，错误：{str(e)}")
                     success = False
 
             # qb中的自动分类管理和目录为二选一的逻辑
             if success:
-                if self._auto_category:
+                if torrent_target.auto_category:
                     try:
-                        logger.info(f"正在为种子「{torrent_title}」[{torrent_hash}] 开启自动分类管理")
+                        logger.info(f"正在为种子开启自动分类管理")
                         downloader.qbc.torrents_set_auto_management(torrent_hashes=torrent_hash,
-                                                                    enable=self._auto_category)
-                        logger.info(f"自动分类管理开启成功 - {torrent_hash}")
+                                                                    enable=torrent_target.auto_category)
+                        logger.info(f"自动分类管理开启成功")
                     except Exception as e:
-                        logger.error(f"自动分类管理开启失败，种子哈希：{torrent_hash}，错误：{str(e)}")
+                        logger.error(f"自动分类管理开启失败，错误：{str(e)}")
                         success = False
                 else:
-                    if self._move_path:
+                    if torrent_target.change_category:
                         try:
-                            logger.info(f"正在为种子「{torrent_title}」[{torrent_hash}] 关闭自动分类管理")
+                            logger.info(f"正在为种子关闭自动分类管理")
                             downloader.qbc.torrents_set_auto_management(torrent_hashes=torrent_hash,
-                                                                        enable=self._auto_category)
-                            logger.info(f"自动分类管理关闭成功 - {torrent_hash}")
+                                                                        enable=torrent_target.auto_category)
+                            logger.info(f"自动分类管理关闭成功")
                         except Exception as e:
-                            logger.error(f"自动分类管理关闭失败，种子哈希：{torrent_hash}，错误：{str(e)}")
+                            logger.error(f"自动分类管理关闭失败，错误：{str(e)}")
                         try:
-                            logger.info(f"正在为种子「{torrent_title}」[{torrent_hash}] 修改保存路径 {self._move_path}")
-                            downloader.qbc.torrents_set_location(torrent_hashes=torrent_hash, location=self._move_path)
-                            logger.info(f"修改保存路径成功 - {torrent_hash}")
+                            logger.info(f"正在为种子修改保存路径 {torrent_target.change_category}")
+                            downloader.qbc.torrents_set_location(torrent_hashes=torrent_hash,
+                                                                 location=torrent_target.change_category)
+                            logger.info(f"修改保存路径成功")
                         except Exception as e:
-                            logger.error(f"修改保存路径失败，种子哈希：{torrent_hash}，错误：{str(e)}")
+                            logger.error(f"修改保存路径失败，错误：{str(e)}")
                             success = False
 
-            # 更新成功或失败的计数器和列表
-            if success:
-                logger.info(f"「{torrent_title}」[{torrent_hash}] 操作完成，请等待后续入库")
-                success_count += 1
-                success_titles.append(torrent_title)
-            else:
-                logger.error(f"「{torrent_title}」[{torrent_hash}] 操作失败，请检查日志调整")
-                failed_count += 1
-                failed_titles.append(torrent_title)
+                # 更新成功或失败的计数器和列表
+                if success:
+                    logger.info(f"{torrent_key} 整理成功")
+                    success_count += 1
+                    success_titles.append(torrent_title)
+                else:
+                    logger.error(f"{torrent_key} 整理失败，请检查日志")
+                    failed_count += 1
+                    failed_titles.append(torrent_title)
 
         # 构建简要的汇总消息
         summary_message_parts = []
         if success_count > 0:
             success_details = "\n".join(success_titles)  # 使用换行符而不是逗号分隔种子标题
-            summary_message_parts.append(f"成功操作 {success_count} 个种子，请等待后续入库\n{success_details}")
+            summary_message_parts.append(f"成功整理 {success_count} 个种子\n{success_details}")
         if failed_count > 0:
             failed_details = "\n".join(failed_titles)  # 使用换行符而不是逗号分隔种子标题
-            summary_message_parts.append(f"失败操作 {failed_count} 个种子，详细详细请查看日志\n{failed_details}")
+            summary_message_parts.append(f"失败整理 {failed_count} 个种子，详细请查看日志\n{failed_details}")
 
         summary_message = "\n\n".join(summary_message_parts)  # 使用两个换行符分隔成功和失败的部分
 
-        self.__send_message(title="【刷流种子整理详情】", text=summary_message)
+        self.__send_message(title="【种子关键字分类整理】", text=summary_message)
+
+    def __get_should_classifier_torrents(self, torrent_datas: dict):
+        """获取需要整理的种子"""
+        classifier_torrents = {}
+        # 遍历所有种子
+        for torrent_hash, torrent in torrent_datas.items():
+            torrent_title = self.__get_torrent_title(torrent=torrent)
+            torrent_category = self.__get_torrent_category(torrent=torrent)
+            torrent_tags = self.__get_torrent_tags(torrent=torrent)
+
+            should_classifier = True
+            for config in self._classifier_configs:
+                # 判断是否满足整理条件，不满足则跳过，满足则跳出
+                should, reason = self.__should_classifier(config=config, torrent_title=torrent_title,
+                                                          torrent_category=torrent_category, torrent_tags=torrent_tags)
+                if should:
+                    logger.debug(f"{torrent_title}({torrent_hash}) 满足过滤方案，已记录待后续整理")
+                    classifier_torrents[torrent_hash] = torrent, config
+                    should_classifier = True
+                    break
+                else:
+                    logger.debug(f"{torrent_title}({torrent_hash}) 不满足过滤方案，原因：{reason}")
+                    should_classifier = False
+                    continue
+
+            if not should_classifier:
+                logger.debug(f"{torrent_title}({torrent_hash}) 没有满足所有过滤方案，跳过")
+                continue
+
+        return classifier_torrents
+
+    @staticmethod
+    def __should_classifier(config: ClassifierConfig,
+                            torrent_title: Optional[str], torrent_category: Optional[str],
+                            torrent_tags: Optional[List[str]]) -> (bool, str):
+        """判断是否满足整理条件"""
+        torrent_filter = config.torrent_filter
+        if not torrent_filter:
+            return False, "没有获取到整理规则"
+
+        if torrent_filter.torrent_title:
+            try:
+                if not torrent_title:
+                    return False, f"标题为空，不符合标题「{torrent_filter.torrent_title}」条件"
+
+                if not re.search(torrent_filter.torrent_title, torrent_title, re.I):
+                    return False, f"不符合标题「{torrent_filter.torrent_title}」条件"
+            except Exception as e:
+                return False, f"标题过滤失败，错误：{str(e)}"
+
+        if torrent_filter.torrent_category:
+            try:
+                if not torrent_category:
+                    return False, f"分类为空，不符合分类「{torrent_filter.torrent_category}」条件"
+
+                if torrent_filter.torrent_category != torrent_category:
+                    return False, f"不符合分类「{torrent_filter.torrent_category}」条件"
+            except Exception as e:
+                return False, f"分类过滤失败，错误：{str(e)}"
+
+        if torrent_filter.torrent_tags:
+            try:
+                if not torrent_tags:
+                    return False, f"标签为空，不符合标签「{torrent_filter.torrent_tags}」条件"
+
+                # 检查种子的标签列表是否至少与过滤标签列表中的一个标签匹配
+                if not any(tag in torrent_tags for tag in torrent_filter.torrent_tags):
+                    return False, f"不符合标签「{torrent_filter.torrent_tags}」条件"
+            except Exception as e:
+                return False, f"标签过滤失败，错误：{str(e)}"
+
+        return True, "OK"
 
     def __setup_downloader(self):
         """
@@ -525,30 +601,35 @@ class TorrentClassifier(_PluginBase):
             logger.error(f"get_all_hashes_and_torrents error: {e}")
             return {}
 
-    def __get_all_hashes_and_titles(self, torrents):
-        """
-        获取torrents列表中所有种子的Hash值和标题，存储在一个字典中
+    def __get_torrent_title(self, torrent: Any) -> Optional[str]:
+        """获取种子标题"""
+        try:
+            if self._downloader == "qbittorrent":
+                return torrent.get("name")
+            else:
+                return torrent.name
+        except Exception as e:
+            print(str(e))
+            return None
 
-        :param torrents: 包含种子信息的列表
-        :return: 一个字典，其中键是种子的Hash值，值是种子的标题
+    def __get_torrent_category(self, torrent: Any) -> Optional[str]:
+        """获取种子分类"""
+        try:
+            return torrent.get("category").strip() if self._downloader == "qbittorrent" else None
+        except Exception as e:
+            print(str(e))
+            return None
+
+    def __get_torrent_tags(self, torrent: Any) -> List[str]:
+        """
+        获取种子标签
         """
         try:
-            all_hashes_titles = {}
-            for torrent in torrents:
-                # 根据下载器类型获取Hash值和标题
-                if self._downloader == "qbittorrent":
-                    hash_value = torrent.get("hash")
-                    torrent_title = torrent.get("name")
-                else:
-                    hash_value = torrent.hashString
-                    torrent_title = torrent.name
-
-                if hash_value and torrent_title:
-                    all_hashes_titles[hash_value] = torrent_title
-            return all_hashes_titles
+            return [str(tag).strip() for tag in torrent.get("tags").split(',')] \
+                if self._downloader == "qbittorrent" else torrent.labels or []
         except Exception as e:
-            logger.error(f"get_all_hashes_and_titles error: {e}")
-            return {}
+            print(str(e))
+            return []
 
     def __get_torrent_info(self, torrent: Any) -> dict:
         """
@@ -649,6 +730,8 @@ class TorrentClassifier(_PluginBase):
             tags = torrent.get("tags")
             # tracker
             tracker = torrent.get("tracker")
+            # 种子分类
+            category = torrent.get("category")
         # TR
         else:
             # ID
@@ -693,6 +776,8 @@ class TorrentClassifier(_PluginBase):
             tags = torrent.get("tags")
             # tracker
             tracker = torrent.get("tracker")
+            # 种子分类
+            category = torrent.get("category")
 
         return {
             "hash": torrent_id,
@@ -708,7 +793,8 @@ class TorrentClassifier(_PluginBase):
             "add_time": add_time,
             "add_on": add_on,
             "tags": tags,
-            "tracker": tracker
+            "tracker": tracker,
+            "category": category
         }
 
     def __send_message(self, title: str, text: str):
@@ -743,8 +829,8 @@ class TorrentClassifier(_PluginBase):
         try:
             data = yaml.load(io.StringIO(config_str))
             return [ClassifierConfig(
-                seed_source=SeedSource(**item['seed_source']),
-                target_seed=TargetSeed(**item['target_seed'])
+                torrent_filter=TorrentFilter(**item['torrent_filter']),
+                torrent_target=TorrentTarget(**item['torrent_target'])
             ) for item in data]
         except YAMLError as e:
             self.__log_and_notify_error(f"YAML parsing error: {e}")
@@ -758,56 +844,56 @@ class TorrentClassifier(_PluginBase):
         """获取默认配置"""
         return """####### 配置说明 begin #######
 # 1. 本配置文件用于管理种子文件的自动分类和标签管理，采用数组形式以支持多种筛选和应用规则。
-# 2. 配置文件中的「seed_source」定义了种子的来源筛选条件；「target_seed」定义了应对匹配种子执行的操作。
+# 2. 配置文件中的「torrent_source」定义了种子的来源筛选条件；「target_torrent」定义了应对匹配种子执行的操作。
 # 3. 每个配置条目以「-」开头，表示配置文件的数组元素。
 # 4. 「remove_tags」字段支持使用特殊值「@all」，代表移除所有标签。
 # 5. 「auto_category」启用时开启QBittorrent的「自动Torrent管理」，并忽略「change_directory」配置项。
 ####### 配置说明 end #######
 
-- seed_source:
+- torrent_filter:
     # 种子来源部分定义：包括筛选种子的标题、分类和标签
     # 种子标题的过滤条件，支持使用正则表达式匹配
-    seed_title: 'title'
+    torrent_title: '测试标题1'
     # 种子必须属于的分类
-    seed_category: 'movies'
-    # 种子必须具有的标签
-    seed_tags:
-      - 'Action'
-  target_seed:
+    torrent_category: '测试分类1'
+    # 种子必须具有的标签，多个标签时，任一满足即可
+    torrent_tags:
+      - '测试标签1'
+  torrent_target:
     # 目标种子部分定义：包括修改目标目录、修改分类、新增标签和移除标签的设置
     # 处理后种子的存储目录，auto_category 为 true 时不生效
     change_directory: '/path/to/movies'
     # 处理后的种子新分类
-    change_category: 'HD movies'
+    change_category: '测试新分类1'
     # 添加到种子的新标签
     add_tags:
-      - '2023'
-      - 'Thriller'
+      - '测试新标签1'
+      - '测试新标签2'
     # 移除的标签，使用 '@all' 清除所有标签
     remove_tags:
       - '@all'
     # 是否启用自动分类
     auto_category: true
 
-- seed_source:
+- torrent_filter:
     # 种子标题的过滤条件，支持使用正则表达式匹配
-    seed_title: '.*\.mp3'
+    torrent_title: '.*\.测试标题2'
     # 种子必须属于的分类
-    seed_category: 'music'
-    # 种子必须具有的标签
-    seed_tags:
-      - 'Live'
+    torrent_category: '测试分类2'
+    # 种子必须具有的标签，多个标签时，任一满足即可
+    torrent_tags:
+      - '测试标签2'
       - 'Rock'
-  target_seed:
+  torrent_target:
     # 处理后种子的存储目录，auto_category 为 true 时不生效
     change_directory: '/path/to/music'
     # 处理后的种子新分类
-    change_category: 'Live music'
+    change_category: '测试新分类2'
     # 添加到种子的新标签
     add_tags:
-      - '2023'
+      - '测试新标签2'
     # 移除的标签
     remove_tags:
-      - 'OldTag'
+      - '测试标签1'
     # 是否启用自动分类
     auto_category: false"""
