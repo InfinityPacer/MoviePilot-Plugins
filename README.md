@@ -128,3 +128,68 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-05-17-23-25-53.png)
 ![](images/2024-05-17-23-26-30.png)
+
+### 13. 种子关键字分类整理
+
+- 通过匹配种子关键字进行自定义分类
+
+```yaml
+####### 配置说明 begin #######
+# 1. 本配置文件用于管理种子文件的自动分类和标签管理，采用数组形式以支持多种筛选和应用规则。
+# 2. 配置文件中的「torrent_source」定义了种子的来源筛选条件；「torrent_target」定义了应对匹配种子执行的操作。
+# 3. 每个配置条目以「-」开头，表示配置文件的数组元素。
+# 4. 「remove_tags」字段支持使用特殊值「@all」，代表移除所有标签。
+# 5. 「auto_category」启用时开启QBittorrent的「自动Torrent管理」，并忽略「change_directory」配置项。
+####### 配置说明 end #######
+
+- torrent_filter:
+    # 种子来源部分定义：包括筛选种子的标题、分类和标签
+    # 种子标题的过滤条件，支持使用正则表达式匹配
+    torrent_title: '测试标题1'
+    # 种子必须属于的分类
+    torrent_category: '测试分类1'
+    # 种子必须具有的标签，多个标签时，任一满足即可
+    torrent_tags:
+      - '测试标签1'
+  torrent_target:
+    # 目标种子部分定义：包括修改目标目录、修改分类、新增标签和移除标签的设置
+    # 处理后种子的存储目录，auto_category 为 true 时不生效
+    change_directory: '/path/to/movies'
+    # 处理后的种子新分类
+    change_category: '测试新分类1'
+    # 添加到种子的新标签
+    add_tags:
+      - '测试新标签1'
+      - '测试新标签2'
+    # 移除的标签，使用 '@all' 清除所有标签
+    remove_tags:
+      - '@all'
+    # 是否启用自动分类
+    auto_category: true
+
+- torrent_filter:
+    # 种子标题的过滤条件，支持使用正则表达式匹配
+    torrent_title: '.*\.测试标题2'
+    # 种子必须属于的分类
+    torrent_category: '测试分类2'
+    # 种子必须具有的标签，多个标签时，任一满足即可
+    torrent_tags:
+      - '测试标签2'
+      - 'Rock'
+  torrent_target:
+    # 处理后种子的存储目录，auto_category 为 true 时不生效
+    change_directory: '/path/to/music'
+    # 处理后的种子新分类
+    change_category: '测试新分类2'
+    # 添加到种子的新标签
+    add_tags:
+      - '测试新标签2'
+    # 移除的标签
+    remove_tags:
+      - '测试标签1'
+    # 是否启用自动分类
+    auto_category: false
+```
+
+
+![](images/2024-05-24-00-29-38.png)
