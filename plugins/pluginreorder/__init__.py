@@ -202,8 +202,9 @@ class PluginReOrder(_PluginBase):
         # 获取本地插件实例
         local_plugins = PluginManager().get_local_plugins()
         # 获取已经安装的插件实例
-        installed_plugins = [plugin for plugin in local_plugins if
-                             plugin.installed and plugin.id != "PluginReOrder"]
+        # installed_plugins = [plugin for plugin in local_plugins if
+        #                      plugin.installed and plugin.id != "PluginReOrder"]
+        installed_plugins = [plugin for plugin in local_plugins if plugin.installed]
         # 对已安装的插件排序
         installed_plugins.sort(key=lambda x: x.plugin_order)
         # 创建格式化字符串
@@ -239,9 +240,9 @@ class PluginReOrder(_PluginBase):
                 continue
 
             plugin_id, plugin_name, plugin_order = parts[0], parts[1], int(parts[2])
-            if plugin_id == "PluginReOrder":
-                logger.warn(f"插件 {plugin_id}#{plugin_name} 不允许调整插件顺序")
-                continue
+            # if plugin_id == "PluginReOrder":
+            #     logger.warn(f"插件 {plugin_id}#{plugin_name} 不允许调整插件顺序")
+            #     continue
 
             # 查找并更新本地插件
             found_plugin = local_plugins.get(plugin_id)
