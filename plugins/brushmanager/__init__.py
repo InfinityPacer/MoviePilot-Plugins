@@ -641,7 +641,7 @@ class BrushManager(_PluginBase):
             summary_message_parts.append(f"成功操作 {success_count} 个种子，请等待后续入库\n{success_details}")
         if failed_count > 0:
             failed_details = "\n".join(failed_titles)  # 使用换行符而不是逗号分隔种子标题
-            summary_message_parts.append(f"失败操作 {failed_count} 个种子，详细详细请查看日志\n{failed_details}")
+            summary_message_parts.append(f"失败操作 {failed_count} 个种子，详细请查看日志\n{failed_details}")
 
         summary_message = "\n\n".join(summary_message_parts)  # 使用两个换行符分隔成功和失败的部分
 
