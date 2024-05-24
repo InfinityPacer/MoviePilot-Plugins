@@ -54,7 +54,7 @@ class PlexEdition(_PluginBase):
     _onlyonce = False
     # 任务执行间隔
     _cron = None
-    # 开启通知
+    # 发送通知
     _notify = False
     # 需要处理的媒体库
     _library_ids = None
@@ -214,7 +214,7 @@ class PlexEdition(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'notify',
-                                            'label': '开启通知',
+                                            'label': '发送通知',
                                         },
                                     }
                                 ],
@@ -288,7 +288,8 @@ class PlexEdition(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'cron',
-                                            'label': '执行周期'
+                                            'label': '执行周期',
+                                            'placeholder': '5位cron表达式'
                                         },
                                     }
                                 ],

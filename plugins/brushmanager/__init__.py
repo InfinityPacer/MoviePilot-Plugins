@@ -58,7 +58,7 @@ class BrushManager(_PluginBase):
     _category = None
     # 种子标签
     _tag = None
-    # 开启通知
+    # 发送通知
     _notify = None
     # 自动分类
     _auto_category = None
@@ -299,7 +299,7 @@ class BrushManager(_PluginBase):
                                                         'component': 'VSwitch',
                                                         'props': {
                                                             'model': 'notify',
-                                                            'label': '开启通知',
+                                                            'label': '发送通知',
                                                         }
                                                     }
                                                 ]

@@ -60,7 +60,7 @@ class WebDAVBackup(_PluginBase):
     _digest_auth = False
     # 立即执行一次
     _onlyonce = False
-    # 开启通知
+    # 发送通知
     _notify = False
     # 忽略校验
     _disable_check = False
@@ -187,7 +187,7 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'notify',
-                                            'label': '开启通知',
+                                            'label': '发送通知',
                                         }
                                     }
                                 ]

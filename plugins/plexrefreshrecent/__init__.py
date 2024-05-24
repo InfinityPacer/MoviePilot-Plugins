@@ -48,7 +48,7 @@ class PlexRefreshRecent(_PluginBase):
     _offset_days = "0"
     # 立即执行一次
     _onlyonce = False
-    # 开启通知
+    # 发送通知
     _notify = False
     # limit
     _limit = None
@@ -168,7 +168,7 @@ class PlexRefreshRecent(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'notify',
-                                            'label': '开启通知',
+                                            'label': '发送通知',
                                         },
                                     }
                                 ],
@@ -204,7 +204,8 @@ class PlexRefreshRecent(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'cron',
-                                            'label': '执行周期'
+                                            'label': '执行周期',
+                                            'placeholder': '5位cron表达式'
                                         },
                                     }
                                 ],
