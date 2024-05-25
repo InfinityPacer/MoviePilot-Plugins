@@ -177,5 +177,17 @@
         "history": {
             "v1.0": "增加种子关键字分类整理插件，支持通过匹配种子关键字进行自定义分类"
         }
+    },
+    "HistoryCategory": {
+        "name": "历史记录分类刷新",
+        "description": "一键刷新历史记录中的分类。",
+        "labels": "工具",
+        "version": "1.0",
+        "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/historycategory.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "增加历史记录分类刷新插件，实现一键刷新历史记录中的显示分类"
+        }
     }
 }
