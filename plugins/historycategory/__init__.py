@@ -63,7 +63,7 @@ class HistoryCategory(_PluginBase):
         self._refresh_if_empty = config.get("refresh_if_empty", True)
 
         if not self._refresh_category:
-            self.__log_and_notify("未开启历史记录分类刷新")
+            logger.info("未开启历史记录分类刷新")
             return
 
         self.update_config({})
@@ -266,7 +266,7 @@ class HistoryCategory(_PluginBase):
                     f"获取到符合条件的历史记录共 {len(histories)} 条")
 
         if not histories:
-            logger.info("没有获取到符合条件的历史记录，跳过刷新")
+            logger.warn("没有获取到符合条件的历史记录，跳过刷新")
             return
 
         # 使用字典进行分组
@@ -284,7 +284,7 @@ class HistoryCategory(_PluginBase):
         # 处理每个分组
         for tmdb_id, history_group in history_groups.items():
             if self._event.is_set():
-                logger.info("外部中断请求，历史记录分类刷新服务停止")
+                logger.warn("外部中断请求，历史记录分类刷新服务停止")
                 break
             first_history = history_group[0]
             try:
@@ -293,7 +293,7 @@ class HistoryCategory(_PluginBase):
                 dest_category = self.__find_category_by_history(history=first_history)
 
                 if dest_category is None:
-                    logger.info(f"无法获取到目标分类，跳过刷新")
+                    logger.warn(f"无法获取到目标分类，跳过刷新")
                     failed_updates += len(history_group)
                     continue
 
@@ -303,7 +303,7 @@ class HistoryCategory(_PluginBase):
                 successful_updates += len(history_group)
             except Exception as e:
                 failed_updates += len(history_group)
-                logger.info(f"分组: {first_history.title}，tmdbid: {tmdb_id} 刷新分类失败，{e}")
+                logger.error(f"分组: {first_history.title}，tmdbid: {tmdb_id} 刷新分类失败，{e}")
 
         self.__log_and_notify(f"已完成历史记录分类刷新，成功 {successful_updates} 条，失败 {failed_updates} 条")
 

@@ -49,7 +49,7 @@ class HistoryClear(_PluginBase):
 
         self._clear_history = config.get("clear_history", False)
         if not self._clear_history:
-            self.__log_and_notify("未开启历史记录清理")
+            logger.info("未开启历史记录清理")
             return
 
         self.update_config({})
