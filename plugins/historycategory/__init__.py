@@ -55,7 +55,6 @@ class HistoryCategory(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
-        # config["refresh_category"] = True
         if not config:
             return
 
