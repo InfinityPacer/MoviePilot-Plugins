@@ -200,3 +200,6 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 刷新历史记录分类可能会导致历史记录分类数据异常，请慎重使用
 - 刷新历史记录分类前请先对/config/user.db文件进行备份，以便出现异常后能够还原
 - 执行刷新前插件会备份数据库至路径：/config/plugins/HistoryCategory/Backup/.zip，如有需要，请自行还原
+
+![](images/2024-05-27-00-56-38.png)
+![](images/2024-05-27-00-56-02.png)
