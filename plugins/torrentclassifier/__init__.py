@@ -30,7 +30,7 @@ class TorrentClassifier(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/TorrentClassifier.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -437,7 +437,7 @@ class TorrentClassifier(_PluginBase):
                         logger.error(f"自动分类管理开启失败，错误：{str(e)}")
                         success = False
                 else:
-                    if torrent_target.change_category:
+                    if torrent_target.change_directory:
                         try:
                             logger.info(f"正在为种子关闭自动分类管理")
                             downloader.qbc.torrents_set_auto_management(torrent_hashes=torrent_hash,
@@ -446,9 +446,9 @@ class TorrentClassifier(_PluginBase):
                         except Exception as e:
                             logger.error(f"自动分类管理关闭失败，错误：{str(e)}")
                         try:
-                            logger.info(f"正在为种子修改保存路径 {torrent_target.change_category}")
+                            logger.info(f"正在为种子修改保存路径 {torrent_target.change_directory}")
                             downloader.qbc.torrents_set_location(torrent_hashes=torrent_hash,
-                                                                 location=torrent_target.change_category)
+                                                                 location=torrent_target.change_directory)
                             logger.info(f"修改保存路径成功")
                         except Exception as e:
                             logger.error(f"修改保存路径失败，错误：{str(e)}")
@@ -483,14 +483,11 @@ class TorrentClassifier(_PluginBase):
         # 遍历所有种子
         for torrent_hash, torrent in torrent_datas.items():
             torrent_title = self.__get_torrent_title(torrent=torrent)
-            torrent_category = self.__get_torrent_category(torrent=torrent)
-            torrent_tags = self.__get_torrent_tags(torrent=torrent)
 
             should_classifier = True
             for config in self._classifier_configs:
                 # 判断是否满足整理条件，不满足则跳过，满足则跳出
-                should, reason = self.__should_classifier(config=config, torrent_title=torrent_title,
-                                                          torrent_category=torrent_category, torrent_tags=torrent_tags)
+                should, reason = self.__should_classifier(config=config, torrent=torrent)
                 if should:
                     logger.debug(f"{torrent_title}({torrent_hash}) 满足过滤方案，已记录待后续整理")
                     classifier_torrents[torrent_hash] = torrent, config
@@ -507,15 +504,64 @@ class TorrentClassifier(_PluginBase):
 
         return classifier_torrents
 
-    @staticmethod
-    def __should_classifier(config: ClassifierConfig,
-                            torrent_title: Optional[str], torrent_category: Optional[str],
-                            torrent_tags: Optional[List[str]]) -> (bool, str):
+    def __should_classifier(self, config: ClassifierConfig, torrent: Any) -> (bool, str):
         """判断是否满足整理条件"""
         torrent_filter = config.torrent_filter
+        torrent_target = config.torrent_target
         if not torrent_filter:
             return False, "没有获取到整理规则"
 
+        torrent_title = self.__get_torrent_title(torrent=torrent)
+        torrent_category = self.__get_torrent_category(torrent=torrent)
+        torrent_tags = self.__get_torrent_tags(torrent=torrent)
+        torrent_auto_category = self.__get_torrent_auto_category(torrent=torrent)
+        torrent_path = self.__get_torrent_path(torrent=torrent)
+
+        # 判断当前属性是否已符合目标设置
+        match, reason = self.__matches_target_settings(torrent_target, torrent_path, torrent_category, torrent_tags,
+                                                       torrent_auto_category)
+        if match:
+            return False, "属性已完全符合目标设置，无需整理"
+        else:
+            logger.debug(f"存在种子属性不符合目标设置，前置过滤通过，原因：{reason}")
+
+        # 继续检查其他过滤条件
+        return self.__check_filters(torrent_filter, torrent_title, torrent_category, torrent_tags)
+
+    @staticmethod
+    def __matches_target_settings(torrent_target, torrent_path, torrent_category, torrent_tags,
+                                  torrent_auto_category) -> (bool, str):
+        """检查种子的当前设置是否符合目标设置"""
+        if torrent_target.auto_category != torrent_auto_category:
+            return False, f"自动分类 不符合目标值 {torrent_target.auto_category}"
+        if not torrent_target.auto_category and not (
+                torrent_target.change_directory and torrent_target.change_directory == torrent_path):
+            return False, f"存储目录 不符合目标值 {torrent_target.change_directory}"
+        if torrent_target.change_category and torrent_target.change_category != torrent_category:
+            return False, f"分类 不符合目标值 {torrent_target.change_category}"
+
+        def __calculate_target_tags():
+            """计算调整后应有的标签集合"""
+            if '@all' in torrent_target.remove_tags:
+                # 如果 '@all' 存在于 remove_tags 中，移除所有标签
+                modified_tags = set()
+            else:
+                # 否则仅移除指定标签
+                modified_tags = set(torrent_tags) - set(torrent_target.remove_tags)
+            # 添加需要的标签
+            modified_tags.update(torrent_target.add_tags)
+            return modified_tags
+
+        # 计算目标标签集
+        target_tags = __calculate_target_tags()
+        if target_tags != set(torrent_tags):
+            return False, f"标签 不符合目标值 {target_tags}"
+
+        return True, ""
+
+    @staticmethod
+    def __check_filters(torrent_filter, torrent_title, torrent_category, torrent_tags) -> (bool, str):
+        """应用过滤条件检查是否需要整理"""
         if torrent_filter.torrent_title:
             try:
                 if not torrent_title:
@@ -630,6 +676,26 @@ class TorrentClassifier(_PluginBase):
         except Exception as e:
             print(str(e))
             return []
+
+    def __get_torrent_auto_category(self, torrent: Any) -> bool:
+        """
+        获取种子是否启用自动Torrent管理
+        """
+        try:
+            return torrent.get("auto_tmm", False) if self._downloader == "qbittorrent" else False
+        except Exception as e:
+            print(str(e))
+            return False
+
+    def __get_torrent_path(self, torrent: Any) -> Optional[str]:
+        """
+        获取种子保存路径
+        """
+        try:
+            return torrent.get("save_path", None) if self._downloader == "qbittorrent" else None
+        except Exception as e:
+            print(str(e))
+            return None
 
     def __get_torrent_info(self, torrent: Any) -> dict:
         """
