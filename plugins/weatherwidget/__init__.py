@@ -961,23 +961,25 @@ class WeatherWidget(_PluginBase):
     def __reset_page_style(self, page: Any, key: str = 'mobile'):
         """重置页面样式"""
 
-        # 重置时间为空
-        page.evaluate("""() => {
-                    const element = document.querySelector('.current-time');
+        # 无边框模式时,调整右上角的样式显示效果
+        if not self._border:
+            # 重置时间为空
+            page.evaluate("""() => {
+                        const element = document.querySelector('.current-time');
+                        if (element) {
+                            element.style.display = 'block';
+                            element.style.height = '16px';
+                            element.textContent  = '';
+                        }
+                    }""")
+
+            # 移除空气质量
+            page.evaluate("""() => {
+                    const element = document.querySelector('.current-live .current-live__item > .air-tag');
                     if (element) {
-                        element.style.display = 'block';
-                        element.style.height = '16px';
-                        element.textContent  = '';
+                        element.remove();
                     }
                 }""")
-
-        # 移除空气质量
-        page.evaluate("""() => {
-                const element = document.querySelector('.current-live .current-live__item > .air-tag');
-                if (element) {
-                    element.remove();
-                }
-            }""")
 
         # 修改天气边框圆角为直角
         page.evaluate("""() => {
