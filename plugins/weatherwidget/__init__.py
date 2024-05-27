@@ -316,7 +316,7 @@ class WeatherWidget(_PluginBase):
                                         'class': 'w-full flex flex-row justify-end items-start absolute '
                                                  'left-0 cursor-pointer',
                                         'style': {
-                                            'top': '1.25rem',
+                                            'top': '1rem',
                                             'font-size': '12px',
                                             'line-height': '12px',
                                             'font-weight': '300',
@@ -332,7 +332,7 @@ class WeatherWidget(_PluginBase):
                                         'class': 'w-full flex flex-row justify-end items-start absolute '
                                                  'right-0 cursor-pointer',
                                         'style': {
-                                            'top': '2.85rem',
+                                            'top': '2.60rem',
                                             'display': 'inline-block',
                                             'width': '76px',
                                             'padding-top': '4px',
