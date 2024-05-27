@@ -64,7 +64,7 @@ class WeatherWidget(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/weatherwidget.png"
     # 插件版本
-    plugin_version = "1.6"
+    plugin_version = "1.7"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -95,6 +95,12 @@ class WeatherWidget(_PluginBase):
     _adapt_mode = None
     # weather_background
     _weather_background = None
+    # weather_current_time
+    _weather_current_time = None
+    # weather_air_tag
+    _weather_air_tag = None
+    # weather_air_tag_background
+    _weather_air_tag_background = None
     # location_url
     _location_url = None
     # 开启天气通知
@@ -142,6 +148,10 @@ class WeatherWidget(_PluginBase):
         self._screenshot_type = self.__get_screenshot_type()
         self._weather_background = config.get("weather_background",
                                               "linear-gradient(225deg, #fee5ca, #e9f0ff 55%, #dce3fb)")
+        self._weather_current_time = config.get("weather_current_time",
+                                                datetime.now(tz=pytz.timezone(settings.TZ)).strftime('%Y-%m-%d %H:%M'))
+        self._weather_air_tag = config.get("weather_air_tag", " AQI 优 ")
+        self._weather_air_tag_background = config.get("weather_air_tag_background", "#95B359")
 
         if self._clear_cache:
             self.__save_data({})
@@ -299,6 +309,45 @@ class WeatherWidget(_PluginBase):
                                             'text': self._location
                                         }
                                     ]
+                                },
+                                {
+                                    'component': 'VCardText',
+                                    'props': {
+                                        'class': 'w-full flex flex-row justify-end items-start absolute '
+                                                 'left-0 cursor-pointer',
+                                        'style': {
+                                            'top': '1.25rem',
+                                            'font-size': '12px',
+                                            'line-height': '12px',
+                                            'font-weight': '300',
+                                            'color': 'var(--text-black-2)',
+                                            'text-align': 'right'
+                                        }
+                                    },
+                                    'text': self._weather_current_time,
+                                },
+                                {
+                                    'component': 'p',
+                                    'props': {
+                                        'class': 'w-full flex flex-row justify-end items-start absolute '
+                                                 'right-0 cursor-pointer',
+                                        'style': {
+                                            'top': '2.85rem',
+                                            'display': 'inline-block',
+                                            'width': '76px',
+                                            'padding-top': '4px',
+                                            'padding-bottom': '4px',
+                                            'margin-right': '20px',
+                                            'font-size': '15px',
+                                            'line-height': '16px',
+                                            'text-align': 'center',
+                                            'white-space': 'nowrap',
+                                            'border-radius': '14px',
+                                            'color': 'white',
+                                            "background-color": self._weather_air_tag_background
+                                        }
+                                    },
+                                    'text': self._weather_air_tag,
                                 }
                             ]
                         }
@@ -733,6 +782,9 @@ class WeatherWidget(_PluginBase):
                 "location": self._location,
                 "location_url": self._location_url,
                 "weather_background": self._weather_background,
+                "weather_current_time": self._weather_current_time,
+                "weather_air_tag": self._weather_air_tag,
+                "weather_air_tag_background": self._weather_air_tag_background,
                 "auto_theme_enabled": self._auto_theme_enabled,
                 'adapt_mode': self._adapt_mode,
                 "weather_notify": self._weather_notify,
@@ -874,8 +926,8 @@ class WeatherWidget(_PluginBase):
                         page.set_viewport_size(device.get("size"))
                     page.goto(self._weather_url)
                     page.wait_for_selector(selector, timeout=self._screenshot_timeout * 1000)
-                    self.__reset_page_style(page=page, key=key)
                     self.__reset_weather_style(page=page)
+                    self.__reset_page_style(page=page, key=key)
                     logger.info(f"{key} 页面加载成功，标题: {page.title()}")
                     self.__update_with_log_screenshot_time(current_time=datetime.now(tz=pytz.timezone(settings.TZ)))
                     element = page.query_selector(selector)
@@ -909,13 +961,23 @@ class WeatherWidget(_PluginBase):
     def __reset_page_style(self, page: Any, key: str = 'mobile'):
         """重置页面样式"""
 
-        # # 删除时间
-        # page.evaluate("""() => {
-        #             const element = document.querySelector('.current-time');
-        #             if (element) {
-        #                 element.remove()
-        #             }
-        #         }""")
+        # 重置时间为空
+        page.evaluate("""() => {
+                    const element = document.querySelector('.current-time');
+                    if (element) {
+                        element.style.display = 'block';
+                        element.style.height = '16px';
+                        element.textContent  = '';
+                    }
+                }""")
+
+        # 移除空气质量
+        page.evaluate("""() => {
+                const element = document.querySelector('.current-live .current-live__item > .air-tag');
+                if (element) {
+                    element.remove();
+                }
+            }""")
 
         # 修改天气边框圆角为直角
         page.evaluate("""() => {
@@ -974,8 +1036,52 @@ class WeatherWidget(_PluginBase):
         else:
             self._weather_background = "linear-gradient(225deg, #fee5ca, #e9f0ff 55%, #dce3fb)"
 
+        # 尝试获取页面中的时间，如果不存在，则使用当前时间
+        current_time_from_page = page.evaluate(
+            "() => document.querySelector('.current-time') ? document.querySelector('.current-time').textContent : ''")
+
+        if current_time_from_page:
+            self._weather_current_time = current_time_from_page
+        else:
+            # 获取当前时间并格式化为 'YYYY-MM-DD HH:MM' 格式
+            self._weather_current_time = datetime.now(tz=pytz.timezone(settings.TZ)).strftime('%Y-%m-%d %H:%M')
+
+        # 尝试获取页面中的空气质量标签
+        air_tag_from_page = page.evaluate("""() => {
+                                        const element = document.querySelector('.current-live .current-live__item > .air-tag');
+                                        if (element) {
+                                            return element ? element.textContent : '';
+                                        }
+                                    }""")
+
+        # 尝试获取页面中的空气质量标签和背景色
+        air_tag_details = page.evaluate("""
+                () => {
+                    const element = document.querySelector('.current-live .current-live__item > .air-tag');
+                    if (element) {
+                        return {
+                            text: element.textContent.trim(),
+                            backgroundColor: window.getComputedStyle(element, null).getPropertyValue('background-color')
+                        };
+                    } else {
+                        return { text: '', backgroundColor: '' };
+                    }
+                }
+            """)
+
+        if air_tag_details:
+            self._weather_air_tag = f" {air_tag_details.get('text', 'AQI 优')} "
+            self._weather_air_tag_background = air_tag_details.get("backgroundColor", "#95B359")
+        else:
+            # 如果没有找到空气质量标签或背景色，使用默认值
+            self._weather_air_tag = " AQI 优 "
+            self._weather_air_tag_background = "#95B359"  # 默认背景颜色
+
         self.__update_config()
         logger.info(f"更新天气背景样式为：{self._weather_background}")
+        logger.info(f"更新当前时间为：{self._weather_current_time}")
+        logger.info(f"更新空气质量为：{self._weather_air_tag}")
+        logger.info(f"更新空气质量背景色为：{self._weather_air_tag_background}")
 
     def __manage_images(self, key: str, max_files: int = 5):
         """管理图片文件，确保每种类型最多保留 max_files 张"""
