@@ -80,7 +80,6 @@ class AutoDiagnosis(_PluginBase):
         self._health_check_sites = config.get("health_check_sites", None)
         self._last_execute_time = None
 
-        self._onlyonce = True
         if self._onlyonce:
             self._onlyonce = False
             config.update({"onlyonce": False})
