@@ -57,7 +57,7 @@ class AutoDiagnosis(_PluginBase):
     # 最近一次执行时间
     _last_execute_time = None
     # min_execute_span
-    _min_execute_span = 10 * 60
+    _min_execute_span = 9 * 60
     # 定时器
     _scheduler = None
     # 退出事件
@@ -380,14 +380,16 @@ class AutoDiagnosis(_PluginBase):
         """解析结果并根据通知设置发送消息"""
         if not (health_modules_results or health_sites_results):
             return
+
+        message = self.__generate_message(health_modules_results, health_sites_results)
+        logger.info(message)
+
         if self._notify == "none":
             return
 
         # 检查是否有异常
         any_errors = any(not res.get("state") for res in health_modules_results + health_sites_results)
-
         if self._notify == "always" or (self._notify == "on_error" and any_errors):
-            message = self.__generate_message(health_modules_results, health_sites_results)
             if message:
                 self.post_message(mtype=NotificationType[self._notify_type], title="【自动诊断】", text=message)
 
