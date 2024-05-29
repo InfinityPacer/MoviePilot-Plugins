@@ -195,13 +195,25 @@
     "AutoDiagnosis": {
         "name": "自动诊断",
         "description": "定时发起系统健康检查以及网络连通性测试。",
-        "labels": "工具",
+        "labels": "系统设置",
         "version": "1.0",
         "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
             "v1.0": "增加自动诊断插件，支持定时发起系统健康检查以及网络连通性测试"
+        }
+    },
+    "SystemNotification": {
+        "name": "系统通知",
+        "description": "通过通知渠道发送系统通知消息。",
+        "labels": "系统设置",
+        "version": "1.0",
+        "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/systemnotification.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "增加系统通知插件，通过通知渠道发送系统通知消息"
         }
     }
 }
