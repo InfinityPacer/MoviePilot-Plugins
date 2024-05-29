@@ -302,8 +302,8 @@ class WeatherWidget(_PluginBase):
                                             'props': {
                                                 'class': 'mb-1 line-clamp-2 overflow-hidden text-ellipsis ...',
                                                 'style': {
-                                                    'color': "rgb(231 227 252)"
-                                                    if self._use_dark_mode else 'rgb(58 53 65 / 87%)'
+                                                    'color': 'rgb(231 227 252)'
+                                                    if self._use_dark_mode else 'rgb(58 53 65 / 87%)',
                                                 }
                                             },
                                             'text': self._location
@@ -319,8 +319,8 @@ class WeatherWidget(_PluginBase):
                                             'top': '1rem',
                                             'font-size': '12px',
                                             'line-height': '12px',
-                                            'font-weight': '300',
-                                            'color': 'var(--text-black-2)',
+                                            'color': 'rgb(231 227 252)'
+                                            if self._use_dark_mode else 'rgb(58 53 65 / 87%)',
                                             'text-align': 'right'
                                         }
                                     },
