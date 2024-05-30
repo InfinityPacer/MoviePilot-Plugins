@@ -64,7 +64,7 @@ class WeatherWidget(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/weatherwidget.png"
     # 插件版本
-    plugin_version = "1.7"
+    plugin_version = "1.8"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -89,10 +89,14 @@ class WeatherWidget(_PluginBase):
     _weather_url = None
     # 启用自动主题
     _auto_theme_enabled = None
+    # 自动高度
+    _auto_height = None
     # use_dark_mode
     _use_dark_mode = None
     # adapt_mode
     _adapt_mode = None
+    # component_size
+    _component_size = None
     # weather_background
     _weather_background = None
     # weather_current_time
@@ -139,12 +143,14 @@ class WeatherWidget(_PluginBase):
         self._location_url = config.get("location_url", "")
         self._weather_url = self.__get_weather_url()
         self._auto_theme_enabled = config.get("auto_theme_enabled", True)
+        self._auto_height = config.get("auto_height", False)
         self._last_screenshot_time = None
         self._use_dark_mode = self.__should_use_dark_mode()
         self._adapt_mode = config.get("adapt_mode", "compatibility")
+        self._component_size = config.get("component_size", "mini")
         self._weather_notify = config.get("weather_notify", True)
         self._weather_notify_cron = config.get("weather_notify_cron")
-        self._weather_notify_type = config.get("weather_notify_type", "SiteMessage")
+        self._weather_notify_type = config.get("weather_notify_type", "Plugin")
         self._screenshot_type = self.__get_screenshot_type()
         self._weather_background = config.get("weather_background",
                                               "linear-gradient(225deg, #fee5ca, #e9f0ff 55%, #dce3fb)")
@@ -200,13 +206,6 @@ class WeatherWidget(_PluginBase):
         }]
         """
         pass
-        # return [{
-        #     "path": "/image",
-        #     "endpoint": self.invoke_service,
-        #     "methods": ["GET"],
-        #     "summary": "获取天气图片",
-        #     "description": "获取天气图片",
-        # }]
 
     def __get_total_elements(self, image: str, key: str = "mobile") -> List[dict]:
         """
@@ -247,7 +246,7 @@ class WeatherWidget(_PluginBase):
                                     'props': {
                                         'src': f'{image}',
                                         'height': 'auto' if key == 'mobile' else (
-                                            '264px' if self._adapt_mode == "compatibility" else 'auto'),
+                                            '264px' if self._adapt_mode == 'compatibility' else 'auto'),
                                         'max-width': '100%',
                                         'width': '100%'
                                     }
@@ -267,8 +266,8 @@ class WeatherWidget(_PluginBase):
                             'position': 'relative',
                             'height': 'auto',
                             'background': f'{self._weather_background}',
-                            'padding': "0" if self._adapt_mode == "compatibility" else (
-                                "0" if key == 'mobile' else '0 0 1.5rem'),
+                            'padding': 0 if self._adapt_mode == 'compatibility'
+                                            or key == 'mobile' or self._auto_height else '0 0 1.5rem',
                         }
                     },
                     'content': [
@@ -283,11 +282,11 @@ class WeatherWidget(_PluginBase):
                                     'component': 'VImg',
                                     'props': {
                                         'src': f'{image}',
-                                        'height': 'auto' if key == 'mobile' else (
-                                            '336px' if self._adapt_mode == "compatibility" else '310px'),
+                                        'height': 'auto' if self._auto_height or key == 'mobile' else (
+                                            '336px' if self._adapt_mode == 'compatibility' else '310px'),
                                         'max-width': '100%',
                                         'width': '100%',
-                                        'cover': False if self._adapt_mode == "compatibility" else True,
+                                        'cover': False if self._adapt_mode == 'compatibility' else True,
                                     }
                                 },
                                 {
@@ -332,7 +331,7 @@ class WeatherWidget(_PluginBase):
                                         'class': 'w-full flex flex-row justify-end items-start absolute '
                                                  'right-0 cursor-pointer',
                                         'style': {
-                                            'top': '2.60rem',
+                                            'top': '2.4rem',
                                             'display': 'inline-block',
                                             'width': '76px',
                                             'padding-top': '4px',
@@ -355,7 +354,8 @@ class WeatherWidget(_PluginBase):
                 }
             ]
 
-    def get_dashboard(self, user_agent: str = None) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], List[dict]]]:
+    def get_dashboard(self, key: str = None, user_agent: str = None) \
+            -> Optional[Tuple[Dict[str, Any], Dict[str, Any], List[dict]]]:
         """
         获取插件仪表盘页面，需要返回：1、仪表板cols配置字典；2、全局配置（自动刷新等）；2、仪表板页面元素配置json（含数据）
         1、col配置参考：
@@ -375,10 +375,14 @@ class WeatherWidget(_PluginBase):
         image = self.__get_weather_base64_image(location=self._location, key=key)
 
         # 列配置
-        cols = {
-            "cols": 12,
-            "md": 4
+        size_to_cols_map = {
+            "mini": {"cols": 12, "md": 4},
+            "small": {"cols": 12, "md": 6},
+            "medium": {"cols": 12, "md": 8},
+            "large": {"cols": 12, "md": 12}
         }
+        cols = size_to_cols_map.get(self._component_size, size_to_cols_map.get("mini"))
+
         # 全局配置
         attrs = {
             "border": not image
@@ -495,6 +499,22 @@ class WeatherWidget(_PluginBase):
                                     {
                                         'component': 'VSwitch',
                                         'props': {
+                                            'model': 'auto_height',
+                                            'label': '自动高度',
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
                                             'model': 'weather_notify',
                                             'label': '开启天气通知',
                                         },
@@ -543,6 +563,28 @@ class WeatherWidget(_PluginBase):
                                     }
                                 ],
                             },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'component_size',
+                                            'label': '组件规格',
+                                            'items': [
+                                                {"title": "迷你", "value": "mini"},
+                                                {"title": "小型", "value": "small"},
+                                                {"title": "中型", "value": "medium"},
+                                                {"title": "大型", "value": "large"}
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
                         ]
                     },
                     {
@@ -605,27 +647,6 @@ class WeatherWidget(_PluginBase):
                             }
                         ]
                     },
-                    # {
-                    #     'component': 'VRow',
-                    #     'content': [
-                    #         {
-                    #             'component': 'VCol',
-                    #             'props': {
-                    #                 'cols': 12,
-                    #             },
-                    #             'content': [
-                    #                 {
-                    #                     'component': 'VAlert',
-                    #                     'props': {
-                    #                         'type': 'info',
-                    #                         'variant': 'tonal',
-                    #                         'text': '注意：因涉及新增API，安装/更新插件后需重启Docker后生效'
-                    #                     }
-                    #                 }
-                    #             ]
-                    #         }
-                    #     ]
-                    # },
                     {
                         'component': 'VRow',
                         'content': [
@@ -718,7 +739,9 @@ class WeatherWidget(_PluginBase):
             "auto_theme_enabled": True,
             "adapt_mode": "compatibility",
             "weather_notify": True,
-            "weather_notify_cron": "0 8 * * *"
+            "weather_notify_cron": "0 8 * * *",
+            "auto_height": False,
+            "component_size": "mini"
         }
 
     def get_page(self) -> List[dict]:
@@ -786,7 +809,9 @@ class WeatherWidget(_PluginBase):
                 "weather_air_tag": self._weather_air_tag,
                 "weather_air_tag_background": self._weather_air_tag_background,
                 "auto_theme_enabled": self._auto_theme_enabled,
+                "auto_height": self._auto_height,
                 'adapt_mode': self._adapt_mode,
+                "component_size": self._component_size,
                 "weather_notify": self._weather_notify,
                 "weather_notify_cron": self._weather_notify_cron,
                 "weather_notify_type": self._weather_notify_type
@@ -961,7 +986,7 @@ class WeatherWidget(_PluginBase):
     def __reset_page_style(self, page: Any, key: str = 'mobile'):
         """重置页面样式"""
 
-        # 无边框模式时,调整右上角的样式显示效果
+        # 无边框模式时，调整右上角的样式显示效果
         if not self._border:
             # 重置时间为空
             page.evaluate("""() => {

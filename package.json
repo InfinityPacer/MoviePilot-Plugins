@@ -140,11 +140,12 @@
         "name": "天气",
         "description": "定时推送天气，并在仪表盘中显示实时天气。",
         "labels": "工具",
-        "version": "1.7",
+        "version": "1.8",
         "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/weatherwidget.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.8": "增加自动高度及组件规格，部分显示效果需要主程序升级1.9.3+版本及后续优化",
             "v1.7": "天气时间以及空气质量调整为原生渲染，优化显示效果",
             "v1.6": "增加天气定时推送以及对应的Bot指令",
             "v1.5": "优化了天气显示效果，可以根据日出和日落时间自动切换不同的主题背景，并可根据设备选择不同的适配模式",
