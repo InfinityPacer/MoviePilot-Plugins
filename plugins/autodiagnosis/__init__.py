@@ -7,10 +7,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
+from app.core.event import eventmanager, Event
 from app.core.module import ModuleManager
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
+from app.schemas.types import EventType
 from app.utils.http import RequestUtils
 
 lock = threading.Lock()
@@ -20,11 +22,11 @@ class AutoDiagnosis(_PluginBase):
     # 插件名称
     plugin_name = "自动诊断"
     # 插件描述
-    plugin_desc = "定时发起系统健康检查以及网络连通性测试。"
+    plugin_desc = "自动发起系统健康检查以及网络连通性测试。"
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -50,14 +52,20 @@ class AutoDiagnosis(_PluginBase):
     _notify = False
     # 消息类型
     _notify_type = None
+    # 系统异常时执行一次
+    _execute_when_system_error = None
     # 健康检查模块
     _health_check_modules = None
     # 网络连通性检查地址
     _health_check_sites = None
     # 最近一次执行时间
     _last_execute_time = None
-    # min_execute_span
+    # 最小执行周期
     _min_execute_span = 9 * 60
+    # 最近一次因错误触发执行时间
+    _last_execute_for_error_time = None
+    # 最小因错误触发执行周期
+    _min_execute_for_error_span = 1 * 60
     # 定时器
     _scheduler = None
     # 退出事件
@@ -74,11 +82,13 @@ class AutoDiagnosis(_PluginBase):
         self._enabled = config.get("enabled", False)
         self._cron = config.get("cron", None)
         self._onlyonce = config.get("onlyonce", False)
+        self._execute_when_system_error = config.get("execute_when_system_error", False)
         self._notify = config.get("notify", "on_error")
         self._notify_type = config.get("notify_type", "Plugin")
         self._health_check_modules = config.get("health_check_modules", None)
         self._health_check_sites = config.get("health_check_sites", None)
         self._last_execute_time = None
+        self._last_execute_for_error_time = None
 
         if self._onlyonce:
             self._onlyonce = False
@@ -151,6 +161,22 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'execute_when_system_error',
+                                            'label': '发生系统错误时运行一次',
                                         }
                                     }
                                 ]
@@ -374,14 +400,25 @@ class AutoDiagnosis(_PluginBase):
         except Exception as e:
             print(str(e))
 
-    def auto_diagnosis(self):
+    def auto_diagnosis(self, trigger_by_error: bool = False):
         """自动诊断"""
         current_time = datetime.now(tz=pytz.timezone(settings.TZ))
-        if not self.__check_execute_span(self._last_execute_time, self._min_execute_span, current_time):
+
+        if trigger_by_error:
+            last_execute_time = self._last_execute_for_error_time
+            min_execute_span = self._min_execute_for_error_span
+        else:
+            last_execute_time = self._last_execute_time
+            min_execute_span = self._min_execute_span
+
+        if not self.__check_execute_span(last_execute_time, min_execute_span, current_time):
             return
 
         with lock:
-            self._last_execute_time = datetime.now(tz=pytz.timezone(settings.TZ))
+            if trigger_by_error:
+                self._last_execute_for_error_time = datetime.now(tz=pytz.timezone(settings.TZ))
+            else:
+                self._last_execute_time = datetime.now(tz=pytz.timezone(settings.TZ))
             health_modules_results = self.__check_health_modules()
             if self.__check_external_interrupt(service="自动诊断"):
                 return
@@ -424,13 +461,13 @@ class AutoDiagnosis(_PluginBase):
         """格式化模块或站点的结果信息"""
         lines = []
         if any(not res.get("state") for res in results):
-            lines.append(f"{type_label}存在异常：")
+            lines.append(f"{type_label}：异常")
             for result in results:
                 if not result.get("state"):
                     error_message = f"，异常信息：{result.get('errmsg')}" if result.get('errmsg') else ""
                     lines.append(f"- {result.get('name', '未知')}{error_message}")
         else:
-            lines.append(f"{type_label}：正常。")
+            lines.append(f"{type_label}：正常")
 
         return lines
 
@@ -662,3 +699,17 @@ class AutoDiagnosis(_PluginBase):
             logger.warning(f"外部中断请求，{service}服务停止")
             return True
         return False
+
+    @eventmanager.register(EventType.SystemError)
+    def handle_error_event(self, event: Event):
+        """处理系统错误事件，发起自动诊断"""
+        if not self._enabled:
+            return
+
+        if not self._execute_when_system_error:
+            return
+
+        if not event or not event.event_data:
+            return {}
+
+        self.auto_diagnosis(trigger_by_error=True)
