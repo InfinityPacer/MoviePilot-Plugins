@@ -247,14 +247,17 @@ class SystemNotification(_PluginBase):
 
     def __generate_message(self, event: Event) -> dict:
         """根据事件生成通知信息"""
+        if not event or not event.event_data:
+            return {}
+
         event_data = event.event_data
         event_type = event_data.get("type")
 
         # 创建一个映射字典，将事件类型映射到对应的处理函数
         event_handlers = {
-            "module": self.handle_module_event,
-            "event": self.handle_event_event,
-            "scheduler": self.handle_scheduler_event
+            "module": self.__handle_module_event,
+            "event": self.__handle_event_event,
+            "scheduler": self.__handle_scheduler_event
         }
 
         # 获取处理函数，如果event_type不在字典中，则返回一个生成空字典的lambda
@@ -278,7 +281,7 @@ class SystemNotification(_PluginBase):
         return notification_types
 
     @staticmethod
-    def handle_module_event(event_data):
+    def __handle_module_event(event_data):
         """
         处理模块相关的错误事件，生成通知消息的详细内容。
         """
@@ -290,7 +293,7 @@ class SystemNotification(_PluginBase):
         }
 
     @staticmethod
-    def handle_event_event(event_data):
+    def __handle_event_event(event_data):
         """
         处理事件处理错误，生成通知消息的详细内容。
         """
@@ -302,7 +305,7 @@ class SystemNotification(_PluginBase):
         }
 
     @staticmethod
-    def handle_scheduler_event(event_data):
+    def __handle_scheduler_event(event_data):
         """
         处理调度器执行失败的错误事件，生成通知消息的详细内容。
         """
@@ -312,3 +315,38 @@ class SystemNotification(_PluginBase):
             "traceback": event_data.get("traceback"),
             "event_type": "scheduler"
         }
+
+    def __trigger_event(self):
+        self.eventmanager.send_event(
+            EventType.SystemError,
+            {
+                "type": "module",
+                "module_id": "module_id",
+                "module_name": "module_name",
+                "module_method": "method",
+                "error": "str(err)",
+                "traceback": "traceback.format_exc()"
+            }
+        )
+
+        self.eventmanager.send_event(
+            EventType.SystemError,
+            {
+                "type": "event",
+                "event_type": "event.event_type",
+                "event_handle": "{class_name}.{method_name}",
+                "error": "str(e)",
+                "traceback": "traceback.format_exc()"
+            }
+        )
+
+        self.eventmanager.send_event(
+            EventType.SystemError,
+            {
+                "type": "scheduler",
+                "scheduler_id": "job_id",
+                "scheduler_name": "job_name",
+                "error": "str(e)",
+                "traceback": "traceback.format_exc()"
+            }
+        )
