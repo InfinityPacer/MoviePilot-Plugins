@@ -872,8 +872,9 @@ class BrushFlowLowFreq(_PluginBase):
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'chips': True,
                                             'multiple': True,
+                                            'chips': True,
+                                            'clearable': True,
                                             'model': 'brushsites',
                                             'label': '刷流站点',
                                             'items': site_options

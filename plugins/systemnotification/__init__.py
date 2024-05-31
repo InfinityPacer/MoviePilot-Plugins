@@ -130,6 +130,7 @@ class SystemNotification(_PluginBase):
                                         'props': {
                                             'multiple': True,
                                             'chips': True,
+                                            'clearable': True,
                                             'model': 'preferences',
                                             'label': '接收类型',
                                             'items': self.__get_user_notification_preferences()
@@ -147,8 +148,6 @@ class SystemNotification(_PluginBase):
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'multiple': False,
-                                            'chips': True,
                                             'model': 'notify_type',
                                             'label': '消息类型',
                                             'items': [{"title": item.value, "value": item.name}

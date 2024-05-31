@@ -553,8 +553,6 @@ class WeatherWidget(_PluginBase):
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'multiple': False,
-                                            'chips': True,
                                             'model': 'weather_notify_type',
                                             'label': '消息类型',
                                             'items': [{"title": item.value, "value": item.name}
@@ -634,7 +632,6 @@ class WeatherWidget(_PluginBase):
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'multiple': False,
                                             'model': 'adapt_mode',
                                             'label': '适配方案',
                                             'items': [

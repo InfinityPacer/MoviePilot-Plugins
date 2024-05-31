@@ -342,8 +342,10 @@ class PlexEdition(_PluginBase):
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'model': 'library_ids',
                                             'multiple': True,
+                                            'chips': True,
+                                            'clearable': True,
+                                            'model': 'library_ids',
                                             'label': '媒体库',
                                             'items': library_options
                                         },

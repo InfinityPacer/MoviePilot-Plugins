@@ -76,7 +76,6 @@ class PluginReload(_PluginBase):
                                     {
                                         'component': 'VAutocomplete',
                                         'props': {
-                                            'multiple': False,
                                             'model': 'plugin_id',
                                             'label': '插件重载',
                                             'items': plugin_options,

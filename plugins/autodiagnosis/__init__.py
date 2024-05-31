@@ -213,8 +213,6 @@ class AutoDiagnosis(_PluginBase):
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'multiple': False,
-                                            'chips': True,
                                             'model': 'notify',
                                             'label': '发送通知',
                                             'items': [
@@ -236,8 +234,6 @@ class AutoDiagnosis(_PluginBase):
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'multiple': False,
-                                            'chips': True,
                                             'model': 'notify_type',
                                             'label': '通知类型',
                                             'items': [{"title": item.value, "value": item.name}
@@ -263,6 +259,7 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'multiple': True,
                                             'chips': True,
+                                            'clearable': True,
                                             'model': 'health_check_modules',
                                             'label': '系统健康检查',
                                             'items': self.__get_health_check_modules_options()
@@ -282,6 +279,7 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'multiple': True,
                                             'chips': True,
+                                            'clearable': True,
                                             'model': 'health_check_sites',
                                             'label': '网络连通性测试',
                                             'items': self.__get_health_check_sites_options()
