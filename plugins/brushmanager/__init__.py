@@ -196,7 +196,7 @@ class BrushManager(_PluginBase):
                                                             'model': 'torrents',
                                                             'label': '选择种子',
                                                             'items': torrent_options,
-                                                            "clearable": True,
+                                                            'clearable': True,
                                                             'menu-props': {
                                                                 'max-width': '-1px'
                                                             }
@@ -212,8 +212,8 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    "cols": 12,
-                                                    "md": 3
+                                                    'cols': 12,
+                                                    'md': 3
                                                 },
                                                 'content': [
                                                     {
@@ -232,8 +232,8 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    "cols": 12,
-                                                    "md": 3
+                                                    'cols': 12,
+                                                    'md': 3
                                                 },
                                                 'content': [
                                                     {
@@ -242,7 +242,7 @@ class BrushManager(_PluginBase):
                                                             'model': 'move_path',
                                                             'label': '移动目录',
                                                             'items': path_options,
-                                                            "clearable": True
+                                                            'clearable': True
                                                         }
                                                     }
                                                 ]
@@ -260,7 +260,7 @@ class BrushManager(_PluginBase):
                                                             'model': 'category',
                                                             'label': '种子分类',
                                                             'items': category_options,
-                                                            "clearable": True
+                                                            'clearable': True
                                                         }
                                                     }
                                                 ]
@@ -278,7 +278,7 @@ class BrushManager(_PluginBase):
                                                             'model': 'tag',
                                                             'label': '添加种子标签',
                                                             'placeholder': '如：待转移,剧情',
-                                                            "clearable": True
+                                                            'clearable': True
                                                         }
                                                     }
                                                 ]
@@ -368,7 +368,7 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    "cols": 12,
+                                                    'cols': 12,
                                                 },
                                                 'content': [
                                                     {
@@ -389,7 +389,7 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    "cols": 12,
+                                                    'cols': 12,
                                                 },
                                                 'content': [
                                                     {
@@ -411,7 +411,7 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    "cols": 12,
+                                                    'cols': 12,
                                                 },
                                                 'content': [
                                                     {
