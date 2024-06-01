@@ -1,22 +1,28 @@
 import threading
 from dataclasses import asdict, fields
+from datetime import datetime, timedelta
 from typing import Any, List, Dict, Tuple
 
+import pytz
 from app.helper.sites import SitesHelper
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from ruamel.yaml import YAMLError
 
+from app.core.config import settings
 from app.core.plugin import PluginManager
+from app.db.site_oper import SiteOper
 from app.log import logger
 from app.plugins import _PluginBase
 from app.plugins.trafficassistant.trafficconfig import TrafficConfig
+from app.schemas import NotificationType
 
 lock = threading.Lock()
 
 
 class TrafficAssistant(_PluginBase):
     # 插件名称
-    plugin_name = "流量管理"
+    plugin_name = "站点流量管理"
     # 插件描述
     plugin_desc = "自动管理流量，保障站点分享率。"
     # 插件图标
@@ -39,6 +45,7 @@ class TrafficAssistant(_PluginBase):
     # 插件Manager
     pluginmanager = None
     siteshelper = None
+    siteoper = None
 
     # 流量管理配置
     _traffic_config = TrafficConfig()
@@ -53,6 +60,7 @@ class TrafficAssistant(_PluginBase):
     def init_plugin(self, config: dict = None):
         self.pluginmanager = PluginManager()
         self.siteshelper = SitesHelper()
+        self.siteoper = SiteOper()
 
         if not config:
             return
@@ -62,6 +70,23 @@ class TrafficAssistant(_PluginBase):
         if not result and not self._traffic_config:
             self.__update_config_if_error(config=config, error=reason)
             return
+
+        if self._traffic_config.onlyonce:
+            self._traffic_config.onlyonce = False
+            self.update_config(config=config)
+
+            logger.info("立即运行一次站点流量管理服务")
+            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+            self._scheduler.add_job(self.traffic, 'date',
+                                    run_date=datetime.now(
+                                        tz=pytz.timezone(settings.TZ)
+                                    ) + timedelta(seconds=3),
+                                    name="站点流量管理")
+
+            if self._scheduler.get_jobs():
+                # 启动服务
+                self._scheduler.print_jobs()
+                self._scheduler.start()
 
         self.__update_config()
 
@@ -161,7 +186,6 @@ class TrafficAssistant(_PluginBase):
                                         'props': {
                                             'multiple': True,
                                             'chips': True,
-                                            'closable-chips': True,
                                             'clearable': True,
                                             'model': 'sites',
                                             'label': '站点列表',
@@ -412,7 +436,8 @@ class TrafficAssistant(_PluginBase):
                                         'props': {
                                             'type': 'error',
                                             'variant': 'tonal',
-                                            'text': '警告：本插件仍在完善阶段，可能会导致流量管理异常，分享率降低等，严重甚至导致站点封号，请慎重使用'
+                                            'text': '警告：本插件仍在完善阶段，可能会导致站点流量异常，分享率降低等，'
+                                                    '严重甚至导致站点封号，请慎重使用'
                                         }
                                     }
                                 ]
@@ -433,7 +458,8 @@ class TrafficAssistant(_PluginBase):
                                         'props': {
                                             'type': 'error',
                                             'variant': 'tonal',
-                                            'text': '警告：本插件依赖站点刷流插件，请提前安装对应插件中进行相关配置，否则可能导致开启站点刷流后，分享率降低或命中H&R种子，严重甚至导致站点封号，请慎重使用'
+                                            'text': '警告：本插件依赖站点刷流插件，请提前安装对应插件中进行相关配置，'
+                                                    '否则可能导致开启站点刷流后，分享率降低或命中H&R种子，严重甚至导致站点封号，请慎重使用'
                                         }
                                     }
                                 ]
@@ -454,7 +480,8 @@ class TrafficAssistant(_PluginBase):
                                         'props': {
                                             'type': 'error',
                                             'variant': 'tonal',
-                                            'text': '注意：本插件依赖站点数据统计插件，请提前安装对应插件中进行相关配置，否则可能导致无法获取到分享率等信息，从而影响后续流量管理'
+                                            'text': '注意：本插件依赖站点数据统计插件，请提前安装对应插件中进行相关配置，'
+                                                    '否则可能导致无法获取到分享率等信息，从而影响后续站点流量管理'
                                         }
                                     }
                                 ]
@@ -490,7 +517,7 @@ class TrafficAssistant(_PluginBase):
         if self._traffic_config.enabled and self._traffic_config.cron:
             return [{
                 "id": "TrafficAssistant",
-                "name": "流量管理服务",
+                "name": "站点流量管理服务",
                 "trigger": CronTrigger.from_crontab(self._traffic_config.cron),
                 "func": self.traffic,
                 "kwargs": {}
@@ -512,8 +539,71 @@ class TrafficAssistant(_PluginBase):
             print(str(e))
 
     def traffic(self):
-        """流量管理"""
-        pass
+        """站点流量管理"""
+        result = self.__get_site_statistics(traffic_config=self._traffic_config)
+        if result.get("success"):
+            site_statistics = result.get("data")
+            logger.info(f"数据获取成功： {site_statistics}")
+        else:
+            self.__send_message(title="站点流量管理-失败",
+                                message=result.get("err_msg", "站点流量管理发送异常，请检查日志"))
+
+    def __get_site_statistics(self, traffic_config: TrafficConfig) -> dict:
+        """获取站点统计数据"""
+
+        def is_data_valid(data):
+            """检查数据是否有效"""
+            return "ratio" in data and not data.get("err_msg")
+
+        site_infos = traffic_config.site_infos
+        current_day = datetime.now(tz=pytz.timezone(settings.TZ)).date()
+        previous_day = current_day - timedelta(days=1)
+        result = {"success": True, "data": {}}
+
+        # 尝试获取当天和前一天的数据
+        current_data = self.get_data(str(current_day), traffic_config.statistic_plugin) or {}
+        previous_day_data = self.get_data(str(previous_day), traffic_config.statistic_plugin) or {}
+
+        if not current_data and not previous_day_data:
+            err_msg = f"{current_day} 和 {previous_day}，均没有获取到有效的数据，请检查"
+            logger.warn(err_msg)
+            result["success"] = False
+            result["err_msg"] = err_msg
+            return result
+
+        # 检查每个站点的数据是否有效
+        all_sites_failed = True
+        for site_id, site in site_infos.items():
+            site_name = site.name
+            site_current_data = current_data.get(site_name, {})
+            site_previous_data = previous_day_data.get(site_name, {})
+
+            if is_data_valid(site_current_data):
+                result["data"][site_name] = {**site_current_data, "success": True}
+                all_sites_failed = False
+            else:
+                if is_data_valid(site_previous_data):
+                    result["data"][site_name] = {**site_previous_data, "success": True}
+                    logger.info(f"站点 {site_name} 使用了 {previous_day} 的数据")
+                    all_sites_failed = False
+                else:
+                    err_msg = site_previous_data.get("err_msg", "无有效数据")
+                    result["data"][site_name] = {"err_msg": err_msg, "success": False, "updated_at": str(previous_day)}
+                    logger.warn(f"{site_name} 前一天的数据也无效，错误信息：{err_msg}")
+
+        # 如果所有站点的数据都无效，则标记全局失败
+        if all_sites_failed:
+            err_msg = f"{current_day} 和 {previous_day}，所有站点的数据获取均失败，无法继续站点流量管理服务"
+            logger.warn(err_msg)
+            result["success"] = False
+            result["err_msg"] = err_msg
+
+        return result
+
+    def __send_message(self, title: str, message: str):
+        """发送消息"""
+        if self._traffic_config.notify:
+            self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
 
     def __validate_config(self, traffic_config: TrafficConfig) -> (bool, str):
         """
@@ -568,6 +658,14 @@ class TrafficAssistant(_PluginBase):
                         site_id for site_id in traffic_config.sites
                         if site_id in site_id_to_public_status and not site_id_to_public_status[site_id]
                     ]
+
+                    site_infos = {}
+                    for site_id in traffic_config.sites:
+                        site_info = self.siteoper.get(site_id)
+                        if site_info:
+                            site_infos[site_id] = site_info
+                    traffic_config.site_infos = site_infos
+
                 self._traffic_config = traffic_config
                 return True, ""
             else:
@@ -586,14 +684,16 @@ class TrafficAssistant(_PluginBase):
         """异常时停用插件并保存配置"""
         if config:
             if config.get("enabled", False):
-                # config["enabled"] = False
+                config["enabled"] = False
                 self.__log_and_notify_error(
-                    f"配置异常，已停用流量管理，原因：{error}" if error else "配置异常，已停用流量管理，请检查")
+                    f"配置异常，已停用站点流量管理，原因：{error}" if error else "配置异常，已停用站点流量管理，请检查")
             self.update_config(config)
 
     def __update_config(self):
         """保存配置"""
         config_mapping = asdict(self._traffic_config)
+        del config_mapping["site_infos"]
+        del config_mapping["statistic_plugin"]
         self.update_config(config_mapping)
 
     def __log_and_notify_error(self, message):
@@ -601,7 +701,7 @@ class TrafficAssistant(_PluginBase):
         记录错误日志并发送系统通知
         """
         logger.error(message)
-        self.systemmessage.put(message, title="流量管理")
+        self.systemmessage.put(message, title="站点流量管理")
 
     def __get_site_options(self):
         """获取当前可选的站点"""
@@ -646,7 +746,7 @@ class TrafficAssistant(_PluginBase):
             return False, "配置信息不完整，无法进行插件状态检查。"
 
         # 定义需要检查的插件集合及其友好名称
-        plugin_names = {"SiteStatistic": "站点数据统计"}
+        plugin_names = {traffic_config.statistic_plugin: "站点数据统计"}
         if traffic_config.brush_plugin:
             plugin_names[traffic_config.brush_plugin] = "站点刷流"
 
