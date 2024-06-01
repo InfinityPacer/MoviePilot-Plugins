@@ -877,7 +877,7 @@ class TorrentClassifier(_PluginBase):
         记录错误日志并发送系统通知
         """
         logger.error(message)
-        self.systemmessage.put(message, "种子关键字分类")
+        self.systemmessage.put(message, title="种子关键字分类")
 
     def __load_configs(self, config_str: Optional[str]) -> List[ClassifierConfig]:
         """加载YAML配置字符串，并构造ClassifierConfig列表。
