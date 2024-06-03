@@ -31,7 +31,7 @@ class TrafficAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/trafficassistant.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -551,7 +551,7 @@ class TrafficAssistant(_PluginBase):
         """
         with lock:
             traffic_config = self._traffic_config
-            success, reason = self.__validate_config(traffic_config=traffic_config)
+            success, reason = self.__validate_config(traffic_config=traffic_config, force=True)
             if not success:
                 self.__send_message(title="站点流量管理", message=f"配置异常，原因：{reason}")
                 return
@@ -565,7 +565,7 @@ class TrafficAssistant(_PluginBase):
                 aggregated_messages = []  # 初始化一个列表来聚合消息内容
 
                 for site_name, (outcome, stat_time) in manage_results.items():
-                    message = f"站点：{site_name}\n日期：{stat_time}\n结果：\n{outcome}\n================================"
+                    message = f"站点：{site_name} (数据日期：{stat_time})\n{outcome}\n————————————————————————————"
                     logger.info(message)
                     aggregated_messages.append(message)  # 将每个消息添加到列表中
 
@@ -597,14 +597,14 @@ class TrafficAssistant(_PluginBase):
         """管理单个站点的流量，根据站点的统计数据进行不同的处理"""
         site_stat = site_statistics.get(site_name)
         if not site_stat:
-            error_msg = "统计数据不存在，跳过"
+            error_msg = "统计数据不存在，跳过分析"
             logger.warn(error_msg)
             return error_msg, "N/A"
 
         stat_time = site_stat.get("statistic_time", "N/A")
-        logger.info(f"数据来源时间：{stat_time}")
+        logger.info(f"数据日期：{stat_time}")
         if not site_stat.get("success"):
-            error_msg = f"{site_stat.get('err_msg')}，跳过"
+            error_msg = f"{site_stat.get('err_msg')}，跳过分析"
             logger.warn(error_msg)
             return error_msg, stat_time
 
@@ -616,101 +616,101 @@ class TrafficAssistant(_PluginBase):
         """根据站点的流量配置和统计信息处理站点流量"""
         ratio = site_stat.get("ratio")
         if ratio is None:
-            error_msg = "没有分享率信息，跳过"
+            error_msg = "分享率：N/A，跳过分析"
             logger.warn(error_msg)
             return error_msg
 
         if ratio == 0.0:
-            error_msg = "分享率为0，跳过"
+            error_msg = "分享率：0，跳过分析"
             logger.warn(error_msg)
             return error_msg
 
         if ratio <= traffic_config.ratio_lower_limit:
-            return self.__handle_low_traffic(traffic_config=traffic_config, site_id=site_id, ratio=ratio)
+            return self.__handle_traffic(traffic_config=traffic_config, site_id=site_id, ratio=ratio, is_low=True)
 
         if ratio > traffic_config.ratio_upper_limit:
-            return self.__handle_high_traffic(traffic_config=traffic_config, site_id=site_id, ratio=ratio)
+            return self.__handle_traffic(traffic_config=traffic_config, site_id=site_id, ratio=ratio, is_low=False)
 
-        return f"分享率 {ratio} 在 {traffic_config.ratio_lower_limit} - {traffic_config.ratio_upper_limit} 范围内，跳过"
+        return (f"分享率：{ratio} ({traffic_config.ratio_lower_limit} - {traffic_config.ratio_upper_limit})\n"
+                f"- 分享率符合预期，无需调整")
 
-    def __handle_low_traffic(self, traffic_config: TrafficConfig, site_id: int, ratio: float) -> str:
-        """
-        处理低流量情况，根据配置执行特定的操作
-        """
+    def __handle_traffic(self, traffic_config: TrafficConfig, site_id: int, ratio: float, is_low: bool) -> str:
+        """处理流量情况，可以适用于高低流量情况"""
+        threshold_type = "≤" if is_low else ">"
+        threshold_value = traffic_config.ratio_lower_limit if is_low else traffic_config.ratio_upper_limit
+        traffic_summary = f"分享率：{ratio} ({threshold_type}{threshold_value})"
         actions = []
-        low_traffic_action = f"分享率 {ratio} 小于等于 {traffic_config.ratio_lower_limit}\n————————————"
-        logger.info(low_traffic_action)
-        if traffic_config.remove_from_search_if_below:
-            success, action_msg = self.__update_search_sites(site_id=site_id, remove=True)
-            actions.append(action_msg)
-        if traffic_config.remove_from_subscription_if_below:
-            success, action_msg = self.__update_subscription_sites(site_id=site_id, remove=True)
-            actions.append(action_msg)
-        if traffic_config.enable_auto_brush_if_below:
-            success, action_msg = self.__update_brush_sites(site_id=site_id, enable=True,
-                                                            plugin_id=traffic_config.brush_plugin)
-            actions.append(action_msg)
-        return "\n".join([low_traffic_action] + actions)
 
-    def __handle_high_traffic(self, traffic_config: TrafficConfig, site_id: int, ratio: float) -> str:
-        """
-        处理高流量情况，根据配置执行特定的操作
-        """
-        actions = []
-        high_traffic_action = f"分享率 {ratio} 大于 {traffic_config.ratio_upper_limit}\n——————————————"
-        logger.info(high_traffic_action)
-        if traffic_config.add_to_search_if_above:
-            success, action_msg = self.__update_search_sites(site_id=site_id, remove=False)
-            actions.append(action_msg)
-        if traffic_config.add_to_subscription_if_above:
-            success, action_msg = self.__update_subscription_sites(site_id=site_id, remove=False)
-            actions.append(action_msg)
-        if traffic_config.disable_auto_brush_if_above:
-            success, action_msg = self.__update_brush_sites(site_id=site_id, enable=False,
-                                                            plugin_id=traffic_config.brush_plugin)
-            # 标记需要进行插件的热加载
+        any_action_taken = False  # 初始化操作跟踪标志
+
+        # 处理搜索和订阅站点
+        search_condition = (
+            traffic_config.remove_from_search_if_below if is_low else traffic_config.add_to_search_if_above)
+        if search_condition:
+            success, action_msg = self.__update_search_sites(site_id=site_id, remove=is_low)
+            actions.append(f"- {action_msg}")
             if success:
-                self._plugin_reload_if_need = True
-            actions.append(action_msg)
-        return "\n".join([high_traffic_action] + actions)
+                any_action_taken = True  # 更新操作执行标志
+
+        subscription_condition = (
+            traffic_config.remove_from_subscription_if_below if is_low else traffic_config.add_to_subscription_if_above)
+        if subscription_condition:
+            success, action_msg = self.__update_subscription_sites(site_id=site_id, remove=is_low)
+            actions.append(f"- {action_msg}")
+            if success:
+                any_action_taken = True  # 更新操作执行标志
+
+        # 处理刷流站点
+        brush_condition = (
+            traffic_config.enable_auto_brush_if_below if is_low else traffic_config.disable_auto_brush_if_above)
+        if brush_condition:
+            success, action_msg = self.__update_brush_sites(site_id=site_id, enable=is_low,
+                                                            plugin_id=traffic_config.brush_plugin)
+            actions.append(f"- {action_msg}")
+            if success:
+                any_action_taken = True  # 更新操作执行标志
+                self._plugin_reload_if_need = True  # 标记需要进行插件的热加载
+
+        if not any_action_taken:
+            actions.clear()
+            actions.append("- 配置项符合预期，无需调整")
+
+        return "\n".join([traffic_summary] + actions)
+
+    @staticmethod
+    def __update_site_list(site_id: int, site_list: list, remove: bool, description: str) -> [bool, str]:
+        """通用方法来添加或移除站点"""
+        action_performed = False
+        action_msg = f"{description}站点：无需调整"
+        if not remove:
+            if site_id not in site_list:
+                site_list.append(site_id)
+                action_performed = True
+                action_msg = f"{description}站点：已添加"
+        else:
+            if site_id in site_list:
+                site_list.remove(site_id)
+                action_performed = True
+                action_msg = f"{description}站点：已移除"
+        return action_performed, action_msg
 
     def __update_search_sites(self, site_id: int, remove: bool) -> [bool, str]:
         """更新搜索站点列表，根据需要添加或移除站点"""
-        indexer_sites = self.systemconfig.get(SystemConfigKey.IndexerSites) or []
-        action_performed = False
-        action_msg = "搜索站点无需调整"
-        if remove:
-            if site_id in indexer_sites:
-                indexer_sites.remove(site_id)
-                action_performed = True
-                action_msg = "已从搜索站点中移除"
-        else:
-            if site_id not in indexer_sites:
-                indexer_sites.append(site_id)
-                action_performed = True
-                action_msg = "已添加到搜索站点"
+        indexer_sites = self.systemconfig.get(key=SystemConfigKey.IndexerSites) or []
+        action_performed, action_msg = self.__update_site_list(site_id=site_id, site_list=indexer_sites, remove=remove,
+                                                               description="搜索")
         if action_performed:
-            self.systemconfig.set(SystemConfigKey.IndexerSites, indexer_sites)
+            self.systemconfig.set(key=SystemConfigKey.IndexerSites, value=indexer_sites)
             logger.info(action_msg)
         return action_performed, action_msg
 
     def __update_subscription_sites(self, site_id: int, remove: bool) -> [bool, str]:
         """更新订阅站点列表，根据需要添加或移除站点"""
-        rss_sites = self.systemconfig.get(SystemConfigKey.RssSites) or []
-        action_performed = False
-        action_msg = "订阅站点无需调整"
-        if remove:
-            if site_id in rss_sites:
-                rss_sites.remove(site_id)
-                action_performed = True
-                action_msg = "已从订阅站点中移除"
-        else:
-            if site_id not in rss_sites:
-                rss_sites.append(site_id)
-                action_performed = True
-                action_msg = "已添加到订阅站点"
+        rss_sites = self.systemconfig.get(key=SystemConfigKey.RssSites) or []
+        action_performed, action_msg = self.__update_site_list(site_id=site_id, site_list=rss_sites, remove=remove,
+                                                               description="订阅")
         if action_performed:
-            self.systemconfig.set(SystemConfigKey.RssSites, rss_sites)
+            self.systemconfig.set(key=SystemConfigKey.RssSites, value=rss_sites)
             logger.info(action_msg)
         return action_performed, action_msg
 
@@ -718,25 +718,16 @@ class TrafficAssistant(_PluginBase):
         """更新或配置刷流插件站点"""
         plugin_config = self.get_config(plugin_id=plugin_id)
         if not plugin_config:
-            logger.warn(f"无法获取到站点 {site_id} 刷流插件的配置信息，跳过")
-            return False, "获取插件配置失败，跳过"
+            action_msg = "刷流站点：获取插件配置失败"
+            logger.warn(action_msg)
+            return False, action_msg
 
         brush_sites = plugin_config.get("brushsites", [])
-        action_performed = False
-        action_msg = "刷流站点无需调整"
-        if enable:
-            if site_id not in brush_sites:
-                brush_sites.append(site_id)
-                plugin_config["brushsites"] = brush_sites
-                action_performed = True
-                action_msg = "已添加到刷流站点"
-        else:
-            if site_id in brush_sites:
-                brush_sites.remove(site_id)
-                plugin_config["brushsites"] = brush_sites
-                action_performed = True
-                action_msg = "已从刷流站点中移除"
+        action_performed, action_msg = self.__update_site_list(site_id=site_id, site_list=brush_sites,
+                                                               remove=not enable,
+                                                               description="刷流")
         if action_performed:
+            plugin_config["brushsites"] = brush_sites
             self.update_config(config=plugin_config, plugin_id=plugin_id)
             logger.info(action_msg)
         return action_performed, action_msg
@@ -823,11 +814,11 @@ class TrafficAssistant(_PluginBase):
         if self._traffic_config.notify:
             self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
 
-    def __validate_config(self, traffic_config: TrafficConfig) -> (bool, str):
+    def __validate_config(self, traffic_config: TrafficConfig, force: bool = False) -> (bool, str):
         """
         验证配置是否有效
         """
-        if not traffic_config.enabled and not traffic_config.onlyonce:
+        if not traffic_config.enabled and not force:
             return True, "插件未启用，无需进行验证"
 
         # 检查站点数据统计是否已启用

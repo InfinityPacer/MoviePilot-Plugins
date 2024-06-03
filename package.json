@@ -222,11 +222,12 @@
         "name": "站点流量管理",
         "description": "自动管理流量，保障站点分享率。",
         "labels": "站点,订阅,刷流",
-        "version": "1.0",
+        "version": "1.1",
         "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/trafficassistant.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.1": "代码重构，优化消息推送",
             "v1.0": "增加站点流量管理插件，自动管理流量，保障站点分享率"
         }
     }
