@@ -172,7 +172,7 @@ class SystemNotification(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：目前仅支持推送系统错误消息'
+                                            'text': '注意：目前仅支持发送系统错误消息'
                                         }
                                     }
                                 ]
