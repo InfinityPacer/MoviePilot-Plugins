@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from ruamel.yaml import YAMLError
 
 from app.core.config import settings
+from app.core.event import Event, eventmanager
 from app.core.plugin import PluginManager
 from app.db.site_oper import SiteOper
 from app.db.systemconfig_oper import SystemConfigOper
@@ -18,7 +19,7 @@ from app.plugins import _PluginBase
 from app.plugins.trafficassistant.trafficconfig import TrafficConfig
 from app.scheduler import Scheduler
 from app.schemas import NotificationType
-from app.schemas.types import SystemConfigKey
+from app.schemas.types import SystemConfigKey, EventType
 
 lock = threading.Lock()
 
@@ -31,7 +32,7 @@ class TrafficAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/trafficassistant.png"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.0"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -544,11 +545,17 @@ class TrafficAssistant(_PluginBase):
         except Exception as e:
             print(str(e))
 
-    def traffic(self):
+    @eventmanager.register(EventType.PluginAction)
+    def traffic(self, event: Event = None):
         """
         主要负责管理站点的流量
         通过获取站点统计信息，依据统计信息的成功获取与否执行相应的流量管理操作或记录错误
         """
+        if event:
+            event_data = event.event_data
+            if not event_data or event_data.get("action") != "sitestatistic_refresh_complete":
+                return
+
         with lock:
             traffic_config = self._traffic_config
             success, reason = self.__validate_config(traffic_config=traffic_config, force=True)
@@ -565,7 +572,7 @@ class TrafficAssistant(_PluginBase):
                 aggregated_messages = []  # 初始化一个列表来聚合消息内容
 
                 for site_name, (outcome, stat_time) in manage_results.items():
-                    message = f"站点：{site_name} (数据日期：{stat_time})\n{outcome}\n————————————————————————————"
+                    message = f"站点：{site_name} (数据日期：{stat_time})\n{outcome}\n————————————————————"
                     logger.info(message)
                     aggregated_messages.append(message)  # 将每个消息添加到列表中
 
