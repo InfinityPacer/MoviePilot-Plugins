@@ -32,7 +32,7 @@ class TrafficAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/trafficassistant.png"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -46,7 +46,6 @@ class TrafficAssistant(_PluginBase):
 
     # region 私有属性
 
-    # 插件Manager
     pluginmanager = None
     siteshelper = None
     siteoper = None
@@ -54,6 +53,7 @@ class TrafficAssistant(_PluginBase):
 
     # 流量管理配置
     _traffic_config = TrafficConfig()
+    # 插件是否需要热加载
     _plugin_reload_if_need = False
 
     # 定时器
@@ -555,12 +555,16 @@ class TrafficAssistant(_PluginBase):
             event_data = event.event_data
             if not event_data or event_data.get("action") != "sitestatistic_refresh_complete":
                 return
+            else:
+                logger.info("站点数据统计刷新完成，立即运行一次站点流量管理服务")
 
         with lock:
             traffic_config = self._traffic_config
             success, reason = self.__validate_config(traffic_config=traffic_config, force=True)
             if not success:
-                self.__send_message(title="站点流量管理", message=f"配置异常，原因：{reason}")
+                err_msg = f"配置异常，原因：{reason}"
+                logger.error(err_msg)
+                self.__send_message(title="站点流量管理", message=err_msg)
                 return
 
             result = self.__get_site_statistics()
@@ -706,9 +710,9 @@ class TrafficAssistant(_PluginBase):
         indexer_sites = self.systemconfig.get(key=SystemConfigKey.IndexerSites) or []
         action_performed, action_msg = self.__update_site_list(site_id=site_id, site_list=indexer_sites, remove=remove,
                                                                description="搜索")
+        logger.info(action_msg)
         if action_performed:
             self.systemconfig.set(key=SystemConfigKey.IndexerSites, value=indexer_sites)
-            logger.info(action_msg)
         return action_performed, action_msg
 
     def __update_subscription_sites(self, site_id: int, remove: bool) -> [bool, str]:
@@ -716,9 +720,9 @@ class TrafficAssistant(_PluginBase):
         rss_sites = self.systemconfig.get(key=SystemConfigKey.RssSites) or []
         action_performed, action_msg = self.__update_site_list(site_id=site_id, site_list=rss_sites, remove=remove,
                                                                description="订阅")
+        logger.info(action_msg)
         if action_performed:
             self.systemconfig.set(key=SystemConfigKey.RssSites, value=rss_sites)
-            logger.info(action_msg)
         return action_performed, action_msg
 
     def __update_brush_sites(self, site_id: int, enable: bool, plugin_id: str) -> [bool, str]:
@@ -729,15 +733,31 @@ class TrafficAssistant(_PluginBase):
             logger.warn(action_msg)
             return False, action_msg
 
+        actions = []
+        config_needs_update = False
+        plugin_enabled = plugin_config.get("enabled", False)
+
+        if enable and not plugin_enabled:
+            plugin_config["enabled"] = True
+            action_msg = "刷流插件：已启用"
+            logger.info(action_msg)
+            actions.append(action_msg)
+            config_needs_update = True
+
         brush_sites = plugin_config.get("brushsites", [])
         action_performed, action_msg = self.__update_site_list(site_id=site_id, site_list=brush_sites,
                                                                remove=not enable,
                                                                description="刷流")
+        logger.info(action_msg)
+        actions.append(action_msg)
         if action_performed:
             plugin_config["brushsites"] = brush_sites
+            config_needs_update = True
+
+        if config_needs_update:
             self.update_config(config=plugin_config, plugin_id=plugin_id)
-            logger.info(action_msg)
-        return action_performed, action_msg
+
+        return config_needs_update, "，".join(actions)
 
     def __reload_plugin(self, plugin_id: str):
         logger.info(f"准备热加载插件: {plugin_id}")
@@ -821,17 +841,19 @@ class TrafficAssistant(_PluginBase):
         if self._traffic_config.notify:
             self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
 
-    def __validate_config(self, traffic_config: TrafficConfig, force: bool = False) -> (bool, str):
+    def __validate_config(self, traffic_config: TrafficConfig, force: bool = False, check_plugin_installed: bool = True) \
+            -> (bool, str):
         """
         验证配置是否有效
         """
         if not traffic_config.enabled and not force:
             return True, "插件未启用，无需进行验证"
 
-        # 检查站点数据统计是否已启用
-        result, message = self.__check_required_plugin_running(plugin_id=traffic_config.statistic_plugin)
-        if not result:
-            return False, message
+        if check_plugin_installed:
+            # 检查站点数据统计是否已启用
+            result, message = self.__check_required_plugin_installed(plugin_id=traffic_config.statistic_plugin)
+            if not result:
+                return False, message
 
         # 检查站点列表是否为空
         if not traffic_config.sites:
@@ -840,9 +862,10 @@ class TrafficAssistant(_PluginBase):
         if traffic_config.enable_auto_brush_if_below or traffic_config.disable_auto_brush_if_above:
             if not traffic_config.brush_plugin:
                 return False, "已启用停止/开启刷流，站点刷流插件不能为空"
-            result, message = self.__check_required_plugin_running(plugin_id=traffic_config.brush_plugin)
-            if not result:
-                return False, message
+            if check_plugin_installed:
+                result, message = self.__check_required_plugin_installed(plugin_id=traffic_config.brush_plugin)
+                if not result:
+                    return False, message
 
         # 检查分享率的设置是否有效
         if traffic_config.ratio_lower_limit <= 0 or traffic_config.ratio_upper_limit <= 0:
@@ -867,7 +890,7 @@ class TrafficAssistant(_PluginBase):
                 **{field.name: config.get(field.name, getattr(TrafficConfig, field.name, None))
                    for field in fields(TrafficConfig)})
 
-            result, reason = self.__validate_config(traffic_config=traffic_config)
+            result, reason = self.__validate_config(traffic_config=traffic_config, check_plugin_installed=False)
             if result:
                 # 过滤掉已删除的站点并保存
                 if traffic_config.sites:
@@ -958,9 +981,9 @@ class TrafficAssistant(_PluginBase):
 
         return plugin_options
 
-    def __check_required_plugin_running(self, plugin_id: str) -> (bool, str):
+    def __check_required_plugin_installed(self, plugin_id: str) -> (bool, str):
         """
-        检查指定的依赖插件是否已启用
+        检查指定的依赖插件是否已安装
         """
         plugin_names = {
             "SiteStatistic": "站点数据统计",
@@ -974,8 +997,8 @@ class TrafficAssistant(_PluginBase):
         local_plugins = self.pluginmanager.get_local_plugins()
 
         # 检查指定的插件是否已启用
-        plugin = next((p for p in local_plugins if p.id == plugin_id and p.state), None)
+        plugin = next((p for p in local_plugins if p.id == plugin_id and p.installed), None)
         if not plugin:
-            return False, f"{plugin_name}未启用"
+            return False, f"{plugin_name}未安装"
 
-        return True, f"{plugin_name}已启用"
+        return True, f"{plugin_name}已安装"
