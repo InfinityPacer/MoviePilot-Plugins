@@ -1,14 +1,19 @@
 import threading
 from datetime import datetime, timedelta
-from typing import Any, List, Dict, Tuple
+from pathlib import Path
+from typing import Any, List, Dict, Tuple, Optional
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.event import eventmanager, Event
 from app.core.module import ModuleManager
+from app.db import db_query
+from app.db.models import TransferHistory
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
@@ -22,11 +27,11 @@ class AutoDiagnosis(_PluginBase):
     # 插件名称
     plugin_name = "自动诊断"
     # 插件描述
-    plugin_desc = "自动发起系统健康检查以及网络连通性测试。"
+    plugin_desc = "自动发起系统健康检查、网络连通性测试以及历史记录硬链接检查。"
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -58,6 +63,8 @@ class AutoDiagnosis(_PluginBase):
     _health_check_modules = None
     # 网络连通性检查地址
     _health_check_sites = None
+    # 历史记录硬链接检查
+    _history_link_check = None
     # 最近一次执行时间
     _last_execute_time = None
     # 最小执行周期
@@ -87,6 +94,7 @@ class AutoDiagnosis(_PluginBase):
         self._notify_type = config.get("notify_type", "Plugin")
         self._health_check_modules = config.get("health_check_modules", None)
         self._health_check_sites = config.get("health_check_sites", None)
+        self._history_link_check = config.get("history_link_check", None)
         self._last_execute_time = None
         self._last_execute_for_error_time = None
 
@@ -251,7 +259,6 @@ class AutoDiagnosis(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -266,12 +273,16 @@ class AutoDiagnosis(_PluginBase):
                                         }
                                     }
                                 ]
-                            },
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -283,6 +294,28 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'health_check_sites',
                                             'label': '网络连通性测试',
                                             'items': self.__get_health_check_sites_options()
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'multiple': False,
+                                            'model': 'history_link_check',
+                                            'label': '历史记录硬链接检查',
+                                            'items': self.__get_history_link_check_options()
                                         }
                                     }
                                 ]
@@ -324,7 +357,8 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：建议仅针对需要使用的模块开启系统健康检查以及网络连通性测试'
+                                            'text': '注意：建议仅针对需要使用的模块开启系统健康检查以及网络连通性测试，'
+                                                    '结果仅供参考，可通过MoviePilot->捷径->系统健康检查/网络连通性测试发起详细检测'
                                         }
                                     }
                                 ]
@@ -345,7 +379,8 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：结果仅供参考，可通过MoviePilot->捷径->系统健康检查/网络连通性测试发起详细检测'
+                                            'text': '注意：建议历史记录硬链接仅作为一次性检查，不建议开启周期性检查，'
+                                                    '结果仅供参考，硬链接请通过命令find /search/directory -inum 进行判断'
                                         }
                                     }
                                 ]
@@ -423,15 +458,18 @@ class AutoDiagnosis(_PluginBase):
             health_sites_result = self.__check_health_sites()
             if self.__check_external_interrupt(service="自动诊断"):
                 return
-            self.__resolve_results(health_modules_results, health_sites_result)
+            history_link_result = self.__check_history_link()
+            if self.__check_external_interrupt(service="自动诊断"):
+                return
+            self.__resolve_results(health_modules_results, health_sites_result, history_link_result)
 
     def __resolve_results(self, health_modules_results: List[Dict[str, Any]],
-                          health_sites_results: List[Dict[str, Any]]):
+                          health_sites_results: List[Dict[str, Any]], history_link_result: List[Dict[str, Any]]):
         """解析结果并根据通知设置发送消息"""
-        if not (health_modules_results or health_sites_results):
+        if not (health_modules_results or health_sites_results or history_link_result):
             return
 
-        message = self.__generate_message(health_modules_results, health_sites_results)
+        message = self.__generate_message(health_modules_results, health_sites_results, history_link_result)
         logger.info(message)
 
         if self._notify == "none":
@@ -443,7 +481,7 @@ class AutoDiagnosis(_PluginBase):
             if message:
                 self.post_message(mtype=NotificationType[self._notify_type], title="【自动诊断】", text=message)
 
-    def __generate_message(self, modules_results, sites_results):
+    def __generate_message(self, modules_results, sites_results, link_results):
         """根据检查结果生成通知信息"""
         message_lines = []
         # 分别生成模块和站点的检查结果
@@ -451,21 +489,27 @@ class AutoDiagnosis(_PluginBase):
             message_lines += self.__format_results("系统健康检查", modules_results)
         if sites_results:
             message_lines += self.__format_results("网络连通性测试", sites_results)
+        if link_results:
+            message_lines += self.__format_results("历史记录硬链接检查", link_results, include_details=True)
 
         return "\n".join(message_lines) if message_lines else None
 
     @staticmethod
-    def __format_results(type_label, results):
+    def __format_results(type_label, results, include_details: bool = False):
         """格式化模块或站点的结果信息"""
         lines = []
         if any(not res.get("state") for res in results):
             lines.append(f"{type_label}：异常")
             for result in results:
                 if not result.get("state"):
-                    error_message = f"，异常信息：{result.get('errmsg')}" if result.get('errmsg') else ""
+                    error_message = f"，异常信息：{result.get('errmsg')}" if result.get("errmsg") else ""
                     lines.append(f"- {result.get('name', '未知')}{error_message}")
         else:
             lines.append(f"{type_label}：正常")
+            if include_details:
+                for result in results:
+                    error_message = f"，{result.get('result')}" if result.get("result") else "正常"
+                    lines.append(f"- {result.get('name', '未知')}{error_message}")
 
         return lines
 
@@ -659,6 +703,160 @@ class AutoDiagnosis(_PluginBase):
             self.__log_result(state, f"域名 {site_name}", results[-1]["result"], errmsg)
 
         return results
+
+    @staticmethod
+    def __get_history_link_check_options():
+        """
+        查询硬链接可选列表
+        """
+        no_option = {"title": "不检查", "value": "no"}
+        all_option = {"title": "全部", "value": "all"}
+
+        recent_options = [
+            {"title": f"最近{n}条", "value": n} for n in [10, 100, 1000, 10000]
+        ]
+
+        # 构造选项列表
+        options = [no_option] + recent_options + [
+            {"title": "上次检查以来", "value": "since_last"}
+        ] + [all_option]
+
+        return options
+
+    def __check_history_link(self) -> List[Dict[str, Any]]:
+        """
+        检查历史记录中的硬链接
+        """
+        if not self._history_link_check or self._history_link_check == "no":
+            logger.info("没有启用历史记录硬链接检查")
+            return []
+
+        if self._history_link_check == "since_last":
+            since_last_time = self.__get_since_last_history_check_time()
+            link_items = self.__list_by_date_for_link(db=None, date=since_last_time)
+        elif self._history_link_check == "all":
+            link_items = self.__list_by_date_for_link(db=None, date=None)
+        else:
+            link_items = self.__list_by_count_for_link(db=None, count=self._history_link_check)
+
+        if not link_items:
+            logger.info("没有查询到相关的硬链接历史记录")
+            return [
+                {
+                    "id": "history_link",
+                    "name": "检查结果",
+                    "state": True,
+                    "errmsg": "没有查询到相关的硬链接历史记录",
+                    "result": "没有查询到相关的硬链接历史记录"
+                }
+            ]
+
+        self.__save_since_last_history_check_time()
+
+        total_files = 0
+        hard_link_count = 0
+        not_hard_link_count = 0
+        file_not_exist_count = 0
+        exception_count = 0
+        empty_or_dir_count = 0
+
+        def generate_link_check_summary():
+            message_parts = [f"历史记录文件个数：{total_files}", f"硬链接：{hard_link_count} 个"]
+            if not_hard_link_count > 0:
+                message_parts.append(f"非硬链接：{not_hard_link_count} 个")
+            if file_not_exist_count > 0:
+                message_parts.append(f"文件不存在：{file_not_exist_count} 个")
+            if exception_count > 0:
+                message_parts.append(f"发生异常：{exception_count} 个")
+            if empty_or_dir_count > 0:
+                message_parts.append(f"跳过处理：{empty_or_dir_count} 个")
+
+            message = "，".join(message_parts)
+            logger.info(message)
+
+            # 只有当所有检查的文件都是硬链接时，状态才返回 True
+            all_hard_link = hard_link_count == (total_files - empty_or_dir_count)
+            return [
+                {
+                    "id": "history_link",
+                    "name": "检查结果",
+                    "state": all_hard_link,
+                    "errmsg": message,
+                    "result": message
+                }
+            ]
+
+        for link_item in link_items:
+            if self.__check_external_interrupt(service="历史记录硬链接检查"):
+                return generate_link_check_summary()
+
+            total_files += 1
+            try:
+                src_path = Path(link_item.src) if link_item.src else None
+                dest_path = Path(link_item.dest) if link_item.dest else None
+
+                # 检查路径是否为空或者是文件夹
+                if not src_path or not dest_path or not src_path.is_file() or not dest_path.is_file():
+                    empty_or_dir_count += 1
+                    logger.info(
+                        f"源文件或目标文件路径为空或为文件夹，跳过处理。src={link_item.src}, dest={link_item.dest}")
+                    continue
+
+                if src_path.exists() and dest_path.exists():
+                    if self.__is_same_file(src_path, dest_path):
+                        hard_link_count += 1
+                        logger.info(f"{src_path} -> {dest_path} 为同一文件")
+                    else:
+                        not_hard_link_count += 1
+                        logger.info(f"{src_path} -> {dest_path} 不是同一文件")
+                else:
+                    file_not_exist_count += 1
+                    logger.info(f"{src_path} 或 {dest_path} 文件不存在")
+            except Exception as e:
+                exception_count += 1
+                logger.error(f"处理文件 {link_item.src} 和 {link_item.src} 时发生错误: {e}")
+
+        return generate_link_check_summary()
+
+    def __get_since_last_history_check_time(self) -> str:
+        """获取配置"""
+        option = self.get_data("diagnosis_option") or {}
+        return option.get("since_last_history_check_time",
+                          datetime.now(pytz.timezone(settings.TZ)).strftime("%Y-%m-%d %H:%M:%S"))
+
+    def __save_since_last_history_check_time(self):
+        """保存配置"""
+        option = {
+            "since_last_history_check_time": datetime.now(pytz.timezone(settings.TZ)).strftime("%Y-%m-%d %H:%M:%S")}
+        self.save_data("diagnosis_option", option)
+
+    @staticmethod
+    def __is_same_file(src: Path, dest: Path) -> bool:
+        """判断是否为同一个文件"""
+        return src.samefile(dest)
+
+    @staticmethod
+    @db_query
+    def __list_by_count_for_link(db: Optional[Session], count: int):
+        """查询一定数量的转移历史，状态为 True"""
+        result = (db.query(TransferHistory)
+                  .filter(and_(TransferHistory.mode == "link", TransferHistory.status))
+                  .order_by(TransferHistory.date.desc())
+                  .limit(count)
+                  .all())
+        return list(result)
+
+    @staticmethod
+    @db_query
+    def __list_by_date_for_link(db: Optional[Session], date: Optional[str]):
+        """
+        查询某时间之后的转移历史
+        """
+        query = db.query(TransferHistory).filter(and_(TransferHistory.mode == "link", TransferHistory.status))
+        if date is not None:
+            query = query.filter(TransferHistory.date > date)
+        result = query.order_by(TransferHistory.date.desc()).all()
+        return list(result)
 
     @staticmethod
     def __log_result(state, name, result, errmsg):

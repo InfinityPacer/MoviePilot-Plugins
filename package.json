@@ -195,13 +195,14 @@
     },
     "AutoDiagnosis": {
         "name": "自动诊断",
-        "description": "自动发起系统健康检查以及网络连通性测试。",
+        "description": "自动发起系统健康检查、网络连通性测试以及历史记录硬链接检查。",
         "labels": "系统设置",
-        "version": "1.1",
+        "version": "1.2",
         "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.2": "增加历史记录硬链接检查",
             "v1.1": "支持发生系统错误时，触发一次自动诊断，需要主程序升级1.9.3+版本",
             "v1.0": "增加自动诊断插件，支持自动发起系统健康检查以及网络连通性测试"
         }
