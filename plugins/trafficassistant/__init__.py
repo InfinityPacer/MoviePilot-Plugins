@@ -42,7 +42,7 @@ class TrafficAssistant(_PluginBase):
     # 加载顺序
     plugin_order = 19
     # 可使用的用户级别
-    auth_level = 1
+    auth_level = 2
 
     # region 私有属性
 
