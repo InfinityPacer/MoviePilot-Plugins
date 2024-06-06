@@ -31,7 +31,7 @@ class AutoDiagnosis(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png"
     # 插件版本
-    plugin_version = "1.2"
+    plugin_version = "1.3"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -458,25 +458,26 @@ class AutoDiagnosis(_PluginBase):
             health_sites_result = self.__check_health_sites()
             if self.__check_external_interrupt(service="自动诊断"):
                 return
-            history_link_result = self.__check_history_link()
+            history_link_results = self.__check_history_link()
             if self.__check_external_interrupt(service="自动诊断"):
                 return
-            self.__resolve_results(health_modules_results, health_sites_result, history_link_result)
+            self.__resolve_results(health_modules_results, health_sites_result, history_link_results)
 
     def __resolve_results(self, health_modules_results: List[Dict[str, Any]],
-                          health_sites_results: List[Dict[str, Any]], history_link_result: List[Dict[str, Any]]):
+                          health_sites_results: List[Dict[str, Any]], history_link_results: List[Dict[str, Any]]):
         """解析结果并根据通知设置发送消息"""
-        if not (health_modules_results or health_sites_results or history_link_result):
+        if not (health_modules_results or health_sites_results or history_link_results):
             return
 
-        message = self.__generate_message(health_modules_results, health_sites_results, history_link_result)
+        message = self.__generate_message(health_modules_results, health_sites_results, history_link_results)
         logger.info(message)
 
         if self._notify == "none":
             return
 
         # 检查是否有异常
-        any_errors = any(not res.get("state") for res in health_modules_results + health_sites_results)
+        any_errors = any(
+            not res.get("state") for res in health_modules_results + health_sites_results + history_link_results)
         if self._notify == "always" or (self._notify == "on_error" and any_errors):
             if message:
                 self.post_message(mtype=NotificationType[self._notify_type], title="【自动诊断】", text=message)
@@ -744,7 +745,7 @@ class AutoDiagnosis(_PluginBase):
             return [
                 {
                     "id": "history_link",
-                    "name": "检查结果",
+                    "name": "硬链接",
                     "state": True,
                     "errmsg": "没有查询到相关的硬链接历史记录",
                     "result": "没有查询到相关的硬链接历史记录"
@@ -756,6 +757,7 @@ class AutoDiagnosis(_PluginBase):
         total_files = 0
         hard_link_count = 0
         not_hard_link_count = 0
+        not_hard_link_path = []
         file_not_exist_count = 0
         exception_count = 0
         empty_or_dir_count = 0
@@ -774,12 +776,20 @@ class AutoDiagnosis(_PluginBase):
             message = "，".join(message_parts)
             logger.info(message)
 
+            if not_hard_link_path:
+                # 构建一个包含分隔线、路径列表和结束分隔线的单一字符串
+                paths_message = "\n---------------------------------- 非硬链接路径 ----------------------------------\n"
+                paths_message += "\n".join(str(path) for path in not_hard_link_path)
+                paths_message += "\n--------------------------------------------------------------------------------\n"
+                # 在日志信息的开头添加一个换行符，并记录
+                logger.info("\n" + paths_message)
+
             # 只有当所有检查的文件都是硬链接时，状态才返回 True
             all_hard_link = hard_link_count == (total_files - empty_or_dir_count)
             return [
                 {
                     "id": "history_link",
-                    "name": "检查结果",
+                    "name": "硬链接",
                     "state": all_hard_link,
                     "errmsg": message,
                     "result": message
@@ -803,12 +813,13 @@ class AutoDiagnosis(_PluginBase):
                     continue
 
                 if src_path.exists() and dest_path.exists():
-                    if self.__is_same_file(src_path, dest_path):
+                    if self.is_hardlink(src_path, dest_path):
                         hard_link_count += 1
-                        logger.info(f"{src_path} -> {dest_path} 为同一文件")
+                        logger.info(f"{src_path} -> {dest_path} 为同一硬链接路径")
                     else:
                         not_hard_link_count += 1
-                        logger.info(f"{src_path} -> {dest_path} 不是同一文件")
+                        not_hard_link_path.append(src_path)
+                        logger.info(f"{src_path} -> {dest_path} 不是同一硬链接路径")
                 else:
                     file_not_exist_count += 1
                     logger.info(f"{src_path} 或 {dest_path} 文件不存在")
@@ -831,9 +842,28 @@ class AutoDiagnosis(_PluginBase):
         self.save_data("diagnosis_option", option)
 
     @staticmethod
-    def __is_same_file(src: Path, dest: Path) -> bool:
-        """判断是否为同一个文件"""
-        return src.samefile(dest)
+    def is_hardlink(src: Path, dest: Path) -> bool:
+        """判断是否为硬链接"""
+        try:
+            if not src.exists() or not dest.exists():
+                return False
+            if src.is_file():
+                # 如果是文件，直接比较文件
+                return src.samefile(dest)
+            else:
+                for src_file in src.glob("**/*"):
+                    if src_file.is_dir():
+                        continue
+                    # 计算目标文件路径
+                    relative_path = src_file.relative_to(src)
+                    target_file = dest.joinpath(relative_path)
+                    # 检查是否是硬链接
+                    if not target_file.exists() or not src_file.samefile(target_file):
+                        return False
+                return True
+        except Exception as e:
+            logger.error(f"判断是否为硬链接时发生异常，{str(e)}")
+            return False
 
     @staticmethod
     @db_query
