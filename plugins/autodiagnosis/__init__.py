@@ -31,7 +31,7 @@ class AutoDiagnosis(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png"
     # 插件版本
-    plugin_version = "1.3"
+    plugin_version = "1.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -761,17 +761,20 @@ class AutoDiagnosis(_PluginBase):
         file_not_exist_count = 0
         exception_count = 0
         empty_or_dir_count = 0
+        strm_count = 0
 
         def generate_link_check_summary():
             message_parts = [f"历史记录文件个数：{total_files}", f"硬链接：{hard_link_count} 个"]
             if not_hard_link_count > 0:
                 message_parts.append(f"非硬链接：{not_hard_link_count} 个")
             if file_not_exist_count > 0:
-                message_parts.append(f"文件不存在：{file_not_exist_count} 个")
+                message_parts.append(f"文件不存在跳过：{file_not_exist_count} 个")
             if exception_count > 0:
-                message_parts.append(f"发生异常：{exception_count} 个")
+                message_parts.append(f"发生异常跳过：{exception_count} 个")
             if empty_or_dir_count > 0:
-                message_parts.append(f"跳过处理：{empty_or_dir_count} 个")
+                message_parts.append(f"路径为空跳过：{empty_or_dir_count} 个")
+            if strm_count > 0:
+                message_parts.append(f"Strm文件跳过：{strm_count} 个")
 
             message = "，".join(message_parts)
             logger.info(message)
@@ -784,13 +787,11 @@ class AutoDiagnosis(_PluginBase):
                 # 在日志信息的开头添加一个换行符，并记录
                 logger.info("\n" + paths_message)
 
-            # 只有当所有检查的文件都是硬链接时，状态才返回 True
-            all_hard_link = hard_link_count == (total_files - empty_or_dir_count)
             return [
                 {
                     "id": "history_link",
                     "name": "硬链接",
-                    "state": all_hard_link,
+                    "state": not_hard_link_count == 0,
                     "errmsg": message,
                     "result": message
                 }
@@ -806,10 +807,17 @@ class AutoDiagnosis(_PluginBase):
                 dest_path = Path(link_item.dest) if link_item.dest else None
 
                 # 检查路径是否为空或者是文件夹
-                if not src_path or not dest_path or not src_path.is_file() or not dest_path.is_file():
+                if not src_path or not dest_path:
                     empty_or_dir_count += 1
                     logger.info(
-                        f"源文件或目标文件路径为空或为文件夹，跳过处理。src={link_item.src}, dest={link_item.dest}")
+                        f"源文件或目标文件路径为空，跳过处理。src={link_item.src}, dest={link_item.dest}")
+                    continue
+
+                if (src_path.is_file() and dest_path.is_file() and
+                        (src_path.suffix == '.strm' or dest_path.suffix == '.strm')):
+                    strm_count += 1
+                    logger.info(
+                        f"源文件或目标文件为 .strm 文件，跳过处理。src={link_item.src}, dest={link_item.dest}")
                     continue
 
                 if src_path.exists() and dest_path.exists():
