@@ -409,7 +409,7 @@ class AutoDiagnosis(_PluginBase):
             "kwargs": {} # 定时器参数
         }]
         """
-        if self._enabled:
+        if self._enabled and self._cron:
             return [{
                 "id": "AutoDiagnosis",
                 "name": "自动诊断",
