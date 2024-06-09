@@ -195,7 +195,7 @@
     },
     "AutoDiagnosis": {
         "name": "自动诊断",
-        "description": "自动发起系统健康检查、网络连通性测试以及历史记录硬链接检查。",
+        "description": "自动发起系统健康检查、网络连通性测试以及硬链接检查。",
         "labels": "系统设置",
         "version": "1.5",
         "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png",

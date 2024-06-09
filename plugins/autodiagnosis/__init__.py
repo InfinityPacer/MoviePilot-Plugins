@@ -29,7 +29,7 @@ class AutoDiagnosis(_PluginBase):
     # 插件名称
     plugin_name = "自动诊断"
     # 插件描述
-    plugin_desc = "自动发起系统健康检查、网络连通性测试以及历史记录硬链接检查。"
+    plugin_desc = "自动发起系统健康检查、网络连通性测试以及硬链接检查。"
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png"
     # 插件版本
