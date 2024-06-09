@@ -1,3 +1,4 @@
+import shutil
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,6 +20,7 @@ from app.plugins import _PluginBase
 from app.schemas import NotificationType
 from app.schemas.types import EventType
 from app.utils.http import RequestUtils
+from app.utils.system import SystemUtils
 
 lock = threading.Lock()
 
@@ -31,7 +33,7 @@ class AutoDiagnosis(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png"
     # 插件版本
-    plugin_version = "1.4"
+    plugin_version = "1.5"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -65,6 +67,8 @@ class AutoDiagnosis(_PluginBase):
     _health_check_sites = None
     # 历史记录硬链接检查
     _history_link_check = None
+    # 目标硬链接测试
+    _dir_link_check = None
     # 最近一次执行时间
     _last_execute_time = None
     # 最小执行周期
@@ -95,6 +99,7 @@ class AutoDiagnosis(_PluginBase):
         self._health_check_modules = config.get("health_check_modules", None)
         self._health_check_sites = config.get("health_check_sites", None)
         self._history_link_check = config.get("history_link_check", None)
+        self._dir_link_check = config.get("dir_link_check", None)
         self._last_execute_time = None
         self._last_execute_for_error_time = None
 
@@ -332,6 +337,31 @@ class AutoDiagnosis(_PluginBase):
                                 },
                                 'content': [
                                     {
+                                        'component': 'VTextarea',
+                                        'props': {
+                                            'model': 'dir_link_check',
+                                            'label': '目录硬链接测试',
+                                            'placeholder': '如不需要目录硬链接测试，请不要填写对应目录\n'
+                                                           '每一行一个目录，格式为：源目录:目标目录，参考如下：\n'
+                                                           '/volume1/Media/Movie:/volume1/Link/Movie',
+                                            'rows': 3,
+                                            'no-resize': True,
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
                                         'component': 'VAlert',
                                         'props': {
                                             'type': 'info',
@@ -379,8 +409,44 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：建议历史记录硬链接仅作为一次性检查，不建议开启周期性检查，'
-                                                    '结果仅供参考，硬链接请通过命令find /search/directory -inum 进行判断'
+                                            'text': '注意：如硬链接测试失败，请检查目录映射，详细信息可参阅'
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/jxxghp/MoviePilot/issues/735',
+                                                    'target': '_blank'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'u',
+                                                        'text': '#735'
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '注意：建议硬链接仅作为一次性检查/测试，不建议开启周期性检查，'
+                                                    '结果仅供参考，详细信息请通过命令find /search/directory -inum 进行判断'
                                         }
                                     }
                                 ]
@@ -455,44 +521,47 @@ class AutoDiagnosis(_PluginBase):
             health_modules_results = self.__check_health_modules()
             if self.__check_external_interrupt(service="自动诊断"):
                 return
-            health_sites_result = self.__check_health_sites()
+            health_sites_results = self.__check_health_sites()
             if self.__check_external_interrupt(service="自动诊断"):
                 return
             history_link_results = self.__check_history_link()
             if self.__check_external_interrupt(service="自动诊断"):
                 return
-            self.__resolve_results(health_modules_results, health_sites_result, history_link_results)
+            dir_link_results = self.__check_dir_link()
+            if self.__check_external_interrupt(service="自动诊断"):
+                return
 
-    def __resolve_results(self, health_modules_results: List[Dict[str, Any]],
-                          health_sites_results: List[Dict[str, Any]], history_link_results: List[Dict[str, Any]]):
+            results_dict = {
+                "系统健康检查": (health_modules_results, False),
+                "网络连通性测试": (health_sites_results, False),
+                "历史记录硬链接检查": (history_link_results, True),
+                "目录硬链接测试": (dir_link_results, False)
+            }
+            self.__resolve_results(results_dict)
+
+    def __resolve_results(self, results_dict):
         """解析结果并根据通知设置发送消息"""
-        if not (health_modules_results or health_sites_results or history_link_results):
+        if not any(results for results, _ in results_dict.values()):  # 如果所有结果列表都为空，则直接返回
             return
 
-        message = self.__generate_message(health_modules_results, health_sites_results, history_link_results)
+        message = self.__generate_message(results_dict)
         logger.info(message)
 
         if self._notify == "none":
             return
 
         # 检查是否有异常
-        any_errors = any(
-            not res.get("state") for res in health_modules_results + health_sites_results + history_link_results)
+        any_errors = any(not res.get("state") for results, _ in results_dict.values() for res in results)
         if self._notify == "always" or (self._notify == "on_error" and any_errors):
             if message:
                 self.post_message(mtype=NotificationType[self._notify_type], title="【自动诊断】", text=message)
 
-    def __generate_message(self, modules_results, sites_results, link_results):
+    def __generate_message(self, results_dict):
         """根据检查结果生成通知信息"""
         message_lines = []
-        # 分别生成模块和站点的检查结果
-        if modules_results:
-            message_lines += self.__format_results("系统健康检查", modules_results)
-        if sites_results:
-            message_lines += self.__format_results("网络连通性测试", sites_results)
-        if link_results:
-            message_lines += self.__format_results("历史记录硬链接检查", link_results, include_details=True)
-
+        for label, (results, include_details) in results_dict.items():
+            if results:
+                message_lines += self.__format_results(label, results, include_details=include_details)
         return "\n".join(message_lines) if message_lines else None
 
     @staticmethod
@@ -539,6 +608,8 @@ class AutoDiagnosis(_PluginBase):
             logger.info("没有选择模块进行健康检查")
             return []
 
+        logger.info("\n--------------------------------------------------------------------------------")
+        logger.info("正在进行系统健康检查")
         preset_modules = self.__get_preset_modules()
         selected_module_ids = self._health_check_modules
 
@@ -657,6 +728,8 @@ class AutoDiagnosis(_PluginBase):
             logger.info("没有选择域名进行网络连通性测试")
             return []
 
+        logger.info("\n--------------------------------------------------------------------------------")
+        logger.info("正在进行网络连通性测试")
         preset_sites = self.__get_preset_sites()
         selected_sites_names = self._health_check_sites
 
@@ -754,6 +827,8 @@ class AutoDiagnosis(_PluginBase):
 
         self.__save_since_last_history_check_time()
 
+        logger.info("\n--------------------------------------------------------------------------------")
+        logger.info("正在进行历史记录硬链接检查")
         total_files = 0
         hard_link_count = 0
         not_hard_link_count = 0
@@ -848,6 +923,154 @@ class AutoDiagnosis(_PluginBase):
         option = {
             "since_last_history_check_time": datetime.now(pytz.timezone(settings.TZ)).strftime("%Y-%m-%d %H:%M:%S")}
         self.save_data("diagnosis_option", option)
+
+    def __check_dir_link(self) -> List[Dict[str, Any]]:
+        """
+        目录硬链接测试
+        """
+        if not self._dir_link_check:
+            logger.info("没有启用目录硬链接测试")
+            return []
+
+        directory_pairs = self.__parse_directory_pairs(self._dir_link_check)
+        if not directory_pairs:
+            logger.info("没有获取到正确的目录映射")
+            return [
+                {
+                    "id": "dir_link",
+                    "name": "目录测试",
+                    "state": False,
+                    "errmsg": "没有获取到正确的目录映射",
+                    "result": "没有获取到正确的目录映射"
+                }
+            ]
+
+        logger.info("\n--------------------------------------------------------------------------------")
+        logger.info("正在进行目录硬链接测试")
+
+        directory_mappings = "\n".join(f"{src} -> {dest}" for src, dest in directory_pairs)
+        logger.info(directory_mappings)
+
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+        count = 1
+        results = []
+        for src_path, dest_path in directory_pairs:
+            logger.info(f"开始测试 {src_path} -> {dest_path}")
+            # 创建随机子目录和文件名
+            path_name = f"hard_link_test_{timestamp}_{count}"
+            src_subdir = src_path / path_name
+            dest_subdir = dest_path / path_name
+            src_file = src_subdir / f"{path_name}.txt"
+            dest_file = dest_subdir / f"{path_name}.txt"
+            count += 1
+            try:
+                # 创建源和目标文件的目录
+                src_subdir.mkdir(parents=True, exist_ok=True)
+                dest_subdir.mkdir(parents=True, exist_ok=True)
+                with open(src_file, "w") as f:
+                    f.write("This is a test file for hard linking.")
+                # 尝试创建硬链接
+                result, message = self._link(src_file, dest_file)
+                if result == 0:
+                    logger.info(f"硬链接成功 {src_path} -> {dest_path}")
+                    results.append({
+                        "id": "dir_link",
+                        "name": f"{src_path} -> {dest_path}",
+                        "state": True,
+                        "errmsg": "成功",
+                        "result": "成功"
+                    })
+                else:
+                    logger.error(f"硬链接失败 {src_path} -> {dest_path}")
+                    results.append({
+                        "id": "dir_link",
+                        "name": f"{src_path} -> {dest_path}",
+                        "state": False,
+                        "errmsg": message,
+                        "result": message
+                    })
+            except Exception as err:
+                logger.error(f"硬链接发生异常，{err}")
+                results.append({
+                    "id": "dir_link",
+                    "name": f"{src_path} -> {dest_path}",
+                    "state": False,
+                    "errmsg": str(err),
+                    "result": str(err)
+                })
+            finally:
+                self.__cleanup_directory(src_subdir)
+                self.__cleanup_directory(dest_subdir)
+
+        for result in results:
+            if result.get("state"):
+                logger.info(f"{result.get('name')}: 硬链接测试成功")
+            else:
+                logger.error(f"{result.get('name')}: 硬链接测试失败 - {result['errmsg']}")
+
+        return results
+
+    @staticmethod
+    def __cleanup_directory(directory):
+        if directory.exists():
+            shutil.rmtree(directory)
+            logger.info(f"清理临时文件，{directory}")
+
+    @staticmethod
+    def _link(src: Path, dest: Path) -> Tuple[int, str]:
+        """
+        硬链接
+        """
+        try:
+            if dest.exists():
+                dest.unlink()
+            dest.hardlink_to(src)
+            return 0, ""
+        except OSError as err:
+            logger.error(err)
+            return -1, err.strerror
+        except Exception as err:
+            logger.error(err)
+            return -1, str(err)
+
+    @staticmethod
+    def __parse_directory_pairs(text: str) -> list[tuple[Path, Path]]:
+        """解析目录结构字符串
+
+        :param text: 包含目录对的字符串，格式为 "源目录:目标目录"
+        :return: 包含目录对元组的列表
+        """
+        if not text:
+            return []
+        lines = text.strip().split("\n")
+        directory_pairs = []
+
+        # 解析每一行中的源目录和目标目录
+        for line in lines:
+            if not line.strip():
+                continue
+            # 适配Windows路径中的冒号
+            if SystemUtils.is_windows():
+                # 尝试区分驱动器标识和路径分隔符
+                parts = line.split(":", 2) if line.count(":") > 1 else line.split(":")
+                if len(parts) == 3:
+                    src, dest = Path(parts[0] + ":" + parts[1].strip()), Path(parts[2].strip())
+                elif len(parts) == 2:
+                    src, dest = Path(parts[0]), Path(parts[1])
+                else:
+                    logger.warning(f"格式错误，跳过此行：{line}")
+                    continue
+            else:
+                # 对于非Windows系统，正常分割
+                parts = line.split(":")
+                if len(parts) != 2:
+                    logger.warning(f"格式错误，跳过此行：{line}")
+                    continue
+                src, dest = Path(parts[0].strip()), Path(parts[1].strip())
+
+            directory_pairs.append((src, dest))
+
+        return directory_pairs
 
     @staticmethod
     def is_hardlink(src: Path, dest: Path) -> bool:
