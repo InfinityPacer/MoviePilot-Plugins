@@ -6,15 +6,17 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, List, Dict, Tuple
 
+import plexapi.utils
 import pypinyin
 import pytz
-import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from plexapi.library import LibrarySection
+from plexapi.server import PlexServer
 
 from app.core.config import settings
 from app.core.context import MediaInfo
-from app.core.event import eventmanager, Event
+from app.core.event import Event, eventmanager
 from app.core.meta import MetaBase
 from app.log import logger
 from app.modules.plex import Plex
@@ -22,6 +24,7 @@ from app.plugins import _PluginBase
 from app.schemas.types import EventType
 
 lock = threading.Lock()
+TYPES = {"movie": [1], "show": [2], "artist": [8, 9, 10]}
 
 
 class PlexLocalization(_PluginBase):
@@ -78,7 +81,7 @@ class PlexLocalization(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
-        self._plex = Plex().get_plex()
+        self._plex: PlexServer = Plex().get_plex()
 
         if not config:
             logger.info("Plex中文本地化开启失败，无法获取插件配置")
@@ -557,73 +560,8 @@ class PlexLocalization(_PluginBase):
         except Exception as e:
             logger.info(str(e))
 
-    @eventmanager.register(EventType.TransferComplete)
-    def after_transfer(self, event: Event):
-        """
-        发送通知消息
-        """
-        if not self._enabled:
-            return
-
-        if not self._execute_transfer:
-            return
-
-        event_info: dict = event.event_data
-        if not event_info:
-            return
-
-        mediainfo: MediaInfo = event_info.get("mediainfo")
-        meta: MetaBase = event_info.get("meta")
-        if not mediainfo or not meta:
-            return
-
-        # 确定季度和集数信息，如果存在则添加前缀空格
-        season_episode = f" {meta.season_episode}" if meta.season_episode else ""
-
-        # 根据是否有延迟设置不同的日志消息
-        delay_message = f"{self._delay} 秒后执行一次本地化服务" if self._delay else "准备执行一次本地化服务"
-        logger.info(f"{mediainfo.title_year}{season_episode} 已入库，{delay_message}")
-
-        if not self._scheduler:
-            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-
-        self._scheduler.remove_all_jobs()
-
-        self._scheduler.add_job(
-            func=self.localization,
-            trigger="date",
-            run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=self._delay),
-            name="Plex中文本地化",
-        )
-
-        # 启动任务
-        if self._scheduler.get_jobs():
-            self._scheduler.print_jobs()
-            self._scheduler.start()
-
-    def localization(self):
-        with lock:
-            logger.info(f"正在准备执行本地化服务")
-            libraries = self.__get_libraries()
-            logger.info(f"正在准备本地化的媒体库 {libraries}")
-            service = PlexService(translate_tags=self._tags, lock_meta=self._lock,
-                                  host=settings.PLEX_HOST, token=settings.PLEX_TOKEN)
-            if service.login:
-                service.loop_all(libraries=libraries, thread_count=self._thread_count)
-            else:
-                logger.info("本地化服务已取消")
-
-    def __get_libraries(self):
-        """获取媒体库信息"""
-        libraries = {
-            int(library.key): (int(library.key), TYPES[library.type], library.title, library.type)
-            for library in self._plex.library.sections()
-            if library.type != 'photo' and library.key in self._library_ids  # 排除照片库
-        }
-
-        return libraries
-
     def __get_tags(self) -> dict:
+        """获取标签信息"""
         try:
             # 如果预置Json被清空，这里还原为默认Json
             if not self._tags_json:
@@ -694,156 +632,199 @@ class PlexLocalization(_PluginBase):
 }"""
         return desc + config
 
+    @eventmanager.register(EventType.TransferComplete)
+    def after_transfer(self, event: Event):
+        """
+        入库后执行一次
+        """
+        if not self._enabled:
+            return
 
-types = {"movie": 1, "show": 2, "artist": 8, "album": 9, 'track': 10}
-TYPES = {"movie": [1], "show": [2], "artist": [8, 9, 10]}
+        if not self._execute_transfer:
+            return
 
+        event_info: dict = event.event_data
+        if not event_info:
+            return
 
-class PlexService:
-    # request.session
-    _session = None
-    # plex_host
-    _host = None
-    # plex_token
-    _token = None
-    # translate_tags
-    _translate_tags = None
-    # lock_meta
-    _lock_meta = None
-    # login
-    login = False
+        mediainfo: MediaInfo = event_info.get("mediainfo")
+        meta: MetaBase = event_info.get("meta")
+        if not mediainfo or not meta:
+            return
 
-    def __init__(self, translate_tags: dict, lock_meta=False, host: str = None, token: str = None):
-        if translate_tags:
-            self._translate_tags = translate_tags
+        # 确定季度和集数信息，如果存在则添加前缀空格
+        season_episode = f" {meta.season_episode}" if meta.season_episode else ""
 
-        self._lock_meta = lock_meta
+        # 根据是否有延迟设置不同的日志消息
+        delay_message = f"{self._delay} 秒后执行一次本地化服务" if self._delay else "准备执行一次本地化服务"
+        logger.info(f"{mediainfo.title_year}{season_episode} 已入库，{delay_message}")
 
-        if host and token:
-            self._host = host
-            self._token = token
-            # 去除末尾的斜线（如果存在）
-            if self._host.endswith("/"):
-                self._host = self._host[:-1]
-            # 确保URL以http://或https://开始
-            if not self._host.startswith("http://") and not self._host.startswith("https://"):
-                self._host = "http://" + self._host
+        if not self._scheduler:
+            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
 
-            headers = {'X-Plex-Token': self._token, 'Accept': 'application/json', "Content-Type": "application/json"}
-            self._session = requests.session()
-            self._session.headers = headers
-            result, message = self._login()
-            self.login = result
-            logger.info(message)
+        self._scheduler.remove_all_jobs()
 
-    def _login(self):
-        try:
-            friendly_name = self._session.get(url=self._host).json()['MediaContainer']['friendlyName']
-            return True, f"已成功连接到服务器{friendly_name}"
-        except Exception as e:
-            logger.info(e)
-            return False, "Plex服务器连接不成功，请检查配置文件是否正确"
-
-    def _list_keys(self, select, is_coll: bool):
-        types_index = {value: key for key, value in types.items()}
-
-        endpoint = f'sections/{select[0]}/collections' if is_coll else f'sections/{select[0]}/all?type={select[1]}'
-        datas = self._session.get(f'{self._host}/library/{endpoint}').json().get("MediaContainer", {}).get(
-            "Metadata",
-            [])
-        keys = [data.get("ratingKey") for data in datas]
-
-        if len(keys):
-            if is_coll:
-                logger.info(F"<{select[2]} {types_index[select[1]]}> 类型共计{len(keys)}个合集")
-            else:
-                logger.info(F"<{select[2]} {types_index[select[1]]}> 类型共计{len(keys)}个媒体")
-
-        return keys
-
-    def _get_metadata(self, rating_key):
-        url = f'{self._host}/library/metadata/{rating_key}'
-        return self._session.get(url=url).json()["MediaContainer"]["Metadata"][0]
-
-    def _put_title_sort(self, select, rating_key, sort_title, lock_meta, is_coll: bool):
-        endpoint = f'library/metadata/{rating_key}' if is_coll else f'library/sections/{select[0]}/all'
-        self._session.put(
-            url=f"{self._host}/{endpoint}",
-            params={
-                "type": select[1],
-                "id": rating_key,
-                "includeExternalMedia": 1,
-                "titleSort.value": sort_title,
-                "titleSort.locked": 1 if lock_meta else 0
-            }
+        self._scheduler.add_job(
+            func=self.localization,
+            trigger="date",
+            run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=self._delay),
+            name="Plex中文本地化",
         )
 
-    def _put_tag(self, select, rating_key, tag, addtag, tag_type, title, lock_meta):
-        self._session.put(
-            url=f"{self._host}/library/sections/{select[0]}/all",
-            params={
-                "type": select[1],
-                "id": rating_key,
-                f"{tag_type}.locked": 1 if lock_meta else 0,
-                f"{tag_type}[0].tag.tag": addtag,
-                f"{tag_type}[].tag.tag-": tag
-            }
-        )
-        logger.info(f"{title} : {tag} → {addtag}")
+        # 启动任务
+        if self._scheduler.get_jobs():
+            self._scheduler.print_jobs()
+            self._scheduler.start()
 
-    def _process_items(self, rating_key):
-        metadata = self._get_metadata(rating_key)
+    def localization(self):
+        """本地化服务"""
+        with lock:
+            logger.info(f"正在准备执行本地化服务")
+            libraries = self.__get_libraries()
+            logger.info(f"正在准备本地化的媒体库 {libraries}")
 
-        library_id = metadata['librarySectionID']
+            self.__loop_all(libraries=libraries, thread_count=self._thread_count)
 
-        is_coll, type_id = (False, types[metadata['type']]) \
-            if metadata['type'] != 'collection' \
-            else (True, types[metadata['subtype']])
-        title = metadata["title"]
-        title_sort = metadata.get("titleSort", "")
-        tags: dict[str:list] = {
-            'genre': [genre.get("tag") for genre in metadata.get('Genre', {})],  # 流派
-            'style': [style.get("tag") for style in metadata.get('Style', {})],  # 风格
-            'mood': [mood.get("tag") for mood in metadata.get('Mood', {})]  # 情绪
+    def __get_libraries(self):
+        """获取媒体库信息"""
+        libraries = {
+            int(library.key): library
+            for library in self._plex.library.sections()
+            if library.type != 'photo' and library.key in self._library_ids  # 排除照片库
         }
 
-        select = library_id, type_id
+        return libraries
+
+    def __list_items(self, library: LibrarySection, type_id: int, is_collection: bool):
+        """获取所有媒体项目"""
+        if not library:
+            return None
+        section = self._plex.library.sectionByID(sectionID=library.key)
+        if is_collection:
+            items = section.collections()
+        else:
+            items = section.all(libtype=type_id)
+
+        rating_keys = list(set([item.ratingKey for item in items]))
+        if rating_keys:
+            items = self.fetch_all_items(section=section, rating_keys=rating_keys)
+
+        logger.info(f"<{library.title} {plexapi.utils.reverseSearchType(libtype=type_id)}> "
+                    f"类型共计 {len(items)} 个{'合集' if is_collection else ''}")
+        return items
+
+    @staticmethod
+    def fetch_all_items(section, rating_keys, page_size=200):
+        """
+        根据指定的分页大小，批量获取条目。
+
+        :param section: 用于获取条目的区域。
+        :param rating_keys: 需要获取的条目的评级键列表。
+        :param page_size: 每批次获取的条目数量。
+        :return: 获取的所有条目列表。
+        """
+        # 初始化结果列表
+        all_items = []
+        # 计算总页数
+        total_pages = (len(rating_keys) + page_size - 1) // page_size
+
+        # 分批次处理每一页
+        for page in range(total_pages):
+            # 计算每一页的起始和结束索引
+            start_index = page * page_size
+            end_index = start_index + page_size
+            # 获取当前页的评级键
+            current_keys = rating_keys[start_index:end_index]
+
+            # 调用fetchItems获取当前页的条目
+            items = section.fetchItems(ekey=current_keys,
+                                       container_start=0,
+                                       container_size=page_size,
+                                       maxresults=len(current_keys))
+
+            # 将获取的条目添加到结果列表
+            all_items.extend(items)
+        return all_items
+
+    def __put_title_sort(self, item: Any, sort_title: str):
+        """更新标题排序"""
+        item.edit(**{
+            "titleSort.value": sort_title,
+            "titleSort.locked": 1 if self._lock else 0
+        })
+
+    def __put_tag(self, item: Any, tag, new_tag, tag_type):
+        """更新标签"""
+        item.edit(**{
+            f"{tag_type}[0].tag.tag": new_tag,
+            f"{tag_type}[].tag.tag-": tag,
+            "tag.locked": 1 if self._lock else 0
+        })
+
+    def __process_item(self, item: Any):
+        title = getattr(item, "title", "")
+        title_sort = getattr(item, "titleSort", "")
 
         # 更新标题排序
-        if self._has_chinese(title_sort) or title_sort == "":
-            title_sort = self._convert_to_pinyin(title)
-            self._put_title_sort(select, rating_key, title_sort, self._lock_meta, is_coll)
+        if self.__has_chinese(title_sort) or title_sort == "":
+            title_sort = self.__convert_to_pinyin(title)
+            self.__put_title_sort(item, title_sort)
             logger.info(f"{title} < {title_sort} >")
+
+        tags: dict[str, list] = {
+            "genre": self.__extract_tags(getattr(item, "genres", []), "tag"),  # 流派
+            "style": self.__extract_tags(getattr(item, "styles", []), "tag"),  # 风格
+            "mood": self.__extract_tags(getattr(item, "moods", []), "tag")  # 情绪
+        }
 
         # 汉化标签
         for tag_type, tag_list in tags.items():
             if tag_list:
                 for tag in tag_list:
-                    self._put_tag(select, rating_key, tag, new_tag, tag_type, title, self._lock_meta) \
-                        if (new_tag := self._translate_tags.get(tag)) else None
+                    new_tag = self._tags.get(tag)
+                    if new_tag:
+                        self.__put_tag(item, tag, new_tag, tag_type)
+                        logger.info(f"{title} : {tag} → {new_tag}")
 
-    def loop_all(self, libraries: dict, thread_count: int = None):
+    def __loop_all(self, libraries: dict, thread_count: int = None):
         """选择媒体库并遍历其中的每一个媒体。"""
-        if not self._translate_tags:
+        if not self._tags:
             logger.warn("标签本地化配置不能为空，请检查")
             return
 
-        logger.info(f"当前标签本地化配置为：{self._translate_tags}")
-
+        logger.info(f"当前标签本地化配置为：{self._tags}")
         t = time.time()
-        logger.info(f"正在运行中文本地化，线程数：{thread_count}，锁定元数据：{self._lock_meta}")
+        logger.info(f"正在运行中文本地化，线程数：{thread_count}，锁定元数据：{self._lock}")
 
+        args_list = []
         for library in libraries.values():
-            for type_id in library[1]:
-                for is_coll in [False, True]:
-                    if keys := self._list_keys((library[0], type_id, library[2]), is_coll):
-                        self._threads(datalist=keys, func=self._process_items,
-                                      thread_count=thread_count)
+            library_types = TYPES.get(library.type, [])
+            for type_id in library_types:
+                for is_collection in [False, True]:
+                    args_list.append((library, type_id, is_collection))
 
+        # 使用多线程获取所有项目列表
+        items_list = self.__threads(self.__list_items, args_list, thread_count or len(args_list))
+
+        # 处理所有项目
+        for items in items_list:
+            if items:
+                self.__threads(self.__process_item, [(item,) for item in items], thread_count or len(items))
         logger.info(f'运行完毕，用时 {time.time() - t} 秒')
 
     @staticmethod
-    def _has_chinese(string):
+    def __extract_tags(datas: Any, attribute_name: str) -> list:
+        """
+        从实体对象列表中提取指定属性的值。
+        :param datas: 实体对象列表。
+        :param attribute_name: 要提取的属性名称。
+        :return: 属性值列表。
+        """
+        return [getattr(data, attribute_name, None) for data in datas if
+                getattr(data, attribute_name, None)]
+
+    @staticmethod
+    def __has_chinese(string):
         """判断是否有中文"""
         for char in string:
             if '\u4e00' <= char <= '\u9fff':
@@ -851,31 +832,21 @@ class PlexService:
         return False
 
     @staticmethod
-    def _convert_to_pinyin(text):
+    def __convert_to_pinyin(text):
         """将字符串转换为拼音首字母形式。"""
         str_a = pypinyin.pinyin(text, style=pypinyin.FIRST_LETTER)
         str_b = [str(str_a[i][0]).upper() for i in range(len(str_a))]
         return ''.join(str_b).replace("：", ":").replace("（", "(").replace("）", ")").replace("，", ",")
 
     @staticmethod
-    def _threads(datalist, func, thread_count):
+    def __threads(func, args_list, thread_count):
         """
         多线程处理模块
-        :param datalist: 待处理数据列表
         :param func: 处理函数
+        :param args_list: 参数列表，每个元素是一个参数元组，包含传递给func的参数
         :param thread_count: 运行线程数
-        :return:
+        :return: 处理后的结果列表
         """
-
-        def chunks(lst, n):
-            """列表切片工具"""
-            for i in range(0, len(lst), n):
-                yield lst[i:i + n]
-
-        chunk_size = (len(datalist) + thread_count - 1) // thread_count  # 计算每个线程需要处理的元素数量
-        list_chunks = list(chunks(datalist, chunk_size))  # 将 datalist 切分成 n 段
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor:
-            result_items = list(executor.map(func, [item for chunk in list_chunks for item in chunk]))
-
-        return result_items
+            results = list(executor.map(lambda args: func(*args), args_list))
+        return results
