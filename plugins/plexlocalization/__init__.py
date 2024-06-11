@@ -6,15 +6,18 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, List, Dict, Tuple
 
+import plexapi.utils
 import pypinyin
 import pytz
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from plexapi.library import LibrarySection
+from requests import Session
 
 from app.core.config import settings
 from app.core.context import MediaInfo
-from app.core.event import eventmanager, Event
+from app.core.event import Event, eventmanager
 from app.core.meta import MetaBase
 from app.log import logger
 from app.modules.plex import Plex
@@ -22,6 +25,7 @@ from app.plugins import _PluginBase
 from app.schemas.types import EventType
 
 lock = threading.Lock()
+TYPES = {"movie": [1], "show": [2], "artist": [8, 9, 10]}
 
 
 class PlexLocalization(_PluginBase):
@@ -48,6 +52,10 @@ class PlexLocalization(_PluginBase):
 
     # region 私有属性
 
+    # plex_host
+    _plex_host = None
+    # session
+    _plex_session = None
     # 是否开启
     _enabled = False
     # 立即执行一次
@@ -78,6 +86,9 @@ class PlexLocalization(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
+        self._plex_host = settings.PLEX_HOST
+        self._plex_host = self.__adapt_base_url(host=self._plex_host)
+        self._plex_session = self.__adapt_plex_session()
         self._plex = Plex().get_plex()
 
         if not config:
@@ -110,6 +121,7 @@ class PlexLocalization(_PluginBase):
         self.stop_service()
 
         self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+        self._onlyonce = True
         if self._onlyonce:
             logger.info(f"Plex中文本地化服务，立即运行一次")
             self._scheduler.add_job(
@@ -557,10 +569,82 @@ class PlexLocalization(_PluginBase):
         except Exception as e:
             logger.info(str(e))
 
+    def __get_tags(self) -> dict:
+        """获取标签信息"""
+        try:
+            # 如果预置Json被清空，这里还原为默认Json
+            if not self._tags_json:
+                self._tags_json = self.__get_preset_tags_json()
+
+            # 去掉以//开始的行
+            tags_json = re.sub(r'//.*?\n', '', self._tags_json).strip()
+            tags = json.loads(tags_json)
+            return tags
+        except Exception as e:
+            logger.error(f"解析标签失败，已停用插件，请检查配置项，错误详情: {e}")
+            self._enabled = False
+
+    @staticmethod
+    def __get_preset_tags_json() -> str:
+        """获取预置Json"""
+        desc = ("// 已预置常用标签的中英翻译\n"
+                "// 若有标签需要修改或新增可以在下述内容中添加\n"
+                "// 注意无关内容需使用 // 注释\n")
+        config = """{
+            "Anime": "动画",
+            "Action": "动作",
+            "Mystery": "悬疑",
+            "Tv Movie": "电视电影",
+            "Animation": "动画",
+            "Crime": "犯罪",
+            "Family": "家庭",
+            "Fantasy": "奇幻",
+            "Disaster": "灾难",
+            "Adventure": "冒险",
+            "Short": "短片",
+            "Horror": "恐怖",
+            "History": "历史",
+            "Suspense": "悬疑",
+            "Biography": "传记",
+            "Sport": "运动",
+            "Comedy": "喜剧",
+            "Romance": "爱情",
+            "Thriller": "惊悚",
+            "Documentary": "纪录",
+            "Indie": "独立",
+            "Music": "音乐",
+            "Sci-Fi": "科幻",
+            "Western": "西部",
+            "Children": "儿童",
+            "Martial Arts": "武侠",
+            "Drama": "剧情",
+            "War": "战争",
+            "Musical": "歌舞",
+            "Film-noir": "黑色",
+            "Science Fiction": "科幻",
+            "Film-Noir": "黑色",
+            "Food": "饮食",
+            "War & Politics": "战争与政治",
+            "Sci-Fi & Fantasy": "科幻与奇幻",
+            "Mini-Series": "迷你剧",
+            "Reality": "真人秀",
+            "Home and Garden": "家居与园艺",
+            "Game Show": "游戏节目",
+            "Awards Show": "颁奖典礼",
+            "News": "新闻",
+            "Talk": "访谈",
+            "Talk Show": "脱口秀",
+            "Travel": "旅行",
+            "Soap": "肥皂剧",
+            "Rap": "说唱",
+            "Adult": "成人"
+        }"""
+        return desc + config
+
     @eventmanager.register(EventType.TransferComplete)
     def after_transfer(self, event: Event):
         """
-        发送通知消息
+        入库后执行一次
         """
         if not self._enabled:
             return
@@ -602,248 +686,223 @@ class PlexLocalization(_PluginBase):
             self._scheduler.start()
 
     def localization(self):
+        """本地化服务"""
         with lock:
             logger.info(f"正在准备执行本地化服务")
             libraries = self.__get_libraries()
             logger.info(f"正在准备本地化的媒体库 {libraries}")
-            service = PlexService(translate_tags=self._tags, lock_meta=self._lock,
-                                  host=settings.PLEX_HOST, token=settings.PLEX_TOKEN)
-            if service.login:
-                service.loop_all(libraries=libraries, thread_count=self._thread_count)
-            else:
-                logger.info("本地化服务已取消")
+
+            self.__loop_all(libraries=libraries, thread_count=self._thread_count)
 
     def __get_libraries(self):
         """获取媒体库信息"""
         libraries = {
-            int(library.key): (int(library.key), TYPES[library.type], library.title, library.type)
+            int(library.key): library
             for library in self._plex.library.sections()
             if library.type != 'photo' and library.key in self._library_ids  # 排除照片库
         }
 
         return libraries
 
-    def __get_tags(self) -> dict:
-        try:
-            # 如果预置Json被清空，这里还原为默认Json
-            if not self._tags_json:
-                self._tags_json = self.__get_preset_tags_json()
+    def __list_rating_key(self, library: LibrarySection, type_id: int, is_collection: bool):
+        """获取所有媒体项目"""
+        if not library:
+            return []
 
-            # 去掉以//开始的行
-            tags_json = re.sub(r'//.*?\n', '', self._tags_json).strip()
-            tags = json.loads(tags_json)
-            return tags
-        except Exception as e:
-            logger.error(f"解析标签失败，已停用插件，请检查配置项，错误详情: {e}")
-            self._enabled = False
+        if is_collection:
+            endpoint = f"/library/sections/{library.key}/collections"
+        else:
+            endpoint = f"/library/sections/{library.key}/all?type={type_id}"
+
+        response = self._plex_session.get(self.__adapt_request_url(endpoint))
+        datas = (response
+                 .json()
+                 .get("MediaContainer", {})
+                 .get("Metadata", []))
+        rating_keys = [data.get("ratingKey") for data in datas]
+
+        if len(rating_keys):
+            logger.info(f"<{library.title} {plexapi.utils.reverseSearchType(libtype=type_id)}> "
+                        f"类型共计 {len(rating_keys)} 个{'合集' if is_collection else ''}")
+
+        # if rating_keys:
+        # items = self.fetch_all_items(section=section, rating_keys=rating_keys)
+
+        return rating_keys
+
+    def __fetch_item(self, rating_key):
+        """
+        获取条目信息
+        """
+        endpoint = f"/library/metadata/{rating_key}"
+        response = self._plex_session.get(self.__adapt_request_url(endpoint))
+        datas = (response
+                 .json()
+                 .get("MediaContainer", {})
+                 .get("Metadata", []))
+        return datas[0] if datas else None
 
     @staticmethod
-    def __get_preset_tags_json() -> str:
-        """获取预置Json"""
-        desc = ("// 已预置常用标签的中英翻译\n"
-                "// 若有标签需要修改或新增可以在下述内容中添加\n"
-                "// 注意无关内容需使用 // 注释\n")
-        config = """{
-    "Anime": "动画",
-    "Action": "动作",
-    "Mystery": "悬疑",
-    "Tv Movie": "电视电影",
-    "Animation": "动画",
-    "Crime": "犯罪",
-    "Family": "家庭",
-    "Fantasy": "奇幻",
-    "Disaster": "灾难",
-    "Adventure": "冒险",
-    "Short": "短片",
-    "Horror": "恐怖",
-    "History": "历史",
-    "Suspense": "悬疑",
-    "Biography": "传记",
-    "Sport": "运动",
-    "Comedy": "喜剧",
-    "Romance": "爱情",
-    "Thriller": "惊悚",
-    "Documentary": "纪录",
-    "Indie": "独立",
-    "Music": "音乐",
-    "Sci-Fi": "科幻",
-    "Western": "西部",
-    "Children": "儿童",
-    "Martial Arts": "武侠",
-    "Drama": "剧情",
-    "War": "战争",
-    "Musical": "歌舞",
-    "Film-noir": "黑色",
-    "Science Fiction": "科幻",
-    "Film-Noir": "黑色",
-    "Food": "饮食",
-    "War & Politics": "战争与政治",
-    "Sci-Fi & Fantasy": "科幻与奇幻",
-    "Mini-Series": "迷你剧",
-    "Reality": "真人秀",
-    "Home and Garden": "家居与园艺",
-    "Game Show": "游戏节目",
-    "Awards Show": "颁奖典礼",
-    "News": "新闻",
-    "Talk": "访谈",
-    "Talk Show": "脱口秀",
-    "Travel": "旅行",
-    "Soap": "肥皂剧",
-    "Rap": "说唱",
-    "Adult": "成人"
-}"""
-        return desc + config
+    def fetch_all_items(section, rating_keys, page_size=200):
+        """
+        根据指定的分页大小，批量获取条目。
 
+        :param section: 用于获取条目的区域。
+        :param rating_keys: 需要获取的条目的评级键列表。
+        :param page_size: 每批次获取的条目数量。
+        :return: 获取的所有条目列表。
+        """
+        # 初始化结果列表
+        all_items = []
+        # 计算总页数
+        total_pages = (len(rating_keys) + page_size - 1) // page_size
 
-types = {"movie": 1, "show": 2, "artist": 8, "album": 9, 'track': 10}
-TYPES = {"movie": [1], "show": [2], "artist": [8, 9, 10]}
+        # 分批次处理每一页
+        for page in range(total_pages):
+            # 计算每一页的起始和结束索引
+            start_index = page * page_size
+            end_index = start_index + page_size
+            # 获取当前页的评级键
+            current_keys = rating_keys[start_index:end_index]
 
+            # 调用fetchItems获取当前页的条目
+            items = section.fetchItems(ekey=current_keys,
+                                       container_start=0,
+                                       container_size=page_size,
+                                       maxresults=len(current_keys))
 
-class PlexService:
-    # request.session
-    _session = None
-    # plex_host
-    _host = None
-    # plex_token
-    _token = None
-    # translate_tags
-    _translate_tags = None
-    # lock_meta
-    _lock_meta = None
-    # login
-    login = False
+            # 将获取的条目添加到结果列表
+            all_items.extend(items)
+        return all_items
 
-    def __init__(self, translate_tags: dict, lock_meta=False, host: str = None, token: str = None):
-        if translate_tags:
-            self._translate_tags = translate_tags
-
-        self._lock_meta = lock_meta
-
-        if host and token:
-            self._host = host
-            self._token = token
-            # 去除末尾的斜线（如果存在）
-            if self._host.endswith("/"):
-                self._host = self._host[:-1]
-            # 确保URL以http://或https://开始
-            if not self._host.startswith("http://") and not self._host.startswith("https://"):
-                self._host = "http://" + self._host
-
-            headers = {'X-Plex-Token': self._token, 'Accept': 'application/json', "Content-Type": "application/json"}
-            self._session = requests.session()
-            self._session.headers = headers
-            result, message = self._login()
-            self.login = result
-            logger.info(message)
-
-    def _login(self):
-        try:
-            friendly_name = self._session.get(url=self._host).json()['MediaContainer']['friendlyName']
-            return True, f"已成功连接到服务器{friendly_name}"
-        except Exception as e:
-            logger.info(e)
-            return False, "Plex服务器连接不成功，请检查配置文件是否正确"
-
-    def _list_keys(self, select, is_coll: bool):
-        types_index = {value: key for key, value in types.items()}
-
-        endpoint = f'sections/{select[0]}/collections' if is_coll else f'sections/{select[0]}/all?type={select[1]}'
-        datas = self._session.get(f'{self._host}/library/{endpoint}').json().get("MediaContainer", {}).get(
-            "Metadata",
-            [])
-        keys = [data.get("ratingKey") for data in datas]
-
-        if len(keys):
-            if is_coll:
-                logger.info(F"<{select[2]} {types_index[select[1]]}> 类型共计{len(keys)}个合集")
-            else:
-                logger.info(F"<{select[2]} {types_index[select[1]]}> 类型共计{len(keys)}个媒体")
-
-        return keys
-
-    def _get_metadata(self, rating_key):
-        url = f'{self._host}/library/metadata/{rating_key}'
-        return self._session.get(url=url).json()["MediaContainer"]["Metadata"][0]
-
-    def _put_title_sort(self, select, rating_key, sort_title, lock_meta, is_coll: bool):
-        endpoint = f'library/metadata/{rating_key}' if is_coll else f'library/sections/{select[0]}/all'
-        self._session.put(
-            url=f"{self._host}/{endpoint}",
+    def __put_title_sort(self, rating_key: str, library_id: int, type_id: int, is_collection: bool, sort_title: str):
+        """更新标题排序"""
+        endpoint = f'library/metadata/{rating_key}' if is_collection else f'library/sections/{library_id}/all'
+        self._plex_session.put(
+            url=self.__adapt_request_url(endpoint),
             params={
-                "type": select[1],
+                "type": type_id,
                 "id": rating_key,
                 "includeExternalMedia": 1,
                 "titleSort.value": sort_title,
-                "titleSort.locked": 1 if lock_meta else 0
-            }
-        )
+                "titleSort.locked": 1 if self._lock else 0
+            })
 
-    def _put_tag(self, select, rating_key, tag, addtag, tag_type, title, lock_meta):
-        self._session.put(
-            url=f"{self._host}/library/sections/{select[0]}/all",
+    def __put_tag(self, rating_key: str, library_id: int, type_id: str, tag, new_tag, tag_type):
+        """更新标签"""
+        endpoint = f"/library/sections/{library_id}/all"
+        self._plex_session.put(
+            url=self.__adapt_request_url(endpoint),
             params={
-                "type": select[1],
+                "type": type_id,
                 "id": rating_key,
-                f"{tag_type}.locked": 1 if lock_meta else 0,
-                f"{tag_type}[0].tag.tag": addtag,
+                f"{tag_type}.locked": 1 if self._lock else 0,
+                f"{tag_type}[0].tag.tag": new_tag,
                 f"{tag_type}[].tag.tag-": tag
-            }
-        )
-        logger.info(f"{title} : {tag} → {addtag}")
+            })
 
-    def _process_items(self, rating_key):
-        metadata = self._get_metadata(rating_key)
+    def __process_rating_key(self, rating_key: str):
+        """
+        处理媒体标识
+        """
+        if not rating_key:
+            return
+        item = self.__fetch_item(rating_key=rating_key)
+        if not item:
+            return
+        self.__process_item(item=item)
 
-        library_id = metadata['librarySectionID']
+    def __process_item(self, item: dict):
+        """
+        处理元数据
+        """
+        if not item:
+            return
 
-        is_coll, type_id = (False, types[metadata['type']]) \
-            if metadata['type'] != 'collection' \
-            else (True, types[metadata['subtype']])
-        title = metadata["title"]
-        title_sort = metadata.get("titleSort", "")
-        tags: dict[str:list] = {
-            'genre': [genre.get("tag") for genre in metadata.get('Genre', {})],  # 流派
-            'style': [style.get("tag") for style in metadata.get('Style', {})],  # 风格
-            'mood': [mood.get("tag") for mood in metadata.get('Mood', {})]  # 情绪
-        }
+        rating_key = item.get("ratingKey")
+        library_id = item.get("librarySectionID")
+        if not rating_key or not library_id:
+            return
 
-        select = library_id, type_id
+        item_type = item.get("type")
+        if not item_type:
+            return
+
+        type_id = plexapi.utils.searchType(libtype=item_type)
+        is_collection = item_type != "collection"
+
+        title = item.get("title", "")
+        title_sort = item.get("titleSort", "")
 
         # 更新标题排序
-        if self._has_chinese(title_sort) or title_sort == "":
-            title_sort = self._convert_to_pinyin(title)
-            self._put_title_sort(select, rating_key, title_sort, self._lock_meta, is_coll)
+        if self.__has_chinese(title_sort) or title_sort == "":
+            title_sort = self.__convert_to_pinyin(title)
+            self.__put_title_sort(rating_key=rating_key,
+                                  library_id=library_id,
+                                  type_id=type_id,
+                                  is_collection=is_collection,
+                                  sort_title=title_sort)
             logger.info(f"{title} < {title_sort} >")
+
+        tags: dict[str, list] = {
+            "genre": [genre.get("tag") for genre in item.get('Genre', {})],  # 流派
+            "style": [style.get("tag") for style in item.get('Style', {})],  # 风格
+            "mood": [mood.get("tag") for mood in item.get('Mood', {})]  # 情绪
+        }
 
         # 汉化标签
         for tag_type, tag_list in tags.items():
             if tag_list:
                 for tag in tag_list:
-                    self._put_tag(select, rating_key, tag, new_tag, tag_type, title, self._lock_meta) \
-                        if (new_tag := self._translate_tags.get(tag)) else None
+                    new_tag = self._tags.get(tag)
+                    if new_tag:
+                        self.__put_tag(rating_key=rating_key,
+                                       library_id=library_id,
+                                       type_id=type_id,
+                                       tag=tag,
+                                       new_tag=new_tag,
+                                       tag_type=tag_type)
+                        logger.info(f"{title} : {tag} → {new_tag}")
 
-    def loop_all(self, libraries: dict, thread_count: int = None):
+    def __loop_all(self, libraries: dict, thread_count: int = None):
         """选择媒体库并遍历其中的每一个媒体。"""
-        if not self._translate_tags:
+        if not self._tags:
             logger.warn("标签本地化配置不能为空，请检查")
             return
 
-        logger.info(f"当前标签本地化配置为：{self._translate_tags}")
-
+        logger.info(f"当前标签本地化配置为：{self._tags}")
         t = time.time()
-        logger.info(f"正在运行中文本地化，线程数：{thread_count}，锁定元数据：{self._lock_meta}")
+        logger.info(f"正在运行中文本地化，线程数：{thread_count}，锁定元数据：{self._lock}")
 
+        args_list = []
         for library in libraries.values():
-            for type_id in library[1]:
-                for is_coll in [False, True]:
-                    if keys := self._list_keys((library[0], type_id, library[2]), is_coll):
-                        self._threads(datalist=keys, func=self._process_items,
-                                      thread_count=thread_count)
+            library_types = TYPES.get(library.type, [])
+            for type_id in library_types:
+                for is_collection in [False, True]:
+                    args_list.append((library, type_id, is_collection))
 
+        # 使用多线程获取所有项目列表
+        items_list = self.__threads(self.__list_rating_key, args_list, thread_count or len(args_list))
+
+        # 处理所有项目
+        for items in items_list:
+            if items:
+                self.__threads(self.__process_rating_key, [(item,) for item in items], thread_count or len(items))
         logger.info(f'运行完毕，用时 {time.time() - t} 秒')
 
     @staticmethod
-    def _has_chinese(string):
+    def __extract_tags(datas: Any, attribute_name: str) -> list:
+        """
+        从实体对象列表中提取指定属性的值。
+        :param datas: 实体对象列表。
+        :param attribute_name: 要提取的属性名称。
+        :return: 属性值列表。
+        """
+        return [getattr(data, attribute_name, None) for data in datas if
+                getattr(data, attribute_name, None)]
+
+    @staticmethod
+    def __has_chinese(string):
         """判断是否有中文"""
         for char in string:
             if '\u4e00' <= char <= '\u9fff':
@@ -851,31 +910,60 @@ class PlexService:
         return False
 
     @staticmethod
-    def _convert_to_pinyin(text):
+    def __convert_to_pinyin(text):
         """将字符串转换为拼音首字母形式。"""
         str_a = pypinyin.pinyin(text, style=pypinyin.FIRST_LETTER)
         str_b = [str(str_a[i][0]).upper() for i in range(len(str_a))]
         return ''.join(str_b).replace("：", ":").replace("（", "(").replace("）", ")").replace("，", ",")
 
     @staticmethod
-    def _threads(datalist, func, thread_count):
+    def __threads(func, args_list, thread_count):
         """
         多线程处理模块
-        :param datalist: 待处理数据列表
         :param func: 处理函数
+        :param args_list: 参数列表，每个元素是一个参数元组，包含传递给func的参数
         :param thread_count: 运行线程数
-        :return:
+        :return: 处理后的结果列表
         """
-
-        def chunks(lst, n):
-            """列表切片工具"""
-            for i in range(0, len(lst), n):
-                yield lst[i:i + n]
-
-        chunk_size = (len(datalist) + thread_count - 1) // thread_count  # 计算每个线程需要处理的元素数量
-        list_chunks = list(chunks(datalist, chunk_size))  # 将 datalist 切分成 n 段
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor:
-            result_items = list(executor.map(func, [item for chunk in list_chunks for item in chunk]))
+            results = list(executor.map(lambda args: func(*args), args_list))
+        return results
 
-        return result_items
+    @staticmethod
+    def __adapt_base_url(host: str) -> str:
+        """
+        标准化提供的主机地址，确保它以http://或https://开头，并且以斜杠(/)结尾。
+        """
+        # 移除尾部斜杠，如果有的话，然后确保最后是以斜杠结束
+        if not host.endswith("/"):
+            host = host + "/"
+        # 确保URL以http://或https://开始
+        if not host.startswith("http://") and not host.startswith("https://"):
+            host = "http://" + host
+        return host
+
+    def __adapt_request_url(self, endpoint: str):
+        """
+        适配请求的URL，确保每个请求的URL是完整的，基于已经设置的_plex_host
+        这个钩子函数用于在发送请求前自动处理和修正请求的URL
+        """
+        # 如果URL不是完整的HTTP或HTTPS URL，则将_plex_host添加到URL前
+        if not endpoint.startswith(('http://', 'https://')):
+            endpoint = f"{self._plex_host.rstrip('/')}/{endpoint.lstrip('/')}"
+        return endpoint
+
+    @staticmethod
+    def __adapt_plex_session() -> Session:
+        """
+        创建并配置一个针对Plex服务的requests.Session实例
+        这个会话包括特定的头部信息，用于处理所有的Plex请求
+        """
+        # 设置请求头部，通常包括验证令牌和接受/内容类型头部
+        headers = {
+            "X-Plex-Token": settings.PLEX_TOKEN,
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        session = requests.session()
+        session.headers = headers
+        return session
