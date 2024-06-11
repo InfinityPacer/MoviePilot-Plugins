@@ -72,6 +72,8 @@ class PlexLocalization(_PluginBase):
     _execute_transfer = None
     # 入库后延迟执行时间
     _delay = None
+    # 每批次处理数量
+    _batch_size = None
     # tags_json
     _tags_json = None
     # tags
@@ -112,6 +114,10 @@ class PlexLocalization(_PluginBase):
             self._delay = int(config.get("delay", 300))
         except ValueError:
             self._delay = 300
+        try:
+            self._batch_size = int(config.get("batch_size", 100))
+        except ValueError:
+            self._batch_size = 100
 
         # 如果开启了入库后执行一次，延迟时间又不填，默认为300s
         if self._execute_transfer and not self._delay:
@@ -121,7 +127,6 @@ class PlexLocalization(_PluginBase):
         self.stop_service()
 
         self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-        self._onlyonce = True
         if self._onlyonce:
             logger.info(f"Plex中文本地化服务，立即运行一次")
             self._scheduler.add_job(
@@ -143,7 +148,8 @@ class PlexLocalization(_PluginBase):
             "tags_json": self._tags_json,
             "thread_count": self._thread_count,
             "execute_transfer": self._execute_transfer,
-            "delay": self._delay
+            "delay": self._delay,
+            "batch_size": self._batch_size
         }
         self.update_config(config=config_mapping)
 
@@ -171,10 +177,10 @@ class PlexLocalization(_PluginBase):
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
         if not settings.MEDIASERVER:
-            logger.info(f"媒体库配置不正确，请检查")
+            logger.error(f"媒体库配置不正确，请检查")
 
         if "plex" not in settings.MEDIASERVER:
-            logger.info(f"Plex配置不正确，请检查")
+            logger.error(f"Plex配置不正确，请检查")
 
         if not self._plex:
             self._plex = Plex().get_plex()
@@ -315,7 +321,7 @@ class PlexLocalization(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -332,7 +338,7 @@ class PlexLocalization(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -349,7 +355,7 @@ class PlexLocalization(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -357,6 +363,22 @@ class PlexLocalization(_PluginBase):
                                         'props': {
                                             'model': 'thread_count',
                                             'label': '运行线程数',
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'batch_size',
+                                            'label': '每批次处理数',
                                         },
                                     }
                                 ],
@@ -520,7 +542,8 @@ class PlexLocalization(_PluginBase):
             "tags_json": self.__get_preset_tags_json(),
             "thread_count": 5,
             "execute_transfer": False,
-            "delay": 300
+            "delay": 300,
+            "batch_size": 100
         }
 
     def get_page(self) -> List[dict]:
@@ -687,6 +710,10 @@ class PlexLocalization(_PluginBase):
 
     def localization(self):
         """本地化服务"""
+        if not self._plex:
+            logger.error("Plex配置不正确，请检查")
+            return
+
         with lock:
             logger.info(f"正在准备执行本地化服务")
             libraries = self.__get_libraries()
@@ -704,7 +731,7 @@ class PlexLocalization(_PluginBase):
 
         return libraries
 
-    def __list_rating_key(self, library: LibrarySection, type_id: int, is_collection: bool):
+    def __list_rating_keys(self, library: LibrarySection, type_id: int, is_collection: bool):
         """获取所有媒体项目"""
         if not library:
             return []
@@ -725,9 +752,6 @@ class PlexLocalization(_PluginBase):
             logger.info(f"<{library.title} {plexapi.utils.reverseSearchType(libtype=type_id)}> "
                         f"类型共计 {len(rating_keys)} 个{'合集' if is_collection else ''}")
 
-        # if rating_keys:
-        # items = self.fetch_all_items(section=section, rating_keys=rating_keys)
-
         return rating_keys
 
     def __fetch_item(self, rating_key):
@@ -742,38 +766,19 @@ class PlexLocalization(_PluginBase):
                  .get("Metadata", []))
         return datas[0] if datas else None
 
-    @staticmethod
-    def fetch_all_items(section, rating_keys, page_size=200):
+    def __fetch_all_items(self, rating_keys):
         """
-        根据指定的分页大小，批量获取条目。
-
-        :param section: 用于获取条目的区域。
+        批量获取条目。
         :param rating_keys: 需要获取的条目的评级键列表。
-        :param page_size: 每批次获取的条目数量。
         :return: 获取的所有条目列表。
         """
-        # 初始化结果列表
-        all_items = []
-        # 计算总页数
-        total_pages = (len(rating_keys) + page_size - 1) // page_size
-
-        # 分批次处理每一页
-        for page in range(total_pages):
-            # 计算每一页的起始和结束索引
-            start_index = page * page_size
-            end_index = start_index + page_size
-            # 获取当前页的评级键
-            current_keys = rating_keys[start_index:end_index]
-
-            # 调用fetchItems获取当前页的条目
-            items = section.fetchItems(ekey=current_keys,
-                                       container_start=0,
-                                       container_size=page_size,
-                                       maxresults=len(current_keys))
-
-            # 将获取的条目添加到结果列表
-            all_items.extend(items)
-        return all_items
+        endpoint = f"/library/metadata/{','.join(rating_keys)}"
+        response = self._plex_session.get(self.__adapt_request_url(endpoint))
+        items = (response
+                 .json()
+                 .get("MediaContainer", {})
+                 .get("Metadata", []))
+        return items
 
     def __put_title_sort(self, rating_key: str, library_id: int, type_id: int, is_collection: bool, sort_title: str):
         """更新标题排序"""
@@ -811,6 +816,14 @@ class PlexLocalization(_PluginBase):
         if not item:
             return
         self.__process_item(item=item)
+
+    def __process_items_batch(self, rating_keys):
+        """
+        获取并处理一批评级键对应的条目
+        """
+        items = self.__fetch_all_items(rating_keys=rating_keys)
+        for item in items:
+            self.__process_item(item)
 
     def __process_item(self, item: dict):
         """
@@ -872,23 +885,56 @@ class PlexLocalization(_PluginBase):
 
         logger.info(f"当前标签本地化配置为：{self._tags}")
         t = time.time()
+        thread_count = thread_count or 5
         logger.info(f"正在运行中文本地化，线程数：{thread_count}，锁定元数据：{self._lock}")
 
-        args_list = []
+        # 生成所有需要处理的rating keys
+        rating_keys = self.__generate_all_rating_keys(libraries)
+
+        # 分批处理rating keys
+        self.__process_rating_keys_in_batches(rating_keys, thread_count, self._batch_size)
+
+        logger.info(f'运行完毕，用时 {time.time() - t} 秒')
+
+    def __generate_all_rating_keys(self, libraries):
+        """生成所有库中项目的rating keys列表"""
+        rating_keys_set = set()
         for library in libraries.values():
             library_types = TYPES.get(library.type, [])
             for type_id in library_types:
                 for is_collection in [False, True]:
-                    args_list.append((library, type_id, is_collection))
+                    # 使用集合来自动去除重复的rating keys
+                    rating_keys_set.update(self.__list_rating_keys(library, type_id, is_collection))
+        return list(rating_keys_set)
 
-        # 使用多线程获取所有项目列表
-        items_list = self.__threads(self.__list_rating_key, args_list, thread_count or len(args_list))
+    def __process_rating_keys_in_batches(self, rating_keys, thread_count, batch_size=100):
+        """分批处理rating keys列表"""
+        total_keys_count = len(rating_keys)
+        total_batches = (total_keys_count + batch_size - 1) // batch_size
 
-        # 处理所有项目
-        for items in items_list:
-            if items:
-                self.__threads(self.__process_rating_key, [(item,) for item in items], thread_count or len(items))
-        logger.info(f'运行完毕，用时 {time.time() - t} 秒')
+        logger.info(f"总条目：{total_keys_count}，每批处理条数：{batch_size}，总批次数：{total_batches}，准备开始执行")
+
+        futures = {}
+        successful_batches = 0  # 成功处理的批次数
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor:
+            for i in range(0, total_keys_count, batch_size):
+                batch_keys = rating_keys[i:i + batch_size]
+                future = executor.submit(self.__process_items_batch, batch_keys)
+                futures[future] = i // batch_size
+
+            # 等待所有的future完成
+            concurrent.futures.wait(futures.keys())
+            for future, batch_index in futures.items():
+                try:
+                    future.result()
+                    logger.info(f"第{batch_index+1}批次处理成功")
+                    successful_batches += 1
+                except Exception as e:
+                    logger.error(f"第{batch_index+1}批次处理过程中发生错误: {e}", exc_info=True)
+
+        # 打印处理完毕后的结果
+        logger.info(f"处理完毕，成功批次数：{successful_batches}")
 
     @staticmethod
     def __extract_tags(datas: Any, attribute_name: str) -> list:
@@ -917,19 +963,6 @@ class PlexLocalization(_PluginBase):
         return ''.join(str_b).replace("：", ":").replace("（", "(").replace("）", ")").replace("，", ",")
 
     @staticmethod
-    def __threads(func, args_list, thread_count):
-        """
-        多线程处理模块
-        :param func: 处理函数
-        :param args_list: 参数列表，每个元素是一个参数元组，包含传递给func的参数
-        :param thread_count: 运行线程数
-        :return: 处理后的结果列表
-        """
-        with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor:
-            results = list(executor.map(lambda args: func(*args), args_list))
-        return results
-
-    @staticmethod
     def __adapt_base_url(host: str) -> str:
         """
         标准化提供的主机地址，确保它以http://或https://开头，并且以斜杠(/)结尾。
@@ -945,7 +978,7 @@ class PlexLocalization(_PluginBase):
     def __adapt_request_url(self, endpoint: str):
         """
         适配请求的URL，确保每个请求的URL是完整的，基于已经设置的_plex_host
-        这个钩子函数用于在发送请求前自动处理和修正请求的URL
+        用于在发送请求前自动处理和修正请求的URL
         """
         # 如果URL不是完整的HTTP或HTTPS URL，则将_plex_host添加到URL前
         if not endpoint.startswith(('http://', 'https://')):
