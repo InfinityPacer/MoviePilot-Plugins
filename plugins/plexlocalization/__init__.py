@@ -741,7 +741,7 @@ class PlexLocalization(_PluginBase):
         else:
             endpoint = f"/library/sections/{library.key}/all?type={type_id}"
 
-        response = self._plex_session.get(self.__adapt_request_url(endpoint))
+        response = self._plex_session.get(url=self.__adapt_request_url(endpoint), timeout=10)
         datas = (response
                  .json()
                  .get("MediaContainer", {})
@@ -759,7 +759,7 @@ class PlexLocalization(_PluginBase):
         获取条目信息
         """
         endpoint = f"/library/metadata/{rating_key}"
-        response = self._plex_session.get(self.__adapt_request_url(endpoint))
+        response = self._plex_session.get(self.__adapt_request_url(endpoint), timeout=10)
         datas = (response
                  .json()
                  .get("MediaContainer", {})
@@ -773,7 +773,7 @@ class PlexLocalization(_PluginBase):
         :return: 获取的所有条目列表。
         """
         endpoint = f"/library/metadata/{','.join(rating_keys)}"
-        response = self._plex_session.get(self.__adapt_request_url(endpoint))
+        response = self._plex_session.get(self.__adapt_request_url(endpoint), timeout=10)
         items = (response
                  .json()
                  .get("MediaContainer", {})
@@ -791,7 +791,7 @@ class PlexLocalization(_PluginBase):
                 "includeExternalMedia": 1,
                 "titleSort.value": sort_title,
                 "titleSort.locked": 1 if self._lock else 0
-            })
+            }, timeout=10)
 
     def __put_tag(self, rating_key: str, library_id: int, type_id: str, tag, new_tag, tag_type):
         """更新标签"""
@@ -804,7 +804,7 @@ class PlexLocalization(_PluginBase):
                 f"{tag_type}.locked": 1 if self._lock else 0,
                 f"{tag_type}[0].tag.tag": new_tag,
                 f"{tag_type}[].tag.tag-": tag
-            })
+            }, timeout=10)
 
     def __process_rating_key(self, rating_key: str):
         """
@@ -918,20 +918,21 @@ class PlexLocalization(_PluginBase):
         successful_batches = 0  # 成功处理的批次数
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor:
+            # 提交所有批次处理任务
             for i in range(0, total_keys_count, batch_size):
                 batch_keys = rating_keys[i:i + batch_size]
                 future = executor.submit(self.__process_items_batch, batch_keys)
                 futures[future] = i // batch_size
 
-            # 等待所有的future完成
-            concurrent.futures.wait(futures.keys())
-            for future, batch_index in futures.items():
+            # 实时处理每个future的完成
+            for future in concurrent.futures.as_completed(futures):
+                batch_index = futures[future]
                 try:
                     future.result()
-                    logger.info(f"第{batch_index+1}批次处理成功")
+                    logger.debug(f"第{batch_index + 1}批次处理成功")
                     successful_batches += 1
                 except Exception as e:
-                    logger.error(f"第{batch_index+1}批次处理过程中发生错误: {e}", exc_info=True)
+                    logger.error(f"第{batch_index + 1}批次处理过程中发生错误: {e}", exc_info=True)
 
         # 打印处理完毕后的结果
         logger.info(f"处理完毕，成功批次数：{successful_batches}")
