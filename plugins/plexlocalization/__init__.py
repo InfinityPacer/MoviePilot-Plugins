@@ -22,7 +22,7 @@ from app.core.meta import MetaBase
 from app.log import logger
 from app.modules.plex import Plex
 from app.plugins import _PluginBase
-from app.schemas.types import EventType
+from app.schemas.types import EventType, NotificationType
 
 lock = threading.Lock()
 TYPES = {"movie": [1], "show": [2], "artist": [8, 9, 10]}
@@ -953,6 +953,8 @@ class PlexLocalization(_PluginBase):
         else:
             message_text = f"Plex本地化完成，用时 {elapsed_time:.2f} 秒"
 
+        self.__send_message(title="【Plex中文本地化】", text=message_text)
+
         logger.info(message_text)
 
     def __generate_all_rating_keys(self, libraries, with_collection: bool = True, added_time: Optional[int] = None):
@@ -1063,3 +1065,12 @@ class PlexLocalization(_PluginBase):
         session = requests.session()
         session.headers = headers
         return session
+
+    def __send_message(self, title: str, text: str):
+        """
+        发送消息
+        """
+        if not self._notify:
+            return
+
+        self.post_message(mtype=NotificationType.SiteMessage, title=title, text=text)
