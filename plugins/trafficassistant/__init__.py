@@ -240,7 +240,7 @@ class TrafficAssistant(_PluginBase):
                                             'model': 'cron',
                                             'label': '运行周期',
                                             'placeholder': '5位cron表达式',
-                                            'hint': '设置任务的执行周期，如每天8点执行一次',
+                                            'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
                                             'persistent-hint': True
                                         }
                                     }
