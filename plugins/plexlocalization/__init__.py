@@ -4,7 +4,7 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Any, List, Dict, Tuple
+from typing import Any, List, Dict, Tuple, Optional
 
 import plexapi.utils
 import pypinyin
@@ -72,6 +72,8 @@ class PlexLocalization(_PluginBase):
     _execute_transfer = None
     # 入库后延迟执行时间
     _delay = None
+    # 最近一次入库时间
+    _transfer_time = None
     # 每批次处理数量
     _batch_size = None
     # tags_json
@@ -665,7 +667,7 @@ class PlexLocalization(_PluginBase):
         return desc + config
 
     @eventmanager.register(EventType.TransferComplete)
-    def after_transfer(self, event: Event):
+    def execute_transfer(self, event: Event):
         """
         入库后执行一次
         """
@@ -684,12 +686,17 @@ class PlexLocalization(_PluginBase):
         if not mediainfo or not meta:
             return
 
-        # 确定季度和集数信息，如果存在则添加前缀空格
+        # 获取媒体信息，确定季度和集数信息，如果存在则添加前缀空格
         season_episode = f" {meta.season_episode}" if meta.season_episode else ""
+        media_desc = f"{mediainfo.title_year}{season_episode}"
+
+        # 如果最近一次入库时间为None，这里才进行赋值，否则可能是存在尚未执行的任务待执行
+        if not self._transfer_time:
+            self._transfer_time = datetime.now(tz=pytz.timezone(settings.TZ))
 
         # 根据是否有延迟设置不同的日志消息
         delay_message = f"{self._delay} 秒后执行一次本地化服务" if self._delay else "准备执行一次本地化服务"
-        logger.info(f"{mediainfo.title_year}{season_episode} 已入库，{delay_message}")
+        logger.info(f"{media_desc} 已入库，{delay_message}")
 
         if not self._scheduler:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -697,7 +704,7 @@ class PlexLocalization(_PluginBase):
         self._scheduler.remove_all_jobs()
 
         self._scheduler.add_job(
-            func=self.localization,
+            func=self.__transfer_by_once,
             trigger="date",
             run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=self._delay),
             name="Plex中文本地化",
@@ -708,7 +715,21 @@ class PlexLocalization(_PluginBase):
             self._scheduler.print_jobs()
             self._scheduler.start()
 
-    def localization(self):
+    def __transfer_by_once(self):
+        """入库后执行一次"""
+        if not self._transfer_time:
+            logger.info("没有获取到最近一次的入库时间，取消执行本地化服务")
+            return
+
+        logger.info(f"正在执行一次本地化服务，入库时间 {self._transfer_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        adjusted_time = self._transfer_time - timedelta(minutes=5)
+        logger.info(f"为保证入库数据完整性，前偏移5分钟后的时间：{adjusted_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        self.localization(added_time=int(adjusted_time.timestamp()))
+        self._transfer_time = None
+
+    def localization(self, added_time: Optional[int] = None):
         """本地化服务"""
         if not self._plex:
             logger.error("Plex配置不正确，请检查")
@@ -719,7 +740,7 @@ class PlexLocalization(_PluginBase):
             libraries = self.__get_libraries()
             logger.info(f"正在准备本地化的媒体库 {libraries}")
 
-            self.__loop_all(libraries=libraries, thread_count=self._thread_count)
+            self.__loop_all(libraries=libraries, thread_count=self._thread_count, added_time=added_time)
 
     def __get_libraries(self):
         """获取媒体库信息"""
@@ -731,7 +752,8 @@ class PlexLocalization(_PluginBase):
 
         return libraries
 
-    def __list_rating_keys(self, library: LibrarySection, type_id: int, is_collection: bool):
+    def __list_rating_keys(self, library: LibrarySection, type_id: int, is_collection: bool,
+                           added_time: Optional[int] = None):
         """获取所有媒体项目"""
         if not library:
             return []
@@ -740,6 +762,8 @@ class PlexLocalization(_PluginBase):
             endpoint = f"/library/sections/{library.key}/collections"
         else:
             endpoint = f"/library/sections/{library.key}/all?type={type_id}"
+            if added_time:
+                endpoint += f"&addedAt>={added_time}"
 
         response = self._plex_session.get(url=self.__adapt_request_url(endpoint), timeout=10)
         datas = (response
@@ -877,34 +901,52 @@ class PlexLocalization(_PluginBase):
                                        tag_type=tag_type)
                         logger.info(f"{title} : {tag} → {new_tag}")
 
-    def __loop_all(self, libraries: dict, thread_count: int = None):
+    def __loop_all(self, libraries: dict, thread_count: int = None, added_time: Optional[int] = None):
         """选择媒体库并遍历其中的每一个媒体。"""
         if not self._tags:
             logger.warn("标签本地化配置不能为空，请检查")
             return
 
         logger.info(f"当前标签本地化配置为：{self._tags}")
-        t = time.time()
+        start_time = time.time()
         thread_count = thread_count or 5
         logger.info(f"正在运行中文本地化，线程数：{thread_count}，锁定元数据：{self._lock}")
 
         # 生成所有需要处理的rating keys
-        rating_keys = self.__generate_all_rating_keys(libraries)
+        if added_time:
+            rating_keys = self.__generate_all_rating_keys(libraries=libraries,
+                                                          with_collection=False,
+                                                          added_time=added_time)
+        else:
+            rating_keys = self.__generate_all_rating_keys(libraries=libraries,
+                                                          with_collection=True)
 
         # 分批处理rating keys
-        self.__process_rating_keys_in_batches(rating_keys, thread_count, self._batch_size)
+        self.__process_rating_keys_in_batches(rating_keys=rating_keys,
+                                              thread_count=thread_count,
+                                              batch_size=self._batch_size)
 
-        logger.info(f'运行完毕，用时 {time.time() - t} 秒')
+        elapsed_time = time.time() - start_time
+        if added_time:
+            formatted_added_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(added_time))
+            message_text = f"最近一次入库时间：{formatted_added_time}，Plex本地化完成，用时 {elapsed_time:.2f} 秒"
+        else:
+            message_text = f"Plex本地化完成，用时 {elapsed_time:.2f} 秒"
 
-    def __generate_all_rating_keys(self, libraries):
+        logger.info(message_text)
+
+    def __generate_all_rating_keys(self, libraries, with_collection: bool = True, added_time: Optional[int] = None):
         """生成所有库中项目的rating keys列表"""
+        # 使用集合来自动去除重复的rating keys
         rating_keys_set = set()
         for library in libraries.values():
             library_types = TYPES.get(library.type, [])
             for type_id in library_types:
-                for is_collection in [False, True]:
-                    # 使用集合来自动去除重复的rating keys
-                    rating_keys_set.update(self.__list_rating_keys(library, type_id, is_collection))
+                if with_collection:
+                    rating_keys_set.update(self.__list_rating_keys(library, type_id, False))
+                    rating_keys_set.update(self.__list_rating_keys(library, type_id, True))
+                else:
+                    rating_keys_set.update(self.__list_rating_keys(library, type_id, False, added_time))
         return list(rating_keys_set)
 
     def __process_rating_keys_in_batches(self, rating_keys, thread_count, batch_size=100):
