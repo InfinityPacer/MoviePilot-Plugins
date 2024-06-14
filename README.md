@@ -42,6 +42,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-04-24-02-45-38.png)
 ![](images/2024-04-24-02-45-08.png)
+![](images/2024-06-15-00-25-20.png)
 
 ### 6. WebDAV备份
 
@@ -60,8 +61,9 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 如有未能提及的作者，请告知我以便进行补充。
 
 ![](images/2024-05-09-03-56-17.png)
-![](images/2024-05-09-03-55-16.png)
-![](images/2024-04-28-03-04-40.png)
+![](images/2024-06-15-00-28-07.png)
+![](images/2024-06-15-00-25-31.png)
+
 
 ### 8. [PlexAutoSkip](https://github.com/InfinityPacer/PlexAutoSkip)
 
