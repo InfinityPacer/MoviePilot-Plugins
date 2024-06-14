@@ -321,6 +321,7 @@ class PlexRefreshRecent(_PluginBase):
 
     @eventmanager.register(EventType.PluginAction)
     def refresh_recent(self, event: Event = None):
+        """刷新最近元数据"""
         if event:
             logger.info(f"event： {event}")
             event_data = event.event_data
@@ -354,6 +355,7 @@ class PlexRefreshRecent(_PluginBase):
             )
 
     def __refresh_plex(self) -> [bool, int]:
+        """刷新Plex"""
         if not self.__init_plex():
             return False, 0
 
@@ -369,11 +371,9 @@ class PlexRefreshRecent(_PluginBase):
     @staticmethod
     def __refresh_metadata(item, refreshed_items):
         """
-        递归刷新媒体元数据，但避免重复刷新已处理的项目。
-
-        参数:
-        - item: 要刷新的 Plex 媒体项。
-        - refreshed_items: 一个字典，用于记录已刷新的项目的ratingKey，避免重复刷新。
+        递归刷新媒体元数据，但避免重复刷新已处理的项目
+        :param item: 要刷新的 Plex 媒体项
+        :param refreshed_items: 字典，用于记录已刷新的项目的ratingKey，避免重复刷新
         """
         parent_rating_key = getattr(item, "parentRatingKey", None)
         grandparent_rating_key = getattr(item, "grandparentRatingKey", None)
@@ -403,15 +403,11 @@ class PlexRefreshRecent(_PluginBase):
             logger.info(f"Summary不为空，无需刷新：{grandparent_info}{parent_info}{item.title} ({item.type})")
 
     @staticmethod
-    def __get_date(offset_day):
+    def __get_date(offset_day: int) -> str:
         """
-        获取相对于当前日期偏移指定天数的日期字符串。
-
-        Args:
-            offset_day (int): 偏移天数，正数表示未来，负数表示过去。
-
-        Returns:
-            str: 偏移后的日期字符串，格式为 "YYYY-MM-DD"。
+        获取相对于当前日期偏移指定天数的日期字符串
+        :param offset_day: 偏移天数，正数表示未来，负数表示过去
+        :return: 偏移后的日期字符串，格式为 "YYYY-MM-DD"
         """
         current_time = datetime.now()
         target_time = current_time + timedelta(days=offset_day)
@@ -419,16 +415,12 @@ class PlexRefreshRecent(_PluginBase):
         return target_date
 
     @staticmethod
-    def __get_timestamp(offset_day):
+    def __get_timestamp(offset_day: int) -> int:
         """
-        获取相对于当前日期偏移指定天数的时间戳。
-
-        Args:
-            offset_day (int): 偏移天数，正数表示未来，负数表示过去。
-
-        Returns:
-            int: 偏移后的时间戳。
-        """
+       获取相对于当前日期偏移指定天数的时间戳
+       :param offset_day: 偏移天数，正数表示未来，负数表示过去
+       :return: 偏移后的时间戳
+       """
         current_time = datetime.now()
         target_time = current_time + timedelta(days=offset_day)
         target_timestamp = int(target_time.timestamp())
