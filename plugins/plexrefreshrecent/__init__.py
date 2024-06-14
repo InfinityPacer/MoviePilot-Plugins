@@ -24,7 +24,7 @@ class PlexRefreshRecent(_PluginBase):
     # 插件图标
     plugin_icon = "Plex_A.png"
     # 插件版本
-    plugin_version = "1.3"
+    plugin_version = "1.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -156,6 +156,8 @@ class PlexRefreshRecent(_PluginBase):
                                         'props': {
                                             'model': 'enabled',
                                             'label': '启用插件',
+                                            'hint': '开启后插件将处于激活状态',
+                                            'persistent-hint': True,
                                         },
                                     }
                                 ],
@@ -169,21 +171,23 @@ class PlexRefreshRecent(_PluginBase):
                                         'props': {
                                             'model': 'notify',
                                             'label': '发送通知',
+                                            'hint': '是否在特定事件发生时发送通知',
+                                            'persistent-hint': True,
                                         },
                                     }
                                 ],
                             },
                             {
                                 'component': 'VCol',
-                                'props': {
-                                    'cols': 12, 'md': 4
-                                },
+                                'props': {'cols': 12, 'md': 4},
                                 'content': [
                                     {
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
+                                            'hint': '插件将立即执行一次',
+                                            'persistent-hint': True,
                                         },
                                     }
                                 ],
@@ -195,51 +199,46 @@ class PlexRefreshRecent(_PluginBase):
                         'content': [
                             {
                                 'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
+                                'props': {'cols': 12, 'md': 4},
                                 'content': [
                                     {
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'cron',
                                             'label': '执行周期',
-                                            'placeholder': '5位cron表达式'
+                                            'placeholder': '5位cron表达式',
+                                            'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
+                                            'persistent-hint': True,
                                         },
                                     }
                                 ],
                             },
                             {
                                 'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
+                                'props': {'cols': 12, 'md': 4},
                                 'content': [
                                     {
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'offset_days',
                                             'label': '几天内',
-                                            'placeholder': '刷新最近几天内入库的元数据'
+                                            'hint': '从当前日期起前几天内的数据',
+                                            'persistent-hint': True,
                                         },
                                     }
                                 ],
                             },
                             {
                                 'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
+                                'props': {'cols': 12, 'md': 4},
                                 'content': [
                                     {
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'limit',
                                             'label': '最大元数据数量',
-                                            'placeholder': '刷新的最大元数据数量'
+                                            'hint': '一次刷新的最大元数据条数',
+                                            'persistent-hint': True,
                                         },
                                     }
                                 ],
@@ -359,7 +358,7 @@ class PlexRefreshRecent(_PluginBase):
             return False, 0
 
         timestamp = self.__get_timestamp(-int(self._offset_days))
-        library_items = self._plex.library.search(limit=self._limit, **{'addedAt>': timestamp})
+        library_items = self._plex.library.search(limit=self._limit, **{"addedAt>": timestamp})
 
         refreshed_items = {}
         for item in library_items:
@@ -376,13 +375,13 @@ class PlexRefreshRecent(_PluginBase):
         - item: 要刷新的 Plex 媒体项。
         - refreshed_items: 一个字典，用于记录已刷新的项目的ratingKey，避免重复刷新。
         """
-        parent_rating_key = getattr(item, 'parentRatingKey', None)
-        grandparent_rating_key = getattr(item, 'grandparentRatingKey', None)
+        parent_rating_key = getattr(item, "parentRatingKey", None)
+        grandparent_rating_key = getattr(item, "grandparentRatingKey", None)
 
-        summary = getattr(item, 'summary', "")
+        summary = getattr(item, "summary", "")
 
-        parent_title = getattr(item, 'parentTitle', None)
-        grandparent_title = getattr(item, 'grandparentTitle', None)
+        parent_title = getattr(item, "parentTitle", None)
+        grandparent_title = getattr(item, "grandparentTitle", None)
 
         parent_info = f"{parent_title} " if parent_title else ""
         grandparent_info = f"{grandparent_title} " if grandparent_title else ""
