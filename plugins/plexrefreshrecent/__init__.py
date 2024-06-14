@@ -222,7 +222,7 @@ class PlexRefreshRecent(_PluginBase):
                                         'props': {
                                             'model': 'offset_days',
                                             'label': '几天内',
-                                            'hint': '从当前日期起前几天内的数据',
+                                            'hint': '“从当前日期往前几天内的数据',
                                             'persistent-hint': True,
                                         },
                                     }
