@@ -359,7 +359,7 @@ class PlexRefreshRecent(_PluginBase):
         if not self.__init_plex():
             return False, 0
 
-        timestamp = self.__get_timestamp(-int(self._offset_days))
+        timestamp = self.__get_timestamp(offset_day=-int(self._offset_days))
         library_items = self._plex.library.search(limit=self._limit, **{"addedAt>": timestamp})
 
         refreshed_items = {}
