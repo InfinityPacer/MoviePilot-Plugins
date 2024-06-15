@@ -154,7 +154,8 @@ class BrushManager(_PluginBase):
                                     'value': 'base_tab'
                                 },
                                 'text': '基本配置'
-                            }, {
+                            },
+                            {
                                 'component': 'VTab',
                                 'props': {
                                     'value': 'data_tab'
@@ -169,7 +170,7 @@ class BrushManager(_PluginBase):
                             'model': '_tabs',
                             'style': {
                                 'padding-top': '24px',
-                                'padding-bottom': '24px',
+                                'padding-bottom': '24px'
                             },
                         },
                         'content': [
@@ -199,7 +200,9 @@ class BrushManager(_PluginBase):
                                                             'clearable': True,
                                                             'menu-props': {
                                                                 'max-width': '-1px'
-                                                            }
+                                                            },
+                                                            'hint': '选择要处理的种子',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -224,7 +227,9 @@ class BrushManager(_PluginBase):
                                                             'items': [
                                                                 {'title': 'Qbittorrent', 'value': 'qbittorrent'},
                                                                 # {'title': 'Transmission', 'value': 'transmission'}
-                                                            ]
+                                                            ],
+                                                            'hint': '选择下载器',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -242,7 +247,9 @@ class BrushManager(_PluginBase):
                                                             'model': 'move_path',
                                                             'label': '移动目录',
                                                             'items': path_options,
-                                                            'clearable': True
+                                                            'clearable': True,
+                                                            'hint': '选择处理完成后移动的目录',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -260,7 +267,9 @@ class BrushManager(_PluginBase):
                                                             'model': 'category',
                                                             'label': '种子分类',
                                                             'items': category_options,
-                                                            'clearable': True
+                                                            'clearable': True,
+                                                            'hint': '选择种子的分类，仅适用QB',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -277,8 +286,9 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'tag',
                                                             'label': '添加种子标签',
-                                                            'placeholder': '如：待转移,剧情',
-                                                            'clearable': True
+                                                            'clearable': True,
+                                                            'hint': '添加标签，如：待转移,剧情',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -300,6 +310,8 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'notify',
                                                             'label': '发送通知',
+                                                            'hint': '是否在特定事件发生时发送通知',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -316,6 +328,8 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'auto_category',
                                                             'label': '自动分类管理',
+                                                            'hint': '启用自动种子管理，仅适用QB',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -332,6 +346,8 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'mp_tag',
                                                             'label': '添加MP标签',
+                                                            'hint': '为种子添加MoviePilot标签',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -348,10 +364,12 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'remove_brush_tag',
                                                             'label': '移除刷流标签',
+                                                            'hint': '是否移除刷流标签',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
-                                            },
+                                            }
                                         ]
                                     }
                                 ]
@@ -368,7 +386,7 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    'cols': 12,
+                                                    'cols': 12
                                                 },
                                                 'content': [
                                                     {
@@ -376,7 +394,9 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'brush_plugin',
                                                             'label': '刷流插件',
-                                                            'items': plugin_options
+                                                            'items': plugin_options,
+                                                            'hint': '选择要使用的刷流插件',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -389,7 +409,7 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    'cols': 12,
+                                                    'cols': 12
                                                 },
                                                 'content': [
                                                     {
@@ -397,8 +417,11 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'source_categories',
                                                             'label': '分类配置',
-                                                            'placeholder': '仅支持QB，每一行一个分类，格式为：QB分类名称，分类名称'
-                                                                           ':QB分类名称，参考如下：\nMovie\n电影:Movie'
+                                                            'placeholder': '仅支持QB，每一行一个分类，格式为：'
+                                                                           'QB分类名称 或 分类名称:QB分类名称，'
+                                                                           '参考如下：\nMovie\n电影:Movie',
+                                                            'hint': '配置分类，格式为：QB分类名称 或 分类名称:QB分类名称',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -411,7 +434,7 @@ class BrushManager(_PluginBase):
                                             {
                                                 'component': 'VCol',
                                                 'props': {
-                                                    'cols': 12,
+                                                    'cols': 12
                                                 },
                                                 'content': [
                                                     {
@@ -419,9 +442,12 @@ class BrushManager(_PluginBase):
                                                         'props': {
                                                             'model': 'source_paths',
                                                             'label': '目录配置',
-                                                            'placeholder': '每一行一个目录，格式为：目录地址，目录名称:目录地址，'
+                                                            'placeholder': '每一行一个目录，格式为：'
+                                                                           '目录地址 或 目录名称:目录地址，'
                                                                            '参考如下：\n/volume1/Media/Movie'
-                                                                           '\n电影:/volume1/Media/Movie'
+                                                                           '\n电影:/volume1/Media/Movie',
+                                                            'hint': '配置目录，格式为：目录地址 或 目录名称:目录地址',
+                                                            'persistent-hint': True
                                                         }
                                                     }
                                                 ]
@@ -429,7 +455,7 @@ class BrushManager(_PluginBase):
                                         ]
                                     }
                                 ]
-                            },
+                            }
                         ]
                     },
                     {
@@ -666,21 +692,22 @@ class BrushManager(_PluginBase):
         # 解析任务数据
         for task_id, task_info in torrent_tasks.items():
             # 检查任务是否已被删除
-            if task_info.get('deleted', False):
+            if task_info.get("deleted", False):
                 continue  # 如果已被删除，则跳过这个任务
 
             # 格式化描述和标题
-            description = task_info.get('description')
-            title = f"{description} | {task_info['title']}" if description else task_info['title']
+            description = task_info.get("description")
+            size = f"{self.__bytes_to_gb(size_in_bytes=task_info.get('size')):.1f} GB"
+            title = f"{size} | {description} | {task_info.get('title')}" if description else task_info.get('title')
 
             torrent_options.append({
                 "title": title,
                 "value": task_id,
-                "name": task_info['title']
+                "name": task_info.get('title')
             })
 
         # 根据创建时间排序，确保所有元素都有时间戳
-        torrent_options.sort(key=lambda x: torrent_tasks[x['value']].get('time', 0), reverse=True)
+        torrent_options.sort(key=lambda x: torrent_tasks[x["value"]].get("time", 0), reverse=True)
 
         # 添加序号到标题
         for index, option in enumerate(torrent_options, start=1):
@@ -716,7 +743,7 @@ class BrushManager(_PluginBase):
 
         # 重新编号，保证显示为 1. 2. 等
         for index, option in enumerate(plugin_options, start=1):
-            option["title"] = f"{index}. {option['title']}"
+            option["title"] = f"{index}. {option.get('title')}"
 
         return plugin_options
 
@@ -965,7 +992,7 @@ class BrushManager(_PluginBase):
             total_size = torrent.total_size
             # 添加时间
             add_on = (torrent.date_added.timestamp() if torrent.date_added else 0)
-            add_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(add_on))
+            add_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(add_on))
             # 种子标签
             tags = torrent.get("tags")
             # tracker
@@ -1040,3 +1067,15 @@ class BrushManager(_PluginBase):
         """
         logger.error(message)
         self.systemmessage.put(message, title="刷流种子整理")
+
+    @staticmethod
+    def __bytes_to_gb(size_in_bytes: float) -> float:
+        """
+        将字节单位的大小转换为千兆字节（GB）。
+
+        :param size_in_bytes: 文件大小，单位为字节。
+        :return: 文件大小，单位为千兆字节（GB）。
+        """
+        if not size_in_bytes:
+            return 0.0
+        return size_in_bytes / (1024 ** 3)
