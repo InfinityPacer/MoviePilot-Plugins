@@ -2,7 +2,7 @@ import shutil
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional, Type
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -33,7 +33,7 @@ class AutoDiagnosis(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/autodiagnosis.png"
     # 插件版本
-    plugin_version = "1.5"
+    plugin_version = "1.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -53,13 +53,13 @@ class AutoDiagnosis(_PluginBase):
     _enabled = False
     # 任务执行间隔
     _cron = None
-    # 立即执行一次
+    # 立即运行一次
     _onlyonce = False
     # 发送通知
     _notify = False
     # 消息类型
     _notify_type = None
-    # 系统异常时执行一次
+    # 系统异常时运行一次
     _execute_when_system_error = None
     # 健康检查模块
     _health_check_modules = None
@@ -67,6 +67,8 @@ class AutoDiagnosis(_PluginBase):
     _health_check_sites = None
     # 历史记录硬链接检查
     _history_link_check = None
+    # 历史硬链接检查模式
+    _history_link_mode = None
     # 目标硬链接测试
     _dir_link_check = None
     # 最近一次执行时间
@@ -99,6 +101,7 @@ class AutoDiagnosis(_PluginBase):
         self._health_check_modules = config.get("health_check_modules", None)
         self._health_check_sites = config.get("health_check_sites", None)
         self._history_link_check = config.get("history_link_check", None)
+        self._history_link_mode = config.get("history_link_mode", "link")
         self._dir_link_check = config.get("dir_link_check", None)
         self._last_execute_time = None
         self._last_execute_for_error_time = None
@@ -158,6 +161,8 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'model': 'enabled',
                                             'label': '启用插件',
+                                            'hint': '开启后插件将处于激活状态',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -174,6 +179,8 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
+                                            'hint': '插件将立即运行一次',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -190,10 +197,12 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'model': 'execute_when_system_error',
                                             'label': '发生系统错误时运行一次',
+                                            'hint': '当系统发生错误时，插件将运行一次',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
-                            },
+                            }
                         ]
                     },
                     {
@@ -211,7 +220,9 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'model': 'cron',
                                             'label': '执行周期',
-                                            'placeholder': '5位cron表达式'
+                                            'placeholder': '5位cron表达式',
+                                            'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -232,7 +243,9 @@ class AutoDiagnosis(_PluginBase):
                                                 {'title': '不发送', 'value': 'none'},
                                                 {'title': '仅异常时发送', 'value': 'on_error'},
                                                 {'title': '发送所有通知', 'value': 'always'}
-                                            ]
+                                            ],
+                                            'hint': '选择发送通知的频率',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ],
@@ -250,7 +263,9 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'notify_type',
                                             'label': '通知类型',
                                             'items': [{"title": item.value, "value": item.name}
-                                                      for item in NotificationType]
+                                                      for item in NotificationType],
+                                            'hint': '选择通知的类型',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ],
@@ -274,7 +289,9 @@ class AutoDiagnosis(_PluginBase):
                                             'clearable': True,
                                             'model': 'health_check_modules',
                                             'label': '系统健康检查',
-                                            'items': self.__get_health_check_modules_options()
+                                            'items': self.__get_health_check_modules_options(),
+                                            'hint': '选择要执行的系统健康检查模块',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -298,7 +315,9 @@ class AutoDiagnosis(_PluginBase):
                                             'clearable': True,
                                             'model': 'health_check_sites',
                                             'label': '网络连通性测试',
-                                            'items': self.__get_health_check_sites_options()
+                                            'items': self.__get_health_check_sites_options(),
+                                            'hint': '选择要进行网络连通性测试的网站',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -311,16 +330,40 @@ class AutoDiagnosis(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
-                                    'cols': 12
+                                    'cols': 12,
+                                    'md': 8
                                 },
                                 'content': [
                                     {
                                         'component': 'VSelect',
                                         'props': {
-                                            'multiple': False,
                                             'model': 'history_link_check',
                                             'label': '历史记录硬链接检查',
-                                            'items': self.__get_history_link_check_options()
+                                            'items': self.__get_history_link_check_options(),
+                                            'hint': '选择要进行历史记录硬链接检查的选项',
+                                            'persistent-hint': True,
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'history_link_mode',
+                                            'label': '检查模式',
+                                            'items': [
+                                                {'title': '硬链接', 'value': 'link'},
+                                                {'title': '全部', 'value': 'all'}
+                                            ],
+                                            'hint': '选择转移方式为硬链接或全部的历史记录',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -341,11 +384,11 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'model': 'dir_link_check',
                                             'label': '目录硬链接测试',
-                                            'placeholder': '如不需要目录硬链接测试，请不要填写对应目录\n'
-                                                           '每一行一个目录，格式为：源目录:目标目录，参考如下：\n'
-                                                           '/volume1/Media/Movie:/volume1/Link/Movie',
+                                            'placeholder': '如不需要目录硬链接测试，请不要填写对应目录\n每一行一个目录，格式为：源目录:目标目录，参考如下：\n/volume1/Media/Movie:/volume1/Link/Movie',
                                             'rows': 3,
                                             'no-resize': True,
+                                            'hint': '配置目录硬链接测试，格式为：源目录:目标目录',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -1096,24 +1139,25 @@ class AutoDiagnosis(_PluginBase):
             logger.error(f"判断是否为硬链接时发生异常，{str(e)}")
             return False
 
-    @staticmethod
     @db_query
-    def __list_by_count_for_link(db: Optional[Session], count: int):
+    def __list_by_count_for_link(self, db: Optional[Session], count: int) -> list[Type[TransferHistory]]:
         """查询一定数量的转移历史，状态为 True"""
-        result = (db.query(TransferHistory)
-                  .filter(and_(TransferHistory.mode == "link", TransferHistory.status))
-                  .order_by(TransferHistory.date.desc())
-                  .limit(count)
-                  .all())
+        if not self._history_link_mode or self._history_link_mode == "link":
+            query = db.query(TransferHistory).filter(and_(TransferHistory.mode == "link", TransferHistory.status))
+        else:
+            query = db.query(TransferHistory).filter(TransferHistory.status)
+        result = query.order_by(TransferHistory.date.desc()).limit(count).all()
         return list(result)
 
-    @staticmethod
     @db_query
-    def __list_by_date_for_link(db: Optional[Session], date: Optional[str]):
+    def __list_by_date_for_link(self, db: Optional[Session], date: Optional[str]) -> list[Type[TransferHistory]]:
         """
         查询某时间之后的转移历史
         """
-        query = db.query(TransferHistory).filter(and_(TransferHistory.mode == "link", TransferHistory.status))
+        if not self._history_link_mode or self._history_link_mode == "link":
+            query = db.query(TransferHistory).filter(and_(TransferHistory.mode == "link", TransferHistory.status))
+        else:
+            query = db.query(TransferHistory).filter(TransferHistory.status)
         if date is not None:
             query = query.filter(TransferHistory.date > date)
         result = query.order_by(TransferHistory.date.desc()).all()
