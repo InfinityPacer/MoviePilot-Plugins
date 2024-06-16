@@ -173,7 +173,7 @@ class WeatherWidget(_PluginBase):
             return
 
         if not self.__check_image():
-            logger.info("没有找到截图，立即执行一次截图任务")
+            logger.info("没有找到截图，立即运行一次截图任务")
             self.__add_screenshot_task()
 
     def get_state(self) -> bool:

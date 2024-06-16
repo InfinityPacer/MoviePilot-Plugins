@@ -50,7 +50,7 @@ class PlexEdition(_PluginBase):
 
     # 是否开启
     _enabled = False
-    # 立即执行一次
+    # 立即运行一次
     _onlyonce = False
     # 任务执行间隔
     _cron = None
@@ -60,7 +60,7 @@ class PlexEdition(_PluginBase):
     _library_ids = None
     # 锁定元数据
     _lock = None
-    # 入库后执行一次
+    # 入库后运行一次
     _execute_transfer = None
     # 入库后延迟执行时间
     _delay = None
@@ -97,7 +97,7 @@ class PlexEdition(_PluginBase):
         except ValueError:
             self._delay = 200
 
-        # 如果开启了入库后执行一次，延迟时间又不填，默认为200s
+        # 如果开启了入库后运行一次，延迟时间又不填，默认为200s
         if self._execute_transfer and not self._delay:
             self._delay = 200
 
@@ -267,7 +267,7 @@ class PlexEdition(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'execute_transfer',
-                                            'label': '入库后执行一次'
+                                            'label': '入库后运行一次'
                                         },
                                     }
                                 ],
@@ -487,7 +487,7 @@ class PlexEdition(_PluginBase):
         season_episode = f" {meta.season_episode}" if meta.season_episode else ""
 
         # 根据是否有延迟设置不同的日志消息
-        delay_message = f"{self._delay} 秒后执行一次Edition服务" if self._delay else "准备执行一次Edition服务"
+        delay_message = f"{self._delay} 秒后运行一次Edition服务" if self._delay else "准备运行一次Edition服务"
         logger.info(f"{mediainfo.title_year}{season_episode} 已入库，{delay_message}")
 
         if not self._scheduler:

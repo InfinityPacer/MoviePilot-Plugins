@@ -58,7 +58,7 @@ class WebDAVBackup(_PluginBase):
     _password = None
     # 是否使用Digest认证
     _digest_auth = False
-    # 立即执行一次
+    # 立即运行一次
     _onlyonce = False
     # 发送通知
     _notify = False

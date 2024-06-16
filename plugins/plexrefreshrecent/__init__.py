@@ -46,7 +46,7 @@ class PlexRefreshRecent(_PluginBase):
     _cron = None
     # 时间范围
     _offset_days = "0"
-    # 立即执行一次
+    # 立即运行一次
     _onlyonce = False
     # 发送通知
     _notify = False
@@ -186,7 +186,7 @@ class PlexRefreshRecent(_PluginBase):
                                         'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
-                                            'hint': '插件将立即执行一次',
+                                            'hint': '插件将立即运行一次',
                                             'persistent-hint': True,
                                         },
                                     }

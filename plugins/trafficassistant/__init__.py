@@ -169,8 +169,8 @@ class TrafficAssistant(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'onlyonce',
-                                            'label': '立即执行一次',
-                                            'hint': '插件将立即执行一次',
+                                            'label': '立即运行一次',
+                                            'hint': '插件将立即运行一次',
                                             'persistent-hint': True
                                         }
                                     }

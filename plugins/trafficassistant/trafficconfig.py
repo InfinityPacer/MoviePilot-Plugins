@@ -33,7 +33,7 @@ class TrafficConfig(BaseConfig):
     enabled: Optional[bool] = False  # 启用插件
     sites: List[int] = field(default_factory=list)  # 站点列表
     site_infos: dict = None  # 站点信息字典
-    onlyonce: Optional[bool] = False  # 立即执行一次
+    onlyonce: Optional[bool] = False  # 立即运行一次
     notify: Optional[bool] = False  # 发送通知
     cron: Optional[str] = None  # 运行周期
     brush_plugin: Optional[str] = None  # 站点刷流插件

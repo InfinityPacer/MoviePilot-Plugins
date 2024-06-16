@@ -58,7 +58,7 @@ class PlexLocalization(_PluginBase):
     _plex_session = None
     # 是否开启
     _enabled = False
-    # 立即执行一次
+    # 立即运行一次
     _onlyonce = False
     # 任务执行间隔
     _cron = None
@@ -68,7 +68,7 @@ class PlexLocalization(_PluginBase):
     _library_ids = None
     # 锁定元数据
     _lock = None
-    # 入库后执行一次
+    # 入库后运行一次
     _execute_transfer = None
     # 入库后延迟执行时间
     _delay = None
@@ -121,7 +121,7 @@ class PlexLocalization(_PluginBase):
         except ValueError:
             self._batch_size = 100
 
-        # 如果开启了入库后执行一次，延迟时间又不填，默认为300s
+        # 如果开启了入库后运行一次，延迟时间又不填，默认为300s
         if self._execute_transfer and not self._delay:
             self._delay = 300
 
@@ -260,7 +260,7 @@ class PlexLocalization(_PluginBase):
                                         'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
-                                            'hint': '插件将立即执行一次',
+                                            'hint': '插件将立即运行一次',
                                             'persistent-hint': True,
                                         },
                                     }
@@ -300,8 +300,8 @@ class PlexLocalization(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'execute_transfer',
-                                            'label': '入库后执行一次',
-                                            'hint': '在媒体入库后执行一次操作',
+                                            'label': '入库后运行一次',
+                                            'hint': '在媒体入库后运行一次操作',
                                             'persistent-hint': True,
                                         },
                                     }
@@ -689,7 +689,7 @@ class PlexLocalization(_PluginBase):
     @eventmanager.register(EventType.TransferComplete)
     def execute_transfer(self, event: Event):
         """
-        入库后执行一次
+        入库后运行一次
         """
         if not self._enabled:
             return
@@ -715,7 +715,7 @@ class PlexLocalization(_PluginBase):
             self._transfer_time = datetime.now(tz=pytz.timezone(settings.TZ))
 
         # 根据是否有延迟设置不同的日志消息
-        delay_message = f"{self._delay} 秒后执行一次本地化服务" if self._delay else "准备执行一次本地化服务"
+        delay_message = f"{self._delay} 秒后运行一次本地化服务" if self._delay else "准备运行一次本地化服务"
         logger.info(f"{media_desc} 已入库，{delay_message}")
 
         if not self._scheduler:
@@ -736,12 +736,12 @@ class PlexLocalization(_PluginBase):
             self._scheduler.start()
 
     def __transfer_by_once(self):
-        """入库后执行一次"""
+        """入库后运行一次"""
         if not self._transfer_time:
             logger.info("没有获取到最近一次的入库时间，取消执行本地化服务")
             return
 
-        logger.info(f"正在执行一次本地化服务，入库时间 {self._transfer_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"正在运行一次本地化服务，入库时间 {self._transfer_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         adjusted_time = self._transfer_time - timedelta(minutes=5)
         logger.info(f"为保证入库数据完整性，前偏移5分钟后的时间：{adjusted_time.strftime('%Y-%m-%d %H:%M:%S')}")

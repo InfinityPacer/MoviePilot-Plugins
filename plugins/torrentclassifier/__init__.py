@@ -46,7 +46,7 @@ class TorrentClassifier(_PluginBase):
 
     # 是否开启
     _enabled = False
-    # 立即执行一次
+    # 立即运行一次
     _onlyonce = False
     # 任务执行间隔
     _cron = None
