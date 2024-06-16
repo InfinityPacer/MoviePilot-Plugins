@@ -244,7 +244,7 @@ class AutoDiagnosis(_PluginBase):
                                                 {'title': '仅异常时发送', 'value': 'on_error'},
                                                 {'title': '发送所有通知', 'value': 'always'}
                                             ],
-                                            'hint': '选择发送通知的频率',
+                                            'hint': '发送通知的频率',
                                             'persistent-hint': True,
                                         }
                                     }
@@ -264,7 +264,7 @@ class AutoDiagnosis(_PluginBase):
                                             'label': '通知类型',
                                             'items': [{"title": item.value, "value": item.name}
                                                       for item in NotificationType],
-                                            'hint': '选择通知的类型',
+                                            'hint': '通知的类型',
                                             'persistent-hint': True,
                                         }
                                     }
@@ -290,7 +290,7 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'health_check_modules',
                                             'label': '系统健康检查',
                                             'items': self.__get_health_check_modules_options(),
-                                            'hint': '选择要执行的系统健康检查模块',
+                                            'hint': '系统健康检查模块',
                                             'persistent-hint': True,
                                         }
                                     }
@@ -316,7 +316,7 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'health_check_sites',
                                             'label': '网络连通性测试',
                                             'items': self.__get_health_check_sites_options(),
-                                            'hint': '选择要进行网络连通性测试的网站',
+                                            'hint': '网络连通性测试的网站',
                                             'persistent-hint': True,
                                         }
                                     }
@@ -340,7 +340,7 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'history_link_check',
                                             'label': '历史记录硬链接检查',
                                             'items': self.__get_history_link_check_options(),
-                                            'hint': '选择要进行历史记录硬链接检查的选项',
+                                            'hint': '历史记录硬链接检查的范围',
                                             'persistent-hint': True,
                                         }
                                     }
@@ -362,7 +362,7 @@ class AutoDiagnosis(_PluginBase):
                                                 {'title': '硬链接', 'value': 'link'},
                                                 {'title': '全部', 'value': 'all'}
                                             ],
-                                            'hint': '选择转移方式为硬链接或全部的历史记录',
+                                            'hint': '历史记录转移方式为硬链接或全部',
                                             'persistent-hint': True,
                                         }
                                     }
