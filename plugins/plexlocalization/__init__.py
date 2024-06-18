@@ -47,11 +47,11 @@ class PlexLocalization(_PluginBase):
     plugin_order = 91
     # 可使用的用户级别
     auth_level = 1
-    # Plex
-    _plex = None
 
     # region 私有属性
 
+    # Plex
+    _plex = None
     # plex_host
     _plex_host = None
     # session
