@@ -713,8 +713,7 @@ class PlexLocalization(_PluginBase):
 
     def localization(self, added_time: Optional[int] = None):
         """本地化服务"""
-        if not self._plex_server:
-            logger.error("Plex配置不正确，请检查")
+        if not self.__check_plex_media_server():
             return
 
         with lock:
@@ -726,8 +725,7 @@ class PlexLocalization(_PluginBase):
 
     def __get_library_options(self):
         """获取媒体库选项"""
-        if not self._plex_server:
-            logger.error("Plex配置不正确，请检查")
+        if not self.__check_plex_media_server():
             return []
 
         library_options = []
@@ -1013,3 +1011,19 @@ class PlexLocalization(_PluginBase):
             return
 
         self.post_message(mtype=NotificationType.SiteMessage, title=title, text=text)
+
+    def __check_plex_media_server(self) -> bool:
+        """检查Plex媒体服务器配置"""
+        if not settings.MEDIASERVER:
+            logger.error(f"媒体库配置不正确，请检查")
+            return False
+
+        if "plex" not in settings.MEDIASERVER:
+            logger.error(f"没有启用Plex媒体库，请检查")
+            return False
+
+        if not self._plex_server:
+            logger.error(f"Plex配置不正确，请检查")
+            return False
+
+        return True
