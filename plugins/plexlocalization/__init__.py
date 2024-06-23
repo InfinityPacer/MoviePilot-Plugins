@@ -21,6 +21,7 @@ from app.log import logger
 from app.modules.plex import Plex
 from app.plugins import _PluginBase
 from app.schemas.types import EventType, NotificationType
+from app.utils.string import StringUtils
 
 lock = threading.Lock()
 TYPES = {"movie": [1], "show": [2], "artist": [8, 9, 10]}
@@ -877,7 +878,7 @@ class PlexLocalization(_PluginBase):
         title_sort = item.get("titleSort", "")
 
         # 更新标题排序
-        if self.__has_chinese(title_sort) or title_sort == "":
+        if StringUtils.is_chinese(title_sort) or title_sort == "":
             title_sort = self.__convert_to_pinyin(title)
             self.__put_title_sort(rating_key=rating_key,
                                   library_id=library_id,
@@ -996,14 +997,6 @@ class PlexLocalization(_PluginBase):
         """
         return [getattr(data, attribute_name, None) for data in datas if
                 getattr(data, attribute_name, None)]
-
-    @staticmethod
-    def __has_chinese(string):
-        """判断是否有中文"""
-        for char in string:
-            if '\u4e00' <= char <= '\u9fff':
-                return True
-        return False
 
     @staticmethod
     def __convert_to_pinyin(text):
