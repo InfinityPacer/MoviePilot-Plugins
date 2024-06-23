@@ -99,7 +99,7 @@ class PlexLocalization(_PluginBase):
         self._onlyonce = config.get("onlyonce")
         self._cron = config.get("cron")
         self._notify = config.get("notify")
-        self._library_ids = config.get("library_ids")
+        self._library_ids = config.get("library_ids", [])
         self._lock = config.get("lock")
         self._execute_transfer = config.get("execute_transfer")
         self._tags_json = config.get("tags_json")
