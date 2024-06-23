@@ -754,7 +754,7 @@ class PlexLocalization(_PluginBase):
 
         return libraries
 
-    def __list_rating_keys(self, library: LibrarySection, type_id: int, is_collection: bool,
+    def __list_rating_keys(self, library: LibrarySection, type_id: int, is_collection: bool = False,
                            added_time: Optional[int] = None):
         """获取所有媒体项目"""
         if not library:
@@ -949,10 +949,12 @@ class PlexLocalization(_PluginBase):
             library_types = TYPES.get(library.type, [])
             for type_id in library_types:
                 if with_collection:
-                    rating_keys_set.update(self.__list_rating_keys(library, type_id, False))
-                    rating_keys_set.update(self.__list_rating_keys(library, type_id, True))
+                    rating_keys_set.update(self.__list_rating_keys(library=library, type_id=type_id))
+                    rating_keys_set.update(
+                        self.__list_rating_keys(library=library, type_id=type_id, is_collection=True))
                 else:
-                    rating_keys_set.update(self.__list_rating_keys(library, type_id, False, added_time))
+                    rating_keys_set.update(
+                        self.__list_rating_keys(library=library, type_id=type_id, added_time=added_time))
         return list(rating_keys_set)
 
     def __process_rating_keys_in_batches(self, rating_keys, thread_count, batch_size=100):
