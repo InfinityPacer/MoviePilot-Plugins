@@ -9,11 +9,9 @@ from typing import Any, List, Dict, Tuple, Optional
 import plexapi.utils
 import pypinyin
 import pytz
-import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from plexapi.library import LibrarySection
-from requests import Session
 
 from app.core.config import settings
 from app.core.context import MediaInfo
@@ -52,10 +50,8 @@ class PlexLocalization(_PluginBase):
 
     # Plex
     _plex = None
-    # plex_host
-    _plex_host = None
-    # session
-    _plex_session = None
+    # plex_server
+    _plex_server = None
     # 是否开启
     _enabled = False
     # 立即运行一次
@@ -76,6 +72,8 @@ class PlexLocalization(_PluginBase):
     _transfer_time = None
     # 每批次处理数量
     _batch_size = None
+    # timeout
+    _timeout = 10
     # tags_json
     _tags_json = None
     # tags
@@ -90,14 +88,11 @@ class PlexLocalization(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
-        self._plex_host = settings.PLEX_HOST
-        self._plex_host = self.__adapt_base_url(host=self._plex_host)
-        self._plex_session = self.__adapt_plex_session()
-        self._plex = Plex().get_plex()
+        self._plex = Plex()
+        self._plex_server = self._plex.get_plex()
 
         if not config:
-            logger.info("Plex中文本地化开启失败，无法获取插件配置")
-            return False
+            return
 
         self._enabled = config.get("enabled")
         self._onlyonce = config.get("onlyonce")
@@ -178,33 +173,6 @@ class PlexLocalization(_PluginBase):
         """
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
-        if not settings.MEDIASERVER:
-            logger.error(f"媒体库配置不正确，请检查")
-
-        if "plex" not in settings.MEDIASERVER:
-            logger.error(f"Plex配置不正确，请检查")
-
-        if not self._plex:
-            self._plex = Plex().get_plex()
-
-        # 获取所有媒体库
-        libraries = self._plex.library.sections()
-        # 生成媒体库选项列表
-        library_options = []
-
-        # 遍历媒体库，创建字典并添加到列表中
-        for library in libraries:
-            # 排除照片库
-            if library.TYPE == "photo":
-                continue
-            library_dict = {
-                "title": f"{library.key}. {library.title} ({library.TYPE})",
-                "value": library.key
-            }
-            library_options.append(library_dict)
-
-        library_options = sorted(library_options, key=lambda x: x["value"])
-
         return [
             {
                 'component': 'VForm',
@@ -423,7 +391,7 @@ class PlexLocalization(_PluginBase):
                                             'clearable': True,
                                             'model': 'library_ids',
                                             'label': '媒体库',
-                                            'items': library_options,
+                                            'items': self.__get_library_options(),
                                             'hint': '选择要处理的媒体库',
                                             'persistent-hint': True,
                                         },
@@ -582,22 +550,15 @@ class PlexLocalization(_PluginBase):
             "kwargs": {} # 定时器参数
         }]
         """
-        services = []
-
         if self._enabled and self._cron:
             logger.info(f"Plex中文本地化定时服务启动，时间间隔 {self._cron} ")
-            services.append({
+            return [{
                 "id": "PlexLocalization",
                 "name": "Plex中文本地化",
                 "trigger": CronTrigger.from_crontab(self._cron),
                 "func": self.localization,
                 "kwargs": {}
-            })
-
-        if not services:
-            logger.info("Plex中文本地化服务定时服务未开启")
-
-        return services
+            }]
 
     def stop_service(self):
         """
@@ -751,7 +712,7 @@ class PlexLocalization(_PluginBase):
 
     def localization(self, added_time: Optional[int] = None):
         """本地化服务"""
-        if not self._plex:
+        if not self._plex_server:
             logger.error("Plex配置不正确，请检查")
             return
 
@@ -762,11 +723,33 @@ class PlexLocalization(_PluginBase):
 
             self.__loop_all(libraries=libraries, thread_count=self._thread_count, added_time=added_time)
 
+    def __get_library_options(self):
+        """获取媒体库选项"""
+        if not self._plex_server:
+            logger.error("Plex配置不正确，请检查")
+            return []
+
+        library_options = []
+        # 获取所有媒体库
+        libraries = self._plex_server.library.sections()
+        # 遍历媒体库，创建字典并添加到列表中
+        for library in libraries:
+            # 排除照片库
+            if library.TYPE == "photo":
+                continue
+            library_dict = {
+                "title": f"{library.key}. {library.title} ({library.TYPE})",
+                "value": library.key
+            }
+            library_options.append(library_dict)
+        library_options = sorted(library_options, key=lambda x: x["value"])
+        return library_options
+
     def __get_libraries(self):
         """获取媒体库信息"""
         libraries = {
             int(library.key): library
-            for library in self._plex.library.sections()
+            for library in self._plex_server.library.sections()
             if library.type != 'photo' and library.key in self._library_ids  # 排除照片库
         }
 
@@ -785,7 +768,7 @@ class PlexLocalization(_PluginBase):
             if added_time:
                 endpoint += f"&addedAt>={added_time}"
 
-        response = self._plex_session.get(url=self.__adapt_request_url(endpoint), timeout=10)
+        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
         datas = (response
                  .json()
                  .get("MediaContainer", {})
@@ -803,7 +786,7 @@ class PlexLocalization(_PluginBase):
         获取条目信息
         """
         endpoint = f"/library/metadata/{rating_key}"
-        response = self._plex_session.get(self.__adapt_request_url(endpoint), timeout=10)
+        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
         datas = (response
                  .json()
                  .get("MediaContainer", {})
@@ -817,7 +800,7 @@ class PlexLocalization(_PluginBase):
         :return: 获取的所有条目列表。
         """
         endpoint = f"/library/metadata/{','.join(rating_keys)}"
-        response = self._plex_session.get(self.__adapt_request_url(endpoint), timeout=10)
+        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
         items = (response
                  .json()
                  .get("MediaContainer", {})
@@ -827,28 +810,30 @@ class PlexLocalization(_PluginBase):
     def __put_title_sort(self, rating_key: str, library_id: int, type_id: int, is_collection: bool, sort_title: str):
         """更新标题排序"""
         endpoint = f'library/metadata/{rating_key}' if is_collection else f'library/sections/{library_id}/all'
-        self._plex_session.put(
-            url=self.__adapt_request_url(endpoint),
+        self._plex.put_data(
+            endpoint=endpoint,
             params={
                 "type": type_id,
                 "id": rating_key,
                 "includeExternalMedia": 1,
                 "titleSort.value": sort_title,
                 "titleSort.locked": 1 if self._lock else 0
-            }, timeout=10)
+            },
+            timeout=self._timeout)
 
     def __put_tag(self, rating_key: str, library_id: int, type_id: str, tag, new_tag, tag_type):
         """更新标签"""
         endpoint = f"/library/sections/{library_id}/all"
-        self._plex_session.put(
-            url=self.__adapt_request_url(endpoint),
+        self._plex.put_data(
+            endpoint=endpoint,
             params={
                 "type": type_id,
                 "id": rating_key,
                 f"{tag_type}.locked": 1 if self._lock else 0,
                 f"{tag_type}[0].tag.tag": new_tag,
                 f"{tag_type}[].tag.tag-": tag
-            }, timeout=10)
+            },
+            timeout=self._timeout)
 
     def __process_rating_key(self, rating_key: str):
         """
@@ -1026,45 +1011,6 @@ class PlexLocalization(_PluginBase):
         str_a = pypinyin.pinyin(text, style=pypinyin.FIRST_LETTER)
         str_b = [str(str_a[i][0]).upper() for i in range(len(str_a))]
         return ''.join(str_b).replace("：", ":").replace("（", "(").replace("）", ")").replace("，", ",")
-
-    @staticmethod
-    def __adapt_base_url(host: str) -> str:
-        """
-        标准化提供的主机地址，确保它以http://或https://开头，并且以斜杠(/)结尾。
-        """
-        # 移除尾部斜杠，如果有的话，然后确保最后是以斜杠结束
-        if not host.endswith("/"):
-            host = host + "/"
-        # 确保URL以http://或https://开始
-        if not host.startswith("http://") and not host.startswith("https://"):
-            host = "http://" + host
-        return host
-
-    def __adapt_request_url(self, endpoint: str):
-        """
-        适配请求的URL，确保每个请求的URL是完整的，基于已经设置的_plex_host
-        用于在发送请求前自动处理和修正请求的URL
-        """
-        # 如果URL不是完整的HTTP或HTTPS URL，则将_plex_host添加到URL前
-        if not endpoint.startswith(('http://', 'https://')):
-            endpoint = f"{self._plex_host.rstrip('/')}/{endpoint.lstrip('/')}"
-        return endpoint
-
-    @staticmethod
-    def __adapt_plex_session() -> Session:
-        """
-        创建并配置一个针对Plex服务的requests.Session实例
-        这个会话包括特定的头部信息，用于处理所有的Plex请求
-        """
-        # 设置请求头部，通常包括验证令牌和接受/内容类型头部
-        headers = {
-            "X-Plex-Token": settings.PLEX_TOKEN,
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        session = requests.session()
-        session.headers = headers
-        return session
 
     def __send_message(self, title: str, text: str):
         """
