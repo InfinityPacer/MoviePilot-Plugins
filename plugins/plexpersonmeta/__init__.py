@@ -442,6 +442,27 @@ class PlexPersonMeta(_PluginBase):
                                         'component': 'VAlert',
                                         'props': {
                                             'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': 'Plex的API过于玄妙，actor.tag.tagKey未能赋值成功，如有了解的朋友，请新增issue联系我，感激不尽'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
                                             'variant': 'tonal'
                                         },
                                         'content': [
