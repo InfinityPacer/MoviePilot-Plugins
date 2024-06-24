@@ -808,7 +808,7 @@ class PlexLocalization(_PluginBase):
 
     def __put_title_sort(self, rating_key: str, library_id: int, type_id: int, is_collection: bool, sort_title: str):
         """更新标题排序"""
-        endpoint = f'library/metadata/{rating_key}' if is_collection else f'library/sections/{library_id}/all'
+        endpoint = f"library/metadata/{rating_key}" if is_collection else f"library/sections/{library_id}/all"
         self._plex.put_data(
             endpoint=endpoint,
             params={
