@@ -227,3 +227,19 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 自动管理流量，保障站点分享率
 
 ![](images/2024-06-02-20-39-05.png)
+
+### 18. Plex演职人员刮削
+
+- 实现刮削演职人员中文名称及角色
+- Plex的API过于玄妙，actor.tag.tagKey未能赋值成功，如有了解的朋友，请新增issue联系我，感激不尽
+
+#### 感谢
+
+- 本插件基于 [官方插件](https://github.com/jxxghp/MoviePilot-Plugins) 编写，并参考了 [PrettyServer](https://github.com/Bespertrijun/PrettyServer) 项目，实现了插件的相关功能。
+- 特此感谢 [jxxghp](https://github.com/jxxghp)、[Bespertrijun](https://github.com/Bespertrijun) 等贡献者的卓越代码贡献。
+- 如有未能提及的作者，请告知我以便进行补充。
+
+![](images/2024-06-25-02-56-17.png)
+![](images/2024-06-25-02-57-20.png)
+![](images/2024-06-25-02-57-53.png)
+
