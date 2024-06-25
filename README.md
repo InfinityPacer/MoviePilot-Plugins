@@ -231,7 +231,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ### 18. Plex演职人员刮削
 
 - 实现刮削演职人员中文名称及角色
-- Plex的API过于玄妙，actor.tag.tagKey未能赋值成功，如有了解的朋友，请新增issue联系我，感激不尽
+- Plex 的 API 实现较为复杂，我在尝试为 actor.tag.tagKey 赋值时遇到了问题，如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢
 
 #### 感谢
 

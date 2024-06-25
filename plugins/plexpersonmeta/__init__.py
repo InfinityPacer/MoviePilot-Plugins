@@ -443,7 +443,7 @@ class PlexPersonMeta(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': 'Plex 的 API 实现较为复杂，我在尝试为 actor.tag.tagKey 赋值时遇到了问题。'
+                                            'text': 'Plex 的 API 实现较为复杂，我在尝试为 actor.tag.tagKey 赋值时遇到了问题，'
                                                     '如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢'
                                         }
                                     }
