@@ -443,7 +443,8 @@ class PlexPersonMeta(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': 'Plex的API过于玄妙，actor.tag.tagKey未能赋值成功，如有了解的朋友，请新增issue联系我，感激不尽'
+                                            'text': 'Plex 的 API 实现较为复杂，我在尝试为 actor.tag.tagKey 赋值时遇到了问题。'
+                                                    '如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢'
                                         }
                                     }
                                 ]
@@ -490,7 +491,7 @@ class PlexPersonMeta(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '如刮削没有达到预期的效果，请尝试在Plex中配置项，设置->在线媒体资源->发现更多->停用发现来源'
+                                            'text': '如刮削没有达到预期的效果，请尝试在Plex中修改配置，设置->在线媒体资源->发现更多->停用发现来源'
                                         }
                                     }
                                 ]
