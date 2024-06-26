@@ -39,7 +39,7 @@ class PlexPersonMeta(_PluginBase):
     # 插件图标
     plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/plexpersonmeta.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -171,8 +171,8 @@ class PlexPersonMeta(_PluginBase):
         if self._enabled and self._cron:
             logger.info(f"{self.plugin_name}定时服务启动，时间间隔 {self._cron} ")
             return [{
-                "id": "PersonMeta",
-                "name": f"{self.plugin_name}",
+                "id": "PlexPersonMeta",
+                "name": f"{self.plugin_name}服务",
                 "trigger": CronTrigger.from_crontab(self._cron),
                 "func": self.scrap_library,
                 "kwargs": {}
