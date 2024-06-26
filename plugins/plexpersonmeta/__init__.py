@@ -1088,7 +1088,11 @@ class PlexPersonMeta(_PluginBase):
                                                          season=fetch_season)
                 if doubaninfo:
                     item = self.chain.douban_info(doubaninfo.get("id")) or {}
-                    return (item.get("actors") or []) + (item.get("directors") or [])
+                    if item:
+                        return (item.get("actors") or []) + (item.get("directors") or [])
+                    else:
+                        logger.debug(f"未找到豆瓣详情：{fetch_title}({fetch_year})")
+                        return []
                 else:
                     logger.debug(f"未找到豆瓣信息：{fetch_title}({fetch_year})")
                     return []
