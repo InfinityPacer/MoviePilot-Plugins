@@ -83,11 +83,12 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 #### 感谢
 
-- 本插件基于 [PlexAutoSkip](https://github.com/mdhiggins/PlexAutoSkip) 项目，实现了插件的相关功能，特此感谢 [mdhiggins](https://github.com/mdhiggins) 的卓越代码贡献。
+- 本插件基于 [PlexAutoSkip](https://github.com/mdhiggins/PlexAutoSkip) 项目，实现了插件的相关功能。
+- 特此感谢 [mdhiggins](https://github.com/mdhiggins) 的卓越代码贡献。
 - 如有未能提及的作者，请告知我以便进行补充。
 
 ![](images/2024-05-03-09-27-11.png)
-![](images/2024-05-03-09-23-52.png)
+![](images/2024-06-28-02-25-01.png)
 
 ### 9. PlexEdition
 
