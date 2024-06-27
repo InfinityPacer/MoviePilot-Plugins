@@ -490,7 +490,7 @@ class PlexPersonMeta(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '如刮削没有达到预期的效果，请尝试在Plex中修改配置，设置->在线媒体资源->发现更多->停用发现来源'
+                                            'text': '注意：如刮削没有达到预期的效果，请尝试在Plex中修改配置，设置->在线媒体资源->发现更多->停用发现来源'
                                         }
                                     }
                                 ]
