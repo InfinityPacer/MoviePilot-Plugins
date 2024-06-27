@@ -12,7 +12,6 @@ import pytz
 import zhconv
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from cachetools import TTLCache, cached
 from plexapi.library import LibrarySection
 
 from app.chain.mediaserver import MediaServerChain
@@ -21,10 +20,10 @@ from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import eventmanager, Event
 from app.core.meta import MetaBase
-from app.core.metainfo import MetaInfo
 from app.log import logger
 from app.modules.plex import Plex
 from app.plugins import _PluginBase
+from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, tmdb_media_cache, douban_media_cache
 from app.schemas.types import EventType, MediaType, NotificationType
 from app.utils.string import StringUtils
 
@@ -612,23 +611,35 @@ class PlexPersonMeta(_PluginBase):
             for library in self.__get_libraries().values():
                 logger.info(f"开始刮削媒体库 {library.title} 的演员信息 ...")
                 try:
-                    rating_keys = self.__list_rating_keys(library=library, added_time=added_time)
-                    if not rating_keys:
+                    rating_items = self.__list_rating_items(library=library, added_time=added_time)
+                    if not rating_items:
+                        logger.info(f"媒体库 {library.title} 没有找到任何媒体信息，跳过刮削")
                         continue
-                    for rating_key in rating_keys:
+
+                    for rating_item in rating_items:
+                        if self.__check_external_interrupt():
+                            return
+                        info = self.__get_rating_info(item=rating_item)
+                        if not info:
+                            continue
+                        if info.type != "movie" and info.type != "show":
+                            continue
                         try:
-                            if self.__check_external_interrupt():
-                                return
-                            item = self.__fetch_item(rating_key=rating_key)
+                            item = self.__fetch_item(rating_key=info.key)
                             if not item:
                                 continue
-                            # 处理条目
-                            title = item.get("title")
-                            logger.info(f"开始刮削 {title} 的演员信息 ...")
+                            logger.info(f"开始刮削 {info.title} 的演员信息 ...")
                             self.__scrap_item(item=item)
-                            logger.info(f"{title} 的演员信息刮削完成")
+                            logger.info(f"{info.title} 的演员信息刮削完成")
                         except Exception as e:
-                            logger.error(f"媒体项 {rating_key} 刮削过程中出现异常，{str(e)}")
+                            logger.error(f"媒体项 {info.title} 刮削过程中出现异常，{str(e)}")
+
+                        if info.type != "show":
+                            logger.info(f"<{info.title}> 类型为 {info.type}，非show类型，跳过剧集刮削")
+                            continue
+                        logger.info(f"<{info.title}> 类型为 show，准备进行剧集刮削")
+                        self.__scrap_episodes(item=item)
+
                     logger.info(f"媒体库 {library.title} 的演员信息刮削完成")
                 except Exception as e:
                     logger.error(f"媒体库 {library.title} 刮削过程中出现异常，{str(e)}")
@@ -644,37 +655,71 @@ class PlexPersonMeta(_PluginBase):
 
             logger.info(message_text)
 
-    def __scrap_item(self, item: dict):
+    def __scrap_episodes(self, item: dict):
+        """刮削剧集"""
+        info = self.__get_rating_info(item=item)
+        if not info:
+            return
+        if info.type != "show":
+            return
+
+        try:
+            episodes = self.__list_episodes(rating_key=info.key)
+            if not episodes:
+                logger.info(f"<{info.title}> 没有找到任何剧集信息，取消剧集刮削")
+            else:
+                logger.info(
+                    f"<{info.title}> 共计 {item.get('childCount', 0)} 季 {len(episodes)} 集，准备进行剧集刮削")
+
+            for episode in episodes:
+                if self.__check_external_interrupt():
+                    return
+                episode_info = self.__get_rating_info(item=episode, parent_item=item)
+                if not episode_info:
+                    continue
+                if episode_info.type != "episode":
+                    continue
+                try:
+                    episode_item = self.__fetch_item(rating_key=episode_info.key)
+                    if not episode_item:
+                        continue
+                    logger.info(f"开始刮削 {episode_info.title} 的演员信息 ...")
+                    self.__scrap_item(item=episode_item, info=episode_info)
+                    logger.info(f"{episode_info.title} 的演员信息刮削完成")
+                except Exception as e:
+                    logger.error(f"媒体项 {episode_info.title} 刮削过程中出现异常，{str(e)}")
+        except Exception as e:
+            logger.error(f"媒体项 {info.title} 刮削剧集过程中出现异常，{str(e)}")
+
+    def __scrap_item(self, item: dict, info: Optional[RatingInfo] = None):
         """
         刮削媒体服务器中的条目
         """
         if not item:
             return
 
-        title = item.get("title")
-        tmdbid = self.__get_tmdb_id(item=item)
+        if not info:
+            info = self.__get_rating_info(item=item)
 
-        if not tmdbid:
-            logger.warn(f"{title} 未找到tmdbid，无法识别媒体信息")
+        if not info or not info.tmdbid:
+            logger.warn(f"{info.title} 未找到tmdbid，无法识别媒体信息")
             return
 
-        logger.info(f"{title} 正在获取 TMDB 媒体信息")
-        mediainfo = self.__get_tmdb_media(tmdbid=tmdbid,
-                                          title=title,
-                                          mtype=MediaType.TV if item.get("type") == "show" else MediaType.MOVIE,
-                                          year=item.get("year"),
-                                          season=item.get("season"))
+        logger.info(f"{info.title} 正在获取 TMDB 媒体信息")
+        mediainfo = self.__get_tmdb_media(tmdbid=info.tmdbid,
+                                          title=info.search_title,
+                                          mtype=MediaType.MOVIE if item.get("type") == "movie" else MediaType.TV)
         if not mediainfo:
-            logger.warn(f"{title} TMDB 未识别到媒体信息")
+            logger.warn(f"{info.title} TMDB 未识别到媒体信息")
             return
 
         try:
             if self.__need_trans_actor(item):
-                self.__update_peoples(item=item, mediainfo=mediainfo)
+                self.__update_peoples(item=item, mediainfo=mediainfo, info=info)
             else:
-                logger.info(f"{title} 的人物信息已是中文，无需更新")
+                logger.info(f"{info.title} 的人物信息已是中文，无需更新")
         except Exception as e:
-            logger.error(f"{title} 更新人物信息时出错：{str(e)}")
+            logger.error(f"{info.title} 更新人物信息时出错：{str(e)}")
 
     def __need_trans_actor(self, item: dict) -> bool:
         """
@@ -707,7 +752,7 @@ class PlexPersonMeta(_PluginBase):
 
         return False
 
-    def __update_peoples(self, item: dict, mediainfo: MediaInfo):
+    def __update_peoples(self, item: dict, mediainfo: MediaInfo, info: Optional[RatingInfo] = None):
         """处理媒体项中的人物信息"""
         """
         item 的数据结构：
@@ -746,7 +791,7 @@ class PlexPersonMeta(_PluginBase):
         if not mediainfo:
             return
 
-        title = item.get("title")
+        title = info.title if info and info.title else item.get("title")
         actors = item.get("Role", [])
         trans_actors = []
 
@@ -1040,29 +1085,20 @@ class PlexPersonMeta(_PluginBase):
 
         return ret_people
 
-    @cached(cache=TTLCache(maxsize=10000, ttl=86400))
+    @cache_with_logging(tmdb_media_cache, "TMDB")
     def __get_tmdb_media(self,
                          tmdbid: int,
                          title: str,
-                         mtype: MediaType = MediaType.TV,
-                         year: Optional[str] = None,
-                         season: Optional[str] = None) -> Optional[MediaInfo]:
+                         mtype: MediaType = MediaType.TV) -> Optional[MediaInfo]:
         """获取TMDB媒体信息"""
-        meta = MetaInfo(title)
-        meta.year = year
-        meta.begin_season = season
-        meta.type = mtype
-
         try:
-            # mediainfo = self.chain.recognize_media(meta=meta, mtype=mtype, tmdbid=tmdbid, cache=False)
-            # 传入meta会导致缓存增加，这里直接用TMDBID查询
             mediainfo = self.chain.recognize_media(mtype=mtype, tmdbid=tmdbid)
             return mediainfo
         except Exception as e:
             logger.error(f"{title} TMDB 识别媒体信息时出错：{str(e)}")
             return None
 
-    @cached(cache=TTLCache(maxsize=10000, ttl=86400))
+    @cache_with_logging(douban_media_cache, "Douban")
     def __get_douban_actors(self,
                             title: str,
                             imdbid: Optional[str] = None,
@@ -1076,7 +1112,7 @@ class PlexPersonMeta(_PluginBase):
                          fetch_imdbid: Optional[str] = None,
                          fetch_mtype: Optional[MediaType] = None,
                          fetch_year: Optional[str] = None,
-                         fetch_season: Optional[int] = None) -> List[dict]:
+                         fetch_season: Optional[int] = None) -> Optional[List[dict]]:
             try:
                 sleep_time = 3 + int(time.time()) % 7
                 logger.debug(f"随机休眠 {sleep_time}秒 ...")
@@ -1092,13 +1128,13 @@ class PlexPersonMeta(_PluginBase):
                         return (item.get("actors") or []) + (item.get("directors") or [])
                     else:
                         logger.debug(f"未找到豆瓣详情：{fetch_title}({fetch_year})")
-                        return []
+                        return None
                 else:
                     logger.debug(f"未找到豆瓣信息：{fetch_title}({fetch_year})")
-                    return []
+                    return None
             except Exception as e:
                 logger.error(f"{fetch_title} 豆瓣识别媒体信息时出错：{str(e)}")
-                return []
+                return None
 
         douban_actors = []
 
@@ -1106,12 +1142,15 @@ class PlexPersonMeta(_PluginBase):
             for season, year in season_years:
                 actors = fetch_actors(fetch_title=title, fetch_mtype=mtype, fetch_year=year,
                                       fetch_season=season)
-                douban_actors.extend(actors)
+                if actors:
+                    douban_actors.extend(actors)
         else:
-            douban_actors = fetch_actors(fetch_title=title, fetch_imdbid=imdbid, fetch_mtype=mtype, fetch_year=year,
-                                         fetch_season=season)
+            actors = fetch_actors(fetch_title=title, fetch_imdbid=imdbid, fetch_mtype=mtype, fetch_year=year,
+                                  fetch_season=season)
+            if actors:
+                douban_actors.extend(actors)
 
-        return douban_actors
+        return douban_actors if douban_actors else None
 
     @staticmethod
     def __get_chinese_field_value(people: dict, field: str) -> Optional[str]:
@@ -1175,8 +1214,45 @@ class PlexPersonMeta(_PluginBase):
 
         return libraries
 
-    def __list_rating_keys(self, library: LibrarySection, is_collection: bool = False,
-                           added_time: Optional[int] = None):
+    @staticmethod
+    def __get_season_episode(item: Dict) -> str:
+        """获取剧集的季和集信息"""
+        season_number = item.get("parentIndex", "0")
+        episode_number = item.get("index", "0")
+        return f"s{str(season_number).zfill(2)}e{str(episode_number).zfill(2)}"
+
+    @staticmethod
+    def __get_rating_info(item: dict, parent_item: Optional[dict] = None) -> Optional[RatingInfo]:
+        """获取媒体项目信息"""
+        if not item:
+            return None
+
+        key = item.get("ratingKey")
+        if not key:
+            return None
+
+        rating_type = item.get("type")
+        title = item.get("title", key)
+        search_title = title
+
+        # 获取 TMDB ID
+        tmdbid = (PlexPersonMeta.__get_tmdb_id(item=parent_item) if parent_item
+                  else PlexPersonMeta.__get_tmdb_id(item=item))
+
+        # 如果是剧集，调整标题格式
+        if rating_type == "episode":
+            parent_title = parent_item.get("title") if parent_item else item.get("grandparentTitle", title)
+            title = f"{parent_title} - {PlexPersonMeta.__get_season_episode(item=item)} - {title}"
+            search_title = parent_title
+
+        return RatingInfo(key=key,
+                          type=rating_type,
+                          title=title,
+                          search_title=search_title,
+                          tmdbid=tmdbid)
+
+    def __list_rating_items(self, library: LibrarySection, is_collection: bool = False,
+                            added_time: Optional[list[dict]] = None):
         """获取所有媒体项目"""
         if not library:
             return []
@@ -1193,13 +1269,24 @@ class PlexPersonMeta(_PluginBase):
                  .json()
                  .get("MediaContainer", {})
                  .get("Metadata", []))
-        rating_keys = [data.get("ratingKey") for data in datas]
 
-        if len(rating_keys):
+        if len(datas):
             logger.info(f"<{library.title} {library.TYPE}> "
-                        f"类型共计 {len(rating_keys)} 个{'合集' if is_collection else ''}")
+                        f"类型共计 {len(datas)} 个{'合集' if is_collection else ''}")
 
-        return rating_keys
+        return datas
+
+    def __list_episodes(self, rating_key, ):
+        """获取show的所有剧集"""
+        endpoint = f"/library/metadata/{rating_key}/allLeaves"
+
+        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
+        datas = (response
+                 .json()
+                 .get("MediaContainer", {})
+                 .get("Metadata", []))
+
+        return datas
 
     def __fetch_item(self, rating_key):
         """
