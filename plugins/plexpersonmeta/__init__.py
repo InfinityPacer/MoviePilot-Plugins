@@ -840,46 +840,45 @@ class PlexPersonMeta(_PluginBase):
             if all(StringUtils.is_chinese(actor.get("tag", "")) and StringUtils.is_chinese(actor.get("role", "")) for
                    actor in trans_actors):
                 logger.info(f"{title} 的人物信息已是中文，无需使用豆瓣信息更新")
-                return
+            else:
+                # 存在人物信息还不是中文数据，使用豆瓣信息进行更新
+                logger.info(f"{title} 正在获取豆瓣媒体信息")
+                douban_actors = self.__get_douban_actors(imdbid=mediainfo.imdb_id,
+                                                         title=mediainfo.title,
+                                                         mtype=mediainfo.type,
+                                                         year=mediainfo.year,
+                                                         season=mediainfo.season,
+                                                         season_years=tuple(sorted(mediainfo.season_years.items())))
+                if douban_actors:
+                    # 将 douban_actors 转换为字典，以 latin_name 和 name 和拼音为键
+                    douban_actor_dict = {}
+                    for actor in douban_actors:
+                        name = actor.get("name")
+                        latin_name = actor.get("latin_name")
+                        if name:
+                            douban_actor_dict[name] = actor
+                            if StringUtils.is_chinese(name):
+                                douban_actor_dict[self.__to_pinyin(name)] = actor
+                        if latin_name:
+                            douban_actor_dict[latin_name] = actor
+                            douban_actor_dict[self.__standardize_name_order(latin_name)] = actor
 
-            # 获取豆瓣演员信息
-            logger.info(f"{title} 正在获取豆瓣媒体信息")
-            douban_actors = self.__get_douban_actors(imdbid=mediainfo.imdb_id,
-                                                     title=mediainfo.title,
-                                                     mtype=mediainfo.type,
-                                                     year=mediainfo.year,
-                                                     season=mediainfo.season,
-                                                     season_years=tuple(sorted(mediainfo.season_years.items())))
-            if douban_actors:
-                # 将 douban_actors 转换为字典，以 latin_name 和 name 和拼音为键
-                douban_actor_dict = {}
-                for actor in douban_actors:
-                    name = actor.get("name")
-                    latin_name = actor.get("latin_name")
-                    if name:
-                        douban_actor_dict[name] = actor
-                        if StringUtils.is_chinese(name):
-                            douban_actor_dict[self.__to_pinyin(name)] = actor
-                    if latin_name:
-                        douban_actor_dict[latin_name] = actor
-                        douban_actor_dict[self.__standardize_name_order(latin_name)] = actor
+                    for actor in trans_actors:
+                        if self.__check_external_interrupt():
+                            return
+                        try:
+                            tag_value = actor.get("tag")
+                            role_value = actor.get("role")
+                            if StringUtils.is_chinese(tag_value) and StringUtils.is_chinese(role_value):
+                                logger.debug(f"{tag_value} 已是中文数据，无需使用豆瓣信息更新")
+                                continue
 
-                for actor in trans_actors:
-                    if self.__check_external_interrupt():
-                        return
-                    try:
-                        tag_value = actor.get("tag")
-                        role_value = actor.get("role")
-                        if StringUtils.is_chinese(tag_value) and StringUtils.is_chinese(role_value):
-                            logger.debug(f"{tag_value} 已是中文数据，无需使用豆瓣信息更新")
-                            continue
-
-                        updated_actor = self.__update_people_by_douban(people=actor,
-                                                                       people_dict=douban_actor_dict)
-                        if updated_actor:
-                            actor.update(updated_actor)
-                    except Exception as e:
-                        logger.error(f"{title} 豆瓣更新人物信息失败：{str(e)}")
+                            updated_actor = self.__update_people_by_douban(people=actor,
+                                                                           people_dict=douban_actor_dict)
+                            if updated_actor:
+                                actor.update(updated_actor)
+                        except Exception as e:
+                            logger.error(f"{title} 豆瓣更新人物信息失败：{str(e)}")
 
         if trans_actors:
             try:
@@ -1047,7 +1046,10 @@ class PlexPersonMeta(_PluginBase):
         # 查找对应的豆瓣人物信息
         person_name = people.get("tag")
         original_name = people.get("original_name")
-        person_detail = people_dict.get(person_name) or people_dict.get(original_name)
+        person_name_lower = self.__remove_spaces_and_lower(person_name)
+        person_pinyin = self.__to_pinyin(person_name)
+        person_detail = (people_dict.get(person_name) or people_dict.get(original_name)
+                         or people_dict.get(person_name_lower) or people_dict.get(person_pinyin))
 
         # 从豆瓣演员中匹配中文名称、角色和简介
         if not person_detail:
@@ -1098,7 +1100,7 @@ class PlexPersonMeta(_PluginBase):
             logger.error(f"{title} TMDB 识别媒体信息时出错：{str(e)}")
             return None
 
-    @cache_with_logging(douban_media_cache, "Douban")
+    @cache_with_logging(douban_media_cache, "豆瓣")
     def __get_douban_actors(self,
                             title: str,
                             imdbid: Optional[str] = None,
