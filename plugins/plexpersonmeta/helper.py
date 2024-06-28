@@ -10,11 +10,13 @@ helper.py
     cache_with_logging -- 创建一个装饰器，用于在函数执行时处理缓存逻辑和日志记录
 """
 import functools
-from app.log import logger
-from cachetools import TTLCache
-from cachetools.keys import hashkey
 from dataclasses import dataclass
 from typing import Optional
+
+from cachetools import TTLCache
+from cachetools.keys import hashkey
+
+from app.log import logger
 
 
 @dataclass
@@ -36,7 +38,10 @@ def cache_with_logging(cache, source):
         def wrapped_func(*args, **kwargs):
             key = hashkey(*args, **kwargs)
             if key in cache:
-                logger.info(f"从缓存中获取 {source} 媒体信息: {kwargs.get('title', 'Unknown Title')}")
+                if source == "PERSON":
+                    logger.info(f"从缓存中获取到 {source} 人物信息")
+                else:
+                    logger.info(f"从缓存中获取到 {source} 媒体信息: {kwargs.get('title', 'Unknown Title')}")
                 return cache[key]
 
             result = func(*args, **kwargs)
@@ -86,5 +91,6 @@ class DynamicTTLCache(TTLCache):
 
 
 # 创建自定义缓存对象
+tmdb_person_cache = DynamicTTLCache(maxsize=100000, default_ttl=86400)
 tmdb_media_cache = DynamicTTLCache(maxsize=10000, default_ttl=86400)
 douban_media_cache = DynamicTTLCache(maxsize=10000, default_ttl=86400)

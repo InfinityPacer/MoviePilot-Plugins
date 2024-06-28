@@ -23,7 +23,9 @@ from app.core.meta import MetaBase
 from app.log import logger
 from app.modules.plex import Plex
 from app.plugins import _PluginBase
-from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, tmdb_media_cache, douban_media_cache
+from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, tmdb_media_cache, douban_media_cache, \
+    tmdb_person_cache
+from app.schemas import MediaPerson
 from app.schemas.types import EventType, MediaType, NotificationType
 from app.utils.string import StringUtils
 
@@ -795,7 +797,7 @@ class PlexPersonMeta(_PluginBase):
         actors = item.get("Role", [])
         trans_actors = []
 
-        # 将 mediainfo.actors 转换为字典，以 original_name、name 和拼音为键
+        # 将 mediainfo.actors 转换为字典，以 original_name、name、alias 和拼音为键
         actor_dict = {}
         for actor in mediainfo.actors:
             name = actor.get("name")
@@ -806,6 +808,18 @@ class PlexPersonMeta(_PluginBase):
                     actor_dict[self.__to_pinyin(name)] = actor
             if original_name:
                 actor_dict[original_name] = actor
+            person_tmdbid = actor.get("id")
+            if person_tmdbid:
+                logger.info(f"{name} 正在获取 TMDB 人物信息")
+                person_detail = self.__get_tmdb_person_detail(person_tmdbid=person_tmdbid)
+                if person_detail:
+                    cn_name = self.__get_chinese_name(person=person_detail)
+                    if cn_name:
+                        actor["name"] = cn_name
+                    if person_detail.also_known_as:
+                        actor["also_known_as"] = person_detail.also_known_as
+                        for alias in person_detail.also_known_as:
+                            actor_dict[alias] = actor
 
         # 使用TMDB信息更新人物
         for actor in actors:
@@ -968,9 +982,12 @@ class PlexPersonMeta(_PluginBase):
         person_name = people.get("tag")
         person_name_lower = self.__remove_spaces_and_lower(person_name)
         person_pinyin = self.__to_pinyin(person_name)
-        person_detail = (people_dict.get(person_name)
-                         or people_dict.get(person_name_lower) or people_dict.get(person_pinyin))
 
+        # 构建一个包含所有潜在键的列表后，再进行逐一获取
+        potential_keys = [person_name, person_name_lower, person_pinyin]
+        person_detail = next((people_dict[key] for key in potential_keys if key in people_dict), None)
+
+        # 从 TMDB 演员中匹配中文名称、角色和简介
         if not person_detail:
             logger.debug(f"人物 {person_name} 未找到中文数据")
             return None
@@ -1046,10 +1063,13 @@ class PlexPersonMeta(_PluginBase):
         # 查找对应的豆瓣人物信息
         person_name = people.get("tag")
         original_name = people.get("original_name")
+        also_known_as = people.get("also_known_as", [])
         person_name_lower = self.__remove_spaces_and_lower(person_name)
         person_pinyin = self.__to_pinyin(person_name)
-        person_detail = (people_dict.get(person_name) or people_dict.get(original_name)
-                         or people_dict.get(person_name_lower) or people_dict.get(person_pinyin))
+
+        # 构建一个包含所有潜在键的列表后，再进行逐一获取
+        potential_keys = [person_name, original_name] + also_known_as + [person_name_lower, person_pinyin]
+        person_detail = next((people_dict[key] for key in potential_keys if key in people_dict), None)
 
         # 从豆瓣演员中匹配中文名称、角色和简介
         if not person_detail:
@@ -1086,6 +1106,17 @@ class PlexPersonMeta(_PluginBase):
                 logger.debug(f"{person_name} 从豆瓣未能获取到中文角色")
 
         return ret_people
+
+    @cache_with_logging(tmdb_person_cache, "PERSON")
+    def __get_tmdb_person_detail(self,
+                                 person_tmdbid: int) -> Optional[MediaPerson]:
+        """获取TMDB媒体信息"""
+        try:
+            person_detail = self.tmdbchain.person_detail(int(person_tmdbid))
+            return person_detail
+        except Exception as e:
+            logger.error(f"{person_tmdbid} TMDB 识别人员信息时出错：{str(e)}")
+            return None
 
     @cache_with_logging(tmdb_media_cache, "TMDB")
     def __get_tmdb_media(self,
@@ -1155,6 +1186,25 @@ class PlexPersonMeta(_PluginBase):
         return douban_actors if douban_actors else None
 
     @staticmethod
+    def __get_chinese_name(person: MediaPerson) -> Optional[str]:
+        """
+        获取TMDB别名中的中文名
+        """
+        try:
+            # 如果人物名称已经是中文，则直接返回，不再繁简转换
+            if StringUtils.is_chinese(person.name):
+                return person.name
+            also_known_as = person.also_known_as or []
+            if also_known_as:
+                for name in also_known_as:
+                    if name and StringUtils.is_chinese(name):
+                        # 使用cn2an将繁体转化为简体
+                        return zhconv.convert(name, "zh-hans")
+        except Exception as err:
+            logger.error(f"获取人物中文名失败：{err}")
+        return None
+
+    @staticmethod
     def __get_chinese_field_value(people: dict, field: str) -> Optional[str]:
         """
         获取TMDB的中文名称
@@ -1179,8 +1229,7 @@ class PlexPersonMeta(_PluginBase):
         try:
             field_value = people.get(field, "")
             if field_value and StringUtils.is_chinese(field_value):
-                # 使用 zhconv 将繁体转化为简体
-                return zhconv.convert(field_value, "zh-hans")
+                return field_value
         except Exception as e:
             logger.error(f"获取人物{field}失败：{e}")
         return None
