@@ -240,7 +240,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 特此感谢 [jxxghp](https://github.com/jxxghp)、[Bespertrijun](https://github.com/Bespertrijun) 等贡献者的卓越代码贡献。
 - 如有未能提及的作者，请告知我以便进行补充。
 
-![](images/2024-06-25-02-56-17.png)
+![](images/2024-06-29-22-40-57.png)
 ![](images/2024-06-25-02-57-20.png)
 ![](images/2024-06-25-02-57-53.png)
 
