@@ -576,7 +576,7 @@ class PlexPersonMeta(_PluginBase):
         self._scheduler.remove_all_jobs()
 
         self._scheduler.add_job(
-            func=self.__scrap_by_once,
+            func=self.__scrap_by_transfer,
             trigger="date",
             run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=self._delay),
             name=f"{self.plugin_name}",
@@ -587,7 +587,7 @@ class PlexPersonMeta(_PluginBase):
             self._scheduler.print_jobs()
             self._scheduler.start()
 
-    def __scrap_by_once(self):
+    def __scrap_by_transfer(self):
         """入库后运行一次"""
         if not self._transfer_time:
             logger.info(f"没有获取到最近一次的入库时间，取消执行{self.plugin_name}服务")
@@ -598,88 +598,149 @@ class PlexPersonMeta(_PluginBase):
         adjusted_time = self._transfer_time - timedelta(minutes=5)
         logger.info(f"为保证入库数据完整性，前偏移5分钟后的时间：{adjusted_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        self.scrap_library(added_time=int(adjusted_time.timestamp()))
+        self.scrap_library_by_added_time(added_time=int(adjusted_time.timestamp()))
         self._transfer_time = None
 
-    def scrap_library(self, added_time: Optional[int] = None):
+    def scrap_library(self):
         """
-        刮削演员信息
+        刮削媒体库中所有媒体的演员信息
         """
         if not self.__check_plex_media_server():
             return
 
         with lock:
             start_time = time.time()
-            for library in self.__get_libraries().values():
+            libraries = self.__get_libraries().values()
+            for library in libraries:
                 logger.info(f"开始刮削媒体库 {library.title} 的演员信息 ...")
                 try:
-                    rating_items = self.__list_rating_items(library=library, added_time=added_time)
+                    rating_items = self.__list_rating_items(library=library)
                     if not rating_items:
                         logger.info(f"媒体库 {library.title} 没有找到任何媒体信息，跳过刮削")
                         continue
 
-                    for rating_item in rating_items:
-                        if self.__check_external_interrupt():
-                            return
-                        info = self.__get_rating_info(item=rating_item)
-                        if not info:
-                            continue
-                        if info.type != "movie" and info.type != "show":
-                            continue
-                        try:
-                            item = self.__fetch_item(rating_key=info.key)
-                            if not item:
-                                continue
-                            logger.info(f"开始刮削 {info.title} 的演员信息 ...")
-                            self.__scrap_item(item=item)
-                            logger.info(f"{info.title} 的演员信息刮削完成")
-                        except Exception as e:
-                            logger.error(f"媒体项 {info.title} 刮削过程中出现异常，{str(e)}")
-
-                        if info.type != "show":
-                            logger.info(f"<{info.title}> 类型为 {info.type}，非show类型，跳过剧集刮削")
-                            continue
-                        logger.info(f"<{info.title}> 类型为 show，准备进行剧集刮削")
-                        self.__scrap_episodes(item=item)
-
+                    self.__scrap_rating_items(rating_items=rating_items)
                     logger.info(f"媒体库 {library.title} 的演员信息刮削完成")
                 except Exception as e:
                     logger.error(f"媒体库 {library.title} 刮削过程中出现异常，{str(e)}")
 
             elapsed_time = time.time() - start_time
-            if added_time:
-                formatted_added_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(added_time))
-                message_text = f"最近一次入库时间：{formatted_added_time}，{self.plugin_name}完成，用时 {elapsed_time:.2f} 秒"
-            else:
-                message_text = f"{self.plugin_name}完成，用时 {elapsed_time:.2f} 秒"
+            message_text = f"{self.plugin_name}完成，用时 {elapsed_time:.2f} 秒"
 
             self.__send_message(title=f"【{self.plugin_name}】", text=message_text)
-
             logger.info(message_text)
 
-    def __scrap_episodes(self, item: dict):
+    def scrap_library_by_added_time(self, added_time: int):
+        """根据入库时间刮削媒体库中的演员信息"""
+        if not self.__check_plex_media_server():
+            return
+
+        with lock:
+            start_time = time.time()
+            library_keys = set(self.__get_libraries().keys())
+            rating_items = {}
+            episode_items = {}
+            recent_added_items = self.__list_rating_items_by_added(added_time=added_time)
+
+            for rating_item in recent_added_items:
+                section_id = rating_item.get("librarySectionID")
+                if section_id not in library_keys:
+                    continue
+                rating_key = rating_item.get("ratingKey")
+                if not rating_key:
+                    continue
+
+                rating_type = rating_item.get("type")
+                # 先获取show和movie的key，后续直接进行刮削
+                if rating_type in ["show", "movie"]:
+                    rating_items[rating_key] = rating_item
+                # 如果是季，这里直接当成show进行处理
+                elif rating_type == "season":
+                    parent_key = self.__extract_key_from_url(rating_item.get("parentKey"))
+                    if parent_key and parent_key not in rating_items:
+                        try:
+                            rating_items[parent_key] = self.__fetch_item(rating_key=parent_key)
+                        except Exception as e:
+                            logger.error(f"媒体项 {rating_item.get('parentTitle')} 获取详细信息失败，{e}")
+                # 如果是集的，先判断对应的父级key是否已经在rating_keys中增加，如果是，则忽略，如果不是，则追加到集的key中，后续独立进行刮削
+                elif rating_type == "episode":
+                    parent_key = self.__extract_key_from_url(rating_item.get("grandparentKey"))
+                    if parent_key and parent_key not in rating_items:
+                        episode_items.setdefault(parent_key, []).append(rating_item)
+
+            logger.info(f"开始刮削最近入库的演员信息 ...")
+            if not rating_items and not episode_items:
+                logger.info(f"最近入库没有找到任何符合条件的媒体信息，跳过刮削")
+            else:
+                self.__scrap_rating_items(rating_items=list(rating_items.values()))
+                self.__scrap_episode_items(episode_items=episode_items)
+
+            elapsed_time = time.time() - start_time
+            formatted_added_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(added_time))
+            message_text = f"最近一次入库时间：{formatted_added_time}，{self.plugin_name}完成，用时 {elapsed_time:.2f} 秒"
+
+            self.__send_message(title=f"【{self.plugin_name}】", text=message_text)
+            logger.info(message_text)
+
+    def __scrap_rating_items(self, rating_items: list):
+        """刮削媒体库中的媒体项"""
+        for rating_item in rating_items:
+            if self.__check_external_interrupt():
+                return
+            info = self.__get_rating_info(item=rating_item)
+            if not info or info.type not in ["movie", "show"]:
+                continue
+            item = {}
+            try:
+                item = self.__fetch_item(rating_key=info.key)
+                if not item:
+                    continue
+                logger.info(f"开始刮削 {info.title} 的演员信息 ...")
+                self.__scrap_item(item=item)
+                logger.info(f"{info.title} 的演员信息刮削完成")
+            except Exception as e:
+                logger.error(f"媒体项 {info.title} 刮削过程中出现异常，{str(e)}")
+
+            if info.type == "show" and item:
+                logger.info(f"<{info.title}> 类型为 show，准备进行剧集刮削")
+                self.__scrap_episodes(item=item)
+
+    def __scrap_episode_items(self, episode_items: dict):
+        """刮削剧集的媒体信息"""
+        for parent_key, episodes in episode_items.items():
+            if self.__check_external_interrupt():
+                return
+            item = self.__fetch_item(rating_key=parent_key)
+            if not item:
+                continue
+            self.__scrap_episodes(item=item, episodes=episodes)
+
+    def __scrap_episodes(self, item: dict, episodes: Optional[dict] = None):
         """刮削剧集"""
         info = self.__get_rating_info(item=item)
-        if not info:
-            return
-        if info.type != "show":
+        if not info or info.type != "show":
             return
 
         try:
-            episodes = self.__list_episodes(rating_key=info.key)
+            # 如果 episodes 为空，这里获取所有的 episodes 进行刮削
+            episodes_provided_all = episodes is None
+            if episodes_provided_all:
+                episodes = self.__list_episodes(rating_key=info.key)
+
             if not episodes:
                 logger.info(f"<{info.title}> 没有找到任何剧集信息，取消剧集刮削")
             else:
-                logger.info(
-                    f"<{info.title}> 共计 {item.get('childCount', 0)} 季 {len(episodes)} 集，准备进行剧集刮削")
+                if episodes_provided_all:
+                    logger.info(
+                        f"<{info.title}> 共计 {item.get('childCount', 0)} 季 {len(episodes)} 集，准备进行剧集刮削")
+                else:
+                    logger.info(f"<{info.title}> 共计 {len(episodes)} 集，准备进行剧集刮削")
 
             for episode in episodes:
                 if self.__check_external_interrupt():
                     return
                 episode_info = self.__get_rating_info(item=episode, parent_item=item)
-                if not episode_info:
-                    continue
-                if episode_info.type != "episode":
+                if not episode_info or episode_info.type != "episode":
                     continue
                 try:
                     episode_item = self.__fetch_item(rating_key=episode_info.key)
@@ -1147,7 +1208,7 @@ class PlexPersonMeta(_PluginBase):
                          fetch_year: Optional[str] = None,
                          fetch_season: Optional[int] = None) -> Optional[List[dict]]:
             try:
-                sleep_time = 3 + int(time.time()) % 7
+                sleep_time = 5 + int(time.time()) % 7
                 logger.debug(f"随机休眠 {sleep_time}秒 ...")
                 time.sleep(sleep_time)
                 doubaninfo = self.chain.match_doubaninfo(name=fetch_title,
@@ -1302,18 +1363,12 @@ class PlexPersonMeta(_PluginBase):
                           search_title=search_title,
                           tmdbid=tmdbid)
 
-    def __list_rating_items(self, library: LibrarySection, is_collection: bool = False,
-                            added_time: Optional[list[dict]] = None):
+    def __list_rating_items(self, library: LibrarySection):
         """获取所有媒体项目"""
         if not library:
             return []
 
-        if is_collection:
-            endpoint = f"/library/sections/{library.key}/collections"
-        else:
-            endpoint = f"/library/sections/{library.key}/all?type={plexapi.utils.searchType(libtype=library.TYPE)}"
-            if added_time:
-                endpoint += f"&addedAt>={added_time}"
+        endpoint = f"/library/sections/{library.key}/all?type={plexapi.utils.searchType(libtype=library.TYPE)}"
 
         response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
         datas = (response
@@ -1323,8 +1378,18 @@ class PlexPersonMeta(_PluginBase):
 
         if len(datas):
             logger.info(f"<{library.title} {library.TYPE}> "
-                        f"类型共计 {len(datas)} 个{'合集' if is_collection else ''}")
+                        f"类型共计 {len(datas)} 个")
 
+        return datas
+
+    def __list_rating_items_by_added(self, added_time: int):
+        """获取最近入库媒体"""
+        endpoint = f"/library/all?addedAt>={added_time}"
+        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
+        datas = (response
+                 .json()
+                 .get("MediaContainer", {})
+                 .get("Metadata", []))
         return datas
 
     def __list_episodes(self, rating_key, ):
@@ -1432,3 +1497,9 @@ class PlexPersonMeta(_PluginBase):
     def __remove_spaces_and_lower(string) -> str:
         """去除字符串中的空格并转换为小写"""
         return string.replace(" ", "").lower()
+
+    @staticmethod
+    def __extract_key_from_url(url: str) -> Optional[str]:
+        """从URL中提取key"""
+        match = re.search(r'/library/metadata/(\d+)', url)
+        return match.group(1) if match else None
