@@ -701,9 +701,11 @@ class PlexPersonMeta(_PluginBase):
             except Exception as e:
                 logger.error(f"媒体项 {info.title} 刮削过程中出现异常，{str(e)}")
 
-            if info.type == "show" and item:
-                logger.info(f"<{info.title}> 类型为 show，准备进行剧集刮削")
-                self.__scrap_episodes(item=item)
+            if info.type != "show":
+                logger.info(f"<{info.title}> 类型为 {info.type}，非show类型，跳过剧集刮削")
+                continue
+            logger.info(f"<{info.title}> 类型为 show，准备进行剧集刮削")
+            self.__scrap_episodes(item=item)
 
     def __scrap_episode_items(self, episode_items: dict):
         """刮削剧集的媒体信息"""
