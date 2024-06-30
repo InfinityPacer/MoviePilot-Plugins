@@ -488,6 +488,27 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
+                                            'text': '注意：在宿主机挂载SMB并将其映射到Docker目录时，硬链接测试可能无法兼容'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
                                             'text': '注意：建议硬链接仅作为一次性检查/测试，不建议开启周期性检查，'
                                                     '结果仅供参考，详细信息请通过命令find /search/directory -inum 进行判断'
                                         }
