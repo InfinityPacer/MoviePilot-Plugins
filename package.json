@@ -235,7 +235,7 @@
         "version": "1.2",
         "icon": "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/trafficassistant.png",
         "author": "InfinityPacer",
-        "level": 1,
+        "level": 2,
         "history": {
             "v1.2": "修复部分情况下插件自动停用，同时优化刷流插件的启用逻辑，以及日志相关优化",
             "v1.1": "代码重构，优化消息推送，支持站点数据统计刷新后自动触发",
