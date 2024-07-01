@@ -16,7 +16,7 @@ class PlexAutoSkip(_PluginBase):
     # 插件描述
     plugin_desc = "实现自动跳过Plex中片头、片尾以及类似的内容。"
     # 插件图标
-    plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/PlexAutoSkip_C.png"
+    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/PlexAutoSkip_C.png"
     # 插件版本
     plugin_version = "0.4"
     # 插件作者

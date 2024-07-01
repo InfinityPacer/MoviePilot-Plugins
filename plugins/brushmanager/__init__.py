@@ -26,7 +26,7 @@ class BrushManager(_PluginBase):
     # 插件描述
     plugin_desc = "针对刷流种子进行整理操作。"
     # 插件图标
-    plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/brushmanager.png"
+    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/brushmanager.png"
     # 插件版本
     plugin_version = "1.4"
     # 插件作者

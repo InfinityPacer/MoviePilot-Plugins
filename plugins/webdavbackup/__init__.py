@@ -26,7 +26,7 @@ class WebDAVBackup(_PluginBase):
     # 插件描述
     plugin_desc = "定时通过WebDAV备份数据库和配置文件。"
     # 插件图标
-    plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/webdavbackup.png"
+    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webdavbackup.png"
     # 插件版本
     plugin_version = "1.4"
     # 插件作者

@@ -16,7 +16,7 @@ class SystemNotification(_PluginBase):
     # 插件描述
     plugin_desc = "通过通知渠道发送系统通知消息。"
     # 插件图标
-    plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/systemnotification.png"
+    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/systemnotification.png"
     # 插件版本
     plugin_version = "1.0"
     # 插件作者

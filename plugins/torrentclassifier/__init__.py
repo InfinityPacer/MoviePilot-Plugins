@@ -28,7 +28,7 @@ class TorrentClassifier(_PluginBase):
     # 插件描述
     plugin_desc = "通过匹配种子关键字进行自定义分类。"
     # 插件图标
-    plugin_icon = "https://github.com/InfinityPacer/MoviePilot-Plugins/raw/main/icons/TorrentClassifier.png"
+    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/TorrentClassifier.png"
     # 插件版本
     plugin_version = "1.1"
     # 插件作者
