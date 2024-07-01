@@ -24,8 +24,8 @@ from app.log import logger
 from app.modules.plex import Plex
 from app.plugins import _PluginBase
 from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, tmdb_media_cache, douban_media_cache, \
-    tmdb_person_cache
-from app.schemas import MediaPerson
+    tmdb_person_cache, rate_limit_handler
+from app.schemas import MediaPerson, APIRateLimitException
 from app.schemas.types import EventType, MediaType, NotificationType
 from app.utils.string import StringUtils
 
@@ -1203,50 +1203,63 @@ class PlexPersonMeta(_PluginBase):
                             season: Optional[int] = None,
                             season_years: Any = None) -> List[dict]:
         """获取豆瓣演员信息"""
-
-        def fetch_actors(fetch_title: str,
-                         fetch_imdbid: Optional[str] = None,
-                         fetch_mtype: Optional[MediaType] = None,
-                         fetch_year: Optional[str] = None,
-                         fetch_season: Optional[int] = None) -> Optional[List[dict]]:
-            try:
-                sleep_time = 5 + int(time.time()) % 7
-                logger.debug(f"随机休眠 {sleep_time}秒 ...")
-                time.sleep(sleep_time)
-                doubaninfo = self.chain.match_doubaninfo(name=fetch_title,
-                                                         imdbid=fetch_imdbid,
-                                                         mtype=fetch_mtype,
-                                                         year=fetch_year,
-                                                         season=fetch_season)
-                if doubaninfo:
-                    item = self.chain.douban_info(doubaninfo.get("id")) or {}
-                    if item:
-                        return (item.get("actors") or []) + (item.get("directors") or [])
-                    else:
-                        logger.debug(f"未找到豆瓣详情：{fetch_title}({fetch_year})")
-                        return None
-                else:
-                    logger.debug(f"未找到豆瓣信息：{fetch_title}({fetch_year})")
-                    return None
-            except Exception as e:
-                logger.error(f"{fetch_title} 豆瓣识别媒体信息时出错：{str(e)}")
-                return None
-
         douban_actors = []
 
         if season_years and len(season_years) > 1:
             for season, year in season_years:
-                actors = fetch_actors(fetch_title=title, fetch_mtype=mtype, fetch_year=year,
-                                      fetch_season=season)
+                actors = self.__fetch_douban_actors(fetch_title=title, fetch_mtype=mtype, fetch_year=year,
+                                                    fetch_season=season)
                 if actors:
                     douban_actors.extend(actors)
         else:
-            actors = fetch_actors(fetch_title=title, fetch_imdbid=imdbid, fetch_mtype=mtype, fetch_year=year,
-                                  fetch_season=season)
+            actors = self.__fetch_douban_actors(fetch_title=title, fetch_imdbid=imdbid, fetch_mtype=mtype,
+                                                fetch_year=year,
+                                                fetch_season=season)
             if actors:
                 douban_actors.extend(actors)
 
         return douban_actors if douban_actors else None
+
+    @rate_limit_handler(base_wait=300, backoff_factor=2)
+    def __fetch_douban_actors(self, fetch_title: str,
+                              fetch_imdbid: Optional[str] = None,
+                              fetch_mtype: Optional[MediaType] = None,
+                              fetch_year: Optional[str] = None,
+                              fetch_season: Optional[int] = None) -> Optional[List[dict]]:
+        """
+        获取演员信息
+        :param fetch_title: 影片标题
+        :param fetch_imdbid: IMDB ID，可选
+        :param fetch_mtype: 媒体类型，可选
+        :param fetch_year: 年份，可选
+        :param fetch_season: 季，可选
+        :return: 包含演员信息的字典列表，或 None
+        """
+        try:
+            sleep_time = 5 + int(time.time()) % 7
+            logger.debug(f"随机休眠 {sleep_time}秒 ...")
+            time.sleep(sleep_time)
+            doubaninfo = self.chain.match_doubaninfo(name=fetch_title,
+                                                     imdbid=fetch_imdbid,
+                                                     mtype=fetch_mtype,
+                                                     year=fetch_year,
+                                                     season=fetch_season,
+                                                     raise_exception=True)
+            if doubaninfo:
+                item = self.chain.douban_info(doubaninfo.get("id"), raise_exception=True) or {}
+                if item:
+                    return (item.get("actors") or []) + (item.get("directors") or [])
+                else:
+                    logger.debug(f"未找到豆瓣详情：{fetch_title}({fetch_year})")
+                    return None
+            else:
+                logger.debug(f"未找到豆瓣信息：{fetch_title}({fetch_year})")
+                return None
+        except APIRateLimitException as e:
+            raise e
+        except Exception as e:
+            logger.error(f"{fetch_title} 豆瓣识别媒体信息时出错：{str(e)}")
+            return None
 
     @staticmethod
     def __get_chinese_name(person: MediaPerson) -> Optional[str]:
