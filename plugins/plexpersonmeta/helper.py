@@ -154,9 +154,10 @@ class RateLimiter:
         重置等待时间
         当调用成功时调用此方法，重置当前等待时间为基础等待时间
         """
+        if self.next_allowed_time != 0 or self.current_wait > self.base_wait:
+            logger.info(f"调用成功，重置限流等待时长，并允许立即调用")
         self.next_allowed_time = 0
         self.current_wait = self.base_wait
-        logger.info(f"调用成功，重置限流等待时长，并允许立即调用")
 
     def trigger_limit(self):
         """
