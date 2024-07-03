@@ -232,17 +232,17 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ### 18. [Plex演职人员刮削](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/plexpersonmeta/README.md)
 
 - 实现刮削演职人员中文名称及角色
-- Plex 的 API 实现较为复杂，我在尝试为 actor.tag.tagKey 赋值时遇到了问题，如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢
+- Plex 的 API 实现较为复杂，我在尝试为 `actor.tag.tagKey` 赋值时遇到了问题，如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢
+- **警告**：由于 `tagKey` 的问题，当执行刮削后，可能会出现丢失在线元数据，无法在Plex中点击人物查看详情等问题
+- **免责声明**：如开启「保留在线元数据」选项，该功能尚处于实验性阶段，需结合数据库脚本使用，可能导致Plex元数据丢失甚至播放失败等一系列未知问题，请慎重使用，详细信息请查阅 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/plexpersonmeta/README.md)
 
 #### 感谢
 
 - 本插件基于 [官方插件](https://github.com/jxxghp/MoviePilot-Plugins) 编写，并参考了 [PrettyServer](https://github.com/Bespertrijun/PrettyServer) 项目，实现了插件的相关功能。
 - 特此感谢 [jxxghp](https://github.com/jxxghp)、[Bespertrijun](https://github.com/Bespertrijun) 等贡献者的卓越代码贡献。
 - 如有未能提及的作者，请告知我以便进行补充。
-- **免责声明**
-  - 如开启「保留在线元数据」选项，该功能尚处于实验性阶段，需结合数据库脚本使用，可能导致Plex元数据丢失甚至播放失败等一系列未知问题，请慎重使用，详细信息请查阅 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/plexpersonmeta/README.md)
 
-![](images/2024-06-29-22-40-57.png)
+![](images/2024-07-04-01-57-02.png)
 ![](images/2024-06-25-02-57-20.png)
 ![](images/2024-06-25-02-57-53.png)
 
