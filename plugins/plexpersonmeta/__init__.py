@@ -40,7 +40,7 @@ class PlexPersonMeta(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png"
     # 插件版本
-    plugin_version = "1.4"
+    plugin_version = "1.5"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -539,7 +539,7 @@ class PlexPersonMeta(_PluginBase):
                                         'props': {
                                             'type': 'error',
                                             'variant': 'tonal',
-                                            'text': '免责声明：如开启「保留在线元数据」选项，需结合数据库触发器脚本使用，该功能尚处于实验性阶段，'
+                                            'text': '免责声明：如开启「保留在线元数据」选项，该功能尚处于实验性阶段，需结合数据库脚本使用，'
                                                     '可能导致Plex元数据丢失甚至播放失败等一系列未知问题，请慎重使用，详细信息请查阅 '
                                         },
                                         'content': [
