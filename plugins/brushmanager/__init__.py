@@ -472,7 +472,7 @@ class BrushManager(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '请先在数据配置中初始化数据源，点击保存后再打开插件选择种子进行整理'
+                                            'text': '注意：请先在数据配置中初始化数据源，点击保存后再打开插件选择种子进行整理'
                                         }
                                     }
                                 ]

@@ -116,7 +116,7 @@ class PluginReload(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '请选择已安装的本地插件，保存后对应插件将会在内存中重新加载'
+                                            'text': '注意：请选择已安装的本地插件，保存后对应插件将会在内存中重新加载'
                                         }
                                     }
                                 ]
