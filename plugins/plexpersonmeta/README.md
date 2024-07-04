@@ -9,7 +9,7 @@
 
 #### 保留在线元数据功能注意事项
 
-- 请注意，该功能目前处于**实验阶段**。在正式启用前，我们**强烈推荐**您在次要使用环境中进行测试，以确保其稳定性。该功能是通过数据库脚本来实现的，可能会引发元数据丢失、播放问题等风险。在使用之前，请确保您已经详细阅读了所有操作步骤，并进行了充分的数据备份，确保了解所有潜在风险并采取了相应的预防措施。
+- 请注意，该功能目前处于**实验阶段**。在正式启用前，我们**强烈推荐**您在次要使用环境中进行测试，以确保其稳定性。该功能是通过数据库脚本来实现的，可能会引发元数据丢失、播放问题甚至Plex数据库文件损坏等风险。在使用之前，请确保您已经详细阅读了所有操作步骤，并进行了充分的数据备份，确保了解所有潜在风险并采取了相应的预防措施。
 
 - 如果您之前使用过本插件，由于保留在线元数据的功能是通过数据库脚本实现的，我们建议对媒体库进行全库元数据刷新，以恢复到历史状态。这是为了避免可能出现的部分元数据无法正常生效的问题。
 
@@ -19,17 +19,20 @@
    - 在开始任何备份或修改之前，请先停用 Plex 服务，以避免数据冲突。
    - 
 2. **备份 Plex 数据库**
-   - **重要：** 一定要先备份您的 Plex 数据库。您可以找到数据库文件通常在以下路径：`/Plug-in Support/Databases/com.plexapp.plugins.library.db`。
+   - **重要：** 一定要先备份您的 Plex 数据库。数据库文件通常在以下路径：
+   `/Plug-in Support/Databases/com.plexapp.plugins.library.db` 
+   `/Plug-in Support/Databases/com.plexapp.plugins.library.blobs.db`
+   请注意，两个数据库文件均需要进行备份。
    - 关于如何备份和恢复数据库，请参考这些官方指南：
      - [修复损坏的数据库](https://support.plex.tv/articles/repair-a-corrupted-database/)
      - [恢复备份的数据库](https://support.plex.tv/articles/202485658-restore-a-database-backed-up-via-scheduled-tasks/)
 
-3. **下载并执行 SQL 脚本**：
+1. **下载并执行 SQL 脚本**：
    - 在备份完成后，请下载附件中的 SQL 脚本。
    - 使用如 [SQLiteStudio](https://github.com/pawelsalawa/sqlitestudio)、[Navicat for SQLite](https://www.navicat.com/en/products/navicat-for-sqlite) 或 [DBeaver](https://dbeaver.com/docs/dbeaver/Database-driver-SQLite/) 等工具打开您的 Plex 数据库。
    - 执行下载的 SQL 脚本，更新数据库。
 
-4. **验证脚本执行结果**：
+2. **验证脚本执行结果**：
    - 脚本执行完毕后，运行以下 SQL 查询以确认触发器是否已正确创建：
      ```sql
      SELECT name, tbl_name, sql
@@ -40,7 +43,7 @@
 
    ![](../../images/2024-07-04-02-11-17.png)
 
-5. **下载 SQL 脚本**：
+3. **下载 SQL 脚本**：
    - 点击此处[下载脚本](resources/trigger.sql)。
 
 请在操作过程中保持高度警惕，确保每一步均正确执行，以避免数据丢失或损坏。
