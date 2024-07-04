@@ -48,6 +48,12 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 - 定时通过WebDAV备份数据库和配置文件。
 
+#### 感谢
+
+- 参考了 [thsrite/MoviePilot-Plugins](https://github.com/thsrite/MoviePilot-Plugins/) 项目，实现了插件的相关功能。
+- 特此感谢 [thsrite](https://github.com/thsrite) 等贡献者的卓越代码贡献。
+- 如有未能提及的作者，请告知我以便进行补充。
+
 ![](images/2024-04-25-05-07-25.png)
 
 ### 7. Plex中文本地化
