@@ -240,7 +240,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 实现刮削演职人员中文名称及角色
 - Plex 的 API 实现较为复杂，我在尝试为 `actor.tag.tagKey` 赋值时遇到了问题，如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢
 - **警告**：由于 `tagKey` 的问题，当执行刮削后，可能会出现丢失在线元数据，无法在Plex中点击人物查看详情等问题
-- **免责声明**：如开启「保留在线元数据」选项，该功能尚处于实验性阶段，需结合数据库脚本使用，可能导致Plex元数据丢失甚至播放失败等一系列未知问题，请慎重使用，详细信息请查阅 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/plexpersonmeta/README.md)
+- **免责声明**：如开启「保留在线元数据」选项，该功能尚处于实验性阶段，开启后将大幅降低刮削效率，同时需结合数据库脚本使用，可能导致Plex元数据丢失甚至播放失败等一系列未知问题，请慎重使用，详细信息请查阅 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/plexpersonmeta/README.md)
 
 #### 感谢
 
