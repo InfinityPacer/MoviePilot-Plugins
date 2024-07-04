@@ -88,8 +88,8 @@ class WebDAVBackup(_PluginBase):
         try:
             self._max_count = int(config.get("max_count", 0))
         except ValueError:
-            logger.error("配置错误: 'max_count' 必须是一个整数。使用默认值 0。")
-            self._max_count = 0
+            logger.error("配置错误: 'max_count' 必须是一个整数。使用默认值 10。")
+            self._max_count = 10
 
         self._hostname = config.get('hostname')
         self._login = config.get('login')
@@ -172,6 +172,8 @@ class WebDAVBackup(_PluginBase):
                                         'props': {
                                             'model': 'enabled',
                                             'label': '启用插件',
+                                            'hint': '开启后插件将处于激活状态',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -188,6 +190,8 @@ class WebDAVBackup(_PluginBase):
                                         'props': {
                                             'model': 'notify',
                                             'label': '发送通知',
+                                            'hint': '是否在特定事件发生时发送通知',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -204,6 +208,8 @@ class WebDAVBackup(_PluginBase):
                                         'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
+                                            'hint': '插件将立即运行一次',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -224,7 +230,9 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'disable_check',
-                                            'label': '忽略校验'
+                                            'label': '忽略校验',
+                                            'hint': '开启后将忽略Webdav目录校验',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -240,7 +248,9 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'digest_auth',
-                                            'label': '启用Digest认证'
+                                            'label': '启用Digest认证',
+                                            'hint': '开启后将使用Digest认证',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -261,7 +271,9 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'hostname',
-                                            'label': '服务器地址'
+                                            'label': '服务器地址',
+                                            'hint': '输入WebDAV服务器的地址',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -277,7 +289,9 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'login',
-                                            'label': '登录名'
+                                            'label': '登录名',
+                                            'hint': '输入登录名',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -293,7 +307,9 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'password',
-                                            'label': '登录密码'
+                                            'label': '登录密码',
+                                            'hint': '输入登录密码',
+                                            'persistent-hint': True,
                                         }
                                     }
                                 ]
@@ -309,7 +325,10 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'cron',
-                                            'label': '备份周期'
+                                            'label': '运行周期',
+                                            'placeholder': '5位cron表达式',
+                                            'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -325,8 +344,38 @@ class WebDAVBackup(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'max_count',
-                                            'label': '最大保留备份数'
+                                            'label': '最大保留备份数',
+                                            'type': 'number',
+                                            "min": "0",
+                                            'hint': '输入最大保留备份数',
+                                            'persistent-hint': True,
                                         }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal'
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'div',
+                                                'html': '参考了 <a href="https://github.com/thsrite/MoviePilot-Plugins/" target="_blank" style="text-decoration: underline;">thsrite/MoviePilot-Plugins</a> 项目，特此感谢 <a href="https://github.com/thsrite" target="_blank" style="text-decoration: underline;">thsrite</a>'
+                                            },
+                                        ]
                                     }
                                 ]
                             }
@@ -367,7 +416,7 @@ class WebDAVBackup(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：如备份失败，并日志提示Remote parent for: ... not found，请尝试开启忽略校验后重试'
+                                            'text': '注意：如备份失败，请尝试开启忽略校验后重试'
                                         }
                                     }
                                 ]
@@ -567,12 +616,13 @@ class WebDAVBackup(_PluginBase):
     def __connect_to_webdav(self) -> bool:
         """尝试连接到WebDAV服务器，并验证连接是否成功。"""
         try:
+            if not self._client:
+                raise Exception("无法获取WebDAV客户端实例，请尝试重新启用插件")
             # 尝试列出根目录来检查连接
             self._client.list('/')  # 如果不成功，会抛出异常
             logger.info("成功连接到WebDAV服务器")
             return True
         except Exception as e:
-            self._client = None
             msg = f"连接到WebDAV服务器失败: {e}"
             logger.error(msg)
             self.__notify_user_if_failed(msg)
