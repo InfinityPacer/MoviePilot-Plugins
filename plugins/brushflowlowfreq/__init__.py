@@ -25,6 +25,7 @@ from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
 from app.schemas import NotificationType, TorrentInfo, MediaType
+from app.schemas.types import EventType
 from app.utils.http import RequestUtils
 from app.utils.string import StringUtils
 
@@ -2235,8 +2236,8 @@ class BrushFlowLowFreq(_PluginBase):
                 logger.warn(f"{torrent.title} 添加刷流任务失败！")
                 continue
 
-            # 保存任务信息
-            torrent_tasks[hash_string] = {
+            # 触发刷流下载时间并保存任务信息
+            torrent_task = {
                 "site": siteinfo.id,
                 "site_name": siteinfo.name,
                 "title": torrent.title,
@@ -2270,6 +2271,12 @@ class BrushFlowLowFreq(_PluginBase):
                 "deleted": False,
                 "time": time.time()
             }
+
+            self.eventmanager.send_event(etype=EventType.PluginAction, data={
+                "action": "brushflow_download_added",
+                "data": torrent_task
+            })
+            torrent_tasks[hash_string] = torrent_task
 
             # 统计数据
             torrents_size += torrent.size
