@@ -12,7 +12,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 详细配置说明以及刷流规则请参考 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/brushflowlowfreq/README.md)
 
 ![](images/2024-05-02-03-16-42.png)
-![](images/2024-05-02-03-18-48.png)
+![](images/2024-07-07-03-36-08.png)
 
 
 ### 2. 飞书机器人消息通知
@@ -25,7 +25,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 - 直接在Docker中调试插件时，无需重启容器即可完成插件热加载
 
-![](images/2024-04-19-00-47-33.png)
+![](images/2024-07-07-03-36-49.png)
 
 ### 4. 刷流种子整理
 
@@ -34,7 +34,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 移除刷流标签建议配合刷流插件中的「下载器监控」选项
 - 入库由MoviePliot的下载器监控或者目录监控完成，本插件仅提供种子操作如自动分类，添加MP标签等功能
 
-![](images/2024-04-21-19-39-10.png)
+![](images/2024-07-07-03-37-10.png)
 
 ### 5. Plex元数据刷新
 
@@ -54,7 +54,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 特此感谢 [thsrite](https://github.com/thsrite) 等贡献者的卓越代码贡献。
 - 如有未能提及的作者，请告知我以便进行补充。
 
-![](images/2024-04-25-05-07-25.png)
+![](images/2024-07-07-03-30-56.png)
 
 ### 7. Plex中文本地化
 
@@ -135,8 +135,8 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 - 支持将插件按自定义顺序排序
 
-![](images/2024-05-17-23-25-53.png)
-![](images/2024-05-17-23-26-30.png)
+![](images/2024-07-07-03-34-15.png)
+![](images/2024-07-07-03-33-52.png)
 
 ### 13. 种子关键字分类整理
 
@@ -248,7 +248,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 特此感谢 [jxxghp](https://github.com/jxxghp)、[Bespertrijun](https://github.com/Bespertrijun) 等贡献者的卓越代码贡献。
 - 如有未能提及的作者，请告知我以便进行补充。
 
-![](images/2024-07-04-01-57-02.png)
+![](images/2024-07-07-03-35-26.png)
 ![](images/2024-06-25-02-57-20.png)
 ![](images/2024-06-25-02-57-53.png)
 
