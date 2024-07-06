@@ -71,7 +71,6 @@ class BrushConfig:
         self.brush_sequential = config.get("brush_sequential", False)
         self.proxy_download = config.get("proxy_download", False)
         self.proxy_delete = config.get("proxy_delete", False)
-        self.log_more = config.get("log_more", False)
         self.active_time_range = config.get("active_time_range")
         self.downloader_monitor = config.get("downloader_monitor")
         self.qb_category = config.get("qb_category")
@@ -295,7 +294,6 @@ class BrushFlowLowFreq(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
-        logger.info(f"站点刷流服务初始化")
         self.siteshelper = SitesHelper()
         self.siteoper = SiteOper()
         self.torrents = TorrentsChain()
@@ -349,11 +347,10 @@ class BrushFlowLowFreq(_PluginBase):
         # 同步官方插件
         self.__sync_official(config=config)
 
-        if brush_config.log_more:
-            if brush_config.enable_site_config:
-                logger.info(f"已开启站点独立配置，配置信息：{brush_config}")
-            else:
-                logger.info(f"没有开启站点独立配置，配置信息：{brush_config}")
+        if brush_config.enable_site_config:
+            logger.debug(f"已开启站点独立配置，配置信息：{brush_config}")
+        else:
+            logger.debug(f"没有开启站点独立配置，配置信息：{brush_config}")
 
         # 停止现有任务
         self.stop_service()
@@ -374,8 +371,6 @@ class BrushFlowLowFreq(_PluginBase):
 
         # 如果开启&存在站点时，才需要启用后台任务
         self._task_brush_enable = brush_config.enabled and brush_config.brushsites
-
-        # brush_config.onlyonce = True
 
         # 检查是否启用了一次性任务
         if brush_config.onlyonce:
@@ -987,11 +982,6 @@ class BrushFlowLowFreq(_PluginBase):
                         'component': 'VWindow',
                         'props': {
                             'model': '_tabs'
-                            # VWindow设置paddnig会导致切换Tab时页面高度变动，调整为修改VRow的方案
-                            # 'style': {
-                            #     'padding-top': '24px',
-                            #     'padding-bottom': '24px',
-                            # },
                         },
                         'content': [
                             {
@@ -1439,7 +1429,7 @@ class BrushFlowLowFreq(_PluginBase):
                                                         'component': 'VTextField',
                                                         'props': {
                                                             'model': 'seed_inactivetime',
-                                                            'label': '未活动时间（分钟） ',
+                                                            'label': '未活动时间（分钟）',
                                                             'placeholder': '超过时删除任务'
                                                         }
                                                     }
@@ -1685,22 +1675,6 @@ class BrushFlowLowFreq(_PluginBase):
                                                     {
                                                         'component': 'VSwitch',
                                                         'props': {
-                                                            'model': 'log_more',
-                                                            'label': '记录更多日志',
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
                                                             'model': 'sync_official',
                                                             'label': '双向同步官方数据',
                                                         }
@@ -1907,7 +1881,6 @@ class BrushFlowLowFreq(_PluginBase):
             "freeleech": "free",
             "hr": "yes",
             "enable_site_config": False,
-            "log_more": False,
             "downloader_monitor": False,
             "auto_qb_category": False,
             "qb_first_last_piece": False,
@@ -2201,9 +2174,6 @@ class BrushFlowLowFreq(_PluginBase):
 
         if brush_config.site_hr_active:
             logger.info(f"站点 {siteinfo.name} 已开启全站H&R选项，所有种子设置为H&R种子")
-            # 由于缓存原因，这里不能直接改torrents，在后续加入任务中调整
-            # for torrent in torrents:
-            #     torrent.hit_and_run = True
 
         # 排除包含订阅的种子
         if brush_config.except_subscribe:
@@ -2223,6 +2193,8 @@ class BrushFlowLowFreq(_PluginBase):
             self.__log_brush_conditions(passed=pre_condition_passed, reason=reason)
             if not pre_condition_passed:
                 return False
+
+            logger.debug(f"种子详情：{torrent}")
 
             # 判断能否通过保种体积刷流条件
             size_condition_passed, reason = self.__evaluate_size_condition_for_brush(torrents_size=torrents_size,
@@ -2452,7 +2424,8 @@ class BrushFlowLowFreq(_PluginBase):
 
         return True, None
 
-    def __log_brush_conditions(self, passed: bool, reason: str, torrent: Any = None):
+    @staticmethod
+    def __log_brush_conditions(passed: bool, reason: str, torrent: Any = None):
         """
         记录刷流日志
         """
@@ -2460,9 +2433,7 @@ class BrushFlowLowFreq(_PluginBase):
             if not torrent:
                 logger.warn(f"没有通过前置刷流条件校验，原因：{reason}")
             else:
-                brush_config = self.__get_brush_config()
-                if brush_config.log_more:
-                    logger.warn(f"种子没有通过刷流条件校验，原因：{reason} 种子：{torrent.title}|{torrent.description}")
+                logger.debug(f"种子没有通过刷流条件校验，原因：{reason} 种子：{torrent.title}|{torrent.description}")
 
     # endregion
 
@@ -2767,8 +2738,7 @@ class BrushFlowLowFreq(_PluginBase):
                                            reason=reason)
                 logger.info(f"站点：{site_name}，{reason}，删除种子：{torrent_title}|{torrent_desc}")
             else:
-                if brush_config.log_more:
-                    logger.info(f"站点：{site_name}，{reason}，不删除种子：{torrent_title}|{torrent_desc}")
+                logger.debug(f"站点：{site_name}，{reason}，不删除种子：{torrent_title}|{torrent_desc}")
 
         return delete_hashes
 
@@ -2806,8 +2776,7 @@ class BrushFlowLowFreq(_PluginBase):
                                            reason=reason)
                 logger.info(f"站点：{site_name}，{reason}，删除种子：{torrent_title}|{torrent_desc}")
             else:
-                if brush_config.log_more:
-                    logger.info(f"站点：{site_name}，{reason}，不删除种子：{torrent_title}|{torrent_desc}")
+                logger.debug(f"站点：{site_name}，{reason}，不删除种子：{torrent_title}|{torrent_desc}")
 
         return delete_hashes
 
@@ -3183,7 +3152,6 @@ class BrushFlowLowFreq(_PluginBase):
             "brush_sequential": brush_config.brush_sequential,
             "proxy_download": brush_config.proxy_download,
             "proxy_delete": brush_config.proxy_delete,
-            "log_more": brush_config.log_more,
             "active_time_range": brush_config.active_time_range,
             "downloader_monitor": brush_config.downloader_monitor,
             "qb_category": brush_config.qb_category,
@@ -3280,7 +3248,7 @@ class BrushFlowLowFreq(_PluginBase):
                     data = data.get(key)
                     if not data:
                         return None
-                logger.info(f"获取到下载地址：{data}")
+                logger.debug(f"获取到下载地址：{data}")
                 return data
         return None
 
@@ -3350,8 +3318,7 @@ class BrushFlowLowFreq(_PluginBase):
                     # 获取种子Hash
                     torrent_hash = self.qb.get_torrent_id_by_tag(tags=tag)
                     if not torrent_hash:
-                        logger.error(f"{brush_config.downloader} 获取种子Hash失败"
-                                     f"{'，请尝试启用「代理下载种子」配置项' if not brush_config.proxy_download else ''}")
+                        logger.error(f"{brush_config.downloader} 获取种子Hash失败，详细信息请查看 README")
                         return None
                     return torrent_hash
             return None
@@ -3915,7 +3882,8 @@ class BrushFlowLowFreq(_PluginBase):
             for key in set(self._subscribe_infos) - current_keys:
                 del self._subscribe_infos[key]
 
-        logger.info(f"订阅标题匹配完成，当前订阅的标题集合为：{self._subscribe_infos}")
+        logger.info("已订阅标题匹配完成")
+        logger.debug(f"当前订阅的标题集合为：{self._subscribe_infos}")
         unique_titles = {title for titles in self._subscribe_infos.values() for title in titles}
         return unique_titles
 
