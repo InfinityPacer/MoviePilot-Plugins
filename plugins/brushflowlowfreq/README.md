@@ -4,6 +4,12 @@
 
 ## 版本更新日志
 
+- v3.4
+  - 移除「记录更多日志」配置项并调整为DEBUG日志
+  - 支持「删除排除标签」配置项
+    - 后续版本将移除「删种排除MoviePilot任务」配置项，请尽快调整
+  - 增加刷流任务时支持触发插件事件（联动H&R助手）
+
 - v3.3
   - 支持QB删除种子时强制汇报Tracker
   - 站点独立配置增加「站点全局H&R」配置项
@@ -139,12 +145,13 @@
 | 下载超时时间（小时）   | `download_time`       | 达到指定下载超时时间后删除任务             |                                                                                                                      |
 | 平均上传速度（KB/s）   | `seed_avgspeed`       | 低于设定的平均上传速度时删除任务           | 刷流任务做种30分钟后才会生效                                                                                         |
 | 未活动时间（分钟）     | `seed_inactivetime`   | 超过设定的未活动时间后删除任务             |                                                                                                                      |
+| 删除排除标签           | `delete_except_tags`  | 删除任务时排除的种子任务标签               | 默认值为MOVIEPILOT,H&R，可用于联动H&R助手或MoviePilot任务                                                            |
 | 单任务上传限速（KB/s） | `up_speed`            | 设置每个种子的上传限速                     |                                                                                                                      |
 | 单任务下载限速（KB/s） | `dl_speed`            | 设置每个种子的下载限速                     |                                                                                                                      |
 | 保存目录               | `save_path`           | 设置种子保存的目录                         |
 | 开启时间段             | `active_time_range`   | 设置插件Brush和Check的活动时间段           | 如00:00-08:00                                                                                                        |
 | 站点顺序刷流           | `brush_sequential`    | 是否按选择的站点顺序进行刷流               | 关闭选项时，按选择的站点随机顺序进行刷流                                                                             |
-| 删种排除MoviePilot任务 | `except_tags`         | 删除任务时排除带有MoviePilot标签的任务     | MoviePilot标签指环境变量中配置的TORRENT_TAG，默认为MoviePilot                                                        |
+| 删种排除MoviePilot任务 | `except_tags`         | 删除任务时排除带有MoviePilot标签的任务     | MoviePilot标签指环境变量中配置的TORRENT_TAG，默认为MoviePilot，后续将移除该配置项                                    |
 | 排除订阅               | `except_subscribe`    | 刷流时排除订阅内容的相关种子               | **实验性功能**，可能会导致刷流时无法正常下载种子，请慎重开启                                                         |
 | 清除统计数据           | `clear_task`          | 是否启用清除统计数据功能                   | 一次性任务，自动将插件数据页中的所有数据重置后，配置项重置为关闭                                                     |
 | 归档已删除种子         | `archive_task`        | 是否启用归档已删除种子的功能               | 一次性任务，自动将插件数据页中的已删除数据进行归档后，配置项重置为关闭                                               |
