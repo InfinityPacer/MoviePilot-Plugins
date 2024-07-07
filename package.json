@@ -248,11 +248,12 @@
         "name": "Plex演职人员刮削",
         "description": "实现刮削演职人员中文名称及角色。",
         "labels": "Plex",
-        "version": "1.5",
+        "version": "1.6",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.6": "由于未知原因，开启「保留在线元数据」后部分媒体库演员数据被清理，因此回滚该功能，如已使用该功能，建议尽快恢复数据库备份",
             "v1.5": "支持保留在线元数据（实验性功能），需结合数据库脚本使用，详情请查阅 README",
             "v1.4": "优化豆瓣限流以及缓存策略，进一步提高性能，需要主程序升级1.9.10+版本",
             "v1.3": "优化最近一次入库逻辑以及剧集处理，进一步提高识别率",
