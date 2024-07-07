@@ -86,7 +86,7 @@ class PlexPersonMeta(_PluginBase):
     # 豆瓣辅助识别
     _douban_scrap = None
     # 保留在线元数据
-    _reserve_tag_key = None
+    # _reserve_tag_key = None
     # 最近一次入库时间
     _transfer_time = None
     # timeout
@@ -118,7 +118,7 @@ class PlexPersonMeta(_PluginBase):
         self._scrap_type = config.get("scrap_type", "all")
         self._remove_no_zh = config.get("remove_no_zh", False)
         self._douban_scrap = config.get("douban_scrap", True)
-        self._reserve_tag_key = config.get("reserve_tag_key", False)
+        # self._reserve_tag_key = config.get("reserve_tag_key", False)
         try:
             self._delay = int(config.get("delay", 200))
         except ValueError:
@@ -344,24 +344,24 @@ class PlexPersonMeta(_PluginBase):
                             #         }
                             #     ]
                             # },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'reserve_tag_key',
-                                            'label': '保留在线元数据（实验性功能）',
-                                            'hint': '尝试保留在线元数据，需结合脚本使用',
-                                            'persistent-hint': True,
-                                        }
-                                    }
-                                ]
-                            }
+                            # {
+                            #     'component': 'VCol',
+                            #     'props': {
+                            #         'cols': 12,
+                            #         'md': 4
+                            #     },
+                            #     'content': [
+                            #         {
+                            #             'component': 'VSwitch',
+                            #             'props': {
+                            #                 'model': 'reserve_tag_key',
+                            #                 'label': '保留在线元数据（实验性功能）',
+                            #                 'hint': '尝试保留在线元数据，需结合脚本使用',
+                            #                 'persistent-hint': True,
+                            #             }
+                            #         }
+                            #     ]
+                            # }
                         ],
                     },
                     {
@@ -616,7 +616,7 @@ class PlexPersonMeta(_PluginBase):
             "delay": 200,
             "scrap_type": "all",
             "remove_no_zh": False,
-            "reserve_tag_key": False,
+            # "reserve_tag_key": False,
             "douban_scrap": True
         }
 
@@ -1071,8 +1071,8 @@ class PlexPersonMeta(_PluginBase):
                 f"{actor_index}.tag.tagKey": actor_tag_key
             })
 
-            if self._reserve_tag_key:
-                actors_param[f"{actor_index}.tag.art"] = actor_tag_key
+            # if self._reserve_tag_key:
+            #     actors_param[f"{actor_index}.tag.art"] = actor_tag_key
 
         params = {
             "actor.locked": 1 if self._lock else 0
