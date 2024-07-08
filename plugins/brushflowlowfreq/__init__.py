@@ -2520,6 +2520,7 @@ class BrushFlowLowFreq(_PluginBase):
 
             # 根据配置的标签进行种子排除
             if check_torrents:
+                logger.info(f"当前刷流任务共 {len(check_torrents)} 个有效种子，正在准备按设定的种子标签进行排除")
                 # 初始化一个空的列表来存储需要排除的标签
                 tags_to_exclude = set()
                 # 如果 except_tags 配置为 True，将 settings.TORRENT_TAG 添加到排除列表中（前提是它不为空且不是纯空白）
@@ -2527,7 +2528,7 @@ class BrushFlowLowFreq(_PluginBase):
                     tags_to_exclude.add(settings.TORRENT_TAG.strip())
                 # 如果 delete_except_tags 非空且不是纯空白，则添加到排除列表中
                 if brush_config.delete_except_tags and brush_config.delete_except_tags.strip():
-                    tags_to_exclude.add(brush_config.delete_except_tags.strip())
+                    tags_to_exclude.update(tag.strip() for tag in brush_config.delete_except_tags.split(','))
                 # 将所有需要排除的标签组合成一个字符串，每个标签之间用逗号分隔
                 combined_tags = ",".join(tags_to_exclude)
                 if combined_tags:  # 确保有标签需要排除
@@ -2536,9 +2537,10 @@ class BrushFlowLowFreq(_PluginBase):
                     post_filter_count = len(check_torrents)  # 获取过滤后的任务数量
                     excluded_count = pre_filter_count - post_filter_count  # 计算被排除的任务数量
                     logger.info(
-                        f"排除标签 '{combined_tags}' 后，剩余任务数: {post_filter_count}, 排除任务数: {excluded_count}")
+                        f"种子数：{pre_filter_count}，排除标签 '{combined_tags}' 后，"
+                        f"剩余种子数: {post_filter_count}, 排除种子数: {excluded_count}")
                 else:
-                    logger.info("没有配置有效的排除标签，所有任务均参与后续处理")
+                    logger.info("没有配置有效的排除标签，所有种子均参与后续处理")
 
             # 种子删除检查
             if not check_torrents:
