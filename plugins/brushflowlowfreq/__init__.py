@@ -2204,7 +2204,7 @@ class BrushFlowLowFreq(_PluginBase):
 
         torrents_size = self.__calculate_seeding_torrents_size(torrent_tasks=torrent_tasks)
 
-        logger.info(f"正在准备种子刷流，数量：{len(torrents)}")
+        logger.info(f"正在准备种子刷流，数量 {len(torrents)}")
 
         # 过滤种子
         for torrent in torrents:
@@ -2537,8 +2537,8 @@ class BrushFlowLowFreq(_PluginBase):
                     post_filter_count = len(check_torrents)  # 获取过滤后的任务数量
                     excluded_count = pre_filter_count - post_filter_count  # 计算被排除的任务数量
                     logger.info(
-                        f"种子数：{pre_filter_count}，排除标签 '{combined_tags}' 后，"
-                        f"剩余种子数: {post_filter_count}, 排除种子数: {excluded_count}")
+                        f"有效种子数 {pre_filter_count}，排除标签 '{combined_tags}' 后，"
+                        f"剩余种子数 {post_filter_count}，排除种子数 {excluded_count}")
                 else:
                     logger.info("没有配置有效的排除标签，所有种子均参与后续处理")
 
@@ -3081,7 +3081,7 @@ class BrushFlowLowFreq(_PluginBase):
             "active_downloaded": active_downloaded
         })
 
-        logger.info(f"刷流任务统计数据：总任务数：{total_count}，活跃任务数：{active_count}，已删除：{total_deleted}，"
+        logger.info(f"刷流任务统计数据，总任务数：{total_count}，活跃任务数：{active_count}，已删除：{total_deleted}，"
                     f"待归档：{total_unarchived}，"
                     f"活跃上传量：{StringUtils.str_filesize(active_uploaded)}，"
                     f"活跃下载量：{StringUtils.str_filesize(active_downloaded)}，"
