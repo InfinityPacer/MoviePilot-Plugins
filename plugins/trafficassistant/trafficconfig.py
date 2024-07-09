@@ -20,7 +20,7 @@ class BaseConfig:
     disable_auto_brush_if_above: Optional[bool] = False  # 分享率高于上限时，是否关闭自动刷流
 
     def __post_init__(self):
-        # Convert string inputs to appropriate types if necessary
+        # 将输入转换为适当的类型
         self.ratio_upper_limit = convert_type(self.ratio_upper_limit, float)
         self.ratio_lower_limit = convert_type(self.ratio_lower_limit, float)
 
@@ -49,20 +49,22 @@ class SiteConfig(BaseConfig):
 
 
 def convert_type(value, target_type):
-    """Convert given value to the specified target type. Return type's natural default value if conversion fails."""
+    """
+    将给定值转换为指定的目标类型。如果转换失败，则返回该类型的自然默认值。
+    """
     try:
         if target_type == float:
             return float(value)
         if target_type == int:
             return int(value)
-        # Add other types as necessary
+        # 可以根据需要添加其他类型
     except (ValueError, TypeError):
-        # Return type's natural default value if conversion fails
+        # 如果转换失败，则返回类型的自然默认值
         if target_type == float:
             return 0.0
         if target_type == int:
             return 0
-        return None  # default for unspecified types
+        return None  # 未指定类型的默认值
 
 
 def merge_configs(global_config: TrafficConfig, site_config: Optional[SiteConfig]) -> BaseConfig:
