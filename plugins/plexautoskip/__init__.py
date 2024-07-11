@@ -26,7 +26,7 @@ class PlexAutoSkip(_PluginBase):
     # 插件配置项ID前缀
     plugin_config_prefix = "plexautoskip_"
     # 加载顺序
-    plugin_order = 92
+    plugin_order = 93
     # 可使用的用户级别
     auth_level = 1
     # Skipper
