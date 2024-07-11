@@ -70,7 +70,6 @@ class PlexMatch(_PluginBase):
         # 停止现有任务
         self.stop_service()
 
-        # self._complete_all = True
         # 启动服务
         self._scheduler = BackgroundScheduler(timezone=settings.TZ)
         if self._complete_all:
