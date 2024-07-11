@@ -972,7 +972,7 @@ class AutoDiagnosis(_PluginBase):
                     logger.info(f"{src_path} 或 {dest_path} 文件不存在")
             except Exception as e:
                 exception_count += 1
-                logger.error(f"处理文件 {link_item.src} 和 {link_item.src} 时发生错误: {e}")
+                logger.error(f"处理文件 {link_item.src} 和 {link_item.dest} 时发生错误: {e}")
 
         return generate_link_check_summary()
 
