@@ -138,8 +138,8 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 - 支持将插件按自定义顺序排序
 
-![](images/2024-07-07-03-34-15.png)
-![](images/2024-07-07-03-33-52.png)
+![](images/2024-07-13-03-00-07.png)
+![](images/2024-07-13-02-54-10.png)
 
 ### 13. 种子关键字分类整理
 
@@ -243,7 +243,6 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 实现刮削演职人员中文名称及角色
 - Plex 的 API 实现较为复杂，我在尝试为 `actor.tag.tagKey` 赋值时遇到了问题，如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢
 - **警告**：由于 `tagKey` 的问题，当执行刮削后，可能会出现丢失在线元数据，无法在Plex中点击人物查看详情等问题
-- **免责声明**：如开启「保留在线元数据」选项，该功能尚处于实验性阶段，开启后将大幅降低刮削效率，同时需结合数据库脚本使用，可能导致Plex元数据丢失甚至播放失败等一系列未知问题，请慎重使用，详细信息请查阅 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/plexpersonmeta/README.md)
 
 #### 感谢
 
@@ -251,7 +250,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 特此感谢 [jxxghp](https://github.com/jxxghp)、[Bespertrijun](https://github.com/Bespertrijun) 等贡献者的卓越代码贡献。
 - 如有未能提及的作者，请告知我以便进行补充。
 
-![](images/2024-07-07-03-35-26.png)
+![](images/2024-07-13-03-02-10.png)
 ![](images/2024-06-25-02-57-20.png)
 ![](images/2024-06-25-02-57-53.png)
 
