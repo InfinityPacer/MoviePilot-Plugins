@@ -1,13 +1,9 @@
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, List, Dict, Tuple, Optional, Type, Union
+from typing import Any, List, Dict, Tuple, Optional, Type
 
 import pytz
-from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy import and_
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import eventmanager, Event
@@ -18,6 +14,9 @@ from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import TransferInfo
 from app.schemas.types import EventType, MediaType
+from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
 
 lock = threading.Lock()
 
@@ -187,7 +186,7 @@ class PlexMatch(_PluginBase):
                                         'props': {
                                             'model': 'complete_all',
                                             'label': '补全 .plexmatch 文件',
-                                            'hint': '一次性根据历史记录补全，执行后自动关闭',
+                                            'hint': '根据历史记录一次性补全，执行后自动关闭',
                                             'persistent-hint': True
                                         },
                                     }
@@ -287,7 +286,7 @@ class PlexMatch(_PluginBase):
                                         'props': {
                                             'type': 'error',
                                             'variant': 'tonal',
-                                            'text': '警告：根据历史记录补全，可能会触发Plex重新扫描已入库媒体文件的片头片尾，请慎重使用'
+                                            'text': '警告：根据历史记录一次性补全，可能会触发Plex重新扫描已入库媒体文件的片头片尾，请慎重使用'
                                         }
                                     }
                                 ]
