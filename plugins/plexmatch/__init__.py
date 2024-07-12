@@ -272,6 +272,27 @@ class PlexMatch(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'error',
+                                            'variant': 'tonal',
+                                            'text': '警告：根据历史记录补全，可能会触发Plex重新扫描已入库媒体文件的片头片尾，请慎重使用'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
