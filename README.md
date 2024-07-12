@@ -4,6 +4,10 @@ MoviePilot三方插件：https://github.com/InfinityPacer/MoviePilot-Plugins
 ## 安装说明
 MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jxxghp/MoviePilot
 
+## 插件集合
+
+![](images/2024-07-13-00-33-23.png)
+
 ## 插件说明
 
 ### 1. [站点刷流（低频版）](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/brushflowlowfreq/README.md)
@@ -127,9 +131,8 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
  - 天气数据来源于[和风天气](https://www.qweather.com/)，再次感谢[和风天气](https://www.qweather.com/)提供的服务
 
-
-![](images/2024-05-17-22-17-21.png)
-![](images/2024-05-17-22-16-48.png)
+![](images/2024-07-13-00-43-36.png)
+![](images/2024-07-13-00-44-06.png)
 
 ### 12. 插件自定义排序
 
@@ -251,4 +254,11 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ![](images/2024-07-07-03-35-26.png)
 ![](images/2024-06-25-02-57-20.png)
 ![](images/2024-06-25-02-57-53.png)
+
+
+### 19. PlexMatch
+
+- 实现入库时添加 .plexmatch 文件，提高识别准确性
+
+![](images/2024-07-13-00-47-11.png)
 
