@@ -367,7 +367,7 @@ class PlexMatch(_PluginBase):
                 return False
 
             if mtype == MediaType.TV:
-                parent_path = path.parent.parent
+                parent_path = path.parent.parent if path.is_file() else path.parent
             else:
                 parent_path = path.parent if path.is_file() else path
 
