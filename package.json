@@ -179,11 +179,12 @@
         "name": "种子关键字分类整理",
         "description": "通过匹配种子关键字进行自定义分类。",
         "labels": "下载管理",
-        "version": "1.1",
+        "version": "1.2",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/TorrentClassifier.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.2": "支持遍历规则匹配，配置页面增加了hint提示信息",
             "v1.1": "增加前置过滤，避免重复整理",
             "v1.0": "增加种子关键字分类整理插件，支持通过匹配种子关键字进行自定义分类"
         }
