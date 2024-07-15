@@ -52,6 +52,8 @@ class TorrentClassifier(_PluginBase):
     _cron = None
     # 发送通知
     _notify = False
+    # 遍历规则匹配
+    _apply_all_rules = False
     # 分类配置
     _classifier_configs = None
     # 下载器
@@ -75,6 +77,7 @@ class TorrentClassifier(_PluginBase):
         self._notify = config.get("notify", False)
         self._cron = config.get("cron", None)
         self._downloader = config.get("downloader", None)
+        self._apply_all_rules = config.get("apply_all_rules", False)
         self._classifier_configs = self.__load_configs(config.get("classifier_configs", None))
 
         if not self._downloader:
@@ -134,7 +137,7 @@ class TorrentClassifier(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -142,6 +145,8 @@ class TorrentClassifier(_PluginBase):
                                         'props': {
                                             'model': 'enabled',
                                             'label': '启用插件',
+                                            'hint': '开启后插件将处于激活状态',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -150,7 +155,7 @@ class TorrentClassifier(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -158,6 +163,31 @@ class TorrentClassifier(_PluginBase):
                                         'props': {
                                             'model': 'notify',
                                             'label': '发送通知',
+                                            'hint': '是否在特定事件发生时发送通知',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    "cols": 12,
+                                    "md": 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'apply_all_rules',
+                                            'label': '遍历规则匹配',
+                                            'hint': '遍历所有规则应用于每个种子',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -166,7 +196,7 @@ class TorrentClassifier(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -174,10 +204,12 @@ class TorrentClassifier(_PluginBase):
                                         'props': {
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
+                                            'hint': '插件将立即运行一次',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
-                            },
+                            }
                         ]
                     },
                     {
@@ -187,7 +219,7 @@ class TorrentClassifier(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -195,7 +227,9 @@ class TorrentClassifier(_PluginBase):
                                         'props': {
                                             'model': 'cron',
                                             'label': '执行周期',
-                                            'placeholder': '5位cron表达式'
+                                            'placeholder': '5位cron表达式',
+                                            'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -204,7 +238,7 @@ class TorrentClassifier(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     "cols": 12,
-                                    "md": 4
+                                    "md": 6
                                 },
                                 'content': [
                                     {
@@ -215,7 +249,9 @@ class TorrentClassifier(_PluginBase):
                                             'items': [
                                                 {'title': 'Qbittorrent', 'value': 'qbittorrent'},
                                                 # {'title': 'Transmission', 'value': 'transmission'}
-                                            ]
+                                            ],
+                                            'hint': '选择下载器',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -228,7 +264,7 @@ class TorrentClassifier(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
-                                    'cols': 12,
+                                    'cols': 12
                                 },
                                 'content': [
                                     {
@@ -237,7 +273,7 @@ class TorrentClassifier(_PluginBase):
                                             'modelvalue': 'classifier_configs',
                                             'lang': 'yaml',
                                             'theme': 'monokai',
-                                            'style': 'height: 30rem',
+                                            'style': 'height: 25rem'
                                         }
                                     }
                                 ]
@@ -250,7 +286,7 @@ class TorrentClassifier(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
-                                    'cols': 12,
+                                    'cols': 12
                                 },
                                 'content': [
                                     {
@@ -319,44 +355,113 @@ class TorrentClassifier(_PluginBase):
 
     def torrent_classifier(self):
         """
-        整理选择的种子进行入库操作
+        根据配置的规则整理并分类选定的种子
         """
         with lock:
+            if self._downloader != "qbittorrent":
+                logger.warn("当前只支持qbittorrent")
+                return
+
             downloader = self.__get_downloader()
             if not downloader:
                 self.__log_and_notify_error("连接下载器出错，请检查连接")
                 return
 
-            torrents, error = downloader.get_torrents()
-            if error:
-                self.__log_and_notify_error("连接下载器出错，请检查连接")
+            if not self._classifier_configs:
+                logger.info("没有找到整理规则，跳过处理")
                 return
 
+            # 根据配置选择应用所有规则还是第一个匹配的规则
+            if self._apply_all_rules:
+                self.__apply_rules_to_each_seeds(downloader=downloader)
+            else:
+                torrents = self.__get_torrents(downloader=downloader)
+                torrent_datas = self.__get_all_hashes_and_torrents(torrents)
+                self.__apply_first_matching_rule_to_torrents(torrent_datas=torrent_datas)
+                return
+
+    def __get_torrents(self, downloader: Any) -> Optional[List[Any]]:
+        """
+        从下载器中获取当前所有种子的列表
+        """
+        torrents, error = downloader.get_torrents()
+        if error:
+            self.__log_and_notify_error("连接下载器出错，请检查连接")
+            return None
+
+        if not torrents:
+            logger.info("无法在下载器中找到种子，取消整理")
+            return None
+
+        return torrents
+
+    def __apply_rules_to_each_seeds(self, downloader: Any):
+        """
+        对每个种子应用所有配置的规则
+        """
+        summary_messages = []
+        # 遍历所有规则并记录序号
+        for index, config in enumerate(self._classifier_configs, start=1):
+            torrents = self.__get_torrents(downloader=downloader)
             if not torrents:
-                logger.info("无法在下载器中找到种子，取消整理")
-                return
+                continue
 
-            logger.info(f"在下载器中获取到的种子数量为 {len(torrents)} ，正在准备进行分类整理")
+            logger.info(f"正在准备执行规则 {index}")
 
             torrent_datas = self.__get_all_hashes_and_torrents(torrents)
+            classifier_torrents = self.__get_should_classifier_torrents(torrent_datas=torrent_datas, config=config)
+            result = self.__torrent_classifier_for_qb(classifier_torrents=classifier_torrents)
+            success_count, failed_count, success_titles, failed_titles = result
 
-            if self._downloader == "qbittorrent":
-                self.__torrent_classifier_for_qb(torrent_datas=torrent_datas)
-            else:
-                logger.warn("当前只支持qbittorrent")
+            # 构建当前规则的成功和失败消息
+            rule_summary_parts = []
+            if success_count > 0:
+                success_details = "\n".join(success_titles)
+                rule_summary_parts.append(f"成功整理 {success_count} 个种子\n{success_details}")
+            if failed_count > 0:
+                failed_details = "\n".join(failed_titles)
+                rule_summary_parts.append(f"失败整理 {failed_count} 个种子，详细请查看日志\n{failed_details}")
 
-    def __torrent_classifier_for_qb(self, torrent_datas: dict):
+            rule_summary_message = "\n\n".join(rule_summary_parts)
+            summary_messages.append(f"规则 {index} 的执行结果:\n{rule_summary_message}")
+            summary_messages.append("————————————————————")
+
+        # 发送所有规则的汇总消息
+        final_summary_message = "\n".join(summary_messages)
+        self.__send_message(title="【种子规则分类整理汇总】", text=final_summary_message)
+
+    def __apply_first_matching_rule_to_torrents(self, torrent_datas: dict):
+        """
+        对每个种子应用第一个匹配的规则
+        """
+        # 初始化成功和失败的计数器和列表
+        classifier_torrents = self.__get_should_classifier_torrents(torrent_datas=torrent_datas)
+        result = self.__torrent_classifier_for_qb(classifier_torrents=classifier_torrents)
+        success_count, failed_count, success_titles, failed_titles = result
+
+        # 构建简要的汇总消息
+        summary_message_parts = []
+        if success_count > 0:
+            success_details = "\n".join(success_titles)  # 使用换行符而不是逗号分隔种子标题
+            summary_message_parts.append(f"成功整理 {success_count} 个种子\n{success_details}")
+        if failed_count > 0:
+            failed_details = "\n".join(failed_titles)  # 使用换行符而不是逗号分隔种子标题
+            summary_message_parts.append(f"失败整理 {failed_count} 个种子，详细请查看日志\n{failed_details}")
+
+        summary_message = "\n\n".join(summary_message_parts)  # 使用两个换行符分隔成功和失败的部分
+
+        self.__send_message(title="【种子关键字分类整理】", text=summary_message)
+
+    def __torrent_classifier_for_qb(self, classifier_torrents: dict):
         """针对QB进行种子整理"""
         # 获取下载器实例
         downloader = self.__get_downloader()
 
-        # 初始化成功和失败的计数器和列表
         success_count = 0
         failed_count = 0
         success_titles = []
         failed_titles = []
 
-        classifier_torrents = self.__get_should_classifier_torrents(torrent_datas=torrent_datas)
         if classifier_torrents:
             logger.info(f"已获取到满足过滤方案的种子共 {len(classifier_torrents)} 个，继续整理")
             torrent_info = "\n".join(
@@ -464,28 +569,17 @@ class TorrentClassifier(_PluginBase):
                     failed_count += 1
                     failed_titles.append(torrent_title)
 
-        # 构建简要的汇总消息
-        summary_message_parts = []
-        if success_count > 0:
-            success_details = "\n".join(success_titles)  # 使用换行符而不是逗号分隔种子标题
-            summary_message_parts.append(f"成功整理 {success_count} 个种子\n{success_details}")
-        if failed_count > 0:
-            failed_details = "\n".join(failed_titles)  # 使用换行符而不是逗号分隔种子标题
-            summary_message_parts.append(f"失败整理 {failed_count} 个种子，详细请查看日志\n{failed_details}")
+        return success_count, failed_count, success_titles, failed_titles
 
-        summary_message = "\n\n".join(summary_message_parts)  # 使用两个换行符分隔成功和失败的部分
-
-        self.__send_message(title="【种子关键字分类整理】", text=summary_message)
-
-    def __get_should_classifier_torrents(self, torrent_datas: dict):
+    def __get_should_classifier_torrents(self, torrent_datas: dict, config: Optional[ClassifierConfig] = None):
         """获取需要整理的种子"""
         classifier_torrents = {}
+        classifier_configs = self._classifier_configs if not config else [config]
         # 遍历所有种子
         for torrent_hash, torrent in torrent_datas.items():
             torrent_title = self.__get_torrent_title(torrent=torrent)
-
             should_classifier = True
-            for config in self._classifier_configs:
+            for config in classifier_configs:
                 # 判断是否满足整理条件，不满足则跳过，满足则跳出
                 should, reason = self.__should_classifier(config=config, torrent=torrent)
                 if should:
