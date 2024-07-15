@@ -35,7 +35,7 @@ class TrafficConfig(BaseConfig):
     site_infos: dict = None  # 站点信息字典
     onlyonce: Optional[bool] = False  # 立即运行一次
     notify: Optional[bool] = False  # 发送通知
-    cron: Optional[str] = None  # 运行周期
+    cron: Optional[str] = None  # 执行周期
     brush_plugin: Optional[str] = None  # 站点刷流插件
     statistic_plugin: Optional[str] = "SiteStatistic"  # 站点数据统计插件
 
