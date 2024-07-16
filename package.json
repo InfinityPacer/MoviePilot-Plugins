@@ -275,5 +275,17 @@
             "v1.1": "修复媒体类型为电视剧时，错误把 .plexmatch 生成路径定位到父目录的问题",
             "v1.0": "增加PlexMatch插件，实现入库时添加 .plexmatch 文件，提高识别准确性"
         }
+    },
+    "CustomPlugin": {
+        "name": "自定义插件",
+        "description": "让每个人都能感受编程的快乐。",
+        "labels": "工具",
+        "version": "1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/customplugin.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "增加自定义插件，让每个人都能感受编程的快乐"
+        }
     }
 }
