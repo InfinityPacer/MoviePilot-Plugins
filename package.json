@@ -278,14 +278,14 @@
     },
     "CustomPlugin": {
         "name": "自定义插件",
-        "description": "让每个人都能感受编程的快乐。",
+        "description": "实现编写自定义插件。",
         "labels": "工具",
         "version": "1.0",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/customplugin.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
-            "v1.0": "增加自定义插件，让每个人都能感受编程的快乐"
+            "v1.0": "增加自定义插件，实现编写自定义插件"
         }
     }
 }

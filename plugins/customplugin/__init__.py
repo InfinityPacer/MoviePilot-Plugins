@@ -23,7 +23,7 @@ class CustomPlugin(_PluginBase):
     # 插件名称
     plugin_name = "自定义插件"
     # 插件描述
-    plugin_desc = "让每个人都能感受编程的快乐。"
+    plugin_desc = "实现编写自定义插件。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/customplugin.png"
     # 插件版本
