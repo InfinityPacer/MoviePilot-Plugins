@@ -287,5 +287,17 @@
         "history": {
             "v1.0": "增加自定义插件，实现编写自定义插件"
         }
+    },
+    "MIHosts": {
+        "name": "小米路由Hosts",
+        "description": "定时将本地Hosts同步至小米路由Hosts。",
+        "labels": "工具",
+        "version": "1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/mihosts.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "增加小米路由Hosts插件，定时将本地Hosts同步至小米路由Hosts"
+        }
     }
 }
