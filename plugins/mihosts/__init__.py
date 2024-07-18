@@ -565,7 +565,7 @@ class MIHosts(_PluginBase):
     @staticmethod
     def __should_ignore_ip(ip: str) -> bool:
         """
-        检查是否应该忽略给定的IP地址。
+        检查是否应该忽略给定的IP地址
         """
         try:
             ip_obj = ipaddress.ip_address(ip)
