@@ -1,4 +1,6 @@
+import ipaddress
 import json
+import re
 import threading
 from datetime import datetime, timedelta
 from typing import Any, List, Dict, Tuple, Optional
@@ -501,50 +503,38 @@ class MIHosts(_PluginBase):
 
     def __update_remote_hosts_with_local(self, local_hosts: list, remote_hosts: list) -> list:
         """
-        使用本地hosts内容覆盖远程hosts，并合并未冲突的条目，同时根据忽略列表忽略特定的本地定义，如 localhost
+        使用本地hosts内容覆盖远程hosts，并合并未冲突的条目，同时忽略IPv6和其他特定的本地定义
         """
         try:
             ignore = self._ignore.split("|") if self._ignore else []
+            ignore.extend(["localhost"])
 
-            # 创建远程hosts字典
-            remote_dict = {line.split()[1]: line.strip() for line in remote_hosts if
-                           " " in line and not line.strip().startswith('#')}
+            # 创建远程hosts字典，适应空格或制表符分隔
+            remote_dict = {}
+            for line in remote_hosts:
+                line = line.strip()
+                if " " in line or "\t" in line:
+                    parts = re.split(r'\s+', line)
+                    if len(parts) > 1 and not line.startswith('#'):
+                        ip, hostname = parts[0], parts[1]
+                        if not self.__should_ignore_ip(ip) and hostname not in ignore and ip not in ignore:
+                            remote_dict[hostname] = f"{ip} {hostname}"
 
-            # 用本地hosts更新远程hosts，忽略特定的本地条目和忽略列表中的条目
+            # 用本地hosts更新远程hosts
             for line in local_hosts:
-                # 移除行首可能的 UTF-8 BOM
                 line = line.lstrip("\ufeff").strip()
-                if line.startswith("#") or any(host in line for host in ignore):
+                if line.startswith("#") or any(ign in line for ign in ignore):
                     continue
-                if line.startswith("#") or "localhost" in line or "127.0.0.1" in line:
-                    continue
-                if " " not in line:
-                    continue
-                parts = line.split()
+                parts = re.split(r'\s+', line)
                 if len(parts) < 2:
                     continue
-                ip = parts[0]
-                hostname = parts[1]
-                if ip in ignore or hostname in ignore:
-                    continue
-                # 只更新非本地特定的条目
-                remote_dict[hostname] = f"{ip} {hostname}"
+                ip, hostname = parts[0], parts[1]
+                if not self.__should_ignore_ip(ip) and hostname not in ignore and ip not in ignore:
+                    remote_dict[hostname] = f"{ip} {hostname}"
 
-            # 组装最终的hosts列表，包括更新远程hosts和添加新的本地hosts
-            updated_hosts = []
-            # 首先添加所有注释行和特定本地行，不进行修改
-            for line in remote_hosts:
-                if line.strip().startswith('#'):
-                    updated_hosts.append(line.strip())
-                else:
-                    parts = line.split()
-                    if len(parts) > 1 and parts[1] in remote_dict:
-                        updated_hosts.append(remote_dict[parts[1]])
-
-            # 添加本地hosts中的新条目，这些条目在远程hosts中未出现
-            for hostname, full_entry in remote_dict.items():
-                if all(hostname not in entry for entry in updated_hosts):
-                    updated_hosts.append(full_entry)
+            # 组装最终的hosts列表
+            updated_hosts = [line.strip() for line in remote_hosts if line.strip().startswith('#')]
+            updated_hosts += [entry for entry in remote_dict.values()]
 
             logger.info(f"更新后的hosts为: {updated_hosts}")
             return updated_hosts
@@ -571,6 +561,20 @@ class MIHosts(_PluginBase):
         except Exception as e:
             logger.error(f"读取本地hosts文件失败: {e}")
             return []
+
+    @staticmethod
+    def __should_ignore_ip(ip: str) -> bool:
+        """
+        检查是否应该忽略给定的IP地址。
+        """
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            # 忽略本地回环地址 (127.0.0.0/8) 和所有IPv6地址
+            if ip_obj.is_loopback or ip_obj.version == 6:
+                return True
+        except ValueError:
+            pass
+        return False
 
     @retry(Exception, logger=logger)
     def __make_request(self, method: str, app_id: str, device_id: str, client_id: str,
