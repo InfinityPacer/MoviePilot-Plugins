@@ -353,7 +353,7 @@ class MIHosts(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'ignore',
-                                            'label': '忽略的IP或令牌',
+                                            'label': '忽略的IP或域名',
                                             'hint': '如：10.10.10.1|wiki.movie-pilot.org',
                                             'persistent-hint': True
                                         }
