@@ -279,7 +279,7 @@
     "CustomPlugin": {
         "name": "自定义插件",
         "description": "实现编写自定义插件。",
-        "labels": "工具",
+        "labels": "插件管理,工具",
         "version": "1.0",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/customplugin.png",
         "author": "InfinityPacer",
