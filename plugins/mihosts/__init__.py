@@ -376,7 +376,7 @@ class MIHosts(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：可配合自定义Hosts以及Cloudflare IP优选插件，实现小米路由Cloudflare优选'
+                                            'text': '注意：可以配合自定义Hosts以及Cloudflare IP优选插件，实现小米路由Cloudflare优选'
                                         }
                                     }
                                 ]
