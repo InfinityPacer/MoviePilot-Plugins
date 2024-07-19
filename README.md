@@ -261,3 +261,8 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-07-13-00-47-11.png)
 
+### 20. 小米路由Hosts
+
+- 定时将本地Hosts同步至小米路由Hosts
+
+![](images/2024-07-20-01-19-39.png)
