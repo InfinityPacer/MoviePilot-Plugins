@@ -1,8 +1,8 @@
-import datetime
 import io
 import re
 import threading
 import time
+from datetime import datetime, timedelta
 from threading import Event
 from typing import Any, List, Dict, Tuple, Optional, Union
 
@@ -98,10 +98,9 @@ class TorrentClassifier(_PluginBase):
 
         if self._onlyonce:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-            self._scheduler.add_job(func=self.torrent_classifier, trigger='date',
-                                    run_date=datetime.datetime.now(
-                                        tz=pytz.timezone(settings.TZ)) + datetime.timedelta(seconds=3)
-                                    )
+            self._scheduler.add_job(func=self.torrent_classifier,
+                                    trigger='date',
+                                    run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3))
             logger.info(f"种子关键字分类整理服务启动，立即运行一次")
             self._onlyonce = False
             config["onlyonce"] = False
@@ -378,7 +377,6 @@ class TorrentClassifier(_PluginBase):
                 torrents = self.__get_torrents(downloader=downloader)
                 torrent_datas = self.__get_all_hashes_and_torrents(torrents)
                 self.__apply_first_matching_rule_to_torrents(torrent_datas=torrent_datas)
-                return
 
     def __get_torrents(self, downloader: Any) -> Optional[List[Any]]:
         """
@@ -411,6 +409,8 @@ class TorrentClassifier(_PluginBase):
             torrent_datas = self.__get_all_hashes_and_torrents(torrents)
             classifier_torrents = self.__get_should_classifier_torrents(torrent_datas=torrent_datas, config=config)
             result = self.__torrent_classifier_for_qb(classifier_torrents=classifier_torrents)
+            if not result:
+                continue
             success_count, failed_count, success_titles, failed_titles = result
 
             # 构建当前规则的成功和失败消息
@@ -426,9 +426,10 @@ class TorrentClassifier(_PluginBase):
             summary_messages.append(f"规则 {index} 的执行结果:\n{rule_summary_message}")
             summary_messages.append("————————————————————")
 
-        # 发送所有规则的汇总消息
-        final_summary_message = "\n".join(summary_messages)
-        self.__send_message(title="【种子规则分类整理汇总】", text=final_summary_message)
+        if summary_messages:
+            # 发送所有规则的汇总消息
+            final_summary_message = "\n".join(summary_messages)
+            self.__send_message(title="【种子规则分类整理汇总】", text=final_summary_message)
 
     def __apply_first_matching_rule_to_torrents(self, torrent_datas: dict):
         """
@@ -437,6 +438,8 @@ class TorrentClassifier(_PluginBase):
         # 初始化成功和失败的计数器和列表
         classifier_torrents = self.__get_should_classifier_torrents(torrent_datas=torrent_datas)
         result = self.__torrent_classifier_for_qb(classifier_torrents=classifier_torrents)
+        if not result:
+            return
         success_count, failed_count, success_titles, failed_titles = result
 
         # 构建简要的汇总消息
@@ -452,7 +455,7 @@ class TorrentClassifier(_PluginBase):
 
         self.__send_message(title="【种子关键字分类整理】", text=summary_message)
 
-    def __torrent_classifier_for_qb(self, classifier_torrents: dict):
+    def __torrent_classifier_for_qb(self, classifier_torrents: dict) -> Optional[Tuple[int, int, List[str], List[str]]]:
         """针对QB进行种子整理"""
         # 获取下载器实例
         downloader = self.__get_downloader()
@@ -471,7 +474,7 @@ class TorrentClassifier(_PluginBase):
             logger.debug(f"正在准备整理的种子信息 \n {torrent_info}")
         else:
             logger.info("没有获取到任何满足过滤方案的种子，取消后续整理")
-            return
+            return None
 
         for torrent_hash, (torrent, config) in classifier_torrents.items():
             config: ClassifierConfig
@@ -1002,13 +1005,13 @@ class TorrentClassifier(_PluginBase):
     @staticmethod
     def __get_demo_config():
         """获取默认配置"""
-        return """####### 配置说明 begin #######
+        return """####### 配置说明 BEGIN #######
 # 1. 本配置文件用于管理种子文件的自动分类和标签管理，采用数组形式以支持多种筛选和应用规则。
 # 2. 配置文件中的「torrent_source」定义了种子的来源筛选条件；「torrent_target」定义了应对匹配种子执行的操作。
 # 3. 每个配置条目以「-」开头，表示配置文件的数组元素。
 # 4. 「remove_tags」字段支持使用特殊值「@all」，代表移除所有标签。
 # 5. 「auto_category」启用时开启QBittorrent的「自动Torrent管理」，并忽略「change_directory」配置项。
-####### 配置说明 end #######
+####### 配置说明 END #######
 
 - torrent_filter:
     # 种子来源部分定义：包括筛选种子的标题、分类和标签
