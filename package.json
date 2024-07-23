@@ -108,11 +108,12 @@
         "name": "PlexAutoSkip",
         "description": "实现自动跳过Plex中片头、片尾以及类似的内容。",
         "labels": "Plex",
-        "version": "0.4",
+        "version": "0.5",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/PlexAutoSkip_C.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v0.5": "增加独立的自动跳过配置项，用于支持远程命令切换自动跳过",
             "v0.4": "修复剧集最后一集无限循环以及优化自动播放逻辑",
             "v0.3": "兼容部分设备SkipNext时，没有自动播放或者跳过下一集的场景",
             "v0.2": "增加客户端支持过滤，优化日志记录",
