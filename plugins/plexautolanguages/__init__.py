@@ -133,7 +133,7 @@ class PlexAutoLanguages(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -151,7 +151,7 @@ class PlexAutoLanguages(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -160,6 +160,42 @@ class PlexAutoLanguages(_PluginBase):
                                             'model': 'auto_switch',
                                             'label': '自动切换',
                                             'hint': '启用后将自动切换剧集语言',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'trigger_on_play',
+                                            'label': '播放时触发',
+                                            'hint': '播放文件是否触发语言更新',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'trigger_on_scan',
+                                            'label': '扫描时触发',
+                                            'hint': '扫描新文件时是否触发语言更新',
                                             'persistent-hint': True
                                         }
                                     }
@@ -219,42 +255,7 @@ class PlexAutoLanguages(_PluginBase):
                     {
                         'component': 'VRow',
                         'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'trigger_on_play',
-                                            'label': '播放时触发',
-                                            'hint': '播放文件是否触发语言更新',
-                                            'persistent-hint': True
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'trigger_on_scan',
-                                            'label': '扫描时触发',
-                                            'hint': '扫描新文件时是否触发语言更新',
-                                            'persistent-hint': True
-                                        }
-                                    }
-                                ]
-                            }
+
                         ]
                     },
                     {
