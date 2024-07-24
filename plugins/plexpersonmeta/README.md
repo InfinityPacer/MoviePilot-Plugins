@@ -18,7 +18,7 @@
 - 特此感谢 [jxxghp](https://github.com/jxxghp)、[Bespertrijun](https://github.com/Bespertrijun) 等贡献者的卓越代码贡献。
 - 如有未能提及的作者，请告知我以便进行补充。
 
-![](../../images/2024-07-04-01-57-02.png)
+![](../../images/2024-07-13-03-02-10.png)
 ![](../../images/2024-06-25-02-57-20.png)
 ![](../../images/2024-06-25-02-57-53.png)
 

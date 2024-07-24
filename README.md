@@ -6,7 +6,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ## 插件集合
 
-![](images/2024-07-13-00-33-23.png)
+
 
 ## 插件说明
 
@@ -17,7 +17,6 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-05-02-03-16-42.png)
 ![](images/2024-07-07-03-36-08.png)
-
 
 ### 2. 飞书机器人消息通知
 
@@ -203,9 +202,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
     auto_category: false
 ```
 
-
 ![](images/2024-05-24-00-29-38.png)
-
 
 ### 14. 历史记录分类刷新
 
@@ -216,7 +213,6 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-05-27-00-56-38.png)
 ![](images/2024-05-27-00-56-02.png)
-
 
 ### 15. 自动诊断
 
@@ -254,15 +250,35 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ![](images/2024-06-25-02-57-20.png)
 ![](images/2024-06-25-02-57-53.png)
 
-
 ### 19. PlexMatch
 
 - 实现入库时添加 .plexmatch 文件，提高识别准确性
 
 ![](images/2024-07-13-00-47-11.png)
 
-### 20. 小米路由Hosts
+### 21. 自定义插件
+
+- 实现编写自定义插件
+
+![](images/2024-07-25-00-32-08.png)
+
+### 21. 小米路由Hosts
 
 - 定时将本地Hosts同步至小米路由Hosts
 
 ![](images/2024-07-20-01-19-39.png)
+
+
+### 22. Plex自动语言
+
+- 实现自动选择Plex电视节目的音轨和字幕语言。
+- 相关信息请参考 [Plex-Auto-Languages](https://github.com/RemiRigal/Plex-Auto-Languages)
+
+#### 感谢
+
+- 本插件基于 [Plex-Auto-Languages](https://github.com/RemiRigal/Plex-Auto-Languages) 项目，实现了插件的相关功能。
+- 特此感谢 [RemiRigal](https://github.com/RemiRigal) 的卓越代码贡献。
+- 如有未能提及的作者，请告知我以便进行补充。
+
+![](images/2024-07-25-00-24-34.png)
+![](images/2024-07-25-00-23-35.png)
