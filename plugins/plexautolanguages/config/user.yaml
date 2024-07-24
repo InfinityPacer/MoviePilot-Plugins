@@ -1,0 +1,86 @@
+plexautolanguages:
+  # 更新整个剧集的语言或仅更新当前季
+  # 可接受的值：
+  #   - show（默认）
+  #   - season
+  update_level: "show"
+
+  # 更新剧集/季的所有剧集或仅更新接下来的剧集
+  # 可接受的值：
+  #   - all（默认）
+  #   - next
+  update_strategy: "all"
+
+  # 播放文件是否触发语言更新，默认为 'true'
+  trigger_on_play: true
+
+  # 扫描新文件时是否触发语言更新，默认为 'true'
+  # 新增的剧集将根据最近观看的剧集更新语言，若该剧从未被观看则根据第一集更新语言
+  trigger_on_scan: true
+
+  # 浏览 Plex 库是否触发语言更新，默认为 'false'
+  # 仅 Plex 网络客户端和 Plex for Windows 应用程序支持此功能
+  # 仅当您希望在更新剧集的默认轨道时执行更改，即使未播放该剧集时，才将此参数设置为 'true'
+  # 将此参数设置为 'true' 可能会导致更高的资源使用
+  trigger_on_activity: false
+
+  # 每当 Plex 服务器扫描其库时是否刷新缓存库，默认为 'true'
+  # 禁用此参数将阻止 PlexAutoLanguages 检测已存在剧集的更新文件
+  # 如果您的电视剧库很大（10k+ 剧集），建议禁用此参数
+  refresh_library_on_scan: false
+
+  # PlexAutoLanguages 将忽略具有以下任何 Plex 标签的剧集
+  ignore_labels:
+    - PAL_IGNORE
+
+  # Plex 配置
+  plex:
+    # 一个有效的 Plex URL（必填）
+    url: "http://plex:32400"
+    # 一个有效的 Plex 令牌（必填）
+    token: "MY_PLEX_TOKEN"
+
+  scheduler:
+    # 是否启用调度程序，默认为 'true'
+    # 调度程序将对所有最近播放的电视剧进行更深入的分析
+    enable: false
+    # 调度程序开始任务的时间，格式为 'HH:MM'，默认为 '02:00'
+    schedule_time: "04:30"
+
+  notifications:
+    # 是否通过 Apprise 启用通知，默认为 'false'
+    # 每当进行语言更改时发送通知
+    enable: false
+    # Apprise 配置的数组，详见 Apprise 文档：https://github.com/caronc/apprise
+    # 数组 'users' 可以指定以将通知 URL 与特定用户关联
+    #   如果不存在，默认为所有用户
+    # 数组 'events' 可以指定以仅获取特定事件的通知
+    #   有效的事件值："play_or_activity" "new_episode" "updated_episode" "scheduler"
+    #   如果不存在，默认为所有事件
+    apprise_configs:
+      # 此 URL 将在所有事件期间通知所有更改
+      - "discord://webhook_id/webhook_token"
+      # 这些 URL 将仅在用户 "MyUser1" 和 "MyUser2" 的语言更改时通知
+      - urls:
+          - "gotify://hostname/token"
+          - "pover://user@token"
+        users:
+          - "MyUser1"
+          - "MyUser2"
+      # 此 URL 将仅在用户 "MyUser3" 的播放或活动事件期间通知语言更改
+      - urls:
+          - "tgram://bottoken/ChatID"
+        users:
+          - "MyUser3"
+        events:
+          - "play_or_activity"
+      # 此 URL 将仅在调度程序任务期间通知语言更改
+      - urls:
+          - "gotify://hostname/token"
+        events:
+          - "scheduler"
+      - "..."
+
+  # 是否启用调试模式，默认为 'false'
+  # 启用调试模式将显著增加输出日志的数量
+  debug: true
