@@ -988,7 +988,7 @@ class TorrentClassifier(_PluginBase):
         if not config_str:
             return []
 
-        yaml = YAML()
+        yaml = YAML(typ="safe")
         try:
             data = yaml.load(io.StringIO(config_str))
             return [ClassifierConfig(
