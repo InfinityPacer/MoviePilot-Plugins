@@ -16,7 +16,7 @@ class PlexAutoLanguages(_PluginBase):
     # 插件名称
     plugin_name = "Plex自动语言"
     # 插件描述
-    plugin_desc = "实现自动切换Plex剧集字幕和音轨。"
+    plugin_desc = "实现自动选择Plex电视节目的音轨和字幕语言。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexautolanguages.png"
     # 插件版本
