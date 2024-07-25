@@ -381,12 +381,12 @@ class PlexAutoLanguages(_PluginBase):
         return True
 
     def __update_user_config(self):
-        yaml = YAML(typ="safe")
+        yaml = YAML()
         # 保留引号和注释
         yaml.preserve_quotes = True
 
         # 读取用户配置并保留注释
-        with open(self.user_yaml, "r", encoding="utf-8") as stream:
+        with open(self.default_yaml, "r", encoding="utf-8") as stream:
             user_config = yaml.load(stream).get("plexautolanguages", {})
 
         # 更新 plex_config
