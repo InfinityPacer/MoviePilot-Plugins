@@ -306,12 +306,13 @@
         "name": "Plex自动语言",
         "description": "实现自动切换Plex剧集字幕和音轨。",
         "labels": "Plex",
-        "version": "0.1",
+        "version": "0.2",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexautolanguages.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
-            "v1.0": "增加Plex自动语言插件，实现自动切换Plex剧集字幕和音轨"
+            "v0.2": "增加Plex自动语言插件，实现自动切换Plex剧集字幕和音轨",
+            "v0.1": "增加Plex自动语言插件，实现自动切换Plex剧集字幕和音轨"
         }
     }
 }
