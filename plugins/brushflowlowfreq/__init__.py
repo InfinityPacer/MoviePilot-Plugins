@@ -2274,6 +2274,7 @@ class BrushFlowLowFreq(_PluginBase):
 
             self.eventmanager.send_event(etype=EventType.PluginAction, data={
                 "action": "brushflow_download_added",
+                "hash": hash_string,
                 "data": torrent_task
             })
             torrent_tasks[hash_string] = torrent_task
