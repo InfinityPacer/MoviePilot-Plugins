@@ -11,13 +11,20 @@ class BaseConfig:
     """
     基础配置类，定义所有配置项的结构。
     """
-    seed_time: Optional[float] = None  # 做种时间（小时）
+    hr_duration: Optional[float] = None  # H&R时间（小时）
     additional_seed_time: Optional[float] = None  # 附加做种时间（小时）
     ratio: Optional[float] = None  # 分享率
     hr_active: Optional[bool] = False  # H&R激活
 
     def __post_init__(self):
         pass
+
+    @property
+    def seed_time(self) -> Optional[float]:
+        """
+        做种时间（小时）
+        """
+        return (self.hr_duration or 0.0) + (self.additional_seed_time or 0.0)
 
 
 @dataclass
@@ -40,7 +47,7 @@ class HNRConfig(BaseConfig):
     onlyonce: Optional[bool] = False  # 立即运行一次
     notify: Optional[bool] = False  # 发送通知
     brush_plugin: Optional[str] = None  # 站点刷流插件
-    spider_period: Optional[int] = None  # 爬取周期
+    auto_monitor: Optional[bool] = False  # 自动监控（实验性功能）
     downloader: Optional[str] = None  # 下载器
     hit_and_run_tag: Optional[str] = None  # 种子标签
     enable_site_config: Optional[bool] = False  # 启用站点独立配置
@@ -50,21 +57,20 @@ class HNRConfig(BaseConfig):
     def __post_init__(self):
         super().__post_init__()
         self.check_period = convert_type(self.check_period, int, default_value=5)
-        self.spider_period = convert_type(self.spider_period, int, default_value=720)
-        self.seed_time = convert_type(self.seed_time, float)
+        self.hr_duration = convert_type(self.hr_duration, float)
         self.additional_seed_time = convert_type(self.additional_seed_time, float)
         self.ratio = convert_type(self.ratio, float)
         if self.enable_site_config:
             if self.site_config_str:
                 self.site_configs = self.__parse_yaml_config(self.site_config_str)
                 if self.site_configs is None:
-                    logger.error("YAML解析失败，禁用站点独立配置")
+                    logger.error("YAML解析失败，站点独立配置已禁用")
                     self.enable_site_config = False
                 else:
                     for site_name, site_config in self.site_configs.items():
                         self.site_configs[site_name] = self.__merge_site_config(site_config)
             else:
-                logger.warn("已启用站点独立配置，但未提供配置字符串，禁用站点独立配置")
+                logger.warn("已启用站点独立配置，但未提供配置字符串，站点独立配置已禁用")
                 self.enable_site_config = False
 
     @staticmethod
@@ -72,7 +78,7 @@ class HNRConfig(BaseConfig):
         """
         解析YAML字符串为站点配置字典
         """
-        yaml = YAML()
+        yaml = YAML(typ="safe")
         site_configs = {}
         try:
             data = yaml.load(yaml_str)
