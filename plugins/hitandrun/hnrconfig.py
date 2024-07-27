@@ -45,7 +45,7 @@ class HNRConfig(BaseConfig):
     sites: List[int] = field(default_factory=list)  # 站点列表
     site_infos: Dict = field(default_factory=dict)  # 站点信息字典
     onlyonce: Optional[bool] = False  # 立即运行一次
-    notify: Optional[bool] = False  # 发送通知
+    notify: Optional[str] = "always"  # 发送通知
     brush_plugin: Optional[str] = None  # 站点刷流插件
     auto_monitor: Optional[bool] = False  # 自动监控（实验性功能）
     downloader: Optional[str] = None  # 下载器

@@ -134,7 +134,7 @@ class HitAndRun(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -152,25 +152,7 @@ class HitAndRun(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'notify',
-                                            'label': '发送通知',
-                                            'hint': '是否在特定事件发生时发送通知',
-                                            'persistent-hint': True
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -215,7 +197,7 @@ class HitAndRun(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4,
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -235,6 +217,29 @@ class HitAndRun(_PluginBase):
                     {
                         'component': 'VRow',
                         'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'notify',
+                                            'label': '发送通知',
+                                            'items': [
+                                                {'title': '不发送', 'value': 'none'},
+                                                {'title': '仅异常时发送', 'value': 'on_error'},
+                                                {'title': '发送所有通知', 'value': 'always'}
+                                            ],
+                                            'hint': '是否在特定事件发生时发送通知',
+                                            'persistent-hint': True,
+                                        }
+                                    }
+                                ],
+                            },
                             {
                                 'component': 'VCol',
                                 'props': {
@@ -270,26 +275,6 @@ class HitAndRun(_PluginBase):
                                             'model': 'hit_and_run_tag',
                                             'label': '种子标签',
                                             'hint': '标记为H&R种子时添加的标签',
-                                            'persistent-hint': True
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'ratio',
-                                            'label': '分享率',
-                                            'type': 'number',
-                                            "min": "0",
-                                            'hint': '达到目标分享率后移除标签',
                                             'persistent-hint': True
                                         }
                                     }
@@ -335,6 +320,26 @@ class HitAndRun(_PluginBase):
                                             'type': 'number',
                                             "min": "0",
                                             'hint': '在H&R时间上额外增加的做种时间',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'ratio',
+                                            'label': '分享率',
+                                            'type': 'number',
+                                            "min": "0",
+                                            'hint': '达到目标分享率后移除标签',
                                             'persistent-hint': True
                                         }
                                     }
@@ -569,7 +574,7 @@ class HitAndRun(_PluginBase):
         ], {
             "enabled": False,
             "onlyonce": False,
-            "notify": True,
+            "notify": "always",
             "downloader": "qbittorrent",
             "hit_and_run_tag": "H&R",
             "spider_period": 720,
