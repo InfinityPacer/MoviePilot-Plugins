@@ -1,9 +1,16 @@
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, asdict
+from enum import Enum
 from typing import Optional, List, Dict, Any
 
 from ruamel.yaml import YAML, YAMLError
 
 from app.log import logger
+
+
+class NotifyMode(Enum):
+    NONE = "none"  # 不发送
+    ON_ERROR = "on_error"  # 仅异常时发送
+    ALWAYS = "always"  # 发送所有通知
 
 
 @dataclass
@@ -15,14 +22,15 @@ class BaseConfig:
     additional_seed_time: Optional[float] = None  # 附加做种时间（小时）
     ratio: Optional[float] = None  # 分享率
     hr_active: Optional[bool] = False  # H&R激活
+    hr_deadline_days: Optional[float] = None  # H&R满足要求的期限（天数）
 
     def __post_init__(self):
         pass
 
     @property
-    def seed_time(self) -> Optional[float]:
+    def hr_seed_time(self) -> Optional[float]:
         """
-        做种时间（小时）
+        H&R做种时间（小时）
         """
         return (self.hr_duration or 0.0) + (self.additional_seed_time or 0.0)
 
@@ -45,7 +53,7 @@ class HNRConfig(BaseConfig):
     sites: List[int] = field(default_factory=list)  # 站点列表
     site_infos: Dict = field(default_factory=dict)  # 站点信息字典
     onlyonce: Optional[bool] = False  # 立即运行一次
-    notify: Optional[str] = "always"  # 发送通知
+    notify: NotifyMode = NotifyMode.ALWAYS  # 发送通知的模式
     brush_plugin: Optional[str] = None  # 站点刷流插件
     auto_monitor: Optional[bool] = False  # 自动监控（实验性功能）
     downloader: Optional[str] = None  # 下载器
@@ -56,6 +64,11 @@ class HNRConfig(BaseConfig):
 
     def __post_init__(self):
         super().__post_init__()
+        if isinstance(self.notify, str):
+            try:
+                self.notify = NotifyMode(self.notify)
+            except ValueError:
+                self.notify = NotifyMode.ALWAYS
         self.check_period = convert_type(self.check_period, int, default_value=5)
         self.hr_duration = convert_type(self.hr_duration, float)
         self.additional_seed_time = convert_type(self.additional_seed_time, float)
@@ -114,6 +127,14 @@ class HNRConfig(BaseConfig):
         else:
             base_config_attrs = {site_field.name: getattr(self, site_field.name) for site_field in fields(BaseConfig)}
             return SiteConfig(**base_config_attrs, site_name=site_name)
+
+    def to_dict(self):
+        """
+        返回字典
+        """
+        dicts = asdict(self)
+        dicts["notify"] = self.notify.value if self.notify else None
+        return dicts
 
 
 def convert_type(value, target_type, default_value: Optional[Any] = None):

@@ -1,7 +1,7 @@
 import random
 import threading
 import time
-from dataclasses import asdict, fields
+from dataclasses import fields
 from datetime import datetime, timedelta
 from typing import Any, List, Dict, Tuple, Optional, Union
 
@@ -18,10 +18,11 @@ from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
-from app.plugins.hitandrun.entities import TorrentTask, ConfirmationStatus, TorrentHistory
-from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig
+from app.plugins.hitandrun.entities import TorrentTask, HNRStatus, TorrentHistory, TaskType
+from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig, NotifyMode
 from app.schemas import NotificationType
 from app.schemas.types import EventType
+from app.utils.string import StringUtils
 
 lock = threading.Lock()
 
@@ -141,7 +142,7 @@ class HitAndRun(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -159,7 +160,43 @@ class HitAndRun(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'enable_site_config',
+                                            'label': '站点独立配置',
+                                            'hint': '启用站点独立配置',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {
+                                    "cols": 12,
+                                    "md": 3
+                                },
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "dialog_closed",
+                                            "label": "打开站点配置窗口",
+                                            'hint': '点击弹出窗口以修改站点配置',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -181,8 +218,7 @@ class HitAndRun(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
-                                    'cols': 12,
-                                    'md': 8
+                                    'cols': 12
                                 },
                                 'content': [
                                     {
@@ -196,25 +232,6 @@ class HitAndRun(_PluginBase):
                                             'hint': '选择参与配置的站点',
                                             'persistent-hint': True,
                                             'items': self.__get_site_options()
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSelect',
-                                        'props': {
-                                            'model': 'brush_plugin',
-                                            'label': '站点刷流插件',
-                                            'hint': '选择参与配置的刷流插件',
-                                            'persistent-hint': True,
-                                            'items': self.__get_plugin_options()
                                         }
                                     }
                                 ]
@@ -273,6 +290,30 @@ class HitAndRun(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'brush_plugin',
+                                            'label': '站点刷流插件',
+                                            'hint': '选择参与配置的刷流插件',
+                                            'persistent-hint': True,
+                                            'items': self.__get_plugin_options()
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
                                     'md': 4,
                                 },
                                 'content': [
@@ -286,12 +327,7 @@ class HitAndRun(_PluginBase):
                                         }
                                     }
                                 ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
+                            },
                             {
                                 'component': 'VCol',
                                 'props': {
@@ -307,6 +343,26 @@ class HitAndRun(_PluginBase):
                                             'type': 'number',
                                             "min": "0",
                                             'hint': '做种时间达到H&R时间后移除标签',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'hr_deadline_days',
+                                            'label': '满足H&R要求的期限（天）',
+                                            'type': 'number',
+                                            "min": "0",
+                                            'hint': '需在此天数内满足H&R要求的期限',
                                             'persistent-hint': True
                                         }
                                     }
@@ -375,42 +431,7 @@ class HitAndRun(_PluginBase):
                             #         }
                             #     ]
                             # },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 4
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VSwitch',
-                                        'props': {
-                                            'model': 'enable_site_config',
-                                            'label': '站点独立配置',
-                                            'hint': '启用站点独立配置',
-                                            'persistent-hint': True
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {
-                                    "cols": 12,
-                                    "md": 4
-                                },
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "dialog_closed",
-                                            "label": "打开站点配置窗口",
-                                            'hint': '点击弹出窗口以修改站点配置',
-                                            'persistent-hint': True
-                                        }
-                                    }
-                                ]
-                            }
+
                         ]
                     },
                     # {
@@ -587,6 +608,7 @@ class HitAndRun(_PluginBase):
             "spider_period": 720,
             "ratio": 99,
             "hr_duration": 144,
+            "hr_deadline_days": 14,
             "additional_seed_time": 24,
             "site_config_str": self.__get_demo_config()
         }
@@ -694,18 +716,46 @@ class HitAndRun(_PluginBase):
         torrent_hash = event_data.get("hash")
         torrent_data = event_data.get("data")
 
-        self.__save_and_cleanup_downloads(torrent_hash=torrent_hash, torrent_data=torrent_data)
-        self.__handle_and_save_brush_torrent_tasks(torrent_hash=torrent_hash, torrent_data=torrent_data)
+        torrent = self.__get_torrents(torrent_hashes=torrent_hash)
+        if not torrent:
+            logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理，")
+            return
 
-    def __save_and_cleanup_downloads(self, torrent_hash: str, torrent_data: Union[dict, TorrentInfo]):
+        torrent_history = self.__save_and_cleanup_downloads(torrent_hash=torrent_hash,
+                                                            torrent_data=torrent_data,
+                                                            task_type=TaskType.BRUSH)
+        torrent_task = self.__handle_and_save_brush_torrent_tasks(torrent_hash=torrent_hash, torrent_data=torrent_data)
+
+    def __handle_hit_and_run(self, torrent_hash: str, torrent: Any, torrent_task: TorrentTask):
+        """
+        处理H&R任务
+        """
+        if not torrent_hash or not torrent or not torrent_task:
+            return
+
+        if not torrent_task.hit_and_run:
+            return
+
+        title = "【H&R助手】"
+        try:
+            tags = self.__get_torrent_tags(torrent=torrent)
+            tags.append(self._hnr_config.hit_and_run_tag)
+            self.__set_torrent_tag(torrent_hash=torrent_hash, tags=tags)
+            self.__send_message(title=title, message="")
+        except Exception as e:
+            logger.error(f"设置标签时出错：{str(e)}")
+
+    def __save_and_cleanup_downloads(self, torrent_hash: str, torrent_data: Union[dict, TorrentInfo],
+                                     task_type: TaskType = TaskType.NORMAL) -> Optional[TorrentHistory]:
         """
         保存下载记录并清理7天前的记录
         """
         if not torrent_hash or not torrent_data:
             logger.info("没有获取到有效下载任务信息，跳过处理")
-            return
+            return None
 
-        torrent_history = self.__create_torrent_history(torrent_data=torrent_data)
+        torrent_history = self.__create_torrent_history(torrent_data=torrent_data, task_type=task_type)
+
         downloads: Dict[str, dict] = self.__get_data(key="downloads")
 
         # 添加新的下载记录
@@ -721,23 +771,31 @@ class HitAndRun(_PluginBase):
         # 保存更新后的下载记录
         self.save_data(key="downloads", value=downloads)
 
-    def __handle_and_save_brush_torrent_tasks(self, torrent_hash: str, torrent_data: dict):
+        return torrent_history
+
+    def __handle_and_save_brush_torrent_tasks(self, torrent_hash: str, torrent_data: dict) -> Optional[TorrentTask]:
         """
         处理并保存刷流种子任务
         """
         if not torrent_hash or not torrent_data:
             logger.info("没有获取到有效刷流任务信息，跳过处理")
-            return
+            return None
 
-        torrent_task = self.__create_torrent_task(torrent_data=torrent_data)
+        torrent_task = self.__create_torrent_task(torrent_data=torrent_data, task_type=TaskType.BRUSH)
 
         # 如果任务所属站点不在配置站点内，则跳过，仅记录到下载记录
         if torrent_task.site_name not in self._hnr_config.sites:
             logger.info(f"站点 {torrent_task.site_name} 没有启用，跳过处理")
-            return
+            return None
 
-        # 设置刷流任务为已确认状态
-        torrent_task.hr_status = ConfirmationStatus.CONFIRMED
+        # 根据H&R对种子的H&R字段赋值，后续再根据站点进一步调整H&R
+        if torrent_task.hit_and_run:
+            site_config = self.__get_site_config(site_name=torrent_task.site_name)
+            torrent_task.hr_duration = site_config.hr_duration
+            torrent_task.hr_deadline_days = site_config.hr_deadline_days
+            torrent_task.hr_status = HNRStatus.IN_PROGRESS
+        else:
+            torrent_task.hr_status = HNRStatus.UNRESTRICTED
 
         # 获取现有的种子任务
         torrent_tasks: Dict[str, dict] = self.__get_data(key="torrents")
@@ -748,27 +806,33 @@ class HitAndRun(_PluginBase):
         # 保存更新后的种子任务数据
         self.save_data(key="torrents", value=torrent_tasks)
 
+        return torrent_task
+
     @staticmethod
-    def __create_torrent_instance(torrent_data: Union[dict, TorrentInfo], cls) -> Union[TorrentHistory, TorrentTask]:
+    def __create_torrent_instance(torrent_data: Union[dict, TorrentInfo], cls, task_type: TaskType) -> \
+            Union[TorrentHistory, TorrentTask]:
         """创建种子实例"""
         if isinstance(torrent_data, TorrentInfo):
-            return cls.from_torrent_info(torrent_info=torrent_data)
-        elif isinstance(torrent_data, dict):
+            result = cls.from_torrent_info(torrent_info=torrent_data)
+        else:
             allowed_fields = {field.name for field in fields(TorrentInfo)}
             # 过滤数据，只保留 TorrentInfo 数据类中的字段
             filtered_data = {key: value for key, value in torrent_data.items() if key in allowed_fields}
             # 创建指定类的实例
-            return cls(**filtered_data)
+            result = cls(**filtered_data)
+
+        result.task_type = task_type
+        return result
 
     @staticmethod
-    def __create_torrent_history(torrent_data: Union[dict, TorrentInfo]) -> TorrentHistory:
+    def __create_torrent_history(torrent_data: Union[dict, TorrentInfo], task_type: TaskType) -> TorrentHistory:
         """创建种子信息"""
-        return HitAndRun.__create_torrent_instance(torrent_data, TorrentHistory)
+        return HitAndRun.__create_torrent_instance(torrent_data, TorrentHistory, task_type)
 
     @staticmethod
-    def __create_torrent_task(torrent_data: Union[dict, TorrentInfo]) -> TorrentTask:
+    def __create_torrent_task(torrent_data: Union[dict, TorrentInfo], task_type: TaskType) -> TorrentTask:
         """创建种子任务"""
-        return HitAndRun.__create_torrent_instance(torrent_data, TorrentTask)
+        return HitAndRun.__create_torrent_instance(torrent_data, TorrentTask, task_type)
 
     def __get_site_config(self, site_name: str) -> Optional[SiteConfig]:
         """"获取站点配置"""
@@ -817,19 +881,54 @@ class HitAndRun(_PluginBase):
         else:
             return None
 
-    def __get_torrents(self, torrent_hashes: Union[str, list]):
+    def __get_torrents(self, torrent_hashes: Union[str, List[str]]) -> Optional[Any]:
         """
         获取下载器中的种子信息
+        如果 `torrent_hashes` 只包含一个值，返回该种子的具体信息
+        如果包含多个值，返回包含所有种子信息的列表
         """
         if not torrent_hashes:
             return None
+
+        # 处理单个种子哈希的情况，确保其被视为列表
+        if isinstance(torrent_hashes, str):
+            torrent_hashes = [torrent_hashes]
 
         torrents, error = self._downloader.get_torrents(ids=torrent_hashes)
         if error:
             logger.warn("连接下载器出错，将在下个时间周期重试")
             return None
 
+        # 如果只有一个种子哈希，直接返回该种子的信息
+        if len(torrent_hashes) == 1:
+            return torrents[0] if torrents else None
+
         return torrents
+
+    def __set_torrent_tag(self, torrent_hash: str, tags: list):
+        """
+        设置种子标签
+        """
+        try:
+            unique_tags = list(set(tags))
+            self._downloader.set_torrent_tag(ids=torrent_hash, tags=unique_tags)
+        except Exception as e:
+            logger.error(f"无法为 torrent_hash: {torrent_hash} 设置标签，错误: {e}")
+
+    def __get_torrent_tags(self, torrent: Any) -> list[str]:
+        """
+        获取种子标签
+        """
+        try:
+            if self._hnr_config.downloader == "qbittorrent":
+                tags = torrent.get("tags", "").split(",")
+            else:
+                tags = torrent.labels or []
+
+            return list(set(tag.strip() for tag in tags if tag.strip()))
+        except Exception as e:
+            logger.error(f"获取种子标签失败，错误: {e}")
+            return []
 
     @staticmethod
     def __validate_config(config: HNRConfig) -> (bool, str):
@@ -839,15 +938,15 @@ class HitAndRun(_PluginBase):
         if not config.enabled and not config.onlyonce:
             return True, "插件未启用，无需进行验证"
 
-        # 检查下载器是否为空
         if not config.downloader:
             return False, "下载器不能为空"
 
-        # 检查做种时间的设置是否有效
         if config.hr_duration <= 0:
-            return False, "做种时间必须大于0"
+            return False, "H&R时间必须大于0"
 
-        # 检查分享率的设置是否有效
+        if config.hr_deadline_days <= 0:
+            return False, "H&R满足要求的期限必须大于0"
+
         if config.ratio <= 0:
             return False, "分享率必须大于0"
 
@@ -906,7 +1005,7 @@ class HitAndRun(_PluginBase):
 
     def __update_config(self):
         """保存配置"""
-        config_mapping = asdict(self._hnr_config)
+        config_mapping = self._hnr_config.to_dict()
         del config_mapping["check_period"]
         del config_mapping["site_infos"]
         del config_mapping["site_configs"]
@@ -953,6 +1052,41 @@ class HitAndRun(_PluginBase):
         """
         logger.error(message)
         self.systemmessage.put(message, title=self.plugin_name)
+
+    @staticmethod
+    def __build_hr_message_text(torrent_task: TorrentTask):
+        """
+        构建关于 H&R 事件的消息文本
+        """
+        msg_parts = []
+        label_mapping = {
+            "site_name": "站点",
+            "task_type": "类型",
+            "title": "标题",
+            "description": "描述",
+            "size": "大小",
+            "pubdate": "发布时间"
+        }
+
+        for key, label in label_mapping.items():
+            value = getattr(torrent_task, key, None)
+            if key == "size" and value and str(value).replace(".", "", 1).isdigit():
+                value = StringUtils.str_filesize(value)
+            elif key == "task_type" and isinstance(value, TaskType):
+                value = value.to_chinese()
+
+            if value:
+                msg_parts.append(f"{label}：{value}")
+
+        return "\n".join(msg_parts)
+
+    def __send_hr_message(self, torrent_task, title: str = "【H&R种子下载】"):
+        """
+        发送命中 H&R 种子消息
+        """
+        if self._hnr_config.notify == NotifyMode.ALWAYS:
+            msg_text = self.__build_hr_message_text(torrent_task)
+            self.post_message(mtype=NotificationType.SiteMessage, title=title, text=msg_text)
 
     def __send_message(self, title: str, message: str):
         """发送消息"""
