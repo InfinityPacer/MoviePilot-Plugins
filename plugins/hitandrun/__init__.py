@@ -1,5 +1,6 @@
 import random
 import threading
+import time
 from dataclasses import asdict, fields
 from datetime import datetime, timedelta
 from typing import Any, List, Dict, Tuple, Optional, Union
@@ -9,6 +10,7 @@ from app.helper.sites import SitesHelper
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
+from app.core.context import TorrentInfo
 from app.core.event import eventmanager, Event
 from app.core.plugin import PluginManager
 from app.db.site_oper import SiteOper
@@ -16,6 +18,7 @@ from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
+from app.plugins.hitandrun.entities import TorrentTask, ConfirmationStatus, TorrentHistory
 from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig
 from app.schemas import NotificationType
 from app.schemas.types import EventType
@@ -53,6 +56,8 @@ class HitAndRun(_PluginBase):
     tr = None
     # H&R助手配置
     _hnr_config = None
+    # 下载器
+    _downloader = None
 
     # 定时器
     _scheduler = None
@@ -78,6 +83,8 @@ class HitAndRun(_PluginBase):
 
         if not self.__setup_downloader():
             return
+
+        self._downloader = self.__get_downloader()
 
         if self._hnr_config.onlyonce:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -659,6 +666,171 @@ class HitAndRun(_PluginBase):
         """
         pass
 
+    @eventmanager.register(EventType.DownloadAdded)
+    def __register_download_added(self, event: Event = None):
+        """
+        注册普通下载任务事件
+        """
+        if not event:
+            return
+        event_data = event.event_data
+        if not event_data:
+            return
+
+        logger.debug(f"触发普通下载任务事件: {event}")
+
+    @eventmanager.register(EventType.PluginAction)
+    def __register_download_added_by_brushflow(self, event: Event = None):
+        """
+        注册刷流下载任务事件
+        """
+        if not event:
+            return
+        event_data = event.event_data
+        if not event_data or event_data.get("action") != "brushflow_download_added":
+            return
+
+        logger.info(f"触发刷流下载任务事件: {event}")
+        torrent_hash = event_data.get("hash")
+        torrent_data = event_data.get("data")
+
+        self.__save_and_cleanup_downloads(torrent_hash=torrent_hash, torrent_data=torrent_data)
+        self.__handle_and_save_brush_torrent_tasks(torrent_hash=torrent_hash, torrent_data=torrent_data)
+
+    def __save_and_cleanup_downloads(self, torrent_hash: str, torrent_data: Union[dict, TorrentInfo]):
+        """
+        保存下载记录并清理7天前的记录
+        """
+        if not torrent_hash or not torrent_data:
+            logger.info("没有获取到有效下载任务信息，跳过处理")
+            return
+
+        torrent_history = self.__create_torrent_history(torrent_data=torrent_data)
+        downloads: Dict[str, dict] = self.__get_data(key="downloads")
+
+        # 添加新的下载记录
+        downloads[torrent_hash] = torrent_history.to_dict()
+
+        # 获取当前时间和7天前的时间戳
+        current_time = time.time()
+        cutoff_time = current_time - 7 * 24 * 60 * 60
+
+        # 清理7天以前的下载记录
+        downloads = {key: value for key, value in downloads.items() if value.get("time", current_time) > cutoff_time}
+
+        # 保存更新后的下载记录
+        self.save_data(key="downloads", value=downloads)
+
+    def __handle_and_save_brush_torrent_tasks(self, torrent_hash: str, torrent_data: dict):
+        """
+        处理并保存刷流种子任务
+        """
+        if not torrent_hash or not torrent_data:
+            logger.info("没有获取到有效刷流任务信息，跳过处理")
+            return
+
+        torrent_task = self.__create_torrent_task(torrent_data=torrent_data)
+
+        # 如果任务所属站点不在配置站点内，则跳过，仅记录到下载记录
+        if torrent_task.site_name not in self._hnr_config.sites:
+            logger.info(f"站点 {torrent_task.site_name} 没有启用，跳过处理")
+            return
+
+        # 设置刷流任务为已确认状态
+        torrent_task.hr_status = ConfirmationStatus.CONFIRMED
+
+        # 获取现有的种子任务
+        torrent_tasks: Dict[str, dict] = self.__get_data(key="torrents")
+
+        # 更新种子任务列表
+        torrent_tasks[torrent_hash] = torrent_task.to_dict()
+
+        # 保存更新后的种子任务数据
+        self.save_data(key="torrents", value=torrent_tasks)
+
+    @staticmethod
+    def __create_torrent_instance(torrent_data: Union[dict, TorrentInfo], cls) -> Union[TorrentHistory, TorrentTask]:
+        """创建种子实例"""
+        if isinstance(torrent_data, TorrentInfo):
+            return cls.from_torrent_info(torrent_info=torrent_data)
+        elif isinstance(torrent_data, dict):
+            allowed_fields = {field.name for field in fields(TorrentInfo)}
+            # 过滤数据，只保留 TorrentInfo 数据类中的字段
+            filtered_data = {key: value for key, value in torrent_data.items() if key in allowed_fields}
+            # 创建指定类的实例
+            return cls(**filtered_data)
+
+    @staticmethod
+    def __create_torrent_history(torrent_data: Union[dict, TorrentInfo]) -> TorrentHistory:
+        """创建种子信息"""
+        return HitAndRun.__create_torrent_instance(torrent_data, TorrentHistory)
+
+    @staticmethod
+    def __create_torrent_task(torrent_data: Union[dict, TorrentInfo]) -> TorrentTask:
+        """创建种子任务"""
+        return HitAndRun.__create_torrent_instance(torrent_data, TorrentTask)
+
+    def __get_site_config(self, site_name: str) -> Optional[SiteConfig]:
+        """"获取站点配置"""
+        if not self._hnr_config:
+            return None
+        return self._hnr_config.get_site_config(site_name=site_name)
+
+    def __get_data(self, key: str):
+        """获取插件数据"""
+        if not key:
+            return {}
+        return self.get_data(key=key) or {}
+
+    def __setup_downloader(self) -> bool:
+        """
+        根据下载器类型初始化下载器实例
+        """
+        if not self._hnr_config:
+            return False
+
+        self.qb = Qbittorrent()
+        # self.tr = Transmission()
+
+        if self._hnr_config.downloader == "qbittorrent":
+            if self.qb.is_inactive():
+                self.__log_and_notify_error("发生异常：Qbittorrent未连接")
+                return False
+        # elif self._hnr_config.downloader == "transmission":
+        #     if self.tr.is_inactive():
+        #         self.__log_and_notify_error("发生异常：Transmission未连接")
+        #         return False
+
+        return True
+
+    def __get_downloader(self) -> Optional[Union[Transmission, Qbittorrent]]:
+        """
+        根据类型返回下载器实例
+        """
+        if not self._hnr_config:
+            return None
+
+        if self._hnr_config.downloader == "qbittorrent":
+            return self.qb
+        # elif self._hnr_config.downloader == "transmission":
+        #     return self.tr
+        else:
+            return None
+
+    def __get_torrents(self, torrent_hashes: Union[str, list]):
+        """
+        获取下载器中的种子信息
+        """
+        if not torrent_hashes:
+            return None
+
+        torrents, error = self._downloader.get_torrents(ids=torrent_hashes)
+        if error:
+            logger.warn("连接下载器出错，将在下个时间周期重试")
+            return None
+
+        return torrents
+
     @staticmethod
     def __validate_config(config: HNRConfig) -> (bool, str):
         """
@@ -807,67 +979,6 @@ class HitAndRun(_PluginBase):
             return False, f"{plugin_name}未安装"
 
         return True, f"{plugin_name}已安装"
-
-    @eventmanager.register(EventType.DownloadAdded)
-    def __register_download_added(self, event: Event = None):
-        """
-        注册普通下载任务事件
-        """
-        logger.info(f"event: {event}")
-
-    @eventmanager.register(EventType.PluginAction)
-    def __register_download_added_by_brushflow(self, event: Event = None):
-        """
-        注册刷流下载任务事件
-        """
-        if not self.get_state():
-            return
-        if not event:
-            return
-        event_data = event.event_data
-        if not event_data or event_data.get("action") != "brushflow_download_added":
-            return
-
-        logger.debug(f"触发刷流任务事件: {event}")
-        torrent_hash = event_data.get("hash")
-        torrent_task = event_data.get("data")
-        if not torrent_hash or not torrent_task:
-            logger.info("没有获取到有效刷流任务信息，跳过")
-
-    def __setup_downloader(self) -> bool:
-        """
-        根据下载器类型初始化下载器实例
-        """
-        if not self._hnr_config:
-            return False
-
-        self.qb = Qbittorrent()
-        # self.tr = Transmission()
-
-        if self._hnr_config.downloader == "qbittorrent":
-            if self.qb.is_inactive():
-                self.__log_and_notify_error("站点刷流任务出错：Qbittorrent未连接")
-                return False
-        # elif self._hnr_config.downloader == "transmission":
-        #     if self.tr.is_inactive():
-        #         self.__log_and_notify_error("站点刷流任务出错：Transmission未连接")
-        #         return False
-
-        return True
-
-    def __get_downloader(self) -> Optional[Union[Transmission, Qbittorrent]]:
-        """
-        根据类型返回下载器实例
-        """
-        if not self._hnr_config:
-            return None
-
-        if self._hnr_config.downloader == "qbittorrent":
-            return self.qb
-        # elif self._hnr_config.downloader == "transmission":
-        #     return self.tr
-        else:
-            return None
 
     @staticmethod
     def __get_demo_config():
