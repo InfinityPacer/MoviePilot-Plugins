@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Optional
 
 from app.core.context import TorrentInfo
+from app.utils.string import StringUtils
 
 
 class HNRStatus(Enum):
@@ -32,14 +33,14 @@ class HNRStatus(Enum):
 
 class TaskType(Enum):
     BRUSH = "Brush"  # 刷流
-    NORMAL = "Normal"  # 普通下载
+    NORMAL = "Normal"  # 普通
     AUTO_SUBSCRIBE = "Auto Subscribe"  # 自动订阅
     RSS_SUBSCRIBE = "RSS Subscribe"  # RSS订阅
 
     def to_chinese(self):
         descriptions = {
             "Brush": "刷流",
-            "Normal": "普通下载",
+            "Normal": "普通",
             "Auto Subscribe": "自动订阅",
             "RSS Subscribe": "RSS订阅"
         }
@@ -49,6 +50,7 @@ class TaskType(Enum):
 @dataclass
 class TorrentHistory(TorrentInfo):
     time: Optional[float] = field(default_factory=time.time)  # 时间戳
+    hash: Optional[str] = None  # 种子Hash
     task_type: TaskType = TaskType.NORMAL  # 任务类型
 
     @classmethod
@@ -56,6 +58,14 @@ class TorrentHistory(TorrentInfo):
         """从TorrentInfo实例创建TorrentHistory实例"""
         # 使用字典解包初始化TorrentTask
         return cls(**torrent_info.__dict__)
+
+    def to_dict(self):
+        """
+        返回字典
+        """
+        dicts = super().to_dict()
+        dicts["task_type"] = self.task_type.value if self.task_type else None
+        return dicts
 
 
 @dataclass
@@ -68,3 +78,27 @@ class TorrentTask(TorrentHistory):
     uploaded: Optional[float] = field(default=0)  # 上传量
     seeding_time: Optional[float] = field(default=0)  # 做种时间
     deleted: Optional[bool] = field(default=False)  # 是否已删除
+
+    @staticmethod
+    def format_size(value):
+        return StringUtils.str_filesize(value) if str(value).replace(".", "", 1).isdigit() else value
+
+    @staticmethod
+    def format_duration(value):
+        return f"{value} 小时" if value is not None else "N/A"
+
+    @staticmethod
+    def format_deadline_days(value):
+        return f"{value} 天" if value is not None else "N/A"
+
+    @staticmethod
+    def format_to_chinese(value):
+        return value.to_chinese() if hasattr(value, "to_chinese") else value
+
+    def to_dict(self):
+        """
+        返回字典
+        """
+        dicts = super().to_dict()
+        dicts["hr_status"] = self.hr_status.value if self.hr_status else None
+        return dicts

@@ -10,7 +10,7 @@ from app.helper.sites import SitesHelper
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
-from app.core.context import TorrentInfo
+from app.core.context import TorrentInfo, Context
 from app.core.event import eventmanager, Event
 from app.core.plugin import PluginManager
 from app.db.site_oper import SiteOper
@@ -22,7 +22,6 @@ from app.plugins.hitandrun.entities import TorrentTask, HNRStatus, TorrentHistor
 from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig, NotifyMode
 from app.schemas import NotificationType
 from app.schemas.types import EventType
-from app.utils.string import StringUtils
 
 lock = threading.Lock()
 
@@ -689,59 +688,158 @@ class HitAndRun(_PluginBase):
         pass
 
     @eventmanager.register(EventType.DownloadAdded)
-    def __register_download_added(self, event: Event = None):
+    def handle_download_added_event(self, event: Event = None):
         """
-        注册普通下载任务事件
+        处理下载添加事件，支持普通下载和RSS订阅
         """
-        if not event:
-            return
-        event_data = event.event_data
-        if not event_data:
+        if not self.__validate_and_log_event(event, event_type_desc="下载任务"):
             return
 
-        logger.debug(f"触发普通下载任务事件: {event}")
+        torrent_hash = event.event_data.get("hash")
+        context: Context = event.event_data.get("context")
+
+        if not torrent_hash or not context or not context.torrent_info:
+            logger.info("没有获取到有效的种子任务信息，跳过处理")
+            return
+
+        torrent_info = context.torrent_info
+
+        # 现阶段，由于获取下载来源涉及主程序大幅调整，暂时处理方案为，如果没有种子详情（页面详情）的，均认为是RSS订阅
+        task_type = TaskType.NORMAL if torrent_info.description else TaskType.RSS_SUBSCRIBE
+        self.__process_event(torrent_hash=torrent_hash, torrent_data=torrent_info, task_type=task_type)
 
     @eventmanager.register(EventType.PluginAction)
-    def __register_download_added_by_brushflow(self, event: Event = None):
+    def handle_brushflow_event(self, event: Event = None):
         """
-        注册刷流下载任务事件
+        处理刷流下载任务事件
         """
-        if not event:
-            return
-        event_data = event.event_data
-        if not event_data or event_data.get("action") != "brushflow_download_added":
-            return
-
-        logger.info(f"触发刷流下载任务事件: {event}")
-        torrent_hash = event_data.get("hash")
-        torrent_data = event_data.get("data")
-
-        torrent = self.__get_torrents(torrent_hashes=torrent_hash)
-        if not torrent:
-            logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理，")
+        # {'action': 'brushflow_download_added', 'hash': '4dd8acdf4bcf34f915652467df7c007dd4a86381',
+        #  'data': {'site': 5, 'site_name': '皇后', 'title': '群星 - 广州影音展15周年 HiFi鉴赏① 2022 - FLAC 分轨',
+        #           'size': 389577441, 'pubdate': '2024-07-31 19:50:11', 'description': None, 'imdbid': None,
+        #           'page_url': 'https://open.cd/plugin_details.php?id=161393&hit=1', 'date_elapsed': '2時44分',
+        #           'freedate': None, 'uploadvolumefactor': 1, 'downloadvolumefactor': 0, 'hit_and_run': False,
+        #           'volume_factor': '免费', 'freedate_diff': '', 'ratio': 0, 'downloaded': 0, 'uploaded': 0,
+        #           'seeding_time': 0, 'deleted': False, 'time': 1722436530.449227}}
+        if not self.__validate_and_log_event(event,
+                                             event_type_desc="刷流下载任务",
+                                             action_required="brushflow_download_added"):
             return
 
-        torrent_history = self.__save_and_cleanup_downloads(torrent_hash=torrent_hash,
-                                                            torrent_data=torrent_data,
-                                                            task_type=TaskType.BRUSH)
-        torrent_task = self.__handle_and_save_brush_torrent_tasks(torrent_hash=torrent_hash, torrent_data=torrent_data)
+        torrent_hash = event.event_data.get("hash")
+        torrent_data = event.event_data.get("data")
+        self.__process_event(torrent_hash, torrent_data, TaskType.BRUSH)
 
-    def __handle_hit_and_run(self, torrent_hash: str, torrent: Any, torrent_task: TorrentTask):
+    @staticmethod
+    def __validate_and_log_event(event, event_type_desc: str, action_required: str = None):
         """
-        处理H&R任务
+        验证事件是否有效并记录日志
         """
-        if not torrent_hash or not torrent or not torrent_task:
+        if not event or not event.event_data:
+            return False
+
+        if action_required and event.event_data.get("action") != action_required:
+            return False
+
+        logger.info(f"触发{event_type_desc}事件: {event.event_type} | {event.event_data}")
+        return True
+
+    def __process_event(self, torrent_hash: str, torrent_data: Union[dict, TorrentInfo], task_type: TaskType):
+        """
+        通用事件处理逻辑
+        """
+        with lock:
+            if not torrent_hash or not torrent_data:
+                logger.info("没有获取到有效的种子任务信息，跳过处理")
+                return
+
+            torrent = self.__get_torrents(torrent_hashes=torrent_hash)
+            if not torrent:
+                logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理")
+                return
+
+            # 保存种子下载记录
+            self.__save_and_cleanup_downloads(torrent_hash=torrent_hash, torrent_data=torrent_data, task_type=task_type)
+            # 处理种子任务
+            self.__process_torrent_task(torrent_hash=torrent_hash, torrent_data=torrent_data, task_type=task_type)
+
+    def __process_torrent_task(self, torrent_hash: str, torrent_data: Union[dict, TorrentInfo], task_type: TaskType):
+        """
+        处理并保存种子任务
+        """
+        torrent_task = self.__create_torrent_task(torrent_hash=torrent_hash,
+                                                  torrent_data=torrent_data,
+                                                  task_type=task_type)
+
+        if torrent_task.site not in self._hnr_config.sites:
+            logger.info(f"站点 {torrent_task.site_name} 没有启用 H&R 管理，跳过处理")
+            return
+
+        self.__adjust_hr_status(torrent_task=torrent_task)
+        self.__save_torrent_tasks(torrent_tasks=torrent_task)
+
+        if not torrent_task.hit_and_run:
+            return
+
+        self.__set_hit_and_run_tag(torrent_task=torrent_task)
+        self.__send_hr_message(torrent_task=torrent_task)
+
+    def __adjust_hr_status(self, torrent_task: TorrentTask):
+        """
+        调整和保存H&R状态
+        """
+        site_config = self.__get_site_config(site_name=torrent_task.site_name)
+
+        # 如果站点已经激活全局H&R，则强制标识为H&R种子
+        if site_config.hr_active:
+            torrent_task.hit_and_run = True
+
+        if torrent_task.hit_and_run:
+            torrent_task.hr_duration = site_config.hr_duration
+            torrent_task.hr_deadline_days = site_config.hr_deadline_days
+            torrent_task.hr_status = HNRStatus.IN_PROGRESS
+        else:
+            torrent_task.hr_status = HNRStatus.UNRESTRICTED
+
+    def __save_torrent_tasks(self, torrent_tasks: Union[TorrentTask, List[TorrentTask]]):
+        """
+        保存或更新单个或多个种子任务数据
+        """
+        if not torrent_tasks:
+            return
+
+        # 确保输入总是列表形式，方便统一处理
+        if isinstance(torrent_tasks, TorrentTask):
+            torrent_tasks = [torrent_tasks]
+
+        existing_torrent_tasks: Dict[str, dict] = self.__get_data(key="torrents")
+
+        # 使用字典解析和 update 方法批量更新数据
+        updates = {task.hash: task.to_dict() for task in torrent_tasks}
+        existing_torrent_tasks.update(updates)
+
+        # 一次性保存所有更新
+        self.save_data(key="torrents", value=existing_torrent_tasks)
+
+    def __set_hit_and_run_tag(self, torrent_task: TorrentTask):
+        """
+        设置H&R标签
+        """
+        if not torrent_task and not torrent_task.hash:
             return
 
         if not torrent_task.hit_and_run:
             return
 
-        title = "【H&R助手】"
+        # 这里重新获取一次种子，避免出现tags冲突的问题
+        torrent = self.__get_torrents(torrent_hashes=torrent_task.hash)
+        if not torrent:
+            logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_task.hash} 的种子信息")
+            return
+
         try:
             tags = self.__get_torrent_tags(torrent=torrent)
             tags.append(self._hnr_config.hit_and_run_tag)
-            self.__set_torrent_tag(torrent_hash=torrent_hash, tags=tags)
-            self.__send_message(title=title, message="")
+            self.__set_torrent_tag(torrent_hash=torrent_task.hash, tags=tags)
         except Exception as e:
             logger.error(f"设置标签时出错：{str(e)}")
 
@@ -750,11 +848,9 @@ class HitAndRun(_PluginBase):
         """
         保存下载记录并清理7天前的记录
         """
-        if not torrent_hash or not torrent_data:
-            logger.info("没有获取到有效下载任务信息，跳过处理")
-            return None
-
-        torrent_history = self.__create_torrent_history(torrent_data=torrent_data, task_type=task_type)
+        torrent_history = self.__create_torrent_history(torrent_hash=torrent_hash,
+                                                        torrent_data=torrent_data,
+                                                        task_type=task_type)
 
         downloads: Dict[str, dict] = self.__get_data(key="downloads")
 
@@ -773,44 +869,9 @@ class HitAndRun(_PluginBase):
 
         return torrent_history
 
-    def __handle_and_save_brush_torrent_tasks(self, torrent_hash: str, torrent_data: dict) -> Optional[TorrentTask]:
-        """
-        处理并保存刷流种子任务
-        """
-        if not torrent_hash or not torrent_data:
-            logger.info("没有获取到有效刷流任务信息，跳过处理")
-            return None
-
-        torrent_task = self.__create_torrent_task(torrent_data=torrent_data, task_type=TaskType.BRUSH)
-
-        # 如果任务所属站点不在配置站点内，则跳过，仅记录到下载记录
-        if torrent_task.site_name not in self._hnr_config.sites:
-            logger.info(f"站点 {torrent_task.site_name} 没有启用，跳过处理")
-            return None
-
-        # 根据H&R对种子的H&R字段赋值，后续再根据站点进一步调整H&R
-        if torrent_task.hit_and_run:
-            site_config = self.__get_site_config(site_name=torrent_task.site_name)
-            torrent_task.hr_duration = site_config.hr_duration
-            torrent_task.hr_deadline_days = site_config.hr_deadline_days
-            torrent_task.hr_status = HNRStatus.IN_PROGRESS
-        else:
-            torrent_task.hr_status = HNRStatus.UNRESTRICTED
-
-        # 获取现有的种子任务
-        torrent_tasks: Dict[str, dict] = self.__get_data(key="torrents")
-
-        # 更新种子任务列表
-        torrent_tasks[torrent_hash] = torrent_task.to_dict()
-
-        # 保存更新后的种子任务数据
-        self.save_data(key="torrents", value=torrent_tasks)
-
-        return torrent_task
-
     @staticmethod
-    def __create_torrent_instance(torrent_data: Union[dict, TorrentInfo], cls, task_type: TaskType) -> \
-            Union[TorrentHistory, TorrentTask]:
+    def __create_torrent_instance(torrent_hash: str, torrent_data: Union[dict, TorrentInfo], cls,
+                                  task_type: TaskType) -> Union[TorrentHistory, TorrentTask]:
         """创建种子实例"""
         if isinstance(torrent_data, TorrentInfo):
             result = cls.from_torrent_info(torrent_info=torrent_data)
@@ -821,18 +882,21 @@ class HitAndRun(_PluginBase):
             # 创建指定类的实例
             result = cls(**filtered_data)
 
+        result.hash = torrent_hash
         result.task_type = task_type
         return result
 
     @staticmethod
-    def __create_torrent_history(torrent_data: Union[dict, TorrentInfo], task_type: TaskType) -> TorrentHistory:
+    def __create_torrent_history(torrent_hash: str, torrent_data: Union[dict, TorrentInfo],
+                                 task_type: TaskType) -> TorrentHistory:
         """创建种子信息"""
-        return HitAndRun.__create_torrent_instance(torrent_data, TorrentHistory, task_type)
+        return HitAndRun.__create_torrent_instance(torrent_hash, torrent_data, TorrentHistory, task_type)
 
     @staticmethod
-    def __create_torrent_task(torrent_data: Union[dict, TorrentInfo], task_type: TaskType) -> TorrentTask:
+    def __create_torrent_task(torrent_hash: str, torrent_data: Union[dict, TorrentInfo],
+                              task_type: TaskType) -> TorrentTask:
         """创建种子任务"""
-        return HitAndRun.__create_torrent_instance(torrent_data, TorrentTask, task_type)
+        return HitAndRun.__create_torrent_instance(torrent_hash, torrent_data, TorrentTask, task_type)
 
     def __get_site_config(self, site_name: str) -> Optional[SiteConfig]:
         """"获取站点配置"""
@@ -911,7 +975,10 @@ class HitAndRun(_PluginBase):
         """
         try:
             unique_tags = list(set(tags))
-            self._downloader.set_torrent_tag(ids=torrent_hash, tags=unique_tags)
+            if self._hnr_config.downloader == "qbittorrent":
+                self._downloader.set_torrents_tag(ids=torrent_hash, tags=unique_tags)
+            else:
+                self._downloader.set_torrent_tag(ids=torrent_hash, tags=unique_tags)
         except Exception as e:
             logger.error(f"无法为 torrent_hash: {torrent_hash} 设置标签，错误: {e}")
 
@@ -961,9 +1028,7 @@ class HitAndRun(_PluginBase):
 
         try:
             # 使用字典推导来提取所有字段，并用config中的值覆盖默认值
-            hnr_config = HNRConfig(
-                **{field.name: config.get(field.name, getattr(HNRConfig, field.name, None))
-                   for field in fields(HNRConfig)})
+            hnr_config = HNRConfig.from_dict(data=config)
 
             result, reason = self.__validate_config(config=hnr_config)
             if result:
@@ -1060,23 +1125,22 @@ class HitAndRun(_PluginBase):
         """
         msg_parts = []
         label_mapping = {
-            "site_name": "站点",
-            "task_type": "类型",
-            "title": "标题",
-            "description": "描述",
-            "size": "大小",
-            "pubdate": "发布时间"
+            "site_name": ("站点", str),
+            "task_type": ("类型", TorrentTask.format_to_chinese),
+            "title": ("标题", str),
+            "description": ("描述", str),
+            "size": ("大小", TorrentTask.format_size),
+            "hr_status": ("状态", TorrentTask.format_to_chinese),
+            "hr_duration": ("时间", TorrentTask.format_duration),
+            "hr_deadline_days": ("期限", TorrentTask.format_deadline_days),
         }
 
-        for key, label in label_mapping.items():
+        for key, (label, formatter) in label_mapping.items():
             value = getattr(torrent_task, key, None)
-            if key == "size" and value and str(value).replace(".", "", 1).isdigit():
-                value = StringUtils.str_filesize(value)
-            elif key == "task_type" and isinstance(value, TaskType):
-                value = value.to_chinese()
-
-            if value:
-                msg_parts.append(f"{label}：{value}")
+            if value is not None:
+                formatted_value = formatter(value)
+                if formatted_value:
+                    msg_parts.append(f"{label}：{formatted_value}")
 
         return "\n".join(msg_parts)
 

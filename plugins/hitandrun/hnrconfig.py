@@ -34,6 +34,16 @@ class BaseConfig:
         """
         return (self.hr_duration or 0.0) + (self.additional_seed_time or 0.0)
 
+    @classmethod
+    def from_dict(cls, data: dict):
+        # 获取类字段名集合
+        field_names = {f.name for f in fields(cls)}
+        # 创建一个新字典，只包含定义在dataclass中的字段
+        filtered_data = {key: value for key, value in data.items() if key in field_names}
+        # 使用过滤后的数据字典创建实例
+        instance = cls(**filtered_data)
+        return instance
+
 
 @dataclass
 class SiteConfig(BaseConfig):
