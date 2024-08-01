@@ -2455,10 +2455,6 @@ class BrushFlowLowFreq(_PluginBase):
         if not brush_config.downloader:
             return
 
-        if not self.__is_current_time_in_range():
-            logger.info(f"当前不在指定的刷流时间区间内，检查操作将暂时暂停")
-            return
-
         with lock:
             logger.info("开始检查刷流下载任务 ...")
             torrent_tasks: Dict[str, dict] = self.get_data("torrents") or {}
@@ -3423,7 +3419,7 @@ class BrushFlowLowFreq(_PluginBase):
             qbc_ret = self.qb.qbc.torrents_add(urls=urls,
                                                torrent_files=torrent_files,
                                                save_path=save_path,
-                                               is_paused=is_paused,
+                                               is_paused=True,
                                                tags=tags,
                                                use_auto_torrent_management=is_auto,
                                                is_first_last_piece_priority=is_first_last_piece_priority,
