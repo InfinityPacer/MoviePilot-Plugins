@@ -3419,7 +3419,7 @@ class BrushFlowLowFreq(_PluginBase):
             qbc_ret = self.qb.qbc.torrents_add(urls=urls,
                                                torrent_files=torrent_files,
                                                save_path=save_path,
-                                               is_paused=True,
+                                               is_paused=is_paused,
                                                tags=tags,
                                                use_auto_torrent_management=is_auto,
                                                is_first_last_piece_priority=is_first_last_piece_priority,
