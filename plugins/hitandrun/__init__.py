@@ -713,13 +713,6 @@ class HitAndRun(_PluginBase):
         """
         处理刷流下载任务事件
         """
-        # {'action': 'brushflow_download_added', 'hash': '4dd8acdf4bcf34f915652467df7c007dd4a86381',
-        #  'data': {'site': 5, 'site_name': '皇后', 'title': '群星 - 广州影音展15周年 HiFi鉴赏① 2022 - FLAC 分轨',
-        #           'size': 389577441, 'pubdate': '2024-07-31 19:50:11', 'description': None, 'imdbid': None,
-        #           'page_url': 'https://open.cd/plugin_details.php?id=161393&hit=1', 'date_elapsed': '2時44分',
-        #           'freedate': None, 'uploadvolumefactor': 1, 'downloadvolumefactor': 0, 'hit_and_run': False,
-        #           'volume_factor': '免费', 'freedate_diff': '', 'ratio': 0, 'downloaded': 0, 'uploaded': 0,
-        #           'seeding_time': 0, 'deleted': False, 'time': 1722436530.449227}}
         if not self.__validate_and_log_event(event,
                                              event_type_desc="刷流下载任务",
                                              action_required="brushflow_download_added"):
@@ -945,15 +938,22 @@ class HitAndRun(_PluginBase):
         else:
             return None
 
-    def __get_torrents(self, torrent_hashes: Union[str, List[str]]) -> Optional[Any]:
+    def __get_hash(self, torrent: Any) -> str:
+        """
+        获取种子hash
+        """
+        try:
+            return torrent.get("hash") if self._hnr_config.downloader == "qbittorrent" else torrent.hashString
+        except Exception as e:
+            print(str(e))
+            return ""
+
+    def __get_torrents(self, torrent_hashes: Optional[Union[str, List[str]]] = None) -> Optional[Any]:
         """
         获取下载器中的种子信息
         如果 `torrent_hashes` 只包含一个值，返回该种子的具体信息
         如果包含多个值，返回包含所有种子信息的列表
         """
-        if not torrent_hashes:
-            return None
-
         # 处理单个种子哈希的情况，确保其被视为列表
         if isinstance(torrent_hashes, str):
             torrent_hashes = [torrent_hashes]
@@ -964,7 +964,7 @@ class HitAndRun(_PluginBase):
             return None
 
         # 如果只有一个种子哈希，直接返回该种子的信息
-        if len(torrent_hashes) == 1:
+        if torrent_hashes and len(torrent_hashes) == 1:
             return torrents[0] if torrents else None
 
         return torrents
@@ -1027,8 +1027,7 @@ class HitAndRun(_PluginBase):
             return False, ""
 
         try:
-            # 使用字典推导来提取所有字段，并用config中的值覆盖默认值
-            hnr_config = HNRConfig.from_dict(data=config)
+            hnr_config = HNRConfig.parse_obj(obj=config)
 
             result, reason = self.__validate_config(config=hnr_config)
             if result:
@@ -1070,10 +1069,8 @@ class HitAndRun(_PluginBase):
 
     def __update_config(self):
         """保存配置"""
-        config_mapping = self._hnr_config.to_dict()
-        del config_mapping["check_period"]
-        del config_mapping["site_infos"]
-        del config_mapping["site_configs"]
+        excludes = {"check_period", "site_infos", "site_configs"}
+        config_mapping = self._hnr_config.to_dict(exclude=excludes)
         self.update_config(config_mapping)
 
     def __get_site_options(self):
@@ -1118,11 +1115,13 @@ class HitAndRun(_PluginBase):
         logger.error(message)
         self.systemmessage.put(message, title=self.plugin_name)
 
-    @staticmethod
-    def __build_hr_message_text(torrent_task: TorrentTask):
+    def __build_hr_message_text(self, torrent_task: TorrentTask):
         """
         构建关于 H&R 事件的消息文本
         """
+        site_config = self.__get_site_config(site_name=torrent_task.site_name)
+        additional_seed_time = site_config.additional_seed_time
+
         msg_parts = []
         label_mapping = {
             "site_name": ("站点", str),
@@ -1131,7 +1130,7 @@ class HitAndRun(_PluginBase):
             "description": ("描述", str),
             "size": ("大小", TorrentTask.format_size),
             "hr_status": ("状态", TorrentTask.format_to_chinese),
-            "hr_duration": ("时间", TorrentTask.format_duration),
+            "hr_duration": ("时间", lambda x: TorrentTask.format_duration(x, additional_seed_time)),
             "hr_deadline_days": ("期限", TorrentTask.format_deadline_days),
         }
 

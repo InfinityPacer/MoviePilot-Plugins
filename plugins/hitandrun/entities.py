@@ -1,7 +1,9 @@
+import json
 import time
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
+from pydantic import BaseModel, Field
 
 from app.core.context import TorrentInfo
 from app.utils.string import StringUtils
@@ -47,9 +49,19 @@ class TaskType(Enum):
         return descriptions[self.value]
 
 
-@dataclass
-class TorrentHistory(TorrentInfo):
-    time: Optional[float] = field(default_factory=time.time)  # 时间戳
+class TorrentHistory(BaseModel):
+    site: Optional[int] = None  # 站点ID
+    site_name: Optional[str] = None  # 站点名称
+    title: Optional[str] = None  # 种子名称
+    description: Optional[str] = None  # 种子副标题
+    enclosure: Optional[str] = None  # 种子链接
+    page_url: Optional[str] = None  # 详情页面
+    size: float = 0  # 种子大小
+    pubdate: Optional[str] = None  # 发布时间
+    hit_and_run: bool = False  # HR
+    pri_order: int = 0  # 种子优先级
+    category: Optional[str] = None  # 种子分类 电影/电视剧
+    time: Optional[float] = Field(default_factory=time.time)
     hash: Optional[str] = None  # 种子Hash
     task_type: TaskType = TaskType.NORMAL  # 任务类型
 
@@ -59,46 +71,53 @@ class TorrentHistory(TorrentInfo):
         # 使用字典解包初始化TorrentTask
         return cls(**torrent_info.__dict__)
 
-    def to_dict(self):
+    # 模型配置
+    class Config:
+        extra = "ignore"
+        arbitrary_types_allowed = True
+
+    def to_dict(self, **kwargs):
         """
         返回字典
         """
-        dicts = super().to_dict()
-        dicts["task_type"] = self.task_type.value if self.task_type else None
-        return dicts
+        config_json = self.json(**kwargs)
+        config_mapping = json.loads(config_json)
+        return config_mapping
 
 
-@dataclass
 class TorrentTask(TorrentHistory):
     hr_status: Optional[HNRStatus] = HNRStatus.PENDING  # H&R状态
     hr_duration: Optional[float] = None  # H&R时间
     hr_deadline_days: Optional[float] = None  # H&R满足要求的期限（天数）
-    ratio: Optional[float] = field(default=0)  # 分享率
-    downloaded: Optional[float] = field(default=0)  # 下载量
-    uploaded: Optional[float] = field(default=0)  # 上传量
-    seeding_time: Optional[float] = field(default=0)  # 做种时间
-    deleted: Optional[bool] = field(default=False)  # 是否已删除
+    ratio: Optional[float] = 0.0  # 分享率
+    downloaded: Optional[float] = 0.0  # 下载量
+    uploaded: Optional[float] = 0.0  # 上传量
+    seeding_time: Optional[float] = 0.0  # 做种时间
+    deleted: Optional[bool] = False  # 是否已删除
 
     @staticmethod
     def format_size(value):
         return StringUtils.str_filesize(value) if str(value).replace(".", "", 1).isdigit() else value
 
     @staticmethod
-    def format_duration(value):
-        return f"{value} 小时" if value is not None else "N/A"
+    def format_duration(value, additional_time=0):
+        if not value and not additional_time:
+            return "N/A"
+        # 格式化浮点数以去除不必要的尾零
+        formatted_value = f"{float(value):.1f}".rstrip("0").rstrip(".")
+        if additional_time:
+            formatted_additional_time = f"{float(additional_time):.1f}".rstrip("0").rstrip(".")
+            return f"{formatted_value}(+{formatted_additional_time})小时"
+        return f"{formatted_value}小时"
 
     @staticmethod
     def format_deadline_days(value):
-        return f"{value} 天" if value is not None else "N/A"
+        if value is None:
+            return "N/A"
+        # 格式化浮点数以去除不必要的尾随零
+        formatted_value = f"{float(value):.1f}".rstrip("0").rstrip(".")
+        return f"{formatted_value}天"
 
     @staticmethod
     def format_to_chinese(value):
         return value.to_chinese() if hasattr(value, "to_chinese") else value
-
-    def to_dict(self):
-        """
-        返回字典
-        """
-        dicts = super().to_dict()
-        dicts["hr_status"] = self.hr_status.value if self.hr_status else None
-        return dicts
