@@ -20,7 +20,7 @@ class BaseConfig(BaseModel):
     """
     hr_duration: Optional[float] = None  # H&R时间（小时）
     additional_seed_time: Optional[float] = None  # 附加做种时间（小时）
-    ratio: Optional[float] = None  # 分享率
+    hr_ratio: Optional[float] = None  # H&R分享率
     hr_active: Optional[bool] = False  # H&R激活
     hr_deadline_days: Optional[float] = None  # H&R满足要求的期限（天数）
 

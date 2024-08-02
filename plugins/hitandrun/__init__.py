@@ -1,13 +1,13 @@
-import random
 import threading
 import time
 from dataclasses import fields
 from datetime import datetime, timedelta
-from typing import Any, List, Dict, Tuple, Optional, Union
+from typing import Any, List, Dict, Tuple, Optional, Union, Type, TypeVar
 
 import pytz
 from app.helper.sites import SitesHelper
 from apscheduler.schedulers.background import BackgroundScheduler
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.context import TorrentInfo, Context
@@ -19,11 +19,13 @@ from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
 from app.plugins.hitandrun.entities import TorrentTask, HNRStatus, TorrentHistory, TaskType
+from app.plugins.hitandrun.helper import TorrentHelper, TimeHelper
 from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig, NotifyMode
 from app.schemas import NotificationType
 from app.schemas.types import EventType
 
 lock = threading.Lock()
+T = TypeVar('T', bound=BaseModel)
 
 
 class HitAndRun(_PluginBase):
@@ -52,6 +54,7 @@ class HitAndRun(_PluginBase):
     siteshelper = None
     siteoper = None
     systemconfig = None
+    torrenthelper = None
     qb = None
     tr = None
     # H&R助手配置
@@ -85,6 +88,7 @@ class HitAndRun(_PluginBase):
             return
 
         self._downloader = self.__get_downloader()
+        self.torrenthelper = TorrentHelper(self._downloader)
 
         if self._hnr_config.onlyonce:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -296,8 +300,8 @@ class HitAndRun(_PluginBase):
                                         'component': 'VSelect',
                                         'props': {
                                             'model': 'brush_plugin',
-                                            'label': '站点刷流插件',
-                                            'hint': '选择参与配置的刷流插件',
+                                            'label': '站点H&R插件',
+                                            'hint': '选择参与配置的H&R插件',
                                             'persistent-hint': True,
                                             'items': self.__get_plugin_options()
                                         }
@@ -397,7 +401,7 @@ class HitAndRun(_PluginBase):
                                     {
                                         'component': 'VTextField',
                                         'props': {
-                                            'model': 'ratio',
+                                            'model': 'hr_ratio',
                                             'label': '分享率',
                                             'type': 'number',
                                             "min": "0",
@@ -605,7 +609,7 @@ class HitAndRun(_PluginBase):
             "downloader": "qbittorrent",
             "hit_and_run_tag": "H&R",
             "spider_period": 720,
-            "ratio": 99,
+            "hr_ratio": 99,
             "hr_duration": 144,
             "hr_deadline_days": 14,
             "additional_seed_time": 24,
@@ -643,9 +647,9 @@ class HitAndRun(_PluginBase):
 
             if self._hnr_config.auto_monitor:
                 # 每天执行4次，随机在8点~23点之间执行
-                triggers = self.__random_even_scheduler(num_executions=4,
-                                                        begin_hour=8,
-                                                        end_hour=23)
+                triggers = TimeHelper.random_even_scheduler(num_executions=4,
+                                                            begin_hour=8,
+                                                            end_hour=23)
                 for trigger in triggers:
                     services.append({
                         "id": f"{self.__class__.__name__}|Monitor|{trigger.hour}:{trigger.minute}",
@@ -675,11 +679,225 @@ class HitAndRun(_PluginBase):
         except Exception as e:
             print(str(e))
 
+    # region Check
+
     def check(self):
         """
         检查服务
         """
-        pass
+        if not self._downloader:
+            return
+
+        with lock:
+            logger.info("开始检查H&R下载任务 ...")
+            torrent_tasks = self.__get_and_parse_data(key="torrents", model=TorrentTask)
+            unmanaged_tasks = self.__get_and_parse_data(key="unmanaged", model=TorrentTask)
+            histories = self.__get_and_parse_data(key="downloads", model=TorrentHistory)
+
+            seeding_torrents = self.torrenthelper.get_torrents()
+            seeding_torrents_dict = {
+                self.torrenthelper.get_torrent_hashes(torrents=torrent):
+                    torrent for torrent in seeding_torrents}
+
+            # 检查种子标签变更情况
+            self.__update_seeding_tasks_based_on_tags(torrent_tasks=torrent_tasks,
+                                                      unmanaged_tasks=unmanaged_tasks,
+                                                      histories=histories,
+                                                      seeding_torrents_dict=seeding_torrents_dict)
+
+            torrent_check_hashes = list(torrent_tasks.keys())
+            if not torrent_tasks or not torrent_check_hashes:
+                logger.info("没有需要检查的H&R下载任务")
+                return
+
+            logger.info(f"共有 {len(torrent_check_hashes)} 个任务正在H&R，开始检查任务状态")
+
+            # 获取到当前所有做种数据中需要被检查的种子数据
+            check_torrents = [seeding_torrents_dict[th] for th in torrent_check_hashes if th in seeding_torrents_dict]
+
+            # 更新H&R任务列表中在下载器中删除的种子为删除状态
+            self.__update_undeleted_torrents_missing_in_downloader(torrent_tasks, torrent_check_hashes, check_torrents)
+
+            # 先更新H&R任务的最新状态，上下传，分享率，做种时间等
+            self.__update_torrent_tasks_state(torrents=check_torrents, torrent_tasks=torrent_tasks)
+
+            # # 更新统计数据
+            # self.__update_and_save_statistic_info(torrent_tasks)
+
+            # 更新H&R下载任务
+            self.__save_data(key="torrents", value=torrent_tasks)
+
+            logger.info("H&R下载任务检查完成")
+
+    def __update_torrent_tasks_state(self, torrents: List[Any], torrent_tasks: Dict[str, TorrentTask]):
+        """
+        更新H&R任务的最新状态，上下传，分享率，做种时间等
+        """
+        for torrent in torrents:
+            torrent_hash = self.torrenthelper.get_torrent_hashes(torrents=torrent)
+            torrent_task = torrent_tasks.get(torrent_hash, None)
+            # 如果找不到种子任务，说明不在管理的种子范围内，直接跳过
+            if not torrent_task:
+                continue
+
+            torrent_info = self.torrenthelper.get_torrent_info(torrent=torrent)
+
+            # 更新上传量、下载量、分享率、做种时间
+            torrent_task.downloaded = torrent_info.get("downloaded", 0)
+            torrent_task.uploaded = torrent_info.get("uploaded", 0)
+            torrent_task.ratio = torrent_info.get("ratio", 0.0)
+            torrent_task.seeding_time = torrent_info.get("seeding_time", 0)
+
+    def __update_seeding_tasks_based_on_tags(self, torrent_tasks: Dict[str, TorrentTask],
+                                             unmanaged_tasks: Dict[str, TorrentTask],
+                                             histories: Dict[str, TorrentHistory],
+                                             seeding_torrents_dict: Dict[str, Any]):
+        if not self._hnr_config.downloader == "qbittorrent":
+            logger.info("同步H&R种子标签记录目前仅支持qbittorrent")
+            return
+
+        # 初始化汇总信息
+        added_tasks = []
+        reset_tasks = []
+        removed_tasks = []
+        # 基于 seeding_torrents_dict 的信息更新或添加到 torrent_tasks
+        for torrent_hash, torrent in seeding_torrents_dict.items():
+            tags = self.torrenthelper.get_torrent_tags(torrent=torrent)
+            # 判断是否包含H&R标签
+            if self._hnr_config.hit_and_run_tag in tags:
+                # 如果包含H&R标签又不在H&R任务中，则需要加入管理
+                if torrent_hash not in torrent_tasks:
+                    # 检查该种子是否在 unmanaged_tasks 中
+                    if torrent_hash in unmanaged_tasks:
+                        # 如果在 unmanaged_tasks 中，移除并转移到 torrent_tasks
+                        torrent_task = unmanaged_tasks.pop(torrent_hash)
+                        torrent_tasks[torrent_hash] = torrent_task
+                        added_tasks.append(torrent_task)
+                        logger.info(f"站点 {torrent_task.site_name}，"
+                                    f"H&R种子任务再次加入：{torrent_task.identifier}")
+                    else:
+                        # 否则，创建一个新的任务
+                        torrent_task = self.__convert_torrent_info_to_task(torrent=torrent, histories=histories)
+                        torrent_tasks[torrent_hash] = torrent_task
+                        added_tasks.append(torrent_task)
+                        logger.info(f"站点 {torrent_task.site_name}，"
+                                    f"H&R种子任务加入：{torrent_task.identifier}")
+                # 包含H&R标签又在H&R任务中，这里额外处理一个特殊逻辑，就是种子在H&R任务中可能被标记删除但实际上又还在下载器中，这里进行重置
+                else:
+                    torrent_task = torrent_tasks[torrent_hash]
+                    if torrent_task.deleted:
+                        torrent_task.deleted = False
+                        reset_tasks.append(torrent_task)
+                        logger.info(
+                            f"站点 {torrent_task.site_name}，在下载器中找到已标记删除的H&R任务对应的种子信息，"
+                            f"更新H&R任务状态为正常：{torrent_task.identifier}")
+            else:
+                # 不包含H&R标签但又在H&R任务中，则移除管理
+                if torrent_hash in torrent_tasks:
+                    # 如果种子不符合H&R条件但在 torrent_tasks 中，移除并加入 unmanaged_tasks
+                    torrent_task = torrent_tasks.pop(torrent_hash)
+                    unmanaged_tasks[torrent_hash] = torrent_task
+                    removed_tasks.append(torrent_task)
+                    logger.info(f"站点 {torrent_task.site_name}，"
+                                f"H&R种子任务移除：{torrent_task.identifier}")
+
+        self.__save_data(key="torrents", value=torrent_tasks)
+        self.__save_data(key="unmanaged", value=unmanaged_tasks)
+
+        # 发送汇总消息
+        if added_tasks:
+            self.__log_and_send_torrent_task_update_message(title="【H&R种子任务加入】", status="纳入H&R管理",
+                                                            reason="H&R标签添加", torrent_tasks=added_tasks)
+        if removed_tasks:
+            self.__log_and_send_torrent_task_update_message(title="【H&R种子任务移除】", status="移除H&R管理",
+                                                            reason="H&R标签移除", torrent_tasks=removed_tasks)
+        if reset_tasks:
+            self.__log_and_send_torrent_task_update_message(title="【H&R任务状态更新】", status="更新H&R状态为正常",
+                                                            reason="在下载器中找到已标记删除的H&R任务对应的种子信息",
+                                                            torrent_tasks=reset_tasks)
+
+    def __update_undeleted_torrents_missing_in_downloader(self, torrent_tasks: Dict[str, TorrentTask],
+                                                          torrent_check_hashes: List[str], torrents: List[Any]):
+        """
+        处理已经被删除，但是任务记录中还没有被标记删除的种子
+        """
+        # 先通过获取的全量种子，判断已经被删除，但是任务记录中还没有被标记删除的种子
+        torrent_all_hashes = self.torrenthelper.get_torrent_hashes(torrents=torrents)
+        missing_hashes = [hash_value for hash_value in torrent_check_hashes if hash_value not in torrent_all_hashes]
+        undeleted_hashes = [hash_value for hash_value in missing_hashes if not torrent_tasks[hash_value].deleted]
+
+        if not undeleted_hashes:
+            return
+
+        # 初始化汇总信息
+        delete_tasks = []
+        for hash_value in undeleted_hashes:
+            # 获取对应的任务信息
+            torrent_task = torrent_tasks[hash_value]
+            # 标记为已删除
+            torrent_task.deleted = True
+            # 处理日志相关内容
+            delete_tasks.append(torrent_task)
+            site_name = torrent_task.site_name
+            torrent_title = torrent_task.title
+            torrent_desc = torrent_task.description
+            logger.info(
+                f"站点：{site_name}，无法在下载器中找到对应种子信息，更新H&R任务状态为已删除，种子：{torrent_title}|{torrent_desc}")
+
+        self.__log_and_send_torrent_task_update_message(title="【H&R任务状态更新】", status="更新H&R状态为已删除",
+                                                        reason="无法在下载器中找到对应的种子信息",
+                                                        torrent_tasks=delete_tasks)
+
+    # def __update_and_save_statistic_info(self, torrent_tasks):
+    #     """
+    #     更新并保存统计信息
+    #     """
+    #     total_count, total_uploaded, total_downloaded, total_deleted = 0, 0, 0, 0
+    #     active_uploaded, active_downloaded, active_count, total_unarchived = 0, 0, 0, 0
+    #
+    #     statistic_info = self.__get_statistic_info()
+    #     archived_tasks = self.get_data("archived") or {}
+    #     combined_tasks = {**torrent_tasks, **archived_tasks}
+    #
+    #     for task in combined_tasks.values():
+    #         if task.get("deleted", False):
+    #             total_deleted += 1
+    #         total_downloaded += task.get("downloaded", 0)
+    #         total_uploaded += task.get("uploaded", 0)
+    #
+    #     # 计算torrent_tasks中未标记为删除的活跃任务的统计信息，及待归档的任务数
+    #     for task in torrent_tasks.values():
+    #         if not task.get("deleted", False):
+    #             active_uploaded += task.get("uploaded", 0)
+    #             active_downloaded += task.get("downloaded", 0)
+    #             active_count += 1
+    #         else:
+    #             total_unarchived += 1
+    #
+    #     # 更新统计信息
+    #     total_count = len(combined_tasks)
+    #     statistic_info.update({
+    #         "uploaded": total_uploaded,
+    #         "downloaded": total_downloaded,
+    #         "deleted": total_deleted,
+    #         "unarchived": total_unarchived,
+    #         "count": total_count,
+    #         "active": active_count,
+    #         "active_uploaded": active_uploaded,
+    #         "active_downloaded": active_downloaded
+    #     })
+    #
+    #     logger.info(f"H&R任务统计数据，总任务数：{total_count}，活跃任务数：{active_count}，已删除：{total_deleted}，"
+    #                 f"待归档：{total_unarchived}，"
+    #                 f"活跃上传量：{StringUtils.str_filesize(active_uploaded)}，"
+    #                 f"活跃下载量：{StringUtils.str_filesize(active_downloaded)}，"
+    #                 f"总上传量：{StringUtils.str_filesize(total_uploaded)}，"
+    #                 f"总下载量：{StringUtils.str_filesize(total_downloaded)}")
+    #
+    #     self.save_data("statistic", statistic_info)
+    #     self.save_data("torrents", torrent_tasks)
+
+    # endregion
 
     def auto_monitor(self):
         """
@@ -711,10 +929,10 @@ class HitAndRun(_PluginBase):
     @eventmanager.register(EventType.PluginAction)
     def handle_brushflow_event(self, event: Event = None):
         """
-        处理刷流下载任务事件
+        处理H&R下载任务事件
         """
         if not self.__validate_and_log_event(event,
-                                             event_type_desc="刷流下载任务",
+                                             event_type_desc="H&R下载任务",
                                              action_required="brushflow_download_added"):
             return
 
@@ -745,7 +963,7 @@ class HitAndRun(_PluginBase):
                 logger.info("没有获取到有效的种子任务信息，跳过处理")
                 return
 
-            torrent = self.__get_torrents(torrent_hashes=torrent_hash)
+            torrent = self.torrenthelper.get_torrents(torrent_hashes=torrent_hash)
             if not torrent:
                 logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理")
                 return
@@ -767,18 +985,59 @@ class HitAndRun(_PluginBase):
             logger.info(f"站点 {torrent_task.site_name} 没有启用 H&R 管理，跳过处理")
             return
 
-        self.__adjust_hr_status(torrent_task=torrent_task)
+        self.__init_hr_status(torrent_task=torrent_task)
         self.__save_torrent_tasks(torrent_tasks=torrent_task)
 
         if not torrent_task.hit_and_run:
             return
 
         self.__set_hit_and_run_tag(torrent_task=torrent_task)
-        self.__send_hr_message(torrent_task=torrent_task)
 
-    def __adjust_hr_status(self, torrent_task: TorrentTask):
+        self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务下载】")
+
+    def __update_hr_status(self, torrent_task: TorrentTask):
         """
-        调整和保存H&R状态
+        更新H&R状态
+        """
+        if not torrent_task.hit_and_run:
+            return
+
+        site_config = self.__get_site_config(site_name=torrent_task.site_name)
+        additional_seed_time = site_config.additional_seed_time or 0
+        required_seeding_time = (torrent_task.hr_duration + additional_seed_time) * 60
+
+        # 更新种子状态和记录日志
+        meets_requirements = self.__meets_hr_requirements(
+            torrent_task=torrent_task,
+            additional_seed_time=additional_seed_time,
+            required_ratio=site_config.hr_ratio
+        )
+
+        if meets_requirements:
+            self.__remove_hit_and_run_tag(torrent_task)
+            torrent_task.hr_status = HNRStatus.COMPLIANT
+            self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已完成】")
+
+        status_description = "已满足" if meets_requirements else "仍未满足"
+        logger.info(
+            f"种子 {torrent_task.identifier} {status_description} H&R 要求，"
+            f"做种时间: {self.__format_hour_by_minutes(torrent_task.seeding_time)} 小时，"
+            f"所需做种时间: {self.__format_hour_by_minutes(required_seeding_time)} 小时，"
+            f"所需分享率: {torrent_task.ratio:.1f}")
+
+    @staticmethod
+    def __meets_hr_requirements(torrent_task: TorrentTask, additional_seed_time: int, required_ratio: float) -> bool:
+        """
+        检查是否满足做种时间和分享率要求
+        """
+        seeding_time_ok = (torrent_task.seeding_time and torrent_task.hr_duration and
+                           torrent_task.seeding_time >= (torrent_task.hr_duration + additional_seed_time) * 60)
+        ratio_ok = torrent_task.ratio and torrent_task.ratio >= required_ratio
+        return seeding_time_ok or ratio_ok
+
+    def __init_hr_status(self, torrent_task: TorrentTask):
+        """
+        初始化H&R状态
         """
         site_config = self.__get_site_config(site_name=torrent_task.site_name)
 
@@ -787,6 +1046,7 @@ class HitAndRun(_PluginBase):
             torrent_task.hit_and_run = True
 
         if torrent_task.hit_and_run:
+            torrent_task.hr_ratio = site_config.hr_ratio
             torrent_task.hr_duration = site_config.hr_duration
             torrent_task.hr_deadline_days = site_config.hr_deadline_days
             torrent_task.hr_status = HNRStatus.IN_PROGRESS
@@ -811,30 +1071,53 @@ class HitAndRun(_PluginBase):
         existing_torrent_tasks.update(updates)
 
         # 一次性保存所有更新
-        self.save_data(key="torrents", value=existing_torrent_tasks)
+        self.__save_data(key="torrents", value=existing_torrent_tasks)
 
-    def __set_hit_and_run_tag(self, torrent_task: TorrentTask):
+    def __update_hit_and_run_tag(self, torrent_task: TorrentTask, add: bool):
         """
-        设置H&R标签
+        更新H&R标签
+        :param torrent_task: 包含种子信息的 TorrentTask 实例
+        :param add: 如果为 True，则添加 H&R 标签；否则移除 H&R 标签
         """
-        if not torrent_task and not torrent_task.hash:
+        if not torrent_task or not torrent_task.hash:
             return
 
         if not torrent_task.hit_and_run:
             return
 
-        # 这里重新获取一次种子，避免出现tags冲突的问题
-        torrent = self.__get_torrents(torrent_hashes=torrent_task.hash)
+        torrent = self.torrenthelper.get_torrents(torrent_hashes=torrent_task.hash)
         if not torrent:
             logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_task.hash} 的种子信息")
             return
 
         try:
-            tags = self.__get_torrent_tags(torrent=torrent)
-            tags.append(self._hnr_config.hit_and_run_tag)
-            self.__set_torrent_tag(torrent_hash=torrent_task.hash, tags=tags)
+            tags = self.torrenthelper.get_torrent_tags(torrent=torrent)
+            hnr_tag = self._hnr_config.hit_and_run_tag
+            if add:
+                if hnr_tag not in tags:
+                    tags.append(hnr_tag)
+                    self.torrenthelper.set_torrent_tag(torrent_hash=torrent_task.hash, tags=tags)
+            else:
+                if hnr_tag in tags:
+                    tags.remove(hnr_tag)
+                    self.torrenthelper.remove_torrent_tag(torrent_hash=torrent_task.hash, tags=[hnr_tag])
         except Exception as e:
-            logger.error(f"设置标签时出错：{str(e)}")
+            action = "添加" if add else "移除"
+            logger.error(f"{action}标签时出错：{str(e)}")
+
+    def __set_hit_and_run_tag(self, torrent_task: TorrentTask):
+        """
+        设置H&R标签
+        :param torrent_task: 包含种子信息的 TorrentTask 实例
+        """
+        self.__update_hit_and_run_tag(torrent_task, add=True)
+
+    def __remove_hit_and_run_tag(self, torrent_task: TorrentTask):
+        """
+        移除H&R标签
+        :param torrent_task: 包含种子信息的 TorrentTask 实例
+        """
+        self.__update_hit_and_run_tag(torrent_task, add=False)
 
     def __save_and_cleanup_downloads(self, torrent_hash: str, torrent_data: Union[dict, TorrentInfo],
                                      task_type: TaskType = TaskType.NORMAL) -> Optional[TorrentHistory]:
@@ -858,7 +1141,7 @@ class HitAndRun(_PluginBase):
         downloads = {key: value for key, value in downloads.items() if value.get("time", current_time) > cutoff_time}
 
         # 保存更新后的下载记录
-        self.save_data(key="downloads", value=downloads)
+        self.__save_data(key="downloads", value=downloads)
 
         return torrent_history
 
@@ -891,17 +1174,78 @@ class HitAndRun(_PluginBase):
         """创建种子任务"""
         return HitAndRun.__create_torrent_instance(torrent_hash, torrent_data, TorrentTask, task_type)
 
+    def __convert_torrent_info_to_task(self, torrent: Any, histories: Dict[str, TorrentHistory]) \
+            -> Optional[TorrentTask]:
+        """
+        根据提供的 torrent 和历史数据将 torrent 信息转换成 torrent 任务
+        """
+        torrent_info = self.torrenthelper.get_torrent_info(torrent=torrent)
+        torrent_hash = torrent_info.get("hash", "")
+        if not torrent_hash:
+            return None
+
+        torrent_history = histories.get(torrent_hash)
+        if torrent_history:
+            torrent_task = TorrentTask.parse_obj(torrent_history.to_dict())
+        else:
+            site_id, site_name = self.torrenthelper.get_site_by_torrent(torrent=torrent)
+            if not site_name:
+                return None
+            torrent_task = TorrentTask.parse_obj({
+                "site": site_id,
+                "site_name": site_name,
+                "hash": torrent_info.get("hash", ""),
+                "title": torrent_info.get("title", ""),
+                "size": torrent_info.get("total_size", 0),
+                # "pubdate": None,
+                # "description": None,
+                # "page_url": None,
+                # "ratio": torrent_info.get("ratio", 0),
+                # "downloaded": torrent_info.get("downloaded", 0),
+                # "uploaded": torrent_info.get("uploaded", 0),
+                # "seeding_time": torrent_info.get("seeding_time", 0),
+                "time": torrent_info.get("add_on", time.time()),
+                "hit_and_run": True,
+                "deleted": False,
+                "task_type": TaskType.NORMAL
+            })
+
+        if not torrent_task:
+            return None
+
+        torrent_task.hit_and_run = True
+        self.__init_hr_status(torrent_task=torrent_task)
+        return torrent_task
+
     def __get_site_config(self, site_name: str) -> Optional[SiteConfig]:
         """"获取站点配置"""
         if not self._hnr_config:
             return None
         return self._hnr_config.get_site_config(site_name=site_name)
 
+    def __get_and_parse_data(self, key: str, model: Type[T]) -> Dict[str, T]:
+        """
+        获取插件数据
+        """
+        if not key:
+            return {}
+
+        raw_data: Dict[str, dict] = self.__get_data(key=key)
+        return {k: model.parse_obj(v) for k, v in raw_data.items()}
+
     def __get_data(self, key: str):
         """获取插件数据"""
         if not key:
             return {}
+
         return self.get_data(key=key) or {}
+
+    def __save_data(self, key: str, value: Any):
+        """保存插件数据"""
+        if not key:
+            return
+
+        self.save_data(key=key, value=value)
 
     def __setup_downloader(self) -> bool:
         """
@@ -938,65 +1282,6 @@ class HitAndRun(_PluginBase):
         else:
             return None
 
-    def __get_hash(self, torrent: Any) -> str:
-        """
-        获取种子hash
-        """
-        try:
-            return torrent.get("hash") if self._hnr_config.downloader == "qbittorrent" else torrent.hashString
-        except Exception as e:
-            print(str(e))
-            return ""
-
-    def __get_torrents(self, torrent_hashes: Optional[Union[str, List[str]]] = None) -> Optional[Any]:
-        """
-        获取下载器中的种子信息
-        如果 `torrent_hashes` 只包含一个值，返回该种子的具体信息
-        如果包含多个值，返回包含所有种子信息的列表
-        """
-        # 处理单个种子哈希的情况，确保其被视为列表
-        if isinstance(torrent_hashes, str):
-            torrent_hashes = [torrent_hashes]
-
-        torrents, error = self._downloader.get_torrents(ids=torrent_hashes)
-        if error:
-            logger.warn("连接下载器出错，将在下个时间周期重试")
-            return None
-
-        # 如果只有一个种子哈希，直接返回该种子的信息
-        if torrent_hashes and len(torrent_hashes) == 1:
-            return torrents[0] if torrents else None
-
-        return torrents
-
-    def __set_torrent_tag(self, torrent_hash: str, tags: list):
-        """
-        设置种子标签
-        """
-        try:
-            unique_tags = list(set(tags))
-            if self._hnr_config.downloader == "qbittorrent":
-                self._downloader.set_torrents_tag(ids=torrent_hash, tags=unique_tags)
-            else:
-                self._downloader.set_torrent_tag(ids=torrent_hash, tags=unique_tags)
-        except Exception as e:
-            logger.error(f"无法为 torrent_hash: {torrent_hash} 设置标签，错误: {e}")
-
-    def __get_torrent_tags(self, torrent: Any) -> list[str]:
-        """
-        获取种子标签
-        """
-        try:
-            if self._hnr_config.downloader == "qbittorrent":
-                tags = torrent.get("tags", "").split(",")
-            else:
-                tags = torrent.labels or []
-
-            return list(set(tag.strip() for tag in tags if tag.strip()))
-        except Exception as e:
-            logger.error(f"获取种子标签失败，错误: {e}")
-            return []
-
     @staticmethod
     def __validate_config(config: HNRConfig) -> (bool, str):
         """
@@ -1014,8 +1299,8 @@ class HitAndRun(_PluginBase):
         if config.hr_deadline_days <= 0:
             return False, "H&R满足要求的期限必须大于0"
 
-        if config.ratio <= 0:
-            return False, "分享率必须大于0"
+        if config.hr_ratio <= 0:
+            return False, "H&R分享率必须大于0"
 
         return True, "所有配置项都有效"
 
@@ -1119,20 +1404,42 @@ class HitAndRun(_PluginBase):
         """
         构建关于 H&R 事件的消息文本
         """
+
+        def format_comparison(actual, required, unit):
+            comparison = "大于" if actual >= required else "小于"
+            return f"{actual:.1f} {unit}，{comparison} {required:.1f} {unit}"
+
         site_config = self.__get_site_config(site_name=torrent_task.site_name)
-        additional_seed_time = site_config.additional_seed_time
+        additional_seed_time = site_config.additional_seed_time or 0
 
         msg_parts = []
-        label_mapping = {
-            "site_name": ("站点", str),
-            "task_type": ("类型", TorrentTask.format_to_chinese),
-            "title": ("标题", str),
-            "description": ("描述", str),
-            "size": ("大小", TorrentTask.format_size),
-            "hr_status": ("状态", TorrentTask.format_to_chinese),
-            "hr_duration": ("时间", lambda x: TorrentTask.format_duration(x, additional_seed_time)),
-            "hr_deadline_days": ("期限", TorrentTask.format_deadline_days),
-        }
+
+        if torrent_task.hr_status == HNRStatus.COMPLIANT:
+            seeding_hours = torrent_task.seeding_time / 60
+            required_seeding_hours = (torrent_task.hr_duration + additional_seed_time) / 60
+            required_ratio = site_config.hr_ratio
+
+            label_mapping = {
+                "site_name": ("站点", str),
+                "task_type": ("类型", TorrentTask.format_to_chinese),
+                "title": ("标题", str),
+                "description": ("描述", str),
+                "seeding_time": (
+                    "做种时间", lambda x: format_comparison(seeding_hours, required_seeding_hours, "小时")),
+                "ratio": ("分享率", lambda x: format_comparison(x, required_ratio, "")),
+                "hr_status": ("状态", TorrentTask.format_to_chinese),
+            }
+        else:
+            label_mapping = {
+                "site_name": ("站点", str),
+                "task_type": ("类型", TorrentTask.format_to_chinese),
+                "title": ("标题", str),
+                "description": ("描述", str),
+                "size": ("大小", TorrentTask.format_size),
+                "hr_duration": ("时间", lambda x: TorrentTask.format_duration(x, additional_seed_time)),
+                "hr_deadline_days": ("期限", TorrentTask.format_deadline_days),
+                "hr_status": ("状态", TorrentTask.format_to_chinese),
+            }
 
         for key, (label, formatter) in label_mapping.items():
             value = getattr(torrent_task, key, None)
@@ -1143,7 +1450,7 @@ class HitAndRun(_PluginBase):
 
         return "\n".join(msg_parts)
 
-    def __send_hr_message(self, torrent_task, title: str = "【H&R种子下载】"):
+    def __send_hr_message(self, torrent_task, title: str):
         """
         发送命中 H&R 种子消息
         """
@@ -1151,31 +1458,29 @@ class HitAndRun(_PluginBase):
             msg_text = self.__build_hr_message_text(torrent_task)
             self.post_message(mtype=NotificationType.SiteMessage, title=title, text=msg_text)
 
+    def __log_and_send_torrent_task_update_message(self, title: str, status: str, reason: str,
+                                                   torrent_tasks: List[TorrentTask]):
+        """
+        记录和发送任务更新消息
+        """
+        if self._hnr_config.notify == NotifyMode.ALWAYS and torrent_tasks:
+            sites_names = ', '.join({task.site_name or "N/A" for task in torrent_tasks})
+            first_title = torrent_tasks[0].title or "N/A"
+            count = len(torrent_tasks)
+            msg = f"站点：{sites_names}\n内容：{first_title} 等 {count} 个种子已经{status}\n原因：{reason}"
+            logger.info(f"{title}，{msg}")
+            self.__send_message(title=title, message=msg)
+
     def __send_message(self, title: str, message: str):
         """发送消息"""
-        if self._hnr_config.notify:
-            self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
+        self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
 
-    def __check_required_plugin_installed(self, plugin_id: str) -> (bool, str):
+    @staticmethod
+    def __format_hour_by_minutes(minutes: float):
         """
-        检查指定的依赖插件是否已安装
+        格式化数字，限制小数点后一位
         """
-        plugin_names = {
-            "BrushFlow": "站点刷流",
-            "BrushFlowLowFreq": "站点刷流（低频版）"
-        }
-
-        plugin_name = plugin_names.get(plugin_id, "未知插件")
-
-        # 获取本地插件列表
-        local_plugins = self.pluginmanager.get_local_plugins()
-
-        # 检查指定的插件是否已启用
-        plugin = next((p for p in local_plugins if p.id == plugin_id and p.installed), None)
-        if not plugin:
-            return False, f"{plugin_name}未安装"
-
-        return True, f"{plugin_name}已安装"
+        return f"{minutes / 60:.1f}"
 
     @staticmethod
     def __get_demo_config():
@@ -1193,7 +1498,7 @@ class HitAndRun(_PluginBase):
   # 附加做种时间（小时），在H&R时间上额外增加的做种时长
   additional_seed_time: 24.0
   # 分享率，做种时期望达到的分享比例，达到目标分享率后移除标签
-  # ratio: 2.0 （与全局配置保持一致，无需单独设置，注释处理）
+  # hr_ratio: 2.0 （与全局配置保持一致，无需单独设置，注释处理）
   # H&R激活，站点是否已启用全站H&R，开启后所有种子均视为H&R种子
   hr_active: false
 
@@ -1204,35 +1509,6 @@ class HitAndRun(_PluginBase):
   # 附加做种时间（小时），在H&R时间上额外增加的做种时长
   # additional_seed_time: 24.0 （与全局配置保持一致，无需单独设置，注释处理）
   # 分享率，做种时期望达到的分享比例，达到目标分享率后移除标签
-  ratio: 2.0
+  hr_ratio: 2.0
   # H&R激活，站点是否已启用全站H&R，开启后所有种子均视为H&R种子
   hr_active: true"""
-
-    @staticmethod
-    def __random_even_scheduler(num_executions: int = 1,
-                                begin_hour: int = 7,
-                                end_hour: int = 23) -> List[datetime]:
-        """
-        按执行次数尽可能平均生成随机定时器
-        :param num_executions: 执行次数
-        :param begin_hour: 计划范围开始的小时数
-        :param end_hour: 计划范围结束的小时数
-        """
-        trigger_times = []
-        start_time = datetime.now().replace(hour=begin_hour, minute=0, second=0, microsecond=0)
-        end_time = datetime.now().replace(hour=end_hour, minute=0, second=0, microsecond=0)
-
-        # 计算范围内的总分钟数
-        total_minutes = int((end_time - start_time).total_seconds() / 60)
-        # 计算每个执行时间段的平均长度
-        segment_length = total_minutes // num_executions
-
-        for i in range(num_executions):
-            # 在每个段内随机选择一个点
-            start_segment = segment_length * i
-            end_segment = start_segment + segment_length
-            minute = random.randint(start_segment, end_segment - 1)
-            trigger_time = start_time + timedelta(minutes=minute)
-            trigger_times.append(trigger_time)
-
-        return trigger_times

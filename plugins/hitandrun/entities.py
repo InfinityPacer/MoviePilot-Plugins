@@ -59,15 +59,13 @@ class TorrentHistory(BaseModel):
     size: float = 0  # 种子大小
     pubdate: Optional[str] = None  # 发布时间
     hit_and_run: bool = False  # HR
-    pri_order: int = 0  # 种子优先级
-    category: Optional[str] = None  # 种子分类 电影/电视剧
     time: Optional[float] = Field(default_factory=time.time)
     hash: Optional[str] = None  # 种子Hash
     task_type: TaskType = TaskType.NORMAL  # 任务类型
 
     @classmethod
     def from_torrent_info(cls, torrent_info: TorrentInfo):
-        """从TorrentInfo实例创建TorrentHistory实例"""
+        """通过TorrentInfo实例化"""
         # 使用字典解包初始化TorrentTask
         return cls(**torrent_info.__dict__)
 
@@ -75,6 +73,7 @@ class TorrentHistory(BaseModel):
     class Config:
         extra = "ignore"
         arbitrary_types_allowed = True
+        use_enum_values = True
 
     def to_dict(self, **kwargs):
         """
@@ -87,13 +86,22 @@ class TorrentHistory(BaseModel):
 
 class TorrentTask(TorrentHistory):
     hr_status: Optional[HNRStatus] = HNRStatus.PENDING  # H&R状态
-    hr_duration: Optional[float] = None  # H&R时间
+    hr_duration: Optional[float] = None  # H&R时间（小时）
+    hr_ratio: Optional[float] = None  # H&R分享率
     hr_deadline_days: Optional[float] = None  # H&R满足要求的期限（天数）
     ratio: Optional[float] = 0.0  # 分享率
     downloaded: Optional[float] = 0.0  # 下载量
     uploaded: Optional[float] = 0.0  # 上传量
-    seeding_time: Optional[float] = 0.0  # 做种时间
+    seeding_time: Optional[float] = 0.0  # 做种时间（分钟）
     deleted: Optional[bool] = False  # 是否已删除
+
+    @property
+    def identifier(self) -> str:
+        """
+        获取种子标识符
+        :return: 标识符字符串
+        """
+        return f"{self.title or ''}|{self.description or ''}"
 
     @staticmethod
     def format_size(value):
@@ -106,17 +114,17 @@ class TorrentTask(TorrentHistory):
         # 格式化浮点数以去除不必要的尾零
         formatted_value = f"{float(value):.1f}".rstrip("0").rstrip(".")
         if additional_time:
-            formatted_additional_time = f"{float(additional_time):.1f}".rstrip("0").rstrip(".")
-            return f"{formatted_value}(+{formatted_additional_time})小时"
-        return f"{formatted_value}小时"
+            formatted_additional_time = f"{float(additional_time):.1f}"
+            return f"{formatted_value}(+{formatted_additional_time}) 小时"
+        return f"{formatted_value} 小时"
 
     @staticmethod
     def format_deadline_days(value):
         if value is None:
             return "N/A"
         # 格式化浮点数以去除不必要的尾随零
-        formatted_value = f"{float(value):.1f}".rstrip("0").rstrip(".")
-        return f"{formatted_value}天"
+        formatted_value = f"{float(value):.1f}"
+        return f"{formatted_value} 天"
 
     @staticmethod
     def format_to_chinese(value):
