@@ -378,3 +378,75 @@ class TimeHelper:
             trigger_times.append(trigger_time)
 
         return trigger_times
+
+
+class FormatHelper:
+
+    @staticmethod
+    def format_value(value: float, precision: int = 1, default: str = "N/A"):
+        """
+        格式化单一数值
+        """
+        if value:
+            formatted = f"{value:.{precision}f}".rstrip("0").rstrip(".")
+            return formatted if formatted else "0"
+        else:
+            return default
+
+    @staticmethod
+    def format_hour(number: float, unit: str = "second") -> str:
+        """
+        格式化数字，限制小数点后一位
+        """
+        if unit == "second":
+            return FormatHelper.format_value(number / 3600)
+        elif unit == "minute":
+            return FormatHelper.format_value(number / 60)
+        elif unit == "hour":
+            return FormatHelper.format_value(number)
+        return ""
+
+    @staticmethod
+    def format_size(value: float):
+        """
+        格式化种子大小
+        """
+        return StringUtils.str_filesize(value) if str(value).replace(".", "", 1).isdigit() else value
+
+    @staticmethod
+    def format_duration(value: float, additional_time: float = 0, suffix: str = ""):
+        """
+        格式化周期时间
+        """
+        value = float(value or 0)
+        additional_time = float(additional_time or 0)
+
+        if value == 0 and additional_time == 0:
+            return "N/A"
+
+        parts = []
+        if value:
+            parts.append(FormatHelper.format_value(value))
+
+        if additional_time:
+            formatted_additional_time = FormatHelper.format_value(additional_time)
+            parts.append(f"(+{formatted_additional_time})")
+
+        return " ".join(parts) + f"{suffix}"
+
+    @staticmethod
+    def format_general(value: float, suffix: str = "", precision: int = 1,
+                       default: str = "N/A"):
+        """
+        通用格式化函数，支持精度、后缀和默认值的自定义
+        """
+        formatted_value = FormatHelper.format_value(value, precision, default)
+        if suffix:
+            return f"{formatted_value}{suffix}"
+        else:
+            return formatted_value
+
+    @staticmethod
+    def format_comparison(actual: float, required: float, unit: str):
+        comparison = "大于" if actual >= required else "小于"
+        return f"{FormatHelper.format_value(actual)} {unit}，{comparison} {FormatHelper.format_value(required)} {unit}"

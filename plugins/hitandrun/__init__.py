@@ -19,7 +19,7 @@ from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
 from app.plugins.hitandrun.entities import TorrentTask, HNRStatus, TorrentHistory, TaskType
-from app.plugins.hitandrun.helper import TorrentHelper, TimeHelper
+from app.plugins.hitandrun.helper import TorrentHelper, TimeHelper, FormatHelper
 from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig, NotifyMode
 from app.schemas import NotificationType
 from app.schemas.types import EventType
@@ -47,7 +47,9 @@ class HitAndRun(_PluginBase):
     # 加载顺序
     plugin_order = 24
     # 可使用的用户级别
-    auth_level = 2
+    auth_level = 99
+    # 插件公钥
+    plugin_public_key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyi9OX+olwHnUPvllTm7Gx2Fz8cnZneVPjs5vJRxnr5iR/fZdDJSJpvxAkFKTB5gRLk2/ilOTBztf/QluCb1SA0QdVIYH5hIn8NSPvaxYxcvD6Kk9rQkEiXk0xZoQs5ywwsTIU8Lcu5OJiMGDtIfueleSqI5GKM0ZMdeGITfGemBw5Feww3WA4YzCHf1SWfalPlAut0qc0/M9PYqH5p1fCRKK8uu3nNd4L4kDhQQduroB5icGKGrjK/iVfvP+rje3HuRyVQKkk5uR68LiGx1uLlvW8ishnb+yL0ivB4N6HgPmIamcYbOyFU6IFc4rKVYGMfspvKc/0L4TWMNpkiaCDQIDAQAB"
 
     # region 私有属性
 
@@ -100,14 +102,14 @@ class HitAndRun(_PluginBase):
                 func=self.check,
                 trigger="date",
                 run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
-                name=f"{self.plugin_name}",
+                name=f"{self.plugin_name}检查服务",
             )
 
             self._scheduler.add_job(
                 func=self.auto_monitor,
                 trigger="date",
                 run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
-                name=f"{self.plugin_name}",
+                name=f"{self.plugin_name}监控服务",
             )
 
             if self._scheduler.get_jobs():
@@ -301,8 +303,8 @@ class HitAndRun(_PluginBase):
                                         'component': 'VSelect',
                                         'props': {
                                             'model': 'brush_plugin',
-                                            'label': '站点H&R插件',
-                                            'hint': '选择参与配置的H&R插件',
+                                            'label': '站点刷流插件',
+                                            'hint': '选择参与配置的刷流插件',
                                             'persistent-hint': True,
                                             'items': self.__get_plugin_options()
                                         }
@@ -671,22 +673,22 @@ class HitAndRun(_PluginBase):
                     },
                     {
                         'component': 'td',
-                        'text': data.format_general(value=data.seeding_time / 3600)
+                        'text': FormatHelper.format_general(value=data.seeding_time / 3600)
                     },
                     {
                         'component': 'td',
                         'props': {
                             'class': 'whitespace-nowrap break-keep'
                         },
-                        'text': data.format_general(value=remain_time)
+                        'text': FormatHelper.format_general(value=remain_time)
                     },
                     {
                         'component': 'td',
                         'props': {
                             'class': 'whitespace-nowrap break-keep'
                         },
-                        'text': data.format_duration(value=data.hr_duration,
-                                                     additional_time=additional_seed_time)
+                        'text': FormatHelper.format_duration(value=data.hr_duration,
+                                                             additional_time=additional_seed_time)
                     },
                     {
                         'component': 'td',
@@ -1022,7 +1024,7 @@ class HitAndRun(_PluginBase):
             self.__update_and_save_statistic_info(torrent_tasks)
 
             # 更新H&R任务
-            self.__save_data(key="torrents", value=torrent_tasks)
+            self.__save_torrent_task(key="torrents", torrent_tasks=torrent_tasks)
 
             logger.info("H&R下载任务检查完成")
 
@@ -1098,18 +1100,18 @@ class HitAndRun(_PluginBase):
                     logger.info(f"站点 {torrent_task.site_name}，"
                                 f"H&R种子任务移除：{torrent_task.identifier}")
 
-        self.__save_data(key="torrents", value=torrent_tasks)
-        self.__save_data(key="unmanaged", value=unmanaged_tasks)
+        self.__save_torrent_task(key="torrents", torrent_tasks=torrent_tasks)
+        self.__save_torrent_task(key="unmanaged", torrent_tasks=unmanaged_tasks)
 
         # 发送汇总消息
         if added_tasks:
-            self.__log_and_send_torrent_task_update_message(title="【H&R种子任务加入】", status="纳入H&R管理",
+            self.__log_and_send_torrent_task_update_message(title="H&R种子任务加入", status="纳入H&R管理",
                                                             reason="H&R标签添加", torrent_tasks=added_tasks)
         if removed_tasks:
-            self.__log_and_send_torrent_task_update_message(title="【H&R种子任务移除】", status="移除H&R管理",
+            self.__log_and_send_torrent_task_update_message(title="H&R种子任务移除", status="移除H&R管理",
                                                             reason="H&R标签移除", torrent_tasks=removed_tasks)
         if reset_tasks:
-            self.__log_and_send_torrent_task_update_message(title="【H&R任务状态更新】", status="更新H&R状态为正常",
+            self.__log_and_send_torrent_task_update_message(title="H&R任务状态更新", status="更新H&R状态为正常",
                                                             reason="在下载器中找到已标记删除的H&R任务对应的种子信息",
                                                             torrent_tasks=reset_tasks)
 
@@ -1279,7 +1281,7 @@ class HitAndRun(_PluginBase):
             logger.info(f"站点 {torrent_task.site_name}，种子 {torrent_task.identifier} 没有激活H&R，跳过处理")
             return
 
-        self.__save_torrent_tasks(torrent_tasks=torrent_task)
+        self.__update_torrent_tasks(torrent_tasks=torrent_task)
         self.__set_hit_and_run_tag(torrent_task=torrent_task)
 
         self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务下载】")
@@ -1289,6 +1291,9 @@ class HitAndRun(_PluginBase):
         更新H&R状态
         """
         if not torrent_task.hit_and_run:
+            return
+
+        if torrent_task.hr_status != HNRStatus.IN_PROGRESS:
             return
 
         site_config = self.__get_site_config(site_name=torrent_task.site_name)
@@ -1305,23 +1310,37 @@ class HitAndRun(_PluginBase):
         if meets_requirements:
             torrent_task.hr_status = HNRStatus.COMPLIANT
             self.__remove_hit_and_run_tag(torrent_task)
+            status_description = "已满足"
             self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已完成】")
+        else:
+            # 计算截止时间（秒）
+            deadline_time = torrent_task.time + torrent_task.hr_deadline_days * 86400
+            # 比较当前时间与截止时间
+            if time.time() > deadline_time:
+                torrent_task.hr_status = HNRStatus.OVERDUE
+                status_description = "已过期"
+                self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已过期】", warn=True)
+            elif torrent_task.deleted:
+                torrent_task.hr_status = HNRStatus.NEEDS_SEEDING
+                status_description = "需要做种"
+                self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务需要做种】", warn=True)
+            else:
+                status_description = "仍未满足"
 
-        status_description = "已满足" if meets_requirements else "仍未满足"
         logger.info(
             f"种子 {torrent_task.identifier} {status_description} H&R 要求，"
-            f"做种时间: {self.__format_hour(torrent_task.seeding_time)} 小时，"
-            f"所需做种时间: {self.__format_hour(required_seeding_time, 'hour')} 小时，"
-            f"所需分享率: {torrent_task.ratio:.1f}")
+            f"做种时间: {FormatHelper.format_hour(torrent_task.seeding_time)} 小时，"
+            f"所需做种时间: {FormatHelper.format_hour(required_seeding_time, 'hour')} 小时，"
+            f"所需分享率: {torrent_task.hr_ratio:.1f}")
 
     @staticmethod
     def __meets_hr_requirements(torrent_task: TorrentTask, additional_seed_time: float, required_ratio: float) -> bool:
         """
         检查是否满足做种时间和分享率要求
         """
-        seeding_time_ok = (torrent_task.seeding_time and torrent_task.hr_duration and
+        seeding_time_ok = (torrent_task.seeding_time is not None and torrent_task.hr_duration is not None and
                            torrent_task.seeding_time > (torrent_task.hr_duration + additional_seed_time) * 3600)
-        ratio_ok = torrent_task.ratio and torrent_task.ratio > required_ratio
+        ratio_ok = torrent_task.ratio is not None and torrent_task.ratio > required_ratio
         return seeding_time_ok or ratio_ok
 
     def __init_hr_status(self, torrent_task: TorrentTask):
@@ -1342,9 +1361,21 @@ class HitAndRun(_PluginBase):
         else:
             torrent_task.hr_status = HNRStatus.UNRESTRICTED
 
-    def __save_torrent_tasks(self, torrent_tasks: Union[TorrentTask, List[TorrentTask]]):
+    def __save_torrent_task(self, key: str, torrent_tasks: Dict[str, TorrentTask]):
         """
-        保存或更新单个或多个种子任务数据
+        保存种子任务数据
+        """
+        if not torrent_tasks:
+            return
+
+        values = {torrent_hash: torrent_task.to_dict() for torrent_hash, torrent_task in torrent_tasks.items()}
+
+        # 一次性保存所有更新
+        self.__save_data(key=key, value=values)
+
+    def __update_torrent_tasks(self, torrent_tasks: Union[TorrentTask, List[TorrentTask]]):
+        """
+        更新单个或多个种子任务数据
         """
         if not torrent_tasks:
             return
@@ -1644,6 +1675,8 @@ class HitAndRun(_PluginBase):
     def __update_config(self):
         """保存配置"""
         excludes = {"check_period", "site_infos", "site_configs"}
+        if not self._hnr_config.site_config_str:
+            self._hnr_config.site_config_str = self.__get_demo_config()
         config_mapping = self._hnr_config.to_dict(exclude=excludes)
         self.update_config(config_mapping)
 
@@ -1694,16 +1727,12 @@ class HitAndRun(_PluginBase):
         构建关于 H&R 事件的消息文本
         """
 
-        def format_comparison(actual, required, unit):
-            comparison = "大于" if actual >= required else "小于"
-            return f"{actual:.1f} {unit}，{comparison} {required:.1f} {unit}"
-
         site_config = self.__get_site_config(site_name=torrent_task.site_name)
         additional_seed_time = site_config.additional_seed_time or 0
 
         msg_parts = []
 
-        if torrent_task.hr_status == HNRStatus.COMPLIANT:
+        if torrent_task.hr_status != HNRStatus.IN_PROGRESS or torrent_task.hr_status != HNRStatus.PENDING:
             seeding_hours = torrent_task.seeding_time / 3600
             required_seeding_hours = (torrent_task.hr_duration + additional_seed_time)
             required_ratio = site_config.hr_ratio
@@ -1714,8 +1743,9 @@ class HitAndRun(_PluginBase):
                 "title": ("标题", str),
                 "description": ("描述", str),
                 "seeding_time": (
-                    "做种时间", lambda x: format_comparison(seeding_hours, required_seeding_hours, "小时")),
-                "ratio": ("分享率", lambda x: format_comparison(x, required_ratio, "")),
+                    "做种时间",
+                    lambda x: FormatHelper.format_comparison(seeding_hours, required_seeding_hours, "小时")),
+                "ratio": ("分享率", lambda x: FormatHelper.format_comparison(x, required_ratio, "")),
                 "hr_status": ("状态", TorrentTask.format_to_chinese),
             }
         else:
@@ -1724,12 +1754,12 @@ class HitAndRun(_PluginBase):
                 "task_type": ("类型", TorrentTask.format_to_chinese),
                 "title": ("标题", str),
                 "description": ("描述", str),
-                "size": ("大小", TorrentTask.format_size),
+                "size": ("大小", FormatHelper.format_size),
                 "hr_duration": ("时间",
-                                lambda x: TorrentTask.format_duration(value=x,
-                                                                      additional_time=additional_seed_time,
-                                                                      suffix=" 小时")),
-                "hr_deadline_days": ("期限", lambda x: TorrentTask.format_general(value=x, suffix=" 天")),
+                                lambda x: FormatHelper.format_duration(value=x,
+                                                                       additional_time=additional_seed_time,
+                                                                       suffix=" 小时")),
+                "hr_deadline_days": ("期限", lambda x: FormatHelper.format_general(value=x, suffix=" 天")),
                 "hr_status": ("状态", TorrentTask.format_to_chinese),
             }
 
@@ -1742,11 +1772,11 @@ class HitAndRun(_PluginBase):
 
         return "\n".join(msg_parts)
 
-    def __send_hr_message(self, torrent_task, title: str):
+    def __send_hr_message(self, torrent_task, title: str, warn: bool = False):
         """
         发送命中 H&R 种子消息
         """
-        if self._hnr_config.notify == NotifyMode.ALWAYS:
+        if self._hnr_config.notify == NotifyMode.ALWAYS or (warn and self._hnr_config.notify == NotifyMode.ON_ERROR):
             msg_text = self.__build_hr_message_text(torrent_task)
             self.post_message(mtype=NotificationType.SiteMessage, title=title, text=msg_text)
 
@@ -1768,19 +1798,6 @@ class HitAndRun(_PluginBase):
         self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
 
     @staticmethod
-    def __format_hour(number: float, unit: str = "second") -> str:
-        """
-        格式化数字，限制小数点后一位
-        """
-        if unit == "second":
-            return f"{number / 3600:.1f}"
-        elif unit == "minute":
-            return f"{number / 60:.1f}"
-        elif unit == "hour":
-            return f"{number:.1f}"
-        return ""
-
-    @staticmethod
     def __get_demo_config():
         """获取默认配置"""
         return """####### 配置说明 BEGIN #######
@@ -1790,7 +1807,7 @@ class HitAndRun(_PluginBase):
 ####### 配置说明 END #######
 
 - # 站点名称，用于标识适用于哪个站点
-  site_name: '彩虹岛'
+  site_name: '站点1'
   # H&R时间（小时），站点默认的H&R时间，做种时间达到H&R时间后移除标签
   hr_duration: 120.0
   # 附加做种时间（小时），在H&R时间上额外增加的做种时长
@@ -1799,14 +1816,31 @@ class HitAndRun(_PluginBase):
   # hr_ratio: 2.0 （与全局配置保持一致，无需单独设置，注释处理）
   # H&R激活，站点是否已启用全站H&R，开启后所有种子均视为H&R种子
   hr_active: false
+  # H&R满足要求的期限（天数），需在此天数内满足H&R要求
+  hr_deadline_days: 14
 
 - # 站点名称，用于标识适用于哪个站点
-  site_name: '皇后'
+  site_name: '站点2'
+  # H&R时间（小时），站点默认的H&R时间，做种时间达到H&R时间后移除标签
+  # hr_duration: 48.0
+  # 附加做种时间（小时），在H&R时间上额外增加的做种时长
+  # additional_seed_time: 24.0 （与全局配置保持一致，无需单独设置，注释处理）
+  # 分享率，做种时期望达到的分享比例，达到目标分享率后移除标签
+  # hr_ratio: 1.0
+  # H&R激活，站点是否已启用全站H&R，开启后所有种子均视为H&R种子
+  hr_active: true
+  # H&R满足要求的期限（天数），需在此天数内满足H&R要求
+  hr_deadline_days: 14
+
+- # 站点名称，用于标识适用于哪个站点
+  site_name: '站点3'
   # H&R时间（小时），站点默认的H&R时间，做种时间达到H&R时间后移除标签
   hr_duration: 36.0
   # 附加做种时间（小时），在H&R时间上额外增加的做种时长
   # additional_seed_time: 24.0 （与全局配置保持一致，无需单独设置，注释处理）
   # 分享率，做种时期望达到的分享比例，达到目标分享率后移除标签
-  hr_ratio: 2.0
+  hr_ratio: 1.0
   # H&R激活，站点是否已启用全站H&R，开启后所有种子均视为H&R种子
-  hr_active: true"""
+  hr_active: true
+  # H&R满足要求的期限（天数），需在此天数内满足H&R要求
+  hr_deadline_days: 14"""

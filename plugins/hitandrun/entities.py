@@ -6,7 +6,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.core.context import TorrentInfo
-from app.utils.string import StringUtils
 
 
 class HNRStatus(Enum):
@@ -101,6 +100,7 @@ class TorrentTask(TorrentHistory):
     uploaded: Optional[float] = 0.0  # 上传量
     seeding_time: Optional[float] = 0.0  # 做种时间（秒）
     deleted: Optional[bool] = False  # 是否已删除
+    time: Optional[float] = Field(default_factory=time.time)
 
     @property
     def identifier(self) -> str:
@@ -108,67 +108,20 @@ class TorrentTask(TorrentHistory):
         获取种子标识符
         """
         parts = [self.title, self.description]
-        return "|".join(part.strip() for part in parts if part and part.strip())
+        return " | ".join(part.strip() for part in parts if part and part.strip())
 
     def remain_time(self, additional_seed_time: Optional[float] = 0.0) -> float:
         """
         剩余时间（小时）
         """
+        # 计算所需做种总时间（小时）
         required_seeding_hours = (self.hr_duration or 0) + (additional_seed_time or 0)
+        # 计算已做种时间（小时）
         seeding_hours = self.seeding_time / 3600 if self.seeding_time else 0
+        # 计算剩余做种时间
         remain_hours = required_seeding_hours - seeding_hours
-        return remain_hours
-
-    @staticmethod
-    def format_size(value: float):
-        """
-        格式化种子大小
-        """
-        return StringUtils.str_filesize(value) if str(value).replace(".", "", 1).isdigit() else value
-
-    @staticmethod
-    def format_value(value: float, precision: int = 1, default: str = "N/A"):
-        """
-        格式化单一数值
-        """
-        if value:
-            formatted = f"{value:.{precision}f}".rstrip("0").rstrip(".")
-            return formatted if formatted else "0"
-        else:
-            return default
-
-    @staticmethod
-    def format_duration(value: float, additional_time: float = 0, suffix: str = ""):
-        """
-        格式化H&R时间
-        """
-        value = float(value or 0)
-        additional_time = float(additional_time or 0)
-
-        if value == 0 and additional_time == 0:
-            return "N/A"
-
-        parts = []
-        if value:
-            parts.append(TorrentTask.format_value(value))
-
-        if additional_time:
-            formatted_additional_time = TorrentTask.format_value(additional_time)
-            parts.append(f"(+{formatted_additional_time})")
-
-        return " ".join(parts) + f"{suffix}"
-
-    @staticmethod
-    def format_general(value: float, suffix: str = "", precision: int = 1,
-                       default: str = "N/A"):
-        """
-        通用格式化函数，支持精度、后缀和默认值的自定义
-        """
-        formatted_value = TorrentTask.format_value(value, precision, default)
-        if suffix:
-            return f"{formatted_value}{suffix}"
-        else:
-            return formatted_value
+        # 确保剩余时间不小于0
+        return max(remain_hours, 0)
 
     @staticmethod
     def format_to_chinese(value):
