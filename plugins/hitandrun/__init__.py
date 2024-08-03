@@ -117,6 +117,10 @@ class HitAndRun(_PluginBase):
                 self._scheduler.print_jobs()
                 self._scheduler.start()
 
+        excludes = {"site_config_str", "site_infos"}
+        config_json = self._hnr_config.json(exclude=excludes)
+        logger.debug(f"{'已' if self._hnr_config.enable_site_config else '未'}开启站点独立配置，配置信息：{config_json}")
+
         self.__update_config()
 
     def get_state(self) -> bool:
