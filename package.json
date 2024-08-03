@@ -2,7 +2,7 @@
     "BrushFlowLowFreq": {
         "name": "站点刷流（低频版）",
         "description": "自动托管刷流，将会提高对应站点的访问频率。（基于官方插件BrushFlow二次开发）",
-        "labels": "刷流,仪表板",
+        "labels": "站点,刷流,仪表板",
         "version": "3.6",
         "icon": "brush.jpg",
         "author": "jxxghp,InfinityPacer",
@@ -315,6 +315,19 @@
         "history": {
             "v0.2": "修复了配置文件的一些细节问题",
             "v0.1": "增加Plex自动语言插件，实现自动切换Plex剧集字幕和音轨"
+        }
+    },
+    "HitAndRun": {
+        "name": "H&R助手",
+        "description": "监听下载、订阅、刷流等行为，对H&R种子进行自动标签管理。",
+        "labels": "站点,H&R",
+        "version": "1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/hitandrun.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyi9OX+olwHnUPvllTm7Gx2Fz8cnZneVPjs5vJRxnr5iR/fZdDJSJpvxAkFKTB5gRLk2/ilOTBztf/QluCb1SA0QdVIYH5hIn8NSPvaxYxcvD6Kk9rQkEiXk0xZoQs5ywwsTIU8Lcu5OJiMGDtIfueleSqI5GKM0ZMdeGITfGemBw5Feww3WA4YzCHf1SWfalPlAut0qc0/M9PYqH5p1fCRKK8uu3nNd4L4kDhQQduroB5icGKGrjK/iVfvP+rje3HuRyVQKkk5uR68LiGx1uLlvW8ishnb+yL0ivB4N6HgPmIamcYbOyFU6IFc4rKVYGMfspvKc/0L4TWMNpkiaCDQIDAQAB",
+        "history": {
+            "v1.0": "增加H&R助手插件，监听下载、订阅、刷流等行为，对H&R种子进行自动标签管理"
         }
     }
 }
