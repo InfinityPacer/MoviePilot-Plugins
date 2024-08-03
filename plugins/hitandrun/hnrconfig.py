@@ -70,7 +70,7 @@ class HNRConfig(BaseConfig):
     site_config_str: Optional[str] = None  # 站点独立配置的字符串
     site_configs: Dict[str, SiteConfig] = {}  # 站点独立配置（根据配置字符串解析后的字典）
 
-    @root_validator(pre=True)
+    @root_validator(pre=True, allow_reuse=True)
     def __check_enums(cls, values):
         """校验枚举值"""
         # 处理 notify 字段
@@ -80,7 +80,7 @@ class HNRConfig(BaseConfig):
             values["notify"] = NotifyMode.ALWAYS
         return values
 
-    @validator('*', pre=True)
+    @validator('*', pre=True, allow_reuse=True)
     def __empty_string_to_float(cls, v, values, field):
         if field.type_ is float and not v:
             return 0.0

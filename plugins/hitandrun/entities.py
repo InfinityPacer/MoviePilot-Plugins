@@ -73,15 +73,22 @@ class TorrentHistory(BaseModel):
     class Config:
         extra = "ignore"
         arbitrary_types_allowed = True
-        use_enum_values = True
 
     def to_dict(self, **kwargs):
         """
         返回字典
         """
-        config_json = self.json(**kwargs)
-        config_mapping = json.loads(config_json)
-        return config_mapping
+        json_str = self.json(**kwargs)
+        instance = json.loads(json_str)
+        return instance
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """
+        实例化
+        """
+        config_json = json.dumps(data)
+        return cls.parse_raw(config_json)
 
 
 class TorrentTask(TorrentHistory):
@@ -92,39 +99,76 @@ class TorrentTask(TorrentHistory):
     ratio: Optional[float] = 0.0  # 分享率
     downloaded: Optional[float] = 0.0  # 下载量
     uploaded: Optional[float] = 0.0  # 上传量
-    seeding_time: Optional[float] = 0.0  # 做种时间（分钟）
+    seeding_time: Optional[float] = 0.0  # 做种时间（秒）
     deleted: Optional[bool] = False  # 是否已删除
 
     @property
     def identifier(self) -> str:
         """
         获取种子标识符
-        :return: 标识符字符串
         """
-        return f"{self.title or ''}|{self.description or ''}"
+        parts = [self.title, self.description]
+        return "|".join(part.strip() for part in parts if part and part.strip())
+
+    def remain_time(self, additional_seed_time: Optional[float] = 0.0) -> float:
+        """
+        剩余时间（小时）
+        """
+        required_seeding_hours = (self.hr_duration or 0) + (additional_seed_time or 0)
+        seeding_hours = self.seeding_time / 3600 if self.seeding_time else 0
+        remain_hours = required_seeding_hours - seeding_hours
+        return remain_hours
 
     @staticmethod
-    def format_size(value):
+    def format_size(value: float):
+        """
+        格式化种子大小
+        """
         return StringUtils.str_filesize(value) if str(value).replace(".", "", 1).isdigit() else value
 
     @staticmethod
-    def format_duration(value, additional_time=0):
-        if not value and not additional_time:
-            return "N/A"
-        # 格式化浮点数以去除不必要的尾零
-        formatted_value = f"{float(value):.1f}".rstrip("0").rstrip(".")
-        if additional_time:
-            formatted_additional_time = f"{float(additional_time):.1f}"
-            return f"{formatted_value}(+{formatted_additional_time}) 小时"
-        return f"{formatted_value} 小时"
+    def format_value(value: float, precision: int = 1, default: str = "N/A"):
+        """
+        格式化单一数值
+        """
+        if value:
+            formatted = f"{value:.{precision}f}".rstrip("0").rstrip(".")
+            return formatted if formatted else "0"
+        else:
+            return default
 
     @staticmethod
-    def format_deadline_days(value):
-        if value is None:
+    def format_duration(value: float, additional_time: float = 0, suffix: str = ""):
+        """
+        格式化H&R时间
+        """
+        value = float(value or 0)
+        additional_time = float(additional_time or 0)
+
+        if value == 0 and additional_time == 0:
             return "N/A"
-        # 格式化浮点数以去除不必要的尾随零
-        formatted_value = f"{float(value):.1f}"
-        return f"{formatted_value} 天"
+
+        parts = []
+        if value:
+            parts.append(TorrentTask.format_value(value))
+
+        if additional_time:
+            formatted_additional_time = TorrentTask.format_value(additional_time)
+            parts.append(f"(+{formatted_additional_time})")
+
+        return " ".join(parts) + f"{suffix}"
+
+    @staticmethod
+    def format_general(value: float, suffix: str = "", precision: int = 1,
+                       default: str = "N/A"):
+        """
+        通用格式化函数，支持精度、后缀和默认值的自定义
+        """
+        formatted_value = TorrentTask.format_value(value, precision, default)
+        if suffix:
+            return f"{formatted_value}{suffix}"
+        else:
+            return formatted_value
 
     @staticmethod
     def format_to_chinese(value):

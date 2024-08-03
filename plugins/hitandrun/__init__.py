@@ -23,6 +23,7 @@ from app.plugins.hitandrun.helper import TorrentHelper, TimeHelper
 from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig, NotifyMode
 from app.schemas import NotificationType
 from app.schemas.types import EventType
+from app.utils.string import StringUtils
 
 lock = threading.Lock()
 T = TypeVar('T', bound=BaseModel)
@@ -617,7 +618,296 @@ class HitAndRun(_PluginBase):
         }
 
     def get_page(self) -> List[dict]:
-        pass
+        # 种子明细
+        torrent_tasks: Dict[str, TorrentTask] = self.__get_and_parse_data(key="torrents", model=TorrentTask)
+
+        if not torrent_tasks:
+            return [
+                {
+                    'component': 'div',
+                    'text': '暂无数据',
+                    'props': {
+                        'class': 'text-center',
+                    }
+                }
+            ]
+        else:
+            data_list = list(torrent_tasks.values())
+            # 按time倒序排序
+            data_list = sorted(data_list, key=lambda x: x.time or 0, reverse=True)
+
+        # 种子数据明细
+        torrent_trs = []
+        for data in data_list:
+            site_config = self.__get_site_config(site_name=data.site_name)
+            additional_seed_time = site_config.additional_seed_time or 0.0
+            remain_time = data.remain_time(additional_seed_time=additional_seed_time)
+            torrent_tr = {
+                'component': 'tr',
+                'props': {
+                    'class': 'text-sm'
+                },
+                'content': [
+                    {
+                        'component': 'td',
+                        'props': {
+                            'class': 'whitespace-nowrap break-keep text-high-emphasis'
+                        },
+                        'text': data.site_name
+                    },
+                    {
+                        'component': 'td',
+                        'html': f'<span style="font-size: .85rem;">{data.title}</span>' +
+                                (f'<br><span style="font-size: 0.75rem;">{data.description}</span>'
+                                 if data.description else "")
+                    },
+                    {
+                        'component': 'td',
+                        'text': StringUtils.str_filesize(data.size)
+                    },
+                    {
+                        'component': 'td',
+                        'text': round(data.ratio or 0, 2)
+                    },
+                    {
+                        'component': 'td',
+                        'text': data.format_general(value=data.seeding_time / 3600)
+                    },
+                    {
+                        'component': 'td',
+                        'props': {
+                            'class': 'whitespace-nowrap break-keep'
+                        },
+                        'text': data.format_general(value=remain_time)
+                    },
+                    {
+                        'component': 'td',
+                        'props': {
+                            'class': 'whitespace-nowrap break-keep'
+                        },
+                        'text': data.format_duration(value=data.hr_duration,
+                                                     additional_time=additional_seed_time)
+                    },
+                    {
+                        'component': 'td',
+                        'props': {
+                            'class': 'whitespace-nowrap break-keep'
+                        },
+                        'text': data.hr_status.to_chinese()
+                    },
+
+                    {
+                        'component': 'td',
+                        'props': {
+                            'class': 'text-no-wrap'
+                        },
+                        'text': "已删除" if data.deleted else "正常"
+                    }
+                ]
+            }
+            torrent_trs.append(torrent_tr)
+
+        # 拼装页面
+        return [
+            {
+                'component': 'VRow',
+                'content': self.__get_total_elements() + [
+                    # 种子明细
+                    {
+                        'component': 'VCol',
+                        'props': {
+                            'cols': 12,
+                        },
+                        'content': [
+                            {
+                                'component': 'VTable',
+                                'props': {
+                                    'hover': True
+                                },
+                                'content': [
+                                    {
+                                        'component': 'thead',
+                                        'props': {
+                                            'class': 'text-no-wrap'
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '站点'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '标题'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '大小'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '分享率'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '做种时间'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '剩余时间'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': 'H&R时间'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '进度'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': '状态'
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'tbody',
+                                        'content': torrent_trs
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+
+    def __get_total_elements(self) -> List[dict]:
+        """
+        组装汇总元素
+        """
+        # 获取统计数据
+        statistic_info = self.__get_data(key="statistic")
+        # 任务总数
+        total_count = statistic_info.get("total_count") or "N/A"
+        # # 待确认
+        # pending_count = statistic_info.get("pending") or "N/A"
+        # 进行中
+        in_progress_count = statistic_info.get("in_progress") or "N/A"
+        # 已满足
+        compliant_count = statistic_info.get("compliant") or "N/A"
+        # 已删除
+        deleted_count = statistic_info.get("deleted") or "N/A"
+        # # 其他
+        # other_count = statistic_info.get("other") or "N/A"
+
+        return [
+            self.__create_stat_card("任务数", "/plugin_icon/seed.png", str(total_count)),
+            self.__create_stat_card("进行中", "/plugin_icon/upload.png", str(in_progress_count)),
+            self.__create_stat_card("已满足", "/plugin_icon/Overleaf_A.png", str(compliant_count)),
+            self.__create_stat_card("已删除", "/plugin_icon/delete.png", str(deleted_count))
+        ]
+
+    @staticmethod
+    def __create_stat_card(title: str, icon_path: str, count: str):
+        """
+        创建一个统计卡片组件
+        """
+        return {
+            'component': 'VCol',
+            'props': {
+                'cols': 12,
+                'md': 3,
+                'sm': 6
+            },
+            'content': [
+                {
+                    'component': 'VCard',
+                    'props': {
+                        'variant': 'tonal',
+                    },
+                    'content': [
+                        {
+                            'component': 'VCardText',
+                            'props': {
+                                'class': 'd-flex align-center',
+                            },
+                            'content': [
+                                {
+                                    'component': 'VAvatar',
+                                    'props': {
+                                        'rounded': True,
+                                        'variant': 'text',
+                                        'class': 'me-3'
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VImg',
+                                            'props': {
+                                                'src': icon_path
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    'component': 'div',
+                                    'content': [
+                                        {
+                                            'component': 'span',
+                                            'props': {
+                                                'class': 'text-caption'
+                                            },
+                                            'text': title
+                                        },
+                                        {
+                                            'component': 'div',
+                                            'props': {
+                                                'class': 'd-flex align-center flex-wrap'
+                                            },
+                                            'content': [
+                                                {
+                                                    'component': 'span',
+                                                    'props': {
+                                                        'class': 'text-h6'
+                                                    },
+                                                    'text': count
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
 
     def get_service(self) -> List[Dict[str, Any]]:
         """
@@ -721,10 +1011,17 @@ class HitAndRun(_PluginBase):
             # 先更新H&R任务的最新状态，上下传，分享率，做种时间等
             self.__update_torrent_tasks_state(torrents=check_torrents, torrent_tasks=torrent_tasks)
 
-            # # 更新统计数据
-            # self.__update_and_save_statistic_info(torrent_tasks)
+            # 更新H&R状态
+            for torrent_task in torrent_tasks.values():
+                try:
+                    self.__update_hr_status(torrent_task=torrent_task)
+                except Exception as e:
+                    logger.error(f"更新H&R下载任务状态过程中出现异常，{e}")
 
-            # 更新H&R下载任务
+            # 更新统计数据
+            self.__update_and_save_statistic_info(torrent_tasks)
+
+            # 更新H&R任务
             self.__save_data(key="torrents", value=torrent_tasks)
 
             logger.info("H&R下载任务检查完成")
@@ -848,54 +1145,45 @@ class HitAndRun(_PluginBase):
                                                         reason="无法在下载器中找到对应的种子信息",
                                                         torrent_tasks=delete_tasks)
 
-    # def __update_and_save_statistic_info(self, torrent_tasks):
-    #     """
-    #     更新并保存统计信息
-    #     """
-    #     total_count, total_uploaded, total_downloaded, total_deleted = 0, 0, 0, 0
-    #     active_uploaded, active_downloaded, active_count, total_unarchived = 0, 0, 0, 0
-    #
-    #     statistic_info = self.__get_statistic_info()
-    #     archived_tasks = self.get_data("archived") or {}
-    #     combined_tasks = {**torrent_tasks, **archived_tasks}
-    #
-    #     for task in combined_tasks.values():
-    #         if task.get("deleted", False):
-    #             total_deleted += 1
-    #         total_downloaded += task.get("downloaded", 0)
-    #         total_uploaded += task.get("uploaded", 0)
-    #
-    #     # 计算torrent_tasks中未标记为删除的活跃任务的统计信息，及待归档的任务数
-    #     for task in torrent_tasks.values():
-    #         if not task.get("deleted", False):
-    #             active_uploaded += task.get("uploaded", 0)
-    #             active_downloaded += task.get("downloaded", 0)
-    #             active_count += 1
-    #         else:
-    #             total_unarchived += 1
-    #
-    #     # 更新统计信息
-    #     total_count = len(combined_tasks)
-    #     statistic_info.update({
-    #         "uploaded": total_uploaded,
-    #         "downloaded": total_downloaded,
-    #         "deleted": total_deleted,
-    #         "unarchived": total_unarchived,
-    #         "count": total_count,
-    #         "active": active_count,
-    #         "active_uploaded": active_uploaded,
-    #         "active_downloaded": active_downloaded
-    #     })
-    #
-    #     logger.info(f"H&R任务统计数据，总任务数：{total_count}，活跃任务数：{active_count}，已删除：{total_deleted}，"
-    #                 f"待归档：{total_unarchived}，"
-    #                 f"活跃上传量：{StringUtils.str_filesize(active_uploaded)}，"
-    #                 f"活跃下载量：{StringUtils.str_filesize(active_downloaded)}，"
-    #                 f"总上传量：{StringUtils.str_filesize(total_uploaded)}，"
-    #                 f"总下载量：{StringUtils.str_filesize(total_downloaded)}")
-    #
-    #     self.save_data("statistic", statistic_info)
-    #     self.save_data("torrents", torrent_tasks)
+    def __update_and_save_statistic_info(self, torrent_tasks: Dict[str, TorrentTask]):
+        """
+        更新并保存统计信息
+        """
+        total_count, pending_count, in_progress_count, compliant_count, deleted_count, other_count = 0, 0, 0, 0, 0, 0
+
+        statistic_info = self.__get_data(key="statistic")
+        archived_tasks = self.__get_and_parse_data(key="archived", model=TorrentTask)
+        combined_tasks = {**torrent_tasks, **archived_tasks}
+
+        for task in combined_tasks.values():
+            if task.deleted:
+                deleted_count += 1
+
+            if task.hit_and_run:
+                total_count += 1
+                if task.hr_status == HNRStatus.PENDING:
+                    pending_count += 1
+                elif task.hr_status == HNRStatus.IN_PROGRESS:
+                    in_progress_count += 1
+                elif task.hr_status == HNRStatus.COMPLIANT:
+                    compliant_count += 1
+                else:
+                    other_count += 1
+
+        # 更新统计信息
+        statistic_info.update({
+            "total_count": total_count,
+            "pending": pending_count,
+            "in_progress": in_progress_count,
+            "compliant": compliant_count,
+            "deleted": deleted_count,
+            "other": other_count
+        })
+
+        logger.info(f"H&R任务统计数据，总任务数：{total_count}，待确认：{pending_count}，"
+                    f"进行中：{in_progress_count}，已满足：{compliant_count}，已删除：{deleted_count}，其他：{other_count}")
+
+        self.__save_data(key="statistic", value=statistic_info)
 
     # endregion
 
@@ -986,11 +1274,12 @@ class HitAndRun(_PluginBase):
             return
 
         self.__init_hr_status(torrent_task=torrent_task)
-        self.__save_torrent_tasks(torrent_tasks=torrent_task)
 
         if not torrent_task.hit_and_run:
+            logger.info(f"站点 {torrent_task.site_name}，种子 {torrent_task.identifier} 没有激活H&R，跳过处理")
             return
 
+        self.__save_torrent_tasks(torrent_tasks=torrent_task)
         self.__set_hit_and_run_tag(torrent_task=torrent_task)
 
         self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务下载】")
@@ -1004,7 +1293,7 @@ class HitAndRun(_PluginBase):
 
         site_config = self.__get_site_config(site_name=torrent_task.site_name)
         additional_seed_time = site_config.additional_seed_time or 0
-        required_seeding_time = (torrent_task.hr_duration + additional_seed_time) * 60
+        required_seeding_time = (torrent_task.hr_duration + additional_seed_time)
 
         # 更新种子状态和记录日志
         meets_requirements = self.__meets_hr_requirements(
@@ -1014,25 +1303,25 @@ class HitAndRun(_PluginBase):
         )
 
         if meets_requirements:
-            self.__remove_hit_and_run_tag(torrent_task)
             torrent_task.hr_status = HNRStatus.COMPLIANT
+            self.__remove_hit_and_run_tag(torrent_task)
             self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已完成】")
 
         status_description = "已满足" if meets_requirements else "仍未满足"
         logger.info(
             f"种子 {torrent_task.identifier} {status_description} H&R 要求，"
-            f"做种时间: {self.__format_hour_by_minutes(torrent_task.seeding_time)} 小时，"
-            f"所需做种时间: {self.__format_hour_by_minutes(required_seeding_time)} 小时，"
+            f"做种时间: {self.__format_hour(torrent_task.seeding_time)} 小时，"
+            f"所需做种时间: {self.__format_hour(required_seeding_time, 'hour')} 小时，"
             f"所需分享率: {torrent_task.ratio:.1f}")
 
     @staticmethod
-    def __meets_hr_requirements(torrent_task: TorrentTask, additional_seed_time: int, required_ratio: float) -> bool:
+    def __meets_hr_requirements(torrent_task: TorrentTask, additional_seed_time: float, required_ratio: float) -> bool:
         """
         检查是否满足做种时间和分享率要求
         """
         seeding_time_ok = (torrent_task.seeding_time and torrent_task.hr_duration and
-                           torrent_task.seeding_time >= (torrent_task.hr_duration + additional_seed_time) * 60)
-        ratio_ok = torrent_task.ratio and torrent_task.ratio >= required_ratio
+                           torrent_task.seeding_time > (torrent_task.hr_duration + additional_seed_time) * 3600)
+        ratio_ok = torrent_task.ratio and torrent_task.ratio > required_ratio
         return seeding_time_ok or ratio_ok
 
     def __init_hr_status(self, torrent_task: TorrentTask):
@@ -1122,7 +1411,7 @@ class HitAndRun(_PluginBase):
     def __save_and_cleanup_downloads(self, torrent_hash: str, torrent_data: Union[dict, TorrentInfo],
                                      task_type: TaskType = TaskType.NORMAL) -> Optional[TorrentHistory]:
         """
-        保存下载记录并清理7天前的记录
+        保存下载记录并清理30天前的记录
         """
         torrent_history = self.__create_torrent_history(torrent_hash=torrent_hash,
                                                         torrent_data=torrent_data,
@@ -1133,9 +1422,9 @@ class HitAndRun(_PluginBase):
         # 添加新的下载记录
         downloads[torrent_hash] = torrent_history.to_dict()
 
-        # 获取当前时间和7天前的时间戳
+        # 获取当前时间和30天前的时间戳
         current_time = time.time()
-        cutoff_time = current_time - 7 * 24 * 60 * 60
+        cutoff_time = current_time - 30 * 24 * 60 * 60
 
         # 清理7天以前的下载记录
         downloads = {key: value for key, value in downloads.items() if value.get("time", current_time) > cutoff_time}
@@ -1415,8 +1704,8 @@ class HitAndRun(_PluginBase):
         msg_parts = []
 
         if torrent_task.hr_status == HNRStatus.COMPLIANT:
-            seeding_hours = torrent_task.seeding_time / 60
-            required_seeding_hours = (torrent_task.hr_duration + additional_seed_time) / 60
+            seeding_hours = torrent_task.seeding_time / 3600
+            required_seeding_hours = (torrent_task.hr_duration + additional_seed_time)
             required_ratio = site_config.hr_ratio
 
             label_mapping = {
@@ -1436,8 +1725,11 @@ class HitAndRun(_PluginBase):
                 "title": ("标题", str),
                 "description": ("描述", str),
                 "size": ("大小", TorrentTask.format_size),
-                "hr_duration": ("时间", lambda x: TorrentTask.format_duration(x, additional_seed_time)),
-                "hr_deadline_days": ("期限", TorrentTask.format_deadline_days),
+                "hr_duration": ("时间",
+                                lambda x: TorrentTask.format_duration(value=x,
+                                                                      additional_time=additional_seed_time,
+                                                                      suffix=" 小时")),
+                "hr_deadline_days": ("期限", lambda x: TorrentTask.format_general(value=x, suffix=" 天")),
                 "hr_status": ("状态", TorrentTask.format_to_chinese),
             }
 
@@ -1476,11 +1768,17 @@ class HitAndRun(_PluginBase):
         self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
 
     @staticmethod
-    def __format_hour_by_minutes(minutes: float):
+    def __format_hour(number: float, unit: str = "second") -> str:
         """
         格式化数字，限制小数点后一位
         """
-        return f"{minutes / 60:.1f}"
+        if unit == "second":
+            return f"{number / 3600:.1f}"
+        elif unit == "minute":
+            return f"{number / 60:.1f}"
+        elif unit == "hour":
+            return f"{number:.1f}"
+        return ""
 
     @staticmethod
     def __get_demo_config():
