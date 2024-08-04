@@ -1223,10 +1223,10 @@ class HitAndRun(_PluginBase):
     @eventmanager.register(EventType.PluginAction)
     def handle_brushflow_event(self, event: Event = None):
         """
-        处理H&R下载任务事件
+        处理刷流下载任务事件
         """
         if not self.__validate_and_log_event(event,
-                                             event_type_desc="H&R下载任务",
+                                             event_type_desc="刷流下载任务",
                                              action_required="brushflow_download_added"):
             return
 
