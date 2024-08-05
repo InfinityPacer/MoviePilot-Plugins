@@ -1736,7 +1736,7 @@ class HitAndRun(_PluginBase):
 
         msg_parts = []
 
-        if torrent_task.hr_status != HNRStatus.IN_PROGRESS or torrent_task.hr_status != HNRStatus.PENDING:
+        if torrent_task.hr_status not in {HNRStatus.IN_PROGRESS, HNRStatus.PENDING}:
             seeding_hours = torrent_task.seeding_time / 3600
             required_seeding_hours = (torrent_task.hr_duration + additional_seed_time)
             required_ratio = site_config.hr_ratio
