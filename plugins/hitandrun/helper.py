@@ -296,7 +296,7 @@ class TorrentHelper:
             unique_tags = list(set(tags))
 
             if self.dl_type == "qbittorrent":
-                self.downloader.remove_torrents_tag(ids=torrent_hash, tags=unique_tags)
+                self.downloader.remove_torrents_tag(ids=torrent_hash, tag=unique_tags)
             else:
                 if updated_tags is not None:
                     # 如果提供了 updated_tags，直接设置这些标签
