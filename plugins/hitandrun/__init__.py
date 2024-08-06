@@ -846,7 +846,7 @@ class HitAndRun(_PluginBase):
         return {
             'component': 'VCol',
             'props': {
-                'cols': 12,
+                'cols': 6,
                 'md': 3,
                 'sm': 6
             },
@@ -1280,11 +1280,13 @@ class HitAndRun(_PluginBase):
         self.__init_hr_status(torrent_task=torrent_task)
 
         if not torrent_task.hit_and_run:
-            logger.info(f"站点 {torrent_task.site_name}，种子 {torrent_task.identifier} 没有激活H&R，跳过处理")
+            logger.info(f"站点 {torrent_task.site_name}，种子 {torrent_task.identifier} 没有命中H&R，跳过处理")
             return
 
         self.__update_torrent_tasks(torrent_tasks=torrent_task)
         self.__set_hit_and_run_tag(torrent_task=torrent_task)
+
+        self.__log_torrent_hr_status(torrent_task=torrent_task, status_description="已命中H&R")
 
         self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务下载】")
 
@@ -1300,7 +1302,6 @@ class HitAndRun(_PluginBase):
 
         site_config = self.__get_site_config(site_name=torrent_task.site_name)
         additional_seed_time = site_config.additional_seed_time or 0
-        required_seeding_time = (torrent_task.hr_duration + additional_seed_time)
 
         # 更新种子状态和记录日志
         meets_requirements = self.__meets_hr_requirements(
@@ -1312,13 +1313,11 @@ class HitAndRun(_PluginBase):
         if meets_requirements:
             torrent_task.hr_status = HNRStatus.COMPLIANT
             self.__remove_hit_and_run_tag(torrent_task)
-            status_description = "已满足"
+            status_description = "已满足 H&R 要求"
             self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已完成】")
         else:
-            # 计算截止时间（秒）
-            deadline_time = torrent_task.time + torrent_task.hr_deadline_days * 86400
             # 比较当前时间与截止时间
-            if time.time() > deadline_time:
+            if time.time() > torrent_task.deadline_time:
                 torrent_task.hr_status = HNRStatus.OVERDUE
                 status_description = "已过期"
                 self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已过期】", warn=True)
@@ -1327,13 +1326,24 @@ class HitAndRun(_PluginBase):
                 status_description = "需要做种"
                 self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务需要做种】", warn=True)
             else:
-                status_description = "仍未满足"
+                status_description = "仍未满足 H&R 要求"
+
+        self.__log_torrent_hr_status(torrent_task=torrent_task, status_description=status_description)
+
+    def __log_torrent_hr_status(self, torrent_task: TorrentTask, status_description: str):
+        """
+        记录H&R种子状态
+        """
+        site_config = self.__get_site_config(site_name=torrent_task.site_name)
+        additional_seed_time = site_config.additional_seed_time or 0
+        required_seeding_time = (torrent_task.hr_duration + additional_seed_time)
 
         logger.info(
-            f"种子 {torrent_task.identifier} {status_description} H&R 要求，"
+            f"种子 {torrent_task.identifier} {status_description}，"
             f"做种时间: {FormatHelper.format_hour(torrent_task.seeding_time)} 小时，"
             f"所需做种时间: {FormatHelper.format_hour(required_seeding_time, 'hour')} 小时，"
-            f"所需分享率: {torrent_task.hr_ratio:.1f}")
+            f"所需分享率: {torrent_task.hr_ratio:.1f}，"
+            f"截止时间: {torrent_task.formatted_deadline()}")
 
     @staticmethod
     def __meets_hr_requirements(torrent_task: TorrentTask, additional_seed_time: float, required_ratio: float) -> bool:
@@ -1748,6 +1758,7 @@ class HitAndRun(_PluginBase):
                     "做种时间",
                     lambda x: FormatHelper.format_comparison(seeding_hours, required_seeding_hours, "小时")),
                 "ratio": ("分享率", lambda x: FormatHelper.format_comparison(x, required_ratio, "")),
+                "deadline_time": ("截止时间", lambda x: torrent_task.formatted_deadline()),
                 "hr_status": ("状态", TorrentTask.format_to_chinese),
             }
         else:
@@ -1756,12 +1767,12 @@ class HitAndRun(_PluginBase):
                 "task_type": ("类型", TorrentTask.format_to_chinese),
                 "title": ("标题", str),
                 "description": ("描述", str),
-                "size": ("大小", FormatHelper.format_size),
-                "hr_duration": ("时间",
+                "hr_duration": ("H&R时间",
                                 lambda x: FormatHelper.format_duration(value=x,
                                                                        additional_time=additional_seed_time,
                                                                        suffix=" 小时")),
-                "hr_deadline_days": ("期限", lambda x: FormatHelper.format_general(value=x, suffix=" 天")),
+                "hr_ratio": ("H&R分享率", lambda x: FormatHelper.format_value(value=x)),
+                "deadline_time": ("截止时间", lambda x: torrent_task.formatted_deadline()),
                 "hr_status": ("状态", TorrentTask.format_to_chinese),
             }
 

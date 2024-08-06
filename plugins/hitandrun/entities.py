@@ -1,10 +1,13 @@
 import json
 import time
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
+import pytz
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.context import TorrentInfo
 
 
@@ -109,6 +112,21 @@ class TorrentTask(TorrentHistory):
         """
         parts = [self.title, self.description]
         return " | ".join(part.strip() for part in parts if part and part.strip())
+
+    @property
+    def deadline_time(self) -> float:
+        """
+        获取截止时间的 Unix 时间戳
+        """
+        deadline_time = self.time + self.hr_deadline_days * 86400
+        return deadline_time
+
+    def formatted_deadline(self) -> str:
+        """
+        获取格式化的截止时间
+        """
+        deadline_time_local = datetime.fromtimestamp(self.deadline_time, pytz.timezone(settings.TZ))
+        return deadline_time_local.strftime('%Y-%m-%d %H:%M')
 
     def remain_time(self, additional_seed_time: Optional[float] = 0.0) -> float:
         """
