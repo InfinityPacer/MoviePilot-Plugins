@@ -47,9 +47,7 @@ class HitAndRun(_PluginBase):
     # 加载顺序
     plugin_order = 24
     # 可使用的用户级别
-    auth_level = 99
-    # 插件公钥
-    plugin_public_key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyi9OX+olwHnUPvllTm7Gx2Fz8cnZneVPjs5vJRxnr5iR/fZdDJSJpvxAkFKTB5gRLk2/ilOTBztf/QluCb1SA0QdVIYH5hIn8NSPvaxYxcvD6Kk9rQkEiXk0xZoQs5ywwsTIU8Lcu5OJiMGDtIfueleSqI5GKM0ZMdeGITfGemBw5Feww3WA4YzCHf1SWfalPlAut0qc0/M9PYqH5p1fCRKK8uu3nNd4L4kDhQQduroB5icGKGrjK/iVfvP+rje3HuRyVQKkk5uR68LiGx1uLlvW8ishnb+yL0ivB4N6HgPmIamcYbOyFU6IFc4rKVYGMfspvKc/0L4TWMNpkiaCDQIDAQAB"
+    auth_level = 2
 
     # region 私有属性
 
