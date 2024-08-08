@@ -1082,6 +1082,9 @@ class HitAndRun(_PluginBase):
             else:
                 # 不包含H&R标签但又在H&R任务中，则移除管理
                 if torrent_hash in torrent_tasks:
+                    torrent_task = torrent_tasks[torrent_hash]
+                    if torrent_task.hr_status not in (HNRStatus.PENDING, HNRStatus.IN_PROGRESS):
+                        continue
                     torrent_task = torrent_tasks.pop(torrent_hash)
                     removed_tasks.append(torrent_task)
                     logger.info(f"站点 {torrent_task.site_name}，"
