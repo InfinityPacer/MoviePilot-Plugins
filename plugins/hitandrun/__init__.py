@@ -985,7 +985,6 @@ class HitAndRun(_PluginBase):
         with lock:
             logger.info("开始检查H&R下载任务 ...")
             torrent_tasks = self.__get_and_parse_data(key="torrents", model=TorrentTask)
-            unmanaged_tasks = self.__get_and_parse_data(key="unmanaged", model=TorrentTask)
             histories = self.__get_and_parse_data(key="downloads", model=TorrentHistory)
 
             seeding_torrents = self.torrenthelper.get_torrents()
@@ -995,7 +994,6 @@ class HitAndRun(_PluginBase):
 
             # 检查种子标签变更情况
             self.__update_seeding_tasks_based_on_tags(torrent_tasks=torrent_tasks,
-                                                      unmanaged_tasks=unmanaged_tasks,
                                                       histories=histories,
                                                       seeding_torrents_dict=seeding_torrents_dict)
 
@@ -1050,7 +1048,6 @@ class HitAndRun(_PluginBase):
             torrent_task.seeding_time = torrent_info.get("seeding_time", 0)
 
     def __update_seeding_tasks_based_on_tags(self, torrent_tasks: Dict[str, TorrentTask],
-                                             unmanaged_tasks: Dict[str, TorrentTask],
                                              histories: Dict[str, TorrentHistory],
                                              seeding_torrents_dict: Dict[str, Any]):
         if not self._hnr_config.downloader == "qbittorrent":
@@ -1068,21 +1065,11 @@ class HitAndRun(_PluginBase):
             if self._hnr_config.hit_and_run_tag in tags:
                 # 如果包含H&R标签又不在H&R任务中，则需要加入管理
                 if torrent_hash not in torrent_tasks:
-                    # 检查该种子是否在 unmanaged_tasks 中
-                    if torrent_hash in unmanaged_tasks:
-                        # 如果在 unmanaged_tasks 中，移除并转移到 torrent_tasks
-                        torrent_task = unmanaged_tasks.pop(torrent_hash)
-                        torrent_tasks[torrent_hash] = torrent_task
-                        added_tasks.append(torrent_task)
-                        logger.info(f"站点 {torrent_task.site_name}，"
-                                    f"H&R种子任务再次加入：{torrent_task.identifier}")
-                    else:
-                        # 否则，创建一个新的任务
-                        torrent_task = self.__convert_torrent_info_to_task(torrent=torrent, histories=histories)
-                        torrent_tasks[torrent_hash] = torrent_task
-                        added_tasks.append(torrent_task)
-                        logger.info(f"站点 {torrent_task.site_name}，"
-                                    f"H&R种子任务加入：{torrent_task.identifier}")
+                    torrent_task = self.__convert_torrent_info_to_task(torrent=torrent, histories=histories)
+                    torrent_tasks[torrent_hash] = torrent_task
+                    added_tasks.append(torrent_task)
+                    logger.info(f"站点 {torrent_task.site_name}，"
+                                f"H&R种子任务加入：{torrent_task.identifier}")
                 # 包含H&R标签又在H&R任务中，这里额外处理一个特殊逻辑，就是种子在H&R任务中可能被标记删除但实际上又还在下载器中，这里进行重置
                 else:
                     torrent_task = torrent_tasks[torrent_hash]
@@ -1095,27 +1082,28 @@ class HitAndRun(_PluginBase):
             else:
                 # 不包含H&R标签但又在H&R任务中，则移除管理
                 if torrent_hash in torrent_tasks:
-                    # 如果种子不符合H&R条件但在 torrent_tasks 中，移除并加入 unmanaged_tasks
                     torrent_task = torrent_tasks.pop(torrent_hash)
-                    unmanaged_tasks[torrent_hash] = torrent_task
                     removed_tasks.append(torrent_task)
                     logger.info(f"站点 {torrent_task.site_name}，"
                                 f"H&R种子任务移除：{torrent_task.identifier}")
 
-        self.__save_torrent_task(key="torrents", torrent_tasks=torrent_tasks)
-        self.__save_torrent_task(key="unmanaged", torrent_tasks=unmanaged_tasks)
-
+        is_modified = False
         # 发送汇总消息
         if added_tasks:
+            is_modified = True
             self.__log_and_send_torrent_task_update_message(title="H&R种子任务加入", status="纳入H&R管理",
                                                             reason="H&R标签添加", torrent_tasks=added_tasks)
         if removed_tasks:
+            is_modified = True
             self.__log_and_send_torrent_task_update_message(title="H&R种子任务移除", status="移除H&R管理",
                                                             reason="H&R标签移除", torrent_tasks=removed_tasks)
         if reset_tasks:
+            is_modified = True
             self.__log_and_send_torrent_task_update_message(title="H&R任务状态更新", status="更新H&R状态为正常",
                                                             reason="在下载器中找到已标记删除的H&R任务对应的种子信息",
                                                             torrent_tasks=reset_tasks)
+        if is_modified:
+            self.__save_torrent_task(key="torrents", torrent_tasks=torrent_tasks)
 
     def __update_undeleted_torrents_missing_in_downloader(self, torrent_tasks: Dict[str, TorrentTask],
                                                           torrent_check_hashes: List[str], torrents: List[Any]):
@@ -1377,7 +1365,7 @@ class HitAndRun(_PluginBase):
         """
         保存种子任务数据
         """
-        if not torrent_tasks:
+        if torrent_tasks is None:
             return
 
         values = {torrent_hash: torrent_task.to_dict() for torrent_hash, torrent_task in torrent_tasks.items()}
@@ -1808,7 +1796,7 @@ class HitAndRun(_PluginBase):
 
     def __send_message(self, title: str, message: str):
         """发送消息"""
-        self.post_message(mtype=NotificationType.Plugin, title=f"【{title}】", text=message)
+        self.post_message(mtype=NotificationType.SiteMessage, title=f"【{title}】", text=message)
 
     @staticmethod
     def __get_demo_config():
