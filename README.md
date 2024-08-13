@@ -254,7 +254,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ### 19. PlexMatch
 
-- 实现入库时添加 .plexmatch 文件，提高识别准确性
+- 实现入库时添加 .plexmatch 文件，提高识别准确率
 
 ![](images/2024-07-13-00-47-11.png)
 

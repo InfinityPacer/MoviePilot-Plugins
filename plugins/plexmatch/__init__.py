@@ -25,7 +25,7 @@ class PlexMatch(_PluginBase):
     # 插件名称
     plugin_name = "PlexMatch"
     # 插件描述
-    plugin_desc = "实现入库时添加 .plexmatch 文件，提高识别准确性。"
+    plugin_desc = "实现入库时添加 .plexmatch 文件，提高识别准确率。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png"
     # 插件版本
