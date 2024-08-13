@@ -331,5 +331,17 @@
             "v1.1": "调整日志以及消息推送并修复移除H&R标签等问题",
             "v1.0": "增加H&R助手插件，监听下载、订阅、刷流等行为，对H&R种子进行自动标签管理"
         }
+    },
+    "PlexSpeedTest": {
+        "name": "Plex IP优选",
+        "description": "自动获取Plex相关域名，实现IP优选。",
+        "labels": "Plex",
+        "version": "1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexspeedtest.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "增加Plex IP优选插件，自动获取Plex相关域名，实现IP优选"
+        }
     }
 }
