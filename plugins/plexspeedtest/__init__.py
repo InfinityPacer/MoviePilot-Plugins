@@ -158,7 +158,7 @@ class PlexSpeedTest(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '警告：本插件依赖自定义Hosts以及Cloudflare IP优选插件，请提前安装对应插件并进行相关配置'
+                                            'text': '注意：本插件依赖自定义Hosts以及Cloudflare IP优选插件，请提前安装对应插件并进行相关配置'
                                         }
                                     }
                                 ]
