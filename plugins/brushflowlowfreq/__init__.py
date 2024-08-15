@@ -3803,7 +3803,7 @@ class BrushFlowLowFreq(_PluginBase):
 
             return len(torrents)
         except Exception as e:
-            logger.error(f"获取下载数量时发生异常: {e}")
+            logger.error(f"获取下载数量发生异常: {e}")
             return 0
 
     @staticmethod
