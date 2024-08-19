@@ -625,9 +625,16 @@ class TrafficAssistant(_PluginBase):
 
     def __process_site_traffic(self, traffic_config: TrafficConfig, site_id: int, site_stat: dict) -> str:
         """根据站点的流量配置和统计信息处理站点流量"""
-        ratio = site_stat.get("ratio")
-        if ratio is None:
+        ratio_str = site_stat.get("ratio")
+        if ratio_str is None:
             error_msg = "分享率：N/A，跳过分析"
+            logger.warn(error_msg)
+            return error_msg
+
+        try:
+            ratio = float(ratio_str)
+        except ValueError:
+            error_msg = f"分享率无效：{ratio_str}，跳过分析"
             logger.warn(error_msg)
             return error_msg
 
