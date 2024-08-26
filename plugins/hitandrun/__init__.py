@@ -675,6 +675,10 @@ class HitAndRun(_PluginBase):
                     },
                     {
                         'component': 'td',
+                        'text': round(data.hr_ratio or 0, 2)
+                    },
+                    {
+                        'component': 'td',
                         'text': FormatHelper.format_general(value=data.seeding_time / 3600)
                     },
                     {
@@ -762,6 +766,13 @@ class HitAndRun(_PluginBase):
                                                     'class': 'text-start ps-4'
                                                 },
                                                 'text': '分享率'
+                                            },
+                                            {
+                                                'component': 'th',
+                                                'props': {
+                                                    'class': 'text-start ps-4'
+                                                },
+                                                'text': 'H&R分享率'
                                             },
                                             {
                                                 'component': 'th',
@@ -1291,7 +1302,7 @@ class HitAndRun(_PluginBase):
         meets_requirements = self.__meets_hr_requirements(
             torrent_task=torrent_task,
             additional_seed_time=additional_seed_time,
-            required_ratio=site_config.hr_ratio
+            required_ratio=torrent_task.hr_ratio
         )
 
         if meets_requirements:
@@ -1733,7 +1744,7 @@ class HitAndRun(_PluginBase):
         if torrent_task.hr_status not in {HNRStatus.IN_PROGRESS, HNRStatus.PENDING}:
             seeding_hours = torrent_task.seeding_time / 3600
             required_seeding_hours = (torrent_task.hr_duration + additional_seed_time)
-            required_ratio = site_config.hr_ratio
+            required_ratio = torrent_task.hr_ratio
 
             label_mapping = {
                 "site_name": ("站点", str),

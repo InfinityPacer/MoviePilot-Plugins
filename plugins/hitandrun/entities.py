@@ -128,10 +128,12 @@ class TorrentTask(TorrentHistory):
         deadline_time_local = datetime.fromtimestamp(self.deadline_time, pytz.timezone(settings.TZ))
         return deadline_time_local.strftime('%Y-%m-%d %H:%M')
 
-    def remain_time(self, additional_seed_time: Optional[float] = 0.0) -> float:
+    def remain_time(self, additional_seed_time: Optional[float] = 0.0) -> Optional[float]:
         """
         剩余时间（小时）
         """
+        if self.hr_status in [HNRStatus.COMPLIANT, HNRStatus.UNRESTRICTED]:
+            return None
         # 计算所需做种总时间（小时）
         required_seeding_hours = (self.hr_duration or 0) + (additional_seed_time or 0)
         # 计算已做种时间（小时）
