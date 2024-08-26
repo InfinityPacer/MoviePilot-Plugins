@@ -1094,15 +1094,15 @@ class HitAndRun(_PluginBase):
         # 发送汇总消息
         if added_tasks:
             is_modified = True
-            self.__log_and_send_torrent_task_update_message(title="H&R种子任务加入", status="纳入H&R管理",
+            self.__log_and_send_torrent_task_update_message(title="【H&R种子任务加入】", status="纳入H&R管理",
                                                             reason="H&R标签添加", torrent_tasks=added_tasks)
         if removed_tasks:
             is_modified = True
-            self.__log_and_send_torrent_task_update_message(title="H&R种子任务移除", status="移除H&R管理",
+            self.__log_and_send_torrent_task_update_message(title="【H&R种子任务移除】", status="移除H&R管理",
                                                             reason="H&R标签移除", torrent_tasks=removed_tasks)
         if reset_tasks:
             is_modified = True
-            self.__log_and_send_torrent_task_update_message(title="H&R任务状态更新", status="更新H&R状态为正常",
+            self.__log_and_send_torrent_task_update_message(title="【H&R任务状态更新】", status="更新H&R状态为正常",
                                                             reason="在下载器中找到已标记删除的H&R任务对应的种子信息",
                                                             torrent_tasks=reset_tasks)
         if is_modified:
@@ -1122,23 +1122,16 @@ class HitAndRun(_PluginBase):
             return
 
         # 初始化汇总信息
-        delete_tasks = []
         for hash_value in undeleted_hashes:
             # 获取对应的任务信息
             torrent_task = torrent_tasks[hash_value]
             # 标记为已删除
             torrent_task.deleted = True
             # 处理日志相关内容
-            delete_tasks.append(torrent_task)
-            site_name = torrent_task.site_name
-            torrent_title = torrent_task.title
-            torrent_desc = torrent_task.description
-            logger.info(
-                f"站点：{site_name}，无法在下载器中找到对应种子信息，更新H&R任务状态为已删除，种子：{torrent_title}|{torrent_desc}")
-
-        self.__log_and_send_torrent_task_update_message(title="【H&R任务状态更新】", status="更新H&R状态为已删除",
-                                                        reason="无法在下载器中找到对应的种子信息",
-                                                        torrent_tasks=delete_tasks)
+            self.__log_torrent_hr_status(torrent_task=torrent_task, status_description="已删除")
+            # 消息推送相关内容，如果种子H&R状态不是已满足&无限制外，则推送警告消息
+            warning = True if torrent_task.hr_status not in [HNRStatus.COMPLIANT, HNRStatus.UNRESTRICTED] else False
+            self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已删除】", warn=warning)
 
     def __update_and_save_statistic_info(self, torrent_tasks: Dict[str, TorrentTask]):
         """
@@ -1330,7 +1323,9 @@ class HitAndRun(_PluginBase):
         required_seeding_time = (torrent_task.hr_duration + additional_seed_time)
 
         logger.info(
+            f"站点： {torrent_task.site_name}，"
             f"种子 {torrent_task.identifier} {status_description}，"
+            f"H&R状态: {torrent_task.hr_status.to_chinese()}，"
             f"做种时间: {FormatHelper.format_hour(torrent_task.seeding_time)} 小时，"
             f"所需做种时间: {FormatHelper.format_hour(required_seeding_time, 'hour')} 小时，"
             f"所需分享率: {torrent_task.hr_ratio:.1f}，"
@@ -1799,7 +1794,7 @@ class HitAndRun(_PluginBase):
 
     def __send_message(self, title: str, message: str):
         """发送消息"""
-        self.post_message(mtype=NotificationType.SiteMessage, title=f"【{title}】", text=message)
+        self.post_message(mtype=NotificationType.SiteMessage, title=f"{title}", text=message)
 
     @staticmethod
     def __get_demo_config():
