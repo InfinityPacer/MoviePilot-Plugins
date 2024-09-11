@@ -415,6 +415,26 @@ class HitAndRun(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'auto_cleanup_days',
+                                            'label': '自动清理记录天数',
+                                            'type': 'number',
+                                            "min": "0",
+                                            'hint': '超过此天数后自动清理已删除/已满足记录',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
@@ -618,6 +638,7 @@ class HitAndRun(_PluginBase):
             "hr_duration": 144,
             "hr_deadline_days": 14,
             "additional_seed_time": 24,
+            "auto_cleanup_days": 7,
             "site_config_str": self.__get_demo_config()
         }
 
@@ -1031,6 +1052,9 @@ class HitAndRun(_PluginBase):
                 except Exception as e:
                     logger.error(f"更新H&R下载任务状态过程中出现异常，{e}")
 
+            # 清理数据
+            self.__auto_cleanup(torrent_tasks=torrent_tasks)
+
             # 更新统计数据
             self.__update_and_save_statistic_info(torrent_tasks)
 
@@ -1038,6 +1062,64 @@ class HitAndRun(_PluginBase):
             self.__save_torrent_task(key="torrents", torrent_tasks=torrent_tasks)
 
             logger.info("H&R下载任务检查完成")
+
+    def __auto_cleanup(self, torrent_tasks: Dict[str, TorrentTask]) -> None:
+        """
+        自动清理满足以下条件的任务
+        1. 任务满足 H&R 要求且超过配置的保留天数
+        2. 任务已被标记为删除且超过配置的保留天数
+        3. 没有明确 H&R 满足时间的历史数据
+        4. 没有明确删除时间的历史数据
+        """
+        current_time = time.time()
+        cleanup_threshold_seconds = self._hnr_config.auto_cleanup_days * 86400  # 将天数转换为秒数
+
+        # 用于标记需要清理的任务，避免重复清理
+        tasks_to_remove = set()
+
+        for task_id, torrent_task in torrent_tasks.items():
+            # 场景 1: 检查任务是否满足 H&R 要求且超出保留天数
+            if (
+                    torrent_task.hr_status == HNRStatus.COMPLIANT
+                    and torrent_task.hr_met_time
+                    and current_time - torrent_task.hr_met_time > cleanup_threshold_seconds
+            ):
+                self.__log_torrent_hr_status(torrent_task=torrent_task,
+                                             status_description="任务满足H&R要求且超出保留天数，已清理")
+                tasks_to_remove.add(task_id)
+                continue
+
+            # 场景 2: 检查没有明确 H&R 满足时间的历史数据
+            if (
+                    torrent_task.hr_status == HNRStatus.COMPLIANT
+                    and not torrent_task.hr_met_time
+            ):
+                self.__log_torrent_hr_status(torrent_task=torrent_task,
+                                             status_description="满足H&R要求的历史数据，已清理")
+                tasks_to_remove.add(task_id)
+                continue
+
+            # 场景 3: 检查任务是否已被标记为删除且超出保留天数
+            if (
+                    torrent_task.deleted
+                    and torrent_task.deleted_time
+                    and current_time - torrent_task.deleted_time > cleanup_threshold_seconds
+            ):
+                self.__log_torrent_hr_status(torrent_task=torrent_task,
+                                             status_description="任务已删除并超出保留天数，已清理")
+                tasks_to_remove.add(task_id)
+                continue
+
+            # 场景 4: 检查没有明确删除时间的历史数据
+            if torrent_task.deleted and not torrent_task.deleted_time:
+                self.__log_torrent_hr_status(torrent_task=torrent_task,
+                                             status_description="已删除的历史数据，已清理")
+                tasks_to_remove.add(task_id)
+
+        # 执行清理符合条件的任务
+        for task_id in tasks_to_remove:
+            if task_id in torrent_tasks:
+                del torrent_tasks[task_id]
 
     def __update_torrent_tasks_state(self, torrents: List[Any], torrent_tasks: Dict[str, TorrentTask]):
         """
@@ -1138,6 +1220,7 @@ class HitAndRun(_PluginBase):
             torrent_task = torrent_tasks[hash_value]
             # 标记为已删除
             torrent_task.deleted = True
+            torrent_task.deleted_time = time.time()
             # 处理日志相关内容
             self.__log_torrent_hr_status(torrent_task=torrent_task, status_description="已删除")
             # 消息推送相关内容，如果种子H&R状态不是已满足&无限制外，则推送警告消息
@@ -1307,6 +1390,7 @@ class HitAndRun(_PluginBase):
 
         if meets_requirements:
             torrent_task.hr_status = HNRStatus.COMPLIANT
+            torrent_task.hr_met_time = time.time()
             self.__remove_hit_and_run_tag(torrent_task)
             status_description = "已满足 H&R 要求"
             self.__send_hr_message(torrent_task=torrent_task, title="【H&R种子任务已完成】")

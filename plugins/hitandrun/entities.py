@@ -103,7 +103,9 @@ class TorrentTask(TorrentHistory):
     uploaded: Optional[float] = 0.0  # 上传量
     seeding_time: Optional[float] = 0.0  # 做种时间（秒）
     deleted: Optional[bool] = False  # 是否已删除
-    time: Optional[float] = Field(default_factory=time.time)
+    time: Optional[float] = Field(default_factory=time.time)  # 任务创建时间
+    deleted_time: Optional[float] = None  # 种子删除时间
+    hr_met_time: Optional[float] = None  # 满足H&R要求的时间
 
     @property
     def identifier(self) -> str:

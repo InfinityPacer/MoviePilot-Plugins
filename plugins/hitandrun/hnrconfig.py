@@ -66,6 +66,7 @@ class HNRConfig(BaseConfig):
     auto_monitor: Optional[bool] = False  # 自动监控（实验性功能）
     downloader: Optional[str] = None  # 下载器
     hit_and_run_tag: Optional[str] = None  # 种子标签
+    auto_cleanup_days: float = 7  # 自动清理已删除或满足H&R要求的任务
     enable_site_config: Optional[bool] = False  # 启用站点独立配置
     site_config_str: Optional[str] = None  # 站点独立配置的字符串
     site_configs: Dict[str, SiteConfig] = {}  # 站点独立配置（根据配置字符串解析后的字典）
@@ -80,10 +81,22 @@ class HNRConfig(BaseConfig):
             values["notify"] = NotifyMode.ALWAYS
         return values
 
-    @validator('*', pre=True, allow_reuse=True)
+    @validator("*", pre=True, allow_reuse=True)
     def __empty_string_to_float(cls, v, values, field):
+        """
+        校验空字符
+        """
         if field.type_ is float and not v:
             return 0.0
+        return v
+
+    @validator("auto_cleanup_days", pre=True, allow_reuse=True)
+    def set_default_auto_cleanup_days(cls, v):
+        """
+        当 auto_cleanup_days 为 None 时，设置为 7
+        """
+        if v is None:
+            return 7
         return v
 
     def __init__(self, **data):
