@@ -324,11 +324,12 @@
         "name": "H&R助手",
         "description": "监听下载、订阅、刷流等行为，对H&R种子进行自动标签管理。",
         "labels": "站点,H&R",
-        "version": "1.4",
+        "version": "1.4.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/hitandrun.png",
         "author": "InfinityPacer",
         "level": 2,
         "history": {
+            "v1.4.1": "修复了一些细节问题",
             "v1.4": "支持自动清理已删除/已满足记录",
             "v1.3": "优化H&R优化删除H&R种子后的消息推送以及日志记录",
             "v1.2": "调整H&R已完成种子移除策略",
