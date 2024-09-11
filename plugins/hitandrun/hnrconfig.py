@@ -29,6 +29,10 @@ class BaseConfig(BaseModel):
         extra = "ignore"
         arbitrary_types_allowed = True
 
+        @staticmethod
+        def json_dumps(v, *, default):
+            return json.dumps(v, ensure_ascii=False, default=default)
+
     def to_dict(self, **kwargs):
         """
         返回字典
