@@ -37,7 +37,7 @@ class HitAndRun(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/hitandrun.png"
     # 插件版本
-    plugin_version = "1.4"
+    plugin_version = "1.4.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1071,6 +1071,10 @@ class HitAndRun(_PluginBase):
         3. 没有明确 H&R 满足时间的历史数据
         4. 没有明确删除时间的历史数据
         """
+        if self._hnr_config.auto_cleanup_days <= 0:
+            logger.info("自动清理记录天数小于等于0，取消自动清理")
+            return
+
         current_time = time.time()
         cleanup_threshold_seconds = self._hnr_config.auto_cleanup_days * 86400  # 将天数转换为秒数
 
