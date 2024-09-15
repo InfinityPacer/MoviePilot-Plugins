@@ -4018,7 +4018,7 @@ class BrushFlowLowFreq(_PluginBase):
         """
        自动归档已经删除的种子数据
        """
-        if self._brush_config.auto_archive_days and self._brush_config.auto_archive_days <= 0:
+        if not self._brush_config.auto_archive_days or self._brush_config.auto_archive_days <= 0:
             logger.info("自动归档记录天数小于等于0，取消自动归档")
             return
 
