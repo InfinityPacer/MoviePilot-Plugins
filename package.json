@@ -33,6 +33,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/reload.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.5": "支持已安装但解析错误的插件重载，优化插件显示顺序",
             "v1.4": "增加过滤本地已安装的插件",
