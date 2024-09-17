@@ -1,0 +1,2 @@
+websocket-client~=1.8
+python-dateutil~=2.8.2
