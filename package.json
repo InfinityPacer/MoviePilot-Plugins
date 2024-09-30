@@ -83,6 +83,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webdavbackup.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.5": "完善了WebDAV客户端连接失败的问题，配置页面增加了hint提示信息",
             "v1.4": "支持开启忽略校验，适配部分网盘校验远程目录时抛出错误的问题",
@@ -118,6 +119,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/PlexAutoSkip_C.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v0.5": "增加独立的自动跳过配置项，用于支持远程命令切换自动跳过",
             "v0.4": "修复剧集最后一集无限循环以及优化自动播放逻辑",
@@ -146,6 +148,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/historyclear.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.0": "增加历史记录清理插件，实现一键清理历史记录"
         }
@@ -158,6 +161,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/weatherwidget.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.8": "增加自动高度及组件规格，部分显示效果需要主程序升级1.9.3+版本及后续优化",
             "v1.7": "天气时间以及空气质量调整为原生渲染，优化显示效果",
@@ -205,6 +209,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/historycategory.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.0": "增加历史记录分类刷新插件，实现一键刷新历史记录中的显示分类"
         }
@@ -217,6 +222,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.6": "历史记录硬链接检查支持选择转移方式，配置页面增加了hint提示信息",
             "v1.5": "增加目录硬链接测试",
@@ -235,6 +241,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/systemnotification.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.0": "增加系统通知插件，通过通知渠道发送系统通知消息，需要主程序升级1.9.3+版本"
         }
@@ -247,6 +254,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png",
         "author": "InfinityPacer",
         "level": 2,
+        "v2": true,
         "history": {
             "v1.3": "相关逻辑容错，适配MTeam调整",
             "v1.2": "修复部分情况下插件自动停用，同时优化刷流插件的启用逻辑，以及日志相关优化",
@@ -280,6 +288,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.1": "修复媒体类型为电视剧时，错误把 .plexmatch 生成路径定位到父目录的问题",
             "v1.0": "增加PlexMatch插件，实现入库时添加 .plexmatch 文件，提高识别准确率"
@@ -293,6 +302,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/customplugin.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.0": "增加自定义插件，实现编写自定义插件"
         }
@@ -305,6 +315,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/mihosts.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.0": "增加小米路由Hosts插件，定时将本地Hosts同步至小米路由Hosts"
         }
@@ -347,6 +358,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexspeedtest.png",
         "author": "InfinityPacer",
         "level": 1,
+        "v2": true,
         "history": {
             "v1.0": "增加Plex IP优选插件，自动获取Plex相关域名，实现IP优选"
         }
