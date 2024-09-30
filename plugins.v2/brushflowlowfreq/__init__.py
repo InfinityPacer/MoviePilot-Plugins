@@ -151,7 +151,7 @@ class BrushConfig:
     @staticmethod
     def get_demo_site_config() -> str:
         desc = (
-            "// 以下为配置示例，请参考：https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/brushflowlowfreq/README.md 进行配置\n"
+            "// 以下为配置示例，请参考：https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/brushflowlowfreq/README.md 进行配置\n"
             "// 如与全局保持一致的配置项，请勿在站点配置中配置\n"
             "// 注意无关内容需使用 // 注释\n")
         config = """[{
@@ -1671,7 +1671,7 @@ class BrushFlowLowFreq(_PluginBase):
                                             {
                                                 'component': 'a',
                                                 'props': {
-                                                    'href': 'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/brushflowlowfreq/README.md',
+                                                    'href': 'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/brushflowlowfreq/README.md',
                                                     'target': '_blank'
                                                 },
                                                 'content': [
@@ -1799,7 +1799,7 @@ class BrushFlowLowFreq(_PluginBase):
                                                                     {
                                                                         'component': 'a',
                                                                         'props': {
-                                                                            'href': 'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/brushflowlowfreq/README.md',
+                                                                            'href': 'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/brushflowlowfreq/README.md',
                                                                             'target': '_blank'
                                                                         },
                                                                         'content': [
