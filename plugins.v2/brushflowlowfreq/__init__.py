@@ -73,7 +73,6 @@ class BrushConfig:
         self.brush_sequential = config.get("brush_sequential", False)
         self.proxy_delete = config.get("proxy_delete", False)
         self.active_time_range = config.get("active_time_range")
-        self.downloader_monitor = config.get("downloader_monitor")
         self.qb_category = config.get("qb_category")
         self.auto_qb_category = config.get("auto_qb_category", False)
         self.qb_first_last_piece = config.get("qb_first_last_piece", False)
@@ -1835,7 +1834,6 @@ class BrushFlowLowFreq(_PluginBase):
             "freeleech": "free",
             "hr": "yes",
             "enable_site_config": False,
-            "downloader_monitor": False,
             "auto_qb_category": False,
             "qb_first_last_piece": False,
             "site_config": BrushConfig.get_demo_site_config()
@@ -2531,12 +2529,6 @@ class BrushFlowLowFreq(_PluginBase):
                                              seeding_torrents_dict: Dict[str, Any]):
         brush_config = self.__get_brush_config()
 
-        if brush_config.downloader_monitor:
-            logger.info("已开启下载器监控，开始同步种子刷流标签记录")
-        else:
-            logger.info("没有开启下载器监控，取消同步种子刷流标签记录")
-            return
-
         if not self.__is_qbittorrent():
             logger.info("同步种子刷流标签记录目前仅支持qbittorrent")
             return
@@ -2905,12 +2897,6 @@ class BrushFlowLowFreq(_PluginBase):
         """
         brush_config = self.__get_brush_config()
 
-        if brush_config.downloader_monitor:
-            logger.info("已开启下载器监控，开始同步刷流任务删除记录")
-        else:
-            logger.info("没有开启下载器监控，取消同步刷流任务删除记录")
-            return
-
         # 先通过获取的全量种子，判断已经被删除，但是任务记录中还没有被标记删除的种子
         torrent_all_hashes = self.__get_all_hashes(torrents)
         missing_hashes = [hash_value for hash_value in torrent_check_hashes if hash_value not in torrent_all_hashes]
@@ -3133,7 +3119,6 @@ class BrushFlowLowFreq(_PluginBase):
             "brush_sequential": brush_config.brush_sequential,
             "proxy_delete": brush_config.proxy_delete,
             "active_time_range": brush_config.active_time_range,
-            "downloader_monitor": brush_config.downloader_monitor,
             "qb_category": brush_config.qb_category,
             "auto_qb_category": brush_config.auto_qb_category,
             "qb_first_last_piece": brush_config.qb_first_last_piece,
