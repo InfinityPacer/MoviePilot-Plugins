@@ -73,8 +73,6 @@ class BrushConfig:
         self.proxy_delete = config.get("proxy_delete", False)
         self.active_time_range = config.get("active_time_range")
         self.qb_category = config.get("qb_category")
-        self.auto_qb_category = config.get("auto_qb_category", False)
-        self.qb_first_last_piece = config.get("qb_first_last_piece", False)
         self.site_hr_active = config.get("site_hr_active", False)
 
         self.brush_tag = "刷流"
@@ -117,8 +115,6 @@ class BrushConfig:
             "save_path",
             "proxy_delete",
             "qb_category",
-            "auto_qb_category",
-            "qb_first_last_piece",
             "site_hr_active"
             # 当新增支持字段时，仅在此处添加字段名
         }
@@ -184,8 +180,6 @@ class BrushConfig:
     "save_path": "/downloads/site1",
     "proxy_delete": false,
     "qb_category": "刷流",
-    "auto_qb_category": true,
-    "qb_first_last_piece": true,
     "site_hr_active": true
 }]"""
         return desc + config
@@ -1584,43 +1578,6 @@ class BrushFlowLowFreq(_PluginBase):
                                                     {
                                                         'component': 'VSwitch',
                                                         'props': {
-                                                            'model': 'qb_first_last_piece',
-                                                            'label': '优先下载首尾文件块',
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
-                                                            'model': 'auto_qb_category',
-                                                            'label': '自动分类管理',
-                                                        }
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        "content": [
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
                                                             'model': 'enable_site_config',
                                                             'label': '站点独立配置',
                                                         }
@@ -1642,7 +1599,12 @@ class BrushFlowLowFreq(_PluginBase):
                                                         }
                                                     }
                                                 ]
-                                            },
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        "content": [
                                             {
                                                 'component': 'VCol',
                                                 'props': {
@@ -1857,8 +1819,6 @@ class BrushFlowLowFreq(_PluginBase):
             "freeleech": "free",
             "hr": "yes",
             "enable_site_config": False,
-            "auto_qb_category": False,
-            "qb_first_last_piece": False,
             "site_config": BrushConfig.get_demo_site_config()
         }
 
@@ -3139,8 +3099,6 @@ class BrushFlowLowFreq(_PluginBase):
             "proxy_delete": brush_config.proxy_delete,
             "active_time_range": brush_config.active_time_range,
             "qb_category": brush_config.qb_category,
-            "auto_qb_category": brush_config.auto_qb_category,
-            "qb_first_last_piece": brush_config.qb_first_last_piece,
             "enable_site_config": brush_config.enable_site_config,
             "site_config": brush_config.site_config,
             "_tabs": self._tabs
@@ -3257,15 +3215,13 @@ class BrushFlowLowFreq(_PluginBase):
                 else:
                     logger.error("尝试通过MP下载种子失败，继续尝试传递种子地址到下载器进行下载")
             if torrent_content:
-                state = self.__qb_add_torrent(content=torrent_content,
-                                              download_dir=download_dir,
-                                              cookie=cookies,
-                                              tag=["已整理", brush_config.brush_tag, tag],
-                                              category=brush_config.qb_category,
-                                              is_auto=brush_config.auto_qb_category,
-                                              is_first_last_piece_priority=brush_config.qb_first_last_piece,
-                                              upload_limit=up_speed,
-                                              download_limit=down_speed)
+                state = downloader.add_torrent(content=torrent_content,
+                                               download_dir=download_dir,
+                                               cookie=cookies,
+                                               category=brush_config.qb_category,
+                                               tag=["已整理", brush_config.brush_tag, tag],
+                                               upload_limit=up_speed,
+                                               download_limit=down_speed)
                 if not state:
                     return None
                 else:
@@ -3301,71 +3257,6 @@ class BrushFlowLowFreq(_PluginBase):
                                                   download_limit=down_speed)
                     return torrent.hashString
         return None
-
-    def __qb_add_torrent(self,
-                         content: Union[str, bytes],
-                         is_paused: bool = False,
-                         download_dir: str = None,
-                         tag: Union[str, list] = None,
-                         category: str = None,
-                         cookie=None,
-                         is_auto=False,
-                         is_first_last_piece_priority=False,
-                         **kwargs
-                         ) -> bool:
-        """
-        添加种子
-        :param content: 种子urls或文件内容
-        :param is_paused: 添加后暂停
-        :param tag: 标签
-        :param category: 种子分类
-        :param download_dir: 下载路径
-        :param cookie: 站点Cookie用于辅助下载种子
-        :return: bool
-        """
-        downloader = self.downloader
-        if not downloader:
-            return False
-
-        if not downloader.qbc or not content:
-            return False
-
-        # 下载内容
-        if isinstance(content, str):
-            urls = content
-            torrent_files = None
-        else:
-            urls = None
-            torrent_files = content
-
-        # 保存目录
-        if download_dir:
-            save_path = download_dir
-        else:
-            save_path = None
-
-        # 标签
-        if tag:
-            tags = tag
-        else:
-            tags = None
-
-        try:
-            # 添加下载
-            qbc_ret = downloader.qbc.torrents_add(urls=urls,
-                                                  torrent_files=torrent_files,
-                                                  save_path=save_path,
-                                                  is_paused=is_paused,
-                                                  tags=tags,
-                                                  use_auto_torrent_management=is_auto,
-                                                  is_first_last_piece_priority=is_first_last_piece_priority,
-                                                  cookie=cookie,
-                                                  category=category,
-                                                  **kwargs)
-            return True if qbc_ret and str(qbc_ret).find("Ok") != -1 else False
-        except Exception as err:
-            logger.error(f"添加种子出错：{str(err)}")
-            return False
 
     def __qb_torrents_reannounce(self, torrent_hashes: List[str]):
         """强制重新汇报"""
