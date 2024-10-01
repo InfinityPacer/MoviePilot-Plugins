@@ -16,7 +16,6 @@ from app import schemas
 from app.chain.torrents import TorrentsChain
 from app.core.config import settings
 from app.core.context import MediaInfo
-from app.core.event import eventmanager, Event
 from app.core.metainfo import MetaInfo
 from app.db.site_oper import SiteOper
 from app.db.subscribe_oper import SubscribeOper
@@ -273,8 +272,6 @@ class BrushFlowLowFreq(_PluginBase):
     downloaderhelper = None
     # 刷流配置
     _brush_config = None
-    # 下载服务
-    _downloader: ServiceInfo = None
     # Brush任务是否启动
     _task_brush_enable = False
     # 订阅缓存信息
@@ -288,6 +285,32 @@ class BrushFlowLowFreq(_PluginBase):
     _scheduler = None
     # tabs
     _tabs = None
+
+    # Property
+
+    @property
+    def service_info(self) -> Optional[ServiceInfo]:
+        """
+        服务信息
+        """
+        brush_config = self.__get_brush_config()
+        service = self.downloaderhelper.get_service(name=brush_config.downloader)
+        if not service:
+            self.__log_and_notify_error("站点刷流任务出错，获取下载器实例失败，请检查配置")
+            return None
+
+        if service.instance.is_inactive():
+            self.__log_and_notify_error("站点刷流任务出错，下载器未连接")
+            return None
+
+        return service
+
+    @property
+    def downloader(self) -> Optional[Union[Qbittorrent, Transmission]]:
+        """
+        下载器实例
+        """
+        return self.service_info.instance if self.service_info else None
 
     # endregion
 
@@ -348,6 +371,13 @@ class BrushFlowLowFreq(_PluginBase):
         # 停止现有任务
         self.stop_service()
 
+        # 如果站点都没有配置，则不开启定时刷流服务
+        if not brush_config.brushsites:
+            logger.info(f"站点刷流定时服务停止，没有配置站点")
+
+        # 如果开启&存在站点时，才需要启用后台任务
+        self._task_brush_enable = brush_config.enabled and brush_config.brushsites
+
         # 如果下载器都没有配置，那么这里也不需要继续
         if not brush_config.downloader:
             brush_config.enabled = False
@@ -355,15 +385,8 @@ class BrushFlowLowFreq(_PluginBase):
             logger.info(f"站点刷流服务停止，没有配置下载器")
             return
 
-        if not self.__setup_downloader():
+        if not self.service_info:
             return
-
-        # 如果站点都没有配置，则不开启定时刷流服务
-        if not brush_config.brushsites:
-            logger.info(f"站点刷流定时服务停止，没有配置站点")
-
-        # 如果开启&存在站点时，才需要启用后台任务
-        self._task_brush_enable = brush_config.enabled and brush_config.brushsites
 
         # 检查是否启用了一次性任务
         if brush_config.onlyonce:
@@ -2042,7 +2065,7 @@ class BrushFlowLowFreq(_PluginBase):
 
         brush_config = self.__get_brush_config()
 
-        if not brush_config.brushsites or not brush_config.downloader:
+        if not brush_config.brushsites or not brush_config.downloader or not self.downloader:
             return
 
         if not self.__is_current_time_in_range():
@@ -2405,7 +2428,7 @@ class BrushFlowLowFreq(_PluginBase):
 
         brush_config = self.__get_brush_config()
 
-        if not brush_config.downloader:
+        if not brush_config.downloader or not self.downloader:
             return
 
         with lock:
@@ -2413,11 +2436,7 @@ class BrushFlowLowFreq(_PluginBase):
             torrent_tasks: Dict[str, dict] = self.get_data("torrents") or {}
             unmanaged_tasks: Dict[str, dict] = self.get_data("unmanaged") or {}
 
-            downloader = self.__get_downloader()
-            if not downloader:
-                logger.warn("无法获取下载器实例，将在下个时间周期重试")
-                return
-
+            downloader = self.downloader
             seeding_torrents, error = downloader.get_torrents()
             if error:
                 logger.warn("连接下载器出错，将在下个时间周期重试")
@@ -2487,7 +2506,7 @@ class BrushFlowLowFreq(_PluginBase):
 
                 if need_delete_hashes:
                     # 如果是QB，则重新汇报Tracker
-                    if self.__is_qbittorrent():
+                    if self.downloaderhelper.is_qbittorrent(service=self.service_info):
                         self.__qb_torrents_reannounce(torrent_hashes=need_delete_hashes)
                     # 删除种子
                     if downloader.delete_torrents(ids=need_delete_hashes, delete_file=True):
@@ -2529,7 +2548,7 @@ class BrushFlowLowFreq(_PluginBase):
                                              seeding_torrents_dict: Dict[str, Any]):
         brush_config = self.__get_brush_config()
 
-        if not self.__is_qbittorrent():
+        if not self.downloaderhelper.is_qbittorrent(service=self.service_info):
             logger.info("同步种子刷流标签记录目前仅支持qbittorrent")
             return
 
@@ -2842,7 +2861,7 @@ class BrushFlowLowFreq(_PluginBase):
             remaining_hashes = list(
                 {self.__get_hash(torrent) for torrent in proxy_delete_torrents} - set(need_delete_hashes))
             # 这里根据排除后的种子列表，再次从下载器中找到已完成的任务
-            downloader = self.__get_downloader()
+            downloader = self.downloader
             completed_torrents = downloader.get_completed_torrents(ids=remaining_hashes)
             remaining_hashes = {self.__get_hash(torrent) for torrent in completed_torrents}
             remaining_torrents = [(_hash, torrent_info_map[_hash]) for _hash in remaining_hashes]
@@ -3130,67 +3149,6 @@ class BrushFlowLowFreq(_PluginBase):
         # 使用update_config方法或其等效方法更新配置
         self.update_config(config_mapping)
 
-    @eventmanager.register(EventType.ModuleReload)
-    def module_reload(self, event: Event):
-        """
-        模块重载事件
-        """
-        if not event:
-            return
-        event_data = event.event_data or {}
-        module_id = event_data.get("module_id")
-        # 如果模块标识不存在，则说明所有模块均发生重载
-        if not module_id:
-            self.__setup_downloader()
-
-    def __setup_downloader(self):
-        """
-        初始化下载器
-        """
-        brush_config = self.__get_brush_config()
-        self._downloader = self.downloaderhelper.get_service(name=brush_config.downloader)
-        if not self._downloader:
-            self.__log_and_notify_error("站点刷流任务出错，获取下载器实例失败，请检查配置")
-            return False
-
-        if self.__get_downloader().is_inactive():
-            self.__log_and_notify_error("站点刷流任务出错，下载器未连接")
-            return False
-
-        return True
-
-    def __get_downloader(self) -> Optional[Union[Transmission, Qbittorrent]]:
-        """
-        获取下载器实例
-        """
-        if not self._downloader:
-            return None
-        return self._downloader.instance
-
-    def __get_downloader_type(self) -> Optional[str]:
-        """
-        获取下载器类型
-        """
-        if not self._downloader:
-            return None
-        return self._downloader.type
-
-    def __is_qbittorrent(self) -> bool:
-        """
-        判断下载器是否为 qbittorrent
-        """
-        if not self._downloader:
-            return False
-        return self._downloader.type == "qbittorrent"
-
-    def __is_transmission(self) -> bool:
-        """
-        判断下载器是否为 transmission
-        """
-        if not self._downloader:
-            return False
-        return self._downloader.type == "transmission"
-
     @staticmethod
     def __get_redict_url(url: str, proxies: str = None, ua: str = None, cookie: str = None) -> Optional[str]:
         """
@@ -3279,11 +3237,11 @@ class BrushFlowLowFreq(_PluginBase):
             logger.error(f"获取下载链接失败：{torrent.title}")
             return None
 
-        downloader = self.__get_downloader()
+        downloader = self.downloader
         if not downloader:
             return None
 
-        if self.__is_qbittorrent():
+        if self.downloaderhelper.is_qbittorrent(service=self.service_info):
             # 限速值转为bytes
             up_speed = up_speed * 1024 if up_speed else None
             down_speed = down_speed * 1024 if down_speed else None
@@ -3319,7 +3277,7 @@ class BrushFlowLowFreq(_PluginBase):
                     return torrent_hash
             return None
 
-        elif self.__is_transmission():
+        elif self.downloaderhelper.is_transmission(service=self.service_info):
             # 如果开启代理下载以及种子地址不是磁力地址，则请求种子到内存再传入下载器
             if not torrent_content.startswith("magnet"):
                 response = RequestUtils(cookies=cookies,
@@ -3365,7 +3323,7 @@ class BrushFlowLowFreq(_PluginBase):
         :param cookie: 站点Cookie用于辅助下载种子
         :return: bool
         """
-        downloader = self.__get_downloader()
+        downloader = self.downloader
         if not downloader:
             return False
 
@@ -3411,7 +3369,7 @@ class BrushFlowLowFreq(_PluginBase):
 
     def __qb_torrents_reannounce(self, torrent_hashes: List[str]):
         """强制重新汇报"""
-        downloader = self.__get_downloader()
+        downloader = self.downloader
         if not downloader:
             return
 
@@ -3432,7 +3390,8 @@ class BrushFlowLowFreq(_PluginBase):
         获取种子hash
         """
         try:
-            return torrent.get("hash") if self.__is_qbittorrent() else torrent.hashString
+            return torrent.get("hash") if self.downloaderhelper.is_qbittorrent(service=self.service_info) \
+                else torrent.hashString
         except Exception as e:
             print(str(e))
             return ""
@@ -3448,7 +3407,8 @@ class BrushFlowLowFreq(_PluginBase):
             all_hashes = []
             for torrent in torrents:
                 # 根据下载器类型获取Hash值
-                hash_value = torrent.get("hash") if self.__is_qbittorrent() else torrent.hashString
+                hash_value = torrent.get("hash") if self.downloaderhelper.is_qbittorrent(service=self.service_info) \
+                    else torrent.hashString
                 if hash_value:
                     all_hashes.append(hash_value)
             return all_hashes
@@ -3462,7 +3422,7 @@ class BrushFlowLowFreq(_PluginBase):
         """
         try:
             return [str(tag).strip() for tag in torrent.get("tags").split(',')] \
-                if self.__get_downloader_type() else torrent.labels or []
+                if self.downloaderhelper.is_qbittorrent(service=self.service_info) else torrent.labels or []
         except Exception as e:
             print(str(e))
             return []
@@ -3473,7 +3433,7 @@ class BrushFlowLowFreq(_PluginBase):
         """
         date_now = int(time.time())
         # QB
-        if self.__is_qbittorrent():
+        if self.downloaderhelper.is_qbittorrent(service=self.service_info):
             """
             {
               "added_on": 1693359031,
@@ -3744,7 +3704,7 @@ class BrushFlowLowFreq(_PluginBase):
         """
         ret_info = schemas.DownloaderInfo()
 
-        downloader = self.__get_downloader()
+        downloader = self.downloader
         if not downloader:
             return ret_info
 
@@ -3764,7 +3724,7 @@ class BrushFlowLowFreq(_PluginBase):
         """
         try:
             brush_config = self.__get_brush_config()
-            downloader = self.__get_downloader()
+            downloader = self.downloader
             if not downloader:
                 return 0
 
