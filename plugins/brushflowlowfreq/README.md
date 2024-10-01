@@ -2,9 +2,9 @@
 
 在官方刷流插件的基础上，新增了若干项功能优化了部分细节逻辑，目前已逐步PR至官方插件。在此，再次感谢 [@jxxghp](https://github.com/jxxghp) 提供那么优秀的开源作品。
 
-## 版本更新日志
+**请注意，本文档仅适用于 `MoviePilot.v2` 站点刷流插件，`MoviePilot.v1` 站点刷流插件，详情见 [v1插件](../../plugins/brushflowlowfreq/README.md)**
 
-- 后续不再维护MoviePilot.v1低频版插件，新调整仅在MoviePilot.v2添加，详情见 [v2插件](../../plugins.v2/brushflowlowfreq/README.md)
+## 版本更新日志
 
 - v3.8
   - 添加自动归档记录天数配置，支持定时归档已删除数据
