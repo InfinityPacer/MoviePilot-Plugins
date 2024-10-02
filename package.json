@@ -182,7 +182,6 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/reorder.png",
         "author": "InfinityPacer",
         "level": 1,
-        "v2": true,
         "history": {
             "v1.0": "增加插件自定义排序插件，支持将插件按自定义顺序排序"
         }

@@ -10,5 +10,17 @@
         "history": {
             "v3.9": "MoviePilot V2 版本站点刷流（低频版）插件"
         }
+    },
+    "PluginReOrder": {
+        "name": "插件自定义排序",
+        "description": "支持将插件按自定义顺序排序。",
+        "labels": "插件管理",
+        "version": "1.1",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/reorder.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "MoviePilot V2 版本插件自定义排序插件"
+        }
     }
 }
