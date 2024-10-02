@@ -2,6 +2,7 @@ from typing import Any, List, Dict, Tuple, Optional
 
 from app.core.event import eventmanager, Event
 from app.core.plugin import PluginManager
+from app.helper.module import ModuleHelper
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas.types import EventType
@@ -203,20 +204,38 @@ class PluginReOrder(_PluginBase):
         """
         获取系统预置插件顺序
         """
-        # 获取本地插件实例
-        local_plugins = PluginManager().get_local_plugins()
-        # 获取已经安装的插件实例
-        # installed_plugins = [plugin for plugin in local_plugins if
-        #                      plugin.installed and plugin.id != "PluginReOrder"]
-        installed_plugins = [plugin for plugin in local_plugins if plugin.installed]
-        # 对已安装的插件排序
-        installed_plugins.sort(key=lambda x: x.plugin_order)
-        # 创建格式化字符串
-        formatted_str = "插件ID#插件名称#插件顺序"
-        for plugin in installed_plugins:
-            formatted_str += f"\n{plugin.id}#{plugin.plugin_name}#{plugin.plugin_order}"
+        # 加载具有 init_plugin 和 plugin_name 属性的插件模块
+        loaded_plugins = ModuleHelper.load(
+            "app.plugins",
+            filter_func=lambda _, obj: hasattr(obj, "init_plugin") and hasattr(obj, "plugin_name")
+        )
 
-        return formatted_str
+        # 创建一个映射，将插件ID映射到其在模块中的plugin_order
+        plugin_order_map = {
+            plugin.__name__: getattr(plugin, "plugin_order", 0)
+            for plugin in loaded_plugins
+        }
+
+        # 获取本地插件并过滤出已安装的插件
+        installed_plugins = [
+            plugin for plugin in PluginManager().get_local_plugins()
+            if plugin.installed
+        ]
+
+        # 更新已安装插件的plugin_order，优先使用模块中的值
+        for plugin in installed_plugins:
+            plugin.plugin_order = plugin_order_map.get(plugin.id, plugin.plugin_order)
+
+        # 根据更新后的plugin_order对插件进行排序
+        sorted_plugins = sorted(installed_plugins, key=lambda p: p.plugin_order)
+
+        # 构建格式化的字符串
+        lines = ["插件ID#插件名称#插件顺序"] + [
+            f"{plugin.id}#{plugin.plugin_name}#{plugin.plugin_order}"
+            for plugin in sorted_plugins
+        ]
+
+        return "\n".join(lines)
 
     def __update_plugin_order(self, plugin_id: Optional[str] = None):
         """
