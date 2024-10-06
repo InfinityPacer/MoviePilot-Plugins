@@ -2874,8 +2874,6 @@ class BrushFlowLowFreq(_PluginBase):
         """
         处理已经被删除，但是任务记录中还没有被标记删除的种子
         """
-        brush_config = self.__get_brush_config()
-
         # 先通过获取的全量种子，判断已经被删除，但是任务记录中还没有被标记删除的种子
         torrent_all_hashes = self.__get_all_hashes(torrents)
         missing_hashes = [hash_value for hash_value in torrent_check_hashes if hash_value not in torrent_all_hashes]
