@@ -288,7 +288,7 @@ class PluginReOrder(_PluginBase):
                 found_plugin.plugin_order = plugin_order
                 plugin_processed = True
             else:
-                logger.warn(f"未找到ID为 {current_plugin_id}#{plugin_name} 的插件")
+                logger.debug(f"未找到ID为 {current_plugin_id}#{plugin_name} 的插件")
 
             # 如果指定了 plugin_id，处理完后即可退出循环
             if plugin_id:
@@ -298,7 +298,7 @@ class PluginReOrder(_PluginBase):
             if plugin_processed:
                 logger.info(f"已完成插件ID {plugin_id} 的顺序调整")
             else:
-                logger.warn(f"在用户配置中未找到插件ID: {plugin_id}")
+                logger.debug(f"在用户配置中未找到插件ID: {plugin_id}")
         else:
             logger.info("已完成用户自定义插件顺序调整")
 
