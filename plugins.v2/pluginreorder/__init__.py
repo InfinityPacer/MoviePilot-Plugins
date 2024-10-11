@@ -247,7 +247,10 @@ class PluginReOrder(_PluginBase):
         if not self._user_plugin_config:
             return
 
-        logger.info("准备开始调整用户自定义插件顺序")
+        if plugin_id:
+            logger.debug(f"{plugin_id} 已发生重载，准备开始调整用户自定义插件顺序")
+        else:
+            logger.info("准备开始调整用户自定义插件顺序")
 
         # 解析用户配置，每行一个插件配置
         user_plugin_config = self._user_plugin_config.strip().split('\n')
