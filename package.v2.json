@@ -3,7 +3,7 @@
         "name": "站点刷流（低频版）",
         "description": "自动托管刷流，将会提高对应站点的访问频率。（基于官方插件BrushFlow二次开发）",
         "labels": "站点,刷流,仪表板",
-        "version": "3.9.3",
+        "version": "3.9.4",
         "icon": "brush.jpg",
         "author": "jxxghp,InfinityPacer",
         "level": 2,
