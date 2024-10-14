@@ -20,7 +20,19 @@
         "author": "InfinityPacer",
         "level": 1,
         "history": {
-            "v1.1": "MoviePilot V2 版本插件自定义排序插件"
+            "v1.1": "MoviePilot V2 版本自定义排序插件"
+        }
+    },
+    "BrushManager": {
+        "name": "刷流种子整理",
+        "description": "针对刷流种子进行整理操作。",
+        "version": "1.5",
+        "labels": "文件整理,刷流",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/brushmanager.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.5": "MoviePilot V2 版本刷流种子整理插件"
         }
     }
 }
