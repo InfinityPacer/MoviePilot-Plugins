@@ -2,7 +2,7 @@ import threading
 import time
 from dataclasses import fields
 from datetime import datetime, timedelta
-from typing import Any, List, Dict, Tuple, Optional, Union, Type, TypeVar
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import pytz
 from app.helper.sites import SitesHelper
@@ -10,18 +10,19 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.core.context import TorrentInfo, Context
-from app.core.event import eventmanager, Event
+from app.core.context import Context, TorrentInfo
+from app.core.event import Event, eventmanager
 from app.core.plugin import PluginManager
 from app.db.site_oper import SiteOper
+from app.helper.downloader import DownloaderHelper
 from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
-from app.plugins.hitandrun.entities import TorrentTask, HNRStatus, TorrentHistory, TaskType
-from app.plugins.hitandrun.helper import TorrentHelper, TimeHelper, FormatHelper
-from app.plugins.hitandrun.hnrconfig import HNRConfig, SiteConfig, NotifyMode
-from app.schemas import NotificationType
+from app.plugins.hitandrun.entities import HNRStatus, TaskType, TorrentHistory, TorrentTask
+from app.plugins.hitandrun.helper import FormatHelper, TimeHelper, TorrentHelper
+from app.plugins.hitandrun.hnrconfig import HNRConfig, NotifyMode, SiteConfig
+from app.schemas import NotificationType, ServiceInfo
 from app.schemas.types import EventType
 from app.utils.string import StringUtils
 
@@ -50,19 +51,13 @@ class HitAndRun(_PluginBase):
     auth_level = 2
 
     # region 私有属性
-
-    pluginmanager = None
-    siteshelper = None
-    siteoper = None
-    systemconfig = None
-    torrenthelper = None
-    qb = None
-    tr = None
+    plugin_manager = None
+    sites_helper = None
+    site_oper = None
+    torrent_helper = None
+    downloader_helper = None
     # H&R助手配置
     _hnr_config = None
-    # 下载器
-    _downloader = None
-
     # 定时器
     _scheduler = None
     # 退出事件
@@ -71,25 +66,22 @@ class HitAndRun(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
-        self.pluginmanager = PluginManager()
-        self.siteshelper = SitesHelper()
-        self.siteoper = SiteOper()
+        self.plugin_manager = PluginManager()
+        self.sites_helper = SitesHelper()
+        self.site_oper = SiteOper()
+        self.downloader_helper = DownloaderHelper()
+
         if not config:
             return
 
         result, reason = self.__validate_and_fix_config(config=config)
-
         if not result and not self._hnr_config:
             self.__update_config_if_error(config=config, error=reason)
             return
 
         self.stop_service()
 
-        if not self.__setup_downloader():
-            return
-
-        self._downloader = self.__get_downloader()
-        self.torrenthelper = TorrentHelper(self._downloader)
+        self.torrent_helper = TorrentHelper(self.downloader)
 
         if self._hnr_config.onlyonce:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -121,6 +113,33 @@ class HitAndRun(_PluginBase):
 
         self.__update_config()
 
+    @property
+    def service_info(self) -> Optional[ServiceInfo]:
+        """
+        服务信息
+        """
+        if not self._hnr_config or not self._hnr_config.downloader:
+            logger.warning("尚未配置下载器，请检查配置")
+            return None
+
+        service = self.downloader_helper.get_service(name=self._hnr_config.downloader, type_filter="qbittorrent")
+        if not service:
+            logger.warning("获取下载器实例失败，请检查配置")
+            return None
+
+        if service.instance.is_inactive():
+            logger.warning(f"下载器 {self._hnr_config.downloader} 未连接，请检查配置")
+            return None
+
+        return service
+
+    @property
+    def downloader(self) -> Optional[Union[Qbittorrent, Transmission]]:
+        """
+        下载器实例
+        """
+        return self.service_info.instance if self.service_info else None
+
     def get_state(self) -> bool:
         return self._hnr_config and self._hnr_config.enabled
 
@@ -139,6 +158,9 @@ class HitAndRun(_PluginBase):
         """
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
+        downloader_options = [{"title": config.name, "value": config.name}
+                              for config in self.downloader_helper.get_configs().values()
+                              if config.type == "qbittorrent"]
         return [
             {
                 'component': 'VForm',
@@ -284,10 +306,7 @@ class HitAndRun(_PluginBase):
                                         'props': {
                                             'model': 'downloader',
                                             'label': '下载器',
-                                            'items': [
-                                                {'title': 'Qbittorrent', 'value': 'qbittorrent'},
-                                                # {'title': 'Transmission', 'value': 'transmission'}
-                                            ],
+                                            'items': downloader_options,
                                             'hint': '选择下载器',
                                             'persistent-hint': True
                                         }
@@ -631,7 +650,6 @@ class HitAndRun(_PluginBase):
             "enabled": False,
             "onlyonce": False,
             "notify": "always",
-            "downloader": "qbittorrent",
             "hit_and_run_tag": "H&R",
             "spider_period": 720,
             "hr_ratio": 99,
@@ -1011,7 +1029,7 @@ class HitAndRun(_PluginBase):
         """
         检查服务
         """
-        if not self._downloader:
+        if not self.downloader:
             return
 
         with lock:
@@ -1019,9 +1037,9 @@ class HitAndRun(_PluginBase):
             torrent_tasks = self.__get_and_parse_data(key="torrents", model=TorrentTask)
             histories = self.__get_and_parse_data(key="downloads", model=TorrentHistory)
 
-            seeding_torrents = self.torrenthelper.get_torrents()
+            seeding_torrents = self.torrent_helper.get_torrents()
             seeding_torrents_dict = {
-                self.torrenthelper.get_torrent_hashes(torrents=torrent):
+                self.torrent_helper.get_torrent_hashes(torrents=torrent):
                     torrent for torrent in seeding_torrents}
 
             # 检查种子标签变更情况
@@ -1130,13 +1148,13 @@ class HitAndRun(_PluginBase):
         更新H&R任务的最新状态，上下传，分享率，做种时间等
         """
         for torrent in torrents:
-            torrent_hash = self.torrenthelper.get_torrent_hashes(torrents=torrent)
+            torrent_hash = self.torrent_helper.get_torrent_hashes(torrents=torrent)
             torrent_task = torrent_tasks.get(torrent_hash, None)
             # 如果找不到种子任务，说明不在管理的种子范围内，直接跳过
             if not torrent_task:
                 continue
 
-            torrent_info = self.torrenthelper.get_torrent_info(torrent=torrent)
+            torrent_info = self.torrent_helper.get_torrent_info(torrent=torrent)
 
             # 更新上传量、下载量、分享率、做种时间
             torrent_task.downloaded = torrent_info.get("downloaded", 0)
@@ -1147,7 +1165,7 @@ class HitAndRun(_PluginBase):
     def __update_seeding_tasks_based_on_tags(self, torrent_tasks: Dict[str, TorrentTask],
                                              histories: Dict[str, TorrentHistory],
                                              seeding_torrents_dict: Dict[str, Any]):
-        if not self._hnr_config.downloader == "qbittorrent":
+        if not self.downloader_helper.is_downloader("qbittorrent", self.service_info):
             logger.info("同步H&R种子标签记录目前仅支持qbittorrent")
             return
 
@@ -1157,7 +1175,7 @@ class HitAndRun(_PluginBase):
         removed_tasks = []
         # 基于 seeding_torrents_dict 的信息更新或添加到 torrent_tasks
         for torrent_hash, torrent in seeding_torrents_dict.items():
-            tags = self.torrenthelper.get_torrent_tags(torrent=torrent)
+            tags = self.torrent_helper.get_torrent_tags(torrent=torrent)
             # 判断是否包含H&R标签
             if self._hnr_config.hit_and_run_tag in tags:
                 # 如果包含H&R标签又不在H&R任务中，则需要加入管理
@@ -1211,7 +1229,7 @@ class HitAndRun(_PluginBase):
         处理已经被删除，但是任务记录中还没有被标记删除的种子
         """
         # 先通过获取的全量种子，判断已经被删除，但是任务记录中还没有被标记删除的种子
-        torrent_all_hashes = self.torrenthelper.get_torrent_hashes(torrents=torrents)
+        torrent_all_hashes = self.torrent_helper.get_torrent_hashes(torrents=torrents)
         missing_hashes = [hash_value for hash_value in torrent_check_hashes if hash_value not in torrent_all_hashes]
         undeleted_hashes = [hash_value for hash_value in missing_hashes if not torrent_tasks[hash_value].deleted]
 
@@ -1284,11 +1302,22 @@ class HitAndRun(_PluginBase):
         """
         处理下载添加事件，支持普通下载和RSS订阅
         """
+        if not self.downloader:
+            return
+
         if not self.__validate_and_log_event(event, event_type_desc="下载任务"):
             return
 
         torrent_hash = event.event_data.get("hash")
         context: Context = event.event_data.get("context")
+        downloader = event.event_data.get("downloader")
+        if not downloader:
+            logger.info("触发添加下载事件，但没有获取到下载器信息，跳过后续处理")
+            return
+
+        if self.service_info.name != downloader:
+            logger.info(f"触发添加下载事件，但没有监听下载器 {downloader}，跳过后续处理")
+            return
 
         if not torrent_hash or not context or not context.torrent_info:
             logger.info("没有获取到有效的种子任务信息，跳过处理")
@@ -1300,29 +1329,45 @@ class HitAndRun(_PluginBase):
         task_type = TaskType.NORMAL if torrent_info.description else TaskType.RSS_SUBSCRIBE
         self.__process_event(torrent_hash=torrent_hash, torrent_data=torrent_info, task_type=task_type)
 
-    @eventmanager.register(EventType.PluginAction)
+    @eventmanager.register(EventType.PluginTriggered)
     def handle_brushflow_event(self, event: Event = None):
         """
         处理刷流下载任务事件
         """
+        if not self.downloader:
+            return
+
         if not self.__validate_and_log_event(event,
                                              event_type_desc="刷流下载任务",
-                                             action_required="brushflow_download_added"):
+                                             event_name="brushflow_download_added"):
             return
 
         torrent_hash = event.event_data.get("hash")
         torrent_data = event.event_data.get("data")
+        downloader = event.event_data.get("downloader")
+        if not downloader:
+            logger.info("触发添加刷流下载事件，但没有获取到下载器信息，跳过后续处理")
+            return
+
+        if self.service_info.name != downloader:
+            logger.info(f"触发添加刷流下载事件，但没有监听下载器 {downloader}，跳过后续处理")
+            return
+
+        if not torrent_hash or not torrent_data:
+            logger.info("没有获取到有效的种子任务信息，跳过处理")
+            return
+
         self.__process_event(torrent_hash, torrent_data, TaskType.BRUSH)
 
     @staticmethod
-    def __validate_and_log_event(event, event_type_desc: str, action_required: str = None):
+    def __validate_and_log_event(event, event_type_desc: str, event_name: str = None):
         """
         验证事件是否有效并记录日志
         """
         if not event or not event.event_data:
             return False
 
-        if action_required and event.event_data.get("action") != action_required:
+        if event_name and event.event_data.get("event") != event_name:
             return False
 
         logger.info(f"触发{event_type_desc}事件: {event.event_type} | {event.event_data}")
@@ -1337,7 +1382,7 @@ class HitAndRun(_PluginBase):
                 logger.info("没有获取到有效的种子任务信息，跳过处理")
                 return
 
-            torrent = self.torrenthelper.get_torrents(torrent_hashes=torrent_hash)
+            torrent = self.torrent_helper.get_torrents(torrent_hashes=torrent_hash)
             if not torrent:
                 logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理")
                 return
@@ -1502,22 +1547,22 @@ class HitAndRun(_PluginBase):
         if not torrent_task.hit_and_run:
             return
 
-        torrent = self.torrenthelper.get_torrents(torrent_hashes=torrent_task.hash)
+        torrent = self.torrent_helper.get_torrents(torrent_hashes=torrent_task.hash)
         if not torrent:
             logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_task.hash} 的种子信息")
             return
 
         try:
-            tags = self.torrenthelper.get_torrent_tags(torrent=torrent)
+            tags = self.torrent_helper.get_torrent_tags(torrent=torrent)
             hnr_tag = self._hnr_config.hit_and_run_tag
             if add:
                 if hnr_tag not in tags:
                     tags.append(hnr_tag)
-                    self.torrenthelper.set_torrent_tag(torrent_hash=torrent_task.hash, tags=tags)
+                    self.torrent_helper.set_torrent_tag(torrent_hash=torrent_task.hash, tags=tags)
             else:
                 if hnr_tag in tags:
                     tags.remove(hnr_tag)
-                    self.torrenthelper.remove_torrent_tag(torrent_hash=torrent_task.hash, tags=[hnr_tag])
+                    self.torrent_helper.remove_torrent_tag(torrent_hash=torrent_task.hash, tags=[hnr_tag])
         except Exception as e:
             action = "添加" if add else "移除"
             logger.error(f"{action}标签时出错：{str(e)}")
@@ -1596,7 +1641,7 @@ class HitAndRun(_PluginBase):
         """
         根据提供的 torrent 和历史数据将 torrent 信息转换成 torrent 任务
         """
-        torrent_info = self.torrenthelper.get_torrent_info(torrent=torrent)
+        torrent_info = self.torrent_helper.get_torrent_info(torrent=torrent)
         torrent_hash = torrent_info.get("hash", "")
         if not torrent_hash:
             return None
@@ -1605,7 +1650,7 @@ class HitAndRun(_PluginBase):
         if torrent_history:
             torrent_task = TorrentTask.parse_obj(torrent_history.to_dict())
         else:
-            site_id, site_name = self.torrenthelper.get_site_by_torrent(torrent=torrent)
+            site_id, site_name = self.torrent_helper.get_site_by_torrent(torrent=torrent)
             if not site_name:
                 return None
             torrent_task = TorrentTask.parse_obj({
@@ -1664,41 +1709,6 @@ class HitAndRun(_PluginBase):
 
         self.save_data(key=key, value=value)
 
-    def __setup_downloader(self) -> bool:
-        """
-        根据下载器类型初始化下载器实例
-        """
-        if not self._hnr_config:
-            return False
-
-        self.qb = Qbittorrent()
-        # self.tr = Transmission()
-
-        if self._hnr_config.downloader == "qbittorrent":
-            if self.qb.is_inactive():
-                self.__log_and_notify_error("发生异常：Qbittorrent未连接")
-                return False
-        # elif self._hnr_config.downloader == "transmission":
-        #     if self.tr.is_inactive():
-        #         self.__log_and_notify_error("发生异常：Transmission未连接")
-        #         return False
-
-        return True
-
-    def __get_downloader(self) -> Optional[Union[Transmission, Qbittorrent]]:
-        """
-        根据类型返回下载器实例
-        """
-        if not self._hnr_config:
-            return None
-
-        if self._hnr_config.downloader == "qbittorrent":
-            return self.qb
-        # elif self._hnr_config.downloader == "transmission":
-        #     return self.tr
-        else:
-            return None
-
     @staticmethod
     def __validate_config(config: HNRConfig) -> (bool, str):
         """
@@ -1736,7 +1746,7 @@ class HitAndRun(_PluginBase):
                 # 过滤掉已删除的站点并保存
                 if hnr_config.sites:
                     site_id_to_public_status = {site.get("id"): site.get("public") for site in
-                                                self.siteshelper.get_indexers()}
+                                                self.sites_helper.get_indexers()}
                     hnr_config.sites = [
                         site_id for site_id in hnr_config.sites
                         if site_id in site_id_to_public_status and not site_id_to_public_status[site_id]
@@ -1744,7 +1754,7 @@ class HitAndRun(_PluginBase):
 
                     site_infos = {}
                     for site_id in hnr_config.sites:
-                        site_info = self.siteoper.get(site_id)
+                        site_info = self.site_oper.get(site_id)
                         if site_info:
                             site_infos[site_id] = site_info
                     hnr_config.site_infos = site_infos
@@ -1780,19 +1790,19 @@ class HitAndRun(_PluginBase):
     def __get_site_options(self):
         """获取当前可选的站点"""
         site_options = [{"title": site.get("name"), "value": site.get("id")}
-                        for site in self.siteshelper.get_indexers()]
+                        for site in self.sites_helper.get_indexers()]
         return site_options
 
     def __get_plugin_options(self) -> List[dict]:
         """获取插件选项列表"""
         # 获取运行的插件选项
-        running_plugins = self.pluginmanager.get_running_plugin_ids()
+        running_plugins = self.plugin_manager.get_running_plugin_ids()
 
         # 需要检查的插件名称
         filter_plugins = {"BrushFlow", "BrushFlowLowFreq"}
 
         # 获取本地插件列表
-        local_plugins = self.pluginmanager.get_local_plugins()
+        local_plugins = self.plugin_manager.get_local_plugins()
 
         # 初始化插件选项列表
         plugin_options = []
