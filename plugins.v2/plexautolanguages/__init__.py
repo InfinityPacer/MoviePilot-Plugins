@@ -1,15 +1,15 @@
 import threading
 from pathlib import Path
-from typing import Any, List, Dict, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ruamel.yaml import YAML
 
-from app.core.config import settings
+from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
-from app.modules.plex import Plex
 from app.plugins import _PluginBase
 from app.plugins.plexautolanguages.languageprovider import LanguageProvider
-from app.utils.http import RequestUtils
+from app.schemas import MediaServerConf, ServiceInfo
+from app.utils.url import UrlUtils
 
 
 class PlexAutoLanguages(_PluginBase):
@@ -33,11 +33,7 @@ class PlexAutoLanguages(_PluginBase):
     auth_level = 1
 
     # region 私有属性
-
-    # Plex
-    _plex = None
-    # plex_server
-    _plex_server = None
+    mediaserver_helper = None
     # lang服务
     _lang_provider = None
     # Thread
@@ -45,6 +41,8 @@ class PlexAutoLanguages(_PluginBase):
 
     # 是否开启
     _enabled = False
+    # 媒体服务器
+    _mediaserver = None
     # 自动切换
     _auto_switch = None
     # 更新级别
@@ -65,8 +63,7 @@ class PlexAutoLanguages(_PluginBase):
     user_yaml = Path(__file__).parent / "config/user.yaml"
 
     def init_plugin(self, config: dict = None):
-        self._plex = Plex()
-        self._plex_server = self._plex.get_plex()
+        self.mediaserver_helper = MediaServerHelper()
 
         if not config:
             return
@@ -74,6 +71,7 @@ class PlexAutoLanguages(_PluginBase):
         self.stop_service()
 
         self._enabled = config.get("enabled")
+        self._mediaserver = config.get("mediaserver")
         self._auto_switch = config.get("auto_switch")
         self._update_level = config.get("update_level")
         self._update_strategy = config.get("update_strategy")
@@ -81,6 +79,37 @@ class PlexAutoLanguages(_PluginBase):
         self._trigger_on_scan = config.get("trigger_on_scan")
         if self._enabled and self._auto_switch:
             self.__start_auto_switch()
+
+    @property
+    def service_info(self) -> Optional[ServiceInfo]:
+        """
+        服务信息
+        """
+        if not self._mediaserver:
+            logger.warning("尚未配置媒体服务器，请检查配置")
+            return None
+
+        service = self.mediaserver_helper.get_service(name=self._mediaserver, type_filter="plex")
+        if not service:
+            logger.warning("获取媒体服务器实例失败，请检查配置")
+            return None
+
+        if service.instance.is_inactive():
+            logger.warning(f"媒体服务器 {self._mediaserver} 未连接，请检查配置")
+            return None
+
+        return service
+
+    @property
+    def plex_config(self) -> Optional[MediaServerConf]:
+        """
+        Plex配置
+        """
+        if not self.service_info:
+            return None
+        if not self.service_info.config or not self.service_info.config.config:
+            return None
+        return self.service_info.config
 
     def __start_auto_switch(self):
         logger.info("正在准备停止服务")
@@ -209,6 +238,31 @@ class PlexAutoLanguages(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'mediaserver',
+                                            'label': '媒体服务器',
+                                            'items': [{"title": config.name, "value": config.name}
+                                                      for config in self.mediaserver_helper.get_configs().values()
+                                                      if config.type == "plex"],
+                                            'hint': '选择媒体服务器',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
                                     'cols': 12,
                                     'md': 6
                                 },
@@ -250,12 +304,6 @@ class PlexAutoLanguages(_PluginBase):
                                     }
                                 ]
                             }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-
                         ]
                     },
                     {
@@ -366,16 +414,8 @@ class PlexAutoLanguages(_PluginBase):
 
     def __check_plex_media_server(self) -> bool:
         """检查Plex媒体服务器配置"""
-        if not settings.MEDIASERVER:
-            logger.error(f"媒体库配置不正确，请检查")
-            return False
-
-        if "plex" not in settings.MEDIASERVER:
-            logger.error(f"没有启用Plex媒体库，请检查")
-            return False
-
-        if not self._plex_server:
-            logger.error(f"Plex配置不正确，请检查")
+        if not self.plex_config:
+            logger.error(f"Plex 配置不正确，请检查")
             return False
 
         return True
@@ -395,8 +435,8 @@ class PlexAutoLanguages(_PluginBase):
         user_config["trigger_on_play"] = self._trigger_on_play
         user_config["trigger_on_scan"] = self._trigger_on_scan
         plex_config = user_config.get("plex", {})
-        plex_config["url"] = RequestUtils.standardize_base_url(settings.PLEX_HOST)
-        plex_config["token"] = settings.PLEX_TOKEN
+        plex_config["url"] = UrlUtils.standardize_base_url(self.plex_config.config.get("host"))
+        plex_config["token"] = self.plex_config.config.get("token")
 
         # 写回到 YAML 文件中并保留注释
         with open(self.user_yaml, "w", encoding="utf-8") as stream:
