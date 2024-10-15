@@ -2,7 +2,7 @@
 
 在官方刷流插件的基础上，新增了若干项功能优化了部分细节逻辑，目前已逐步PR至官方插件。在此，再次感谢 [@jxxghp](https://github.com/jxxghp) 提供那么优秀的开源作品。
 
-**请注意，本文档仅适用于 `MoviePilot.v2` 站点刷流插件，`MoviePilot.v1` 站点刷流插件，详情见 [v2插件](../../plugins/brushflowlowfreq/README.md)**
+**请注意，本文档仅适用于 `MoviePilot.v2` 站点刷流插件，`MoviePilot.v1` 站点刷流插件，详情见 [v1插件](../../plugins/brushflowlowfreq/README.md)**
 
 ## 版本更新日志
 
