@@ -4,7 +4,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from threading import Event
-from typing import Any, List, Dict, Tuple, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -12,12 +12,13 @@ from apscheduler.triggers.cron import CronTrigger
 from ruamel.yaml import YAML, YAMLError
 
 from app.core.config import settings
+from app.helper.downloader import DownloaderHelper
 from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
 from app.plugins.torrentclassifier.classifierconfig import ClassifierConfig, TorrentFilter, TorrentTarget
-from app.schemas import NotificationType
+from app.schemas import NotificationType, ServiceInfo
 
 lock = threading.Lock()
 
@@ -43,7 +44,7 @@ class TorrentClassifier(_PluginBase):
     auth_level = 1
 
     # region 私有属性
-
+    downloader_helper = None
     # 是否开启
     _enabled = False
     # 立即运行一次
@@ -66,6 +67,8 @@ class TorrentClassifier(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
+        self.downloader_helper = DownloaderHelper()
+
         if not config:
             return False
 
@@ -82,13 +85,6 @@ class TorrentClassifier(_PluginBase):
 
         if not self._downloader:
             self.__log_and_notify_error("没有配置下载器")
-            return
-
-        if self._downloader != "qbittorrent":
-            logger.warn("当前只支持qbittorrent")
-            return
-
-        if not self.__setup_downloader():
             return
 
         if self._enabled or self._onlyonce:
@@ -110,6 +106,33 @@ class TorrentClassifier(_PluginBase):
                 self._scheduler.print_jobs()
                 self._scheduler.start()
 
+    @property
+    def service_info(self) -> Optional[ServiceInfo]:
+        """
+        服务信息
+        """
+        if not self._downloader:
+            logger.warning("尚未配置下载器，请检查配置")
+            return None
+
+        service = self.downloader_helper.get_service(name=self._downloader, type_filter="qbittorrent")
+        if not service:
+            logger.warning("获取下载器实例失败，请检查配置")
+            return None
+
+        if service.instance.is_inactive():
+            logger.warning(f"下载器 {self._downloader} 未连接，请检查配置")
+            return None
+
+        return service
+
+    @property
+    def downloader(self) -> Optional[Union[Qbittorrent, Transmission]]:
+        """
+        下载器实例
+        """
+        return self.service_info.instance if self.service_info else None
+
     def get_state(self):
         return self._enabled
 
@@ -124,7 +147,9 @@ class TorrentClassifier(_PluginBase):
         """
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
-
+        downloader_options = [{"title": config.name, "value": config.name}
+                              for config in self.downloader_helper.get_configs().values()
+                              if config.type == "qbittorrent"]
         return [
             {
                 'component': 'VForm',
@@ -245,10 +270,7 @@ class TorrentClassifier(_PluginBase):
                                         'props': {
                                             'model': 'downloader',
                                             'label': '下载器',
-                                            'items': [
-                                                {'title': 'Qbittorrent', 'value': 'qbittorrent'},
-                                                # {'title': 'Transmission', 'value': 'transmission'}
-                                            ],
+                                            'items': downloader_options,
                                             'hint': '选择下载器',
                                             'persistent-hint': True
                                         }
@@ -306,7 +328,6 @@ class TorrentClassifier(_PluginBase):
             "enabled": False,
             "notify": True,
             "only_once": False,
-            "downloader": "qbittorrent",
             "classifier_configs": self.__get_demo_config()
         }
 
@@ -357,11 +378,11 @@ class TorrentClassifier(_PluginBase):
         根据配置的规则整理并分类选定的种子
         """
         with lock:
-            if self._downloader != "qbittorrent":
-                logger.warn("当前只支持qbittorrent")
+            if not self.__is_qbittorrent():
+                logger.warn("当前只支持qBittorrent")
                 return
 
-            downloader = self.__get_downloader()
+            downloader = self.downloader
             if not downloader:
                 self.__log_and_notify_error("连接下载器出错，请检查连接")
                 return
@@ -458,7 +479,7 @@ class TorrentClassifier(_PluginBase):
     def __torrent_classifier_for_qb(self, classifier_torrents: dict) -> Optional[Tuple[int, int, List[str], List[str]]]:
         """针对QB进行种子整理"""
         # 获取下载器实例
-        downloader = self.__get_downloader()
+        downloader = self.downloader
 
         success_count = 0
         failed_count = 0
@@ -692,35 +713,6 @@ class TorrentClassifier(_PluginBase):
 
         return True, "OK"
 
-    def __setup_downloader(self):
-        """
-        根据下载器类型初始化下载器实例
-        """
-        if self._downloader == "qbittorrent":
-            self.qb = Qbittorrent()
-            if self.qb.is_inactive():
-                self.__log_and_notify_error("qBittorrent未连接")
-                return False
-
-        elif self._downloader == "transmission":
-            self.tr = Transmission()
-            if self.tr.is_inactive():
-                self.__log_and_notify_error("Transmission未连接")
-                return False
-
-        return True
-
-    def __get_downloader(self) -> Optional[Union[Transmission, Qbittorrent]]:
-        """
-        根据类型返回下载器实例
-        """
-        if self._downloader == "qbittorrent":
-            return self.qb
-        elif self._downloader == "transmission":
-            return self.tr
-        else:
-            return None
-
     def __get_all_hashes_and_torrents(self, torrents):
         """
         获取torrents列表中所有种子的Hash值和对应的种子对象，存储在一个字典中
@@ -732,7 +724,7 @@ class TorrentClassifier(_PluginBase):
             all_hashes_torrents = {}
             for torrent in torrents:
                 # 根据下载器类型获取Hash值
-                if self._downloader == "qbittorrent":
+                if self.__is_qbittorrent():
                     hash_value = torrent.get("hash")
                 else:
                     hash_value = torrent.hashString
@@ -747,7 +739,7 @@ class TorrentClassifier(_PluginBase):
     def __get_torrent_title(self, torrent: Any) -> Optional[str]:
         """获取种子标题"""
         try:
-            if self._downloader == "qbittorrent":
+            if self.__is_qbittorrent():
                 return torrent.get("name")
             else:
                 return torrent.name
@@ -758,7 +750,7 @@ class TorrentClassifier(_PluginBase):
     def __get_torrent_category(self, torrent: Any) -> Optional[str]:
         """获取种子分类"""
         try:
-            return torrent.get("category").strip() if self._downloader == "qbittorrent" else None
+            return torrent.get("category").strip() if self.__is_qbittorrent() else None
         except Exception as e:
             print(str(e))
             return None
@@ -769,7 +761,7 @@ class TorrentClassifier(_PluginBase):
         """
         try:
             return [str(tag).strip() for tag in torrent.get("tags").split(',')] \
-                if self._downloader == "qbittorrent" else torrent.labels or []
+                if self.__is_qbittorrent() else torrent.labels or []
         except Exception as e:
             print(str(e))
             return []
@@ -779,7 +771,7 @@ class TorrentClassifier(_PluginBase):
         获取种子是否启用自动Torrent管理
         """
         try:
-            return torrent.get("auto_tmm", False) if self._downloader == "qbittorrent" else False
+            return torrent.get("auto_tmm", False) if self.__is_qbittorrent() else False
         except Exception as e:
             print(str(e))
             return False
@@ -789,7 +781,7 @@ class TorrentClassifier(_PluginBase):
         获取种子保存路径
         """
         try:
-            return torrent.get("save_path", None) if self._downloader == "qbittorrent" else None
+            return torrent.get("save_path", None) if self.__is_qbittorrent() else None
         except Exception as e:
             print(str(e))
             return None
@@ -800,7 +792,7 @@ class TorrentClassifier(_PluginBase):
         """
         date_now = int(time.time())
         # QB
-        if self._downloader == "qbittorrent":
+        if self.__is_qbittorrent():
             """
             {
               "added_on": 1693359031,
@@ -959,6 +951,12 @@ class TorrentClassifier(_PluginBase):
             "tracker": tracker,
             "category": category
         }
+
+    def __is_qbittorrent(self):
+        """
+        判断是否为 qBittorrent
+        """
+        return self.downloader_helper.is_downloader("qbittorrent", self.service_info)
 
     def __send_message(self, title: str, text: str):
         """
