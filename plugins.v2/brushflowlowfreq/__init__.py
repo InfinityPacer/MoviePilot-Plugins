@@ -246,7 +246,7 @@ class BrushFlowLowFreq(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "3.9.4"
+    plugin_version = "3.9.5"
     # 插件作者
     plugin_author = "jxxghp,InfinityPacer"
     # 作者主页
