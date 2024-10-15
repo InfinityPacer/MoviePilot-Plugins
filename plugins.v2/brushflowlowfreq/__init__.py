@@ -2183,10 +2183,12 @@ class BrushFlowLowFreq(_PluginBase):
                 "time": time.time()
             }
 
-            self.eventmanager.send_event(etype=EventType.PluginAction, data={
-                "action": "brushflow_download_added",
+            self.eventmanager.send_event(etype=EventType.PluginTriggered, data={
+                "plugin_id": self.__class__.__name__,
+                "event_name": "brushflow_download_added",
                 "hash": hash_string,
-                "data": torrent_task
+                "data": torrent_task,
+                "downloader": self.service_info.name
             })
             torrent_tasks[hash_string] = torrent_task
 
