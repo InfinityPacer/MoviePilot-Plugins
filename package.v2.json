@@ -94,5 +94,17 @@
         "history": {
             "v1.1": "MoviePilot V2 版本PlexEdition插件"
         }
+    },
+    "PlexPersonMeta": {
+        "name": "Plex演职人员刮削",
+        "description": "实现刮削演职人员中文名称及角色。",
+        "labels": "Plex,刮削",
+        "version": "1.7",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.7": "MoviePilot V2 版本Plex演职人员刮削插件"
+        }
     }
 }
