@@ -899,7 +899,7 @@ class PlexLocalization(_PluginBase):
         更新标题排序
         """
         endpoint = f"library/metadata/{rating_key}" if is_collection else f"library/sections/{library_id}/all"
-        response = plex.put_data(
+        plex.put_data(
             endpoint=endpoint,
             params={
                 "type": type_id,
@@ -909,8 +909,6 @@ class PlexLocalization(_PluginBase):
                 "titleSort.locked": 1 if self._lock else 0
             },
             timeout=self._timeout)
-        if response.status_code != 200:
-            data = response
 
     def __put_tag(self, plex: Plex, rating_key: str, library_id: int, type_id: str, tag, new_tag, tag_type):
         """
@@ -969,7 +967,9 @@ class PlexLocalization(_PluginBase):
         title = item.get("title", "")
         locked_fields = [field["name"] for field in item.get("Field") or [] if field.get("locked")]
         # 如果标题排序没有锁定，尝试更新标题排序
-        if "titleSort" not in locked_fields:
+        if "titleSort" in locked_fields:
+            logger.debug(f"{title}: titleSort is locked, skip")
+        else:
             title_sort = item.get("titleSort", "")
             if StringUtils.is_chinese(title_sort) or title_sort == "":
                 title_sort = self.__convert_to_pinyin(title)
@@ -989,19 +989,22 @@ class PlexLocalization(_PluginBase):
 
         # 汉化标签
         for tag_type, tag_list in tags.items():
-            # 如果标签类型没有锁定，尝试更新标签类型
-            if tag_type not in locked_fields and tag_list:
-                for tag in tag_list:
-                    new_tag = self._tags.get(tag)
-                    if new_tag:
-                        self.__put_tag(plex=plex,
-                                       rating_key=rating_key,
-                                       library_id=library_id,
-                                       type_id=type_id,
-                                       tag=tag,
-                                       new_tag=new_tag,
-                                       tag_type=tag_type)
-                        logger.info(f"{title} : {tag} → {new_tag}")
+            if tag_list:
+                # 如果标签类型没有锁定，尝试更新标签类型
+                if tag_type in locked_fields:
+                    logger.debug(f"{title}: {tag_type} is locked, skip")
+                else:
+                    for tag in tag_list:
+                        new_tag = self._tags.get(tag)
+                        if new_tag:
+                            self.__put_tag(plex=plex,
+                                           rating_key=rating_key,
+                                           library_id=library_id,
+                                           type_id=type_id,
+                                           tag=tag,
+                                           new_tag=new_tag,
+                                           tag_type=tag_type)
+                            logger.info(f"{title}: {tag} → {new_tag}")
 
     def __loop_all(self, service_libraries: Dict[str, Dict[int, Any]], thread_count: int = None,
                    added_time: Optional[int] = None):
