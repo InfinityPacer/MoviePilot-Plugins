@@ -173,7 +173,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'enabled',
                                             'label': '启用插件',
                                             'hint': '开启后插件将处于激活状态',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -191,7 +191,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'notify',
                                             'label': '发送通知',
                                             'hint': '是否在特定事件发生时发送通知',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -209,7 +209,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
                                             'hint': '插件将立即运行一次',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -232,7 +232,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'disable_check',
                                             'label': '忽略校验',
                                             'hint': '开启后将忽略Webdav目录校验',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -250,7 +250,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'digest_auth',
                                             'label': '启用Digest认证',
                                             'hint': '开启后将使用Digest认证',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -273,7 +273,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'hostname',
                                             'label': '服务器地址',
                                             'hint': '输入WebDAV服务器的地址',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -291,7 +291,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'login',
                                             'label': '登录名',
                                             'hint': '输入登录名',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -309,7 +309,7 @@ class WebDAVBackup(_PluginBase):
                                             'model': 'password',
                                             'label': '登录密码',
                                             'hint': '输入登录密码',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -348,7 +348,7 @@ class WebDAVBackup(_PluginBase):
                                             'type': 'number',
                                             "min": "0",
                                             'hint': '输入最大保留备份数',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]

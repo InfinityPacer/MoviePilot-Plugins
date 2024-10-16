@@ -227,7 +227,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'enabled',
                                             'label': '启用插件',
                                             'hint': '开启后插件将处于激活状态',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -245,7 +245,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'notify',
                                             'label': '发送通知',
                                             'hint': '是否在特定事件发生时发送通知',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -263,7 +263,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
                                             'hint': '插件将立即运行一次',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -286,7 +286,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'lock',
                                             'label': '锁定元数据',
                                             'hint': '部分Plex版本只有锁定时才会生效',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -304,7 +304,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'execute_transfer',
                                             'label': '入库后运行一次',
                                             'hint': '在媒体入库后运行一次操作',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -322,7 +322,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'dialog_closed',
                                             'label': '打开标签设置窗口',
                                             'hint': '开启时弹出窗口以增加或修改标签',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -346,7 +346,7 @@ class PlexLocalization(_PluginBase):
                                             'label': '执行周期',
                                             'placeholder': '5位cron表达式',
                                             'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -365,7 +365,7 @@ class PlexLocalization(_PluginBase):
                                             'label': '延迟时间（秒）',
                                             'placeholder': '入库后延迟执行时间',
                                             'hint': '入库后延迟执行的时间（秒）',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -383,7 +383,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'thread_count',
                                             'label': '运行线程数',
                                             'hint': '执行任务时使用的线程数量',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -401,7 +401,7 @@ class PlexLocalization(_PluginBase):
                                             'model': 'batch_size',
                                             'label': '每批次处理数',
                                             'hint': '每次处理的最大元数据条数',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -427,7 +427,7 @@ class PlexLocalization(_PluginBase):
                                             'label': '媒体库',
                                             'items': self.__get_service_library_options(),
                                             'hint': '选择要处理的媒体库',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],

@@ -259,9 +259,9 @@ class HitAndRun(_PluginBase):
                                             'clearable': True,
                                             'model': 'sites',
                                             'label': '站点列表',
+                                            'items': self.__get_site_options(),
                                             'hint': '选择参与配置的站点',
-                                            'persistent-hint': True,
-                                            'items': self.__get_site_options()
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -289,7 +289,7 @@ class HitAndRun(_PluginBase):
                                                 {'title': '发送所有通知', 'value': 'always'}
                                             ],
                                             'hint': '是否在特定事件发生时发送通知',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ],
@@ -325,9 +325,9 @@ class HitAndRun(_PluginBase):
                                         'props': {
                                             'model': 'brush_plugin',
                                             'label': '站点刷流插件',
+                                            'items': self.__get_plugin_options(),
                                             'hint': '选择参与配置的刷流插件',
-                                            'persistent-hint': True,
-                                            'items': self.__get_plugin_options()
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]

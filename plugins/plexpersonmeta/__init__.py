@@ -221,7 +221,7 @@ class PlexPersonMeta(_PluginBase):
                                             'model': 'enabled',
                                             'label': '启用插件',
                                             'hint': '开启后插件将处于激活状态',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -239,7 +239,7 @@ class PlexPersonMeta(_PluginBase):
                                             'model': 'notify',
                                             'label': '发送通知',
                                             'hint': '是否在特定事件发生时发送通知',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -257,7 +257,7 @@ class PlexPersonMeta(_PluginBase):
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
                                             'hint': '插件将立即运行一次',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -280,7 +280,7 @@ class PlexPersonMeta(_PluginBase):
                                             'model': 'lock',
                                             'label': '锁定元数据',
                                             'hint': '开启后元数据将锁定，须手工解锁后才允许修改',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -298,7 +298,7 @@ class PlexPersonMeta(_PluginBase):
                                             'model': 'execute_transfer',
                                             'label': '入库后运行一次',
                                             'hint': '在媒体入库后运行一次操作',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -316,7 +316,7 @@ class PlexPersonMeta(_PluginBase):
                                             'model': 'douban_scrap',
                                             'label': '豆瓣辅助识别',
                                             'hint': '提高识别率的同时将会降低性能',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -339,7 +339,7 @@ class PlexPersonMeta(_PluginBase):
                             #                 'model': 'remove_no_zh',
                             #                 'label': '删除非中文演员',
                             #                 'hint': '开启后将删除所有非中文演员',
-                            #                 'persistent-hint': True,
+                            #                 'persistent-hint': True
                             #             }
                             #         }
                             #     ]
@@ -357,7 +357,7 @@ class PlexPersonMeta(_PluginBase):
                             #                 'model': 'reserve_tag_key',
                             #                 'label': '保留在线元数据（实验性功能）',
                             #                 'hint': '尝试保留在线元数据，需结合脚本使用',
-                            #                 'persistent-hint': True,
+                            #                 'persistent-hint': True
                             #             }
                             #         }
                             #     ]
@@ -381,7 +381,7 @@ class PlexPersonMeta(_PluginBase):
                                             'label': '执行周期',
                                             'placeholder': '5位cron表达式',
                                             'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -400,7 +400,7 @@ class PlexPersonMeta(_PluginBase):
                                             'label': '延迟时间（秒）',
                                             'placeholder': '入库后延迟运行时间',
                                             'hint': '入库后延迟运行的时间（秒）',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -423,7 +423,7 @@ class PlexPersonMeta(_PluginBase):
                                                 {'title': '角色非中文', 'value': 'role'},
                                             ],
                                             'hint': '选择刮削条件',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -449,7 +449,7 @@ class PlexPersonMeta(_PluginBase):
                                             'label': '媒体库',
                                             'items': self.__get_library_options(),
                                             'hint': '选择要处理的媒体库',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],

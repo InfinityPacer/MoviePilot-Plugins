@@ -162,7 +162,7 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'enabled',
                                             'label': '启用插件',
                                             'hint': '开启后插件将处于激活状态',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -180,7 +180,7 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
                                             'hint': '插件将立即运行一次',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -198,7 +198,7 @@ class AutoDiagnosis(_PluginBase):
                                             'model': 'execute_when_system_error',
                                             'label': '发生系统错误时运行一次',
                                             'hint': '当系统发生错误时，插件将运行一次',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -222,7 +222,7 @@ class AutoDiagnosis(_PluginBase):
                                             'label': '执行周期',
                                             'placeholder': '5位cron表达式',
                                             'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -245,7 +245,7 @@ class AutoDiagnosis(_PluginBase):
                                                 {'title': '发送所有通知', 'value': 'always'}
                                             ],
                                             'hint': '发送通知的频率',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ],
@@ -265,7 +265,7 @@ class AutoDiagnosis(_PluginBase):
                                             'items': [{"title": item.value, "value": item.name}
                                                       for item in NotificationType],
                                             'hint': '通知的类型',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ],
@@ -291,7 +291,7 @@ class AutoDiagnosis(_PluginBase):
                                             'label': '系统健康检查',
                                             'items': self.__get_health_check_modules_options(),
                                             'hint': '系统健康检查模块',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -317,7 +317,7 @@ class AutoDiagnosis(_PluginBase):
                                             'label': '网络连通性测试',
                                             'items': self.__get_health_check_sites_options(),
                                             'hint': '网络连通性测试的网站',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -341,7 +341,7 @@ class AutoDiagnosis(_PluginBase):
                                             'label': '历史记录硬链接检查',
                                             'items': self.__get_history_link_check_options(),
                                             'hint': '历史记录硬链接检查的范围',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -363,7 +363,7 @@ class AutoDiagnosis(_PluginBase):
                                                 {'title': '全部', 'value': 'all'}
                                             ],
                                             'hint': '历史记录转移方式为硬链接或全部',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -388,7 +388,7 @@ class AutoDiagnosis(_PluginBase):
                                             'rows': 3,
                                             'no-resize': True,
                                             'hint': '配置目录硬链接测试，格式为：源目录:目标目录',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]

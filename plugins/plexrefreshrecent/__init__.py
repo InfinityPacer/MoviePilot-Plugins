@@ -157,7 +157,7 @@ class PlexRefreshRecent(_PluginBase):
                                             'model': 'enabled',
                                             'label': '启用插件',
                                             'hint': '开启后插件将处于激活状态',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -172,7 +172,7 @@ class PlexRefreshRecent(_PluginBase):
                                             'model': 'notify',
                                             'label': '发送通知',
                                             'hint': '是否在特定事件发生时发送通知',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -187,7 +187,7 @@ class PlexRefreshRecent(_PluginBase):
                                             'model': 'onlyonce',
                                             'label': '立即运行一次',
                                             'hint': '插件将立即运行一次',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -208,7 +208,7 @@ class PlexRefreshRecent(_PluginBase):
                                             'label': '执行周期',
                                             'placeholder': '5位cron表达式',
                                             'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -223,7 +223,7 @@ class PlexRefreshRecent(_PluginBase):
                                             'model': 'offset_days',
                                             'label': '几天内',
                                             'hint': '从当前日期往前几天内的数据',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
@@ -238,7 +238,7 @@ class PlexRefreshRecent(_PluginBase):
                                             'model': 'limit',
                                             'label': '最大元数据数量',
                                             'hint': '一次刷新的最大元数据条数',
-                                            'persistent-hint': True,
+                                            'persistent-hint': True
                                         },
                                     }
                                 ],
