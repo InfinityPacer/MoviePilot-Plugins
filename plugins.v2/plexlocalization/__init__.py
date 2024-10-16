@@ -3,8 +3,9 @@ import json
 import re
 import threading
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Any, List, Dict, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import plexapi.utils
 import pypinyin
@@ -17,9 +18,11 @@ from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import Event, eventmanager
 from app.core.meta import MetaBase
+from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
 from app.modules.plex import Plex
 from app.plugins import _PluginBase
+from app.schemas import ServiceInfo
 from app.schemas.types import EventType, NotificationType
 from app.utils.string import StringUtils
 
@@ -48,11 +51,7 @@ class PlexLocalization(_PluginBase):
     auth_level = 1
 
     # region 私有属性
-
-    # Plex
-    _plex = None
-    # plex_server
-    _plex_server = None
+    mediaserver_helper = None
     # 是否开启
     _enabled = False
     # 立即运行一次
@@ -62,7 +61,7 @@ class PlexLocalization(_PluginBase):
     # 发送通知
     _notify = False
     # 需要处理的媒体库
-    _library_ids = None
+    _libraries = None
     # 锁定元数据
     _lock = None
     # 入库后运行一次
@@ -89,17 +88,14 @@ class PlexLocalization(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
-        self._plex = Plex()
-        self._plex_server = self._plex.get_plex()
-
+        self.mediaserver_helper = MediaServerHelper()
         if not config:
             return
-
         self._enabled = config.get("enabled")
         self._onlyonce = config.get("onlyonce")
         self._cron = config.get("cron")
         self._notify = config.get("notify")
-        self._library_ids = config.get("library_ids", [])
+        self._libraries = config.get("libraries", [])
         self._lock = config.get("lock")
         self._execute_transfer = config.get("execute_transfer")
         self._tags_json = config.get("tags_json")
@@ -141,7 +137,7 @@ class PlexLocalization(_PluginBase):
             "onlyonce": False,
             "cron": self._cron,
             "notify": self._notify,
-            "library_ids": self._library_ids,
+            "libraries": self._libraries,
             "lock": self._lock,
             "tags_json": self._tags_json,
             "thread_count": self._thread_count,
@@ -155,6 +151,43 @@ class PlexLocalization(_PluginBase):
         if self._scheduler.get_jobs():
             self._scheduler.print_jobs()
             self._scheduler.start()
+
+    def service_infos(self, name_filters: Optional[List[str]] = None) -> Optional[Dict[str, ServiceInfo]]:
+        """
+        服务信息
+        """
+        services = self.mediaserver_helper.get_services(name_filters=name_filters, type_filter="plex")
+        if not services:
+            logger.warning("获取媒体服务器实例失败，请检查配置")
+            return None
+
+        active_services = {}
+        for service_name, service_info in services.items():
+            if service_info.instance.is_inactive():
+                logger.warning(f"媒体服务器 {service_name} 未连接，请检查配置")
+            else:
+                active_services[service_name] = service_info
+
+        if not active_services:
+            logger.warning("没有已连接的媒体服务器，请检查配置")
+            return None
+
+        return active_services
+
+    def service_info(self, name: str) -> Optional[ServiceInfo]:
+        """
+        服务信息
+        """
+        service = self.mediaserver_helper.get_service(name=name, type_filter="plex")
+        if not service:
+            logger.warning("获取媒体服务器实例失败，请检查配置")
+            return None
+
+        if service.instance.is_inactive():
+            logger.warning(f"媒体服务器 {name} 未连接，请检查配置")
+            return None
+
+        return service
 
     def get_state(self) -> bool:
         return self._enabled
@@ -252,7 +285,7 @@ class PlexLocalization(_PluginBase):
                                         'props': {
                                             'model': 'lock',
                                             'label': '锁定元数据',
-                                            'hint': '电影合集只有锁定时才会生效',
+                                            'hint': '部分Plex版本只有锁定时才会生效',
                                             'persistent-hint': True,
                                         },
                                     }
@@ -390,9 +423,9 @@ class PlexLocalization(_PluginBase):
                                             'multiple': True,
                                             'chips': True,
                                             'clearable': True,
-                                            'model': 'library_ids',
+                                            'model': 'libraries',
                                             'label': '媒体库',
-                                            'items': self.__get_library_options(),
+                                            'items': self.__get_service_library_options(),
                                             'hint': '选择要处理的媒体库',
                                             'persistent-hint': True,
                                         },
@@ -584,7 +617,7 @@ class PlexLocalization(_PluginBase):
                 self._tags_json = self.__get_preset_tags_json()
 
             # 去掉以//开始的行
-            tags_json = re.sub(r'//.*?\n', '', self._tags_json).strip()
+            tags_json = re.sub(r"//.*?\n", "", self._tags_json).strip()
             tags = json.loads(tags_json)
             return tags
         except Exception as e:
@@ -713,50 +746,106 @@ class PlexLocalization(_PluginBase):
 
     def localization(self, added_time: Optional[int] = None):
         """本地化服务"""
-        if not self.__check_plex_media_server():
-            return
-
         with lock:
             logger.info(f"正在准备执行本地化服务")
-            libraries = self.__get_libraries()
-            logger.info(f"正在准备本地化的媒体库 {libraries}")
+            service_libraries = self.__get_service_libraries()
+            if not service_libraries:
+                logger.error(f"Plex 配置不正确，请检查")
+                return
+            logger.info(f"正在准备本地化的媒体库 {service_libraries}")
+            self.__loop_all(service_libraries=service_libraries, thread_count=self._thread_count, added_time=added_time)
 
-            self.__loop_all(libraries=libraries, thread_count=self._thread_count, added_time=added_time)
-
-    def __get_library_options(self):
-        """获取媒体库选项"""
-        if not self.__check_plex_media_server():
-            return []
-
+    def __get_service_library_options(self):
+        """
+        获取媒体库选项
+        """
         library_options = []
+        service_infos = self.service_infos()
+        if not service_infos:
+            return library_options
+
         # 获取所有媒体库
-        libraries = self._plex_server.library.sections()
-        # 遍历媒体库，创建字典并添加到列表中
-        for library in libraries:
-            # 排除照片库
-            if library.TYPE == "photo":
+        for service in service_infos.values():
+            plex = service.instance
+            if not plex or not plex.get_plex():
                 continue
-            library_dict = {
-                "title": f"{library.key}. {library.title} ({library.TYPE})",
-                "value": library.key
-            }
-            library_options.append(library_dict)
-        library_options = sorted(library_options, key=lambda x: x["value"])
+            plex_server = plex.get_plex()
+            libraries = sorted(plex_server.library.sections(), key=lambda x: x.key)
+            # 遍历媒体库，创建字典并添加到列表中
+            for library in libraries:
+                # 排除照片库
+                if library.TYPE == "photo":
+                    continue
+                library_dict = {
+                    "title": f"{service.name} - {library.key}. {library.title} ({library.TYPE})",
+                    "value": f"{service.name}.{library.key}"
+                }
+                library_options.append(library_dict)
         return library_options
 
-    def __get_libraries(self):
-        """获取媒体库信息"""
-        libraries = {
-            int(library.key): library
-            for library in self._plex_server.library.sections()
-            if library.type != 'photo' and library.key in self._library_ids  # 排除照片库
-        }
+    def __get_service_libraries(self) -> Optional[Dict[str, Dict[int, Any]]]:
+        """
+        获取 Plex 媒体库信息
+        """
+        if not self._libraries:
+            return None
 
-        return libraries
+        service_libraries = defaultdict(set)
 
-    def __list_rating_keys(self, library: LibrarySection, type_id: int, is_collection: bool = False,
+        # 1. 处理本地 _libraries，提取出 service_name 和 library_key
+        for library in self._libraries:
+            if not library:
+                continue
+            if "." in library:
+                service_name, library_key = library.split(".", 1)
+                service_libraries[service_name].add(library_key)
+
+        # 2. 获取 service_infos 对象
+        service_infos = self.service_infos(name_filters=list(service_libraries.keys()))
+        if not service_infos:
+            return None
+
+        # 创建存放交集的字典，value 也是字典，key 为 int(library.key)，value 为 library 对象
+        intersected_libraries = {}
+
+        # 3. 遍历 service_infos，验证 Plex 实例并获取媒体库
+        for service_name, library_keys in service_libraries.items():
+            service_info = service_infos.get(service_name)
+            if not service_info or not service_info.instance:
+                continue
+
+            plex = service_info.instance
+            plex_server = plex.get_plex()
+            if not plex_server:
+                continue
+
+            libraries = plex_server.library.sections()
+
+            # 4. 获取 Plex 实例中的有效媒体库，进行比对
+            remote_libraries = {
+                int(library.key): library  # 键为 int(library.key)，值为 library 对象
+                for library in libraries if library.TYPE != "photo"
+            }
+
+            # 计算本地库和远程库的交集，保留匹配的库
+            matched_libraries = {
+                key: library
+                for key, library in remote_libraries.items()
+                if str(key) in library_keys
+            }
+
+            # 如果存在交集，添加到最终结果
+            if matched_libraries:
+                intersected_libraries[service_name] = matched_libraries
+
+        # 5. 返回交集
+        return intersected_libraries if intersected_libraries else None
+
+    def __list_rating_keys(self, plex: Plex, library: LibrarySection, type_id: int, is_collection: bool = False,
                            added_time: Optional[int] = None):
-        """获取所有媒体项目"""
+        """
+        获取所有媒体项目
+        """
         if not library:
             return []
 
@@ -767,7 +856,7 @@ class PlexLocalization(_PluginBase):
             if added_time:
                 endpoint += f"&addedAt>={added_time}"
 
-        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
+        response = plex.get_data(endpoint=endpoint, timeout=self._timeout)
         datas = (response
                  .json()
                  .get("MediaContainer", {})
@@ -780,36 +869,37 @@ class PlexLocalization(_PluginBase):
 
         return rating_keys
 
-    def __fetch_item(self, rating_key):
+    def __fetch_item(self, plex: Plex, rating_key):
         """
         获取条目信息
         """
         endpoint = f"/library/metadata/{rating_key}"
-        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
+        response = plex.get_data(endpoint=endpoint, timeout=self._timeout)
         datas = (response
                  .json()
                  .get("MediaContainer", {})
                  .get("Metadata", []))
         return datas[0] if datas else None
 
-    def __fetch_all_items(self, rating_keys):
+    def __fetch_all_items(self, plex: Plex, rating_keys):
         """
-        批量获取条目。
-        :param rating_keys: 需要获取的条目的评级键列表。
-        :return: 获取的所有条目列表。
+        批量获取条目
         """
         endpoint = f"/library/metadata/{','.join(rating_keys)}"
-        response = self._plex.get_data(endpoint=endpoint, timeout=self._timeout)
+        response = plex.get_data(endpoint=endpoint, timeout=self._timeout)
         items = (response
                  .json()
                  .get("MediaContainer", {})
                  .get("Metadata", []))
         return items
 
-    def __put_title_sort(self, rating_key: str, library_id: int, type_id: int, is_collection: bool, sort_title: str):
-        """更新标题排序"""
+    def __put_title_sort(self, plex: Plex, rating_key: str, library_id: int, type_id: int, is_collection: bool,
+                         sort_title: str):
+        """
+        更新标题排序
+        """
         endpoint = f"library/metadata/{rating_key}" if is_collection else f"library/sections/{library_id}/all"
-        self._plex.put_data(
+        response = plex.put_data(
             endpoint=endpoint,
             params={
                 "type": type_id,
@@ -819,11 +909,15 @@ class PlexLocalization(_PluginBase):
                 "titleSort.locked": 1 if self._lock else 0
             },
             timeout=self._timeout)
+        if response.status_code != 200:
+            data = response
 
-    def __put_tag(self, rating_key: str, library_id: int, type_id: str, tag, new_tag, tag_type):
-        """更新标签"""
+    def __put_tag(self, plex: Plex, rating_key: str, library_id: int, type_id: str, tag, new_tag, tag_type):
+        """
+        更新标签
+        """
         endpoint = f"/library/sections/{library_id}/all"
-        self._plex.put_data(
+        plex.put_data(
             endpoint=endpoint,
             params={
                 "type": type_id,
@@ -834,26 +928,26 @@ class PlexLocalization(_PluginBase):
             },
             timeout=self._timeout)
 
-    def __process_rating_key(self, rating_key: str):
+    def __process_rating_key(self, plex: Plex, rating_key: str):
         """
         处理媒体标识
         """
         if not rating_key:
             return
-        item = self.__fetch_item(rating_key=rating_key)
+        item = self.__fetch_item(plex=plex, rating_key=rating_key)
         if not item:
             return
-        self.__process_item(item=item)
+        self.__process_item(plex=plex, item=item)
 
-    def __process_items_batch(self, rating_keys):
+    def __process_items_batch(self, plex: Plex, rating_keys):
         """
         获取并处理一批评级键对应的条目
         """
-        items = self.__fetch_all_items(rating_keys=rating_keys)
+        items = self.__fetch_all_items(plex=plex, rating_keys=rating_keys)
         for item in items:
-            self.__process_item(item)
+            self.__process_item(plex=plex, item=item)
 
-    def __process_item(self, item: dict):
+    def __process_item(self, plex: Plex, item: dict):
         """
         处理元数据
         """
@@ -873,31 +967,35 @@ class PlexLocalization(_PluginBase):
         is_collection = item_type != "collection"
 
         title = item.get("title", "")
-        title_sort = item.get("titleSort", "")
-
-        # 更新标题排序
-        if StringUtils.is_chinese(title_sort) or title_sort == "":
-            title_sort = self.__convert_to_pinyin(title)
-            self.__put_title_sort(rating_key=rating_key,
-                                  library_id=library_id,
-                                  type_id=type_id,
-                                  is_collection=is_collection,
-                                  sort_title=title_sort)
-            logger.info(f"{title} < {title_sort} >")
+        locked_fields = [field["name"] for field in item.get("Field") or [] if field.get("locked")]
+        # 如果标题排序没有锁定，尝试更新标题排序
+        if "titleSort" not in locked_fields:
+            title_sort = item.get("titleSort", "")
+            if StringUtils.is_chinese(title_sort) or title_sort == "":
+                title_sort = self.__convert_to_pinyin(title)
+                self.__put_title_sort(plex=plex,
+                                      rating_key=rating_key,
+                                      library_id=library_id,
+                                      type_id=type_id,
+                                      is_collection=is_collection,
+                                      sort_title=title_sort)
+                logger.info(f"{title} < {title_sort} >")
 
         tags: dict[str, list] = {
-            "genre": [genre.get("tag") for genre in item.get('Genre', {})],  # 流派
-            "style": [style.get("tag") for style in item.get('Style', {})],  # 风格
-            "mood": [mood.get("tag") for mood in item.get('Mood', {})]  # 情绪
+            "genre": [genre.get("tag") for genre in item.get("Genre", {})],  # 流派
+            "style": [style.get("tag") for style in item.get("Style", {})],  # 风格
+            "mood": [mood.get("tag") for mood in item.get("Mood", {})]  # 情绪
         }
 
         # 汉化标签
         for tag_type, tag_list in tags.items():
-            if tag_list:
+            # 如果标签类型没有锁定，尝试更新标签类型
+            if tag_type not in locked_fields and tag_list:
                 for tag in tag_list:
                     new_tag = self._tags.get(tag)
                     if new_tag:
-                        self.__put_tag(rating_key=rating_key,
+                        self.__put_tag(plex=plex,
+                                       rating_key=rating_key,
                                        library_id=library_id,
                                        type_id=type_id,
                                        tag=tag,
@@ -905,60 +1003,83 @@ class PlexLocalization(_PluginBase):
                                        tag_type=tag_type)
                         logger.info(f"{title} : {tag} → {new_tag}")
 
-    def __loop_all(self, libraries: dict, thread_count: int = None, added_time: Optional[int] = None):
-        """选择媒体库并遍历其中的每一个媒体。"""
+    def __loop_all(self, service_libraries: Dict[str, Dict[int, Any]], thread_count: int = None,
+                   added_time: Optional[int] = None):
+        """
+        选择媒体库并遍历其中的每一个媒体
+        """
         if not self._tags:
             logger.warn("标签本地化配置不能为空，请检查")
             return
 
         logger.info(f"当前标签本地化配置为：{self._tags}")
-        start_time = time.time()
+        overall_start_time = time.time()
         thread_count = thread_count or 5
         logger.info(f"正在运行中文本地化，线程数：{thread_count}，锁定元数据：{self._lock}")
 
-        # 生成所有需要处理的rating keys
-        if added_time:
-            rating_keys = self.__generate_all_rating_keys(libraries=libraries,
-                                                          with_collection=False,
-                                                          added_time=added_time)
-        else:
-            rating_keys = self.__generate_all_rating_keys(libraries=libraries,
-                                                          with_collection=True)
+        for service_name, libraries in service_libraries.items():
+            service = self.service_info(name=service_name)
+            if not service or not service.instance:
+                logger.info(f"获取媒体服务器 {service.name} 实例失败，跳过处理")
+                continue
 
-        # 分批处理rating keys
-        self.__process_rating_keys_in_batches(rating_keys=rating_keys,
-                                              thread_count=thread_count,
-                                              batch_size=self._batch_size)
+            service_start_time = time.time()
+            logger.info(f"开始处理媒体服务器 {service.name}")
 
-        elapsed_time = time.time() - start_time
+            # 生成所有需要处理的rating keys
+            if added_time:
+                rating_keys = self.__generate_all_rating_keys(plex=service.instance,
+                                                              libraries=libraries,
+                                                              with_collection=False,
+                                                              added_time=added_time)
+            else:
+                rating_keys = self.__generate_all_rating_keys(plex=service.instance,
+                                                              libraries=libraries,
+                                                              with_collection=True)
+
+            # 分批处理rating keys
+            self.__process_rating_keys_in_batches(plex=service.instance,
+                                                  rating_keys=rating_keys,
+                                                  thread_count=thread_count,
+                                                  batch_size=self._batch_size)
+
+            service_elapsed_time = time.time() - service_start_time
+            logger.info(f"媒体服务器 {service.name} 处理完成，耗时 {service_elapsed_time:.2f} 秒")
+
+        overall_elapsed_time = time.time() - overall_start_time
         if added_time:
-            formatted_added_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(added_time))
-            message_text = f"最近一次入库时间：{formatted_added_time}，Plex本地化完成，用时 {elapsed_time:.2f} 秒"
+            formatted_added_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(added_time))
+            message_text = f"最近一次入库时间：{formatted_added_time}，Plex本地化完成，用时 {overall_elapsed_time :.2f} 秒"
         else:
-            message_text = f"Plex本地化完成，用时 {elapsed_time:.2f} 秒"
+            message_text = f"Plex本地化完成，用时 {overall_elapsed_time :.2f} 秒"
 
         self.__send_message(title="【Plex中文本地化】", text=message_text)
 
         logger.info(message_text)
 
-    def __generate_all_rating_keys(self, libraries, with_collection: bool = True, added_time: Optional[int] = None):
-        """生成所有库中项目的rating keys列表"""
+    def __generate_all_rating_keys(self, plex: Plex, libraries, with_collection: bool = True,
+                                   added_time: Optional[int] = None):
+        """
+        生成所有库中项目的rating keys列表
+        """
         # 使用集合来自动去除重复的rating keys
         rating_keys_set = set()
         for library in libraries.values():
             library_types = TYPES.get(library.type, [])
             for type_id in library_types:
                 if with_collection:
-                    rating_keys_set.update(self.__list_rating_keys(library=library, type_id=type_id))
+                    rating_keys_set.update(self.__list_rating_keys(plex=plex, library=library, type_id=type_id))
                     rating_keys_set.update(
-                        self.__list_rating_keys(library=library, type_id=type_id, is_collection=True))
+                        self.__list_rating_keys(plex=plex, library=library, type_id=type_id, is_collection=True))
                 else:
                     rating_keys_set.update(
-                        self.__list_rating_keys(library=library, type_id=type_id, added_time=added_time))
+                        self.__list_rating_keys(plex=plex, library=library, type_id=type_id, added_time=added_time))
         return list(rating_keys_set)
 
-    def __process_rating_keys_in_batches(self, rating_keys, thread_count, batch_size=100):
-        """分批处理rating keys列表"""
+    def __process_rating_keys_in_batches(self, plex: Plex, rating_keys, thread_count, batch_size=100):
+        """
+        分批处理rating keys列表
+        """
         total_keys_count = len(rating_keys)
         total_batches = (total_keys_count + batch_size - 1) // batch_size
 
@@ -971,7 +1092,7 @@ class PlexLocalization(_PluginBase):
             # 提交所有批次处理任务
             for i in range(0, total_keys_count, batch_size):
                 batch_keys = rating_keys[i:i + batch_size]
-                future = executor.submit(self.__process_items_batch, batch_keys)
+                future = executor.submit(self.__process_items_batch, plex, batch_keys)
                 futures[future] = i // batch_size
 
             # 实时处理每个future的完成
@@ -1003,7 +1124,7 @@ class PlexLocalization(_PluginBase):
         """将字符串转换为拼音首字母形式。"""
         str_a = pypinyin.pinyin(text, style=pypinyin.FIRST_LETTER)
         str_b = [str(str_a[i][0]).upper() for i in range(len(str_a))]
-        return ''.join(str_b).replace("：", ":").replace("（", "(").replace("）", ")").replace("，", ",")
+        return "".join(str_b).replace("：", ":").replace("（", "(").replace("）", ")").replace("，", ",")
 
     def __send_message(self, title: str, text: str):
         """
@@ -1013,19 +1134,3 @@ class PlexLocalization(_PluginBase):
             return
 
         self.post_message(mtype=NotificationType.SiteMessage, title=title, text=text)
-
-    def __check_plex_media_server(self) -> bool:
-        """检查Plex媒体服务器配置"""
-        if not settings.MEDIASERVER:
-            logger.error(f"媒体库配置不正确，请检查")
-            return False
-
-        if "plex" not in settings.MEDIASERVER:
-            logger.error(f"没有启用Plex媒体库，请检查")
-            return False
-
-        if not self._plex_server:
-            logger.error(f"Plex配置不正确，请检查")
-            return False
-
-        return True

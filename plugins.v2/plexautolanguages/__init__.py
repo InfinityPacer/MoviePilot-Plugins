@@ -64,12 +64,9 @@ class PlexAutoLanguages(_PluginBase):
 
     def init_plugin(self, config: dict = None):
         self.mediaserver_helper = MediaServerHelper()
-
         if not config:
             return
-
         self.stop_service()
-
         self._enabled = config.get("enabled")
         self._mediaserver = config.get("mediaserver")
         self._auto_switch = config.get("auto_switch")
