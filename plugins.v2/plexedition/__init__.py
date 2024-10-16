@@ -79,6 +79,7 @@ class PlexEdition(_PluginBase):
         self.mediaserver_helper = MediaServerHelper()
         if not config:
             return False
+        self._enabled = config.get("enabled")
         self._onlyonce = config.get("onlyonce")
         self._cron = config.get("cron")
         self._notify = config.get("notify")
