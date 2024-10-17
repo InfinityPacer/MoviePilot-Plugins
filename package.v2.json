@@ -106,5 +106,17 @@
         "history": {
             "v1.7": "MoviePilot V2 版本Plex演职人员刮削插件"
         }
+    },
+    "TrafficAssistant": {
+        "name": "站点流量管理",
+        "description": "自动管理流量，保障站点分享率。",
+        "labels": "站点,订阅,刷流",
+        "version": "1.4",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png",
+        "author": "InfinityPacer",
+        "level": 2,
+        "history": {
+            "v1.4": "MoviePilot V2 版本站点流量管理插件"
+        }
     }
 }
