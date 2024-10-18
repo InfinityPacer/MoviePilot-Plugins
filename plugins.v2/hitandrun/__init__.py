@@ -1384,7 +1384,7 @@ class HitAndRun(_PluginBase):
 
             torrent = self.torrent_helper.get_torrents(torrent_hashes=torrent_hash)
             if not torrent:
-                logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理")
+                logger.warning(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理")
                 return
 
             # 保存种子下载记录
@@ -1549,7 +1549,7 @@ class HitAndRun(_PluginBase):
 
         torrent = self.torrent_helper.get_torrents(torrent_hashes=torrent_task.hash)
         if not torrent:
-            logger.warn(f"下载器中没有获取到 torrent_hash: {torrent_task.hash} 的种子信息")
+            logger.warning(f"下载器中没有获取到 torrent_hash: {torrent_task.hash} 的种子信息")
             return
 
         try:

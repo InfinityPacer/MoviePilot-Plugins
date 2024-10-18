@@ -127,7 +127,7 @@ class HNRConfig(BaseConfig):
                     logger.error("YAML解析失败，站点独立配置已禁用")
                     self.enable_site_config = False
             else:
-                logger.warn("已启用站点独立配置，但未提供配置字符串，站点独立配置已禁用")
+                logger.warning("已启用站点独立配置，但未提供配置字符串，站点独立配置已禁用")
                 self.enable_site_config = False
 
     @staticmethod

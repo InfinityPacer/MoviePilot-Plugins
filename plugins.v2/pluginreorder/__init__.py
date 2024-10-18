@@ -267,7 +267,7 @@ class PluginReOrder(_PluginBase):
             parts = user_plugin.strip().split('#')
 
             if len(parts) < 3:
-                logger.warn(f"跳过无效条目：{user_plugin}")
+                logger.warning(f"跳过无效条目：{user_plugin}")
                 continue
 
             current_plugin_id, plugin_name, plugin_order_str = parts[0], parts[1], parts[2]
@@ -277,7 +277,7 @@ class PluginReOrder(_PluginBase):
                 continue
 
             if not plugin_order_str.isdigit():
-                logger.warn(f"插件顺序无效，跳过条目：{user_plugin}")
+                logger.warning(f"插件顺序无效，跳过条目：{user_plugin}")
                 continue
 
             plugin_order = int(plugin_order_str)

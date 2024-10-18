@@ -274,7 +274,7 @@ class PlexSpeedTest(_PluginBase):
         """
         logger.info("正在准备写入Hosts")
         if not dns_records:
-            logger.warn("Plex DNS 记录为空，跳过写入")
+            logger.warning("Plex DNS 记录为空，跳过写入")
             return False
 
         logger.info(f"Plex DNS 记录: {dns_records}")
@@ -373,7 +373,7 @@ class PlexSpeedTest(_PluginBase):
                 if headers:
                     result_records = self.__filter_records(sheet, headers)
             if not result_records:
-                logger.warn(f"没有获取在线 Plex DNS 记录，使用默认 DNS 记录")
+                logger.warning(f"没有获取在线 Plex DNS 记录，使用默认 DNS 记录")
                 result_records = default_records
             return result_records
         except Exception as e:

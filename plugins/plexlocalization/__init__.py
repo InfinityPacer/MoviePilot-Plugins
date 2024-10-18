@@ -908,7 +908,7 @@ class PlexLocalization(_PluginBase):
     def __loop_all(self, libraries: dict, thread_count: int = None, added_time: Optional[int] = None):
         """选择媒体库并遍历其中的每一个媒体。"""
         if not self._tags:
-            logger.warn("标签本地化配置不能为空，请检查")
+            logger.warning("标签本地化配置不能为空，请检查")
             return
 
         logger.info(f"当前标签本地化配置为：{self._tags}")

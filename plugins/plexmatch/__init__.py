@@ -357,12 +357,12 @@ class PlexMatch(_PluginBase):
         logger.info(f"{keyword} 正在准备添加 .plexmatch 文件")
         try:
             if not tmdbid:
-                logger.warn(f"{title} 的 TMDBID {tmdbid} 无效，跳过处理")
+                logger.warning(f"{title} 的 TMDBID {tmdbid} 无效，跳过处理")
                 return False
 
             path = Path(file_path) if file_path else None
             if not path or not path.exists():
-                logger.warn(f"目标路径 {path} 不存在，跳过处理")
+                logger.warning(f"目标路径 {path} 不存在，跳过处理")
                 return False
 
             if mtype == MediaType.TV:

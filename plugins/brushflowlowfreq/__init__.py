@@ -2178,7 +2178,7 @@ class BrushFlowLowFreq(_PluginBase):
         """
         siteinfo = self.siteoper.get(siteid)
         if not siteinfo:
-            logger.warn(f"站点不存在：{siteid}")
+            logger.warning(f"站点不存在：{siteid}")
             return True
 
         logger.info(f"开始获取站点 {siteinfo.name} 的新种子 ...")
@@ -2230,7 +2230,7 @@ class BrushFlowLowFreq(_PluginBase):
             # 添加下载任务
             hash_string = self.__download(torrent=torrent)
             if not hash_string:
-                logger.warn(f"{torrent.title} 添加刷流任务失败！")
+                logger.warning(f"{torrent.title} 添加刷流任务失败！")
                 continue
 
             # 触发刷流下载时间并保存任务信息
@@ -2455,7 +2455,7 @@ class BrushFlowLowFreq(_PluginBase):
         """
         if not passed:
             if not torrent:
-                logger.warn(f"没有通过前置刷流条件校验，原因：{reason}")
+                logger.warning(f"没有通过前置刷流条件校验，原因：{reason}")
             else:
                 logger.debug(f"种子没有通过刷流条件校验，原因：{reason} 种子：{torrent.title}|{torrent.description}")
 
@@ -2482,12 +2482,12 @@ class BrushFlowLowFreq(_PluginBase):
 
             downloader = self.__get_downloader(brush_config.downloader)
             if not downloader:
-                logger.warn("无法获取下载器实例，将在下个时间周期重试")
+                logger.warning("无法获取下载器实例，将在下个时间周期重试")
                 return
 
             seeding_torrents, error = downloader.get_torrents()
             if error:
-                logger.warn("连接下载器出错，将在下个时间周期重试")
+                logger.warning("连接下载器出错，将在下个时间周期重试")
                 return
 
             seeding_torrents_dict = {self.__get_hash(torrent): torrent for torrent in seeding_torrents}
@@ -3825,7 +3825,7 @@ class BrushFlowLowFreq(_PluginBase):
 
             torrents = downloader.get_downloading_torrents(tags=brush_config.brush_tag)
             if torrents is None:
-                logger.warn("获取下载数量失败，可能是下载器连接发生异常")
+                logger.warning("获取下载数量失败，可能是下载器连接发生异常")
                 return 0
 
             return len(torrents)
@@ -4248,7 +4248,7 @@ class BrushFlowLowFreq(_PluginBase):
 
         official_enabled = official_config.get("enabled")
         if official_enabled and brush_config.enabled:
-            logger.warn("官方插件与当前插件只能同时启用一个，请重新配置")
+            logger.warning("官方插件与当前插件只能同时启用一个，请重新配置")
             return False
 
         return True

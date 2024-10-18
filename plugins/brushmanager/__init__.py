@@ -109,7 +109,7 @@ class BrushManager(_PluginBase):
             return
 
         if self._downloader != "qbittorrent":
-            logger.warn("当前只支持qbittorrent")
+            logger.warning("当前只支持qbittorrent")
             return
 
         if not self.__setup_downloader():
@@ -556,7 +556,7 @@ class BrushManager(_PluginBase):
                 self.__organize_for_qb(torrent_hash_titles=torrent_hash_titles, torrent_datas=torrent_datas)
                 self.__run_after_organize()
             else:
-                logger.warn("当前只支持qbittorrent")
+                logger.warning("当前只支持qbittorrent")
 
     def __organize_for_qb(self, torrent_hash_titles: dict, torrent_datas):
         """针对QB进行种子整理"""
@@ -613,7 +613,7 @@ class BrushManager(_PluginBase):
                     try:
                         downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash, category=self._category)
                     except Exception as e:
-                        logger.warn(f"种子 「{torrent_title}」[{torrent_hash}] "
+                        logger.warning(f"种子 「{torrent_title}」[{torrent_hash}] "
                                     f"设置分类 {self._category} 失败：{str(e)}, 尝试创建分类再设置")
                         downloader.qbc.torrents_create_category(name=self._category, save_path=self._move_path)
                         downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash, category=self._category)

@@ -852,7 +852,7 @@ class PlexPersonMeta(_PluginBase):
             info = self.__get_rating_info(item=item)
 
         if not info or not info.tmdbid:
-            logger.warn(f"{info.title} 未找到tmdbid，无法识别媒体信息")
+            logger.warning(f"{info.title} 未找到tmdbid，无法识别媒体信息")
             return
 
         logger.info(f"{info.title} 正在获取 TMDB 媒体信息")
@@ -860,7 +860,7 @@ class PlexPersonMeta(_PluginBase):
                                           title=info.search_title,
                                           mtype=MediaType.MOVIE if item.get("type") == "movie" else MediaType.TV)
         if not mediainfo:
-            logger.warn(f"{info.title} TMDB 未识别到媒体信息")
+            logger.warning(f"{info.title} TMDB 未识别到媒体信息")
             return
 
         try:

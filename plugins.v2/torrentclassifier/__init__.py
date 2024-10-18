@@ -379,7 +379,7 @@ class TorrentClassifier(_PluginBase):
         """
         with lock:
             if not self.__is_qbittorrent():
-                logger.warn("当前只支持qBittorrent")
+                logger.warning("当前只支持qBittorrent")
                 return
 
             downloader = self.downloader
@@ -544,7 +544,7 @@ class TorrentClassifier(_PluginBase):
                         downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash,
                                                              category=torrent_target.change_category)
                     except Exception as e:
-                        logger.warn(f"种子设置分类 {torrent_target.change_category} 失败：{str(e)}, 尝试创建分类再设置")
+                        logger.warning(f"种子设置分类 {torrent_target.change_category} 失败：{str(e)}, 尝试创建分类再设置")
                         downloader.qbc.torrents_create_category(name=torrent_target.change_category,
                                                                 save_path=torrent_target.change_directory)
                         downloader.qbc.torrents_set_category(torrent_hashes=torrent_hash,

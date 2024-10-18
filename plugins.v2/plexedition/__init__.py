@@ -660,7 +660,7 @@ class PlexEdition(_PluginBase):
                 if is_anime_flag else MetaVideo(file_name, file_name, True)
 
             if not meta.edition:
-                logger.warn(f"{item.title}({item.ratingKey}) can't get edition, can't edit edition")
+                logger.warning(f"{item.title}({item.ratingKey}) can't get edition, can't edit edition")
                 return
 
             old_edition = item.editionTitle

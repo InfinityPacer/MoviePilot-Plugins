@@ -222,7 +222,7 @@ class PluginReOrder(_PluginBase):
             return
 
         if not self._user_plugin_config:
-            logger.warn("没有获取到用户配置")
+            logger.warning("没有获取到用户配置")
             return
 
         logger.info("准备开始调整用户自定义插件顺序")
@@ -236,12 +236,12 @@ class PluginReOrder(_PluginBase):
         for user_plugin in user_plugin_config:
             parts = user_plugin.split('#')
             if len(parts) < 3 or not parts[2].isdigit():
-                logger.warn(f"跳过无效条目：{user_plugin}")
+                logger.warning(f"跳过无效条目：{user_plugin}")
                 continue
 
             plugin_id, plugin_name, plugin_order = parts[0], parts[1], int(parts[2])
             # if plugin_id == "PluginReOrder":
-            #     logger.warn(f"插件 {plugin_id}#{plugin_name} 不允许调整插件顺序")
+            #     logger.warning(f"插件 {plugin_id}#{plugin_name} 不允许调整插件顺序")
             #     continue
 
             # 查找并更新本地插件
@@ -251,6 +251,6 @@ class PluginReOrder(_PluginBase):
                     f"更新插件 {found_plugin.plugin_name} 的顺序，从 {found_plugin.plugin_order} 更改为 {plugin_order}")
                 found_plugin.plugin_order = plugin_order
             else:
-                logger.warn(f"未找到ID为 {plugin_id}#{plugin_name} 的插件")
+                logger.warning(f"未找到ID为 {plugin_id}#{plugin_name} 的插件")
 
         logger.info("已完成用户自定义插件顺序调整")

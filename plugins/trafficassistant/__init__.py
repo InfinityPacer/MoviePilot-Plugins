@@ -609,14 +609,14 @@ class TrafficAssistant(_PluginBase):
         site_stat = site_statistics.get(site_name)
         if not site_stat:
             error_msg = "统计数据不存在，跳过分析"
-            logger.warn(error_msg)
+            logger.warning(error_msg)
             return error_msg, "N/A"
 
         stat_time = site_stat.get("statistic_time", "N/A")
         logger.info(f"数据日期：{stat_time}")
         if not site_stat.get("success"):
             error_msg = f"{site_stat.get('err_msg')}，跳过分析"
-            logger.warn(error_msg)
+            logger.warning(error_msg)
             return error_msg, stat_time
 
         process_result = self.__process_site_traffic(traffic_config=traffic_config, site_id=site_id,
@@ -628,19 +628,19 @@ class TrafficAssistant(_PluginBase):
         ratio_str = site_stat.get("ratio")
         if ratio_str is None:
             error_msg = "分享率：N/A，跳过分析"
-            logger.warn(error_msg)
+            logger.warning(error_msg)
             return error_msg
 
         try:
             ratio = float(ratio_str)
         except ValueError:
             error_msg = f"分享率无效：{ratio_str}，跳过分析"
-            logger.warn(error_msg)
+            logger.warning(error_msg)
             return error_msg
 
         if ratio == 0.0:
             error_msg = "分享率：0，跳过分析"
-            logger.warn(error_msg)
+            logger.warning(error_msg)
             return error_msg
 
         if ratio <= traffic_config.ratio_lower_limit:
@@ -737,7 +737,7 @@ class TrafficAssistant(_PluginBase):
         plugin_config = self.get_config(plugin_id=plugin_id)
         if not plugin_config:
             action_msg = "刷流站点：获取插件配置失败"
-            logger.warn(action_msg)
+            logger.warning(action_msg)
             return False, action_msg
 
         actions = []
@@ -806,7 +806,7 @@ class TrafficAssistant(_PluginBase):
 
         if not current_data and not previous_day_data:
             err_msg = f"{current_day} 和 {previous_day}，均没有获取到有效的数据，请检查"
-            logger.warn(err_msg)
+            logger.warning(err_msg)
             result["success"] = False
             result["err_msg"] = err_msg
             return result
@@ -832,12 +832,12 @@ class TrafficAssistant(_PluginBase):
                     err_msg = site_previous_data.get("err_msg", "无有效数据")
                     result["data"][site_name] = {"err_msg": err_msg, "success": False,
                                                  "statistic_time": str(previous_day)}
-                    logger.warn(f"{site_name} 前一天的数据也无效，错误信息：{err_msg}")
+                    logger.warning(f"{site_name} 前一天的数据也无效，错误信息：{err_msg}")
 
         # 如果所有站点的数据都无效，则标记全局失败
         if all_sites_failed:
             err_msg = f"{current_day} 和 {previous_day}，所有站点的数据获取均失败，无法继续站点流量管理服务"
-            logger.warn(err_msg)
+            logger.warning(err_msg)
             result["success"] = False
             result["err_msg"] = err_msg
 

@@ -276,7 +276,7 @@ class TorrentHelper:
 
         torrents, error = self.downloader.get_torrents(ids=torrent_hashes)
         if error:
-            logger.warn("连接下载器出错，将在下个时间周期重试")
+            logger.warning("连接下载器出错，将在下个时间周期重试")
             return None
 
         # 如果只有一个种子哈希，直接返回该种子的信息
@@ -305,7 +305,7 @@ class TorrentHelper:
                     # 否则，获取当前种子的标签并移除指定标签
                     torrent = self.get_torrents(torrent_hashes=torrent_hash)
                     if not torrent:
-                        logger.warn(f"种子 {torrent_hash} 未找到")
+                        logger.warning(f"种子 {torrent_hash} 未找到")
                         return
 
                     torrent_tags = self.get_torrent_tags(torrent=torrent)

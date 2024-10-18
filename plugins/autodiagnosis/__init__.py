@@ -1209,7 +1209,7 @@ class AutoDiagnosis(_PluginBase):
             time_since_last = (current_time - last_execute_time).total_seconds()
             time_to_wait = min_execute_span - time_since_last
             if time_since_last < min_execute_span:
-                logger.warn(f"操作过快，最小时间间隔为 {min_execute_span} 秒。请在 {time_to_wait:.2f} 秒后重试。")
+                logger.warning(f"操作过快，最小时间间隔为 {min_execute_span} 秒。请在 {time_to_wait:.2f} 秒后重试。")
                 return False
         return True
 

@@ -265,7 +265,7 @@ class HistoryCategory(_PluginBase):
                     f"获取到符合条件的历史记录共 {len(histories)} 条")
 
         if not histories:
-            logger.warn("没有获取到符合条件的历史记录，跳过刷新")
+            logger.warning("没有获取到符合条件的历史记录，跳过刷新")
             return
 
         # 使用字典进行分组
@@ -283,7 +283,7 @@ class HistoryCategory(_PluginBase):
         # 处理每个分组
         for tmdb_id, history_group in history_groups.items():
             if self._event.is_set():
-                logger.warn("外部中断请求，历史记录分类刷新服务停止")
+                logger.warning("外部中断请求，历史记录分类刷新服务停止")
                 break
             first_history = history_group[0]
             try:
@@ -292,7 +292,7 @@ class HistoryCategory(_PluginBase):
                 dest_category = self.__find_category_by_history(history=first_history)
 
                 if dest_category is None:
-                    logger.warn(f"无法获取到目标分类，跳过刷新")
+                    logger.warning(f"无法获取到目标分类，跳过刷新")
                     failed_updates += len(history_group)
                     continue
 

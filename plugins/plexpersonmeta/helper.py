@@ -146,7 +146,7 @@ class RateLimiter:
         current_time = time.time()
         if current_time >= self.next_allowed_time:
             return True
-        logger.warn(f"限流期间，跳过调用：将在 {self.next_allowed_time - current_time:.2f} 秒后允许继续调用")
+        logger.warning(f"限流期间，跳过调用：将在 {self.next_allowed_time - current_time:.2f} 秒后允许继续调用")
         return False
 
     def reset(self):
@@ -166,7 +166,7 @@ class RateLimiter:
         """
         current_time = time.time()
         self.next_allowed_time = current_time + self.current_wait
-        logger.warn(f"触发限流：将在 {self.current_wait} 秒后允许继续调用")
+        logger.warning(f"触发限流：将在 {self.current_wait} 秒后允许继续调用")
         self.current_wait *= self.backoff_factor
 
 
