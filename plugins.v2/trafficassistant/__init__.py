@@ -861,12 +861,6 @@ class TrafficAssistant(_PluginBase):
         if not traffic_config.enabled and not force:
             return True, "插件未启用，无需进行验证"
 
-        if check_plugin_installed:
-            # 检查站点数据统计是否已启用
-            result, message = self.__check_required_plugin_installed(plugin_id=traffic_config.statistic_plugin)
-            if not result:
-                return False, message
-
         # 检查站点列表是否为空
         if not traffic_config.sites:
             return False, "站点列表不能为空"
