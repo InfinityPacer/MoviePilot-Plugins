@@ -118,5 +118,17 @@
         "history": {
             "v1.4": "MoviePilot V2 版本站点流量管理插件"
         }
+    },
+    "AuxiliaryAuth": {
+        "name": "辅助认证",
+        "description": "支持使用第三方系统进行辅助认证。",
+        "labels": "认证",
+        "version": "1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/auxiliaryauth.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.0": "增加辅助认证插件，支持使用第三方系统进行辅助认证"
+        }
     }
 }
