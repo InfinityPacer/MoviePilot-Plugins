@@ -7,7 +7,7 @@ from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import ServiceInfo
-from app.schemas.event import AuthPassedInterceptData, AuthVerificationData
+from app.schemas.event import AuthCredentials, AuthInterceptCredentials
 from app.schemas.types import ChainEventType
 
 lock = threading.Lock()
@@ -173,6 +173,27 @@ class AuxiliaryAuth(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '注意：启用辅助认证需要在 app.env 文件或环境变量中设置 AUXILIARY_AUTH_ENABLE 参数为开启状态'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
@@ -212,21 +233,22 @@ class AuxiliaryAuth(_PluginBase):
         if not event or not event.event_data:
             return
 
-        event_data: AuthPassedInterceptData = event.event_data
+        event_data: AuthInterceptCredentials = event.event_data
 
         logger.info(
-            f"处理认证通过拦截事件 - 用户名: {event_data.name}, 渠道: {event_data.channel}, 服务: {event_data.service}")
+            f"处理认证通过拦截事件 - 用户名: {event_data.username}, 渠道: {event_data.channel}, 服务: {event_data.service}")
 
         # 检查是否为 Emby 或 Jellyfin 渠道，并处理服务信息
         if event_data.channel in ["Emby", "Jellyfin"]:
-            if event_data.service not in self.service_infos.keys():
+            if not self.service_infos or event_data.service not in self.service_infos.keys():
                 event_data.cancel = True
                 event_data.source = self.plugin_name
-                logger.info(
-                    f"渠道: {event_data.channel}，服务 {event_data.service} 未开启辅助认证，认证被拦截，拦截源: {self.plugin_name}")
+                logger.warning(
+                    f"认证被拦截，用户：{event_data.username}，渠道：{event_data.channel}，"
+                    f"服务：{event_data.service}，拦截源：{event_data.source}")
             else:
                 event_data.cancel = False
-                logger.info(f"渠道: {event_data.channel}，服务 {event_data.service} 允许认证通过")
+                logger.info(f"用户：{event_data.username}，渠道: {event_data.channel}，服务 {event_data.service} 允许认证通过")
         else:
             logger.info(f"尚未支持处理渠道: {event_data.channel}，跳过拦截")
 
@@ -239,7 +261,7 @@ class AuxiliaryAuth(_PluginBase):
     #     if not event or not event.event_data:
     #         return
     #
-    #     event_data: AuthVerificationData = event.event_data
+    #     event_data: AuthCredentials = event.event_data
     #
     #     # 检查是否允许匿名认证
     #     if not self._allow_anonymous:
@@ -249,4 +271,5 @@ class AuxiliaryAuth(_PluginBase):
     #     event_data.service = self.plugin_name
     #     event_data.token = str(uuid.uuid4())
     #     event_data.channel = "Plugin-Anonymous"
-    #     logger.info(f"处理匿名认证 - 用户名: {event_data.name}, 服务: {event_data.service}, Token: {event_data.token}")
+    #     logger.info(
+    #         f"处理匿名认证 - 用户名: {event_data.username}, 服务: {event_data.service}, Token: {event_data.token}")
