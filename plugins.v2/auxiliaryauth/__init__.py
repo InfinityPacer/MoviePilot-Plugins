@@ -224,10 +224,10 @@ class AuxiliaryAuth(_PluginBase):
         """
         pass
 
-    @eventmanager.register(ChainEventType.AuthPassedIntercept)
-    def handle_auth_passed_intercept(self, event: Event):
+    @eventmanager.register(ChainEventType.AuthIntercept)
+    def handle_auth_intercept(self, event: Event):
         """
-        处理 AuthPassedIntercept 事件
+        处理 AuthIntercept 事件
         :param event: 事件数据
         """
         if not event or not event.event_data:
