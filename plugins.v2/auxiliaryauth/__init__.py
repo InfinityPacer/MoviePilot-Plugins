@@ -238,6 +238,10 @@ class AuxiliaryAuth(_PluginBase):
         logger.info(
             f"处理认证通过拦截事件 - 用户名: {event_data.username}, 渠道: {event_data.channel}, 服务: {event_data.service}")
 
+        if event_data.cancel:
+            logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
+            return
+
         # 检查是否为 Emby 或 Jellyfin 渠道，并处理服务信息
         if event_data.channel in ["Emby", "Jellyfin"]:
             if not self.service_infos or event_data.service not in self.service_infos.keys():
@@ -248,7 +252,8 @@ class AuxiliaryAuth(_PluginBase):
                     f"服务：{event_data.service}，拦截源：{event_data.source}")
             else:
                 event_data.cancel = False
-                logger.info(f"用户：{event_data.username}，渠道: {event_data.channel}，服务 {event_data.service} 允许认证通过")
+                logger.info(
+                    f"用户：{event_data.username}，渠道: {event_data.channel}，服务 {event_data.service} 允许认证通过")
         else:
             logger.info(f"尚未支持处理渠道: {event_data.channel}，跳过拦截")
 
@@ -262,6 +267,9 @@ class AuxiliaryAuth(_PluginBase):
     #         return
     #
     #     event_data: AuthCredentials = event.event_data
+    #     if not all([event_data.service, event_data.token, event_data.channel]):
+    #         logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
+    #         return
     #
     #     # 检查是否允许匿名认证
     #     if not self._allow_anonymous:
