@@ -128,6 +128,7 @@
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.1": "支持 Plex 辅助认证校验",
             "v1.0": "增加辅助认证插件，支持使用第三方系统进行辅助认证"
         }
     },
