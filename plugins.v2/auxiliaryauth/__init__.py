@@ -67,8 +67,7 @@ class AuxiliaryAuth(_PluginBase):
             logger.warning("获取媒体服务器实例失败，请检查配置")
             return None
 
-        services = {name: service for name, service in services.items()
-                    if service.type == "emby" or service.type == "jellyfin"}
+        services = {name: service for name, service in services.items()}
 
         active_services = {}
         for service_name, service_info in services.items():
@@ -166,8 +165,7 @@ class AuxiliaryAuth(_PluginBase):
                                             'hint': '选择启用辅助认证的媒体服务器',
                                             'persistent-hint': True,
                                             'items': [{"title": config.name, "value": config.name}
-                                                      for config in self.mediaserver_helper.get_configs().values()
-                                                      if config.type == "emby" or config.type == "jellyfin"]
+                                                      for config in self.mediaserver_helper.get_configs().values()]
                                         }
                                     }
                                 ]
@@ -243,7 +241,7 @@ class AuxiliaryAuth(_PluginBase):
             return
 
         # 检查是否为 Emby 或 Jellyfin 渠道，并处理服务信息
-        if event_data.channel in ["Emby", "Jellyfin"]:
+        if event_data.channel in ["Emby", "Jellyfin", "Plex"]:
             if not self.service_infos or event_data.service not in self.service_infos.keys():
                 event_data.cancel = True
                 event_data.source = self.plugin_name
