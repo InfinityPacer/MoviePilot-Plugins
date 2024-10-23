@@ -123,7 +123,7 @@
         "name": "辅助认证",
         "description": "支持使用第三方系统进行辅助认证。",
         "labels": "认证",
-        "version": "1.0",
+        "version": "1.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/auxiliaryauth.png",
         "author": "InfinityPacer",
         "level": 1,
