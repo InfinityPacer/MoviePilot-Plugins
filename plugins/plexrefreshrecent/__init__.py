@@ -1,6 +1,6 @@
 import threading
 from datetime import datetime, timedelta
-from typing import Any, List, Dict, Tuple
+from typing import Any, List, Dict, Tuple, Optional
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -8,9 +8,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
 from app.core.event import eventmanager, Event
+from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
-from app.modules.plex import Plex
 from app.plugins import _PluginBase
+from app.schemas import ServiceInfo
 from app.schemas.types import EventType, NotificationType
 
 lock = threading.Lock()
@@ -35,11 +36,9 @@ class PlexRefreshRecent(_PluginBase):
     plugin_order = 90
     # 可使用的用户级别
     auth_level = 1
-    # Plex
-    _plex = None
 
     # region 私有属性
-
+    mediaserver_helper = None
     # 是否开启
     _enabled = False
     # 任务执行间隔
@@ -52,6 +51,10 @@ class PlexRefreshRecent(_PluginBase):
     _notify = False
     # limit
     _limit = None
+    # 强制刷新
+    _force = False
+    # 媒体服务器
+    _mediaservers = None
     # 定时器
     _scheduler = None
     # 退出事件
@@ -60,18 +63,16 @@ class PlexRefreshRecent(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
+        self.mediaserver_helper = MediaServerHelper()
         if not config:
-            logger.info("Plex元数据刷新服务启动失败，无法获取插件配置")
-            return
-
-        if not self.__init_plex():
             return
 
         self._enabled = config.get("enabled")
         self._cron = config.get("cron")
         self._notify = config.get("notify")
         self._onlyonce = config.get("onlyonce")
-
+        self._force = config.get("force")
+        self._mediaservers = config.get("mediaservers")
         try:
             self._offset_days = int(config.get("offset_days", 3))
         except ValueError:
@@ -105,7 +106,9 @@ class PlexRefreshRecent(_PluginBase):
                 "enabled": self._enabled,
                 "offset_days": self._offset_days,
                 "notify": self._notify,
-                "limit": self._limit
+                "limit": self._limit,
+                "force": self._force,
+                "mediaservers": self._mediaservers
             }
         )
 
@@ -113,6 +116,32 @@ class PlexRefreshRecent(_PluginBase):
         if self._scheduler.get_jobs():
             self._scheduler.print_jobs()
             self._scheduler.start()
+
+    def service_infos(self) -> Optional[Dict[str, ServiceInfo]]:
+        """
+        服务信息
+        """
+        if not self._mediaservers:
+            logger.warning("尚未配置媒体服务器，请检查配置")
+            return None
+
+        services = self.mediaserver_helper.get_services(name_filters=self._mediaservers, type_filter="plex")
+        if not services:
+            logger.warning("获取媒体服务器实例失败，请检查配置")
+            return None
+
+        active_services = {}
+        for service_name, service_info in services.items():
+            if service_info.instance.is_inactive():
+                logger.warning(f"媒体服务器 {service_name} 未连接，请检查配置")
+            else:
+                active_services[service_name] = service_info
+
+        if not active_services:
+            logger.warning("没有已连接的媒体服务器，请检查配置")
+            return None
+
+        return active_services
 
     def get_state(self) -> bool:
         return self._enabled
@@ -149,7 +178,7 @@ class PlexRefreshRecent(_PluginBase):
                         'content': [
                             {
                                 'component': 'VCol',
-                                'props': {'cols': 12, 'md': 4},
+                                'props': {'cols': 12, 'md': 3},
                                 'content': [
                                     {
                                         'component': 'VSwitch',
@@ -164,7 +193,22 @@ class PlexRefreshRecent(_PluginBase):
                             },
                             {
                                 'component': 'VCol',
-                                'props': {'cols': 12, 'md': 4},
+                                'props': {'cols': 12, 'md': 3},
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'force',
+                                            'label': '强制刷新',
+                                            'hint': '无论是否已存在，将重新刷新元数据',
+                                            'persistent-hint': True
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {'cols': 12, 'md': 3},
                                 'content': [
                                     {
                                         'component': 'VSwitch',
@@ -179,7 +223,7 @@ class PlexRefreshRecent(_PluginBase):
                             },
                             {
                                 'component': 'VCol',
-                                'props': {'cols': 12, 'md': 4},
+                                'props': {'cols': 12, 'md': 3},
                                 'content': [
                                     {
                                         'component': 'VSwitch',
@@ -245,7 +289,35 @@ class PlexRefreshRecent(_PluginBase):
                             }
                         ],
                     },
-                ],
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'multiple': True,
+                                            'chips': True,
+                                            'clearable': True,
+                                            'model': 'mediaservers',
+                                            'label': '媒体服务器',
+                                            'items': [{"title": config.name, "value": config.name}
+                                                      for config in self.mediaserver_helper.get_configs().values()
+                                                      if config.type == "plex"],
+                                            'hint': '选择媒体服务器',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
             }
         ], {
             "enabled": False,
@@ -301,24 +373,6 @@ class PlexRefreshRecent(_PluginBase):
         except Exception as e:
             print(str(e))
 
-    def __init_plex(self) -> bool:
-        """初始化Plex"""
-        if not settings.MEDIASERVER:
-            logger.info(f"媒体库配置不正确，请检查")
-            return False
-
-        if "plex" not in settings.MEDIASERVER:
-            logger.info(f"没有配置Plex媒体库，请检查")
-            return False
-
-        if not self._plex:
-            self._plex = Plex().get_plex()
-
-        if not self._plex:
-            logger.info(f"Plex配置不正确，请检查")
-
-        return True
-
     @eventmanager.register(EventType.PluginAction)
     def refresh_recent(self, event: Event = None):
         """刷新最近元数据"""
@@ -328,7 +382,7 @@ class PlexRefreshRecent(_PluginBase):
             if not event_data or event_data.get("action") != "refresh_plex_recent_event":
                 return
 
-        if not self.__init_plex():
+        if not self.__check_plex_media_server():
             return
 
         with lock:
@@ -356,20 +410,31 @@ class PlexRefreshRecent(_PluginBase):
 
     def __refresh_plex(self) -> [bool, int]:
         """刷新Plex"""
-        if not self.__init_plex():
+        if not self.__check_plex_media_server():
             return False, 0
 
-        timestamp = self.__get_timestamp(offset_day=-int(self._offset_days))
-        library_items = self._plex.library.search(limit=self._limit, **{"addedAt>": timestamp})
+        refreshed_count = 0
+        for service in self.service_infos().values():
+            try:
+                plex = service.instance.get_plex()
+                if not plex:
+                    logger.warning(f"{service.name} 获取 Plex 实例失败，请检查配置")
+                    continue
+                logger.info(f"准备对 {service.name} 进行元数据刷新")
+                timestamp = self.__get_timestamp(offset_day=-int(self._offset_days))
+                library_items = service.instance.get_plex().library.search(limit=self._limit, **{"addedAt>": timestamp})
 
-        refreshed_items = {}
-        for item in library_items:
-            self.__refresh_metadata(item, refreshed_items)
+                refreshed_items = {}
+                for item in library_items:
+                    self.__refresh_metadata(item, refreshed_items)
+                    refreshed_count += len(refreshed_items)
+                logger.info(f"{service.name} 元数据刷新已完成，刷新条数：{len(refreshed_items)}")
+            except Exception as e:
+                logger.error(f"{service.name} 刷新最近元数据过程中发生异常，{e}")
 
-        return True, len(refreshed_items)
+        return True, refreshed_count
 
-    @staticmethod
-    def __refresh_metadata(item, refreshed_items):
+    def __refresh_metadata(self, item, refreshed_items):
         """
         递归刷新媒体元数据，但避免重复刷新已处理的项目
         :param item: 要刷新的 Plex 媒体项
@@ -394,11 +459,13 @@ class PlexRefreshRecent(_PluginBase):
             return
 
         # 目前摘要为空且不是季度时，才进行刷新元数据处理
-        if not summary and item.TYPE != "season":
-            item.refresh()  # 触发元数据刷新
-            logger.info(f"刷新元数据已请求：{grandparent_info}{parent_info}{item.title} ({item.type})")
-            # 标记此项目已刷新
-            refreshed_items[item.ratingKey] = True
+        if item.TYPE != "season":
+            if self._force or not summary:
+                # 触发元数据刷新
+                item.refresh()
+                logger.info(f"刷新元数据已请求：{grandparent_info}{parent_info}{item.title} ({item.type})")
+                # 标记此项目已刷新
+                refreshed_items[item.ratingKey] = True
         else:
             logger.info(f"Summary不为空，无需刷新：{grandparent_info}{parent_info}{item.title} ({item.type})")
 
@@ -425,3 +492,12 @@ class PlexRefreshRecent(_PluginBase):
         target_time = current_time + timedelta(days=offset_day)
         target_timestamp = int(target_time.timestamp())
         return target_timestamp
+
+    def __check_plex_media_server(self) -> bool:
+        """
+        检查Plex媒体服务器配置
+        """
+        if not self.service_infos():
+            logger.error(f"Plex 配置不正确，请检查")
+            return False
+        return True
