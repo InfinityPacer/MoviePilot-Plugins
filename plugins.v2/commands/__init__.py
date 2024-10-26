@@ -154,8 +154,8 @@ class Commands(_PluginBase):
                                 'margin-top': '8px',
                                 'margin-bottom': '16px'
                             },
-                            'stacked': True,
-                            'fixed-tabs': True
+                            'stacked': False,
+                            'fixed-tabs': False
                         },
                         'content': [
                             {
