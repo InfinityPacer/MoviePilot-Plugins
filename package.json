@@ -222,7 +222,6 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png",
         "author": "InfinityPacer",
         "level": 1,
-        "v2": true,
         "history": {
             "v1.6": "历史记录硬链接检查支持选择转移方式，配置页面增加了hint提示信息",
             "v1.5": "增加目录硬链接测试",
