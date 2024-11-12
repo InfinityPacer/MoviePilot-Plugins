@@ -557,18 +557,27 @@ class WebDAVBackup(_PluginBase):
             backup_path.mkdir(parents=True, exist_ok=True)
             logger.info(f"本地临时备份文件夹路径：{backup_path}")
 
-            # 需要备份的文件列表
+            # 自动匹配备份文件和目录
             backup_files = [
-                config_path / "user.db",
-                config_path / "app.env",
-                config_path / "category.yaml"
-            ]
+                               item for item in config_path.glob("user.db*")  # 匹配user.db开头的所有文件
+                           ] + [
+                               config_path / "cookies"  # 匹配cookies目录
+                           ] + [
+                               config_path / "app.env",
+                               config_path / "category.yaml"
+                           ]
 
-            # 将文件复制到备份文件夹
-            for file_path in backup_files:
-                if file_path.exists():
-                    logger.info(f"正在备份文件: {file_path}")
-                    shutil.copy(file_path, backup_path)
+            # 将文件和目录复制到备份文件夹
+            for item_path in backup_files:
+                if item_path.exists():
+                    if item_path.is_dir():
+                        # 拷贝目录
+                        shutil.copytree(item_path, backup_path / item_path.name)
+                        logger.info(f"正在备份目录: {item_path}")
+                    else:
+                        # 拷贝文件
+                        shutil.copy(item_path, backup_path)
+                        logger.info(f"正在备份文件: {item_path}")
 
             # 打包备份文件夹为ZIP
             logger.info(f"正在压缩备份文件: {zip_file_path}")
