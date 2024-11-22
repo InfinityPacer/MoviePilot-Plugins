@@ -116,6 +116,7 @@ class SmartRename(_PluginBase):
                                             'model': 'edition_separator',
                                             'label': 'EDITION 分隔符',
                                             'hint': '请输入 EDITION 分隔符，如：. - _ 空格',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
