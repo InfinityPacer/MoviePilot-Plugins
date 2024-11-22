@@ -153,7 +153,7 @@
         "author": "InfinityPacer",
         "level": 1,
         "history": {
-            "v1.5": "增加命令管理插件，实现微信、Telegram等客户端的命令管理"
+            "v1.0": "增加命令管理插件，实现微信、Telegram等客户端的命令管理"
         }
     },
     "AutoDiagnosis": {
@@ -166,6 +166,18 @@
         "level": 1,
         "history": {
             "v2.0": "MoviePilot V2 版本自动诊断插件"
+        }
+    },
+    "SmartRename": {
+        "name": "智能重命名",
+        "description": "在默认规则的基础上，自定义适配多场景重命名。",
+        "labels": "刮削",
+        "version": "1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/smartrename.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v1.5": "增加智能重命名插件，在默认规则的基础上，自定义适配多场景重命名"
         }
     }
 }
