@@ -767,6 +767,16 @@ class AutoDiagnosis(_PluginBase):
                 'url': 'https://github.com',
                 'proxy': True,
             },
+            {
+                'name': 'api.github.com',
+                'url': 'https://api.github.com',
+                'proxy': True,
+            },
+            {
+                'name': 'raw.githubusercontent.com',
+                'url': 'https://raw.githubusercontent.com',
+                'proxy': True,
+            }
         ]
 
     def __get_health_check_sites_options(self):
