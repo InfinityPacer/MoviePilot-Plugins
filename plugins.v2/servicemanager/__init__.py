@@ -255,6 +255,27 @@ class ServiceManager(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'error',
+                                            'variant': 'tonal',
+                                            'text': '注意：请勿随意调整服务频率，否则可能导致站点警告、封禁等后果，相关风险请自行评估与承担'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
@@ -285,7 +306,7 @@ class ServiceManager(_PluginBase):
         if self._sitedata_refresh:
             services.append({
                 "id": "sitedata_refresh",
-                "name": "站点数据刷新",
+                "name": "站点数据统计",
                 "trigger": CronTrigger.from_crontab(self._sitedata_refresh),
                 "func": SiteChain().refresh_userdatas
             })
@@ -315,7 +336,7 @@ class ServiceManager(_PluginBase):
         if self._random_wallpager:
             services.append({
                 "id": "random_wallpager",
-                "name": "壁纸缓存",
+                "name": "壁纸缓存更新",
                 "trigger": CronTrigger.from_crontab(self._random_wallpager),
                 "func": TmdbChain().get_trending_wallpapers
             })
