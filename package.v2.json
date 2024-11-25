@@ -160,12 +160,13 @@
         "name": "自动诊断",
         "description": "自动发起系统健康检查、网络连通性测试以及硬链接检查。",
         "labels": "系统设置",
-        "version": "1.7",
+        "version": "1.8",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
-            "v2.0": "MoviePilot V2 版本自动诊断插件"
+            "v1.8": "增加网络连通性测试站点",
+            "v1.7": "MoviePilot V2 版本自动诊断插件"
         }
     },
     "SmartRename": {
