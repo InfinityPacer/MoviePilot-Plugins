@@ -6,7 +6,7 @@ from jinja2 import Template
 from app.core.event import Event, eventmanager
 from app.log import logger
 from app.plugins import _PluginBase
-from app.schemas.event import SmartRenameEventData
+from app.schemas.event import TransferRenameEventData
 from app.schemas.types import ChainEventType
 
 lock = threading.Lock()
@@ -151,18 +151,18 @@ class SmartRename(_PluginBase):
         """
         pass
 
-    @eventmanager.register(ChainEventType.SmartRename)
-    def handle_smart_rename(self, event: Event):
+    @eventmanager.register(ChainEventType.TransferRename)
+    def handle_transfer_rename(self, event: Event):
         """
-        处理 SmartRename 事件
+        处理 TransferRename 事件
         :param event: 事件数据
         """
         if not event or not event.event_data:
             return
 
-        event_data: SmartRenameEventData = event.event_data
+        event_data: TransferRenameEventData = event.event_data
 
-        logger.info(f"处理 SmartRename 事件 - {event_data}")
+        logger.info(f"处理 TransferRename 事件 - {event_data}")
 
         if event_data.updated:
             logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
