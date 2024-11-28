@@ -6,7 +6,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from typing import Any, List, Dict, Tuple, Optional, Union, Set
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, parse_qsl, urlencode, urlunparse
 
 import pytz
 from app.helper.sites import SitesHelper
@@ -3158,6 +3158,30 @@ class BrushFlowLowFreq(_PluginBase):
                 return data
         return None
 
+    def __reset_download_url(self, torrent_url, site_id):
+        """
+        处理下载地址
+        """
+        try:
+            # 检查 torrent_url 是否为有效的下载 URL，并且 site 是 NexusPHP
+            if not torrent_url or torrent_url.startswith("magnet") or not self.__is_nexusphp(site_id):
+                return torrent_url
+
+            # 解析 URL
+            parsed_url = urlparse(torrent_url)
+
+            # 如果 URL 中已有查询参数，使用 urlencode 进行拼接
+            query_params = dict(parse_qsl(parsed_url.query))
+            query_params["letdown"] = "1"
+
+            # 重新构造带有新参数的 URL
+            new_query = urlencode(query_params)
+            new_url = urlunparse(parsed_url._replace(query=new_query))
+            return new_url
+        except Exception as e:
+            logger.error(f"Error while resetting downloader URL for torrent: {torrent_url}. Error: {str(e)}")
+            return torrent_url
+
     def __download(self, torrent: TorrentInfo) -> Optional[str]:
         """
         添加下载任务
@@ -3191,6 +3215,7 @@ class BrushFlowLowFreq(_PluginBase):
             logger.error(f"获取下载链接失败：{torrent.title}")
             return None
 
+        torrent_content = self.__reset_download_url(torrent_url=torrent_content, site_id=torrent.site)
         downloader = self.downloader
         if not downloader:
             return None
@@ -4016,3 +4041,17 @@ class BrushFlowLowFreq(_PluginBase):
             return False
 
         return True
+
+    def __is_nexusphp(self, site_id):
+        """
+        是否NexusPHP站点
+        """
+        indexers = self.sites_helper.get_indexers()
+        if not indexers:
+            return False
+
+        site = next((item for item in indexers if item.get("id") == site_id), None)
+        if not site:
+            return False
+
+        return site.get("schema", "").startswith("Nexus")
