@@ -45,8 +45,10 @@ class ServiceManager(_PluginBase):
     _subscribe_search = ""
     # 缓存清理（cron 表达式）
     _clear_cache = ""
-    # 壁纸缓存（cron 表达式
+    # 壁纸缓存（cron 表达式）
     _random_wallpager = ""
+    # 订阅元数据更新（小时）
+    _subscribe_tmdb = ""
 
     # endregion
 
@@ -60,6 +62,7 @@ class ServiceManager(_PluginBase):
         self._subscribe_search = config.get("subscribe_search")
         self._clear_cache = config.get("clear_cache")
         self._random_wallpager = config.get("random_wallpager")
+        self._subscribe_tmdb = config.get("subscribe_tmdb")
 
         if self._reset_and_disable:
             self._enabled = False
@@ -211,6 +214,27 @@ class ServiceManager(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'subscribe_tmdb',
+                                            'label': '订阅元数据更新',
+                                            'type': 'number',
+                                            "min": "1",
+                                            'placeholder': '最低不能小于1',
+                                            'hint': '设置订阅元数据更新的周期，如 1/3/6/12，最低为 1',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
@@ -339,6 +363,22 @@ class ServiceManager(_PluginBase):
                 "name": "壁纸缓存",
                 "trigger": CronTrigger.from_crontab(self._random_wallpager),
                 "func": TmdbChain().get_trending_wallpapers
+            })
+
+        # 订阅元数据更新服务
+        if self._subscribe_tmdb:
+            try:
+                subscribe_tmdb = max(int(self._subscribe_tmdb or 1), 1)
+            except (ValueError, TypeError):
+                subscribe_tmdb = 1
+            services.append({
+                "id": "subscribe_tmdb",
+                "name": "订阅元数据更新",
+                "trigger": "interval",
+                "func": SubscribeChain().check,
+                "kwargs": {
+                    "hours": subscribe_tmdb
+                }
             })
 
         return services
