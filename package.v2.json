@@ -187,11 +187,12 @@
         "name": "服务管理",
         "description": "实现自定义服务管理。",
         "labels": "系统设置",
-        "version": "1.0.1",
+        "version": "1.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/servicemanager.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.1": "增加订阅元数据更新服务",
             "v1.0": "增加服务管理插件，实现自定义服务管理"
         }
     }
