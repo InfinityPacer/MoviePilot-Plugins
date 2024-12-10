@@ -1,3 +1,4 @@
+import random
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple, Optional
@@ -547,6 +548,47 @@ class SubscribeAssistant(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'props': {
+                            'style': {
+                                'margin-top': '12px'
+                            },
+                        },
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '注意：相关订阅状态说明，请参阅'
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/jxxghp/MoviePilot/pull/3330',
+                                                    'target': '_blank'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'u',
+                                                        'text': '#3330'
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
@@ -689,15 +731,7 @@ class SubscribeAssistant(_PluginBase):
         """
         下载待定检查
         """
-        if not self._auto_tv_pending:
-            return
-
-        subscribes = self.subscribe_oper.list(state="N,R,P")
-        if not subscribes:
-            return
-
-        for subscribe in subscribes:
-            self.__process_tv_pending(subscribe)
+        pass
 
     def tv_pending_check(self):
         """
@@ -819,7 +853,7 @@ class SubscribeAssistant(_PluginBase):
 
             # 检查订阅状态是否可处理
             if subscribe.state not in ["N", "R", "P"]:
-                logger.debug(f"{subscribe.name if not mediainfo else mediainfo.title}（{subscribe.id}）"
+                logger.debug(f"{subscribe.name if not mediainfo else mediainfo.title} [{subscribe.id}]"
                              f"当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
                 return
 
@@ -844,7 +878,7 @@ class SubscribeAssistant(_PluginBase):
             # 检查媒体类型是否为 TV
             if mediainfo.type != MediaType.TV:
                 logger.debug(
-                    f"{mediainfo.title_year}（{subscribe.id}）类型为 {mediainfo.type}，非 TV 类型，跳过处理")
+                    f"{mediainfo.title_year} [{subscribe.id}]类型为 {mediainfo.type}，非 TV 类型，跳过处理")
                 return
 
             # 检查季信息是否存在
@@ -877,24 +911,27 @@ class SubscribeAssistant(_PluginBase):
             pending_date = air_date + timedelta(days=self._auto_tv_pending_days)
             current_date = datetime.now()
 
+            logger.debug(f"{mediainfo.title_year} [{subscribe.id}]，上线日期: {air_date}，"
+                         f"待定天数：{self._auto_tv_pending_days}，当前日期: {current_date}")
+
             # 判断目标状态
             if subscribe.state == "P" and pending_date <= current_date:
                 # 如果当前状态是待定 (P)，但不再符合待定条件，更新为已处理 (R)
                 target_state = "R"
                 logger.debug(
-                    f"{mediainfo.title_year}（{subscribe.id}），季数 {season} 当前状态为 'P'，"
+                    f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态为 'P'，"
                     f"不符合待定条件，目标状态更新为 'R'")
             elif subscribe.state != "P" and pending_date > current_date:
                 # 如果当前状态不是待定 (P)，但符合待定条件，更新为待定 (P)
                 target_state = "P"
                 logger.debug(
-                    f"{mediainfo.title_year}（{subscribe.id}），季数 {season} 当前状态非 'P'，"
+                    f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态非 'P'，"
                     f"符合待定条件，目标状态更新为 'P'")
             else:
                 # 否则保持当前状态
                 target_state = subscribe.state
                 logger.debug(
-                    f"{mediainfo.title_year}（{subscribe.id}），季数 {season} 当前状态无需变更，保持为 {target_state}")
+                    f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态无需变更，保持为 {target_state}")
 
             # 如果订阅状态已是目标状态，无需更新
             if subscribe.state == target_state:
@@ -902,16 +939,14 @@ class SubscribeAssistant(_PluginBase):
 
             # 如果当前状态为 "N"，且目标状态已确定非 "N"，触发补全搜索
             if subscribe.state == "N" and target_state != "N":
-                logger.info(f"新增订阅触发补全搜索任务，标题：{mediainfo.title_year}（{subscribe.id}）")
-                self._scheduler.add_job(
-                    func=lambda: SubscribeChain().search(sid=subscribe.id),
-                    trigger="date",
-                    run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(minutes=1),
-                    name="订阅助手",
-                )
+                random_minutes = random.uniform(3, 5)
+                logger.info(f"新增订阅触发补全搜索任务，标题：{mediainfo.title_year} [{subscribe.id}]，"
+                            f"任务将在 {random_minutes:.2f} 分钟后触发")
+                timer = threading.Timer(random_minutes * 60, lambda: SubscribeChain().search(sid=subscribe.id))
+                timer.start()
 
             # 更新订阅状态
-            logger.info(f"{mediainfo.title_year}（{subscribe.id}），"
+            logger.info(f"{mediainfo.title_year} [{subscribe.id}]，"
                         f"季数 {season} 状态从 {subscribe.state} 更新为 {target_state}")
             self.subscribe_oper.update(subscribe.id, {"state": target_state})
 
@@ -936,9 +971,9 @@ class SubscribeAssistant(_PluginBase):
 
                 # 构造标题，根据状态动态调整
                 if target_state == "P":
-                    title = f"{mediainfo.title_year} {meta.season} 已标记为待定"
+                    title = f"{mediainfo.title_year} {meta.season} 已标记待定"
                 else:
-                    title = f"{mediainfo.title_year} {meta.season} 已标记为订阅中"
+                    title = f"{mediainfo.title_year} {meta.season} 已标记订阅中"
 
                 # 推送消息
                 self.post_message(
