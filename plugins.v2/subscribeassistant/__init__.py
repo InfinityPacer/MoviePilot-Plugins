@@ -27,7 +27,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件名称
     plugin_name = "订阅助手"
     # 插件描述
-    plugin_desc = "实现多场景管理系统订阅与状态同步。"
+    plugin_desc = "测试插件，尚未发布，请勿使用。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
