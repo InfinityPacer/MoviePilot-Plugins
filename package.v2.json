@@ -196,5 +196,17 @@
             "v1.1": "增加订阅元数据更新服务",
             "v1.0": "增加服务管理插件，实现自定义服务管理"
         }
+    },
+    "SubscribeAssistant": {
+        "name": "订阅助手",
+        "description": "实现多场景管理系统订阅与状态同步。",
+        "labels": "订阅",
+        "version": "0.0.1",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v0.0.1": "增加订阅助手插件，实现多场景管理系统订阅与状态同步"
+        }
     }
 }
