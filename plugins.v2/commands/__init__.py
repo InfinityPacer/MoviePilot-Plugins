@@ -331,6 +331,7 @@ class Commands(_PluginBase):
             return
 
         # 如果不在选择的服务实例中，则直接拦截
+        event_data.source = self.plugin_name
         if not self.service_infos or event_data.service not in self.service_infos.keys():
             event_data.cancel = True
             logger.warning(f"命令注册被拦截，{event_data}")
