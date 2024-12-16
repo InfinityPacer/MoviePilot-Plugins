@@ -712,21 +712,20 @@ class SubscribeAssistant(_PluginBase):
         订阅自动检查
         """
         self.download_check()
-        self.tv_pending_check()
-        self.best_version_check()
+        # self.tv_pending_check()
+        # self.best_version_check()
 
     def download_check(self):
         """
         下载检查
         """
-        self.download_delete_check()
+        # self.download_delete_check()
         self.download_pending_check()
 
     def pending_check(self):
         """
         待定检查
         """
-        self.download_pending_check()
         self.tv_pending_check()
 
     def download_delete_check(self):
@@ -741,13 +740,16 @@ class SubscribeAssistant(_PluginBase):
             return
 
         for torrent_hash, torrent_task in torrent_tasks.items():
-            self.__process_torrent_task_delete(torrent_hash=torrent_hash, torrent_task=torrent_task)
+            self.process_torrent_task_delete(torrent_hash=torrent_hash, torrent_task=torrent_task)
 
     def download_pending_check(self):
         """
         下载待定检查
         """
-        pass
+        if not self._auto_download_pending:
+            return
+
+        self.process_download_pending()
 
     def tv_pending_check(self):
         """
@@ -899,6 +901,8 @@ class SubscribeAssistant(_PluginBase):
                         "description": context.torrent_info.description,
                         "enclosure": context.torrent_info.enclosure,
                         "page_url": context.torrent_info.page_url,
+                        "pending_check": self._auto_download_pending,
+                        "timeout_check": self._auto_download_delete,
                         "time": time.time(),
                     }
                 })
@@ -1103,6 +1107,8 @@ class SubscribeAssistant(_PluginBase):
             downloaded = torrent.get("downloaded")
             # 种子大小
             total_size = torrent.get("total_size")
+            # 目标大小
+            target_size = torrent.get("size")
             # 添加时间
             add_on = (torrent.get("added_on") or 0)
             add_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(add_on))
@@ -1149,6 +1155,8 @@ class SubscribeAssistant(_PluginBase):
                 iatime = date_now - int(torrent.date_active.timestamp())
             # 种子大小
             total_size = torrent.total_size
+            # 目标大小
+            target_size = torrent.size_when_done
             # 添加时间
             add_on = (torrent.date_added.timestamp() if torrent.date_added else 0)
             add_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(add_on))
@@ -1169,12 +1177,38 @@ class SubscribeAssistant(_PluginBase):
             "iatime": iatime,
             "dltime": dltime,
             "total_size": total_size,
+            "target_size": target_size,
             "add_time": add_time,
             "add_on": add_on,
             "tags": tags,
             "tracker": tracker,
             "state": state,
         }
+
+    @staticmethod
+    def __get_torrent_completion_status(torrent_info: dict) -> Tuple[bool, float]:
+        """
+        获取种子的完成状态和相关时间信息
+        :param torrent_info: 包含种子信息的字典，必须包含种子状态、下载大小、总大小等字段
+        :return: 返回一个元组，第一个元素是布尔值，表示种子是否完成，第二个元素是完成的时间（如果已完成，返回0；否则返回下载时间）
+        """
+        if not torrent_info:
+            return False, -1
+
+        # 如果种子正在做种，说明已完成
+        torrent_state = torrent_info.get("state")
+        if torrent_state in ["seeding", "seed_pending"]:
+            return True, 0
+
+        # 如果存在做种时间，说明已完成
+        if torrent_info.get("seeding_time"):
+            return True, 0
+
+        # 如果种子的已下载大小大于目标大小，说明已完成
+        if torrent_info.get("downloaded") >= torrent_info.get("target_size"):
+            return True, 0
+
+        return False, torrent_info.get("dltime")
 
     def __get_subscribe_by_source(self, source: str) -> Tuple[Optional[dict], Optional[Subscribe]]:
         """
@@ -1199,7 +1233,7 @@ class SubscribeAssistant(_PluginBase):
         subscribe = self.subscribe_oper.get(subscribe_id)
         return subscribe_dict, subscribe
 
-    def __process_torrent_task_delete(self, torrent_hash: str, torrent_task: dict, torrent_info: Optional[dict] = None):
+    def process_torrent_task_delete(self, torrent_hash: str, torrent_task: dict, torrent_info: Optional[dict] = None):
         """
         处理单个种子超时删除
         :param torrent_hash: 种子标识
@@ -1235,12 +1269,76 @@ class SubscribeAssistant(_PluginBase):
                 torrent_info.get("dltime") >= float(self._download_timeout) * 3600:
             return
 
+    def process_download_pending(self):
+        """
+        处理下载自动待定
+        """
+        if not self._auto_download_pending:
+            return
+
+        self.__process_download_torrent_task(self.__get_data(key="subscribes"), self.__get_data(key="torrents"))
+
+    def __process_download_torrent_task(self, subscribe_tasks: dict, torrent_tasks: dict):
+        """
+        处理下载种子任务
+        :param subscribe_tasks: 订阅任务字典
+        :param torrent_tasks: 下载任务字典
+        """
+        for torrent_hash, torrent_task in torrent_tasks.items():
+            subscribe_id = str(torrent_task.get("subscribe_id"))
+            subscribe_info = torrent_task.get("subscribe_info")
+            episodes = torrent_task.get("episodes")
+            username = torrent_task.get("username")
+            downloader = torrent_task.get("downloader")
+            site_id = torrent_task.get("site_id")
+            site_name = torrent_task.get("site_name")
+            title = torrent_task.get("title")
+            description = torrent_task.get("description")
+            enclosure = torrent_task.get("enclosure")
+            page_url = torrent_task.get("page_url")
+            pending_check = torrent_task.get("pending_check")
+            timeout_check = torrent_task.get("timeout_check")
+            torrent_time = torrent_task.get("time")
+
+            subscribe_task = subscribe_tasks.get(subscribe_id)
+            if not subscribe_task:
+                logger.debug(f"种子 {torrent_hash} 没有找到相关的订阅信息")
+                continue
+
+            torrent_tasks = subscribe_task.get("torrent_tasks") or []
+            subscribe_torrent_task = {}
+            for task in torrent_tasks:
+                if task.get("hash") == torrent_hash:
+                    subscribe_torrent_task = task
+                    break
+
+            if not subscribe_torrent_task:
+                logger.debug(f"种子 {torrent_hash} 没有找到对应的订阅种子任务")
+                continue
+
+            downloader = torrent_task.get("downloader")
+            service = self.__get_downloader_service(downloader=downloader)
+            if not service:
+                logger.debug(f"种子 {torrent_hash} 获取下载器 {downloader} 实例失败，请检查配置")
+                continue
+            torrent = self.__get_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
+            if not torrent:
+                logger.debug(f"种子 {torrent_hash} 没有获取到对应的种子详情，可能已被删除")
+                continue
+            torrent_info = self.__get_torrent_info(torrent=torrent, dl_type=service.type)
+            if not torrent_info:
+                logger.debug(f"种子 {torrent_hash} 没有获取到对应的种子详情，可能是不支持的种子类型")
+                continue
+
+            is_completed, time_info = self.__get_torrent_completion_status(torrent_info=torrent_info)
+            logger.info(is_completed)
+
     def process_tv_pending(self, subscribes: [Subscribe | tuple[Subscribe, MediaInfo]]):
         """
         处理剧集自动待定
         :param subscribes: 订阅对象列表
         """
-        if not self._auto_download_pending or not subscribes:
+        if not self._auto_tv_pending or not subscribes:
             return
 
         self.__with_lock_and_update_subscribe_tasks(method=self.__process_tv_pending, subscribes=subscribes)
@@ -1571,6 +1669,8 @@ class SubscribeAssistant(_PluginBase):
     def clear_tasks(self, subscribe_id: int, subscribe: dict):
         """
         清理任务
+        :param subscribe_id: 订阅 ID
+        :param subscribe: 订阅信息
         """
         self.__with_lock_and_update_subscribe_tasks(
             method=self.__clear_subscribe_tasks, subscribe_id=subscribe_id
@@ -1583,6 +1683,8 @@ class SubscribeAssistant(_PluginBase):
     def __clear_subscribe_tasks(subscribe_tasks: dict, subscribe_id: int):
         """
         清理订阅任务
+        :param subscribe_tasks: 订阅任务字典
+        :param subscribe_id: 订阅 ID
         """
         subscribe_id = str(subscribe_id)
         subscribe_tasks.pop(subscribe_id, None)
@@ -1591,9 +1693,11 @@ class SubscribeAssistant(_PluginBase):
     def __clear_torrent_tasks(torrent_tasks: dict, subscribe_id: int):
         """
         清理种子任务
+        :param torrent_tasks: 种子任务字典
+        :param subscribe_id: 订阅 ID
         """
         for k in list(torrent_tasks.keys()):
-            if torrent_tasks[k]["subscribe_id"] == subscribe_id:
+            if torrent_tasks[k].get("subscribe_id") == subscribe_id:
                 del torrent_tasks[k]
 
     def __update_subscribe_torrent_task(self, subscribe_tasks: dict, subscribe: Subscribe,
