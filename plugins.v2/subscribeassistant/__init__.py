@@ -3,7 +3,7 @@ import random
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Tuple, Optional, Union, Set
+from typing import Any, Dict, List, Tuple, Optional, Union, Callable
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -483,7 +483,7 @@ class SubscribeAssistant(_PluginBase):
                                                             'label': '最新上线剧集待定天数',
                                                             'type': 'number',
                                                             "min": "0",
-                                                            'hint': 'TMDB中上线日期加上设置的天数大于当前日期，则视为待定',
+                                                            'hint': 'TMDB中上映日期加上设置的天数大于当前日期，则视为待定',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -760,14 +760,30 @@ class SubscribeAssistant(_PluginBase):
         if not subscribes:
             return
 
-        for subscribe in subscribes:
-            self.__process_tv_pending(subscribe)
+        self.process_tv_pending(subscribes)
 
     def best_version_check(self):
         """
         洗版检查
         """
         pass
+
+    @eventmanager.register(EventType.SubscribeDeleted)
+    def handle_subscribe_deleted_event(self, event: Event = None):
+        """
+        处理订阅删除事件
+        """
+        try:
+            # 验证事件数据
+            if not event or not event.event_data:
+                return
+
+            subscribe_id = event.event_data.get("subscribe_id")
+            subscribe = event.event_data.get("subscribe")
+            logger.debug(f"接收到订阅删除事件，订阅 ID: {subscribe_id}，数据：{subscribe}")
+            self.clear_tasks(subscribe_id=subscribe_id, subscribe=subscribe)
+        except Exception as e:
+            logger.error(f"处理订阅删除事件时发生错误: {str(e)}")
 
     @eventmanager.register(EventType.SubscribeAdded)
     def handle_subscribe_added_event(self, event: Event = None):
@@ -784,29 +800,29 @@ class SubscribeAssistant(_PluginBase):
                 logger.debug("自动待定功能未开启，跳过处理")
                 return
 
-            sub_id = event.event_data.get("subscribe_id")
+            subscribe_id = event.event_data.get("subscribe_id")
             username = event.event_data.get("username")
             mediainfo_dict = event.event_data.get("mediainfo")
 
-            logger.debug(f"接收到订阅添加事件，来自用户: {username}, 订阅 ID: {sub_id}, 数据: {mediainfo_dict}")
+            logger.debug(f"接收到订阅添加事件，来自用户: {username}, 订阅 ID: {subscribe_id}, 数据: {mediainfo_dict}")
 
             # 缺少订阅信息或媒体信息
-            if not sub_id or not mediainfo_dict:
-                logger.warning(f"订阅事件数据缺失，跳过处理。订阅 ID: {sub_id}, 媒体信息: {mediainfo_dict}")
+            if not subscribe_id or not mediainfo_dict:
+                logger.warning(f"订阅事件数据缺失，跳过处理。订阅 ID: {subscribe_id}, 媒体信息: {mediainfo_dict}")
                 return
 
             # 获取订阅信息和媒体信息
-            subscribe = self.subscribe_oper.get(sub_id)
+            subscribe = self.subscribe_oper.get(subscribe_id)
             mediainfo = MediaInfo()
             mediainfo.from_dict(mediainfo_dict)
 
             # 订阅或媒体信息获取失败
             if not subscribe or not mediainfo:
-                logger.error(f"订阅 ID {sub_id} 的订阅信息获取失败，媒体标题: {mediainfo_dict.get('title_year')}")
+                logger.error(f"订阅 ID {subscribe_id} 的订阅信息获取失败，媒体标题: {mediainfo_dict.get('title_year')}")
                 return
 
             # 调用公共方法处理订阅
-            self.__process_tv_pending(subscribe, mediainfo)
+            self.process_tv_pending([(subscribe, mediainfo)])
         except Exception as e:
             logger.error(f"处理订阅添加事件时发生错误: {str(e)}")
 
@@ -835,7 +851,7 @@ class SubscribeAssistant(_PluginBase):
             torrent_hash = event.event_data.get("hash")
             context: Context = event.event_data.get("context")
             downloader = event.event_data.get("downloader")
-            episodes = event.event_data.get("episodes")
+            episodes = list(event.event_data.get("episodes", []))
             username = event.event_data.get("username")
             source = event.event_data.get("source")
 
@@ -861,27 +877,32 @@ class SubscribeAssistant(_PluginBase):
                 return
 
             # 更新订阅下载任务
-            subscribe_tasks = self.__get_data(key="subscribes")
-            self.__update_subscribe_torrent_task(subscribe=subscribe, subscribe_tasks=subscribe_tasks,
-                                                 torrent_info=context.torrent_info)
-            self.__save_data(key="subscribes", value=subscribe_tasks)
+            self.__with_lock_and_update_subscribe_tasks(method=self.__update_subscribe_torrent_task,
+                                                        subscribe=subscribe,
+                                                        torrent_hash=torrent_hash,
+                                                        torrent_info=context.torrent_info,
+                                                        episodes=episodes,
+                                                        downloader=downloader)
 
-            torrent_tasks = self.__get_data(key="torrent_tasks")
-            torrent_tasks[torrent_hash] = {
-                "hash": torrent_hash,
-                "subscribe_id": subscribe.id,
-                "subscribe_info": subscribe_info,
-                "episodes": episodes,
-                "username": username,
-                "downloader": downloader,
-                "site": context.torrent_info.site,
-                "title": context.torrent_info.title,
-                "description": context.torrent_info.description,
-                "enclosure": context.torrent_info.enclosure,
-                "page_url": context.torrent_info.page_url,
-                "time": time.time(),
-            }
-            self.save_data(key="torrent_tasks", value=torrent_tasks)
+            self.__with_lock_and_update_torrent_tasks(
+                method=lambda tasks: tasks.update({
+                    torrent_hash: {
+                        "hash": torrent_hash,
+                        "subscribe_id": subscribe.id if subscribe else None,
+                        "subscribe_info": subscribe_info,
+                        "episodes": episodes,
+                        "username": username,
+                        "downloader": downloader,
+                        "site_id": context.torrent_info.site,
+                        "site_name": context.torrent_info.site_name,
+                        "title": context.torrent_info.title,
+                        "description": context.torrent_info.description,
+                        "enclosure": context.torrent_info.enclosure,
+                        "page_url": context.torrent_info.page_url,
+                        "time": time.time(),
+                    }
+                })
+            )
         except Exception as e:
             logger.error(f"处理下载添加事件时发生错误: {str(e)}")
 
@@ -918,7 +939,9 @@ class SubscribeAssistant(_PluginBase):
             return
 
         # 获取种子信息
-        context: Context = event.event_data.get("context")
+        context: Context = event_data.context
+        downloader = event_data.downloader
+        episodes = list(event_data.episodes or [])
         if not context or not context.torrent_info:
             logger.info("没有获取到有效的种子任务信息，跳过处理")
             return
@@ -929,16 +952,17 @@ class SubscribeAssistant(_PluginBase):
             logger.debug(f"未能找到订阅信息，跳过处理")
             return
 
+        # 更新订阅下载任务
+        self.__with_lock_and_update_subscribe_tasks(method=self.__update_subscribe_torrent_task,
+                                                    subscribe=subscribe,
+                                                    torrent_info=context.torrent_info,
+                                                    episodes=episodes,
+                                                    downloader=downloader,
+                                                    pending=True)
         # 更新订阅信息为待定
         logger.debug(f"{self.__format_subscribe(subscribe)} 已更新为待定状态")
         if subscribe.state != "P":
-            # 更新订阅为待定状态
             self.subscribe_oper.update(subscribe.id, {"state": "P"})
-            # 更新订阅下载任务
-            subscribe_tasks = self.__get_data(key="subscribes")
-            self.__update_subscribe_torrent_task(subscribe=subscribe, subscribe_tasks=subscribe_tasks,
-                                                 torrent_info=context.torrent_info, pending=True)
-            self.__save_data(key="subscribes", value=subscribe_tasks)
 
     def __get_downloader_service(self, downloader: str) -> Optional[ServiceInfo]:
         """
@@ -1211,166 +1235,182 @@ class SubscribeAssistant(_PluginBase):
                 torrent_info.get("dltime") >= float(self._download_timeout) * 3600:
             return
 
-    def __process_tv_pending(self, subscribe: Subscribe, mediainfo: Optional[MediaInfo] = None):
+    def process_tv_pending(self, subscribes: [Subscribe | tuple[Subscribe, MediaInfo]]):
         """
         处理剧集自动待定
-        :param subscribe: 订阅对象
-        :param mediainfo: 媒体信息对象
+        :param subscribes: 订阅对象列表
         """
-        try:
-            self.save_data(key="subscribe_pending", value={})
+        if not self._auto_download_pending or not subscribes:
+            return
 
-            if not subscribe:
-                return
+        self.__with_lock_and_update_subscribe_tasks(method=self.__process_tv_pending, subscribes=subscribes)
 
-            # 检查订阅状态是否可处理
-            if subscribe.state not in ["N", "R", "P"]:
-                logger.debug(f"{subscribe.name if not mediainfo else mediainfo.title} [{subscribe.id}]"
-                             f"当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
-                return
-
-            # 检查订阅类型是否为电视剧
-            if subscribe.type != MediaType.TV.value:
-                logger.debug(f"{subscribe.name} 的类型为 {subscribe.type}，非 TV 类型，跳过处理")
-                return
-
-            # 自动识别媒体信息
-            if not mediainfo:
-                mediainfo = self.__recognize_media(subscribe)
-
-            if not mediainfo:
-                logger.warning(f"{subscribe.name} 未能识别到媒体信息，跳过处理")
-                return
-
-            # 检查媒体类型是否为 TV
-            if mediainfo.type != MediaType.TV:
-                logger.debug(
-                    f"{mediainfo.title_year} [{subscribe.id}] 类型为 {mediainfo.type}，非 TV 类型，跳过处理")
-                return
-
-            # 检查季信息是否存在
-            if not mediainfo.season_info:
-                logger.warning(f"{mediainfo.title_year} 的 season_info 为空，跳过处理")
-                return
-
-            # 查找与当前订阅季数匹配的首播日期 (air_date)
-            season = subscribe.season
-            air_day = None
-            for season_info in mediainfo.season_info:
-                if season_info.get("season_number") == season:
-                    air_day = season_info.get("air_date")
-                    break
-
-            if not air_day:
-                # 未找到与订阅季数匹配的首播日期
-                logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season} 对应的 air_date，跳过处理")
-                return
-
-            # 解析上线日期
-            try:
-                air_date = datetime.strptime(air_day, "%Y-%m-%d")
-            except ValueError:
-                # 首播日期格式错误
-                logger.error(f"{mediainfo.title} 的 air_date 格式错误：{air_day}，跳过处理")
-                return
-
-            # 判断是否符合 auto_tv_pending_days 的要求
-            pending_date = air_date + timedelta(days=self._auto_tv_pending_days)
-            current_date = datetime.now()
-
-            logger.debug(f"{mediainfo.title_year} [{subscribe.id}]，上线日期: {air_date}，"
-                         f"待定天数：{self._auto_tv_pending_days}，当前日期: {current_date}")
-
-            # 判断目标状态
-            if subscribe.state == "P" and pending_date <= current_date:
-                # 如果当前状态是待定 (P)，但不再符合待定条件，更新为已处理 (R)
-                target_state = "R"
-                logger.debug(
-                    f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态为 'P'，"
-                    f"不符合待定条件，目标状态更新为 'R'")
-            elif subscribe.state != "P" and pending_date > current_date:
-                # 如果当前状态不是待定 (P)，但符合待定条件，更新为待定 (P)
-                target_state = "P"
-                logger.debug(
-                    f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态非 'P'，"
-                    f"符合待定条件，目标状态更新为 'P'")
+    def __process_tv_pending(self, subscribe_tasks: dict, subscribes: [Subscribe | tuple[Subscribe, MediaInfo]]):
+        """
+        处理剧集自动待定
+        :param subscribe_tasks: 订阅任务字典
+        :param subscribes: 订阅对象列表
+        """
+        for data in subscribes:
+            if isinstance(data, tuple):
+                subscribe, mediainfo = data
             else:
-                # 否则保持当前状态
-                target_state = subscribe.state
-                logger.debug(
-                    f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态无需变更，保持为 {target_state}")
+                subscribe = data
+                mediainfo = None
+            try:
+                # 检查订阅状态是否可处理
+                if subscribe.state not in ["N", "R", "P"]:
+                    logger.debug(f"{subscribe.name if not mediainfo else mediainfo.title} [{subscribe.id}]"
+                                 f"当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
+                    continue
 
-            # 如果订阅状态已是目标状态，无需更新
-            if subscribe.state == target_state:
-                return
+                # 检查订阅类型是否为电视剧
+                if subscribe.type != MediaType.TV.value:
+                    logger.debug(f"{subscribe.name} 的类型为 {subscribe.type}，非 TV 类型，跳过处理")
+                    continue
 
-            # 如果当前状态为 "N"，且目标状态已确定非 "N"，触发补全搜索
-            if subscribe.state == "N" and target_state != "N":
-                random_minutes = random.uniform(3, 5)
-                logger.info(f"新增订阅触发补全搜索任务，标题：{mediainfo.title_year} [{subscribe.id}]，"
-                            f"任务将在 {random_minutes:.2f} 分钟后触发")
-                timer = threading.Timer(random_minutes * 60, lambda: SubscribeChain().search(sid=subscribe.id))
-                timer.start()
+                # 自动识别媒体信息
+                if not mediainfo:
+                    mediainfo = self.__recognize_media(subscribe)
 
-            # 更新订阅状态
-            logger.info(f"{mediainfo.title_year} [{subscribe.id}]，"
-                        f"季数 {subscribe.season} 状态从 {subscribe.state} 更新为 {target_state}")
-            self.subscribe_oper.update(subscribe.id, {"state": target_state})
+                if not mediainfo:
+                    logger.warning(f"{subscribe.name} 未能识别到媒体信息，跳过处理")
+                    continue
 
-            # 获取订阅任务并更新订阅状态
-            tv_pending = target_state == "P"
-            subscribe_tasks = self.__get_data(key="subscribes")
-            self.__update_subscribe_tv_pending_task(subscribe=subscribe, subscribe_tasks=subscribe_tasks,
-                                                    pending=tv_pending)
-            self.__save_data(key="subscribes", value=subscribe_tasks)
+                # 检查媒体类型是否为 TV
+                if mediainfo.type != MediaType.TV:
+                    logger.debug(
+                        f"{mediainfo.title_year} [{subscribe.id}] 类型为 {mediainfo.type}，非 TV 类型，跳过处理")
+                    continue
 
-            # 消息推送
-            if self._notify:
-                # 构造消息文本
-                text_parts = []
-                if mediainfo.vote_average:
-                    text_parts.append(f"评分：{mediainfo.vote_average}")
-                if subscribe.username:
-                    text_parts.append(f"来自用户：{subscribe.username}")
-                if air_day:
-                    text_parts.append(f"上线日期：{air_day}")
-                # 将非空部分拼接成完整的文本
-                text = "，".join(text_parts) if text_parts else ""
+                # 检查季信息是否存在
+                if not mediainfo.season_info:
+                    logger.warning(f"{mediainfo.title_year} 的 season_info 为空，跳过处理")
+                    continue
 
-                # 构造跳转链接
-                if mediainfo.type == MediaType.TV:
-                    link = settings.MP_DOMAIN('#/subscribe/tv?tab=mysub')
+                # 查找与当前订阅季数匹配的上映日期 (air_date)
+                season = subscribe.season
+                air_day = None
+                for season_info in mediainfo.season_info:
+                    if season_info.get("season_number") == season:
+                        air_day = season_info.get("air_date")
+                        continue
+
+                if not air_day:
+                    # 未找到与订阅季数匹配的上映日期
+                    logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season} 对应的 air_date，跳过处理")
+                    continue
+
+                # 解析上映日期
+                try:
+                    air_date = datetime.strptime(air_day, "%Y-%m-%d")
+                except ValueError:
+                    # 上映日期格式错误
+                    logger.error(f"{mediainfo.title} 的 air_date 格式错误：{air_day}，跳过处理")
+                    continue
+
+                # 判断是否符合 auto_tv_pending_days 的要求
+                pending_date = air_date + timedelta(days=self._auto_tv_pending_days)
+                current_date = datetime.now()
+
+                logger.debug(f"{mediainfo.title_year} [{subscribe.id}]，上映日期: {air_date}，"
+                             f"待定天数：{self._auto_tv_pending_days}，当前日期: {current_date}")
+
+                # 判断目标状态
+                if subscribe.state == "P" and pending_date <= current_date:
+                    # 如果当前状态是待定 (P)，但不再符合待定条件，更新为已处理 (R)
+                    target_state = "R"
+                    logger.debug(
+                        f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态为 'P'，"
+                        f"不符合待定条件，目标状态更新为 'R'")
+                elif subscribe.state != "P" and pending_date > current_date:
+                    # 如果当前状态不是待定 (P)，但符合待定条件，更新为待定 (P)
+                    target_state = "P"
+                    logger.debug(
+                        f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态非 'P'，"
+                        f"符合待定条件，目标状态更新为 'P'")
                 else:
-                    link = settings.MP_DOMAIN('#/subscribe/movie?tab=mysub')
+                    # 否则保持当前状态
+                    target_state = subscribe.state
+                    logger.debug(
+                        f"{mediainfo.title_year} [{subscribe.id}]，季数 {season} 当前状态无需变更，保持为 {target_state}")
 
-                meta = MetaInfo(subscribe.name)
-                meta.year = subscribe.year
-                meta.begin_season = subscribe.season or None
-                meta.type = MediaType.TV
+                # 如果订阅状态已是目标状态，无需更新
+                if subscribe.state == target_state:
+                    continue
 
-                # 构造标题，根据状态动态调整
-                if target_state == "P":
-                    title = f"{mediainfo.title_year} {meta.season} 已标记待定"
+                # 如果当前状态为 "N"，且目标状态已确定非 "N"，触发补全搜索
+                if subscribe.state == "N" and target_state != "N":
+                    random_minutes = random.uniform(3, 5)
+                    logger.info(f"新增订阅触发补全搜索任务，标题：{mediainfo.title_year} [{subscribe.id}]，"
+                                f"任务将在 {random_minutes:.2f} 分钟后触发")
+                    timer = threading.Timer(random_minutes * 60, lambda: SubscribeChain().search(sid=subscribe.id))
+                    timer.start()
+
+                # 获取订阅任务并更新订阅状态
+                tv_pending = target_state == "P"
+                subscribe_task = self.__update_subscribe_tv_pending_task(subscribe=subscribe,
+                                                                         subscribe_tasks=subscribe_tasks,
+                                                                         pending=tv_pending)
+
+                # 更新订阅状态，如果订阅任务没有被其他场景待定，则这里使用目标状态，如果已被其他场景修改，则这里使用待定状态更新
+                pending = self.__get_subscribe_task_pending(subscribe_task=subscribe_task)
+                if not pending:
+                    logger.info(f"{mediainfo.title_year} [{subscribe.id}]，"
+                                f"季数 {subscribe.season} 状态从 {subscribe.state} 更新为 {target_state}")
+                    self.subscribe_oper.update(subscribe.id, {"state": target_state})
                 else:
-                    title = f"{mediainfo.title_year} {meta.season} 已标记订阅中"
+                    logger.info(f"{mediainfo.title_year} [{subscribe.id}]，"
+                                f"季数 {subscribe.season} 状态从 {subscribe.state} 更新为 P")
+                    self.subscribe_oper.update(subscribe.id, {"state": "P"})
 
-                # 推送消息
-                self.post_message(
-                    mtype=NotificationType.Subscribe,
-                    title=title,
-                    text=text,
-                    image=mediainfo.get_message_image(),
-                    link=link,
-                    # username=subscribe.username
-                )
-        except Exception as e:
-            # 捕获异常并记录错误日志
-            logger.error(f"处理订阅 ID {subscribe.id} 时发生错误: {str(e)}")
+                # 消息推送
+                if self._notify:
+                    # 构造消息文本
+                    text_parts = []
+                    if mediainfo.vote_average:
+                        text_parts.append(f"评分：{mediainfo.vote_average}")
+                    if subscribe.username:
+                        text_parts.append(f"来自用户：{subscribe.username}")
+                    if air_day:
+                        text_parts.append(f"上映日期：{air_day}")
+                    # 将非空部分拼接成完整的文本
+                    text = "，".join(text_parts) if text_parts else ""
+
+                    # 构造跳转链接
+                    if mediainfo.type == MediaType.TV:
+                        link = settings.MP_DOMAIN('#/subscribe/tv?tab=mysub')
+                    else:
+                        link = settings.MP_DOMAIN('#/subscribe/movie?tab=mysub')
+
+                    meta = MetaInfo(subscribe.name)
+                    meta.year = subscribe.year
+                    meta.begin_season = subscribe.season or None
+                    meta.type = MediaType.TV
+
+                    # 构造标题，根据状态动态调整
+                    if target_state == "P":
+                        title = f"{mediainfo.title_year} {meta.season} 满足上映待定，已标记待定"
+                    else:
+                        title = f"{mediainfo.title_year} {meta.season} 不再满足上映待定，已标记订阅中"
+
+                    # 推送消息
+                    self.post_message(
+                        mtype=NotificationType.Subscribe,
+                        title=title,
+                        text=text,
+                        image=mediainfo.get_message_image(),
+                        link=link,
+                        # username=subscribe.username
+                    )
+            except Exception as e:
+                # 捕获异常并记录错误日志
+                logger.error(f"处理订阅 ID {subscribe.id} 时发生错误: {str(e)}")
 
     def __get_target_subscription_state(self, subscribe: Subscribe, mediainfo: Optional[MediaInfo] = None) \
             -> Optional[str]:
         """
-        获取订阅的目标状态，根据订阅的季数、上线日期等条件判断
+        获取订阅的目标状态，根据订阅的季数、上映日期等条件判断
         :param subscribe: 订阅对象
         :param mediainfo: 媒体信息对象
         :return: 目标订阅状态
@@ -1382,7 +1422,7 @@ class SubscribeAssistant(_PluginBase):
             logger.warning(f"{subscribe.name} 未能识别到媒体信息，无法计算目标状态")
             return None
 
-        # 获取季数和上线日期
+        # 获取季数和上映日期
         season = subscribe.season
         air_day = None
         for season_info in mediainfo.season_info:
@@ -1404,7 +1444,7 @@ class SubscribeAssistant(_PluginBase):
         pending_date = air_date + timedelta(days=self._auto_tv_pending_days)
         current_date = datetime.now()
 
-        logger.debug(f"{mediainfo.title_year} [{subscribe.id}]，上线日期: {air_date}，"
+        logger.debug(f"{mediainfo.title_year} [{subscribe.id}]，上映日期: {air_date}，"
                      f"待定天数：{self._auto_tv_pending_days}，当前日期: {current_date}")
 
         # 判断目标状态
@@ -1470,6 +1510,29 @@ class SubscribeAssistant(_PluginBase):
         return self.save_data(key=key, value=value)
 
     @staticmethod
+    def __match_subscribe(subscribe: Subscribe, subscribe_task: dict) -> bool:
+        """
+        判断是否为同一个订阅
+        """
+        # 如果不存在或为空，则返回 False
+        if not subscribe or not subscribe_task:
+            return False
+
+        # 判断ID
+        if subscribe.id != subscribe_task.get("id") or subscribe.name != subscribe_task.get("name"):
+            return False
+
+        # 判断 tmdbid
+        if subscribe.tmdbid and subscribe_task.get("tmdbid") != subscribe.tmdbid:
+            return False
+
+        # 判断 doubanid
+        if subscribe.doubanid and subscribe_task.get("doubanid") != subscribe.doubanid:
+            return False
+
+        return True
+
+    @staticmethod
     def __format_subscribe(subscribe: Subscribe) -> str:
         """
         根据订阅类型（TV 或 MOVIE）拼接不同格式的字符串
@@ -1478,9 +1541,10 @@ class SubscribeAssistant(_PluginBase):
             return "无效的订阅信息"
 
         # 基于订阅类型拼接不同的字符串格式
-        if subscribe.type == "TV":
+        mediatype = MediaType(subscribe.type)
+        if mediatype == MediaType.TV:
             return f"电视节目: {subscribe.name} ({subscribe.year}) 季{subscribe.season} [{subscribe.id}]"
-        elif subscribe.type == "MOVIE":
+        elif mediatype == MediaType.MOVIE:
             return f"电影: {subscribe.name} ({subscribe.year}) [{subscribe.id}]"
         else:
             return f"未知类型: {subscribe.name} ({subscribe.year}) [{subscribe.id}]"
@@ -1504,18 +1568,48 @@ class SubscribeAssistant(_PluginBase):
         # 如果都没有匹配到，返回 False
         return False
 
-    def __update_subscribe_torrent_task(self, subscribe: Subscribe, subscribe_tasks: dict,
+    def clear_tasks(self, subscribe_id: int, subscribe: dict):
+        """
+        清理任务
+        """
+        self.__with_lock_and_update_subscribe_tasks(
+            method=self.__clear_subscribe_tasks, subscribe_id=subscribe_id
+        )
+        self.__with_lock_and_update_torrent_tasks(
+            method=self.__clear_torrent_tasks, subscribe_id=subscribe_id
+        )
+
+    @staticmethod
+    def __clear_subscribe_tasks(subscribe_tasks: dict, subscribe_id: int):
+        """
+        清理订阅任务
+        """
+        subscribe_id = str(subscribe_id)
+        subscribe_tasks.pop(subscribe_id, None)
+
+    @staticmethod
+    def __clear_torrent_tasks(torrent_tasks: dict, subscribe_id: int):
+        """
+        清理种子任务
+        """
+        for k in list(torrent_tasks.keys()):
+            if torrent_tasks[k]["subscribe_id"] == subscribe_id:
+                del torrent_tasks[k]
+
+    def __update_subscribe_torrent_task(self, subscribe_tasks: dict, subscribe: Subscribe,
                                         torrent_hash: Optional[str] = None,
                                         torrent_info: Optional[TorrentInfo] = None,
-                                        episodes: Set[int] = None,
+                                        episodes: list[int] = None,
+                                        downloader: str = None,
                                         complete: bool = False, pending: bool = False) -> Optional[dict]:
         """
         更新订阅种子任务，支持移除完成任务、更新或新增种子任务
+        :param subscribe_tasks: 订阅任务字典
         :param subscribe: 订阅对象
-        :param subscribe_tasks: 当前订阅任务列表
         :param torrent_hash: 可选，种子的 hash 值
         :param torrent_info: 可选，种子信息
         :param episodes: 可选，需要下载的集数
+        :param downloader: 可选，下载器
         :param complete: 可选，是否标记任务为完成并移除
         :param pending: 可选，是否将种子任务标记为待定
         :return: 返回更新后的订阅任务对象，或者移除任务后的任务信息
@@ -1525,7 +1619,8 @@ class SubscribeAssistant(_PluginBase):
 
         # 完成任务的移除操作
         if complete and torrent_hash:
-            remove, task = self.__remove_completed_subscribe_torrent_task(subscribe_tasks, subscribe.id, torrent_hash)
+            remove, task = self.__remove_completed_subscribe_torrent_task(subscribe_tasks, str(subscribe.id),
+                                                                          torrent_hash)
             if remove:
                 self.__save_data(key="subscribes", value=subscribe_tasks)
             return task
@@ -1534,9 +1629,9 @@ class SubscribeAssistant(_PluginBase):
         subscribe_task = self.__initialize_subscribe_task(subscribe, subscribe_tasks)
 
         # 更新或新增种子任务
-        self.__update_or_add_subscribe_torrent_task(subscribe_task, torrent_hash, torrent_info, episodes, pending)
+        self.__update_or_add_subscribe_torrent_task(subscribe_task, torrent_hash, torrent_info,
+                                                    episodes, downloader, pending)
 
-        subscribe_tasks[subscribe.id] = subscribe_task
         return subscribe_task
 
     @staticmethod
@@ -1569,7 +1664,8 @@ class SubscribeAssistant(_PluginBase):
 
     def __update_or_add_subscribe_torrent_task(self, subscribe_task: dict, torrent_hash: Optional[str] = None,
                                                torrent_info: Optional[TorrentInfo] = None,
-                                               episodes: Set[int] = None,
+                                               episodes: list[int] = None,
+                                               downloader: str = None,
                                                pending: bool = False) -> bool:
         """
         更新或新增订阅种子任务
@@ -1577,6 +1673,7 @@ class SubscribeAssistant(_PluginBase):
         :param torrent_hash: 种子hash
         :param torrent_info: 种子数据
         :param episodes: 需要下载的集数
+        :param downloader: 下载器
         :param pending: 是否待定
         """
         if not subscribe_task:
@@ -1590,7 +1687,11 @@ class SubscribeAssistant(_PluginBase):
                     return False
                 # 如果任务没有 hash 且信息匹配，更新 hash
                 if not task.get("hash") and self.__compare_torrent_info_and_task(torrent_info, task):
-                    task["hash"] = torrent_hash
+                    task.update({
+                        "hash": torrent_hash,
+                        "episodes": episodes,
+                        "downloader": downloader
+                    })
                     return True
 
         if not torrent_info:
@@ -1599,12 +1700,14 @@ class SubscribeAssistant(_PluginBase):
         # 如果未找到匹配任务，初始化一个新的 torrent_task
         torrent_tasks.append({
             "hash": torrent_hash,
-            "site": torrent_info.site,
+            "site_id": torrent_info.site,
+            "site_name": torrent_info.site_name,
             "title": torrent_info.title,
             "description": torrent_info.description,
             "enclosure": torrent_info.enclosure,
             "page_url": torrent_info.page_url,
             "episodes": episodes,
+            "downloader": downloader,
             "time": time.time(),
             "pending": pending,
             "pending_time": time.time() if pending else None
@@ -1633,7 +1736,6 @@ class SubscribeAssistant(_PluginBase):
             subscribe_task["tv_pending"] = False
             subscribe_task["tv_pending_time"] = None
 
-        subscribe_tasks[subscribe.id] = subscribe_task
         return subscribe_task
 
     @staticmethod
@@ -1649,20 +1751,34 @@ class SubscribeAssistant(_PluginBase):
             return True
 
         for task in subscribe_task.get("torrent_tasks", []):
-            if task.get("download_pending"):
+            if task.get("pending"):
                 return True
 
         return False
 
-    @staticmethod
-    def __initialize_subscribe_task(subscribe: Subscribe, subscribe_tasks: dict) -> dict:
+    def __initialize_subscribe_task(self, subscribe: Subscribe, subscribe_tasks: dict) -> dict:
         """
         初始化订阅任务，或者获取已有的订阅任务
         :param subscribe: 订阅对象
         :param subscribe_tasks: 订阅任务列表
         :return: 订阅任务
         """
-        return subscribe_tasks.setdefault(subscribe.id, {
+        subscribe_id = str(subscribe.id)
+        subscribe_task = subscribe_tasks.get(subscribe_id)
+
+        # 判断现有任务是否存在且一致
+        if subscribe_task:
+            match = self.__match_subscribe(subscribe=subscribe, subscribe_task=subscribe_task)
+            if match:
+                return subscribe_task
+            else:
+                # 订阅信息不一致，记录日志并删除旧的订阅任务
+                logger.info(f"订阅任务不一致，删除原任务：ID={subscribe_id}, Name={subscribe_task.get('name')}, "
+                            f"Subscribe_task={subscribe_task}")
+                subscribe_tasks.pop(subscribe_id)
+
+        # 创建新的订阅任务
+        subscribe_task = {
             "id": subscribe.id,
             "name": subscribe.name,
             "year": subscribe.year,
@@ -1677,4 +1793,48 @@ class SubscribeAssistant(_PluginBase):
             "tv_pending": False,
             "tv_pending_time": None,
             "torrent_tasks": []
-        })
+        }
+        subscribe_tasks[subscribe_id] = subscribe_task
+        return subscribe_task
+
+    def __with_lock_and_update_subscribe_tasks(self, method: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+        """
+        使用锁获取并更新订阅任务数据
+        :param method: 需要执行的操作，接收当前数据字典并进行修改
+        :param *args: 额外的位置参数
+        :param **kwargs: 额外的关键字参数
+        """
+        with lock:
+            try:
+                # 获取数据
+                tasks = self.__get_data(key="subscribes")
+
+                # 执行需要的操作
+                method(tasks, *args, **kwargs)
+
+                # 保存修改后的数据
+                self.__save_data(key="subscribes", value=tasks)
+            except Exception as e:
+                # 处理异常
+                logger.error(f"Error during {method.__name__}: {e}")
+
+    def __with_lock_and_update_torrent_tasks(self, method: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+        """
+        使用锁获取并更新下载任务数据
+        :param method: 需要执行的操作，接收当前数据字典并进行修改
+        :param *args: 额外的位置参数
+        :param **kwargs: 额外的关键字参数
+        """
+        with lock:
+            try:
+                # 获取数据
+                tasks = self.__get_data(key="torrents")
+
+                # 执行需要的操作
+                method(tasks, *args, **kwargs)
+
+                # 保存修改后的数据
+                self.__save_data(key="torrents", value=tasks)
+            except Exception as e:
+                # 处理异常
+                logger.error(f"Error during {method.__name__}: {e}")
