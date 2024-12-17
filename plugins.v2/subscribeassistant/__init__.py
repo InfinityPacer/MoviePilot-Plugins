@@ -33,11 +33,11 @@ class SubscribeAssistant(_PluginBase):
     # 插件名称
     plugin_name = "订阅助手"
     # 插件描述
-    plugin_desc = "测试插件，尚未发布，请勿使用。"
+    plugin_desc = "实现多场景管理系统订阅与状态同步。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "0.0.1"
+    plugin_version = "1.0"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -911,9 +911,9 @@ class SubscribeAssistant(_PluginBase):
                     update_contexts.remove(context)
                     updated = True
                     continue
-        if updated:
-            event_data.updated = True
-            event_data.updated_contexts = update_contexts
+        # if updated:
+        #     event_data.updated = True
+        #     event_data.updated_contexts = update_contexts
 
     @eventmanager.register(etype=ChainEventType.ResourceDownload, priority=9999)
     def handle_resource_download_event(self, event: Event):
@@ -1025,6 +1025,22 @@ class SubscribeAssistant(_PluginBase):
             return False
 
         return deleted
+
+    @staticmethod
+    def __get_torrent_tags(torrent: Any, dl_type: str) -> list[str]:
+        """
+        获取种子标签
+        """
+        try:
+            if dl_type == "qbittorrent":
+                tags = torrent.get("tags", "").split(",")
+            else:
+                tags = torrent.labels or []
+
+            return list(set(tag.strip() for tag in tags if tag.strip()))
+        except Exception as e:
+            logger.error(f"获取种子标签失败，错误: {e}")
+            return []
 
     @staticmethod
     def __get_torrent_info(torrent: Any, dl_type: str) -> dict:
@@ -1355,15 +1371,24 @@ class SubscribeAssistant(_PluginBase):
                     task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
                 ]
             else:
-                logger.debug(f"种子任务 {torrent_desc} 尚未完成，下载时长 {download_time}")
+                logger.debug(f"种子任务 {torrent_desc} 尚未完成，下载时长 {download_time / 3600 :.2f}")
                 if not timeout_check or not self._auto_download_delete:
                     continue
 
                 if download_time < self._download_timeout * 3600:
                     continue
 
-                logger.info(f"种子 {torrent_desc} 已超时删除，将从订阅任务中移除")
-                # self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
+                if self._delete_exclude_tags:
+                    torrent_tags = self.__get_torrent_tags(torrent=torrent, dl_type=service.type)
+                    if torrent_tags:
+                        intersection_tags = set(self._delete_exclude_tags.split(",")) & set(torrent_tags)
+                        if intersection_tags:
+                            logger.debug(
+                                f"种子任务 {torrent_desc} 已超时，但满足不删除标签 {intersection_tags}，跳过处理")
+                            continue
+
+                logger.info(f"种子任务 {torrent_desc} 已超时删除，将从订阅任务中移除")
+                self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
 
                 if torrent_hash in torrent_tasks:
                     del torrent_tasks[torrent_hash]
@@ -1760,11 +1785,13 @@ class SubscribeAssistant(_PluginBase):
             return False
 
         # 如果 torrent_info.enclosure 和 task.enclosure 都不为空且一致
-        if torrent_info.enclosure and torrent_task.get("enclosure") and torrent_task.get("enclosure") == torrent_info.enclosure:
+        if torrent_info.enclosure and torrent_task.get("enclosure") and torrent_task.get(
+                "enclosure") == torrent_info.enclosure:
             return True
 
         # 如果 torrent_info.page_url 和 task.page_url 都不为空且一致
-        if torrent_info.page_url and torrent_task.get("page_url") and torrent_task.get("page_url") == torrent_info.page_url:
+        if torrent_info.page_url and torrent_task.get("page_url") and torrent_task.get(
+                "page_url") == torrent_info.page_url:
             return True
 
         # 如果都没有匹配到，返回 False
