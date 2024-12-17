@@ -712,37 +712,17 @@ class SubscribeAssistant(_PluginBase):
         订阅自动检查
         """
         self.download_check()
-        # self.tv_pending_check()
+        self.tv_pending_check()
         # self.best_version_check()
 
     def download_check(self):
         """
         下载检查
         """
-        # self.download_delete_check()
-        self.download_pending_check()
-
-    def pending_check(self):
-        """
-        待定检查
-        """
-        self.tv_pending_check()
-
-    def download_delete_check(self):
-        """
-        下载超时删除检查
-        """
-        if not self._auto_download_delete:
+        if not self._auto_download_delete or not self._auto_download_pending:
             return
 
-    def download_pending_check(self):
-        """
-        下载待定检查
-        """
-        if not self._auto_download_pending:
-            return
-
-        self.process_download_torrent_task()
+        self.process_download_task()
 
     def tv_pending_check(self):
         """
@@ -1250,11 +1230,11 @@ class SubscribeAssistant(_PluginBase):
         subscribe = self.subscribe_oper.get(subscribe_id)
         return subscribe_dict, subscribe
 
-    def process_download_torrent_task(self):
+    def process_download_task(self):
         """
         处理下载种子任务并清理异常种子
         """
-        if not self._auto_download_pending or self._auto_download_delete:
+        if not self._auto_download_delete or not self._auto_download_pending:
             return
 
         with lock:
@@ -1262,12 +1242,12 @@ class SubscribeAssistant(_PluginBase):
             subscribe_tasks = self.__get_data(key="subscribes")
             torrent_tasks = self.__get_data(key="torrents")
             # 处理下载种子任务
-            self.__process_download_torrent_task(subscribe_tasks=subscribe_tasks, torrent_tasks=torrent_tasks)
+            self.__process_download_task(subscribe_tasks=subscribe_tasks, torrent_tasks=torrent_tasks)
             # 保存更新后的数据
             self.__save_data(key="subscribes", value=subscribe_tasks)
             self.__save_data(key="torrents", value=torrent_tasks)
 
-    def __process_download_torrent_task(self, subscribe_tasks: dict, torrent_tasks: dict):
+    def __process_download_task(self, subscribe_tasks: dict, torrent_tasks: dict):
         """
         处理下载种子任务并清理异常种子
         :param subscribe_tasks: 订阅任务字典
@@ -1279,7 +1259,6 @@ class SubscribeAssistant(_PluginBase):
         for torrent_hash, torrent_task in torrent_tasks.items():
             subscribe_id = torrent_task.get("subscribe_id")
             subscribe_info = torrent_task.get("subscribe_info")
-            episodes = torrent_task.get("episodes")
             username = torrent_task.get("username")
             downloader = torrent_task.get("downloader")
             site_id = torrent_task.get("site_id")
@@ -1347,188 +1326,108 @@ class SubscribeAssistant(_PluginBase):
 
             is_completed, download_time = self.__get_torrent_completion_status(torrent_info=torrent_info)
             if is_completed:
+                logger.info(f"种子 {torrent_desc} 已完成，将从订阅任务中移除")
+
                 if torrent_hash in torrent_tasks:
-                    logger.info(f"种子 {torrent_desc} 已完成，从下载任务中移除")
                     del torrent_tasks[torrent_hash]
 
                 subscribe_task["torrent_tasks"] = [
                     task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
                 ]
-                logger.info(f"种子 {torrent_desc} 已完成，从订阅任务中移除")
-                if pending_check:
-                    pending = self.__get_subscribe_task_pending(subscribe_task=subscribe_task)
-                    # 如果当前订阅状态为待定，且订阅任务不为待定状态，则更新为订阅中
-                    if subscribe.state == "P" and not pending:
-                        self.subscribe_oper.update(subscribe.id, {"state": "R"})
-                        logger.info(
-                            f"{self.__format_subscribe(subscribe)} 状态从 {subscribe.state} 更新为 R")
+
+                if not pending_check:
+                    return
+                pending = self.__get_subscribe_task_pending(subscribe_task=subscribe_task)
+                # 如果当前订阅状态为待定，且订阅任务不为待定状态，则更新为订阅中
+                if subscribe.state == "P" and not pending:
+                    self.subscribe_oper.update(subscribe.id, {"state": "R"})
+                    logger.info(
+                        f"{self.__format_subscribe(subscribe)} 状态从 {subscribe.state} 更新为 R")
             else:
-                logger.debug(f"尚未完成，下载时长 {download_time}，种子任务: {torrent_desc}")
-                if download_time >= self._download_timeout * 3600:
-                    if timeout_check and self._auto_download_delete:
-                        self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
-                        if torrent_hash in torrent_tasks:
-                            logger.info(f"种子 {torrent_desc} 已超时删除，从下载任务中移除")
-                            del torrent_tasks[torrent_hash]
+                logger.debug(f"种子任务 {torrent_desc} 尚未完成，下载时长 {download_time}")
+                if not timeout_check or not self._auto_download_delete:
+                    continue
 
-                        subscribe_task["torrent_tasks"] = [
-                            task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
-                        ]
-                        logger.info(f"种子 {torrent_desc} 已超时删除，从订阅任务中移除")
-                        if MediaType(subscribe.type) == MediaType.TV:
-                            note = set(subscribe.note or [])
-                            episodes_set = set(episodes)
-                            note = list(note - episodes_set)
-                            self.subscribe_oper.update(subscribe.id, {"note": note})
-                            if self._auto_search_when_delete:
-                                self.__with_lock_and_update_delete_tasks(method=self.__update_or_add_delete_tasks,
-                                                                         torrent_task=torrent_task)
-                                random_minutes = random.uniform(3, 5)
-                                logger.info(f"{self.__format_subscribe(subscribe)}，删除超时种子触发补全搜索任务，"
-                                            f"任务将在 {random_minutes:.2f} 分钟后触发")
-                                timer = threading.Timer(random_minutes * 60,
-                                                        lambda: SubscribeChain().search(sid=subscribe.id))
-                                timer.start()
+                if download_time < self._download_timeout * 3600:
+                    continue
 
-        # 清理异常种子
+                logger.info(f"种子 {torrent_desc} 已超时删除，将从订阅任务中移除")
+                self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
+
+                if torrent_hash in torrent_tasks:
+                    del torrent_tasks[torrent_hash]
+
+                subscribe_task["torrent_tasks"] = [
+                    task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
+                ]
+
+                self.__handle_timeout_seed_deletion(subscribe=subscribe, torrent_task=torrent_task)
+
+        self.__clean_invalid_torrents(invalid_torrent_hashes, subscribe_tasks, torrent_tasks)
+
+    def __handle_timeout_seed_deletion(self, subscribe: Subscribe, torrent_task: dict) -> None:
+        """
+        处理删除超时种子后触发补全搜索任务
+
+        :param subscribe: 订阅信息
+        :param torrent_task: 种子任务
+        """
+        if MediaType(subscribe.type) != MediaType.TV:
+            return
+        # 如果是电视剧，这里需要再次触发补全搜索
+        episodes = torrent_task.get("episodes") or []
+        note = set(subscribe.note or [])
+        episodes_set = set(episodes)
+        note = list(note - episodes_set)
+        self.subscribe_oper.update(subscribe.id, {"note": note})
+
+        if self._auto_search_when_delete:
+            self.__with_lock_and_update_delete_tasks(method=self.__update_or_add_delete_tasks,
+                                                     torrent_task=torrent_task)
+            random_minutes = random.uniform(1, 3)
+            logger.info(f"{self.__format_subscribe(subscribe)}，删除超时种子触发补全搜索任务，"
+                        f"任务将在 {random_minutes:.2f} 分钟后触发")
+            timer = threading.Timer(random_minutes * 60,
+                                    lambda: SubscribeChain().search(sid=subscribe.id))
+            timer.start()
+
+    def __clean_invalid_torrents(self, invalid_torrent_hashes: list, subscribe_tasks: dict, torrent_tasks: dict):
+        """
+        清理异常种子
+
+        :param invalid_torrent_hashes: 异常种子哈希列表
+        :param subscribe_tasks: 所有订阅任务
+        :param torrent_tasks: 所有下载任务
+        """
+        # 从 subscribe_tasks 中移除与异常种子相关的订阅任务
         for torrent_hash in invalid_torrent_hashes:
             # 从 torrent_tasks 中移除异常种子
-            if torrent_hash in torrent_tasks:
-                title = torrent_tasks[torrent_hash].get("title")
-                description = torrent_tasks[torrent_hash].get("description")
-                logger.info(f"清理异常种子：{torrent_hash} ({title} | {description}) 从下载任务中移除")
-                del torrent_tasks[torrent_hash]
+            torrent_task = torrent_tasks.get(torrent_hash)
+            if not torrent_task:
+                continue
+            torrent_desc = self.__get_torrent_desc(torrent_hash, torrent_task)
+            logger.info(f"清理异常种子：{torrent_desc}")
+            del torrent_tasks[torrent_hash]
 
-            # 从 subscribe_tasks 中移除与异常种子相关的订阅任务
+            # 从订阅任务中移除异常种子
             for subscribe_task in subscribe_tasks.values():
-                # 在一个遍历中更新订阅任务，移除包含异常种子的任务
-                original_count = len(subscribe_task.get("torrent_tasks", []))
                 subscribe_task["torrent_tasks"] = [
-                    task for task in subscribe_task.get("torrent_tasks", [])
-                    if task.get("hash") != torrent_hash
+                    task for task in subscribe_task.get("torrent_tasks", []) if task.get("hash") != torrent_hash
                 ]
-                updated_count = len(subscribe_task.get("torrent_tasks", []))
-
-                # 如果有种子被移除，打印日志
-                if original_count != updated_count:
-                    logger.info(f"清理异常种子：{torrent_hash} 从订阅任务中移除，订阅名称: {subscribe_task.get('name')}")
 
     @staticmethod
-    def __get_torrent_description(torrent_task: dict):
+    def __get_torrent_desc(torrent_hash: str, torrent_task: dict) -> str:
         """
-        获取种子任务的描述信息
-
-        :param torrent_task: 种子任务字典
-        :return: 字符串描述信息
-        """
-        return f"{torrent_task.get('title')} | {torrent_task.get('description')} ({torrent_task.get('hash')})"
-
-    def __validate_and_process_torrent(self, subscribe_tasks: dict, torrent_hash: str, torrent_task: dict,
-                                       invalid_torrent_hashes: list[str], torrent_desc: str):
-        """
-        验证并处理每个种子任务，将无效的种子添加到无效种子列表
-
-        :param subscribe_tasks: 订阅任务字典
-        :param torrent_hash: 种子hash
-        :param torrent_task: 种子任务字典
-        :param invalid_torrent_hashes: 无效种子hash列表
-        :param torrent_desc: 种子描述信息
-        :return: 布尔值，是否成功处理
-        """
-        subscribe_id = torrent_task.get("subscribe_id")
-        subscribe_task = subscribe_tasks.get(str(subscribe_id))
-
-        if not subscribe_task:
-            invalid_torrent_hashes.append(torrent_hash)
-            logger.debug(f"未找到相关的订阅信息，种子任务: {torrent_desc}")
-            return False
-
-        subscribe = self.subscribe_oper.get(subscribe_id)
-        if not subscribe:
-            invalid_torrent_hashes.append(torrent_hash)
-            logger.debug(f"数据库中未找到相关的订阅信息，种子任务: {torrent_desc}")
-            return False
-
-        if subscribe.state not in ["N", "R", "P"]:
-            logger.debug(
-                f"{self.__format_subscribe(subscribe)} 当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
-            return False
-
-        subscribe_torrent_tasks = subscribe_task.get("torrent_tasks") or []
-        if not any(task.get("hash") == torrent_hash for task in subscribe_torrent_tasks):
-            logger.debug(f"未找到对应的订阅种子任务，种子任务: {torrent_desc}")
-            return False
-
-        return True
-
-    def __handle_torrent_completion(self, subscribe_tasks: dict, torrent_hash: str,
-                                    torrent_task: dict, torrent_desc: str):
-        """
-        处理种子的完成状态，更新任务列表
-
-        :param subscribe_tasks: 订阅任务字典
-        :param torrent_hash: 种子hash
-        :param torrent_task: 种子任务字典
-        :param torrent_desc: 种子描述信息
-        :return: 布尔值，是否成功处理
-        """
-        service = self.__get_downloader_service(downloader=torrent_task.get("downloader"))
-        if not service:
-            logger.debug(f"获取下载器 {torrent_task.get('downloader')} 实例失败，请检查配置，种子任务: {torrent_desc}")
-            return False
-
-        torrent = self.__get_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
-        if not torrent:
-            logger.debug(f"没有获取到对应的种子详情，种子可能已被删除，种子任务: {torrent_desc}")
-            return False
-
-        torrent_info = self.__get_torrent_info(torrent=torrent, dl_type=service.type)
-        if not torrent_info:
-            logger.debug(f"没有获取到对应的种子详情，可能是不支持的种子类型，种子任务: {torrent_desc}")
-            return False
-
-        is_completed, download_time = self.__get_torrent_completion_status(torrent_info=torrent_info)
-        if is_completed:
-            self.__remove_completed_task(torrent_hash, torrent_task, subscribe_tasks, torrent_desc)
-            return True
-        else:
-            self.__handle_incomplete_task(torrent_hash, torrent_task, download_time, torrent_desc)
-            return False
-
-    @staticmethod
-    def __remove_completed_task(subscribe_task: dict, torrent_hash: str, torrent_task: dict, torrent_desc: str):
-        """
-        从下载任务和订阅任务中移除已完成的任务
-
-        :param subscribe_task: 订阅任务字典
-        :param torrent_hash: 种子hash
-        :param torrent_task: 种子任务字典
-        :param torrent_desc: 种子描述信息
-        :return: None
-        """
-        logger.info(f"种子 {torrent_desc} 已完成，从下载任务中移除")
-        del torrent_task[torrent_hash]
-        subscribe_task["torrent_tasks"] = [
-            task for task in subscribe_task.get("torrent_tasks", []) if task.get("hash") != torrent_hash
-        ]
-        logger.info(f"种子 {torrent_desc} 已完成，从订阅任务中移除")
-
-    def __handle_incomplete_task(self, torrent_hash, torrent_task, download_time, torrent_desc):
-        """
-        处理未完成的种子任务，检查是否超时
+        获取种子的描述信息
 
         :param torrent_hash: 种子hash
-        :param torrent_task: 种子任务字典
-        :param download_time: 下载时间
-        :param torrent_desc: 种子描述信息
-        :return: None
+        :param torrent_task: 种子任务
+
+        :return: 种子的描述字符串
         """
-        if download_time >= self._download_timeout * 3600:
-            if torrent_task.get("timeout_check") and self._auto_download_delete:
-                self.__delete_torrents(downloader=torrent_task.get("downloader"), torrent_hashes=torrent_hash)
-                logger.info(f"种子 {torrent_desc} 超时，已删除")
-            else:
-                logger.debug(f"种子 {torrent_desc} 超时，但未启用删除任务")
+        title = torrent_task.get("title")
+        description = torrent_task.get("description")
+        return f"{title} | {description} ({torrent_hash})"
 
     def process_tv_pending(self, subscribes: [Subscribe | tuple[Subscribe, MediaInfo]]):
         """
