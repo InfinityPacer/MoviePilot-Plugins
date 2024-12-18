@@ -1422,7 +1422,7 @@ class SubscribeAssistant(_PluginBase):
 
     def __handle_timeout_seed_deletion(self, subscribe: Subscribe, torrent_task: dict, triggered_subscribe_ids: set):
         """
-        处理删除超时种子后触发补全搜索任务
+        处理删除超时种子后续相关任务
 
         :param subscribe: 订阅信息
         :param torrent_task: 种子任务
@@ -1431,8 +1431,15 @@ class SubscribeAssistant(_PluginBase):
         if not subscribe:
             return
 
-        # 是否启用自动搜索补全
-        auto_search_when_delete = self._auto_search_when_delete and MediaType(subscribe.type) == MediaType.TV
+        media_type = MediaType(subscribe.type)
+        if media_type == MediaType.TV:
+            episodes = torrent_task.get("episodes") or []
+            note = set(subscribe.note or [])
+            episodes_set = set(episodes)
+            note = list(note - episodes_set)
+            self.subscribe_oper.update(subscribe.id, {"note": note})
+        elif media_type == MediaType.MOVIE:
+            self.subscribe_oper.update(subscribe.id, {"note": []})
 
         random_minutes = random.uniform(3, 5)
         completion_time = f"{random_minutes:.2f} 分钟"
@@ -1447,7 +1454,7 @@ class SubscribeAssistant(_PluginBase):
                 msg_parts.append(f"标题：{torrent_task.get('title')}")
             if torrent_task.get("description"):
                 msg_parts.append(f"内容：{torrent_task.get('description')}")
-            if auto_search_when_delete:
+            if self._auto_search_when_delete:
                 msg_parts.append(f"补全：将在 {completion_time} 后触发搜索")
             # 拼接消息文本
             msg_text = "\n".join(msg_parts)
@@ -1459,15 +1466,8 @@ class SubscribeAssistant(_PluginBase):
                 image=self.__get_subscribe_image(subscribe),
             )
 
-        if not auto_search_when_delete:
+        if not self._auto_search_when_delete:
             return
-
-        # 如果是电视剧，这里需要再次触发补全搜索
-        episodes = torrent_task.get("episodes") or []
-        note = set(subscribe.note or [])
-        episodes_set = set(episodes)
-        note = list(note - episodes_set)
-        self.subscribe_oper.update(subscribe.id, {"note": note})
 
         # 如果这个订阅已经触发过补全搜索任务，直接返回
         if subscribe.id in triggered_subscribe_ids:
@@ -1479,7 +1479,7 @@ class SubscribeAssistant(_PluginBase):
                     f"任务将在 {random_minutes:.2f} 分钟后触发")
         timer = threading.Timer(random_minutes * 60,
                                 lambda: SubscribeChain().search(sid=subscribe.id))
-        # timer.start()
+        timer.start()
 
     def __clean_invalid_torrents(self, invalid_torrent_hashes: list, subscribe_tasks: dict, torrent_tasks: dict):
         """
