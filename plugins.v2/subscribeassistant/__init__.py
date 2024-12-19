@@ -120,7 +120,7 @@ class SubscribeAssistant(_PluginBase):
         self._download_check_interval = self.__get_int_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_int_config(config, "download_timeout", 3)
         self._auto_tv_pending_days = self.__get_int_config(config, "auto_tv_pending_days", 14)
-        self._auto_best_remaining_days = self.__get_int_config(config, "auto_best_remaining_days", 0)
+        self._auto_best_remaining_days = self.__get_int_config(config, "auto_best_remaining_days", 0) or None
 
         # 停止现有任务
         self.stop_service()
@@ -2111,7 +2111,10 @@ class SubscribeAssistant(_PluginBase):
         if not self._auto_best_types or not subscribes:
             return
 
-        # 如果剩余天数小于等于0，则跳过
+        if not self._auto_best_remaining_days:
+            logger.debug("未配置洗版天数，跳过处理")
+            return
+
         if self._auto_best_remaining_days <= 0:
             logger.debug("洗版天数小于等于0，跳过处理")
             return
