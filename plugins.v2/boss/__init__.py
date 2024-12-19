@@ -1,6 +1,12 @@
 import threading
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
+import pytz
+from apscheduler.schedulers.background import BackgroundScheduler
+
+from app.core.config import settings
+from app.log import logger
 from app.plugins import _PluginBase
 from app.plugins.boss.douban import run_batch
 
@@ -30,13 +36,32 @@ class BOSS(_PluginBase):
     # region 私有属性
     # 是否开启
     _enabled = False
+    # 是否立即运行一次
+    _onlyonce = False
+    # 定时器
+    _scheduler = None
 
     # endregion
 
     def init_plugin(self, config: dict = None):
-        run_batch()
         if not config:
             return
+
+        self._onlyonce = config.get("onlyonce", False)
+
+        self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+        self._scheduler.start()
+        if self._onlyonce:
+            logger.info("个人测试，立即运行一次")
+            self._scheduler.add_job(
+                func=run_batch,
+                trigger="date",
+                run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                name="订阅助手",
+            )
+            self._onlyonce = False
+            config["onlyonce"] = self._onlyonce
+            self.update_config(config=config)
 
     def get_state(self) -> bool:
         return self._enabled
@@ -56,7 +81,37 @@ class BOSS(_PluginBase):
         """
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
-        pass
+        return [
+            {
+                'component': 'VForm',
+                'content': [
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'onlyonce',
+                                            'label': '立即运行一次',
+                                            'hint': '插件将立即运行一次',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ], {
+        }
 
     def get_page(self) -> List[dict]:
         pass
