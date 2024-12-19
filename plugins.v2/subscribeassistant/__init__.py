@@ -38,7 +38,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.1.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -61,7 +61,7 @@ class SubscribeAssistant(_PluginBase):
     # 是否立即运行一次
     _onlyonce = False
     # 下载检查周期
-    _download_check_interval = False
+    _download_check_interval = 5
     # 下载超时自动删除
     _auto_download_delete = False
     # 删除后触发搜索补全
@@ -103,7 +103,6 @@ class SubscribeAssistant(_PluginBase):
         self._enabled = config.get("enabled", False)
         self._notify = config.get("notify", False)
         self._onlyonce = config.get("onlyonce", False)
-        self._download_check_interval = config.get("download_check_interval", 5)
         self._auto_download_delete = config.get("auto_download_delete", True)
         self._auto_search_when_delete = config.get("auto_search_when_delete", True)
         self._delete_exclude_tags = config.get("delete_exclude_tags", "H&R")
@@ -118,6 +117,7 @@ class SubscribeAssistant(_PluginBase):
         }
         self._auto_best_types = type_mapping.get(self._auto_best_type, set())
         self._auto_best_cron = config.get("auto_best_cron", "0 15 * * *")
+        self._download_check_interval = self.__get_int_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_int_config(config, "download_timeout", 3)
         self._auto_tv_pending_days = self.__get_int_config(config, "auto_tv_pending_days", 14)
         self._auto_best_remaining_days = self.__get_int_config(config, "auto_best_remaining_days", 0)
@@ -236,10 +236,10 @@ class SubscribeAssistant(_PluginBase):
                                             'model': 'download_check_interval',
                                             'label': '下载检查周期',
                                             'items': [
-                                                {'title': '5分钟', 'value': '5'},
-                                                {'title': '10分钟', 'value': '15'},
-                                                {'title': '30分钟', 'value': '30'},
-                                                {'title': '60分钟', 'value': '60'}
+                                                {'title': '5分钟', 'value': 5},
+                                                {'title': '10分钟', 'value': 15},
+                                                {'title': '30分钟', 'value': 30},
+                                                {'title': '60分钟', 'value': 60}
                                             ],
                                             'hint': '设置下载检查的周期，定时检查下载任务状态',
                                             'persistent-hint': True
