@@ -24,6 +24,7 @@ from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
 from app.schemas import ServiceInfo
 from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData
+from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import EventType, ChainEventType, MediaType, NotificationType
 
 lock = threading.RLock()
@@ -79,10 +80,12 @@ class SubscribeAssistant(_PluginBase):
     _auto_pending_cron = None
     # 洗版类型
     _auto_best_type = "no"
+    # 洗版类型集合
+    _auto_best_types = set()
     # 洗版检查周期
     _auto_best_cron = None
-    # 洗版次数
-    _auto_best_count = 1
+    # 洗版天数
+    _auto_best_remaining_days = 60
     # 定时器
     _scheduler = None
     # 退出事件
@@ -108,10 +111,16 @@ class SubscribeAssistant(_PluginBase):
         self._auto_pending_cron = config.get("auto_pending_cron", "0 12 * * *")
         self._auto_download_pending = config.get("auto_download_pending", True)
         self._auto_best_type = config.get("auto_best_type", "no")
+        type_mapping = {
+            "tv": {MediaType.TV},
+            "movie": {MediaType.MOVIE},
+            "all": {MediaType.TV, MediaType.MOVIE}
+        }
+        self._auto_best_types = type_mapping.get(self._auto_best_type, set())
         self._auto_best_cron = config.get("auto_best_cron", "0 15 * * *")
         self._download_timeout = self.__get_int_config(config, "download_timeout", 3)
         self._auto_tv_pending_days = self.__get_int_config(config, "auto_tv_pending_days", 14)
-        self._auto_best_count = self.__get_int_config(config, "auto_best_count", 1)
+        self._auto_best_remaining_days = self.__get_int_config(config, "auto_best_remaining_days", 0)
 
         # 停止现有任务
         self.stop_service()
@@ -302,13 +311,13 @@ class SubscribeAssistant(_PluginBase):
                                 },
                                 'text': '自动待定'
                             },
-                            # {
-                            #     'component': 'VTab',
-                            #     'props': {
-                            #         'value': 'best_tab'
-                            #     },
-                            #     'text': '自动洗版'
-                            # }
+                            {
+                                'component': 'VTab',
+                                'props': {
+                                    'value': 'best_tab'
+                                },
+                                'text': '自动洗版'
+                            }
                         ]
                     },
                     {
@@ -493,68 +502,68 @@ class SubscribeAssistant(_PluginBase):
                                     }
                                 ]
                             },
-                            # {
-                            #     'component': 'VWindowItem',
-                            #     'props': {
-                            #         'value': 'best_tab'
-                            #     },
-                            #     'content': [
-                            #         {
-                            #             'component': 'VRow',
-                            #             'props': {
-                            #                 'style': {
-                            #                     'margin-top': '0px'
-                            #                 }
-                            #             },
-                            #             'content': [
-                            #                 {
-                            #                     'component': 'VCol',
-                            #                     'props': {
-                            #                         'cols': 12,
-                            #                         'md': 6
-                            #                     },
-                            #                     'content': [
-                            #                         {
-                            #                             'component': 'VSelect',
-                            #                             'props': {
-                            #                                 'model': 'auto_best_type',
-                            #                                 'label': '洗版类型',
-                            #                                 'items': [
-                            #                                     {'title': '全部', 'value': 'all'},
-                            #                                     {'title': '关闭', 'value': 'no'},
-                            #                                     {'title': '电影', 'value': 'movie'},
-                            #                                     {'title': '电视剧', 'value': 'tv'}
-                            #                                 ],
-                            #                                 'hint': '选择需要自动洗版的类型',
-                            #                                 'persistent-hint': True
-                            #                             }
-                            #                         }
-                            #                     ]
-                            #                 },
-                            #                 {
-                            #                     'component': 'VCol',
-                            #                     'props': {
-                            #                         'cols': 12,
-                            #                         'md': 6
-                            #                     },
-                            #                     'content': [
-                            #                         {
-                            #                             'component': 'VTextField',
-                            #                             'props': {
-                            #                                 'model': 'auto_best_count',
-                            #                                 'label': '洗版次数',
-                            #                                 'type': 'number',
-                            #                                 "min": "1",
-                            #                                 'hint': '洗版达到对应次数后自动完成，为空时按系统默认处理',
-                            #                                 'persistent-hint': True
-                            #                             }
-                            #                         }
-                            #                     ]
-                            #                 }
-                            #             ]
-                            #         }
-                            #     ]
-                            # }
+                            {
+                                'component': 'VWindowItem',
+                                'props': {
+                                    'value': 'best_tab'
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VRow',
+                                        'props': {
+                                            'style': {
+                                                'margin-top': '0px'
+                                            }
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 6
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSelect',
+                                                        'props': {
+                                                            'model': 'auto_best_type',
+                                                            'label': '洗版类型',
+                                                            'items': [
+                                                                {'title': '全部', 'value': 'all'},
+                                                                {'title': '关闭', 'value': 'no'},
+                                                                {'title': '电影', 'value': 'movie'},
+                                                                {'title': '电视剧', 'value': 'tv'}
+                                                            ],
+                                                            'hint': '选择需要自动洗版的类型',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 6
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_best_remaining_days',
+                                                            'label': '洗版天数',
+                                                            'type': 'number',
+                                                            "min": "1",
+                                                            'hint': '达到指定天数后自动完成，若有下载则按最新时间计算，为空时按默认处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
                         ]
                     },
                     {
@@ -703,7 +712,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_best_type": self._auto_best_type,
             "download_timeout": self._download_timeout,
             "auto_tv_pending_days": self._auto_tv_pending_days,
-            "auto_best_count": self._auto_best_count,
+            "auto_best_remaining_days": self._auto_best_remaining_days,
         }
         self.update_config(config=config)
 
@@ -713,7 +722,7 @@ class SubscribeAssistant(_PluginBase):
         """
         self.tv_pending_check()
         self.download_check()
-        # self.best_version_check()
+        self.best_version_check()
 
     def download_check(self):
         """
@@ -735,13 +744,17 @@ class SubscribeAssistant(_PluginBase):
         if not subscribes:
             return
 
-        self.process_tv_pending(subscribes)
+        self.process_tv_pending_check(subscribes)
 
     def best_version_check(self):
         """
         洗版检查
         """
-        pass
+        subscribes = self.subscribe_oper.list(state="N,R,P")
+        if not subscribes:
+            return
+
+        self.process_best_version_complete_check(subscribes)
 
     @eventmanager.register(EventType.SubscribeDeleted)
     def handle_subscribe_deleted_event(self, event: Event = None):
@@ -754,9 +767,9 @@ class SubscribeAssistant(_PluginBase):
                 return
 
             subscribe_id = event.event_data.get("subscribe_id")
-            subscribe = event.event_data.get("subscribe")
-            logger.debug(f"接收到订阅删除事件，订阅 ID: {subscribe_id}，数据：{subscribe}")
-            self.clear_tasks(subscribe_id=subscribe_id, subscribe=subscribe)
+            subscribe_dict = event.event_data.get("subscribe_info")
+            logger.debug(f"接收到订阅删除事件，订阅 ID: {subscribe_id}，数据：{subscribe_dict}")
+            self.clear_tasks(subscribe_id=subscribe_id, subscribe=subscribe_dict)
         except Exception as e:
             logger.error(f"处理订阅删除事件时发生错误: {str(e)}")
 
@@ -796,8 +809,12 @@ class SubscribeAssistant(_PluginBase):
                 logger.error(f"订阅 ID {subscribe_id} 的订阅信息获取失败，媒体标题: {mediainfo_dict.get('title_year')}")
                 return
 
+            if subscribe.best_version:
+                logger.debug(f"{self.__format_subscribe(subscribe)} 为洗版订阅，跳过处理")
+                return
+
             # 调用公共方法处理订阅
-            self.process_tv_pending([(subscribe, mediainfo)])
+            self.process_tv_pending_check([(subscribe, mediainfo)])
         except Exception as e:
             logger.error(f"处理订阅添加事件时发生错误: {str(e)}")
 
@@ -806,7 +823,37 @@ class SubscribeAssistant(_PluginBase):
         """
         处理订阅完成事件
         """
-        pass
+        try:
+            # 验证事件数据
+            if not event or not event.event_data:
+                return
+
+            subscribe_id = event.event_data.get("subscribe_id")
+            subscribe_dict = event.event_data.get("subscribe_info")
+            mediainfo_dict = event.event_data.get("mediainfo")
+
+            logger.debug(f"接收到订阅完成事件，订阅数据：{subscribe_dict}，媒体数据：{mediainfo_dict}")
+
+            # 订阅完成清理订阅任务数据
+            self.clear_tasks(subscribe_id=subscribe_id, subscribe=subscribe_dict)
+
+            if not self._auto_best_types:
+                logger.debug("自动洗版功能未开启，跳过处理")
+                return
+
+            # 缺少订阅信息或媒体信息
+            if not subscribe_dict or not mediainfo_dict:
+                logger.warning(f"订阅事件数据缺失，跳过处理。订阅数据: {subscribe_dict}, 媒体信息: {mediainfo_dict}")
+                return
+
+            # 获取订阅信息和媒体信息
+            mediainfo = MediaInfo()
+            mediainfo.from_dict(mediainfo_dict)
+
+            # 调用公共方法处理订阅
+            self.process_best_version(subscribe_dict=subscribe_dict, mediainfo=mediainfo)
+        except Exception as e:
+            logger.error(f"处理订阅完成事件时发生错误: {str(e)}")
 
     @eventmanager.register(EventType.DownloadAdded)
     def handle_download_added_event(self, event: Event = None):
@@ -895,7 +942,7 @@ class SubscribeAssistant(_PluginBase):
         if not event_data.contexts:
             return
 
-        delete_tasks = self.__get_data("deletes")
+        delete_tasks = self.__get_data("deletes") or {}
         if not delete_tasks:
             return
 
@@ -911,9 +958,9 @@ class SubscribeAssistant(_PluginBase):
                     update_contexts.remove(context)
                     updated = True
                     continue
-        # if updated:
-        #     event_data.updated = True
-        #     event_data.updated_contexts = update_contexts
+        if updated:
+            event_data.updated = True
+            event_data.updated_contexts = update_contexts
 
     @eventmanager.register(etype=ChainEventType.ResourceDownload, priority=9999)
     def handle_resource_download_event(self, event: Event):
@@ -1325,9 +1372,7 @@ class SubscribeAssistant(_PluginBase):
                 invalid_torrent_hashes.append(torrent_hash)
                 continue
 
-            if subscribe.state not in ["N", "R", "P"]:
-                logger.debug(
-                    f"{self.__format_subscribe(subscribe)} 当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
+            if not self.__check_subscribe_status(subscribe=subscribe):
                 continue
 
             subscribe_torrent_tasks = subscribe_task.get("torrent_tasks") or []
@@ -1412,7 +1457,7 @@ class SubscribeAssistant(_PluginBase):
             return
         for subscribe_id, subscribe_task in subscribe_tasks.items():
             subscribe = self.subscribe_oper.get(sid=subscribe_id)
-            if not subscribe or subscribe.state not in ["N", "R", "P"]:
+            if not self.__check_subscribe_status(subscribe=subscribe):
                 continue
             pending = self.__get_subscribe_task_pending(subscribe_task=subscribe_task)
             # 如果当前订阅状态为待定，且订阅任务不为待定状态，则更新为订阅中
@@ -1448,8 +1493,6 @@ class SubscribeAssistant(_PluginBase):
         if self._notify:
             # 构建消息内容
             msg_parts = []
-            if subscribe.name:
-                msg_parts.append(f"{self.__format_subscribe(subscribe)}")
             if torrent_task.get("title"):
                 msg_parts.append(f"标题：{torrent_task.get('title')}")
             if torrent_task.get("description"):
@@ -1461,7 +1504,7 @@ class SubscribeAssistant(_PluginBase):
             # 推送消息
             self.post_message(
                 mtype=NotificationType.Subscribe,
-                title="【订阅种子超时删除】",
+                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 订阅种子超时删除",
                 text=msg_text,
                 image=self.__get_subscribe_image(subscribe),
             )
@@ -1519,7 +1562,7 @@ class SubscribeAssistant(_PluginBase):
         description = torrent_task.get("description")
         return f"{title} | {description} ({torrent_hash})"
 
-    def process_tv_pending(self, subscribes: [Subscribe | tuple[Subscribe, MediaInfo]]):
+    def process_tv_pending_check(self, subscribes: [Subscribe | tuple[Subscribe, MediaInfo]]):
         """
         处理剧集自动待定
         :param subscribes: 订阅对象列表
@@ -1542,10 +1585,13 @@ class SubscribeAssistant(_PluginBase):
                 subscribe = data
                 mediainfo = None
             try:
+                # 检查订阅是否为洗版订阅
+                if subscribe.best_version:
+                    logger.debug(f"{self.__format_subscribe(subscribe)} 为洗版订阅，跳过处理")
+                    continue
+
                 # 检查订阅状态是否可处理
-                if subscribe.state not in ["N", "R", "P"]:
-                    logger.debug(
-                        f"{self.__format_subscribe(subscribe)} 当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
+                if not self.__check_subscribe_status(subscribe=subscribe):
                     continue
 
                 # 检查订阅类型是否为电视剧
@@ -1558,7 +1604,6 @@ class SubscribeAssistant(_PluginBase):
                     mediainfo = self.__recognize_media(subscribe)
 
                 if not mediainfo:
-                    logger.warning(f"{subscribe.name} 未能识别到媒体信息，跳过处理")
                     continue
 
                 # 检查媒体类型是否为 TV
@@ -1669,7 +1714,7 @@ class SubscribeAssistant(_PluginBase):
                 meta = MetaInfo(subscribe.name)
                 meta.year = subscribe.year
                 meta.begin_season = subscribe.season or None
-                meta.type = MediaType.TV
+                meta.type = mediainfo.type
 
                 # 构造标题，根据状态动态调整
                 if target_state == "P":
@@ -1759,7 +1804,7 @@ class SubscribeAssistant(_PluginBase):
     @staticmethod
     def __format_subscribe(subscribe: Subscribe) -> str:
         """
-        根据订阅类型（TV 或 MOVIE）拼接不同格式的字符串
+        格式化订阅信息
         """
         if not subscribe:
             return "无效的订阅信息"
@@ -1772,6 +1817,28 @@ class SubscribeAssistant(_PluginBase):
             return f"电影: {subscribe.name} ({subscribe.year}) [{subscribe.id}]"
         else:
             return f"未知类型: {subscribe.name} ({subscribe.year}) [{subscribe.id}]"
+
+    def __format_subscribe_desc(self, subscribe: Subscribe, mediainfo: Optional[MediaInfo] = None) -> Optional[str]:
+        """
+        格式化订阅描述信息
+        """
+        if not subscribe:
+            return None
+
+        if not mediainfo:
+            mediainfo = self.__recognize_media(subscribe=subscribe)
+
+        if mediainfo:
+            meta = MetaInfo(subscribe.name)
+            meta.year = subscribe.year
+            meta.begin_season = subscribe.season or None
+            meta.type = mediainfo.type
+
+            subscribe_desc = f"{mediainfo.title_year} {meta.season}" \
+                if mediainfo.type == MediaType.TV else f"{mediainfo.title_year}"
+            return subscribe_desc
+        else:
+            self.__format_subscribe(subscribe=subscribe)
 
     @staticmethod
     def __compare_torrent_info_and_task(torrent_info: TorrentInfo, torrent_task: dict) -> bool:
@@ -2008,6 +2075,147 @@ class SubscribeAssistant(_PluginBase):
         subscribe_tasks[subscribe_id] = subscribe_task
         return subscribe_task
 
+    @staticmethod
+    def __get_subscribe_image(subscribe: Subscribe):
+        """
+        返回订阅图片地址
+        """
+        if subscribe.backdrop:
+            return subscribe.backdrop.replace("original", "w500")
+        if subscribe.poster:
+            return subscribe.poster.replace("original", "w500")
+        return ""
+
+    def process_best_version_complete_check(self, subscribes: list[Subscribe]):
+        """
+        处理自动洗版完成检查
+        :param subscribes: 订阅对象列表
+        """
+        if not self._auto_best_types or not subscribes:
+            return
+
+        # 如果剩余天数小于等于0，则跳过
+        if self._auto_best_remaining_days <= 0:
+            logger.debug("洗版天数小于等于0，跳过处理")
+            return
+
+        for subscribe in subscribes:
+            if not subscribe.best_version:
+                continue
+
+            # 优先级已经是洗版完成，跳过
+            if subscribe.current_priority == 100:
+                logger.debug(f"{self.__format_subscribe(subscribe)} 优先级已标识为洗版完成，跳过处理")
+                continue
+
+            # 获取最后更新的日期，优先使用 last_update，否则使用创建日期
+            last_update_date_str = subscribe.last_update or subscribe.date
+            if not last_update_date_str:
+                logger.debug(f"{self.__format_subscribe(subscribe)} 没有有效的日期，跳过处理")
+                continue
+
+                # 将字符串转换为 datetime 对象
+            try:
+                last_update_date = datetime.strptime(last_update_date_str, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                # 如果日期格式不匹配，跳过此条订阅
+                logger.warning(f"{self.__format_subscribe(subscribe)} 的日期格式不匹配，跳过处理")
+                continue
+
+            # 计算距离当前的天数
+            remaining_days = (datetime.now() - last_update_date).total_seconds() / 86400
+            logger.info(f"{self.__format_subscribe(subscribe)} 距离上次更新 {remaining_days:.2f} 天")
+
+            if remaining_days >= self._auto_best_remaining_days:
+                # 如果剩余天数已大于洗版天数，则更新优先级为100，标识为洗版完成
+                logger.info(f"{self.__format_subscribe(subscribe)} 已满足洗版天数，更新优先级为 100")
+                self.subscribe_oper.update(sid=subscribe.id, payload={"current_priority": 100})
+            else:
+                logger.info(f"订阅 {self.__format_subscribe(subscribe)} 尚未满足洗版天数，跳过处理")
+
+    def process_best_version(self, subscribe_dict: dict, mediainfo: MediaInfo):
+        """
+        处理自动洗版
+        """
+        if not subscribe_dict:
+            return
+
+        subscribe_dict.pop("id", None)
+        model_fields = SchemaSubscribe.__fields__
+        for key in list(subscribe_dict.keys()):
+            if key not in model_fields:
+                subscribe_dict.pop(key)
+        subscribe = SchemaSubscribe(**subscribe_dict)
+
+        if subscribe.best_version:
+            logger.debug(f"{self.__format_subscribe(subscribe)} 已为洗版订阅，跳过处理")
+            return
+
+        if MediaType(subscribe.type) not in self._auto_best_types:
+            logger.info(f"{subscribe.type} ，尚未开启自动洗版，跳过处理")
+            return
+
+        # 自动识别媒体信息
+        if not mediainfo:
+            mediainfo = self.__recognize_media(subscribe)
+
+        if not mediainfo:
+            return
+
+        # 更新订阅字典
+        subscribe_dict["best_version"] = True
+        subscribe_dict["username"] = self.plugin_name
+        subscribe_dict["state"] = "N"
+        fields_to_pop = [
+            "name", "year", "type", "tmdbid", "imdbid", "tvdbid", "doubanid", "bangumiid",
+            "poster", "backdrop", "vote", "description", "date", "last_update", "note", "state", "current_priority"
+        ]
+        for field in fields_to_pop:
+            subscribe_dict.pop(field, None)
+        if mediainfo.type == MediaType.TV:
+            subscribe_dict["lack_episode"] = subscribe_dict.get("total_episode")
+
+        # 添加订阅
+        sid, err_msg = self.subscribe_oper.add(mediainfo=mediainfo,
+                                               **subscribe_dict)
+
+        subscribe_desc = self.__format_subscribe_desc(subscribe=subscribe, mediainfo=mediainfo)
+
+        if sid:
+            logger.info(f"{subscribe_desc} 已成功添加洗版订阅 (ID: {sid})")
+            # 发送事件
+            eventmanager.send_event(EventType.SubscribeAdded, {
+                "subscribe_id": sid,
+                "username": self.plugin_name,
+                "mediainfo": mediainfo.to_dict(),
+            })
+        else:
+            logger.error(f"{subscribe_desc} 添加洗版订阅失败，错误信息: {err_msg}")
+
+        if not self._notify:
+            return
+
+        if not sid:
+            self.post_message(
+                mtype=NotificationType.Subscribe,
+                title=f"{subscribe_desc} 添加洗版订阅失败！",
+                text=err_msg,
+                image=mediainfo.get_message_image()
+            )
+        else:
+            if mediainfo.type == MediaType.TV:
+                link = settings.MP_DOMAIN('#/subscribe/tv?tab=mysub')
+            else:
+                link = settings.MP_DOMAIN('#/subscribe/movie?tab=mysub')
+            self.post_message(
+                mtype=NotificationType.Subscribe,
+                title=f"{subscribe_desc} 已添加洗版订阅",
+                text=f"评分：{mediainfo.vote_average}，来自用户：{self.plugin_name}",
+                image=mediainfo.get_message_image(),
+                link=link,
+                # username=subscribe.username
+            )
+
     def __with_lock_and_update_subscribe_tasks(self, method: Callable[..., None], *args: Any, **kwargs: Any) -> None:
         """
         使用锁获取并更新订阅任务数据
@@ -2065,13 +2273,16 @@ class SubscribeAssistant(_PluginBase):
                 # 处理异常
                 logger.error(f"Error during {method.__name__}: {e}")
 
-    @staticmethod
-    def __get_subscribe_image(subscribe: Subscribe):
+    def __check_subscribe_status(self, subscribe: Subscribe) -> bool:
         """
-        返回订阅图片地址
+        检查订阅状态是否符合要求
         """
-        if subscribe.backdrop:
-            return subscribe.backdrop.replace("original", "w500")
-        if subscribe.poster:
-            return subscribe.poster.replace("original", "w500")
-        return ""
+        if not subscribe:
+            return False
+
+        # 检查订阅状态是否可处理
+        if subscribe.state not in ["N", "R", "P"]:
+            logger.debug(
+                f"{self.__format_subscribe(subscribe)} 当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
+            return False
+        return True
