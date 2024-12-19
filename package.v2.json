@@ -208,5 +208,17 @@
         "history": {
             "v1.0": "增加订阅助手插件，实现多场景管理系统订阅与状态同步"
         }
+    },
+    "BOSS": {
+        "name": "个人测试",
+        "description": "测试插件，请勿使用。",
+        "labels": "订阅",
+        "version": "0.0.1",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v0.0.1": "测试插件，请勿使用"
+        }
     }
 }
