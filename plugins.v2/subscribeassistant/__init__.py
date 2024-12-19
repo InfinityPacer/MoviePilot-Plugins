@@ -1676,7 +1676,7 @@ class SubscribeAssistant(_PluginBase):
                     # 如果订阅目标状态一致，但是订阅待定状态已变更，也推送消息
                     if updated:
                         self.__send_tv_pending_msg(subscribe=subscribe, mediainfo=mediainfo,
-                                                   air_day=air_day, target_state=target_state)
+                                                   air_day=air_day, tv_pending=tv_pending)
                     continue
 
                 logger.info(f"{self.__format_subscribe(subscribe)} 订阅状态从 {subscribe.state} 更新为 {target_state}")
@@ -1684,19 +1684,19 @@ class SubscribeAssistant(_PluginBase):
 
                 if updated:
                     self.__send_tv_pending_msg(subscribe=subscribe, mediainfo=mediainfo,
-                                               air_day=air_day, target_state=target_state)
+                                               air_day=air_day, tv_pending=tv_pending)
 
             except Exception as e:
                 # 捕获异常并记录错误日志
                 logger.error(f"处理订阅 ID {subscribe.id} 时发生错误: {str(e)}")
 
-    def __send_tv_pending_msg(self, subscribe: Subscribe, mediainfo: MediaInfo, air_day: str, target_state: str):
+    def __send_tv_pending_msg(self, subscribe: Subscribe, mediainfo: MediaInfo, air_day: str, tv_pending: bool):
         """
         发送剧集待定消息
         :param subscribe: 订阅信息
         :param mediainfo: 媒体信息
         :param air_day: 上映日期
-        :param target_state: 目标状态
+        :param tv_pending: 待定状态
         """
         if not self._notify:
             return
@@ -1724,7 +1724,7 @@ class SubscribeAssistant(_PluginBase):
         meta.type = mediainfo.type
 
         # 构造标题，根据状态动态调整
-        if target_state == "P":
+        if tv_pending:
             title = f"{mediainfo.title_year} {meta.season} 满足上映待定，已标记待定"
         else:
             title = f"{mediainfo.title_year} {meta.season} 不再满足上映待定，已标记订阅中"
