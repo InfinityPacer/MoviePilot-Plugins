@@ -90,6 +90,8 @@ class SubscribeAssistant(_PluginBase):
     _auto_best_cron = None
     # 洗版天数
     _auto_best_remaining_days = 60
+    # 重置任务
+    _reset_task = False
     # 定时器
     _scheduler = None
     # 退出事件
@@ -114,6 +116,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_pending_cron = config.get("auto_pending_cron", "0 12 * * *")
         self._auto_download_pending = config.get("auto_download_pending", True)
         self._skip_timeout = config.get("skip_timeout", True)
+        self._reset_task = config.get("reset_task", False)
         self._auto_best_type = config.get("auto_best_type", "no")
         type_mapping = {
             "tv": {MediaType.TV},
@@ -133,6 +136,16 @@ class SubscribeAssistant(_PluginBase):
 
         self._scheduler = BackgroundScheduler(timezone=settings.TZ)
         self._scheduler.start()
+        if self._reset_task:
+            logger.info("订阅助手服务，即将开始重置任务")
+            self._scheduler.add_job(
+                func=self.reset_task,
+                trigger="date",
+                run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                name="订阅助手",
+            )
+            self._reset_task = False
+
         if self._onlyonce:
             logger.info("订阅助手服务，立即运行一次")
             self._scheduler.add_job(
@@ -174,7 +187,7 @@ class SubscribeAssistant(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -192,7 +205,7 @@ class SubscribeAssistant(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -210,7 +223,25 @@ class SubscribeAssistant(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'reset_task',
+                                            'label': '重置数据',
+                                            'hint': '将重置所有待定订阅及清理相关任务',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -761,8 +792,24 @@ class SubscribeAssistant(_PluginBase):
             "timeout_history_cleanup": self._timeout_history_cleanup,
             "auto_tv_pending_days": self._auto_tv_pending_days,
             "auto_best_remaining_days": self._auto_best_remaining_days,
+            "reset_task": self._reset_task,
         }
         self.update_config(config=config)
+
+    def reset_task(self):
+        """
+        重置任务
+        """
+        subscribes = self.subscribe_oper.list("P")
+        logger.info(f"开始重置任务，共有 {len(subscribes)} 个待定订阅任务")
+        for subscribe in subscribes:
+            self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R"})
+            logger.info(f"待定订阅 {self.__format_subscribe(subscribe)} 已重置订阅状态为 R")
+
+        self.__save_data("subscribes", {})
+        self.__save_data("torrents", {})
+        self.__save_data("deletes", {})
+        logger.info("已重置所有订阅任务、下载种子任务和超时删除记录")
 
     def auto_check(self):
         """
