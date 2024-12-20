@@ -38,7 +38,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "1.1.2"
+    plugin_version = "1.1.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -117,10 +117,10 @@ class SubscribeAssistant(_PluginBase):
         }
         self._auto_best_types = type_mapping.get(self._auto_best_type, set())
         self._auto_best_cron = config.get("auto_best_cron", "0 15 * * *")
-        self._download_check_interval = self.__get_int_config(config, "download_check_interval", 5)
-        self._download_timeout = self.__get_int_config(config, "download_timeout", 3)
-        self._auto_tv_pending_days = self.__get_int_config(config, "auto_tv_pending_days", 14)
-        self._auto_best_remaining_days = self.__get_int_config(config, "auto_best_remaining_days", 0) or None
+        self._download_check_interval = self.__get_float_config(config, "download_check_interval", 5)
+        self._download_timeout = self.__get_float_config(config, "download_timeout", 3)
+        self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 14)
+        self._auto_best_remaining_days = self.__get_float_config(config, "auto_best_remaining_days", 0) or None
 
         # 停止现有任务
         self.stop_service()
@@ -684,12 +684,12 @@ class SubscribeAssistant(_PluginBase):
             print(str(e))
 
     @staticmethod
-    def __get_int_config(config: dict, key: str, default: int) -> int:
+    def __get_float_config(config: dict, key: str, default: float) -> float:
         """
         获取int配置项
         """
         try:
-            return int(config.get(key, default))
+            return float(config.get(key, default))
         except (ValueError, TypeError):
             return default
 
@@ -942,6 +942,10 @@ class SubscribeAssistant(_PluginBase):
         if not event_data.contexts:
             return
 
+        # event_data.updated = True
+        # event_data.updated_contexts = []
+        # return
+
         delete_tasks = self.__get_data("deletes") or {}
         if not delete_tasks:
             return
@@ -1067,7 +1071,7 @@ class SubscribeAssistant(_PluginBase):
             torrent_hashes = [torrent_hashes]
 
         deleted = downloader.delete_torrents(delete_file=True, ids=torrent_hashes)
-        if deleted:
+        if not deleted:
             logger.warning(f"删除种子过程中发生异常，请检查")
             return False
 
@@ -1432,7 +1436,7 @@ class SubscribeAssistant(_PluginBase):
                                 f"种子任务 {torrent_desc} 已超时，但满足不删除标签 {intersection_tags}，跳过处理")
                             continue
 
-                logger.info(f"种子任务 {torrent_desc} 已超时删除，将从订阅任务中移除")
+                logger.info(f"种子任务 {torrent_desc} 已超时，即将删除并从订阅任务中移除")
                 self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
 
                 if torrent_hash in torrent_tasks:
@@ -1482,7 +1486,16 @@ class SubscribeAssistant(_PluginBase):
             note = set(subscribe.note or [])
             episodes_set = set(episodes)
             note = list(note - episodes_set)
-            self.subscribe_oper.update(subscribe.id, {"note": note})
+            update_data = {
+                "note": note
+            }
+            if subscribe.total_episode:
+                start_episode = subscribe.start_episode - 1 if subscribe.start_episode else 0
+                lack_episode = subscribe.total_episode - start_episode - len(note)
+                update_data["lack_episode"] = lack_episode
+            else:
+                update_data["lack_episode"] = subscribe.total_episode
+            self.subscribe_oper.update(subscribe.id, update_data)
         elif media_type == MediaType.MOVIE:
             self.subscribe_oper.update(subscribe.id, {"note": []})
 
