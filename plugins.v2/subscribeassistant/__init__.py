@@ -66,8 +66,12 @@ class SubscribeAssistant(_PluginBase):
     _auto_download_delete = False
     # 删除后触发搜索补全
     _auto_search_when_delete = False
+    # 跳过超时记录
+    _skip_timeout = True
     # 超时删除时间（小时）
     _download_timeout = 3
+    # 超时记录清理时间（小时）
+    _timeout_history_cleanup = 24
     # 排除标签
     _delete_exclude_tags = None
     # 自动待定最近上线剧集订阅
@@ -109,6 +113,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_tv_pending = config.get("auto_tv_pending", True)
         self._auto_pending_cron = config.get("auto_pending_cron", "0 12 * * *")
         self._auto_download_pending = config.get("auto_download_pending", True)
+        self._skip_timeout = config.get("skip_timeout", True)
         self._auto_best_type = config.get("auto_best_type", "no")
         type_mapping = {
             "tv": {MediaType.TV},
@@ -119,6 +124,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_best_cron = config.get("auto_best_cron", "0 15 * * *")
         self._download_check_interval = self.__get_float_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_float_config(config, "download_timeout", 3)
+        self._timeout_history_cleanup = self.__get_float_config(config, "timeout_history_cleanup", 0) or None
         self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 14)
         self._auto_best_remaining_days = self.__get_float_config(config, "auto_best_remaining_days", 0) or None
 
@@ -344,7 +350,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -362,7 +368,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -371,6 +377,24 @@ class SubscribeAssistant(_PluginBase):
                                                             'model': 'auto_search_when_delete',
                                                             'label': '删除后触发搜索补全',
                                                             'hint': '种子删除后将自动触发搜索补全',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'skip_timeout',
+                                                            'label': '跳过超时记录',
+                                                            'hint': '跳过最近超时删除的种子，避免再次下载超时',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -385,7 +409,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -395,7 +419,7 @@ class SubscribeAssistant(_PluginBase):
                                                             'label': '下载超时时间',
                                                             'type': 'number',
                                                             "min": "0",
-                                                            'hint': '下载任务超时的小时数，N小时内未完成则视为超时',
+                                                            'hint': 'N小时内未完成下载任务视为超时',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -405,7 +429,27 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'timeout_history_cleanup',
+                                                            'label': '超时记录清理时间',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '定时清理N小时前的超时种子记录',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -614,7 +658,9 @@ class SubscribeAssistant(_PluginBase):
             "download_check_interval": 5,
             "auto_download_delete": True,
             "auto_search_when_delete": True,
+            "skip_timeout": True,
             "download_timeout": 3,
+            "timeout_history_cleanup": 24,
             "delete_exclude_tags": "H&R",
             "auto_tv_pending": True,
             "auto_download_pending": True,
@@ -710,7 +756,9 @@ class SubscribeAssistant(_PluginBase):
             "auto_download_pending": self._auto_download_pending,
             "auto_best_cron": self._auto_best_cron,
             "auto_best_type": self._auto_best_type,
+            "skip_timeout": self._skip_timeout,
             "download_timeout": self._download_timeout,
+            "timeout_history_cleanup": self._timeout_history_cleanup,
             "auto_tv_pending_days": self._auto_tv_pending_days,
             "auto_best_remaining_days": self._auto_best_remaining_days,
         }
@@ -731,7 +779,13 @@ class SubscribeAssistant(_PluginBase):
         if not self._auto_download_delete or not self._auto_download_pending:
             return
 
+        logger.info("开始清理超时种子记录...")
+        self.process_delete_task()
+        logger.info("超时种子记录清理完成...")
+
+        logger.info("开始检查下载种子任务...")
         self.process_download_task()
+        logger.info("下载种子任务检查完成...")
 
     def tv_pending_check(self):
         """
@@ -744,7 +798,9 @@ class SubscribeAssistant(_PluginBase):
         if not subscribes:
             return
 
+        logger.info("开始检查剧集待定...")
         self.process_tv_pending(subscribes)
+        logger.info("剧集待定检查完成...")
 
     def best_version_check(self):
         """
@@ -754,7 +810,9 @@ class SubscribeAssistant(_PluginBase):
         if not subscribes:
             return
 
+        logger.info("开始检查订阅洗版...")
         self.process_best_version_complete(subscribes)
+        logger.info("订阅洗版检查完成...")
 
     @eventmanager.register(EventType.SubscribeDeleted)
     def handle_subscribe_deleted_event(self, event: Event = None):
@@ -945,6 +1003,9 @@ class SubscribeAssistant(_PluginBase):
         # event_data.updated = True
         # event_data.updated_contexts = []
         # return
+
+        if not self._skip_timeout:
+            return
 
         delete_tasks = self.__get_data("deletes") or {}
         if not delete_tasks:
@@ -1315,6 +1376,43 @@ class SubscribeAssistant(_PluginBase):
         subscribe = self.subscribe_oper.get(subscribe_id)
         return subscribe_dict, subscribe
 
+    def process_delete_task(self):
+        """
+        清理超时种子记录
+        """
+        self.__with_lock_and_update_delete_tasks(method=self.__process_delete_task)
+
+    def __process_delete_task(self, torrent_tasks: dict):
+        """
+        清理超时种子记录
+        :param torrent_tasks: 种子任务字典
+        """
+        if not torrent_tasks:
+            return
+
+        if not self._timeout_history_cleanup:
+            logger.debug("未配置超时记录清理时间，跳过处理")
+            return
+
+        if self._timeout_history_cleanup <= 0:
+            logger.debug("超时记录清理时间小于等于0，跳过处理")
+            return
+
+        current_time = time.time()
+        timeout_threshold = self._timeout_history_cleanup * 3600
+
+        # 遍历torrent_tasks字典，移除超时的记录
+        for torrent_hash in list(torrent_tasks.keys()):
+            torrent_task = torrent_tasks[torrent_hash]
+            delete_time = torrent_task.get("delete_time")
+            if not delete_time:
+                del torrent_tasks[torrent_hash]
+                continue
+            elapsed_time = current_time - delete_time
+            if elapsed_time > timeout_threshold:
+                logger.info(f"超时种子记录 {torrent_hash} 已满足清理时间，删除任务")
+                del torrent_tasks[torrent_hash]
+
     def process_download_task(self):
         """
         处理下载种子任务并清理异常种子
@@ -1446,6 +1544,11 @@ class SubscribeAssistant(_PluginBase):
                     task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
                 ]
 
+                # 记录删除记录
+                self.__with_lock_and_update_delete_tasks(method=self.__update_or_add_delete_tasks,
+                                                         torrent_task=torrent_task)
+
+                # 处理删除后续逻辑
                 self.__handle_timeout_seed_deletion(subscribe=subscribe, torrent_task=torrent_task,
                                                     triggered_subscribe_ids=triggered_subscribe_ids)
 
@@ -1529,8 +1632,6 @@ class SubscribeAssistant(_PluginBase):
         if subscribe.id in triggered_subscribe_ids:
             return
         triggered_subscribe_ids.add(subscribe.id)
-        self.__with_lock_and_update_delete_tasks(method=self.__update_or_add_delete_tasks,
-                                                 torrent_task=torrent_task)
         logger.info(f"{self.__format_subscribe(subscribe)}，删除超时种子触发补全搜索任务，"
                     f"任务将在 {random_minutes:.2f} 分钟后触发")
         timer = threading.Timer(random_minutes * 60,
@@ -1925,6 +2026,7 @@ class SubscribeAssistant(_PluginBase):
         if not torrent_task:
             return
         torrent_hash = torrent_task.get("hash")
+        torrent_task["delete_time"] = time.time()
         delete_tasks[torrent_hash] = torrent_task
 
     def __update_subscribe_torrent_task(self, subscribe_tasks: dict, subscribe: Subscribe,
