@@ -1047,17 +1047,39 @@ class SubscribeAssistant(_PluginBase):
         if not event_data.contexts:
             return
 
-        # event_data.updated = True
-        # event_data.updated_contexts = []
-        # return
+        logger.debug(f"接收到资源选择事件，资源数: {len(event_data.contexts)}")
 
-        if not self._skip_timeout:
+        subscribe_info, subscribe = self.__get_subscribe_by_source(source=event_data.origin)
+        if not subscribe_info or not subscribe:
+            logger.debug(f"未能找到订阅信息，跳过处理")
             return
 
-        delete_tasks = self.__get_data("deletes") or {}
+        # 检查是否开启下载自动待定，并且当前是否处于待定状态
+        if self._auto_download_pending:
+            subscribe_tasks = self.__get_data(key="subscribes")
+            subscribe_task, exists = self.__initialize_subscribe_task(subscribe=subscribe,
+                                                                      subscribe_tasks=subscribe_tasks)
+
+            # 如果存在洗版订阅任务，并处于下载待定状态，则不允许进行资源选择，否则可能会多次下载资源
+            if subscribe.best_version and subscribe.state == "P" and exists:
+                pending = self.__get_subscribe_task_download_pending(subscribe_task=subscribe_task)
+                if pending:
+                    logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 当前存在任务正在下载，取消后续资源选择")
+                    event_data.updated = True
+                    event_data.updated_contexts = []
+                    event_data.source = self.plugin_name
+                    return
+
+        # 跳过超时未开启
+        if not self._skip_timeout:
+            logger.debug("跳过超时功能未开启，跳过处理")
+            return
+
+        delete_tasks = self.__get_data("deletes")
         if not delete_tasks:
             return
 
+        # 处理超时删除任务
         updated = False
         update_contexts = event_data.updated_contexts or event_data.contexts or []
         for context in list(update_contexts):
@@ -1652,6 +1674,7 @@ class SubscribeAssistant(_PluginBase):
                 update_data["lack_episode"] = subscribe.total_episode
         elif media_type == MediaType.MOVIE:
             update_data["note"] = []
+
         # 如果是洗版，这里还需要处理优先级
         if subscribe.best_version:
             update_data["current_priority"] = subscribe_task.get("current_priority", subscribe.current_priority) or 0
