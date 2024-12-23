@@ -201,11 +201,12 @@
         "name": "订阅助手",
         "description": "实现多场景管理系统订阅与状态同步。",
         "labels": "订阅",
-        "version": "1.3",
+        "version": "1.3.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.3.1": "修复洗版优先级等一些细节问题",
             "v1.3": "增加重置数据以及修复一些细节问题",
             "v1.2": "增加跳过超时种子以及修复一些细节问题",
             "v1.1": "增加自动洗版以及修复一些细节问题",
