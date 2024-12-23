@@ -1073,6 +1073,7 @@ class SubscribeAssistant(_PluginBase):
         if updated:
             event_data.updated = True
             event_data.updated_contexts = update_contexts
+            event_data.source = self.plugin_name
 
     @eventmanager.register(etype=ChainEventType.ResourceDownload, priority=9999)
     def handle_resource_download_event(self, event: Event):
@@ -1112,7 +1113,9 @@ class SubscribeAssistant(_PluginBase):
                                                     torrent_info=context.torrent_info,
                                                     episodes=episodes,
                                                     downloader=downloader,
-                                                    pending=True)
+                                                    pending=True,
+                                                    update_priority=True)
+
         # 更新订阅信息为待定
         logger.debug(f"{self.__format_subscribe(subscribe)} 已更新为待定状态")
         if subscribe.state != "P":
@@ -1596,7 +1599,8 @@ class SubscribeAssistant(_PluginBase):
                                                          torrent_task=torrent_task)
 
                 # 处理删除后续逻辑
-                self.__handle_timeout_seed_deletion(subscribe=subscribe, torrent_task=torrent_task,
+                self.__handle_timeout_seed_deletion(subscribe=subscribe, subscribe_task=subscribe_task,
+                                                    torrent_task=torrent_task,
                                                     triggered_subscribe_ids=triggered_subscribe_ids)
 
         self.__clean_invalid_torrents(invalid_torrent_hashes, subscribe_tasks, torrent_tasks)
@@ -1619,11 +1623,13 @@ class SubscribeAssistant(_PluginBase):
                 self.subscribe_oper.update(subscribe.id, {"state": "R"})
                 logger.info(f"{self.__format_subscribe(subscribe)} 状态从 {subscribe.state} 更新为 R")
 
-    def __handle_timeout_seed_deletion(self, subscribe: Subscribe, torrent_task: dict, triggered_subscribe_ids: set):
+    def __handle_timeout_seed_deletion(self, subscribe: Subscribe, subscribe_task: dict, torrent_task: dict,
+                                       triggered_subscribe_ids: set):
         """
         处理删除超时种子后续相关任务
 
         :param subscribe: 订阅信息
+        :param subscribe_task: 订阅任务
         :param torrent_task: 种子任务
         :param triggered_subscribe_ids: 已触发的订阅任务
         """
@@ -1631,23 +1637,26 @@ class SubscribeAssistant(_PluginBase):
             return
 
         media_type = MediaType(subscribe.type)
+        update_data = {}
         if media_type == MediaType.TV:
             episodes = torrent_task.get("episodes") or []
             note = set(subscribe.note or [])
             episodes_set = set(episodes)
             note = list(note - episodes_set)
-            update_data = {
-                "note": note
-            }
+            update_data["note"] = note
             if subscribe.total_episode:
                 start_episode = subscribe.start_episode - 1 if subscribe.start_episode else 0
                 lack_episode = subscribe.total_episode - start_episode - len(note)
                 update_data["lack_episode"] = lack_episode
             else:
                 update_data["lack_episode"] = subscribe.total_episode
-            self.subscribe_oper.update(subscribe.id, update_data)
         elif media_type == MediaType.MOVIE:
-            self.subscribe_oper.update(subscribe.id, {"note": []})
+            update_data["note"] = []
+        # 如果是洗版，这里还需要处理优先级
+        if subscribe.best_version:
+            update_data["current_priority"] = subscribe_task.get("current_priority", subscribe.current_priority) or 0
+        if update_data:
+            self.subscribe_oper.update(subscribe.id, update_data)
 
         random_minutes = random.uniform(3, 5)
         completion_time = f"{random_minutes:.2f} 分钟"
@@ -2079,7 +2088,8 @@ class SubscribeAssistant(_PluginBase):
     def __update_subscribe_torrent_task(self, subscribe_tasks: dict, subscribe: Subscribe,
                                         torrent_hash: Optional[str] = None,
                                         torrent_info: Optional[TorrentInfo] = None, episodes: list[int] = None,
-                                        downloader: str = None, pending: bool = False) -> Optional[dict]:
+                                        downloader: str = None, pending: bool = False,
+                                        update_priority=False) -> Optional[dict]:
         """
         更新订阅种子任务，支持移除完成任务、更新或新增种子任务
         :param subscribe_tasks: 订阅任务字典
@@ -2089,6 +2099,7 @@ class SubscribeAssistant(_PluginBase):
         :param episodes: 可选，需要下载的集数
         :param downloader: 可选，下载器
         :param pending: 可选，是否将种子任务标记为待定
+        :param update_priority：可选，更新优先级
         :return: 返回更新后的订阅任务对象，或者移除任务后的任务信息
         """
         if not subscribe or subscribe_tasks is None:
@@ -2100,6 +2111,10 @@ class SubscribeAssistant(_PluginBase):
         # 更新或新增种子任务
         self.__update_or_add_subscribe_torrent_task(subscribe_task, torrent_hash, torrent_info,
                                                     episodes, downloader, pending)
+
+        # 更新优先级
+        if update_priority:
+            subscribe_task["current_priority"] = subscribe.current_priority
 
         return subscribe_task
 
@@ -2247,6 +2262,7 @@ class SubscribeAssistant(_PluginBase):
             "doubanid": subscribe.doubanid,
             "bangumiid": subscribe.bangumiid,
             "best_version": subscribe.best_version,
+            "current_priority": subscribe.current_priority,
             "tv_pending": False,
             "tv_pending_time": None,
             "torrent_tasks": []
@@ -2398,7 +2414,7 @@ class SubscribeAssistant(_PluginBase):
                 # username=subscribe.username
             )
 
-    def __with_lock_and_update_subscribe_tasks(self, method: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+    def __with_lock_and_update_subscribe_tasks(self, method: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
         """
         使用锁获取并更新订阅任务数据
         :param method: 需要执行的操作，接收当前数据字典并进行修改
