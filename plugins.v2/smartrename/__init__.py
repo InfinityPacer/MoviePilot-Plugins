@@ -218,11 +218,35 @@ class SmartRename(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '注意：重置插件后即可恢复相关示例配置'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
         ], {
             "enabled": False,
+            "separator": ".",
+            "separator_types": ["audioCodec", "videoCodec", "videoFormat", "edition", "effect",
+                                "resourceType"],
             "custom_separator": "@",
             "word_replacements": """(?i)(?<=[\W_])BluRay.REMUX(?=[\W_]) => REMUX
 (?i)(?<=[\W_])HDR.DV(?=[\W_]) => DoVi.HDR
@@ -230,7 +254,8 @@ class SmartRename(_PluginBase):
 (?i)(?<=[\W_])H264(?=[\W_]) => x264
 (?i)(?<=[\W_])h265(?=[\W_]) => x265
 (?i)(?<=[\W_])NF(?=[\W_]) => Netflix
-(?i)(?<=[\W_])AMZN(?=[\W_]) => Amazon"""
+(?i)(?<=[\W_])AMZN(?=[\W_]) => Amazon
+(?i)\.Atmos(?=\W) => """
         }
 
     def get_page(self) -> List[dict]:
@@ -367,7 +392,7 @@ class SmartRename(_PluginBase):
         try:
             if replacement_str:
                 # 将字符串按行分割，并去除空行
-                return [line.strip() for line in replacement_str.splitlines() if line.strip()]
+                return [line.lstrip() for line in replacement_str.splitlines() if line.strip()]
             return []
         except Exception as e:
             # 记录异常信息并返回空列表
