@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Tuple, Optional
 from jinja2 import Template
 
 from app.core.event import Event, eventmanager
+from app.core.meta.customization import CustomizationMatcher
+from app.core.meta.words import WordsMatcher
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas.event import TransferRenameEventData
@@ -42,6 +44,10 @@ class SmartRename(_PluginBase):
     _separator_types: Optional[list] = None
     # 各字段的分隔符字典，按需配置不同字段的分隔符
     _field_separators: Optional[Dict[str, str]] = None
+    # 自定义替换词
+    _word_replacements: Optional[list] = []
+    # 自定义占位符分隔符
+    _custom_separator: Optional[str] = "@"
 
     # endregion
 
@@ -52,6 +58,9 @@ class SmartRename(_PluginBase):
         self._enabled = config.get("enabled") or False
         self._separator = config.get("separator")
         self._separator_types = config.get("separator_types")
+        self._word_replacements = self.__parse_replacement_rules(config.get("word_replacements"))
+        self._custom_separator = config.get("custom_separator") or "@"
+        CustomizationMatcher().custom_separator = self._custom_separator
 
     def get_state(self) -> bool:
         return self._enabled
@@ -120,8 +129,8 @@ class SmartRename(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'separator',
-                                            'label': '分隔符',
-                                            'hint': '请输入分隔符，如：. - _ 空格',
+                                            'label': '默认分隔符',
+                                            'hint': '请输入默认分隔符，如：. - _ 空格',
                                             'persistent-hint': True
                                         }
                                     }
@@ -132,6 +141,28 @@ class SmartRename(_PluginBase):
                                 'props': {
                                     'cols': 12,
                                     'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'custom_separator',
+                                            'label': '自定义占位符分隔符',
+                                            'hint': '请输入 customization 的分隔符，如：. - _ 空格，默认为 @',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
                                 },
                                 'content': [
                                     {
@@ -162,13 +193,44 @@ class SmartRename(_PluginBase):
                                     }
                                 ]
                             }
-
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextarea',
+                                        'props': {
+                                            'model': 'word_replacements',
+                                            'label': '自定义替换词',
+                                            'rows': 5,
+                                            "placeholder": "每行输入一条替换规则，格式：被替换词 => 替换词",
+                                            'hint': '定义替换规则，重命名后会自动进行词语替换',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
                         ]
                     }
                 ]
             }
         ], {
-            "enabled": False
+            "enabled": False,
+            "custom_separator": "@",
+            "word_replacements": """(?i)(?<=[\W_])BluRay.REMUX(?=[\W_]) => REMUX
+(?i)(?<=[\W_])HDR.DV(?=[\W_]) => DoVi.HDR
+(?i)(?<=[\W_])DV(?=[\W_]) => DoVi
+(?i)(?<=[\W_])H264(?=[\W_]) => x264
+(?i)(?<=[\W_])h265(?=[\W_]) => x265
+(?i)(?<=[\W_])NF(?=[\W_]) => Netflix
+(?i)(?<=[\W_])AMZN(?=[\W_]) => Amazon"""
         }
 
     def get_page(self) -> List[dict]:
@@ -213,7 +275,13 @@ class SmartRename(_PluginBase):
         try:
             # 调用智能重命名方法
             updated_str = self.rename(template_string=event_data.template_string,
-                                      rename_dict=copy.deepcopy(event_data.rename_dict))
+                                      rename_dict=copy.deepcopy(event_data.rename_dict)) or event_data.render_str
+
+            # 调用替换词
+            if self._word_replacements:
+                updated_str, apply_words = WordsMatcher().prepare(title=updated_str,
+                                                                  custom_words=self._word_replacements)
+
             # 仅在智能重命名有实际更新时，标记更新状态
             if updated_str and updated_str != event_data.render_str:
                 event_data.updated_str = updated_str
@@ -284,3 +352,18 @@ class SmartRename(_PluginBase):
             return updated_value if updated_value != value else None
 
         return None
+
+    @staticmethod
+    def __parse_replacement_rules(replacement_str: str) -> Optional[list]:
+        """
+        将替换规则字符串解析为列表，按行分割
+        """
+        try:
+            if replacement_str:
+                # 将字符串按行分割，并去除空行
+                return [line.strip() for line in replacement_str.splitlines() if line.strip()]
+            return []
+        except Exception as e:
+            # 记录异常信息并返回空列表
+            logger.error(f"Error parsing replacement rules: {e}")
+            return []
