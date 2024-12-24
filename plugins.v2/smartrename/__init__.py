@@ -274,6 +274,7 @@ class SmartRename(_PluginBase):
 
         try:
             # 调用智能重命名方法
+            logger.debug(f"开始智能重命名处理，原始值：{event_data.render_str}")
             updated_str = self.rename(template_string=event_data.template_string,
                                       rename_dict=copy.deepcopy(event_data.rename_dict)) or event_data.render_str
 
@@ -281,12 +282,16 @@ class SmartRename(_PluginBase):
             if self._word_replacements:
                 updated_str, apply_words = WordsMatcher().prepare(title=updated_str,
                                                                   custom_words=self._word_replacements)
+                logger.debug(f"完成词语替换，应用的替换词: {apply_words}，替换后字符串：{updated_str}")
 
             # 仅在智能重命名有实际更新时，标记更新状态
             if updated_str and updated_str != event_data.render_str:
                 event_data.updated_str = updated_str
                 event_data.updated = True
                 event_data.source = self.__class__.__name__
+                logger.info(f"重命名完成，{event_data.render_str} -> {updated_str}")
+            else:
+                logger.debug(f"重命名结果与原始值相同，跳过更新")
         except Exception as e:
             logger.error(f"重命名发生未知异常: {e}", exc_info=True)
 
@@ -313,6 +318,7 @@ class SmartRename(_PluginBase):
             if updated_value is not None and updated_value != value:
                 rename_dict[field] = updated_value
                 updated = True
+                logger.debug(f"字段 {field} : {value} -> {updated_value}")
 
         # 如果没有任何字段被修改，直接返回 None
         if not updated:
