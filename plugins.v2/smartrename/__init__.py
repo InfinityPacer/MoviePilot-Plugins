@@ -1,3 +1,4 @@
+import copy
 import threading
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -35,8 +36,12 @@ class SmartRename(_PluginBase):
     # region 私有属性
     # 是否开启
     _enabled = False
-    # 分隔符
-    _edition_separator: Optional[str] = None
+    # 默认分隔符
+    _separator: Optional[str] = None
+    # 分隔符适用范围
+    _separator_types: Optional[list] = None
+    # 各字段的分隔符字典，按需配置不同字段的分隔符
+    _field_separators: Optional[Dict[str, str]] = None
 
     # endregion
 
@@ -45,7 +50,8 @@ class SmartRename(_PluginBase):
             return
 
         self._enabled = config.get("enabled") or False
-        self._edition_separator = config.get("edition_separator")
+        self._separator = config.get("separator")
+        self._separator_types = config.get("separator_types")
 
     def get_state(self) -> bool:
         return self._enabled
@@ -113,14 +119,50 @@ class SmartRename(_PluginBase):
                                     {
                                         'component': 'VTextField',
                                         'props': {
-                                            'model': 'edition_separator',
-                                            'label': 'EDITION 分隔符',
-                                            'hint': '请输入 EDITION 分隔符，如：. - _ 空格',
+                                            'model': 'separator',
+                                            'label': '分隔符',
+                                            'hint': '请输入分隔符，如：. - _ 空格',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'multiple': True,
+                                            'chips': True,
+                                            'clearable': True,
+                                            'model': 'separator_types',
+                                            'label': '分隔符适用范围',
+                                            'items': [
+                                                {'title': 'title', 'value': 'title'},
+                                                {'title': 'en_title', 'value': 'en_title'},
+                                                {'title': 'original_title', 'value': 'original_title'},
+                                                {'title': 'name', 'value': 'name'},
+                                                {'title': 'en_name', 'value': 'en_name'},
+                                                {'title': 'original_name', 'value': 'original_name'},
+                                                {'title': 'resourceType', 'value': 'resourceType'},
+                                                {'title': 'effect', 'value': 'effect'},
+                                                {'title': 'edition', 'value': 'edition'},
+                                                {'title': 'videoFormat', 'value': 'videoFormat'},
+                                                {'title': 'videoCodec', 'value': 'videoCodec'},
+                                                {'title': 'audioCodec', 'value': 'audioCodec'},
+                                            ],
+                                            'hint': '请选择分隔符适用范围',
                                             'persistent-hint': True
                                         }
                                     }
                                 ]
                             }
+
                         ]
                     }
                 ]
@@ -170,7 +212,8 @@ class SmartRename(_PluginBase):
 
         try:
             # 调用智能重命名方法
-            updated_str = self.rename(template_string=event_data.template_string, rename_dict=event_data.rename_dict)
+            updated_str = self.rename(template_string=event_data.template_string,
+                                      rename_dict=copy.deepcopy(event_data.rename_dict))
             # 仅在智能重命名有实际更新时，标记更新状态
             if updated_str and updated_str != event_data.render_str:
                 event_data.updated_str = updated_str
@@ -186,38 +229,58 @@ class SmartRename(_PluginBase):
         :param rename_dict: 渲染上下文，用于替换模板中的变量
         :return: 生成的完整字符串
         """
+        if not self._separator_types or not self._separator:
+            return None
+
+        logger.debug(f"Initial rename_dict: {rename_dict}")
+
         # 检查并更新
         updated = False
+        # 遍历所有字段，根据需要修改
+        for field, value in rename_dict.items():
+            if field not in self._separator_types:
+                continue
+            updated_value = self.modify_field(field, value, self._separator_types)
 
-        # 修改 edition 并判断是否有实际更新
-        if "edition" in rename_dict:
-            original_edition = rename_dict["edition"]
-            updated_edition = self.modify_edition(original_edition)
-
-            # 如果 modify_edition 没有更新 edition，保持原值
-            if updated_edition is not None and updated_edition != original_edition:
-                rename_dict["edition"] = updated_edition
+            if updated_value is not None and updated_value != value:
+                rename_dict[field] = updated_value
                 updated = True
 
         # 如果没有任何字段被修改，直接返回 None
         if not updated:
             return None
 
-        # 创建jinja2模板对象
+        # 创建 jinja2 模板对象
         template = Template(template_string)
         # 渲染生成的字符串
         return template.render(rename_dict)
 
-    def modify_edition(self, edition: str) -> Optional[str]:
+    def modify_field(self, field: str, value: str, separator_types: list) -> Optional[str]:
         """
-        修改 edition 字段，使用指定分隔符进行合并
-        :param edition: 原始 edition 字段
-        :return: 修改后的 edition 或 None（如果不处理）
+        修改字段内容，使用指定的分隔符进行合并
+        :param field: 字段名
+        :param value: 字段的原始值
+        :param separator_types: 需要处理的分隔符类型列表
+        :return: 修改后的字段值或 None（如果不处理）
         """
-        if not edition or not self._edition_separator:
+        if not value or not separator_types:
             return None
-        if isinstance(edition, str):
-            parts = edition.split()
-            updated_edition = self._edition_separator.join(parts)
-            return updated_edition if updated_edition != edition else None
+
+        if isinstance(value, str):
+            parts = value.split()
+
+            # 如果字段不在 separator_types 中，则不做任何修改
+            if field not in separator_types:
+                return None
+
+            # 如果存在该字段的特定分隔符，则使用该分隔符进行处理
+            separator = self._field_separators.get(field,
+                                                   self._separator) if self._field_separators else self._separator
+
+            # 使用选定的分隔符类型进行字段值修改
+            updated_value = separator.join(parts) if separator else value
+
+            # 如果修改后的值与原值不同，返回更新后的值
+            return updated_value if updated_value != value else None
+
         return None
