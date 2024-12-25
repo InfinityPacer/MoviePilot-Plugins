@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Tuple, Optional
 
 from jinja2 import Template
 
+from app.core.context import MediaInfo
 from app.core.event import Event, eventmanager
 from app.core.meta.customization import CustomizationMatcher
 from app.core.meta.words import WordsMatcher
@@ -46,6 +47,8 @@ class SmartRename(_PluginBase):
     _field_separators: Optional[Dict[str, str]] = None
     # 自定义替换词
     _word_replacements: Optional[list] = []
+    # 自定义重命名模板
+    _template_groups: Optional[dict] = {}
     # 自定义占位符分隔符
     _custom_separator: Optional[str] = "@"
 
@@ -59,6 +62,7 @@ class SmartRename(_PluginBase):
         self._separator = config.get("separator")
         self._separator_types = config.get("separator_types")
         self._word_replacements = self.__parse_replacement_rules(config.get("word_replacements"))
+        self._template_groups = self.__parse_template_groups(config.get("template_groups"))
         self._custom_separator = config.get("custom_separator") or "@"
         CustomizationMatcher().custom_separator = self._custom_separator
 
@@ -225,6 +229,32 @@ class SmartRename(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextarea',
+                                        'props': {
+                                            'model': 'template_groups',
+                                            'label': '自定义重命名模板',
+                                            'rows': 5,
+                                            "placeholder": "每行输入一条重命名模板，格式：\n"
+                                                           "二级分类名称:重命名模板\n"
+                                                           "TMDBID:重命名模板",
+                                            'hint': '定义重命名模板，覆盖默认的重命名模板',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
                                     'cols': 12,
                                 },
                                 'content': [
@@ -239,7 +269,8 @@ class SmartRename(_PluginBase):
                                 ]
                             }
                         ]
-                    },{
+                    },
+                    {
                         'component': 'VRow',
                         'props': {
                             'style': {
@@ -340,7 +371,32 @@ class SmartRename(_PluginBase):
         try:
             # 调用智能重命名方法
             logger.debug(f"开始智能重命名处理，原始值：{event_data.render_str}")
-            updated_str = self.rename(template_string=event_data.template_string,
+
+            template_string = event_data.template_string
+
+            mediainfo: MediaInfo = event_data.rename_dict.get("__mediainfo__")
+            if not mediainfo:
+                logger.info("没有获取到媒体信息，跳过自定义重命名格式处理")
+            else:
+                # 二级分类
+                category = mediainfo.category
+                if category:
+                    category_template_str = self._template_groups.get(category)
+                    if category_template_str:
+                        template_string = category_template_str
+                        logger.debug(f"检测到二级分类：{category}，应用模板：{template_string}")
+                # TMDB
+                tmdb_id = mediainfo.tmdb_id
+                if tmdb_id:
+                    tmdb_template_str = self._template_groups.get(str(tmdb_id))
+                    if tmdb_template_str:
+                        template_string = tmdb_template_str
+                        logger.debug(f"检测到TMDB ID：{tmdb_id}，应用模板：{template_string}")
+
+            # 最终的模板字符串
+            logger.debug(f"最终模板字符串：{template_string}")
+
+            updated_str = self.rename(template_string=template_string,
                                       rename_dict=copy.deepcopy(event_data.rename_dict)) or event_data.render_str
 
             # 调用替换词
@@ -429,12 +485,41 @@ class SmartRename(_PluginBase):
         """
         将替换规则字符串解析为列表，按行分割
         """
+        if not replacement_str:
+            return []
+
         try:
             if replacement_str:
                 # 将字符串按行分割，并去除空行
-                return [line.lstrip() for line in replacement_str.splitlines() if line.strip()]
+                return [line.lstrip() for line in replacement_str.splitlines()
+                        if line.strip() and not line.startswith("#")]
             return []
         except Exception as e:
-            # 记录异常信息并返回空列表
             logger.error(f"Error parsing replacement rules: {e}")
             return []
+
+    @staticmethod
+    def __parse_template_groups(template_group_str: Optional[str]) -> Dict[str, str]:
+        """
+        解析重命名模板规则，将字符串格式的规则解析成字典
+        格式示例：二级分类名称:重命名模板\nTMDBID:重命名模板
+        """
+        if not template_group_str:
+            return {}
+
+        try:
+            template_groups = {}
+            lines = template_group_str.split("\n")
+
+            for line in lines:
+                if line.startswith("#"):
+                    continue
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    category, template = parts
+                    template_groups[category.strip()] = template.strip()
+
+            return template_groups
+        except Exception as e:
+            logger.error(f"Error parsing template groups: {e}")
+            return {}
