@@ -120,7 +120,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_search_when_delete = config.get("auto_search_when_delete", True)
         self._delete_exclude_tags = config.get("delete_exclude_tags", "H&R")
         self._auto_tv_pending = config.get("auto_tv_pending", True)
-        self._meta_check_interval = config.get("meta_check_interval", "0 12 * * *")
+        self._meta_check_interval = config.get("meta_check_interval", 6)
         self._auto_download_pending = config.get("auto_download_pending", True)
         self._skip_timeout = config.get("skip_timeout", True)
         self._reset_task = config.get("reset_task", False)
@@ -735,7 +735,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_download_pending": True,
             "auto_tv_pending_days": 7,
             "auto_tv_pending_episodes": 1,
-            "meta_check_interval": 12,
+            "meta_check_interval": 6,
             "auto_best_type": "no",
             "auto_best_cron": "0 15 * * *"
         }
