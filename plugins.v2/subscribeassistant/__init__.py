@@ -78,14 +78,16 @@ class SubscribeAssistant(_PluginBase):
     _timeout_history_cleanup = 24
     # 排除标签
     _delete_exclude_tags = None
-    # 自动待定最近上线剧集订阅
+    # 自动待定剧集订阅
     _auto_tv_pending = False
     # 订阅下载时自动待定
     _auto_download_pending = False
-    # 最新上线剧集待定天数
+    # 剧集待定天数
     _auto_tv_pending_days = 0
-    # 待定检查周期
-    _auto_pending_cron = None
+    # 剧集待定集数
+    _auto_tv_pending_episodes = 0
+    # 元数据检查周期
+    _meta_check_interval = None
     # 洗版类型
     _auto_best_type = "no"
     # 洗版类型集合
@@ -118,7 +120,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_search_when_delete = config.get("auto_search_when_delete", True)
         self._delete_exclude_tags = config.get("delete_exclude_tags", "H&R")
         self._auto_tv_pending = config.get("auto_tv_pending", True)
-        self._auto_pending_cron = config.get("auto_pending_cron", "0 12 * * *")
+        self._meta_check_interval = config.get("meta_check_interval", "0 12 * * *")
         self._auto_download_pending = config.get("auto_download_pending", True)
         self._skip_timeout = config.get("skip_timeout", True)
         self._reset_task = config.get("reset_task", False)
@@ -133,7 +135,8 @@ class SubscribeAssistant(_PluginBase):
         self._download_check_interval = self.__get_float_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_float_config(config, "download_timeout", 3)
         self._timeout_history_cleanup = self.__get_float_config(config, "timeout_history_cleanup", 0) or None
-        self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 14)
+        self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 0) or None
+        self._auto_tv_pending_episodes = self.__get_float_config(config, "auto_tv_pending_episodes", 0) or None
         self._auto_best_remaining_days = self.__get_float_config(config, "auto_best_remaining_days", 0) or None
 
         # 停止现有任务
@@ -281,9 +284,10 @@ class SubscribeAssistant(_PluginBase):
                                                 {'title': '5分钟', 'value': 5},
                                                 {'title': '10分钟', 'value': 15},
                                                 {'title': '30分钟', 'value': 30},
-                                                {'title': '60分钟', 'value': 60}
+                                                {'title': '60分钟', 'value': 60},
+                                                {'title': '120分钟', 'value': 120},
                                             ],
-                                            'hint': '设置下载检查的周期，定时检查下载任务状态',
+                                            'hint': '下载检查的周期，定时检查下载任务状态',
                                             'persistent-hint': True
                                         }
                                     }
@@ -297,11 +301,20 @@ class SubscribeAssistant(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VSelect',
                                         'props': {
-                                            'model': 'auto_pending_cron',
-                                            'label': '待定检查周期',
-                                            'hint': '设置待定检查的周期，如 0 12 * * *',
+                                            'model': 'meta_check_interval',
+                                            'label': '元数据检查周期',
+                                            'items': [
+                                                {'title': '1小时', 'value': 1},
+                                                {'title': '3小时', 'value': 3},
+                                                {'title': '6小时', 'value': 6},
+                                                {'title': '12小时', 'value': 12},
+                                                {'title': '24小时', 'value': 24}
+                                            ],
+                                            'item-value': 'value',  # 关键属性
+                                            'item-title': 'title',  # 显示的文本字段
+                                            'hint': '元数据检查的周期，定时检查订阅元数据状态',
                                             'persistent-hint': True
                                         }
                                     }
@@ -319,7 +332,7 @@ class SubscribeAssistant(_PluginBase):
                                         'props': {
                                             'model': 'auto_best_cron',
                                             'label': '洗版检查周期',
-                                            'hint': '设置洗版检查的周期，如 0 15 * * *',
+                                            'hint': '洗版检查的周期，如 0 15 * * *',
                                             'persistent-hint': True
                                         }
                                     }
@@ -546,8 +559,8 @@ class SubscribeAssistant(_PluginBase):
                                                         'component': 'VSwitch',
                                                         'props': {
                                                             'model': 'auto_tv_pending',
-                                                            'label': '自动待定最近上线剧集订阅',
-                                                            'hint': '订阅新上线剧集时，自动标记为待定状态，避免提前完成订阅',
+                                                            'label': '自动待定剧集订阅',
+                                                            'hint': '订阅剧集时，自动标记为待定状态，避免提前完成订阅',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -562,17 +575,37 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 12
+                                                    'md': 6
                                                 },
                                                 'content': [
                                                     {
                                                         'component': 'VTextField',
                                                         'props': {
                                                             'model': 'auto_tv_pending_days',
-                                                            'label': '最新上线剧集待定天数',
+                                                            'label': '剧集待定天数',
                                                             'type': 'number',
                                                             "min": "0",
-                                                            'hint': 'TMDB中上映日期加上设置的天数大于当前日期，则视为待定',
+                                                            'hint': '上映日期加上设置的天数大于当前日期，则视为待定，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 6
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_tv_pending_episodes',
+                                                            'label': '剧集待定集数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '剧集数小于等于设置的集数，则视为待定，为空时不处理',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -634,7 +667,7 @@ class SubscribeAssistant(_PluginBase):
                                                             'label': '洗版天数',
                                                             'type': 'number',
                                                             "min": "1",
-                                                            'hint': '达到指定天数后自动完成，若有下载则按最新时间计算，为空时按默认处理',
+                                                            'hint': '达到指定天数后自动完成，若有下载则按最新时间计算，为空时按默认优先级规则处理',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -665,7 +698,7 @@ class SubscribeAssistant(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：相关订阅状态说明，请参阅'
+                                            'text': '注意：本插件仅支持 TMDB 数据源，相关订阅状态说明，请参阅'
                                         },
                                         'content': [
                                             {
@@ -701,7 +734,8 @@ class SubscribeAssistant(_PluginBase):
             "auto_tv_pending": True,
             "auto_download_pending": True,
             "auto_tv_pending_days": 7,
-            "auto_pending_cron": "0 12 * * *",
+            "auto_tv_pending_episodes": 1,
+            "meta_check_interval": 12,
             "auto_best_type": "no",
             "auto_best_cron": "0 15 * * *"
         }
@@ -732,13 +766,13 @@ class SubscribeAssistant(_PluginBase):
                 "func": self.download_check,
                 "kwargs": {"minutes": self._download_check_interval}
             })
-        if self._auto_tv_pending and self._auto_pending_cron:
+        if self._meta_check_interval:
             services.append({
-                "id": f"{self.__class__.__name__}_pending",
-                "name": f"待定检查",
-                "trigger": CronTrigger.from_crontab(self._auto_pending_cron),
-                "func": self.tv_pending_check,
-                "kwargs": {}
+                "id": f"{self.__class__.__name__}_meta_check",
+                "name": f"元数据检查",
+                "trigger": "interval",
+                "func": self.meta_check,
+                "kwargs": {"hours": self._meta_check_interval}
             })
         if self._auto_best_type != "no" and self._auto_best_cron:
             services.append({
@@ -788,7 +822,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_search_when_delete": self._auto_search_when_delete,
             "delete_exclude_tags": self._delete_exclude_tags,
             "auto_tv_pending": self._auto_tv_pending,
-            "auto_pending_cron": self._auto_pending_cron,
+            "meta_check_interval": self._meta_check_interval,
             "auto_download_pending": self._auto_download_pending,
             "auto_best_cron": self._auto_best_cron,
             "auto_best_type": self._auto_best_type,
@@ -796,6 +830,7 @@ class SubscribeAssistant(_PluginBase):
             "download_timeout": self._download_timeout,
             "timeout_history_cleanup": self._timeout_history_cleanup,
             "auto_tv_pending_days": self._auto_tv_pending_days,
+            "auto_tv_pending_episodes": self._auto_tv_pending_episodes,
             "auto_best_remaining_days": self._auto_best_remaining_days,
             "reset_task": self._reset_task,
         }
@@ -820,7 +855,7 @@ class SubscribeAssistant(_PluginBase):
         """
         订阅自动检查
         """
-        self.tv_pending_check()
+        self.meta_check()
         self.download_check()
         self.best_version_check()
 
@@ -838,6 +873,12 @@ class SubscribeAssistant(_PluginBase):
         logger.info("开始检查下载种子任务...")
         self.process_download_task()
         logger.info("下载种子任务检查完成...")
+
+    def meta_check(self):
+        """
+        元数据检查
+        """
+        self.tv_pending_check()
 
     def tv_pending_check(self):
         """
@@ -1815,39 +1856,7 @@ class SubscribeAssistant(_PluginBase):
                     logger.warning(f"{self.__format_subscribe(subscribe)} 的 season_info 为空，跳过处理")
                     continue
 
-                # 查找与当前订阅季数匹配的上映日期 (air_date)
-                season = subscribe.season
-                air_day = None
-                for season_info in mediainfo.season_info:
-                    if season_info.get("season_number") == season:
-                        air_day = season_info.get("air_date")
-                        continue
-
-                if not air_day:
-                    # 未找到与订阅季数匹配的上映日期
-                    logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season} 对应的 air_date，跳过处理")
-                    continue
-
-                # 解析上映日期
-                try:
-                    air_date = datetime.strptime(air_day, "%Y-%m-%d")
-                except ValueError:
-                    # 上映日期格式错误
-                    logger.error(f"{mediainfo.title} 的 air_date 格式错误：{air_day}，跳过处理")
-                    continue
-
-                # 获取剧集是否已完结
-                completed = self.__check_tv_season_completed(mediainfo=mediainfo, season=subscribe.season)
-
-                # 判断是否符合 auto_tv_pending_days 的要求
-                pending_date = air_date + timedelta(days=self._auto_tv_pending_days)
-                current_date = datetime.now()
-
-                # 如果剧集已完结，则认为 tv_pending 为 False
-                tv_pending = pending_date > current_date and not completed
-
-                logger.debug(f"{self.__format_subscribe(subscribe)}，完结状态：{completed}，上映日期: {air_day}，"
-                             f"待定天数：{self._auto_tv_pending_days}，当前日期: {current_date}，tv_pending: {tv_pending}")
+                tv_pending, air_day = self.__check_tv_pending_by_mediainfo(subscribe=subscribe, mediainfo=mediainfo)
 
                 # 如果当前状态为 "N"，且需要待定处理，则触发补全搜索
                 if subscribe.state == "N" and tv_pending:
@@ -1891,6 +1900,47 @@ class SubscribeAssistant(_PluginBase):
             except Exception as e:
                 # 捕获异常并记录错误日志
                 logger.error(f"处理订阅 ID {subscribe.id} 时发生错误: {str(e)}")
+
+    def __check_tv_pending_by_mediainfo(self, subscribe: Subscribe, mediainfo: MediaInfo) -> Tuple[bool, str]:
+        """
+        根据媒体信息判断订阅是否为待定
+        :param subscribe: 订阅信息
+        :param mediainfo: 媒体信息
+        """
+        # 查找与当前订阅季数匹配的上映日期 (air_date)
+        air_date, air_day = self.__get_tv_season_air_date(mediainfo=mediainfo, season=subscribe.season)
+
+        # 查询与当前订阅季数匹配的剧集总数 (episode_count)
+        episode_count = self.__get_tv_season_episode_count(mediainfo=mediainfo, season=subscribe.season)
+
+        # 获取剧集是否已完结
+        completed = self.__check_tv_season_completed(mediainfo=mediainfo, season=subscribe.season)
+
+        tv_pending = False
+        current_date = datetime.now()
+
+        # 只有剧集没有完结时，才需要考虑是否待定
+        if not completed:
+            # 条件1：配置了剧集待定天数，并且存在上映日期，且满足待定条件
+            condition_days = False
+            if self._auto_tv_pending_days is not None and air_date:
+                pending_date = air_date + timedelta(days=self._auto_tv_pending_days)
+                condition_days = pending_date > current_date
+
+            # 条件2：配置了剧集待定集数，并且存在集数，且满足待定条件
+            condition_episodes = False
+            if self._auto_tv_pending_episodes is not None and episode_count is not None:
+                condition_episodes = episode_count <= self._auto_tv_pending_episodes
+
+            # 任一条件成立，则 tv_pending 为 True
+            tv_pending = condition_days or condition_episodes
+
+        logger.debug(
+            f"{self.__format_subscribe(subscribe)}，tv_pending: {tv_pending}，完结状态：{completed}，"
+            f"上映日期: {air_day}，剧集数：{episode_count}，待定天数：{self._auto_tv_pending_days}，"
+            f"当前日期: {current_date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        return tv_pending, air_day
 
     def __send_tv_pending_msg(self, subscribe: Subscribe, mediainfo: MediaInfo, air_day: str, tv_pending: bool):
         """
@@ -2526,7 +2576,7 @@ class SubscribeAssistant(_PluginBase):
 
     def __check_tv_season_completed(self, mediainfo: MediaInfo, season: int) -> bool:
         """
-        判断剧集某季是否已完结
+        按季判断剧集是否已完结
         :param mediainfo: 媒体信息
         :param season: 季数
         """
@@ -2547,6 +2597,52 @@ class SubscribeAssistant(_PluginBase):
         # 判断是否存在最终集，存在则认为已完结
         completed = any(episode.episode_type == "finale" for episode in episodes) if episodes else False
         return completed
+
+    @staticmethod
+    def __get_tv_season_air_date(mediainfo: MediaInfo, season: int) -> Tuple[Optional[datetime], Optional[str]]:
+        """
+        按季获取剧集上映日期
+        :param mediainfo: 媒体信息
+        :param season: 季数
+        """
+        air_day = None
+        for season_info in mediainfo.season_info:
+            if season_info.get("season_number") == season:
+                air_day = season_info.get("air_date")
+                continue
+
+        if not air_day:
+            # 未找到与订阅季数匹配的上映日期
+            logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season} 对应的 air_date")
+            return None, None
+
+        # 解析上映日期
+        try:
+            air_date = datetime.strptime(air_day, "%Y-%m-%d")
+            return air_date, air_day
+        except ValueError:
+            # 上映日期格式错误
+            logger.error(f"{mediainfo.title} 的 air_date 格式错误：{air_day}")
+            return None, None
+
+    @staticmethod
+    def __get_tv_season_episode_count(mediainfo: MediaInfo, season: int) -> Optional[int]:
+        """
+        按季获取剧集总数
+        :param mediainfo: 媒体信息
+        :param season: 季数
+        """
+        episode_count = None
+        for season_info in mediainfo.season_info:
+            if season_info.get("season_number") == season:
+                episode_count = season_info.get("episode_count")
+                continue
+
+        if episode_count is None:
+            # 未找到与订阅季数匹配的剧集总数
+            logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season} 对应的 episode_count")
+
+        return episode_count
 
     @staticmethod
     def __compare_versions(version1: str, version2: str) -> int:
