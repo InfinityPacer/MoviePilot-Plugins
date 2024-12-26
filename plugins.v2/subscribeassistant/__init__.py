@@ -10,6 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.chain.subscribe import SubscribeChain
+from app.chain.tmdb import TmdbChain
 from app.core.config import settings
 from app.core.context import MediaInfo, Context, TorrentInfo
 from app.core.event import eventmanager, Event
@@ -51,6 +52,7 @@ class SubscribeAssistant(_PluginBase):
     auth_level = 1
 
     # region 私有属性
+    tmdb_chain = None
     downloader_helper = None
     downloadhistory_oper = None
     subscribe_oper = None
@@ -100,6 +102,7 @@ class SubscribeAssistant(_PluginBase):
     # endregion
 
     def init_plugin(self, config: dict = None):
+        self.tmdb_chain = TmdbChain()
         self.downloader_helper = DownloaderHelper()
         self.downloadhistory_oper = DownloadHistoryOper()
         self.subscribe_oper = SubscribeOper()
@@ -1831,14 +1834,18 @@ class SubscribeAssistant(_PluginBase):
                     logger.error(f"{mediainfo.title} 的 air_date 格式错误：{air_day}，跳过处理")
                     continue
 
+                # 获取剧集是否已完结
+                completed = self.__check_tv_season_completed(mediainfo=mediainfo, season=subscribe.season)
+
                 # 判断是否符合 auto_tv_pending_days 的要求
                 pending_date = air_date + timedelta(days=self._auto_tv_pending_days)
                 current_date = datetime.now()
 
-                logger.debug(f"{self.__format_subscribe(subscribe)}，上映日期: {air_date}，"
-                             f"待定天数：{self._auto_tv_pending_days}，当前日期: {current_date}")
+                # 如果剧集已完结，则认为 tv_pending 为 False
+                tv_pending = pending_date > current_date and not completed
 
-                tv_pending = pending_date > current_date
+                logger.debug(f"{self.__format_subscribe(subscribe)}，完结状态：{completed}，上映日期: {air_day}，"
+                             f"待定天数：{self._auto_tv_pending_days}，当前日期: {current_date}，tv_pending: {tv_pending}")
 
                 # 如果当前状态为 "N"，且需要待定处理，则触发补全搜索
                 if subscribe.state == "N" and tv_pending:
@@ -2480,6 +2487,12 @@ class SubscribeAssistant(_PluginBase):
                 logger.error(f"Error during {method.__name__}: {e}")
 
     def __with_lock_and_update_delete_tasks(self, method: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+        """
+        使用锁获取并更新删除任务数据
+        :param method: 需要执行的操作，接收当前数据字典并进行修改
+        :param *args: 额外的位置参数
+        :param **kwargs: 额外的关键字参数
+        """
         with lock:
             try:
                 # 获取数据
@@ -2497,6 +2510,7 @@ class SubscribeAssistant(_PluginBase):
     def __check_subscribe_status(self, subscribe: Subscribe) -> bool:
         """
         检查订阅状态是否符合要求
+        :param subscribe: 订阅信息
         """
         if not subscribe:
             return False
@@ -2507,3 +2521,24 @@ class SubscribeAssistant(_PluginBase):
                 f"{self.__format_subscribe(subscribe)} 当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
             return False
         return True
+
+    def __check_tv_season_completed(self, mediainfo: MediaInfo, season: int) -> bool:
+        """
+        判断剧集某季是否已完结
+        :param mediainfo: 媒体信息
+        :param season: 季数
+        """
+        if not mediainfo or not mediainfo.tmdb_id or not season:
+            return False
+
+        # 如果剧集状态为 Ended 或 Canceled，则认为已完结
+        if mediainfo.status in ["Ended", "Canceled"]:
+            return True
+
+        episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
+        if not episodes:
+            return False
+
+        # 判断是否存在最终集，存在则认为已完结
+        completed = any(episode.episode_type == "finale" for episode in episodes) if episodes else False
+        return completed
