@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple, Optional, Union, Callable
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from packaging.version import Version
 
 from app.chain.subscribe import SubscribeChain
 from app.chain.tmdb import TmdbChain
@@ -27,6 +28,7 @@ from app.schemas import ServiceInfo
 from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData
 from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import EventType, ChainEventType, MediaType, NotificationType
+from version import APP_VERSION
 
 lock = threading.RLock()
 
@@ -39,7 +41,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "1.4"
+    plugin_version = "1.4.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -2535,6 +2537,9 @@ class SubscribeAssistant(_PluginBase):
         if mediainfo.status in ["Ended", "Canceled"]:
             return True
 
+        if self.__compare_versions("2.1.5", APP_VERSION) <= 0:
+            return False
+
         episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
         if not episodes:
             return False
@@ -2542,3 +2547,26 @@ class SubscribeAssistant(_PluginBase):
         # 判断是否存在最终集，存在则认为已完结
         completed = any(episode.episode_type == "finale" for episode in episodes) if episodes else False
         return completed
+
+    @staticmethod
+    def __compare_versions(version1: str, version2: str) -> int:
+        """
+        比较两个版本号的大小
+        :param version1: version1
+        :param version2: version2
+        :return: 1 (version2 > version1)
+               0 (version2 == version1)
+              -1 (version2 < version1)
+        """
+        try:
+            v1 = Version(version1)
+            v2 = Version(version2)
+            if v2 > v1:
+                return 1
+            elif v2 == v1:
+                return 0
+            else:
+                return -1
+        except Exception as e:
+            logger.error(f"Invalid version format: {e}")
+            return 0
