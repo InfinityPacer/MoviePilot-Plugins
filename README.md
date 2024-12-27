@@ -6,7 +6,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ## 插件集合
 
-![](images/2024-12-28-01-11-11.png)
+![](images/2024-12-28-01-25-20.png)
 
 ## 插件说明
 
