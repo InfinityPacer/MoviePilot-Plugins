@@ -810,7 +810,6 @@ class SubscribeAssistant(_PluginBase):
             "auto_tv_pending": True,
             "auto_download_pending": True,
             "auto_pause_days": 7,
-            "auto_tv_pending_days": 7,
             "auto_tv_pending_episodes": 1,
             "meta_check_interval": 6,
             "auto_best_type": "no",
