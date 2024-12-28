@@ -288,7 +288,6 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png",
         "author": "InfinityPacer",
         "level": 1,
-        "v2": true,
         "history": {
             "v1.1": "修复媒体类型为电视剧时，错误把 .plexmatch 生成路径定位到父目录的问题",
             "v1.0": "增加PlexMatch插件，实现入库时添加 .plexmatch 文件，提高识别准确率"
