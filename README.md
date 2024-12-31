@@ -1,7 +1,9 @@
 # MoviePilot-Plugins
+
 MoviePilot三方插件：https://github.com/InfinityPacer/MoviePilot-Plugins
 
 ## 安装说明
+
 MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jxxghp/MoviePilot
 
 ## 插件集合
@@ -75,21 +77,20 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ![](images/2024-06-15-00-28-07.png)
 ![](images/2024-06-15-00-25-31.png)
 
-
 ### 8. [PlexAutoSkip](https://github.com/InfinityPacer/PlexAutoSkip)
 
 - 实现自动跳过Plex中片头、片尾以及类似的内容。
 - 目前支持的Plex客户端，参考如下
-  - Plex for iOS
-  - Plex for Apple TV
+    - Plex for iOS
+    - Plex for Apple TV
 - 由于Plex调整，部分客户端仅部分版本支持，仅供参考
-  - Plex Web
-  - Plex for Windows
-  - Plex for Mac
-  - Plex for Linux
-  - Plex for Roku
-  - Plex for Android (TV)
-  - Plex for Android (Mobile)
+    - Plex Web
+    - Plex for Windows
+    - Plex for Mac
+    - Plex for Linux
+    - Plex for Roku
+    - Plex for Android (TV)
+    - Plex for Android (Mobile)
 - 相关配置请参考[说明](https://github.com/InfinityPacer/PlexAutoSkip/blob/master/README.md)以及[Wiki](https://github.com/InfinityPacer/PlexAutoSkip/wiki)
 
 #### 感谢
@@ -130,7 +131,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 #### 感谢
 
- - 天气数据来源于[和风天气](https://www.qweather.com/)，再次感谢[和风天气](https://www.qweather.com/)提供的服务
+- 天气数据来源于[和风天气](https://www.qweather.com/)，再次感谢[和风天气](https://www.qweather.com/)提供的服务
 
 ![](images/2024-07-13-00-43-36.png)
 ![](images/2024-07-13-00-44-06.png)
@@ -221,13 +222,13 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 自动发起系统健康检查、网络连通性测试以及硬链接检查
 - 建议仅针对需要使用的模块开启系统健康检查以及网络连通性测试
 - 执行周期建议大于60分钟，最小不能低于10分钟
- 
+
 ![](images/2024-06-13-17-06-24.png)
 
 ### 16. 系统通知
 
 - 通过通知渠道发送系统通知消息
- 
+
 ![](images/2024-05-30-18-35-36.png)
 
 ### 17. 站点流量管理
@@ -270,7 +271,6 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-07-20-01-19-39.png)
 
-
 ### 22. Plex自动语言
 
 - 实现自动选择Plex电视节目的音轨和字幕语言。
@@ -300,6 +300,9 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 - 自动获取Plex相关域名，实现IP优选
 
 ![](images/2024-08-14-20-27-09.png)
+
+-------
+**以下插件仅支持 MoviePilot v2**
 
 ### 25. 辅助认证
 
