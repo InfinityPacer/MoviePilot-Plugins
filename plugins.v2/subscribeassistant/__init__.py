@@ -1647,7 +1647,7 @@ class SubscribeAssistant(_PluginBase):
             pending_check = torrent_task.get("pending_check")
             timeout_check = torrent_task.get("timeout_check")
             torrent_time = torrent_task.get("time")
-            torrent_desc = f"{title} | {description} ({torrent_hash})"
+            torrent_desc = self.__get_torrent_desc(torrent_hash=torrent_hash, torrent_task=torrent_task)
 
             subscribe_task = subscribe_tasks.get(str(subscribe_id))
             if not subscribe_task:
@@ -1701,7 +1701,7 @@ class SubscribeAssistant(_PluginBase):
 
             is_completed, download_time = self.__get_torrent_completion_status(torrent_info=torrent_info)
             if is_completed:
-                logger.info(f"种子 {torrent_desc} 已完成，将从订阅任务中移除")
+                logger.info(f"种子 {torrent_desc} 已完成，将从订阅种子任务中移除")
 
                 if torrent_hash in torrent_tasks:
                     del torrent_tasks[torrent_hash]
@@ -1726,7 +1726,7 @@ class SubscribeAssistant(_PluginBase):
                                 f"种子任务 {torrent_desc} 已超时，但满足不删除标签 {intersection_tags}，跳过处理")
                             continue
 
-                logger.info(f"种子任务 {torrent_desc} 已超时，即将删除并从订阅任务中移除")
+                logger.info(f"种子任务 {torrent_desc} 已超时，即将删除并从订阅种子任务中移除")
                 self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
 
                 if torrent_hash in torrent_tasks:
@@ -1872,8 +1872,9 @@ class SubscribeAssistant(_PluginBase):
         :return: 种子的描述字符串
         """
         title = torrent_task.get("title")
-        description = torrent_task.get("description")
-        return f"{title} | {description} ({torrent_hash})"
+        description = torrent_task.get("description", "").strip()
+        desc_part = f"| {description} " if description else ""
+        return f"{title}{desc_part}({torrent_hash})"
 
     def process_subscribe_pause(self, subscribe_id: Optional[int] = None):
         """
