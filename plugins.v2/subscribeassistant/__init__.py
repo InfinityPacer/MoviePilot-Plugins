@@ -2274,12 +2274,13 @@ class SubscribeAssistant(_PluginBase):
 
         # 基于订阅类型拼接不同的字符串格式
         mediatype = MediaType(subscribe.type)
+        year = subscribe.year if subscribe.year else "Unknown"
         if mediatype == MediaType.TV:
-            return f"剧集: {subscribe.name} ({subscribe.year}) 季{subscribe.season} [{subscribe.id}]"
+            return f"剧集: {subscribe.name} ({year}) 季{subscribe.season} [{subscribe.id}]"
         elif mediatype == MediaType.MOVIE:
-            return f"电影: {subscribe.name} ({subscribe.year}) [{subscribe.id}]"
+            return f"电影: {subscribe.name} ({year}) [{subscribe.id}]"
         else:
-            return f"未知类型: {subscribe.name} ({subscribe.year}) [{subscribe.id}]"
+            return f"未知类型: {subscribe.name} ({year}) [{subscribe.id}]"
 
     def __format_subscribe_desc(self, subscribe: Subscribe, mediainfo: Optional[MediaInfo] = None) -> Optional[str]:
         """
