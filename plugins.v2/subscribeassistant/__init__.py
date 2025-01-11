@@ -1872,7 +1872,7 @@ class SubscribeAssistant(_PluginBase):
         :return: 种子的描述字符串
         """
         title = torrent_task.get("title")
-        description = torrent_task.get("description", "").strip()
+        description = torrent_task.get("description")
         desc_part = f"| {description} " if description else ""
         return f"{title}{desc_part}({torrent_hash})"
 
