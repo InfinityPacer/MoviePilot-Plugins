@@ -41,7 +41,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "1.5.1"
+    plugin_version = "1.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -704,7 +704,7 @@ class SubscribeAssistant(_PluginBase):
                                                             'label': '待定剧集默认总集数',
                                                             'type': 'number',
                                                             "min": "0",
-                                                            'hint': '待定剧集的默认总集数，支持订阅信息未更新时可正常下载，为空时不处理',
+                                                            'hint': '待定剧集的默认总集数，用于支持订阅信息未更新时正常下载，为空时不处理',
                                                             'persistent-hint': True
                                                         }
                                                     }
