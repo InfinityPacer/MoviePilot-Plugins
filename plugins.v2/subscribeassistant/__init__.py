@@ -90,6 +90,8 @@ class SubscribeAssistant(_PluginBase):
     _auto_tv_pending_days = 0
     # 剧集待定集数
     _auto_tv_pending_episodes = 0
+    # 待定剧集默认总集数
+    _auto_update_tv_pending_episodes = 0
     # 元数据检查周期
     _meta_check_interval = None
     # 洗版类型
@@ -143,6 +145,8 @@ class SubscribeAssistant(_PluginBase):
         self._auto_pause_days = self.__get_float_config(config, "auto_pause_days", 0) or None
         self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 0) or None
         self._auto_tv_pending_episodes = self.__get_float_config(config, "auto_tv_pending_episodes", 0) or None
+        self._auto_update_tv_pending_episodes = self.__get_float_config(config, "auto_update_tv_pending_episodes",
+                                                                  0) or None
         self._auto_best_remaining_days = self.__get_float_config(config, "auto_best_remaining_days", 0) or None
 
         # 停止现有任务
@@ -650,7 +654,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -670,7 +674,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -681,6 +685,26 @@ class SubscribeAssistant(_PluginBase):
                                                             'type': 'number',
                                                             "min": "0",
                                                             'hint': '剧集数小于等于设置的集数，则视为待定，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_update_tv_pending_episodes',
+                                                            'label': '待定剧集默认总集数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '待定剧集的默认总集数，支持订阅信息未更新时可正常下载，为空时不处理',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -811,6 +835,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_download_pending": True,
             "auto_pause_days": 7,
             "auto_tv_pending_episodes": 1,
+            "auto_update_tv_pending_episodes": 99,
             "meta_check_interval": 6,
             "auto_best_type": "no",
             "auto_best_cron": "0 15 * * *"
@@ -907,6 +932,7 @@ class SubscribeAssistant(_PluginBase):
             "timeout_history_cleanup": self._timeout_history_cleanup,
             "auto_tv_pending_days": self._auto_tv_pending_days,
             "auto_tv_pending_episodes": self._auto_tv_pending_episodes,
+            "auto_update_tv_pending_episodes": self._auto_update_tv_pending_episodes,
             "auto_best_remaining_days": self._auto_best_remaining_days,
             "reset_task": self._reset_task,
             "auto_pause": self._auto_pause,
@@ -921,8 +947,9 @@ class SubscribeAssistant(_PluginBase):
         subscribes = self.subscribe_oper.list("P")
         logger.info(f"开始重置任务，共有 {len(subscribes)} 个待定订阅任务")
         for subscribe in subscribes:
-            self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R"})
-            logger.info(f"待定订阅 {self.__format_subscribe(subscribe)} 已重置订阅状态为 R")
+            self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R", "manual_total_episode": 0})
+            logger.info(f"待定订阅 {self.__format_subscribe(subscribe)} 已重置订阅状态为 R，手工更新集数状态为 False")
+        SubscribeChain().check()
 
         self.__save_data("subscribes", {})
         self.__save_data("torrents", {})
@@ -2010,7 +2037,7 @@ class SubscribeAssistant(_PluginBase):
         处理剧集自动待定
         :param subscribe_id: 订阅标识
         """
-        if not self._auto_tv_pending or not self._auto_tv_pending_days or not self._auto_pause_days:
+        if not self._auto_tv_pending or (self._auto_tv_pending_days is None and self._auto_tv_pending_episodes is None):
             return
 
         if not subscribe_id:
@@ -2103,21 +2130,55 @@ class SubscribeAssistant(_PluginBase):
                     msg_title = f"{mediainfo.title_year} {meta.season} 不再满足上映待定，已标记订阅中"
 
                 if subscribe.state == target_state:
-                    # 如果订阅目标状态一致，但是订阅待定状态已变更，也推送消息
+                    # 如果订阅目标状态一致，但是订阅待定状态已变更，需要更新订阅集数以及推送消息
                     if updated:
+                        episode_count = self.__update_tv_pending_episodes(subscribe=subscribe, mediainfo=mediainfo,
+                                                                          tv_pending=tv_pending)
                         self.__send_subscribe_status_msg(subscribe=subscribe, mediainfo=mediainfo,
-                                                         air_day=air_day, msg_title=msg_title)
+                                                         air_day=air_day, msg_title=msg_title,
+                                                         episode_count=episode_count)
                     continue
 
                 logger.info(f"{self.__format_subscribe(subscribe)} 订阅状态从 {subscribe.state} 更新为 {target_state}")
                 self.subscribe_oper.update(subscribe.id, {"state": target_state})
 
                 if updated:
+                    episode_count = self.__update_tv_pending_episodes(subscribe=subscribe, mediainfo=mediainfo,
+                                                                      tv_pending=tv_pending)
                     self.__send_subscribe_status_msg(subscribe=subscribe, mediainfo=mediainfo,
-                                                     air_day=air_day, msg_title=msg_title)
+                                                     air_day=air_day, msg_title=msg_title, episode_count=episode_count)
             except Exception as e:
                 # 捕获异常并记录错误日志
                 logger.error(f"处理订阅 ID {subscribe.id} 时发生错误: {str(e)}")
+
+    def __update_tv_pending_episodes(self, subscribe: Subscribe, mediainfo: MediaInfo, tv_pending: bool) \
+            -> Optional[int]:
+        """
+        更新待定剧集总集数
+        """
+        if self._auto_update_tv_pending_episodes is None:
+            return None
+
+        # 初始化更新字段
+        update_data = {"manual_total_episode": 1 if tv_pending else 0}
+
+        if tv_pending:
+            episode_count = int(self._auto_update_tv_pending_episodes)
+        else:
+            episodes = mediainfo.seasons.get(subscribe.season)
+            episode_count = len(episodes) if episodes else 0
+        lack_episode = subscribe.lack_episode + (episode_count - subscribe.total_episode)
+
+        # 如果 episode_count 不为空，则添加到更新字段
+        if episode_count:
+            update_data["total_episode"] = episode_count
+            update_data["lack_episode"] = lack_episode
+
+        # 更新订阅信息
+        logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 待定状态：{tv_pending}，"
+                    f"手工更新集数状态：{tv_pending}，总集数更新为：{episode_count}，缺失集数更新为：{lack_episode}")
+        self.subscribe_oper.update(subscribe.id, update_data)
+        return episode_count
 
     def __check_tv_pending_by_mediainfo(self, subscribe: Subscribe, mediainfo: MediaInfo) -> Tuple[bool, Optional[str]]:
         """
@@ -2160,13 +2221,15 @@ class SubscribeAssistant(_PluginBase):
 
         return tv_pending, air_day
 
-    def __send_subscribe_status_msg(self, subscribe: Subscribe, mediainfo: MediaInfo, msg_title: str, air_day: str):
+    def __send_subscribe_status_msg(self, subscribe: Subscribe, mediainfo: MediaInfo, msg_title: str,
+                                    air_day: str, episode_count: Optional[int] = None):
         """
         发送订阅状态消息
         :param subscribe: 订阅信息
         :param mediainfo: 媒体信息
         :param msg_title: 消息标题
         :param air_day: 上映日期
+        :param episode_count: 集数
         """
         if not self._notify:
             return
@@ -2179,6 +2242,8 @@ class SubscribeAssistant(_PluginBase):
             text_parts.append(f"来自用户：{subscribe.username}")
         air_day = air_day or "未知"
         text_parts.append(f"上映日期：{air_day}")
+        if episode_count:
+            text_parts.append(f"集数更新为：{episode_count}")
         # 将非空部分拼接成完整的文本
         text = "，".join(text_parts) if text_parts else ""
 
