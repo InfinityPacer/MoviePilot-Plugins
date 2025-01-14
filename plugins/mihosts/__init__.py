@@ -234,7 +234,7 @@ class MIHosts(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'cron',
-                                            'label': '运行周期',
+                                            'label': '执行周期',
                                             'placeholder': '5位cron表达式',
                                             'hint': '使用cron表达式指定执行周期，如 0 8 * * *',
                                             'persistent-hint': True

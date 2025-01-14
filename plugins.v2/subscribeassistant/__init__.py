@@ -41,7 +41,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "1.7"
+    plugin_version = "1.8"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -339,7 +339,7 @@ class SubscribeAssistant(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'auto_best_cron',
                                             'label': '洗版检查周期',

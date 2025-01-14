@@ -38,7 +38,7 @@ class PlexLocalization(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexlocalization.png"
     # 插件版本
-    plugin_version = "1.7"
+    plugin_version = "1.8"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -340,7 +340,7 @@ class PlexLocalization(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'cron',
                                             'label': '执行周期',

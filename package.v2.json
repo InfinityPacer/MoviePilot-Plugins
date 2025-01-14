@@ -3,11 +3,12 @@
         "name": "站点刷流（低频版）",
         "description": "自动托管刷流，将会提高对应站点的访问频率。（基于官方插件BrushFlow二次开发）",
         "labels": "站点,刷流,仪表板",
-        "version": "4.2",
+        "version": "4.3",
         "icon": "brush.jpg",
         "author": "jxxghp,InfinityPacer",
         "level": 2,
         "history": {
+            "v4.3": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v4.2": "支持带宽采样并计算平均值，以优化刷流效率",
             "v4.1": "支持通过CRON表达式配置开启时间，固定10分钟为执行周期",
             "v4.0": "站点独立配置项支持配置NexusPHP 站点自动跳过下载提示页",
@@ -42,11 +43,12 @@
         "name": "种子关键字分类整理",
         "description": "通过匹配种子关键字进行自定义分类。",
         "labels": "下载管理",
-        "version": "1.4",
+        "version": "1.5",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/TorrentClassifier.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.5": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.4": "MoviePilot V2 版本种子关键字分类整理插件"
         }
     },
@@ -78,11 +80,12 @@
         "name": "Plex中文本地化",
         "description": "实现拼音排序、搜索及类型标签中文本地化功能。",
         "labels": "Plex",
-        "version": "1.7",
+        "version": "1.8",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexlocalization.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex中文本地化插件"
         }
     },
@@ -90,11 +93,12 @@
         "name": "PlexEdition",
         "description": "根据入库记录修改Edition为电影版本/资源类型/特效信息。",
         "labels": "Plex",
-        "version": "1.1",
+        "version": "1.2",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexedition.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.2": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.1": "MoviePilot V2 版本PlexEdition插件"
         }
     },
@@ -102,11 +106,12 @@
         "name": "Plex演职人员刮削",
         "description": "实现刮削演职人员中文名称及角色。",
         "labels": "Plex,刮削",
-        "version": "1.7",
+        "version": "1.8",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex演职人员刮削插件"
         }
     },
@@ -114,11 +119,12 @@
         "name": "站点流量管理",
         "description": "自动管理流量，保障站点分享率。",
         "labels": "站点,订阅,刷流",
-        "version": "1.4.1",
+        "version": "1.5",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png",
         "author": "InfinityPacer",
         "level": 2,
         "history": {
+            "v1.5": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.4": "MoviePilot V2 版本站点流量管理插件"
         }
     },
@@ -139,11 +145,12 @@
         "name": "Plex元数据刷新",
         "description": "定时通知Plex刷新最近入库元数据。",
         "labels": "Plex,刮削",
-        "version": "1.5",
+        "version": "1.6",
         "icon": "Plex_A.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.6": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.5": "MoviePilot V2 版本Plex元数据刷新插件"
         }
     },
@@ -163,11 +170,12 @@
         "name": "自动诊断",
         "description": "自动发起系统健康检查、网络连通性测试以及硬链接检查。",
         "labels": "系统设置",
-        "version": "1.8",
+        "version": "1.9",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.9": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.8": "增加网络连通性测试站点",
             "v1.7": "MoviePilot V2 版本自动诊断插件"
         }
@@ -192,11 +200,12 @@
         "name": "服务管理",
         "description": "实现自定义服务管理。",
         "labels": "系统设置",
-        "version": "1.1",
+        "version": "1.2",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/servicemanager.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.2": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.1": "增加订阅元数据更新服务",
             "v1.0": "增加服务管理插件，实现自定义服务管理"
         }
@@ -205,11 +214,12 @@
         "name": "订阅助手",
         "description": "实现多场景管理系统订阅与状态同步。",
         "labels": "订阅",
-        "version": "1.7",
+        "version": "1.8",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "自动洗版支持选择分集下载订阅，避免因订阅合集下载而触发自动洗版",
             "v1.6": "自动待定支持更新剧集默认总集数，用于支持订阅信息未更新时正常下载",
             "v1.5": "增加自动暂停以及修复一些细节问题",

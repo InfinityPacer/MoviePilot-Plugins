@@ -22,7 +22,7 @@ class ServiceManager(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/servicemanager.png"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -147,7 +147,7 @@ class ServiceManager(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'sitedata_refresh',
                                             'label': '站点数据刷新',
@@ -166,7 +166,7 @@ class ServiceManager(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'subscribe_search',
                                             'label': '订阅搜索补全',
@@ -185,7 +185,7 @@ class ServiceManager(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'clear_cache',
                                             'label': '缓存清理',
@@ -204,7 +204,7 @@ class ServiceManager(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'random_wallpager',
                                             'label': '壁纸缓存',

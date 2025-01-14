@@ -32,7 +32,7 @@ class TrafficAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png"
     # 插件版本
-    plugin_version = "1.4.1"
+    plugin_version = "1.5"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -235,7 +235,7 @@ class TrafficAssistant(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'cron',
                                             'label': '执行周期',

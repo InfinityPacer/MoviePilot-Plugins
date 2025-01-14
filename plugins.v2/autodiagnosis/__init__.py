@@ -33,7 +33,7 @@ class AutoDiagnosis(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png"
     # 插件版本
-    plugin_version = "1.8"
+    plugin_version = "1.9"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -216,7 +216,7 @@ class AutoDiagnosis(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'cron',
                                             'label': '执行周期',

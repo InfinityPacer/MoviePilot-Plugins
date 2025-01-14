@@ -25,7 +25,7 @@ class PlexRefreshRecent(_PluginBase):
     # 插件图标
     plugin_icon = "Plex_A.png"
     # 插件版本
-    plugin_version = "1.5"
+    plugin_version = "1.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -246,7 +246,7 @@ class PlexRefreshRecent(_PluginBase):
                                 'props': {'cols': 12, 'md': 4},
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VCronField',
                                         'props': {
                                             'model': 'cron',
                                             'label': '执行周期',
