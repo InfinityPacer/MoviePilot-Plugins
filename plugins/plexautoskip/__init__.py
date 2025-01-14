@@ -193,22 +193,46 @@ class PlexAutoSkip(_PluginBase):
                         'component': 'VRow',
                         'content': [
                             {
-                                'component': 'VCol',
+                                'component': 'VAlert',
                                 'props': {
-                                    'cols': 12,
+                                    'type': 'info',
+                                    'variant': 'tonal'
                                 },
                                 'content': [
                                     {
-                                        'component': 'VAlert',
+                                        'component': 'span',
+                                        'text': '基于 '
+                                    },
+                                    {
+                                        'component': 'a',
                                         'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal'
+                                            'href': 'https://github.com/mdhiggins/PlexAutoSkip',
+                                            'target': '_blank',
+                                            'style': 'text-decoration: underline;'
                                         },
                                         'content': [
                                             {
-                                                'component': 'div',
-                                                'html': '基于 <a href="https://github.com/mdhiggins/PlexAutoSkip" target="_blank" style="text-decoration: underline;">PlexAutoSkip</a><span> 项目编写，特此感谢 </span><a href="https://github.com/mdhiggins" target="_blank" style="text-decoration: underline;">mdhiggins</a>'
-                                            },
+                                                'component': 'u',
+                                                'text': 'PlexAutoSkip'
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'span',
+                                        'text': ' 项目编写，特此感谢 '
+                                    },
+                                    {
+                                        'component': 'a',
+                                        'props': {
+                                            'href': 'https://github.com/mdhiggins',
+                                            'target': '_blank',
+                                            'style': 'text-decoration: underline;'
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'u',
+                                                'text': 'mdhiggins'
+                                            }
                                         ]
                                     }
                                 ]

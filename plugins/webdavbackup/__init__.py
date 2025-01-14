@@ -359,22 +359,59 @@ class WebDAVBackup(_PluginBase):
                         'component': 'VRow',
                         'content': [
                             {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                },
+                                'component': 'VRow',
                                 'content': [
                                     {
-                                        'component': 'VAlert',
+                                        'component': 'VCol',
                                         'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal'
+                                            'cols': 12,
                                         },
                                         'content': [
                                             {
-                                                'component': 'div',
-                                                'html': '参考了 <a href="https://github.com/thsrite/MoviePilot-Plugins/" target="_blank" style="text-decoration: underline;">thsrite/MoviePilot-Plugins</a> 项目，特此感谢 <a href="https://github.com/thsrite" target="_blank" style="text-decoration: underline;">thsrite</a>'
-                                            },
+                                                'component': 'VAlert',
+                                                'props': {
+                                                    'type': 'info',
+                                                    'variant': 'tonal'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'span',
+                                                        'text': '参考了 '
+                                                    },
+                                                    {
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': 'https://github.com/thsrite/MoviePilot-Plugins/',
+                                                            'target': '_blank',
+                                                            'style': 'text-decoration: underline;'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'u',
+                                                                'text': 'thsrite/MoviePilot-Plugins'
+                                                            }
+                                                        ]
+                                                    },
+                                                    {
+                                                        'component': 'span',
+                                                        'text': ' 项目，特此感谢 '
+                                                    },
+                                                    {
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': 'https://github.com/thsrite',
+                                                            'target': '_blank',
+                                                            'style': 'text-decoration: underline;'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'u',
+                                                                'text': 'thsrite'
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
                                         ]
                                     }
                                 ]

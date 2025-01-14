@@ -320,9 +320,41 @@ class PlexAutoLanguages(_PluginBase):
                                         },
                                         'content': [
                                             {
-                                                'component': 'div',
-                                                'html': '基于 <a href="https://github.com/RemiRigal/Plex-Auto-Languages" target="_blank" style="text-decoration: underline;">Plex Auto Languages</a><span> 项目编写，特此感谢 </span><a href="https://github.com/RemiRigal" target="_blank" style="text-decoration: underline;">RemiRigal</a>'
+                                                'component': 'span',
+                                                'text': '基于 '
                                             },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/RemiRigal/Plex-Auto-Languages',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'u',
+                                                        'text': 'Plex Auto Languages'
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': ' 项目编写，特此感谢 '
+                                            },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/RemiRigal',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'u',
+                                                        'text': 'RemiRigal'
+                                                    }
+                                                ]
+                                            }
                                         ]
                                     }
                                 ]

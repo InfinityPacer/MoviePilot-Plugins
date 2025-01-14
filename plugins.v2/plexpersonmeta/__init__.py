@@ -443,22 +443,95 @@ class PlexPersonMeta(_PluginBase):
                         'component': 'VRow',
                         'content': [
                             {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                },
+                                'component': 'VRow',
                                 'content': [
                                     {
-                                        'component': 'VAlert',
+                                        'component': 'VCol',
                                         'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal'
+                                            'cols': 12,
                                         },
                                         'content': [
                                             {
-                                                'component': 'div',
-                                                'html': '基于 <a href="https://github.com/jxxghp/MoviePilot-Plugins" target="_blank" style="text-decoration: underline;">官方插件</a> 编写，并参考了 <a href="https://github.com/Bespertrijun/PrettyServer" target="_blank" style="text-decoration: underline;">PrettyServer</a> 项目，特此感谢 <a href="https://github.com/jxxghp" target="_blank" style="text-decoration: underline;">jxxghp</a>、<a href="https://github.com/Bespertrijun" target="_blank" style="text-decoration: underline;">Bespertrijun</a>'
-                                            },
+                                                'component': 'VAlert',
+                                                'props': {
+                                                    'type': 'info',
+                                                    'variant': 'tonal'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'span',
+                                                        'text': '基于 '
+                                                    },
+                                                    {
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': 'https://github.com/jxxghp/MoviePilot-Plugins',
+                                                            'target': '_blank',
+                                                            'style': 'text-decoration: underline;'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'u',
+                                                                'text': '官方插件'
+                                                            }
+                                                        ]
+                                                    },
+                                                    {
+                                                        'component': 'span',
+                                                        'text': ' 编写，并参考了 '
+                                                    },
+                                                    {
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': 'https://github.com/Bespertrijun/PrettyServer',
+                                                            'target': '_blank',
+                                                            'style': 'text-decoration: underline;'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'u',
+                                                                'text': 'PrettyServer'
+                                                            }
+                                                        ]
+                                                    },
+                                                    {
+                                                        'component': 'span',
+                                                        'text': ' 项目，特此感谢 '
+                                                    },
+                                                    {
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': 'https://github.com/jxxghp',
+                                                            'target': '_blank',
+                                                            'style': 'text-decoration: underline;'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'u',
+                                                                'text': 'jxxghp'
+                                                            }
+                                                        ]
+                                                    },
+                                                    {
+                                                        'component': 'span',
+                                                        'text': '、'
+                                                    },
+                                                    {
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': 'https://github.com/Bespertrijun',
+                                                            'target': '_blank',
+                                                            'style': 'text-decoration: underline;'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'u',
+                                                                'text': 'Bespertrijun'
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
                                         ]
                                     }
                                 ]

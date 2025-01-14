@@ -395,9 +395,41 @@ class PlexEdition(_PluginBase):
                                         },
                                         'content': [
                                             {
-                                                'component': 'div',
-                                                'html': '灵感来自于项目 <a href="https://github.com/x1ao4/plex-edition-manager" target="_blank" style="text-decoration: underline;">plex-edition-manager</a> ，特此感谢 <a href="https://github.com/x1ao4" target="_blank" style="text-decoration: underline;">x1ao4</a>'
+                                                'component': 'span',
+                                                'text': '灵感来自于项目 '
                                             },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/x1ao4/plex-edition-manager',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'u',
+                                                        'text': 'plex-edition-manager'
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': ' ，特此感谢 '
+                                            },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/x1ao4',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'u',
+                                                        'text': 'x1ao4'
+                                                    }
+                                                ]
+                                            }
                                         ]
                                     }
                                 ]
