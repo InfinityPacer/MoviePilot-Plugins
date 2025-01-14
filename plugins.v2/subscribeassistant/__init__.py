@@ -134,6 +134,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_best_type = config.get("auto_best_type", "no")
         type_mapping = {
             "tv": {MediaType.TV},
+            "tv_episode": {MediaType.TV},
             "movie": {MediaType.MOVIE},
             "all": {MediaType.TV, MediaType.MOVIE}
         }
@@ -744,7 +745,8 @@ class SubscribeAssistant(_PluginBase):
                                                                 {'title': '全部', 'value': 'all'},
                                                                 {'title': '关闭', 'value': 'no'},
                                                                 {'title': '电影', 'value': 'movie'},
-                                                                {'title': '电视剧', 'value': 'tv'}
+                                                                {'title': '剧集', 'value': 'tv'},
+                                                                {'title': '剧集（分集下载）', 'value': 'tv_episode'}
                                                             ],
                                                             'hint': '选择需要自动洗版的类型',
                                                             'persistent-hint': True
@@ -763,10 +765,10 @@ class SubscribeAssistant(_PluginBase):
                                                         'component': 'VTextField',
                                                         'props': {
                                                             'model': 'auto_best_remaining_days',
-                                                            'label': '洗版天数',
+                                                            'label': '洗版时限',
                                                             'type': 'number',
                                                             "min": "1",
-                                                            'hint': '达到指定天数后自动完成，若有下载则按最新时间计算，为空时不处理',
+                                                            'hint': '达到指定天数后自动终止洗版，若有下载则按最新时间计算，为空时不处理',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -2072,7 +2074,7 @@ class SubscribeAssistant(_PluginBase):
                 if not self.__check_subscribe_status(subscribe=subscribe):
                     continue
 
-                # 检查订阅类型是否为电视剧
+                # 检查订阅类型是否为剧集
                 if subscribe.type != MediaType.TV.value:
                     logger.debug(f"{subscribe.name} 的类型为 {subscribe.type}，非 TV 类型，跳过处理")
                     continue
@@ -2704,7 +2706,7 @@ class SubscribeAssistant(_PluginBase):
         if not subscribe_dict:
             return
 
-        subscribe_dict.pop("id", None)
+        subscribe_id = subscribe_dict.pop("id", None)
         model_fields = SchemaSubscribe.__fields__
         for key in list(subscribe_dict.keys()):
             if key not in model_fields:
@@ -2715,9 +2717,33 @@ class SubscribeAssistant(_PluginBase):
             logger.debug(f"{self.__format_subscribe(subscribe)} 已为洗版订阅，跳过处理")
             return
 
-        if MediaType(subscribe.type) not in self._auto_best_types:
+        # 如果订阅类型不在自动洗版的策略中，则直接返回
+        subscribe_type = MediaType(subscribe.type)
+        if subscribe_type not in self._auto_best_types:
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启自动洗版，跳过处理")
             return
+
+        # 如果是分集下载的洗版，则判断下载记录是否存在多条记录
+        if subscribe_type == MediaType.TV and "tv_episode" == self._auto_best_type:
+            meta = self.__get_subscribe_meta(subscribe)
+            downloads = self.downloadhistory_oper.get_last_by(mtype=subscribe.type, title=subscribe.name,
+                                                              year=subscribe.year, season=meta.season,
+                                                              tmdbid=subscribe.tmdbid)
+            if not downloads:
+                logger.info(f"{self.__format_subscribe(subscribe)}，没有下载记录，跳过处理")
+                return
+
+            download_count = sum(
+                1 for download in downloads
+                if (source := download.note.get("source", "") if isinstance(download.note, dict) else "")
+                and download.date > subscribe.date
+                and (subscribe_info := self.__get_subscribe_by_source(source=source)[0])
+                and subscribe_info is not None
+                and subscribe_info.get("id") == subscribe_id
+            )
+            if download_count <= 1:
+                logger.info(f"{self.__format_subscribe(subscribe)}，不是分集下载订阅，跳过处理")
+                return
 
         # 自动识别媒体信息
         if not mediainfo:
