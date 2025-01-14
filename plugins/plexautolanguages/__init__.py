@@ -298,7 +298,7 @@ class PlexAutoLanguages(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：本插件仍在完善阶段，可能存在导致性能消耗、异常退出等问题，请详细查阅'
+                                            'text': '注意：本插件仍在完善阶段，可能存在导致性能消耗、异常退出等问题，请详细查阅 '
                                         },
                                         'content': [
                                             {

@@ -452,7 +452,7 @@ class AutoDiagnosis(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：如硬链接测试失败，请检查目录映射，详细信息可参阅'
+                                            'text': '注意：如硬链接测试失败，请检查目录映射，详细信息可查阅 '
                                         },
                                         'content': [
                                             {

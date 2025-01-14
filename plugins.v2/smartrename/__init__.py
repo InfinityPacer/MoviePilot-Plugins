@@ -289,7 +289,7 @@ class SmartRename(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：智能重命名相关细节，请参阅'
+                                            'text': '注意：智能重命名相关细节，请查阅 '
                                         },
                                         'content': [
                                             {

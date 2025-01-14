@@ -208,7 +208,7 @@ class PlexMatch(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：.plexmatch 相关内容请参考'
+                                            'text': '注意：.plexmatch 相关内容请查阅 '
                                         },
                                         'content': [
                                             {

@@ -799,7 +799,7 @@ class SubscribeAssistant(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '注意：本插件仅支持 TMDB 数据源，相关订阅状态说明，请参阅'
+                                            'text': '注意：本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 '
                                         },
                                         'content': [
                                             {

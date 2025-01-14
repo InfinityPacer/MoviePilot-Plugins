@@ -319,7 +319,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ### 27. 智能重命名
 
 - 自定义适配多场景重命名
-- 相关细节，请参阅[自定义重命名](https://wiki.movie-pilot.org/zh/advanced)
+- 相关细节，请查阅[自定义重命名](https://wiki.movie-pilot.org/zh/advanced)
 
 ![](images/2024-12-28-01-19-13.png)
 
@@ -335,7 +335,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ### 29. 订阅助手
 
 - 实现多场景管理系统订阅与状态同步
-- 本插件仅支持 TMDB 数据源，相关订阅状态说明，请参阅 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)
+- 本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)
 
 ![](images/2024-12-28-01-21-45.png)
 ![](images/2024-12-28-01-21-56.png)
