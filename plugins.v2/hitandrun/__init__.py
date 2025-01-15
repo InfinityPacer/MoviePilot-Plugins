@@ -1367,7 +1367,7 @@ class HitAndRun(_PluginBase):
         if not event or not event.event_data:
             return False
 
-        if event_name and event.event_data.get("event") != event_name:
+        if event_name and event.event_data.get("event_name") != event_name:
             return False
 
         logger.info(f"触发{event_type_desc}事件: {event.event_type} | {event.event_data}")
