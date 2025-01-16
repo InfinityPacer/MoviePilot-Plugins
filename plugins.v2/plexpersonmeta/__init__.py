@@ -15,7 +15,8 @@ from app.core.meta import MetaBase
 from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
 from app.plugins import _PluginBase
-from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, douban_media_cache ,tmdb_media_cache, tmdb_person_cache
+from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, douban_media_cache, tmdb_media_cache, \
+    tmdb_person_cache
 from app.plugins.plexpersonmeta.scrape import ScrapeHelper
 from app.schemas import ServiceInfo
 from app.schemas.types import EventType, NotificationType
@@ -55,6 +56,10 @@ class PlexPersonMeta(_PluginBase):
     _notify = False
     # 需要处理的媒体库
     _libraries = None
+    # 入库后运行一次
+    _execute_transfer = None
+    # 入库后延迟执行时间
+    _delay = None
     # 最近一次入库时间
     _transfer_time = None
     # 定时器
@@ -73,6 +78,15 @@ class PlexPersonMeta(_PluginBase):
         self._cron = config.get("cron")
         self._notify = config.get("notify")
         self._libraries = config.get("libraries", [])
+        self._execute_transfer = config.get("execute_transfer")
+        try:
+            self._delay = int(config.get("delay", 200))
+        except ValueError:
+            self._delay = 200
+
+        # 如果开启了入库后运行一次，延迟时间又不填，默认为200s
+        if self._execute_transfer and not self._delay:
+            self._delay = 200
 
         # 停止现有任务
         self.stop_service()
