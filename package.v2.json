@@ -108,11 +108,12 @@
         "name": "Plex演职人员刮削",
         "description": "实现刮削演职人员中文名称及角色。",
         "labels": "Plex,刮削",
-        "version": "1.8",
+        "version": "1.9",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.9": "修复了入库执行一次失效的问题",
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex演职人员刮削插件"
         }
@@ -221,7 +222,7 @@
         "author": "InfinityPacer",
         "level": 1,
         "history": {
-            "v1.9": "优化了跳过删除种子的匹配逻辑，避免重复下载",
+            "v1.9": "调整跳过删除种子的匹配逻辑，避免重复下载",
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "自动洗版支持选择分集下载订阅，避免因订阅合集下载而触发自动洗版",
             "v1.6": "自动待定支持更新剧集默认总集数，用于支持订阅信息未更新时正常下载",
