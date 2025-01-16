@@ -147,7 +147,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 0) or None
         self._auto_tv_pending_episodes = self.__get_float_config(config, "auto_tv_pending_episodes", 0) or None
         self._auto_update_tv_pending_episodes = self.__get_float_config(config, "auto_update_tv_pending_episodes",
-                                                                  0) or None
+                                                                        0) or None
         self._auto_best_remaining_days = self.__get_float_config(config, "auto_best_remaining_days", 0) or None
 
         # 停止现有任务
@@ -1236,7 +1236,8 @@ class SubscribeAssistant(_PluginBase):
             if not torrent_info:
                 continue
             for torrent_task in delete_tasks.values():
-                if self.__compare_torrent_info_and_task(torrent_info=torrent_info, torrent_task=torrent_task):
+                if self.__compare_torrent_info_and_task(torrent_info=torrent_info, torrent_task=torrent_task,
+                                                        partial_match=True):
                     logger.info(f"存在超时删除的种子信息，跳过，context：{context}")
                     update_contexts.remove(context)
                     updated = True
@@ -2372,27 +2373,34 @@ class SubscribeAssistant(_PluginBase):
             self.__format_subscribe(subscribe=subscribe)
 
     @staticmethod
-    def __compare_torrent_info_and_task(torrent_info: TorrentInfo, torrent_task: dict) -> bool:
+    def __compare_torrent_info_and_task(torrent_info: TorrentInfo, torrent_task: dict,
+                                        partial_match: bool = False) -> bool:
         """
         判断 torrent_info 和 task 是否一致
         :param torrent_info: TorrentInfo 实例
         :param torrent_task: 任务字典
+        :param partial_match: 是否启用部分匹配
         :return: 如果一致返回 True，不一致返回 False
         """
         if not torrent_info or not torrent_task:
             return False
 
-        def is_partial_match(field1, field2):
+        def is_match(field1, field2):
             """
-            检查两个字段是否存在部分匹配
+            检查两个字段是否匹配
+            :param field1: 第一个字段
+            :param field2: 第二个字段
+            :return: 是否匹配
             """
-            return field1 and field2 and (field1 in field2 or field2 in field1)
+            if partial_match:
+                return field1 and field2 and (field1 in field2 or field2 in field1)
+            return field1 == field2
 
-        #  检查 enclosure 和 page_url 的部分匹配，RSS 与 搜索的地址可能不一致，使用 in 放宽匹配，也有可能出现误判的情况
-        if is_partial_match(torrent_info.enclosure, torrent_task.get("enclosure")):
+        # 检查 enclosure 和 page_url 的匹配
+        if is_match(torrent_info.enclosure, torrent_task.get("enclosure")):
             return True
 
-        if is_partial_match(torrent_info.page_url, torrent_task.get("page_url")):
+        if is_match(torrent_info.page_url, torrent_task.get("page_url")):
             return True
 
         # 如果都没有匹配到，返回 False
