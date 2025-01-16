@@ -1237,7 +1237,7 @@ class SubscribeAssistant(_PluginBase):
                 continue
             for torrent_task in delete_tasks.values():
                 if self.__compare_torrent_info_and_task(torrent_info=torrent_info, torrent_task=torrent_task):
-                    logger.debug(f"存在超时删除的种子信息，跳过，context：{context}")
+                    logger.info(f"存在超时删除的种子信息，跳过，context：{context}")
                     update_contexts.remove(context)
                     updated = True
                     continue
@@ -2379,17 +2379,20 @@ class SubscribeAssistant(_PluginBase):
         :param torrent_task: 任务字典
         :return: 如果一致返回 True，不一致返回 False
         """
-        if not torrent_info:
+        if not torrent_info or not torrent_task:
             return False
 
-        # 如果 torrent_info.enclosure 和 task.enclosure 都不为空且一致
-        if torrent_info.enclosure and torrent_task.get("enclosure") and torrent_task.get(
-                "enclosure") == torrent_info.enclosure:
+        def is_partial_match(field1, field2):
+            """
+            检查两个字段是否存在部分匹配
+            """
+            return field1 and field2 and (field1 in field2 or field2 in field1)
+
+        #  检查 enclosure 和 page_url 的部分匹配，RSS 与 搜索的地址可能不一致，使用 in 放宽匹配，也有可能出现误判的情况
+        if is_partial_match(torrent_info.enclosure, torrent_task.get("enclosure")):
             return True
 
-        # 如果 torrent_info.page_url 和 task.page_url 都不为空且一致
-        if torrent_info.page_url and torrent_task.get("page_url") and torrent_task.get(
-                "page_url") == torrent_info.page_url:
+        if is_partial_match(torrent_info.page_url, torrent_task.get("page_url")):
             return True
 
         # 如果都没有匹配到，返回 False
