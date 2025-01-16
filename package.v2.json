@@ -216,11 +216,12 @@
         "name": "订阅助手",
         "description": "实现多场景管理系统订阅与状态同步。",
         "labels": "订阅",
-        "version": "1.8",
+        "version": "1.9",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.9": "优化了跳过删除种子的匹配逻辑，避免重复下载",
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "自动洗版支持选择分集下载订阅，避免因订阅合集下载而触发自动洗版",
             "v1.6": "自动待定支持更新剧集默认总集数，用于支持订阅信息未更新时正常下载",
