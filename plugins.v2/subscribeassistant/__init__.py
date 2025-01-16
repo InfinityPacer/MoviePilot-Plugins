@@ -1864,7 +1864,7 @@ class SubscribeAssistant(_PluginBase):
         logger.info(f"{self.__format_subscribe(subscribe)}，删除超时种子触发补全搜索任务，"
                     f"任务将在 {random_minutes:.2f} 分钟后触发")
         timer = threading.Timer(random_minutes * 60,
-                                lambda: SubscribeChain().search(sid=subscribe.id))
+                                lambda sid=subscribe.id: SubscribeChain().search(sid=sid))
         timer.start()
 
     def __clean_invalid_torrents(self, invalid_torrent_hashes: list, subscribe_tasks: dict, torrent_tasks: dict):
@@ -1959,7 +1959,8 @@ class SubscribeAssistant(_PluginBase):
                     random_minutes = random.uniform(3, 5)
                     logger.info(f"{self.__format_subscribe(subscribe)}，启用订阅，触发补全搜索任务，"
                                 f"任务将在 {random_minutes:.2f} 分钟后触发")
-                    timer = threading.Timer(random_minutes * 60, lambda: SubscribeChain().search(sid=subscribe.id))
+                    timer = threading.Timer(random_minutes * 60,
+                                            lambda sid=subscribe.id: SubscribeChain().search(sid=sid))
                     timer.start()
 
                 target_state = subscribe.state
@@ -2105,7 +2106,8 @@ class SubscribeAssistant(_PluginBase):
                     random_minutes = random.uniform(3, 5)
                     logger.info(f"{self.__format_subscribe(subscribe)}，新增订阅触发补全搜索任务，"
                                 f"任务将在 {random_minutes:.2f} 分钟后触发")
-                    timer = threading.Timer(random_minutes * 60, lambda: SubscribeChain().search(sid=subscribe.id))
+                    timer = threading.Timer(random_minutes * 60,
+                                            lambda sid=subscribe.id: SubscribeChain().search(sid=sid))
                     timer.start()
 
                 subscribe_task, exists = self.__initialize_subscribe_task(subscribe=subscribe,
