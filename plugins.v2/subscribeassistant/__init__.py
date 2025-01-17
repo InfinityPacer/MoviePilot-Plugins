@@ -72,8 +72,8 @@ class SubscribeAssistant(_PluginBase):
     _manual_delete_listen = False
     # 删除后触发搜索补全
     _auto_search_when_delete = False
-    # 跳过超时记录
-    _skip_timeout = True
+    # 跳过删除记录
+    _skip_deletion = True
     # 超时删除时间（小时）
     _download_timeout = 3
     # 超时记录清理时间（小时）
@@ -132,7 +132,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_pause = config.get("auto_pause", True)
         self._meta_check_interval = config.get("meta_check_interval", 6)
         self._auto_download_pending = config.get("auto_download_pending", True)
-        self._skip_timeout = config.get("skip_timeout", True)
+        self._skip_deletion = config.get("skip_deletion", True)
         self._reset_task = config.get("reset_task", False)
         self._auto_best_type = config.get("auto_best_type", "no")
         type_mapping = {
@@ -480,7 +480,7 @@ class SubscribeAssistant(_PluginBase):
                                                     {
                                                         'component': 'VSwitch',
                                                         'props': {
-                                                            'model': 'skip_timeout',
+                                                            'model': 'skip_deletion',
                                                             'label': '跳过种子删除记录',
                                                             'hint': '跳过最近删除的种子，避免再次下载',
                                                             'persistent-hint': True
@@ -850,7 +850,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_download_delete": True,
             "manual_delete_listen": True,
             "auto_search_when_delete": True,
-            "skip_timeout": True,
+            "skip_deletion": True,
             "download_timeout": 3,
             "timeout_history_cleanup": 24,
             "delete_exclude_tags": "H&R",
@@ -953,7 +953,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_download_pending": self._auto_download_pending,
             "auto_best_cron": self._auto_best_cron,
             "auto_best_type": self._auto_best_type,
-            "skip_timeout": self._skip_timeout,
+            "skip_deletion": self._skip_deletion,
             "download_timeout": self._download_timeout,
             "timeout_history_cleanup": self._timeout_history_cleanup,
             "auto_tv_pending_days": self._auto_tv_pending_days,
@@ -1244,9 +1244,9 @@ class SubscribeAssistant(_PluginBase):
                     event_data.source = self.plugin_name
                     return
 
-        # 跳过超时未开启
-        if not self._skip_timeout:
-            logger.debug("跳过超时功能未开启，跳过处理")
+        # 跳过删除记录未开启
+        if not self._skip_deletion:
+            logger.debug("跳过删除记录功能未开启，跳过处理")
             return
 
         delete_tasks = self.__get_data("deletes")
