@@ -68,6 +68,8 @@ class SubscribeAssistant(_PluginBase):
     _download_check_interval = 5
     # 下载超时自动删除
     _auto_download_delete = False
+    # 监听手动删除种子
+    _manual_delete_listen = False
     # 删除后触发搜索补全
     _auto_search_when_delete = False
     # 跳过超时记录
@@ -123,6 +125,7 @@ class SubscribeAssistant(_PluginBase):
         self._notify = config.get("notify", False)
         self._onlyonce = config.get("onlyonce", False)
         self._auto_download_delete = config.get("auto_download_delete", True)
+        self._manual_delete_listen = config.get("manual_delete_listen", True)
         self._auto_search_when_delete = config.get("auto_search_when_delete", True)
         self._delete_exclude_tags = config.get("delete_exclude_tags", "H&R")
         self._auto_tv_pending = config.get("auto_tv_pending", True)
@@ -417,7 +420,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 4
+                                                    'md': 3
                                                 },
                                                 'content': [
                                                     {
@@ -435,7 +438,25 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 4
+                                                    'md': 3
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'manual_delete_listen',
+                                                            'label': '监听手动删除种子',
+                                                            'hint': '监听用户手动删除的种子记录',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 3
                                                 },
                                                 'content': [
                                                     {
@@ -453,15 +474,15 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 4
+                                                    'md': 3
                                                 },
                                                 'content': [
                                                     {
                                                         'component': 'VSwitch',
                                                         'props': {
                                                             'model': 'skip_timeout',
-                                                            'label': '跳过超时记录',
-                                                            'hint': '跳过最近超时删除的种子，避免再次下载超时',
+                                                            'label': '跳过种子删除记录',
+                                                            'hint': '跳过最近删除的种子，避免再次下载',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -503,10 +524,10 @@ class SubscribeAssistant(_PluginBase):
                                                         'component': 'VTextField',
                                                         'props': {
                                                             'model': 'timeout_history_cleanup',
-                                                            'label': '超时记录清理时间',
+                                                            'label': '种子删除记录清理时间',
                                                             'type': 'number',
                                                             "min": "0",
-                                                            'hint': '定时清理N小时前的超时种子记录',
+                                                            'hint': '定时清理N小时前的种子删除记录',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -827,6 +848,7 @@ class SubscribeAssistant(_PluginBase):
             "enabled": False,
             "download_check_interval": 5,
             "auto_download_delete": True,
+            "manual_delete_listen": True,
             "auto_search_when_delete": True,
             "skip_timeout": True,
             "download_timeout": 3,
@@ -861,7 +883,8 @@ class SubscribeAssistant(_PluginBase):
             return []
 
         services = []
-        if self._download_check_interval and (self._auto_download_delete or self._auto_download_pending):
+        if self._download_check_interval and (
+                self._auto_download_delete or self._manual_delete_listen or self._auto_download_pending):
             services.append({
                 "id": f"{self.__class__.__name__}_download",
                 "name": f"下载检查",
@@ -922,6 +945,7 @@ class SubscribeAssistant(_PluginBase):
             "onlyonce": self._onlyonce,
             "download_check_interval": self._download_check_interval,
             "auto_download_delete": self._auto_download_delete,
+            "manual_delete_listen": self._manual_delete_listen,
             "auto_search_when_delete": self._auto_search_when_delete,
             "delete_exclude_tags": self._delete_exclude_tags,
             "auto_tv_pending": self._auto_tv_pending,
@@ -950,7 +974,7 @@ class SubscribeAssistant(_PluginBase):
         logger.info(f"开始重置任务，共有 {len(subscribes)} 个待定订阅任务")
         for subscribe in subscribes:
             self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R", "manual_total_episode": 0})
-            logger.info(f"待定订阅 {self.__format_subscribe(subscribe)} 已重置订阅状态为 R，手工更新集数状态为 False")
+            logger.info(f"待定订阅 {self.__format_subscribe(subscribe)} 已重置订阅状态为 R，手动更新集数状态为 False")
         SubscribeChain().check()
 
         self.__save_data("subscribes", {})
@@ -970,7 +994,7 @@ class SubscribeAssistant(_PluginBase):
         """
         下载检查
         """
-        if not self._auto_download_delete or not self._auto_download_pending:
+        if not self._auto_download_delete or not self._manual_delete_listen or not self._auto_download_pending:
             return
 
         logger.info("开始清理超时种子记录...")
@@ -1119,9 +1143,9 @@ class SubscribeAssistant(_PluginBase):
             if not event or not event.event_data:
                 return
 
-            # 下载超时删除/下载自动待定功能未开启
-            if not self._auto_download_delete and not self._auto_download_pending:
-                logger.debug("下载超时删除/下载自动待定功能未开启，跳过处理")
+            # 下载超时删除/监听手动删除/下载自动待定功能未开启
+            if not self._auto_download_delete or not self._manual_delete_listen and not self._auto_download_pending:
+                logger.debug("下载超时删除/监听手动删除/下载自动待定功能未开启，跳过处理")
                 return
 
             torrent_hash = event.event_data.get("hash")
@@ -1177,6 +1201,7 @@ class SubscribeAssistant(_PluginBase):
                         "page_url": context.torrent_info.page_url,
                         "pending_check": self._auto_download_pending,
                         "timeout_check": self._auto_download_delete,
+                        "manual_check": self._manual_delete_listen,
                         "time": time.time(),
                     }
                 })
@@ -1238,7 +1263,7 @@ class SubscribeAssistant(_PluginBase):
             for torrent_task in delete_tasks.values():
                 if self.__compare_torrent_info_and_task(torrent_info=torrent_info, torrent_task=torrent_task,
                                                         partial_match=True):
-                    logger.info(f"存在超时删除的种子信息，跳过，context：{context}")
+                    logger.info(f"存在超时/手动删除的种子信息，跳过，context：{context}")
                     update_contexts.remove(context)
                     updated = True
                     continue
@@ -1639,7 +1664,7 @@ class SubscribeAssistant(_PluginBase):
         """
         处理下载种子任务并清理异常种子
         """
-        if not self._auto_download_delete or not self._auto_download_pending:
+        if not self._auto_download_delete or not self._manual_delete_listen or not self._auto_download_pending:
             return
 
         with lock:
@@ -1676,6 +1701,7 @@ class SubscribeAssistant(_PluginBase):
             page_url = torrent_task.get("page_url")
             pending_check = torrent_task.get("pending_check")
             timeout_check = torrent_task.get("timeout_check")
+            manual_check = torrent_task.get("manual_check")
             torrent_time = torrent_task.get("time")
             torrent_desc = self.__get_torrent_desc(torrent_hash=torrent_hash, torrent_task=torrent_task)
 
@@ -1719,14 +1745,22 @@ class SubscribeAssistant(_PluginBase):
 
             torrent = self.__get_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
             if not torrent:
-                logger.debug(f"没有获取到对应的种子详情，种子可能已被删除，种子任务: {torrent_desc}")
-                invalid_torrent_hashes.append(torrent_hash)
-                continue
+                logger.info(f"没有获取到对应的种子详情，种子可能已被删除，种子任务: {torrent_desc}")
+                if not manual_check or not self._manual_delete_listen:
+                    invalid_torrent_hashes.append(torrent_hash)
+                    continue
+                else:
+                    self.__clean_torrent_task_by_hash(subscribe=subscribe, subscribe_task=subscribe_task,
+                                                      subscribe_torrent_tasks=subscribe_torrent_tasks,
+                                                      triggered_subscribe_ids=triggered_subscribe_ids,
+                                                      torrent_hash=torrent_hash, torrent_task=torrent_task,
+                                                      torrent_tasks=torrent_tasks, reason="订阅种子手动删除")
+                    continue
 
             torrent_info = self.__get_torrent_info(torrent=torrent, dl_type=service.type)
             if not torrent_info:
                 invalid_torrent_hashes.append(torrent_hash)
-                logger.debug(f"没有获取到对应的种子详情，可能是不支持的种子类型，种子任务: {torrent_desc}")
+                logger.info(f"没有获取到对应的种子详情，可能是不支持的种子类型，种子任务: {torrent_desc}")
                 continue
 
             is_completed, download_time = self.__get_torrent_completion_status(torrent_info=torrent_info)
@@ -1759,23 +1793,44 @@ class SubscribeAssistant(_PluginBase):
                 logger.info(f"种子任务 {torrent_desc} 已超时，即将删除并从订阅种子任务中移除")
                 self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
 
-                if torrent_hash in torrent_tasks:
-                    del torrent_tasks[torrent_hash]
-
-                subscribe_task["torrent_tasks"] = [
-                    task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
-                ]
-
-                # 记录删除记录
-                self.__with_lock_and_update_delete_tasks(method=self.__update_or_add_delete_tasks,
-                                                         torrent_task=torrent_task)
-
-                # 处理删除后续逻辑
-                self.__handle_timeout_seed_deletion(subscribe=subscribe, subscribe_task=subscribe_task,
-                                                    torrent_task=torrent_task,
-                                                    triggered_subscribe_ids=triggered_subscribe_ids)
+                self.__clean_torrent_task_by_hash(subscribe=subscribe, subscribe_task=subscribe_task,
+                                                  subscribe_torrent_tasks=subscribe_torrent_tasks,
+                                                  triggered_subscribe_ids=triggered_subscribe_ids,
+                                                  torrent_hash=torrent_hash, torrent_task=torrent_task,
+                                                  torrent_tasks=torrent_tasks, reason="订阅种子下载超时删除")
 
         self.__clean_invalid_torrents(invalid_torrent_hashes, subscribe_tasks, torrent_tasks)
+
+    def __clean_torrent_task_by_hash(self, subscribe: Subscribe, subscribe_task: dict,
+                                     subscribe_torrent_tasks: list[dict], triggered_subscribe_ids: set,
+                                     torrent_hash: str, torrent_task: dict, torrent_tasks: dict,
+                                     reason: str):
+        """
+          清理并更新种子下载记录
+
+          :param subscribe: 当前订阅对象
+          :param subscribe_task: 当前订阅的任务记录
+          :param subscribe_torrent_tasks: 订阅下所有种子的任务记录
+          :param triggered_subscribe_ids: 被触发的订阅 ID 集合
+          :param torrent_hash: 种子哈希值
+          :param torrent_task: 当前种子任务信息
+          :param torrent_tasks: 所有种子任务的字典
+          """
+        if torrent_hash in torrent_tasks:
+            del torrent_tasks[torrent_hash]
+
+        subscribe_task["torrent_tasks"] = [
+            task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
+        ]
+
+        # 记录删除记录
+        self.__with_lock_and_update_delete_tasks(method=self.__update_or_add_delete_tasks,
+                                                 torrent_task=torrent_task)
+
+        # 处理删除后续逻辑
+        self.__handle_timeout_seed_deletion(subscribe=subscribe, subscribe_task=subscribe_task,
+                                            torrent_task=torrent_task,
+                                            triggered_subscribe_ids=triggered_subscribe_ids, reason=reason)
 
     def __reset_subscribe_task_pending(self, subscribe_tasks: dict):
         """
@@ -1796,7 +1851,7 @@ class SubscribeAssistant(_PluginBase):
                 logger.info(f"{self.__format_subscribe(subscribe)} 状态从 {subscribe.state} 更新为 R")
 
     def __handle_timeout_seed_deletion(self, subscribe: Subscribe, subscribe_task: dict, torrent_task: dict,
-                                       triggered_subscribe_ids: set):
+                                       triggered_subscribe_ids: set, reason: str):
         """
         处理删除超时种子后续相关任务
 
@@ -1804,6 +1859,7 @@ class SubscribeAssistant(_PluginBase):
         :param subscribe_task: 订阅任务
         :param torrent_task: 种子任务
         :param triggered_subscribe_ids: 已触发的订阅任务
+        :param reason: 原因
         """
         if not subscribe:
             return
@@ -1849,7 +1905,7 @@ class SubscribeAssistant(_PluginBase):
             # 推送消息
             self.post_message(
                 mtype=NotificationType.Subscribe,
-                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 订阅种子超时删除",
+                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} {reason}",
                 text=msg_text,
                 image=self.__get_subscribe_image(subscribe),
             )
@@ -1861,7 +1917,7 @@ class SubscribeAssistant(_PluginBase):
         if subscribe.id in triggered_subscribe_ids:
             return
         triggered_subscribe_ids.add(subscribe.id)
-        logger.info(f"{self.__format_subscribe(subscribe)}，删除超时种子触发补全搜索任务，"
+        logger.info(f"{self.__format_subscribe(subscribe)}，{reason}，触发补全搜索任务，"
                     f"任务将在 {random_minutes:.2f} 分钟后触发")
         timer = threading.Timer(random_minutes * 60,
                                 lambda sid=subscribe.id: SubscribeChain().search(sid=sid))
@@ -2181,7 +2237,7 @@ class SubscribeAssistant(_PluginBase):
 
         # 更新订阅信息
         logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 待定状态：{tv_pending}，"
-                    f"手工更新集数状态：{tv_pending}，总集数更新为：{episode_count}，缺失集数更新为：{lack_episode}")
+                    f"手动更新集数状态：{tv_pending}，总集数更新为：{episode_count}，缺失集数更新为：{lack_episode}")
         self.subscribe_oper.update(subscribe.id, update_data)
         return episode_count
 
