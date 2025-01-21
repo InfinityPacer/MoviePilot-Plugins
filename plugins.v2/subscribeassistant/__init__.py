@@ -44,7 +44,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.0"
+    plugin_version = "2.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -804,7 +804,7 @@ class SubscribeAssistant(_PluginBase):
                                                                 {'title': '电影', 'value': 'movie'},
                                                                 {'title': '剧集', 'value': 'tv'},
                                                             ],
-                                                            'hint': '洗版下载时，将清理洗版前的整理记录并删除源文件及媒体库文件',
+                                                            'hint': '洗版下载时，将清理相关的整理记录并删除源文件及媒体库文件',
                                                             'persistent-hint': True
                                                         }
                                                     }
