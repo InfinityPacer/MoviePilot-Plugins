@@ -10,6 +10,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from packaging.version import Version
 
+from app import schemas
+from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
 from app.chain.tmdb import TmdbChain
 from app.core.config import settings
@@ -19,6 +21,7 @@ from app.core.metainfo import MetaInfo
 from app.db.downloadhistory_oper import DownloadHistoryOper
 from app.db.models import Subscribe
 from app.db.subscribe_oper import SubscribeOper
+from app.db.transferhistory_oper import TransferHistoryOper
 from app.helper.downloader import DownloaderHelper
 from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
@@ -57,6 +60,7 @@ class SubscribeAssistant(_PluginBase):
     tmdb_chain = None
     downloader_helper = None
     downloadhistory_oper = None
+    transferhistory_oper = None
     subscribe_oper = None
     # 是否开启
     _enabled = False
@@ -100,6 +104,10 @@ class SubscribeAssistant(_PluginBase):
     _auto_best_type = "no"
     # 洗版类型集合
     _auto_best_types = set()
+    # 洗版清理整理记录
+    _auto_best_clear_history_type = "no"
+    # 洗版清理整理记录集合
+    _auto_best_clear_history_types = set()
     # 洗版检查周期
     _auto_best_cron = None
     # 洗版天数
@@ -117,6 +125,7 @@ class SubscribeAssistant(_PluginBase):
         self.tmdb_chain = TmdbChain()
         self.downloader_helper = DownloaderHelper()
         self.downloadhistory_oper = DownloadHistoryOper()
+        self.transferhistory_oper = TransferHistoryOper()
         self.subscribe_oper = SubscribeOper()
         if not config:
             return
@@ -134,14 +143,16 @@ class SubscribeAssistant(_PluginBase):
         self._auto_download_pending = config.get("auto_download_pending", True)
         self._skip_deletion = config.get("skip_deletion", True)
         self._reset_task = config.get("reset_task", False)
-        self._auto_best_type = config.get("auto_best_type", "no")
         type_mapping = {
             "tv": {MediaType.TV},
             "tv_episode": {MediaType.TV},
             "movie": {MediaType.MOVIE},
             "all": {MediaType.TV, MediaType.MOVIE}
         }
+        self._auto_best_type = config.get("auto_best_type", "no")
         self._auto_best_types = type_mapping.get(self._auto_best_type, set())
+        self._auto_best_clear_history_type = config.get("auto_best_clear_history_type", "no")
+        self._auto_best_clear_history_types = type_mapping.get(self._auto_best_clear_history_type, set())
         self._auto_best_cron = config.get("auto_best_cron", "0 15 * * *")
         self._download_check_interval = self.__get_float_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_float_config(config, "download_timeout", 3)
@@ -754,7 +765,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -779,7 +790,31 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSelect',
+                                                        'props': {
+                                                            'model': 'auto_best_clear_history_type',
+                                                            'label': '清理整理记录（实验性功能）',
+                                                            'items': [
+                                                                {'title': '全部', 'value': 'all'},
+                                                                {'title': '关闭', 'value': 'no'},
+                                                                {'title': '电影', 'value': 'movie'},
+                                                                {'title': '剧集', 'value': 'tv'},
+                                                            ],
+                                                            'hint': '洗版下载时，将清理洗版前的整理记录并删除源文件及媒体库文件',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -862,6 +897,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_update_tv_pending_episodes": 99,
             "meta_check_interval": 6,
             "auto_best_type": "no",
+            "auto_best_clear_history_type": "no",
             "auto_best_cron": "0 15 * * *"
         }
 
@@ -953,6 +989,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_download_pending": self._auto_download_pending,
             "auto_best_cron": self._auto_best_cron,
             "auto_best_type": self._auto_best_type,
+            "auto_best_clear_history_type": self._auto_best_clear_history_type,
             "skip_deletion": self._skip_deletion,
             "download_timeout": self._download_timeout,
             "timeout_history_cleanup": self._timeout_history_cleanup,
@@ -1280,14 +1317,11 @@ class SubscribeAssistant(_PluginBase):
         if not event or not event.event_data:
             return
 
+        logger.debug(f"接收到资源下载事件，资源信息: {event.event_data}")
+
         event_data: ResourceDownloadEventData = event.event_data
         if event_data.cancel:
             logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
-            return
-
-        # 下载自动待定功能未开启
-        if not self._auto_download_pending:
-            logger.debug("下载自动待定功能未开启，跳过处理")
             return
 
         # 获取种子信息
@@ -1304,6 +1338,21 @@ class SubscribeAssistant(_PluginBase):
             logger.debug(f"未能找到订阅信息，跳过处理")
             return
 
+        self.__handle_resource_download_pending(subscribe=subscribe, context=context,
+                                                episodes=episodes, downloader=downloader)
+
+        self.__handle_resource_download_history_clear(subscribe=subscribe)
+
+    def __handle_resource_download_pending(self, subscribe: Subscribe, context: Context,
+                                           episodes: list, downloader: str):
+        """
+        处理资源下载自动待定
+        """
+        # 下载自动待定功能未开启
+        if not self._auto_download_pending:
+            logger.debug("下载自动待定功能未开启，跳过处理")
+            return
+
         # 更新订阅下载任务
         self.__with_lock_and_update_subscribe_tasks(method=self.__update_subscribe_torrent_task,
                                                     subscribe=subscribe,
@@ -1317,6 +1366,66 @@ class SubscribeAssistant(_PluginBase):
         logger.debug(f"{self.__format_subscribe(subscribe)} 已更新为待定状态")
         if subscribe.state != "P":
             self.subscribe_oper.update(subscribe.id, {"state": "P"})
+
+        logger.debug(f"已完成资源下载自动待定处理")
+
+    def __handle_resource_download_history_clear(self, subscribe: Subscribe):
+        """
+        处理洗版资源下载时清理整理记录
+        """
+        if not subscribe.best_version:
+            return
+
+        # 如果订阅类型不在清理整理记录的策略中，则直接返回
+        subscribe_type = MediaType(subscribe.type)
+        if subscribe_type not in self._auto_best_clear_history_types:
+            logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启清理整理记录，跳过处理")
+            return
+
+        logger.info(f"即将开始清理洗版资源整理记录")
+        if not subscribe.tmdbid:
+            logger.debug(f"{self.__format_subscribe(subscribe)} 未能获取到 TMDBID，跳过处理")
+        if subscribe_type == MediaType.TV:
+            meta = self.__get_subscribe_meta(subscribe)
+            histories = self.transferhistory_oper.get_by(tmdbid=subscribe.tmdbid, mtype=subscribe.type,
+                                                         season=meta.season)
+        else:
+            histories = self.transferhistory_oper.get_by(tmdbid=subscribe.tmdbid, mtype=subscribe.type)
+        if not histories:
+            logger.info(
+                f"{self.__format_subscribe(subscribe)} TMDBID: {subscribe.tmdbid} 未能获取到匹配的整理记录，跳过处理")
+
+        logger.info(
+            f"{self.__format_subscribe(subscribe)} TMDBID: {subscribe.tmdbid} 获取到 {len(histories)} 条整理记录，即将开始清理")
+
+        storge_chain = StorageChain()
+        for history in histories:
+            logger.info(f"清理整理记录并删除相关文件：{history.src} -> {history.dest}")
+
+            # 删除媒体库文件
+            if history.dest_fileitem:
+                dest_fileitem = schemas.FileItem(**history.dest_fileitem)
+                storge_chain.delete_media_file(fileitem=dest_fileitem, mtype=MediaType(history.type))
+
+            # 删除源文件
+            if history.src_fileitem:
+                src_fileitem = schemas.FileItem(**history.src_fileitem)
+                state = StorageChain().delete_media_file(src_fileitem)
+                if not state:
+                    logger.warning(f"{src_fileitem.path} 删除失败")
+                # 发送事件
+                eventmanager.send_event(
+                    EventType.DownloadFileDeleted,
+                    {
+                        "src": history.src,
+                        "hash": history.download_hash
+                    }
+                )
+            # 删除记录
+            self.transferhistory_oper.delete(history.id)
+
+        # 强制睡眠5s，等待所有外部事件处理完成，如下载器种子清理等等
+        time.sleep(5)
 
     def __get_downloader_service(self, downloader: str) -> Optional[ServiceInfo]:
         """
