@@ -15,8 +15,6 @@ from app.core.meta import MetaBase
 from app.helper.mediaserver import MediaServerHelper
 from app.log import logger
 from app.plugins import _PluginBase
-from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, douban_media_cache, tmdb_media_cache, \
-    tmdb_person_cache
 from app.plugins.plexpersonmeta.scrape import ScrapeHelper
 from app.schemas import ServiceInfo
 from app.schemas.types import EventType, NotificationType
@@ -62,6 +60,8 @@ class PlexPersonMeta(_PluginBase):
     _delay = None
     # 最近一次入库时间
     _transfer_time = None
+    # 清理缓存
+    _clear_cache = None
     # 定时器
     _scheduler = None
     # 退出事件
@@ -78,6 +78,7 @@ class PlexPersonMeta(_PluginBase):
         self._cron = config.get("cron")
         self._notify = config.get("notify")
         self._libraries = config.get("libraries", [])
+        self._clear_cache = config.get("clear_cache")
         self._execute_transfer = config.get("execute_transfer")
         try:
             self._delay = int(config.get("delay", 200))
@@ -93,12 +94,25 @@ class PlexPersonMeta(_PluginBase):
 
         # 启动服务
         self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+        if self._clear_cache:
+            logger.info(f"{self.plugin_name} 清理缓存一次")
+            self._scheduler.add_job(
+                func=ScrapeHelper.clear_cache,
+                trigger="date",
+                run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                name=f"{self.plugin_name}",
+            )
+            # 关闭清理缓存
+            self._clear_cache = False
+            config["clear_cache"] = False
+            self.update_config(config=config)
+
         if self._onlyonce:
             logger.info(f"{self.plugin_name}服务，立即运行一次")
             self._scheduler.add_job(
                 func=self.scrape_library,
                 trigger="date",
-                run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=6),
                 name=f"{self.plugin_name}",
             )
             # 关闭一次性开关
@@ -209,7 +223,7 @@ class PlexPersonMeta(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -227,7 +241,7 @@ class PlexPersonMeta(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -245,7 +259,25 @@ class PlexPersonMeta(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'clear_cache',
+                                            'label': '清理缓存',
+                                            'hint': '清理元数据识别缓存',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
                                 },
                                 'content': [
                                     {

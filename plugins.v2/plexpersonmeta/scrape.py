@@ -12,11 +12,11 @@ from plexapi.library import LibrarySection
 
 from app.chain.mediaserver import MediaServerChain
 from app.chain.tmdb import TmdbChain
+from app.core.cache import cache_backend
 from app.core.context import MediaInfo
 from app.log import logger
 from app.plugins import PluginChian
-from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging, douban_media_cache, tmdb_media_cache, \
-    tmdb_person_cache
+from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging
 from app.schemas import MediaPerson, ServiceInfo
 from app.schemas.types import MediaType
 from app.utils.string import StringUtils
@@ -546,7 +546,7 @@ class ScrapeHelper:
 
         return ret_people
 
-    @cache_with_logging(tmdb_person_cache, "PERSON")
+    @cache_with_logging("plex_tmdb_person", "PERSON")
     def get_tmdb_person_detail(self,
                                person_tmdbid: int) -> Optional[MediaPerson]:
         """获取TMDB媒体信息"""
@@ -557,7 +557,7 @@ class ScrapeHelper:
             logger.error(f"{person_tmdbid} TMDB 识别人员信息时出错：{str(e)}")
             return None
 
-    @cache_with_logging(tmdb_media_cache, "TMDB")
+    @cache_with_logging("plex_tmdb_media", "TMDB")
     def get_tmdb_media(self,
                        tmdbid: int,
                        title: str,
@@ -570,7 +570,7 @@ class ScrapeHelper:
             logger.error(f"{title} TMDB 识别媒体信息时出错：{str(e)}")
             return None
 
-    @cache_with_logging(douban_media_cache, "豆瓣")
+    @cache_with_logging("plex_douban_media", "TMDB")
     def get_douban_actors(self,
                           title: str,
                           imdbid: Optional[str] = None,
@@ -835,3 +835,12 @@ class ScrapeHelper:
         """从URL中提取key"""
         match = re.search(r'/library/metadata/(\d+)', url)
         return match.group(1) if match else None
+
+    @staticmethod
+    def clear_cache():
+        """
+        清理缓存
+        """
+        cache_backend.clear(region="plex_tmdb_media")
+        cache_backend.clear(region="plex_tmdb_person")
+        cache_backend.clear(region="plex_douban_media")
