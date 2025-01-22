@@ -4,11 +4,8 @@ helper.py
 这个模块定义了用于存储媒体项目信息的 `RatingInfo` 数据类以及缓存、限流等装饰器
 """
 import functools
-import inspect
 from dataclasses import dataclass
 from typing import Optional
-
-from cachetools.keys import hashkey
 
 from app.core.cache import cache_backend
 from app.log import logger
@@ -34,37 +31,15 @@ def cache_with_logging(region, source):
     :return: 装饰器函数
     """
 
-    def get_cache_key(func, args, kwargs):
-        """
-        获取缓存的键，通过哈希函数对函数的参数进行处理
-        :param func: 被装饰的函数
-        :param args: 位置参数
-        :param kwargs: 关键字参数
-        :return: 缓存键
-        """
-        # 获取方法签名
-        signature = inspect.signature(func)
-        resolved_kwargs = {}
-        # 获取默认值并结合传递的参数（如果有）
-        for param, value in signature.parameters.items():
-            if param in kwargs:
-                # 使用显式传递的参数
-                resolved_kwargs[param] = kwargs[param]
-            elif value.default is not inspect.Parameter.empty:
-                # 没有传递参数时使用默认值
-                resolved_kwargs[param] = value.default
-        # 构造缓存键，忽略实例（self 或 cls）
-        params_to_hash = args[1:] if len(args) > 1 else []
-        return f"{func.__name__}_{hashkey(*params_to_hash, **resolved_kwargs)}"
-
     def decorator(func):
 
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
-            key = get_cache_key(func, args, kwargs)
-            value = cache_backend.get(key=key, region=region)
-            if value:
-                if value != "None":
+            key = cache_backend.get_cache_key(func, args, kwargs)
+            exists_cache = cache_backend.exists(key=key, region=region)
+            if exists_cache:
+                value = cache_backend.get(key=key, region=region)
+                if value is not None:
                     if source == "PERSON":
                         logger.info(f"从缓存中获取到 {source} 人物信息")
                     else:
