@@ -62,9 +62,10 @@ def cache_with_logging(region, source):
         @functools.wraps(func)
         def wrapped_func(*args, **kwargs):
             key = get_cache_key(func, args, kwargs)
-            value = cache_backend.get(key=key, region=region)
-            if value:
-                if value != "None":
+            exists_cache = cache_backend.exists(key=key,region=region)
+            if exists_cache:
+                value = cache_backend.get(key=key, region=region)
+                if value is not None:
                     if source == "PERSON":
                         logger.info(f"从缓存中获取到 {source} 人物信息")
                     else:
@@ -77,7 +78,7 @@ def cache_with_logging(region, source):
 
             if result is None:
                 # 如果结果为 None，说明触发限流或网络等异常，缓存5分钟，以免高频次调用
-                cache_backend.set(key, "None", ttl=60 * 5, region=region, maxsize=100000)
+                cache_backend.set(key, result, ttl=60 * 5, region=region, maxsize=100000)
             else:
                 # 结果不为 None，使用默认 TTL 缓存
                 cache_backend.set(key, result, ttl=60 * 60 * 24 * 3, region=region, maxsize=100000)
