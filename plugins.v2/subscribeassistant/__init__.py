@@ -44,7 +44,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.1.1"
+    plugin_version = "2.1.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1391,9 +1391,11 @@ class SubscribeAssistant(_PluginBase):
                                                          season=meta.season)
         else:
             histories = self.transferhistory_oper.get_by(tmdbid=subscribe.tmdbid, mtype=subscribe.type)
+
         if not histories:
             logger.info(
                 f"{self.__format_subscribe(subscribe)} TMDBID: {subscribe.tmdbid} 未能获取到匹配的整理记录，跳过处理")
+            return
 
         logger.info(
             f"{self.__format_subscribe(subscribe)} TMDBID: {subscribe.tmdbid} 获取到 {len(histories)} 条整理记录，即将开始清理")
