@@ -1424,6 +1424,16 @@ class SubscribeAssistant(_PluginBase):
             # 删除记录
             self.transferhistory_oper.delete(history.id)
 
+        # 消息推送
+        if self._notify:
+            # 推送消息
+            self.post_message(
+                mtype=NotificationType.Subscribe,
+                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} ，即将开始洗版下载",
+                text=f"订阅助手：已清理 {len(histories)} 条整理记录并删除源文件及媒体库文件",
+                image=self.__get_subscribe_image(subscribe),
+            )
+
         # 强制睡眠5s，等待所有外部事件处理完成，如下载器种子清理等等
         time.sleep(5)
 
