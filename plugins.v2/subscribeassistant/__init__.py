@@ -2930,9 +2930,16 @@ class SubscribeAssistant(_PluginBase):
                 and (subscribe_info := self.__get_subscribe_by_source(source=source)[0])
                 and subscribe_info is not None
                 and subscribe_info.get("id") == subscribe_id
+                and subscribe_info.get("tmdbid") == subscribe.tmdbid
+                and subscribe_info.get("year") == subscribe.year
+                and subscribe_info.get("season") == subscribe.season
+                and MetaInfo(title=download.torrent_name,
+                             subtitle=download.torrent_description).total_episode != subscribe.total_episode
             )
+
             if download_count <= 1:
-                logger.info(f"{self.__format_subscribe(subscribe)}，不是分集下载订阅，跳过处理")
+                logger.info(
+                    f"{self.__format_subscribe(subscribe)}，关联下载记录共 {download_count} 条，不是分集下载订阅，跳过处理")
                 return
 
         # 自动识别媒体信息
