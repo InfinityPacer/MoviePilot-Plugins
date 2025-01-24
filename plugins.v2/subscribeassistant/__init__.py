@@ -584,7 +584,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -602,17 +602,15 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 8
                                                 },
                                                 'content': [
                                                     {
                                                         'component': 'VTextField',
                                                         'props': {
-                                                            'model': 'auto_pause_days',
-                                                            'label': '自动暂停天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '当前日期小于上映日期减N天，则视为暂停，为空时不处理',
+                                                            'model': 'auto_pause_users',
+                                                            'label': '新增订阅自动暂停用户',
+                                                            'hint': '指定用户新增订阅时将自动暂停，多个用户使用逗号分隔，如：thsrite,boeto',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -623,7 +621,138 @@ class SubscribeAssistant(_PluginBase):
                                     {
                                         'component': 'VRow',
                                         'content': [
-
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_movie_release_days',
+                                                            'label': '电影上映暂停天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '上映日期距离当前日期大于N天，则视为暂停，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_tv_air_days',
+                                                            'label': '剧集上映暂停天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '上映日期距离当前日期大于N天，则视为暂停，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_tv_season_final_days',
+                                                            'label': '季中最终集暂停天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '已下载季中最终集，且下集日期距离当前日期大于N天，则视为暂停，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSelect',
+                                                        'props': {
+                                                            'multiple': True,
+                                                            'chips': True,
+                                                            'clearable': True,
+                                                            'model': 'auto_pause_no_download_actions',
+                                                            'label': '无下载处理策略',
+                                                            'hint': '选择无下载时的处理策略',
+                                                            'persistent-hint': True,
+                                                            'items': [
+                                                                {'title': '暂停电影订阅', 'value': 'pause_movie'},
+                                                                {'title': '暂停剧集订阅', 'value': 'pause_tv'},
+                                                                {'title': '删除电影订阅', 'value': 'delete_movie'},
+                                                                {'title': '删除剧集订阅', 'value': 'delete_tv'}
+                                                            ],
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_movie_no_download_days',
+                                                            'label': '电影无下载处理天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '电影上映后，N天内无新的订阅下载，则自动处理，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_tv_no_download_days',
+                                                            'label': '剧集无下载处理天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '剧集上映后，N天内无新的订阅下载，则自动处理，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
                                         ]
                                     }
                                 ]
