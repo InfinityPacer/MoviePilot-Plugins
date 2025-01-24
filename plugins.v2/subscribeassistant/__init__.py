@@ -31,6 +31,7 @@ from app.schemas import ServiceInfo
 from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData
 from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import EventType, ChainEventType, MediaType, NotificationType
+from app.utils.string import StringUtils
 from version import APP_VERSION
 
 lock = threading.RLock()
@@ -86,8 +87,22 @@ class SubscribeAssistant(_PluginBase):
     _delete_exclude_tags = None
     # 自动暂停订阅
     _auto_pause = False
-    # 自动暂停订阅天数
-    _auto_pause_days = 0
+    # 自动暂停的用户
+    _auto_pause_user = ""
+    # 自动暂停的用户集合
+    _auto_pause_users = set()
+    # 电影上映后暂停的天数
+    _auto_pause_movie_air_days = None
+    # 剧集上映后暂停的天数
+    _auto_pause_tv_air_days = None
+    # 季中最终集后暂停的天数
+    _auto_pause_tv_season_final_days = None
+    # 无下载时的处理策略
+    _auto_pause_no_download_actions = []
+    # 电影无下载处理的天数
+    _auto_pause_movie_no_download_days = None
+    # 剧集无下载处理的天数
+    _auto_pause_tv_no_download_days = None
     # 自动待定剧集订阅
     _auto_tv_pending = False
     # 自动待定下载中订阅
@@ -157,12 +172,23 @@ class SubscribeAssistant(_PluginBase):
         self._download_check_interval = self.__get_float_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_float_config(config, "download_timeout", 3)
         self._timeout_history_cleanup = self.__get_float_config(config, "timeout_history_cleanup", 0) or None
-        self._auto_pause_days = self.__get_float_config(config, "auto_pause_days", 0) or None
         self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 0) or None
         self._auto_tv_pending_episodes = self.__get_float_config(config, "auto_tv_pending_episodes", 0) or None
         self._auto_update_tv_pending_episodes = self.__get_float_config(config, "auto_update_tv_pending_episodes",
                                                                         0) or None
         self._auto_best_remaining_days = self.__get_float_config(config, "auto_best_remaining_days", 0) or None
+        self._auto_pause_user = config.get("auto_pause_user")
+        self._auto_pause_users = set(self._auto_pause_user.split(",")) if self._auto_pause_user else set()
+        self._auto_pause_movie_air_days = self.__get_float_config(config, "auto_pause_movie_air_days",
+                                                                  0) or None
+        self._auto_pause_tv_air_days = self.__get_float_config(config, "auto_pause_tv_air_days", 0) or None
+        self._auto_pause_tv_season_final_days = self.__get_float_config(config, "auto_pause_tv_season_final_days",
+                                                                        0) or None
+        self._auto_pause_no_download_actions = config.get("auto_pause_no_download_actions", [])
+        self._auto_pause_movie_no_download_days = self.__get_float_config(config, "auto_pause_movie_no_download_days",
+                                                                          0) or None
+        self._auto_pause_tv_no_download_days = self.__get_float_config(config, "auto_pause_tv_no_download_days",
+                                                                       0) or None
 
         # 停止现有任务
         self.stop_service()
@@ -200,7 +226,15 @@ class SubscribeAssistant(_PluginBase):
         定义远程控制命令
         :return: 命令关键字、事件、描述、附带数据
         """
-        pass
+        return [{
+            "cmd": "/subscribe_toggle",
+            "event": EventType.PluginAction,
+            "desc": "切换订阅状态",
+            "category": "订阅",
+            "data": {
+                "action": "subscribe_toggle"
+            }
+        }]
 
     def get_api(self) -> List[Dict[str, Any]]:
         pass
@@ -382,28 +416,28 @@ class SubscribeAssistant(_PluginBase):
                                 'props': {
                                     'value': 'delete_tab'
                                 },
-                                'text': '自动删除'
+                                'text': '种子删除'
                             },
                             {
                                 'component': 'VTab',
                                 'props': {
                                     'value': 'pending_tab'
                                 },
-                                'text': '自动待定'
+                                'text': '订阅待定'
                             },
                             {
                                 'component': 'VTab',
                                 'props': {
                                     'value': 'pause_tab'
                                 },
-                                'text': '自动暂停'
+                                'text': '订阅暂停/删除'
                             },
                             {
                                 'component': 'VTab',
                                 'props': {
                                     'value': 'best_tab'
                                 },
-                                'text': '自动洗版'
+                                'text': '订阅洗版'
                             }
                         ]
                     },
@@ -591,8 +625,8 @@ class SubscribeAssistant(_PluginBase):
                                                         'component': 'VSwitch',
                                                         'props': {
                                                             'model': 'auto_pause',
-                                                            'label': '自动暂停订阅',
-                                                            'hint': '自动标记订阅为暂停状态，避免无意义的请求',
+                                                            'label': '自动暂停/删除订阅',
+                                                            'hint': '自动标记订阅为暂停/删除状态，避免无意义的请求',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -608,9 +642,9 @@ class SubscribeAssistant(_PluginBase):
                                                     {
                                                         'component': 'VTextField',
                                                         'props': {
-                                                            'model': 'auto_pause_users',
-                                                            'label': '新增订阅自动暂停用户',
-                                                            'hint': '指定用户新增订阅时将自动暂停，多个用户使用逗号分隔，如：thsrite,boeto',
+                                                            'model': 'auto_pause_user',
+                                                            'label': '自动暂停新增订阅的用户',
+                                                            'hint': '用户新增订阅时将自动暂停，多个用户使用逗号分隔',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -621,46 +655,6 @@ class SubscribeAssistant(_PluginBase):
                                     {
                                         'component': 'VRow',
                                         'content': [
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_pause_movie_release_days',
-                                                            'label': '电影上映暂停天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '上映日期距离当前日期大于N天，则视为暂停，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_pause_tv_air_days',
-                                                            'label': '剧集上映暂停天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '上映日期距离当前日期大于N天，则视为暂停，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
                                             {
                                                 'component': 'VCol',
                                                 'props': {
@@ -680,81 +674,121 @@ class SubscribeAssistant(_PluginBase):
                                                         }
                                                     }
                                                 ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_movie_air_days',
+                                                            'label': '电影上映暂停天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '当前日期小于上映日期减N天，则视为暂停，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_tv_air_days',
+                                                            'label': '剧集上映暂停天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '当前日期小于上映日期减N天，则视为暂停，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
                                             }
                                         ]
                                     },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSelect',
-                                                        'props': {
-                                                            'multiple': True,
-                                                            'chips': True,
-                                                            'clearable': True,
-                                                            'model': 'auto_pause_no_download_actions',
-                                                            'label': '无下载处理策略',
-                                                            'hint': '选择无下载时的处理策略',
-                                                            'persistent-hint': True,
-                                                            'items': [
-                                                                {'title': '暂停电影订阅', 'value': 'pause_movie'},
-                                                                {'title': '暂停剧集订阅', 'value': 'pause_tv'},
-                                                                {'title': '删除电影订阅', 'value': 'delete_movie'},
-                                                                {'title': '删除剧集订阅', 'value': 'delete_tv'}
-                                                            ],
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_pause_movie_no_download_days',
-                                                            'label': '电影无下载处理天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '电影上映后，N天内无新的订阅下载，则自动处理，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_pause_tv_no_download_days',
-                                                            'label': '剧集无下载处理天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '剧集上映后，N天内无新的订阅下载，则自动处理，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    }
+                                    # {
+                                    #     'component': 'VRow',
+                                    #     'content': [
+                                    #         {
+                                    #             'component': 'VCol',
+                                    #             'props': {
+                                    #                 'cols': 12,
+                                    #                 'md': 4
+                                    #             },
+                                    #             'content': [
+                                    #                 {
+                                    #                     'component': 'VSelect',
+                                    #                     'props': {
+                                    #                         'multiple': True,
+                                    #                         'chips': True,
+                                    #                         'clearable': True,
+                                    #                         'model': 'auto_pause_no_download_actions',
+                                    #                         'label': '无下载处理策略',
+                                    #                         'hint': '选择无下载时的处理策略',
+                                    #                         'persistent-hint': True,
+                                    #                         'items': [
+                                    #                             {'title': '暂停电影订阅', 'value': 'pause_movie'},
+                                    #                             {'title': '暂停剧集订阅', 'value': 'pause_tv'},
+                                    #                             {'title': '删除电影订阅', 'value': 'delete_movie'},
+                                    #                             {'title': '删除剧集订阅', 'value': 'delete_tv'}
+                                    #                         ],
+                                    #                     }
+                                    #                 }
+                                    #             ]
+                                    #         },
+                                    #         {
+                                    #             'component': 'VCol',
+                                    #             'props': {
+                                    #                 'cols': 12,
+                                    #                 'md': 4
+                                    #             },
+                                    #             'content': [
+                                    #                 {
+                                    #                     'component': 'VTextField',
+                                    #                     'props': {
+                                    #                         'model': 'auto_pause_movie_no_download_days',
+                                    #                         'label': '电影无下载处理天数',
+                                    #                         'type': 'number',
+                                    #                         "min": "0",
+                                    #                         'hint': '电影上映后，N天内无新的订阅下载，则自动处理，为空时不处理',
+                                    #                         'persistent-hint': True
+                                    #                     }
+                                    #                 }
+                                    #             ]
+                                    #         },
+                                    #         {
+                                    #             'component': 'VCol',
+                                    #             'props': {
+                                    #                 'cols': 12,
+                                    #                 'md': 4
+                                    #             },
+                                    #             'content': [
+                                    #                 {
+                                    #                     'component': 'VTextField',
+                                    #                     'props': {
+                                    #                         'model': 'auto_pause_tv_no_download_days',
+                                    #                         'label': '剧集无下载处理天数',
+                                    #                         'type': 'number',
+                                    #                         "min": "0",
+                                    #                         'hint': '剧集上映后，N天内无新的订阅下载，则自动处理，为空时不处理',
+                                    #                         'persistent-hint': True
+                                    #                     }
+                                    #                 }
+                                    #             ]
+                                    #         }
+                                    #     ]
+                                    # }
                                 ]
                             },
                             {
@@ -1019,9 +1053,14 @@ class SubscribeAssistant(_PluginBase):
             "timeout_history_cleanup": 24,
             "delete_exclude_tags": "H&R",
             "auto_pause": True,
+            "auto_pause_movie_air_days": 7,
+            "auto_pause_tv_air_days": 7,
+            "auto_pause_tv_season_final_days": 14,
+            "auto_pause_no_download_actions": [],
+            "auto_pause_movie_no_download_days": 180,
+            "auto_pause_tv_no_download_days": 90,
             "auto_tv_pending": True,
             "auto_download_pending": True,
-            "auto_pause_days": 7,
             "auto_tv_pending_episodes": 1,
             "auto_update_tv_pending_episodes": 99,
             "meta_check_interval": 6,
@@ -1128,7 +1167,13 @@ class SubscribeAssistant(_PluginBase):
             "auto_best_remaining_days": self._auto_best_remaining_days,
             "reset_task": self._reset_task,
             "auto_pause": self._auto_pause,
-            "auto_pause_days": self._auto_pause_days
+            "auto_pause_user": self._auto_pause_user,
+            "auto_pause_movie_air_days": self._auto_pause_movie_air_days,
+            "auto_pause_tv_air_days": self._auto_pause_tv_air_days,
+            "auto_pause_tv_season_final_days": self._auto_pause_tv_season_final_days,
+            "auto_pause_no_download_actions": self._auto_pause_no_download_actions,
+            "auto_pause_movie_no_download_days": self._auto_pause_movie_no_download_days,
+            "auto_pause_tv_no_download_days": self._auto_pause_tv_no_download_days,
         }
         self.update_config(config=config)
 
@@ -1146,6 +1191,7 @@ class SubscribeAssistant(_PluginBase):
         self.__save_data("subscribes", {})
         self.__save_data("torrents", {})
         self.__save_data("deletes", {})
+        self.__save_data("states", {})
         logger.info("已重置所有订阅任务、下载种子任务和超时删除记录")
 
     def auto_check(self):
@@ -1198,6 +1244,59 @@ class SubscribeAssistant(_PluginBase):
         self.process_best_version_complete(subscribes)
         logger.info("订阅洗版检查完成...")
 
+    @eventmanager.register(EventType.PluginAction)
+    def toggle_subscribe_state(self, event: Event = None):
+        """
+        切换订阅状态
+        """
+        if not event:
+            return
+        event_data = event.event_data
+        if not event_data or event_data.get("action") != "subscribe_toggle":
+            return
+        subscribe_keyword = event_data.get("arg_str")
+        if not subscribe_keyword:
+            self.post_message(channel=event_data.get("channel"), title="未能获取到订阅信息",
+                              userid=event_data.get("user"), source=event_data.get("source"))
+            return
+
+        subscribes = self.subscribe_oper.list()
+        if not subscribes:
+            self.post_message(channel=event_data.get("channel"), title="没有找到符合要求的订阅",
+                              userid=event_data.get("user"), source=event_data.get("source"))
+            return
+
+        if StringUtils.is_number(subscribe_keyword):
+            filtered_subscribes = [s for s in subscribes if s.id == int(subscribe_keyword)]
+        else:
+            filtered_subscribes = [s for s in subscribes if s.name == subscribe_keyword]
+
+        if not filtered_subscribes:
+            self.post_message(channel=event.event_data.get("channel"), title=self.plugin_name,
+                              text="没有找到符合要求的订阅",
+                              userid=event_data.get("user"), source=event_data.get("source"))
+            return
+
+        if len(filtered_subscribes) == 1:
+            subscribe = filtered_subscribes[0]
+            state = "S" if subscribe.state != "S" else "R"
+            self.subscribe_oper.update(sid=subscribe.id, payload={"state": state})
+            status = "禁用" if state == "S" else "启用"
+            self.post_message(channel=event.event_data.get("channel"),
+                              title=f"{self.__format_subscribe(subscribe=subscribe)} 已{status}",
+                              userid=event_data.get("user"), source=event_data.get("source"))
+        else:
+            title = f"共有 {len(subscribes)} 个订阅，回复对应指令操作： " \
+                    f"\n- 切换订阅状态：/subscribe_toggle [id]"
+            messages = []
+            for subscribe in filtered_subscribes:
+                if subscribe.type == MediaType.MOVIE.value:
+                    messages.append(f"{subscribe.id}. {subscribe.name}（{subscribe.year}）")
+                else:
+                    messages.append(f"{subscribe.id}. {subscribe.name}（{subscribe.year}）第{subscribe.season}季 ")
+            self.post_message(channel=event.event_data.get("channel"), title=title, text="\n".join(messages),
+                              userid=event_data.get("user"), source=event_data.get("source"))
+
     @eventmanager.register(EventType.SubscribeDeleted)
     def handle_subscribe_deleted_event(self, event: Event = None):
         """
@@ -1225,9 +1324,9 @@ class SubscribeAssistant(_PluginBase):
             if not event or not event.event_data:
                 return
 
-            # 自动待定/暂停功能未开启
+            # 自动待定/暂停/删除功能未开启
             if not self._auto_tv_pending and not self._auto_pause:
-                logger.debug("自动待定/暂停功能未开启，跳过处理")
+                logger.debug("自动待定/暂停/删除功能未开启，跳过处理")
                 return
 
             subscribe_id = event.event_data.get("subscribe_id")
@@ -1257,10 +1356,47 @@ class SubscribeAssistant(_PluginBase):
                 return
 
             # 调用公共方法处理订阅
+            self.process_subscribe_pause_for_user(subscribe_id=subscribe_id)
             self.process_subscribe_pause(subscribe_id=subscribe_id)
             self.process_tv_pending(subscribe_id=subscribe_id)
         except Exception as e:
             logger.error(f"处理订阅添加事件时发生错误: {str(e)}")
+
+    @eventmanager.register(EventType.SubscribeModified)
+    def handle_subscribe_modified_event(self, event: Event = None):
+        """
+        处理订阅更新事件
+        """
+        try:
+            # 验证事件数据
+            if not event or not event.event_data:
+                return
+
+            subscribe_id = event.event_data.get("subscribe_id")
+            subscribe_info = event.event_data.get("subscribe_info") or {}
+            old_subscribe_info = event.event_data.get("old_subscribe_info") or {}
+
+            logger.debug(f"接收到订阅更新事件，来自用户: {subscribe_info.get('username')}, 订阅 ID: {subscribe_id}")
+
+            # 缺少订阅信息
+            if not subscribe_id or not subscribe_info or not old_subscribe_info:
+                logger.warning(f"订阅事件数据缺失，跳过处理。订阅 ID: {subscribe_id}")
+                return
+
+            # 获取订阅信息
+            subscribe = self.subscribe_oper.get(subscribe_id)
+
+            # 比对差异
+            different_keys = {
+                key for key in subscribe_info.keys() & old_subscribe_info.keys()
+                if subscribe_info[key] != old_subscribe_info[key]
+            }
+
+            # 重置订阅状态
+            self.__with_lock_and_update_subscribe_tasks(method=self.__reset_subscribe_task_state_when_updated,
+                                                        subscribe=subscribe, different_keys=different_keys)
+        except Exception as e:
+            logger.error(f"处理订阅更新事件时发生错误: {str(e)}")
 
     @eventmanager.register(EventType.SubscribeComplete)
     def handle_subscribe_complete_event(self, event: Event = None):
@@ -1555,13 +1691,11 @@ class SubscribeAssistant(_PluginBase):
             # 删除记录
             self.transferhistory_oper.delete(history.id)
 
-        # 消息推送
         if self._notify:
-            # 推送消息
             self.post_message(
                 mtype=NotificationType.Subscribe,
-                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} ，即将开始洗版下载",
-                text=f"订阅助手：已清理 {len(histories)} 条整理记录并删除源文件及媒体库文件",
+                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 即将开始洗版下载",
+                text=f"已清理 {len(histories)} 条整理记录并删除源文件及媒体库文件",
                 image=self.__get_subscribe_image(subscribe),
             )
 
@@ -2140,7 +2274,6 @@ class SubscribeAssistant(_PluginBase):
         random_minutes = random.uniform(3, 5)
         completion_time = f"{random_minutes:.2f} 分钟"
 
-        # 消息推送
         if self._notify:
             # 构建消息内容
             msg_parts = []
@@ -2212,12 +2345,93 @@ class SubscribeAssistant(_PluginBase):
         desc_part = f"| {description} " if description else ""
         return f"{title}{desc_part}({torrent_hash})"
 
+    def __reset_subscribe_task_state_when_updated(self, subscribe_tasks: dict, subscribe: Subscribe,
+                                                  different_keys: dict):
+        """
+        重新订阅状态
+        :param subscribe_tasks: 订阅任务字典
+        :param subscribe: 订阅对象
+        :param different_keys: 变更字段
+        """
+        if not subscribe or subscribe_tasks is None:
+            return
+
+        logger.debug(f"{self.__format_subscribe(subscribe=subscribe)} 已更新，变更字段：{different_keys}")
+
+        if "state" not in different_keys:
+            logger.debug(f"{self.__format_subscribe(subscribe=subscribe)} 状态未更新，跳过处理")
+
+        # 获取或初始化订阅任务
+        subscribe_task, exists = self.__initialize_subscribe_task(subscribe, subscribe_tasks)
+        subscribe_task["pause_for_user"] = False
+        subscribe_task["pause_for_user_time"] = None
+        logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 订阅状态已变更，已重置用户新增订阅暂停状态")
+        return subscribe_task
+
+    def process_subscribe_pause_for_user(self, subscribe_id: int):
+        """
+        根据上映日期处理订阅自动暂停
+        :param subscribe_id: 订阅标识
+        """
+        # 如果没有开启自动暂停或没有配置需要暂停的用户
+        if not self._auto_pause or not self._auto_pause_users:
+            return
+
+        subscribe = self.subscribe_oper.get(sid=subscribe_id)
+        if not subscribe:
+            logger.error(f"无法找到订阅 ID {subscribe_id} 对应的订阅信息，跳过处理")
+            return
+
+        # 检查订阅是否为洗版订阅
+        if subscribe.best_version:
+            logger.debug(f"{self.__format_subscribe(subscribe)} 为洗版订阅，跳过处理")
+            return
+
+        if subscribe.username not in self._auto_pause_users:
+            logger.debug(
+                f"{self.__format_subscribe(subscribe)} 对应的订阅用户 {subscribe.username} 不在暂停用户列表中，跳过处理")
+            return
+
+        self.__with_lock_and_update_subscribe_tasks(method=self.__process_subscribe_pause_for_user,
+                                                    subscribe=subscribe)
+
+    def __process_subscribe_pause_for_user(self, subscribe_tasks: dict, subscribe: Subscribe):
+        """
+        根据用户处理订阅自动暂停
+        :param subscribe_tasks: 订阅任务列表
+        :param subscribe: 订阅对象
+        """
+        try:
+            previous_state = subscribe.state
+            self.subscribe_oper.update(subscribe.id, {"state": "S"})
+
+            subscribe_task, exists = self.__initialize_subscribe_task(subscribe=subscribe,
+                                                                      subscribe_tasks=subscribe_tasks)
+            subscribe_task["pause_for_user"] = True
+            subscribe_task["pause_for_user_time"] = time.time()
+
+            logger.info(f"{self.__format_subscribe(subscribe)} 对应的订阅用户 {subscribe.username} "
+                        f"已被设置为新增订阅暂停用户，订阅状态从 {previous_state} 更新为暂停")
+
+            if self._notify:
+                self.post_message(
+                    mtype=NotificationType.Subscribe,
+                    title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 已暂停订阅",
+                    text=f"{subscribe.username} 的新增订阅已自动标记为暂停",
+                    image=self.__get_subscribe_image(subscribe),
+                )
+        except Exception as e:
+            # 捕获异常并记录错误日志
+            logger.error(f"处理订阅 {self.__format_subscribe(subscribe=subscribe)} 时发生错误: {str(e)}")
+
     def process_subscribe_pause(self, subscribe_id: Optional[int] = None):
         """
         处理订阅自动暂停
         :param subscribe_id: 订阅标识
         """
-        if not self._auto_pause or self._auto_pause_days is None:
+        # 如果没有开启自动暂停或暂停天数均为空，则直接返回
+        if not self._auto_pause or (
+                self._auto_pause_tv_air_days is None and self._auto_pause_movie_air_days is None):
             return
 
         if not subscribe_id:
@@ -2228,11 +2442,13 @@ class SubscribeAssistant(_PluginBase):
         if not subscribes:
             return
 
-        self.__with_lock_and_update_subscribe_tasks(method=self.__process_subscribe_pause, subscribes=subscribes)
+        self.__with_lock_and_update_subscribe_tasks(method=self.__process_subscribe_pause,
+                                                    subscribes=subscribes)
 
     def __process_subscribe_pause(self, subscribe_tasks: dict, subscribes: list[Subscribe]):
         """
         处理订阅自动暂停
+        :param subscribe_tasks: 订阅任务列表
         :param subscribes: 订阅对象列表
         """
         for data in subscribes:
@@ -2246,6 +2462,28 @@ class SubscribeAssistant(_PluginBase):
                 if subscribe.best_version:
                     logger.debug(f"{self.__format_subscribe(subscribe)} 为洗版订阅，跳过处理")
                     continue
+
+                # 检查是否已经配置了暂停天数
+                subscribe_type = MediaType(subscribe.type)
+                if subscribe_type == MediaType.TV and self._auto_pause_tv_air_days is None:
+                    continue
+                if subscribe_type == MediaType.MOVIE and self._auto_pause_movie_air_days is None:
+                    continue
+
+                # 获取订阅任务
+                subscribe_task, exists = self.__initialize_subscribe_task(subscribe=subscribe,
+                                                                          subscribe_tasks=subscribe_tasks)
+                # 判断是否已经根据用户自动暂停
+                pause_for_user = subscribe_task.get("pause_for_user")
+                if pause_for_user:
+                    if subscribe.state == "S":
+                        logger.info(f"{self.__format_subscribe(subscribe=subscribe)} "
+                                    f"已根据用户新增订阅暂停配置标记为暂停，如需进一步操作，请先启用")
+                        continue
+                    else:
+                        subscribe_task["pause_for_user"] = False
+                        subscribe_task["pause_for_user_time"] = None
+                        logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 已启用，已重置用户新增订阅暂停状态")
 
                 # 自动识别媒体信息
                 if not mediainfo:
@@ -2283,11 +2521,9 @@ class SubscribeAssistant(_PluginBase):
                 self.subscribe_oper.update(subscribe.id, {"state": target_state})
 
                 # 如果当前订阅任务需要修改任务状态，则进一步获取订阅任务是否开启剧集待定，如果已开启，则需要重置处理
-                subscribe_task, exists = self.__initialize_subscribe_task(subscribe=subscribe,
-                                                                          subscribe_tasks=subscribe_tasks)
                 tv_pending = subscribe_task.get("tv_pending")
                 if tv_pending:
-                    logger.debug(f"{self.__format_subscribe(subscribe)} 已开启剧集待定，订阅状态已发生变更，重置剧集待定")
+                    logger.info(f"{self.__format_subscribe(subscribe)} 已开启剧集待定，订阅状态已发生变更，重置剧集待定")
                     self.__update_subscribe_tv_pending_task(subscribe=subscribe,
                                                             subscribe_task=subscribe_task,
                                                             pending=False)
@@ -2295,15 +2531,15 @@ class SubscribeAssistant(_PluginBase):
                 # 构造标题，根据状态动态调整
                 meta = self.__get_subscribe_meta(subscribe=subscribe)
                 if pause:
-                    msg_title = f"{mediainfo.title_year} {meta.season} 满足订阅暂停，已标记暂停"
+                    msg_title = f"{mediainfo.title_year} {meta.season} 上映日期满足订阅暂停，已标记暂停"
                 else:
-                    msg_title = f"{mediainfo.title_year} {meta.season} 不再满足订阅暂停，已标记订阅中"
+                    msg_title = f"{mediainfo.title_year} {meta.season} 上映日期不再满足订阅暂停，已标记订阅中"
 
                 self.__send_subscribe_status_msg(subscribe=subscribe, mediainfo=mediainfo,
                                                  air_day=air_day, msg_title=msg_title)
             except Exception as e:
                 # 捕获异常并记录错误日志
-                logger.error(f"处理订阅 ID {subscribe.id} 时发生错误: {str(e)}")
+                logger.error(f"处理订阅 {self.__format_subscribe(subscribe=subscribe)} 时发生错误: {str(e)}")
 
     def __check_subscribe_pause_by_mediainfo(self, subscribe: Subscribe, mediainfo: MediaInfo) \
             -> Tuple[bool, Optional[str]]:
@@ -2313,6 +2549,11 @@ class SubscribeAssistant(_PluginBase):
         :param mediainfo: 媒体信息
         """
         if mediainfo.type == MediaType.UNKNOWN:
+            return False, None
+
+        auto_pause_days = self._auto_pause_tv_air_days if mediainfo.type == MediaType.TV \
+            else self._auto_pause_movie_air_days
+        if auto_pause_days is None:
             return False, None
 
         if mediainfo.type == MediaType.TV:
@@ -2326,19 +2567,19 @@ class SubscribeAssistant(_PluginBase):
 
         # 条件1：配置了自动暂停天数，且满足暂停条件
         condition_days = False
-        if self._auto_pause_days is not None:
+        if auto_pause_days is not None:
             # 任一条件成立，则 condition_days 为 True
             if air_date is None:
                 condition_days = True
                 air_day = "未知"
             else:
-                pending_date = air_date - timedelta(days=self._auto_pause_days)
+                pending_date = air_date - timedelta(days=auto_pause_days)
                 condition_days = pending_date > current_date
 
         pause = condition_days
 
         logger.debug(f"{self.__format_subscribe(subscribe)}，pause: {pause}，上映日期: {air_day}，"
-                     f"暂停天数：{self._auto_pause_days}，当前日期: {current_date.strftime('%Y-%m-%d %H:%M:%S')}")
+                     f"暂停天数：{auto_pause_days}，当前日期: {current_date.strftime('%Y-%m-%d %H:%M:%S')}")
 
         return pause, air_day
 
@@ -2460,7 +2701,7 @@ class SubscribeAssistant(_PluginBase):
                                                      air_day=air_day, msg_title=msg_title, episode_count=episode_count)
             except Exception as e:
                 # 捕获异常并记录错误日志
-                logger.error(f"处理订阅 ID {subscribe.id} 时发生错误: {str(e)}")
+                logger.error(f"处理订阅 {self.__format_subscribe(subscribe=subscribe)} 时发生错误: {str(e)}")
 
     def __update_tv_pending_episodes(self, subscribe: Subscribe, mediainfo: MediaInfo, tv_pending: bool) \
             -> Optional[int]:
@@ -2564,7 +2805,6 @@ class SubscribeAssistant(_PluginBase):
         else:
             link = settings.MP_DOMAIN('#/subscribe/movie?tab=mysub')
 
-        # 推送消息
         self.post_message(
             mtype=NotificationType.Subscribe,
             title=msg_title,
@@ -2939,6 +3179,8 @@ class SubscribeAssistant(_PluginBase):
             "bangumiid": subscribe.bangumiid,
             "best_version": subscribe.best_version,
             "current_priority": subscribe.current_priority,
+            "pause_for_user": False,
+            "pause_for_user_time": None,
             "tv_pending": False,
             "tv_pending_time": None,
             "torrent_tasks": []
