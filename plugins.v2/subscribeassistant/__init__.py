@@ -45,7 +45,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.1.3"
+    plugin_version = "2.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -618,7 +618,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 4
+                                                    'md': 6
                                                 },
                                                 'content': [
                                                     {
@@ -636,7 +636,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 8
+                                                    'md': 6
                                                 },
                                                 'content': [
                                                     {
@@ -655,31 +655,31 @@ class SubscribeAssistant(_PluginBase):
                                     {
                                         'component': 'VRow',
                                         'content': [
+                                            # {
+                                            #     'component': 'VCol',
+                                            #     'props': {
+                                            #         'cols': 12,
+                                            #         'md': 4
+                                            #     },
+                                            #     'content': [
+                                            #         {
+                                            #             'component': 'VTextField',
+                                            #             'props': {
+                                            #                 'model': 'auto_pause_tv_season_final_days',
+                                            #                 'label': '季中最终集暂停天数',
+                                            #                 'type': 'number',
+                                            #                 "min": "0",
+                                            #                 'hint': '已下载季中最终集，且下集日期距离当前日期大于N天，则视为暂停，为空时不处理',
+                                            #                 'persistent-hint': True
+                                            #             }
+                                            #         }
+                                            #     ]
+                                            # },
                                             {
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_pause_tv_season_final_days',
-                                                            'label': '季中最终集暂停天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '已下载季中最终集，且下集日期距离当前日期大于N天，则视为暂停，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
+                                                    'md': 6
                                                 },
                                                 'content': [
                                                     {
@@ -699,7 +699,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 4
+                                                    'md': 6
                                                 },
                                                 'content': [
                                                     {
