@@ -341,7 +341,7 @@ class SubscribeAssistant(_PluginBase):
                                             'label': '下载检查周期',
                                             'items': [
                                                 {'title': '5分钟', 'value': 5},
-                                                {'title': '10分钟', 'value': 15},
+                                                {'title': '10分钟', 'value': 10},
                                                 {'title': '30分钟', 'value': 30},
                                                 {'title': '60分钟', 'value': 60},
                                                 {'title': '120分钟', 'value': 120},
@@ -603,6 +603,125 @@ class SubscribeAssistant(_PluginBase):
                             {
                                 'component': 'VWindowItem',
                                 'props': {
+                                    'value': 'pending_tab'
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VRow',
+                                        'props': {
+                                            'style': {
+                                                'margin-top': '0px'
+                                            }
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 6
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'auto_download_pending',
+                                                            'label': '自动待定下载中订阅',
+                                                            'hint': '自动标记正在下载的订阅为待定状态，避免提前完成订阅',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 6
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'auto_tv_pending',
+                                                            'label': '自动待定剧集订阅',
+                                                            'hint': '自动标记订阅剧集为待定状态，避免提前完成订阅',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_tv_pending_days',
+                                                            'label': '剧集待定天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '当前日期小于上映日期加N天，则视为待定，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_tv_pending_episodes',
+                                                            'label': '剧集待定集数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '剧集数小于等于设置的集数，则视为待定，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_update_tv_pending_episodes',
+                                                            'label': '待定剧集默认总集数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '待定剧集的默认总集数，用于支持订阅信息未更新时正常下载，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VWindowItem',
+                                'props': {
                                     'value': 'pause_tab'
                                 },
                                 'content': [
@@ -789,125 +908,6 @@ class SubscribeAssistant(_PluginBase):
                                     #         }
                                     #     ]
                                     # }
-                                ]
-                            },
-                            {
-                                'component': 'VWindowItem',
-                                'props': {
-                                    'value': 'pending_tab'
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VRow',
-                                        'props': {
-                                            'style': {
-                                                'margin-top': '0px'
-                                            }
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 6
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
-                                                            'model': 'auto_download_pending',
-                                                            'label': '自动待定下载中订阅',
-                                                            'hint': '自动标记正在下载的订阅为待定状态，避免提前完成订阅',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 6
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VSwitch',
-                                                        'props': {
-                                                            'model': 'auto_tv_pending',
-                                                            'label': '自动待定剧集订阅',
-                                                            'hint': '自动标记订阅剧集为待定状态，避免提前完成订阅',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_tv_pending_days',
-                                                            'label': '剧集待定天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '当前日期小于上映日期加N天，则视为待定，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_tv_pending_episodes',
-                                                            'label': '剧集待定集数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '剧集数小于等于设置的集数，则视为待定，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'auto_update_tv_pending_episodes',
-                                                            'label': '待定剧集默认总集数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '待定剧集的默认总集数，用于支持订阅信息未更新时正常下载，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    }
                                 ]
                             },
                             {
@@ -3473,6 +3473,7 @@ class SubscribeAssistant(_PluginBase):
             return False
 
         # 判断是否存在最终集，存在则认为已完结
+        # mid_season 季中最终集
         completed = any(episode.episode_type == "finale" for episode in episodes) if episodes else False
         return completed
 
