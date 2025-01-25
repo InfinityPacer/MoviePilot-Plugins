@@ -783,26 +783,6 @@ class SubscribeAssistant(_PluginBase):
                                                     {
                                                         'component': 'VTextField',
                                                         'props': {
-                                                            'model': 'auto_pause_tv_latest_days',
-                                                            'label': '即将播出暂停天数',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            'hint': '已存在最新播出集，且下集日期距离当前日期大于N天，则视为暂停，为空时不处理',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
                                                             'model': 'auto_pause_movie_air_days',
                                                             'label': '电影上映暂停天数',
                                                             'type': 'number',
@@ -828,6 +808,26 @@ class SubscribeAssistant(_PluginBase):
                                                             'type': 'number',
                                                             "min": "0",
                                                             'hint': '当前日期小于上映日期减N天，则视为暂停，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_tv_latest_days',
+                                                            'label': '即将播出暂停天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '已存在最新播出集，且下集日期距离当前日期大于N天，则视为暂停，为空时不处理',
                                                             'persistent-hint': True
                                                         }
                                                     }
