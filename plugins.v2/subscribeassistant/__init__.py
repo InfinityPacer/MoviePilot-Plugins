@@ -27,12 +27,11 @@ from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
-from app.schemas import ServiceInfo
+from app.schemas import ServiceInfo, TmdbEpisode
 from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData
 from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import EventType, ChainEventType, MediaType, NotificationType
 from app.utils.string import StringUtils
-from version import APP_VERSION
 
 lock = threading.RLock()
 
@@ -95,8 +94,8 @@ class SubscribeAssistant(_PluginBase):
     _auto_pause_movie_air_days = None
     # 剧集上映后暂停的天数
     _auto_pause_tv_air_days = None
-    # 季中最终集后暂停的天数
-    _auto_pause_tv_season_final_days = None
+    # 即将播出暂停的天数
+    _auto_pause_tv_latest_days = None
     # 无下载时的处理策略
     _auto_pause_no_download_actions = []
     # 电影无下载处理的天数
@@ -182,8 +181,8 @@ class SubscribeAssistant(_PluginBase):
         self._auto_pause_movie_air_days = self.__get_float_config(config, "auto_pause_movie_air_days",
                                                                   0) or None
         self._auto_pause_tv_air_days = self.__get_float_config(config, "auto_pause_tv_air_days", 0) or None
-        self._auto_pause_tv_season_final_days = self.__get_float_config(config, "auto_pause_tv_season_final_days",
-                                                                        0) or None
+        self._auto_pause_tv_latest_days = self.__get_float_config(config, "auto_pause_tv_latest_days",
+                                                                  0) or None
         self._auto_pause_no_download_actions = config.get("auto_pause_no_download_actions", [])
         self._auto_pause_movie_no_download_days = self.__get_float_config(config, "auto_pause_movie_no_download_days",
                                                                           0) or None
@@ -774,31 +773,31 @@ class SubscribeAssistant(_PluginBase):
                                     {
                                         'component': 'VRow',
                                         'content': [
-                                            # {
-                                            #     'component': 'VCol',
-                                            #     'props': {
-                                            #         'cols': 12,
-                                            #         'md': 4
-                                            #     },
-                                            #     'content': [
-                                            #         {
-                                            #             'component': 'VTextField',
-                                            #             'props': {
-                                            #                 'model': 'auto_pause_tv_season_final_days',
-                                            #                 'label': '季中最终集暂停天数',
-                                            #                 'type': 'number',
-                                            #                 "min": "0",
-                                            #                 'hint': '已下载季中最终集，且下集日期距离当前日期大于N天，则视为暂停，为空时不处理',
-                                            #                 'persistent-hint': True
-                                            #             }
-                                            #         }
-                                            #     ]
-                                            # },
                                             {
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'auto_pause_tv_latest_days',
+                                                            'label': '即将播出暂停天数',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            'hint': '已存在最新播出集，且下集日期距离当前日期大于N天，则视为暂停，为空时不处理',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -818,7 +817,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 6
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -1055,7 +1054,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_pause": True,
             "auto_pause_movie_air_days": 7,
             "auto_pause_tv_air_days": 7,
-            "auto_pause_tv_season_final_days": 14,
+            "auto_pause_tv_latest_days": 30,
             "auto_pause_no_download_actions": [],
             "auto_pause_movie_no_download_days": 180,
             "auto_pause_tv_no_download_days": 90,
@@ -1170,7 +1169,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_pause_user": self._auto_pause_user,
             "auto_pause_movie_air_days": self._auto_pause_movie_air_days,
             "auto_pause_tv_air_days": self._auto_pause_tv_air_days,
-            "auto_pause_tv_season_final_days": self._auto_pause_tv_season_final_days,
+            "auto_pause_tv_latest_days": self._auto_pause_tv_latest_days,
             "auto_pause_no_download_actions": self._auto_pause_no_download_actions,
             "auto_pause_movie_no_download_days": self._auto_pause_movie_no_download_days,
             "auto_pause_tv_no_download_days": self._auto_pause_tv_no_download_days,
@@ -2430,8 +2429,8 @@ class SubscribeAssistant(_PluginBase):
         :param subscribe_id: 订阅标识
         """
         # 如果没有开启自动暂停或暂停天数均为空，则直接返回
-        if not self._auto_pause or (
-                self._auto_pause_tv_air_days is None and self._auto_pause_movie_air_days is None):
+        if not self._auto_pause or (self._auto_pause_tv_latest_days is None and
+                                    self._auto_pause_tv_air_days is None and self._auto_pause_movie_air_days is None):
             return
 
         if not subscribe_id:
@@ -2496,7 +2495,8 @@ class SubscribeAssistant(_PluginBase):
                     logger.info(f"{self.__format_subscribe(subscribe=subscribe)}，未知的媒体类型，跳过处理")
                     continue
 
-                pause, air_day = self.__check_subscribe_pause_by_mediainfo(subscribe=subscribe, mediainfo=mediainfo)
+                pause, air_day, reason = self.__check_subscribe_pause_by_mediainfo(subscribe=subscribe,
+                                                                                   mediainfo=mediainfo)
 
                 # 如果当前状态为 "S"，且需要启用处理，则触发补全搜索
                 if subscribe.state == "S" and not pause:
@@ -2531,57 +2531,97 @@ class SubscribeAssistant(_PluginBase):
                 # 构造标题，根据状态动态调整
                 meta = self.__get_subscribe_meta(subscribe=subscribe)
                 if pause:
-                    msg_title = f"{mediainfo.title_year} {meta.season} 上映日期满足订阅暂停，已标记暂停"
+                    msg_title = f"{mediainfo.title_year} {meta.season} {reason}满足订阅暂停，已标记暂停"
                 else:
-                    msg_title = f"{mediainfo.title_year} {meta.season} 上映日期不再满足订阅暂停，已标记订阅中"
+                    msg_title = f"{mediainfo.title_year} {meta.season} {reason}不再满足订阅暂停，已标记订阅中"
 
                 self.__send_subscribe_status_msg(subscribe=subscribe, mediainfo=mediainfo,
-                                                 air_day=air_day, msg_title=msg_title)
+                                                 air_day=f"{reason}：{air_day}", msg_title=msg_title)
             except Exception as e:
                 # 捕获异常并记录错误日志
                 logger.error(f"处理订阅 {self.__format_subscribe(subscribe=subscribe)} 时发生错误: {str(e)}")
 
     def __check_subscribe_pause_by_mediainfo(self, subscribe: Subscribe, mediainfo: MediaInfo) \
-            -> Tuple[bool, Optional[str]]:
+            -> Tuple[bool, Optional[str], Optional[str]]:
         """
         根据媒体信息判断订阅是否为暂停
         :param subscribe: 订阅信息
         :param mediainfo: 媒体信息
+        :return: (pause: bool, air_day: Optional[str])
+            pause: True 表示满足暂停条件
+            air_day: 日期
+            reason: 原因
         """
         if mediainfo.type == MediaType.UNKNOWN:
-            return False, None
+            return False, None, None
 
-        auto_pause_days = self._auto_pause_tv_air_days if mediainfo.type == MediaType.TV \
-            else self._auto_pause_movie_air_days
-        if auto_pause_days is None:
-            return False, None
+        # 根据媒体类型获取对应该类型的自动暂停天数配置
+        auto_pause_days = (
+            self._auto_pause_tv_air_days if mediainfo.type == MediaType.TV else self._auto_pause_movie_air_days
+        )
 
+        # 如果是剧集，从订阅与媒体信息中提取对应季数的上映日期
         if mediainfo.type == MediaType.TV:
-            # 查找与当前订阅季数匹配的上映日期 (air_date)
-            air_date, air_day = self.__get_tv_season_air_date(mediainfo=mediainfo, season=subscribe.season)
+            # 与当前订阅季数匹配的首映信息
+            first_air_date, first_air_day = self.__get_tv_season_air_date(
+                mediainfo=mediainfo,
+                season=subscribe.season
+            )
         else:
-            air_day = mediainfo.release_date
-            air_date, air_day = self.__parse_date(day=air_day)
+            # 电影只需要从 release_date 获取上映信息
+            first_air_day = mediainfo.release_date
+            first_air_date, first_air_day = self.__parse_date(day=first_air_day)
 
+        # 默认不暂停，即将播出日期为上映日期，如果是剧集，还需要进一步处理季中最终集的场景
+        pause = False
+        reason = "未知"
+        latest_air_day = "未知"
+        air_day = first_air_day or "未知"
         current_date = datetime.now()
 
-        # 条件1：配置了自动暂停天数，且满足暂停条件
-        condition_days = False
+        # 条件1：基于上映日期的自动暂停，若配置了自动暂停天数，则依据上映日期的时间进行判断
         if auto_pause_days is not None:
-            # 任一条件成立，则 condition_days 为 True
-            if air_date is None:
-                condition_days = True
+            reason = "上映日期"
+            if first_air_date is None:
+                # 无法正确解析上映日期，默认视为需要暂停
+                pause = True
                 air_day = "未知"
             else:
-                pending_date = air_date - timedelta(days=auto_pause_days)
-                condition_days = pending_date > current_date
+                # 若上映日期-配置天数比当前时间还晚，说明尚未到达可播放时间
+                pending_date = first_air_date - timedelta(days=auto_pause_days)
+                pause = pending_date > current_date
 
-        pause = condition_days
+        # 条件2：基于即将播出集的自动暂停，若配置了自动暂停天数，则继续判断
+        if not pause and mediainfo.type == MediaType.TV and self._auto_pause_tv_latest_days is not None:
+            reason = "即将播出日期"
+            air_day = "未知"
+            latest_episode, next_episode = self.__get_tv_latest_episode(
+                mediainfo=mediainfo,
+                season=subscribe.season
+            )
+            if latest_episode:
+                latest_ep_date, latest_air_day = self.__parse_date(day=latest_episode.air_date)
+                if next_episode and next_episode.air_date:
+                    # 如果下集尚未下载，并当前最新集为已下载的最大集
+                    downloads = subscribe.note or []
+                    start_episode = subscribe.total_episode - subscribe.lack_episode + 1
+                    next_ep_date, air_day = self.__parse_date(day=next_episode.air_date)
+                    logger.debug(
+                        f"{self.__format_subscribe(subscribe=subscribe)} 即将下载集：{start_episode}，已下载集数：{downloads}")
+                    if (
+                            next_episode.episode_number == start_episode
+                            and next_episode.episode_number not in downloads
+                            # and latest_episode.episode_number in downloads
+                    ):
+                        if next_ep_date:
+                            pause = next_ep_date - current_date > timedelta(days=self._auto_pause_tv_latest_days)
 
-        logger.debug(f"{self.__format_subscribe(subscribe)}，pause: {pause}，上映日期: {air_day}，"
-                     f"暂停天数：{auto_pause_days}，当前日期: {current_date.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.debug(f"{self.__format_subscribe(subscribe)}，pause: {pause}，上映日期: {first_air_day}，"
+                     f"最近播出日期：{latest_air_day}，即将播出日期：{air_day}，"
+                     f"上映暂停天数：{auto_pause_days}，即将播出暂停天数：{self._auto_pause_tv_latest_days}，"
+                     f"当前日期: {current_date.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        return pause, air_day
+        return pause, air_day, reason
 
     def process_tv_pending(self, subscribe_id: Optional[int] = None):
         """
@@ -2687,7 +2727,7 @@ class SubscribeAssistant(_PluginBase):
                         episode_count = self.__update_tv_pending_episodes(subscribe=subscribe, mediainfo=mediainfo,
                                                                           tv_pending=tv_pending)
                         self.__send_subscribe_status_msg(subscribe=subscribe, mediainfo=mediainfo,
-                                                         air_day=air_day, msg_title=msg_title,
+                                                         air_day=f"上映日期：{air_day}", msg_title=msg_title,
                                                          episode_count=episode_count)
                     continue
 
@@ -2698,7 +2738,8 @@ class SubscribeAssistant(_PluginBase):
                     episode_count = self.__update_tv_pending_episodes(subscribe=subscribe, mediainfo=mediainfo,
                                                                       tv_pending=tv_pending)
                     self.__send_subscribe_status_msg(subscribe=subscribe, mediainfo=mediainfo,
-                                                     air_day=air_day, msg_title=msg_title, episode_count=episode_count)
+                                                     air_day=f"上映日期：{air_day}", msg_title=msg_title,
+                                                     episode_count=episode_count)
             except Exception as e:
                 # 捕获异常并记录错误日志
                 logger.error(f"处理订阅 {self.__format_subscribe(subscribe=subscribe)} 时发生错误: {str(e)}")
@@ -2780,7 +2821,7 @@ class SubscribeAssistant(_PluginBase):
         :param subscribe: 订阅信息
         :param mediainfo: 媒体信息
         :param msg_title: 消息标题
-        :param air_day: 上映日期
+        :param air_day: 日期
         :param episode_count: 集数
         """
         if not self._notify:
@@ -2792,8 +2833,8 @@ class SubscribeAssistant(_PluginBase):
             text_parts.append(f"评分：{mediainfo.vote_average}")
         if subscribe.username:
             text_parts.append(f"来自用户：{subscribe.username}")
-        air_day = air_day or "未知"
-        text_parts.append(f"上映日期：{air_day}")
+        if air_day:
+            text_parts.append(air_day)
         if episode_count:
             text_parts.append(f"集数更新为：{episode_count}")
         # 将非空部分拼接成完整的文本
@@ -3465,17 +3506,58 @@ class SubscribeAssistant(_PluginBase):
         if mediainfo.status in ["Ended", "Canceled"]:
             return True
 
-        if self.__compare_versions("2.1.5", APP_VERSION) <= 0:
-            return False
-
         episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
         if not episodes:
             return False
 
         # 判断是否存在最终集，存在则认为已完结
-        # mid_season 季中最终集
         completed = any(episode.episode_type == "finale" for episode in episodes) if episodes else False
         return completed
+
+    def __get_tv_latest_episode(self, mediainfo: MediaInfo, season: int) -> \
+            Tuple[Optional[TmdbEpisode], Optional[TmdbEpisode]]:
+        """
+        按季获取剧集最新播出集和下一集
+        :param mediainfo: 媒体信息
+        :param season: 季数
+        """
+        if not mediainfo or not mediainfo.tmdb_id or not season:
+            return None, None
+
+        episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
+        if not episodes:
+            return None, None
+
+        now = datetime.now()
+        valid_eps = []
+        for ep in episodes:
+            # 判断 episode_number 存在, 并能解析出有效的播出日期
+            if ep.episode_number is not None and ep.air_date:
+                ep_datetime, _ = self.__parse_date(ep.air_date)
+                if ep_datetime:
+                    valid_eps.append((ep, ep_datetime))
+
+        if not valid_eps:
+            return None, None
+
+        # 按集数降序排序, 集数越大排在越前
+        valid_eps.sort(key=lambda x: x[0].episode_number, reverse=True)
+
+        latest_episode = None
+        next_episode = None
+
+        for i, (ep, air_dt) in enumerate(valid_eps):
+            if air_dt <= now:
+                latest_episode = ep
+                # 如果 i-1 >= 0, 即可视为此下一集比当前集数更大
+                if i - 1 >= 0:
+                    next_episode = valid_eps[i - 1][0]
+                break
+
+        latest_info = f"{latest_episode.episode_number} ({latest_episode.air_date})" if latest_episode else None
+        next_info = f"{next_episode.episode_number} ({next_episode.air_date})" if next_episode else None
+        logger.debug(f"{mediainfo.title_year} 季{season} - latest_episode: {latest_info}, next_episode: {next_info}")
+        return latest_episode, next_episode
 
     def __get_tv_season_air_date(self, mediainfo: MediaInfo, season: int) -> Tuple[Optional[datetime], Optional[str]]:
         """
