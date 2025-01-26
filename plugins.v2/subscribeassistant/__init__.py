@@ -2500,7 +2500,8 @@ class SubscribeAssistant(_PluginBase):
                     logger.info(f"{self.__format_subscribe(subscribe=subscribe)}，未知的媒体类型，跳过处理")
                     return
 
-                execute = self.__process_subscribe_pause_for_download(subscribe_task=subscribe, subscribe=subscribe,
+                execute = self.__process_subscribe_pause_for_download(subscribe_task=subscribe_task,
+                                                                      subscribe=subscribe,
                                                                       mediainfo=mediainfo)
                 if not execute:
                     self.__process_subscribe_pause_for_airing(subscribe_task=subscribe_task, subscribe=subscribe,
@@ -2571,20 +2572,13 @@ class SubscribeAssistant(_PluginBase):
         elif action == "complete":
             self.subscribe_oper.add_history(**subscribe.to_dict())
             self.subscribe_oper.delete(subscribe.id)
-            eventmanager.send_event(EventType.SubscribeComplete, {
-                "subscribe_id": subscribe.id,
-                "subscribe_info": subscribe.to_dict(),
-                "mediainfo": mediainfo.to_dict(),
-            })
         elif action == "delete":
             self.subscribe_oper.delete(sid=subscribe.id)
-            eventmanager.send_event(EventType.SubscribeDeleted, {
-                "subscribe_id": subscribe.id,
-                "subscribe_info": subscribe.to_dict()
-            })
+
+        self.clear_tasks(subscribe_id=subscribe.id, subscribe=subscribe.to_dict())
 
         meta = self.__get_subscribe_meta(subscribe=subscribe)
-        msg_title = f"{mediainfo.title_year} {meta.season} 近{no_download_days}天未有下载记录，已标记{action_name}"
+        msg_title = f"{mediainfo.title_year} {meta.season} 近 {no_download_days} 天未有下载记录，已标记{action_name}"
         self.__send_subscribe_status_msg(subscribe=subscribe, mediainfo=mediainfo, msg_title=msg_title)
         return True
 
@@ -2623,15 +2617,15 @@ class SubscribeAssistant(_PluginBase):
             return False, no_download_days
 
         # 获取订阅日期
-        subscribe_date, subscribe_day = self.__parse_date(subscribe.date)
+        subscribe_date, subscribe_day = self.__parse_date(day=subscribe.date, f="%Y-%m-%d %H:%M:%S")
 
         # 获取最后更新日期
-        last_update_date, last_update_day = self.__parse_date(subscribe.last_update)
+        last_update_date, last_update_day = self.__parse_date(day=subscribe.last_update, f="%Y-%m-%d %H:%M:%S")
 
         # 获取最近下载日期
         downloads = self.__get_related_download_histories(subscribe_id=subscribe.id, subscribe=subscribe)
         last_download_day = max([download.date for download in downloads]) if downloads else None
-        last_download_date, last_download_day = self.__parse_date(last_download_day)
+        last_download_date, last_download_day = self.__parse_date(day=last_download_day, f="%Y-%m-%d %H:%M:%S")
 
         # 计算无下载的截止日期
         dates = [date for date in [first_air_date, subscribe_date, last_update_date, last_download_date] if date]
@@ -2643,7 +2637,7 @@ class SubscribeAssistant(_PluginBase):
                      f"截止日期：{no_download_deadline.strftime('%Y-%m-%d')}")
 
         # 如果还没有超过最终日期，说明不需要执行任何动作，否则需要按执行策略进行处理
-        return no_download_deadline < current_date, no_download_days
+        return no_download_deadline < current_date, (current_date - max(dates)).days
 
     def __process_subscribe_pause_for_airing(self, subscribe_task: dict, subscribe: Subscribe,
                                              mediainfo: MediaInfo):
@@ -3800,14 +3794,14 @@ class SubscribeAssistant(_PluginBase):
         return related_downloads
 
     @staticmethod
-    def __parse_date(day: str):
+    def __parse_date(day: str, f: str = "%Y-%m-%d"):
         """
         格式化日期
         """
         try:
             if not day:
                 return None, None
-            date = datetime.strptime(day, "%Y-%m-%d")
+            date = datetime.strptime(day, f)
             return date, day
         except ValueError:
             logger.error(f"day 格式错误：{day}")
