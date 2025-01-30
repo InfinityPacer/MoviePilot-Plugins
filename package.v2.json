@@ -216,7 +216,7 @@
     },
     "SubscribeAssistant": {
         "name": "订阅助手",
-        "description": "实现多场景管理系统订阅与状态同步。",
+        "description": "多场景管理系统订阅，实现种子删除及订阅待定/暂停/洗版。",
         "labels": "订阅",
         "version": "2.4",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
