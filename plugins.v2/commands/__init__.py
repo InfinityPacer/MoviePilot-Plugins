@@ -314,7 +314,7 @@ class Commands(_PluginBase):
             logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
             return
 
-        event_data.source = self.__class__.__name__
+        event_data.source = self.plugin_name
         if event_data.origin == "CommandChain":
             # 每次传递，都更新预置指令
             config = self.get_config()

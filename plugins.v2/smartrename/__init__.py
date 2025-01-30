@@ -409,7 +409,7 @@ class SmartRename(_PluginBase):
             if updated_str and updated_str != event_data.render_str:
                 event_data.updated_str = updated_str
                 event_data.updated = True
-                event_data.source = self.__class__.__name__
+                event_data.source = self.plugin_name
                 logger.info(f"重命名完成，{event_data.render_str} -> {updated_str}")
             else:
                 logger.debug(f"重命名结果与原始值相同，跳过更新")
