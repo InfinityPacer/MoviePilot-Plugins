@@ -1,15 +1,8 @@
 import json
+import pytz
 import random
 import threading
 import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Tuple, Optional, Union, Callable
-
-import pytz
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from packaging.version import Version
-
 from app import schemas
 from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
@@ -32,6 +25,11 @@ from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventD
 from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import EventType, ChainEventType, MediaType, NotificationType
 from app.utils.string import StringUtils
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from datetime import datetime, timedelta
+from packaging.version import Version
+from typing import Any, Dict, List, Tuple, Optional, Union, Callable
 
 lock = threading.RLock()
 
@@ -3806,26 +3804,3 @@ class SubscribeAssistant(_PluginBase):
         except ValueError:
             logger.error(f"day 格式错误：{day}")
             return None, None
-
-    @staticmethod
-    def __compare_versions(version1: str, version2: str) -> int:
-        """
-        比较两个版本号的大小
-        :param version1: version1
-        :param version2: version2
-        :return: 1 (version2 > version1)
-               0 (version2 == version1)
-              -1 (version2 < version1)
-        """
-        try:
-            v1 = Version(version1)
-            v2 = Version(version2)
-            if v2 > v1:
-                return 1
-            elif v2 == v1:
-                return 0
-            else:
-                return -1
-        except Exception as e:
-            logger.error(f"Invalid version format: {e}")
-            return 0
