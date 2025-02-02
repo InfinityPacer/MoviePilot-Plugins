@@ -1,8 +1,16 @@
 import json
-import pytz
 import random
 import threading
 import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Tuple, Optional, Union, Callable
+
+import pytz
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from packaging.version import Version
+
 from app import schemas
 from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
@@ -12,7 +20,7 @@ from app.core.context import MediaInfo, Context, TorrentInfo
 from app.core.event import eventmanager, Event
 from app.core.metainfo import MetaInfo
 from app.db.downloadhistory_oper import DownloadHistoryOper
-from app.db.models import Subscribe, DownloadHistory
+from app.db.models import Subscribe, DownloadHistory, TransferHistory
 from app.db.subscribe_oper import SubscribeOper
 from app.db.transferhistory_oper import TransferHistoryOper
 from app.helper.downloader import DownloaderHelper
@@ -21,15 +29,10 @@ from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
 from app.schemas import ServiceInfo, TmdbEpisode
-from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData
+from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData, TransferInterceptEventData
 from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import EventType, ChainEventType, MediaType, NotificationType
 from app.utils.string import StringUtils
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from datetime import datetime, timedelta
-from packaging.version import Version
-from typing import Any, Dict, List, Tuple, Optional, Union, Callable
 
 lock = threading.RLock()
 
@@ -38,7 +41,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件名称
     plugin_name = "订阅助手"
     # 插件描述
-    plugin_desc = "多场景管理订阅，实现种子删除及订阅待定/暂停/洗版。"
+    plugin_desc = "多场景管理订阅，实现订阅超时删除以及自动待定/暂停/洗版。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
@@ -1039,6 +1042,27 @@ class SubscribeAssistant(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'error',
+                                            'variant': 'tonal',
+                                            'text': '注意：本插件可能导致订阅数据异常，媒体文件丢失，相关风险请自行评估与承担'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
@@ -1608,6 +1632,28 @@ class SubscribeAssistant(_PluginBase):
 
         self.__handle_resource_download_history_clear(subscribe=subscribe)
 
+    @eventmanager.register(etype=ChainEventType.TransferIntercept, priority=9999)
+    def handle_transfer_intercept_event(self, event: Event):
+        """
+        处理整理拦截事件
+        """
+        if not event or not event.event_data:
+            return
+
+        logger.debug(f"接收到整理拦截事件，事件信息: {event.event_data}")
+
+        event_data: TransferInterceptEventData = event.event_data
+        if event_data.cancel:
+            logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
+            return
+
+        if not event_data.mediainfo:
+            logger.debug(f"未能获取到媒体信息，跳过后续操作")
+            return
+
+        self.__handle_transfer_intercept_history_clear(mediainfo=event_data.mediainfo,
+                                                       target_path=event_data.target_path)
+
     def __handle_resource_download_pending(self, subscribe: Subscribe, context: Context,
                                            episodes: list, downloader: str):
         """
@@ -1647,9 +1693,9 @@ class SubscribeAssistant(_PluginBase):
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启清理整理记录，跳过处理")
             return
 
-        logger.info(f"即将开始清理洗版资源整理记录")
+        logger.info(f"即将开始清理洗版资源整理源文件记录")
         if not subscribe.tmdbid:
-            logger.debug(f"{self.__format_subscribe(subscribe)} 未能获取到 TMDBID，跳过处理")
+            logger.warning(f"{self.__format_subscribe(subscribe)} 未能获取到 TMDBID，跳过处理")
         if subscribe_type == MediaType.TV:
             meta = self.__get_subscribe_meta(subscribe)
             histories = self.transferhistory_oper.get_by(tmdbid=subscribe.tmdbid, mtype=subscribe.type,
@@ -1665,19 +1711,42 @@ class SubscribeAssistant(_PluginBase):
         logger.info(
             f"{self.__format_subscribe(subscribe)} TMDBID: {subscribe.tmdbid} 获取到 {len(histories)} 条整理记录，即将开始清理")
 
+        with lock:
+            tasks = self.__get_data(key="best_version_clear_histories")
+
+            self.__clear_transfer_src_histories(tasks=tasks, subscribe=subscribe, histories=histories)
+
+            self.__save_data(key="best_version_clear_histories", value=tasks)
+
+        # 强制睡眠5s，等待所有外部事件处理完成，如下载器种子清理等等
+        time.sleep(5)
+
+    def __clear_transfer_src_histories(self, tasks: dict, subscribe: Subscribe,
+                                       histories: list[TransferHistory]):
+        """
+        清理整理源文件历史记录
+        :param tasks: 任务集合
+        :param histories: 整理历史记录
+        """
+        if not subscribe.tmdbid:
+            return
+
+        tasks[subscribe.tmdbid] = {
+            "subscribe_id": subscribe.id,
+            "subscribe_desc": self.__format_subscribe(subscribe=subscribe),
+            "subscribe_image": self.__get_subscribe_image(subscribe=subscribe),
+            "histories": histories,
+            "time": time.time(),
+        }
+
         storge_chain = StorageChain()
         for history in histories:
-            logger.info(f"清理整理记录并删除相关文件：{history.src} -> {history.dest}")
-
-            # 删除媒体库文件
-            if history.dest_fileitem:
-                dest_fileitem = schemas.FileItem(**history.dest_fileitem)
-                storge_chain.delete_media_file(fileitem=dest_fileitem, mtype=MediaType(history.type))
+            logger.info(f"清理整理记录并删除源文件：{history.src}")
 
             # 删除源文件
             if history.src_fileitem:
                 src_fileitem = schemas.FileItem(**history.src_fileitem)
-                state = StorageChain().delete_media_file(src_fileitem)
+                state = storge_chain.delete_media_file(src_fileitem)
                 if not state:
                     logger.warning(f"{src_fileitem.path} 删除失败")
                 # 发送事件
@@ -1695,12 +1764,77 @@ class SubscribeAssistant(_PluginBase):
             self.post_message(
                 mtype=NotificationType.Subscribe,
                 title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 即将开始洗版下载",
-                text=f"已清理 {len(histories)} 条整理记录并删除源文件及媒体库文件",
+                text=f"已删除 {len(histories)} 条整理记录对应的源文件",
                 image=self.__get_subscribe_image(subscribe),
             )
 
-        # 强制睡眠5s，等待所有外部事件处理完成，如下载器种子清理等等
-        time.sleep(5)
+    def __handle_transfer_intercept_history_clear(self, mediainfo: MediaInfo, target_path: Path):
+        """
+        处理洗版资源整理时清理整理记录
+        """
+        if not mediainfo:
+            return
+
+        logger.info(f"即将开始清理洗版资源整理媒体库文件记录")
+
+        if not mediainfo.tmdb_id:
+            logger.warning(f"{self.__format_subscribe_desc(mediainfo=mediainfo)} 未能获取到 TMDBID，跳过处理")
+
+        with lock:
+            tasks = self.__get_data(key="best_version_clear_histories")
+            task = tasks.get(mediainfo.tmdb_id)
+            if not task:
+                return
+
+            if self.__clear_transfer_dest_histories(task=task, mediainfo=mediainfo, target_path=target_path):
+                self.__save_data(key="best_version_clear_histories", value=tasks)
+
+    def __clear_transfer_dest_histories(self, task: dict, mediainfo: MediaInfo, target_path: Path) -> bool:
+        """
+        清理整理媒体库文件历史记录
+        :param task: 任务
+        :param mediainfo: 媒体信息
+        :param target_path: 目标路径
+        """
+        if not task or not mediainfo:
+            return False
+
+        histories = task.get("histories")
+        if not histories:
+            return False
+
+        subscribe_desc = task.get("subscribe_desc")
+        subscribe_image = task.get("subscribe_image")
+
+        storge_chain = StorageChain()
+        for history in histories:
+            logger.info(f"清理整理记录并删除媒体库文件：{history.dest}")
+
+            # 删除源文件
+            if history.src_fileitem:
+                src_fileitem = schemas.FileItem(**history.src_fileitem)
+                state = storge_chain.delete_media_file(src_fileitem)
+                if not state:
+                    logger.warning(f"{src_fileitem.path} 删除失败")
+                # 发送事件
+                eventmanager.send_event(
+                    EventType.DownloadFileDeleted,
+                    {
+                        "src": history.src,
+                        "hash": history.download_hash
+                    }
+                )
+            # 删除记录
+            self.transferhistory_oper.delete(history.id)
+
+        if self._notify:
+            self.post_message(
+                mtype=NotificationType.Subscribe,
+                title=f"{subscribe_desc} 即将开始洗版整理",
+                text=f"已删除 {len(histories)} 条整理记录对应的媒体库文件",
+                image=subscribe_image,
+            )
+        return True
 
     def __get_downloader_service(self, downloader: str) -> Optional[ServiceInfo]:
         """
@@ -3097,7 +3231,8 @@ class SubscribeAssistant(_PluginBase):
         else:
             return f"未知类型: {subscribe.name} ({year}) [{subscribe.id}]"
 
-    def __format_subscribe_desc(self, subscribe: Subscribe, mediainfo: Optional[MediaInfo] = None) -> Optional[str]:
+    def __format_subscribe_desc(self, subscribe: Optional[Subscribe] = None, mediainfo: Optional[MediaInfo] = None) -> \
+            Optional[str]:
         """
         格式化订阅描述信息
         """
@@ -3804,3 +3939,26 @@ class SubscribeAssistant(_PluginBase):
         except ValueError:
             logger.error(f"day 格式错误：{day}")
             return None, None
+
+    @staticmethod
+    def __compare_versions(version1: str, version2: str) -> int:
+        """
+        比较两个版本号的大小
+        :param version1: version1
+        :param version2: version2
+        :return: 1 (version2 > version1)
+               0 (version2 == version1)
+              -1 (version2 < version1)
+        """
+        try:
+            v1 = Version(version1)
+            v2 = Version(version2)
+            if v2 > v1:
+                return 1
+            elif v2 == v1:
+                return 0
+            else:
+                return -1
+        except Exception as e:
+            logger.error(f"Invalid version format: {e}")
+            return 0
