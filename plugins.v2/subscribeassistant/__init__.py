@@ -1728,14 +1728,14 @@ class SubscribeAssistant(_PluginBase):
         :param tasks: 任务集合
         :param histories: 整理历史记录
         """
-        if not subscribe.tmdbid:
+        if not subscribe.tmdbid or not histories:
             return
 
         tasks[subscribe.tmdbid] = {
             "subscribe_id": subscribe.id,
             "subscribe_desc": self.__format_subscribe(subscribe=subscribe),
             "subscribe_image": self.__get_subscribe_image(subscribe=subscribe),
-            "histories": histories,
+            "histories": [history.to_dict() for history in histories],
             "time": time.time(),
         }
 
@@ -1782,11 +1782,13 @@ class SubscribeAssistant(_PluginBase):
 
         with lock:
             tasks = self.__get_data(key="best_version_clear_histories")
-            task = tasks.get(mediainfo.tmdb_id)
+            clear_key = str(mediainfo.tmdb_id)
+            task = tasks.get(clear_key)
             if not task:
                 return
 
             if self.__clear_transfer_dest_histories(task=task, mediainfo=mediainfo, target_path=target_path):
+                del tasks[clear_key]
                 self.__save_data(key="best_version_clear_histories", value=tasks)
 
     def __clear_transfer_dest_histories(self, task: dict, mediainfo: MediaInfo, target_path: Path) -> bool:
@@ -1801,31 +1803,23 @@ class SubscribeAssistant(_PluginBase):
 
         histories = task.get("histories")
         if not histories:
-            return False
+            return True
 
         subscribe_desc = task.get("subscribe_desc")
         subscribe_image = task.get("subscribe_image")
 
         storge_chain = StorageChain()
         for history in histories:
-            logger.info(f"清理整理记录并删除媒体库文件：{history.dest}")
+            dest = history.get("dest")
+            dest_fileitem = history.get("dest_fileitem")
+            logger.info(f"清理整理记录并删除媒体库文件：{dest}")
 
             # 删除源文件
-            if history.src_fileitem:
-                src_fileitem = schemas.FileItem(**history.src_fileitem)
-                state = storge_chain.delete_media_file(src_fileitem)
+            if dest_fileitem:
+                dest_fileitem = schemas.FileItem(**dest_fileitem)
+                state = storge_chain.delete_media_file(dest_fileitem)
                 if not state:
-                    logger.warning(f"{src_fileitem.path} 删除失败")
-                # 发送事件
-                eventmanager.send_event(
-                    EventType.DownloadFileDeleted,
-                    {
-                        "src": history.src,
-                        "hash": history.download_hash
-                    }
-                )
-            # 删除记录
-            self.transferhistory_oper.delete(history.id)
+                    logger.warning(f"{dest_fileitem.path} 删除失败")
 
         if self._notify:
             self.post_message(
