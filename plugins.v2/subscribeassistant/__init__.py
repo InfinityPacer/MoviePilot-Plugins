@@ -1733,7 +1733,7 @@ class SubscribeAssistant(_PluginBase):
 
         tasks[subscribe.tmdbid] = {
             "subscribe_id": subscribe.id,
-            "subscribe_desc": self.__format_subscribe(subscribe=subscribe),
+            "subscribe_desc": self.__format_subscribe_desc(subscribe=subscribe),
             "subscribe_image": self.__get_subscribe_image(subscribe=subscribe),
             "histories": [history.to_dict() for history in histories],
             "time": time.time(),
