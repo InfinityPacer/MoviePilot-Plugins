@@ -525,7 +525,7 @@ class SubscribeAssistant(_PluginBase):
                                                         'props': {
                                                             'model': 'tracker_response_listen',
                                                             'label': '监听Tracker响应关键字',
-                                                            'hint': 'Tracker响应关键字时将自动删除种子',
+                                                            'hint': '命中Tracker响应关键字时将自动删除种子',
                                                             'persistent-hint': True
                                                         }
                                                     }
