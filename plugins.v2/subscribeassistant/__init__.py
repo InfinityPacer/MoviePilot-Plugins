@@ -1132,13 +1132,13 @@ class SubscribeAssistant(_PluginBase):
                             {
                                 "component": "VCard",
                                 "props": {
-                                    "title": "设置Tracker响应关键字"
+                                    "title": "自定义Tracker配置"
                                 },
                                 "content": [
                                     {
                                         "component": "VDialogCloseBtn",
                                         "props": {
-                                            "model": "dialog_closed"
+                                            "model": "open_tracker_dialog"
                                         }
                                     },
                                     {
