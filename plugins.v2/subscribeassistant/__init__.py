@@ -1,5 +1,6 @@
 import json
 import random
+import re
 import threading
 import time
 from datetime import datetime, timedelta
@@ -75,6 +76,12 @@ class SubscribeAssistant(_PluginBase):
     _auto_download_delete = False
     # 监听手动删除种子
     _manual_delete_listen = False
+    # 监听Tracker响应关键字
+    _tracker_response_listen = False
+    # Tracker响应关键字
+    _tracker_response = None
+    # Tracker响应关键字集合
+    _tracker_responses = []
     # 删除后触发搜索补全
     _auto_search_when_delete = False
     # 跳过删除记录
@@ -150,6 +157,14 @@ class SubscribeAssistant(_PluginBase):
         self._onlyonce = config.get("onlyonce", False)
         self._auto_download_delete = config.get("auto_download_delete", True)
         self._manual_delete_listen = config.get("manual_delete_listen", True)
+        self._tracker_response_listen = config.get("tracker_response_listen", True)
+        self._tracker_response = config.get("tracker_response") or self.__get_default_tracker_response()
+        if self._tracker_response:
+            self._tracker_responses = [keyword.strip() for keyword in self._tracker_response.split("\n") if
+                                       keyword.strip()]
+        else:
+            self._tracker_responses = []
+        self._tracker_response_listen = config.get("tracker_response_listen", True)
         self._auto_search_when_delete = config.get("auto_search_when_delete", True)
         self._delete_exclude_tags = config.get("delete_exclude_tags", "H&R")
         self._auto_tv_pending = config.get("auto_tv_pending", True)
@@ -466,7 +481,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 3
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -484,7 +499,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 3
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -502,7 +517,48 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 3
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'tracker_response_listen',
+                                                            'label': '监听Tracker响应关键字',
+                                                            'hint': 'Tracker响应关键字时将自动删除种子',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'open_tracker_dialog',
+                                                            'label': '打开Tracker配置窗口',
+                                                            'hint': '自定义Tracker配置以实现更精准的种子匹配',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -520,7 +576,7 @@ class SubscribeAssistant(_PluginBase):
                                                 'component': 'VCol',
                                                 'props': {
                                                     'cols': 12,
-                                                    'md': 3
+                                                    'md': 4
                                                 },
                                                 'content': [
                                                     {
@@ -1063,6 +1119,60 @@ class SubscribeAssistant(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        "component": "VDialog",
+                        "props": {
+                            "model": "open_tracker_dialog",
+                            "max-width": "65rem",
+                            "overlay-class": "v-dialog--scrollable v-overlay--scroll-blocked",
+                            "content-class": "v-card v-card--density-default v-card--variant-elevated rounded-t"
+                        },
+                        "content": [
+                            {
+                                "component": "VCard",
+                                "props": {
+                                    "title": "设置Tracker响应关键字"
+                                },
+                                "content": [
+                                    {
+                                        "component": "VDialogCloseBtn",
+                                        "props": {
+                                            "model": "dialog_closed"
+                                        }
+                                    },
+                                    {
+                                        "component": "VCardText",
+                                        "props": {},
+                                        "content": [
+                                            {
+                                                'component': 'VRow',
+                                                'content': [
+                                                    {
+                                                        'component': 'VCol',
+                                                        'props': {
+                                                            'cols': 12,
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'VTextarea',
+                                                                'props': {
+                                                                    'model': 'tracker_response',
+                                                                    'label': 'Tracker响应关键字',
+                                                                    'rows': 10,
+                                                                    'hint': '每一行一个关键字，忽略大小写，支持正则表达式匹配',
+                                                                    'persistent-hint': True
+                                                                }
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
@@ -1090,7 +1200,9 @@ class SubscribeAssistant(_PluginBase):
             "meta_check_interval": 6,
             "auto_best_type": "no",
             "auto_best_clear_history_type": "no",
-            "auto_best_cron": "0 15 * * *"
+            "auto_best_cron": "0 15 * * *",
+            "tracker_response": self.__get_default_tracker_response(),
+            "tracker_response_listen": True,
         }
 
     def get_page(self) -> List[dict]:
@@ -1112,7 +1224,8 @@ class SubscribeAssistant(_PluginBase):
 
         services = []
         if self._download_check_interval and (
-                self._auto_download_delete or self._manual_delete_listen or self._auto_download_pending):
+                self._auto_download_delete or self._manual_delete_listen or
+                self._tracker_response_listen or self._auto_download_pending):
             services.append({
                 "id": f"{self.__class__.__name__}_download",
                 "name": f"下载检查",
@@ -1174,6 +1287,8 @@ class SubscribeAssistant(_PluginBase):
             "download_check_interval": self._download_check_interval,
             "auto_download_delete": self._auto_download_delete,
             "manual_delete_listen": self._manual_delete_listen,
+            "tracker_response_listen": self._tracker_response_listen,
+            "tracker_response": self._tracker_response,
             "auto_search_when_delete": self._auto_search_when_delete,
             "delete_exclude_tags": self._delete_exclude_tags,
             "auto_tv_pending": self._auto_tv_pending,
@@ -1230,7 +1345,8 @@ class SubscribeAssistant(_PluginBase):
         """
         下载检查
         """
-        if not self._auto_download_delete or not self._manual_delete_listen or not self._auto_download_pending:
+        if (not self._auto_download_delete or not self._manual_delete_listen or
+                not self._tracker_response_listen or not self._auto_download_pending):
             return
 
         logger.info("开始清理超时种子记录...")
@@ -1469,9 +1585,10 @@ class SubscribeAssistant(_PluginBase):
             if not event or not event.event_data:
                 return
 
-            # 下载超时删除/监听手动删除/下载自动待定功能未开启
-            if not self._auto_download_delete or not self._manual_delete_listen and not self._auto_download_pending:
-                logger.debug("下载超时删除/监听手动删除/下载自动待定功能未开启，跳过处理")
+            # 下载超时删除/监听手动删除/监听Tracker响应关键字/下载自动待定功能未开启
+            if (not self._auto_download_delete or not self._manual_delete_listen or
+                    not self._tracker_response_listen or not self._auto_download_pending):
+                logger.debug("下载超时删除/监听手动删除/监听Tracker响应关键字/下载自动待定功能未开启，跳过处理")
                 return
 
             torrent_hash = event.event_data.get("hash")
@@ -2022,6 +2139,9 @@ class SubscribeAssistant(_PluginBase):
             tags = torrent.get("tags")
             # tracker
             tracker = torrent.get("tracker")
+            # tracker_responses
+            trackers = [tracker for tracker in torrent.trackers if tracker.tier != -1] if torrent.trackers else []
+            tracker_responses = [tracker.msg for tracker in trackers if tracker.msg] if trackers else []
             # state
             state = torrent.get("state")
         # TR
@@ -2062,7 +2182,7 @@ class SubscribeAssistant(_PluginBase):
             # 种子大小
             total_size = torrent.total_size
             # 目标大小
-            target_size = torrent.size_when_done
+            target_size = torrent.size_when_done if "size_when_done" in torrent.fields else total_size
             # 添加时间
             add_on = (torrent.date_added.timestamp() if torrent.date_added else 0)
             add_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(add_on))
@@ -2070,6 +2190,11 @@ class SubscribeAssistant(_PluginBase):
             tags = torrent.get("tags")
             # tracker
             tracker = torrent.get("tracker")
+            # tracker_responses
+            trackers = [tracker for tracker in torrent.tracker_stats if
+                        tracker.tier != -1] if torrent.tracker_stats else []
+            tracker_responses = [tracker.last_announce_result for tracker in trackers if
+                                 tracker.last_announce_result] if trackers else []
             # state
             state = torrent.status
         return {
@@ -2088,6 +2213,7 @@ class SubscribeAssistant(_PluginBase):
             "add_on": add_on,
             "tags": tags,
             "tracker": tracker,
+            "tracker_responses": tracker_responses,
             "state": state,
         }
 
@@ -2180,7 +2306,8 @@ class SubscribeAssistant(_PluginBase):
         """
         处理下载种子任务并清理异常种子
         """
-        if not self._auto_download_delete or not self._manual_delete_listen or not self._auto_download_pending:
+        if (not self._auto_download_delete or not self._manual_delete_listen or
+                not self._tracker_response_listen or not self._auto_download_pending):
             return
 
         with lock:
@@ -2256,7 +2383,8 @@ class SubscribeAssistant(_PluginBase):
             service = self.__get_downloader_service(downloader=downloader)
             if not service:
                 logger.debug(f"获取下载器 {downloader} 实例失败，请检查配置，种子任务: {torrent_desc}")
-                invalid_torrent_hashes.append(torrent_hash)
+                # 部分情况下，下载器可能会失联，这里不在直接移除种子
+                # invalid_torrent_hashes.append(torrent_hash)
                 continue
 
             torrent = self.__get_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
@@ -2291,29 +2419,58 @@ class SubscribeAssistant(_PluginBase):
                 ]
             else:
                 logger.debug(f"种子任务 {torrent_desc} 尚未完成，下载时长 {download_time / 3600 :.2f}")
-                if not timeout_check or not self._auto_download_delete:
+
+                deletion_reason = None
+
+                # 1. 判断 Tracker 响应关键字是否满足删除条件
+                if self._tracker_response_listen and self._tracker_responses:
+                    tracker_responses = torrent_info.get("tracker_responses") or []
+                    if tracker_responses:
+                        matched_keyword = None
+                        for pattern in self._tracker_responses:
+                            for response in tracker_responses:
+                                # 使用正则匹配（可在 pattern 内部或通过 re.I 忽略大小写）
+                                if re.search(pattern, response, re.I):
+                                    matched_keyword = pattern
+                                    break
+                            if matched_keyword:
+                                break
+                        if matched_keyword:
+                            deletion_reason = f"订阅种子命中 Tracker 响应关键字（{matched_keyword}）删除"
+
+                # 2. 判断超时删除条件（只有当 Tracker 未触发时才检查超时）
+                if not deletion_reason:
+                    if timeout_check and self._auto_download_delete and download_time >= self._download_timeout * 3600:
+                        deletion_reason = "订阅种子下载超时删除"
+
+                if not deletion_reason:
                     continue
 
-                if download_time < self._download_timeout * 3600:
-                    continue
-
+                # 3. 如果满足删除条件，则统一调用删除接口，检查是否存在排除删除的标签
                 if self._delete_exclude_tags:
                     torrent_tags = self.__get_torrent_tags(torrent=torrent, dl_type=service.type)
                     if torrent_tags:
-                        intersection_tags = set(self._delete_exclude_tags.split(",")) & set(torrent_tags)
+                        # 对配置的排除标签进行 trim 并转换为集合
+                        exclude_tags = set(
+                            tag.strip() for tag in self._delete_exclude_tags.split(",") if tag.strip())
+                        intersection_tags = exclude_tags & set(torrent_tags)
                         if intersection_tags:
-                            logger.debug(
-                                f"种子任务 {torrent_desc} 已超时，但满足不删除标签 {intersection_tags}，跳过处理")
+                            logger.debug(f"种子任务 {torrent_desc} 满足删除条件（{deletion_reason}），"
+                                         f"但满足不删除标签 {intersection_tags}，跳过处理")
                             continue
 
-                logger.info(f"种子任务 {torrent_desc} 已超时，即将删除并从订阅种子任务中移除")
+                logger.info(f"种子任务 {torrent_desc} 满足删除条件：{deletion_reason}，即将删除并从订阅种子任务中移除")
                 self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
-
-                self.__clean_torrent_task_by_hash(subscribe=subscribe, subscribe_task=subscribe_task,
-                                                  subscribe_torrent_tasks=subscribe_torrent_tasks,
-                                                  triggered_subscribe_ids=triggered_subscribe_ids,
-                                                  torrent_hash=torrent_hash, torrent_task=torrent_task,
-                                                  torrent_tasks=torrent_tasks, reason="订阅种子下载超时删除")
+                self.__clean_torrent_task_by_hash(
+                    subscribe=subscribe,
+                    subscribe_task=subscribe_task,
+                    subscribe_torrent_tasks=subscribe_torrent_tasks,
+                    triggered_subscribe_ids=triggered_subscribe_ids,
+                    torrent_hash=torrent_hash,
+                    torrent_task=torrent_task,
+                    torrent_tasks=torrent_tasks,
+                    reason=deletion_reason
+                )
 
         self.__clean_invalid_torrents(invalid_torrent_hashes, subscribe_tasks, torrent_tasks)
 
@@ -3937,6 +4094,14 @@ class SubscribeAssistant(_PluginBase):
         except ValueError:
             logger.error(f"day 格式错误：{day}")
             return None, None
+
+    @staticmethod
+    def __get_default_tracker_response():
+        """
+        获取默认Tracker响应关键字
+        """
+        return """torrent not registered with this tracker
+torrent banned"""
 
     @staticmethod
     def __compare_versions(version1: str, version2: str) -> int:
