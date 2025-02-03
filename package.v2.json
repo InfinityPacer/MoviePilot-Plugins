@@ -218,11 +218,12 @@
         "name": "订阅助手",
         "description": "多场景管理订阅，实现订阅任务超时删除以及自动待定/暂停/洗版。",
         "labels": "订阅",
-        "version": "2.5",
+        "version": "2.6",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v2.6": "支持配置Tracker响应关键字，通过监听Tracker响应自动删除订阅任务",
             "v2.5": "优化洗版资源清理，删除媒体库文件操作延后至资源整理阶段，需要MoviePilot v2.2.7+",
             "v2.4": "支持订阅无下载时自动暂停/完成/删除",
             "v2.3": "增加即将播出暂停天数，用于支持在追剧长时间断更时自动暂停订阅",
