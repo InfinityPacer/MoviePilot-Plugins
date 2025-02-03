@@ -1693,9 +1693,9 @@ class SubscribeAssistant(_PluginBase):
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启清理整理记录，跳过处理")
             return
 
-        logger.info(f"即将开始清理洗版资源整理源文件记录")
         if not subscribe.tmdbid:
             logger.warning(f"{self.__format_subscribe(subscribe)} 未能获取到 TMDBID，跳过处理")
+
         if subscribe_type == MediaType.TV:
             meta = self.__get_subscribe_meta(subscribe)
             histories = self.transferhistory_oper.get_by(tmdbid=subscribe.tmdbid, mtype=subscribe.type,
@@ -1707,6 +1707,8 @@ class SubscribeAssistant(_PluginBase):
             logger.info(
                 f"{self.__format_subscribe(subscribe)} TMDBID: {subscribe.tmdbid} 未能获取到匹配的整理记录，跳过处理")
             return
+
+        logger.info(f"即将开始清理洗版资源整理源文件记录")
 
         logger.info(
             f"{self.__format_subscribe(subscribe)} TMDBID: {subscribe.tmdbid} 获取到 {len(histories)} 条整理记录，即将开始清理")
@@ -1775,8 +1777,6 @@ class SubscribeAssistant(_PluginBase):
         if not mediainfo:
             return
 
-        logger.info(f"即将开始清理洗版资源整理媒体库文件记录")
-
         if not mediainfo.tmdb_id:
             logger.warning(f"{self.__format_subscribe_desc(mediainfo=mediainfo)} 未能获取到 TMDBID，跳过处理")
 
@@ -1805,8 +1805,12 @@ class SubscribeAssistant(_PluginBase):
         if not histories:
             return True
 
+        logger.info(f"即将开始清理洗版资源整理媒体库文件记录")
+
         subscribe_desc = task.get("subscribe_desc")
         subscribe_image = task.get("subscribe_image")
+
+        logger.info(f"{subscribe_desc} TMDBID: {mediainfo.tmdb_id} 获取到 {len(histories)} 条整理记录，即将开始清理")
 
         storge_chain = StorageChain()
         for history in histories:
@@ -1814,7 +1818,7 @@ class SubscribeAssistant(_PluginBase):
             dest_fileitem = history.get("dest_fileitem")
             logger.info(f"清理整理记录并删除媒体库文件：{dest}")
 
-            # 删除源文件
+            # 删除媒体库文件
             if dest_fileitem:
                 dest_fileitem = schemas.FileItem(**dest_fileitem)
                 state = storge_chain.delete_media_file(dest_fileitem)
