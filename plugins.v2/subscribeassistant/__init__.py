@@ -2436,12 +2436,12 @@ class SubscribeAssistant(_PluginBase):
                             if matched_keyword:
                                 break
                         if matched_keyword:
-                            deletion_reason = f"订阅种子命中 Tracker 响应关键字（{matched_keyword}）删除"
+                            deletion_reason = f"订阅种子，命中 Tracker 响应关键字（{matched_keyword}）"
 
                 # 2. 判断超时删除条件（只有当 Tracker 未触发时才检查超时）
                 if not deletion_reason:
                     if timeout_check and self._auto_download_delete and download_time >= self._download_timeout * 3600:
-                        deletion_reason = "订阅种子下载超时删除"
+                        deletion_reason = f"订阅种子，下载时长超时（{download_time / 3600 :.2f}）"
 
                 if not deletion_reason:
                     continue
@@ -2577,7 +2577,7 @@ class SubscribeAssistant(_PluginBase):
             # 推送消息
             self.post_message(
                 mtype=NotificationType.Subscribe,
-                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} {reason}",
+                title=f"{self.__format_subscribe_desc(subscribe=subscribe)} {reason}，已删除",
                 text=msg_text,
                 image=self.__get_subscribe_image(subscribe),
             )
