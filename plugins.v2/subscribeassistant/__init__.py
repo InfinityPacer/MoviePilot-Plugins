@@ -4000,19 +4000,39 @@ class SubscribeAssistant(_PluginBase):
         :param mediainfo: 媒体信息
         :param season: 季数
         """
+        # 尝试从 season_info 中获取上映日期
         air_day = None
         for season_info in mediainfo.season_info:
             if season_info.get("season_number") == season:
                 air_day = season_info.get("air_date")
-                continue
+                break
 
-        if not air_day:
-            # 未找到与订阅季数匹配的上映日期
-            logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season} 对应的 上映日期")
+        # 如果获取到有效的上映日期，则尝试解析后返回
+        if air_day:
+            air_date, air_day = self.__parse_date(air_day)
+            if air_date:
+                return air_date, air_day
+            else:
+                logger.warning(f"{mediainfo.title} 季 {season} 的上映日期格式不正确，尝试从集的详细信息中获取")
+        else:
+            logger.warning(f"{mediainfo.title} 未找到季 {season} 的上映日期，尝试从集的详细信息中获取")
+
+        # 未能从 season_info 中获取有效日期时，从剧集详情中获取
+        episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
+        if not episodes:
+            logger.warning(f"{mediainfo.title} 未找到季 {season} 的剧集信息，未能获取到上映日期")
             return None, None
 
-        air_date, air_day = self.__parse_date(day=air_day)
-        return air_date, air_day
+        episodes = [ep for ep in episodes if ep.episode_number is not None]
+        episodes.sort(key=lambda x: x.episode_number)
+        for ep in episodes:
+            if ep.air_date:
+                ep_date, ep_day = self.__parse_date(ep.air_date)
+                if ep_date:
+                    return ep_date, ep_day
+
+        logger.warning(f"{mediainfo.title} 季 {season} 未能从剧集信息中获取到上映日期")
+        return None, None
 
     @staticmethod
     def __get_tv_season_episode_count(mediainfo: MediaInfo, season: int) -> Optional[int]:
