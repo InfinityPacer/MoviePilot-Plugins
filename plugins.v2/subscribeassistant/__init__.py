@@ -2649,6 +2649,7 @@ class SubscribeAssistant(_PluginBase):
 
         if "state" not in different_keys:
             logger.debug(f"{self.__format_subscribe(subscribe=subscribe)} 状态未更新，跳过处理")
+            return
 
         # 获取或初始化订阅任务
         subscribe_task, exists = self.__initialize_subscribe_task(subscribe, subscribe_tasks)
