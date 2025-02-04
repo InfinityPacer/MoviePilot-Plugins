@@ -216,7 +216,7 @@
     },
     "SubscribeAssistant": {
         "name": "订阅助手",
-        "description": "多场景管理订阅，实现订阅任务超时删除以及自动待定/暂停/洗版。",
+        "description": "多场景管理订阅，实现订阅种子删除以及自动待定/暂停/洗版。",
         "labels": "订阅",
         "version": "2.6.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
@@ -240,7 +240,7 @@
             "v1.3": "增加重置数据以及修复一些细节问题",
             "v1.2": "增加跳过超时种子以及修复一些细节问题",
             "v1.1": "增加自动洗版以及修复一些细节问题",
-            "v1.0": "增加订阅助手插件，支持多场景管理订阅，实现订阅任务超时删除以及自动待定/暂停/洗版"
+            "v1.0": "增加订阅助手插件，支持多场景管理订阅，实现订阅种子删除以及自动待定/暂停/洗版"
         }
     },
     "PlexMatch": {
