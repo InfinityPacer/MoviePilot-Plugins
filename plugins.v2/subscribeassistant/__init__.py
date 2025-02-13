@@ -29,7 +29,7 @@ from app.log import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
-from app.schemas import ServiceInfo, TmdbEpisode
+from app.schemas import ServiceInfo, TmdbEpisode, TransferInfo
 from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData, TransferInterceptEventData
 from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import EventType, ChainEventType, MediaType, NotificationType
@@ -1345,8 +1345,8 @@ class SubscribeAssistant(_PluginBase):
         """
         下载检查
         """
-        if (not self._auto_download_delete or not self._manual_delete_listen or
-                not self._tracker_response_listen or not self._auto_download_pending):
+        if not (self._auto_download_delete or self._manual_delete_listen or
+                self._tracker_response_listen or self._auto_download_pending):
             return
 
         logger.info("开始清理超时种子记录...")
@@ -1361,7 +1361,7 @@ class SubscribeAssistant(_PluginBase):
         """
         元数据检查
         """
-        if not self._auto_tv_pending and not self._auto_pause:
+        if not (self._auto_tv_pending or self._auto_pause):
             return
 
         logger.info("开始检查订阅暂停...")
@@ -1465,7 +1465,7 @@ class SubscribeAssistant(_PluginBase):
                 return
 
             # 自动待定/暂停功能未开启
-            if not self._auto_tv_pending and not self._auto_pause:
+            if not (self._auto_tv_pending or self._auto_pause):
                 logger.debug("自动待定/暂停功能未开启，跳过处理")
                 return
 
@@ -1586,8 +1586,8 @@ class SubscribeAssistant(_PluginBase):
                 return
 
             # 下载超时删除/监听手动删除/监听Tracker响应关键字/下载自动待定功能未开启
-            if (not self._auto_download_delete or not self._manual_delete_listen or
-                    not self._tracker_response_listen or not self._auto_download_pending):
+            if not (self._auto_download_delete or self._manual_delete_listen or
+                    self._tracker_response_listen or self._auto_download_pending):
                 logger.debug("下载超时删除/监听手动删除/监听Tracker响应关键字/下载自动待定功能未开启，跳过处理")
                 return
 
@@ -1771,6 +1771,28 @@ class SubscribeAssistant(_PluginBase):
         self.__handle_transfer_intercept_history_clear(mediainfo=event_data.mediainfo,
                                                        target_path=event_data.target_path)
 
+    @eventmanager.register(etype=EventType.TransferComplete)
+    def handle_transfer_complete_event(self, event: Event):
+        """
+        处理整理完成事件
+        """
+        if not event or not event.event_data:
+            return
+
+        event_data = event.event_data
+        transfer_info: TransferInfo = event_data.get("transferinfo")
+        downloader = event_data.get("downloader")
+        download_hash = event_data.get("download_hash")
+        if not transfer_info:
+            logger.debug(f"未能获取到整理信息，跳过后续操作")
+            return
+
+        logger.debug(
+            f"接收到整理完成事件，整理文件信息: {transfer_info.fileitem}，整理类型：{transfer_info.transfer_type}，"
+            f"下载器：{downloader}，种子：{download_hash}")
+
+        self.__handle_transfer_complete_remove_torrent(transfer_info, downloader, download_hash)
+
     def __handle_resource_download_pending(self, subscribe: Subscribe, context: Context,
                                            episodes: list, downloader: str):
         """
@@ -1951,6 +1973,32 @@ class SubscribeAssistant(_PluginBase):
             )
         return True
 
+    def __handle_transfer_complete_remove_torrent(self, transfer_info: TransferInfo, downloader: str,
+                                                  download_hash: str):
+        """
+        处理整理完成移动模式种子删除同步
+        """
+        if not transfer_info or transfer_info.transfer_type != "move":
+            return
+
+        if not downloader or not download_hash:
+            return
+
+        with lock:
+            # 获取订阅任务和种子任务数据
+            subscribe_tasks = self.__get_data(key="subscribes")
+            torrent_tasks = self.__get_data(key="torrents")
+            if download_hash not in torrent_tasks:
+                return
+            torrent_task = torrent_tasks[download_hash]
+            torrent_desc = self.__get_torrent_desc(torrent_hash=download_hash, torrent_task=torrent_task)
+            self.__clean_invalid_torrents(invalid_torrent_hashes=[download_hash], subscribe_tasks=subscribe_tasks,
+                                          torrent_tasks=torrent_tasks)
+            logger.info(f"订阅种子 {torrent_desc} 已整理入库，整理类型：{transfer_info.transfer_type}，相关订阅任务已清理")
+            # 保存更新后的数据
+            self.__save_data(key="subscribes", value=subscribe_tasks)
+            self.__save_data(key="torrents", value=torrent_tasks)
+
     def __get_downloader_service(self, downloader: str) -> Optional[ServiceInfo]:
         """
         获取下载器服务
@@ -1958,10 +2006,6 @@ class SubscribeAssistant(_PluginBase):
         service = self.downloader_helper.get_service(name=downloader)
         if not service:
             logger.error(f"{downloader} 获取下载器实例失败，请检查配置")
-            return None
-
-        if service.instance.is_inactive():
-            logger.error(f"下载器 {downloader} 未连接")
             return None
 
         return service
@@ -2306,8 +2350,8 @@ class SubscribeAssistant(_PluginBase):
         """
         处理下载种子任务并清理异常种子
         """
-        if (not self._auto_download_delete or not self._manual_delete_listen or
-                not self._tracker_response_listen or not self._auto_download_pending):
+        if not (self._auto_download_delete or self._manual_delete_listen or
+                self._tracker_response_listen or self._auto_download_pending):
             return
 
         with lock:
@@ -2383,8 +2427,11 @@ class SubscribeAssistant(_PluginBase):
             service = self.__get_downloader_service(downloader=downloader)
             if not service:
                 logger.debug(f"获取下载器 {downloader} 实例失败，请检查配置，种子任务: {torrent_desc}")
+                invalid_torrent_hashes.append(torrent_hash)
+                continue
+
+            if not service.instance.is_inactive():
                 # 部分情况下，下载器可能会失联，这里不在直接移除种子
-                # invalid_torrent_hashes.append(torrent_hash)
                 continue
 
             torrent = self.__get_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
