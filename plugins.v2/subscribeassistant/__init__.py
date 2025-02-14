@@ -2430,7 +2430,8 @@ class SubscribeAssistant(_PluginBase):
                 invalid_torrent_hashes.append(torrent_hash)
                 continue
 
-            if not service.instance.is_inactive():
+            if service.instance.is_inactive():
+                logger.debug(f"下载器 {service.name} 未连接")
                 # 部分情况下，下载器可能会失联，这里不在直接移除种子
                 continue
 
