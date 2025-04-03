@@ -2176,8 +2176,11 @@ class BrushFlowLowFreq(_PluginBase):
             if not condition_passed:
                 continue
 
+            # 判断种子HR
+            hit_and_run = torrent.hit_and_run or brush_config.site_hr_active
+
             # 添加下载任务
-            hash_string = self.__download(torrent=torrent)
+            hash_string = self.__download(torrent=torrent, hit_and_run = hit_and_run)
             if not hash_string:
                 logger.warning(f"{torrent.title} 添加刷流任务失败！")
                 continue
@@ -2204,7 +2207,7 @@ class BrushFlowLowFreq(_PluginBase):
                 "freedate": torrent.freedate,
                 "uploadvolumefactor": torrent.uploadvolumefactor,
                 "downloadvolumefactor": torrent.downloadvolumefactor,
-                "hit_and_run": torrent.hit_and_run or brush_config.site_hr_active,
+                "hit_and_run": hit_and_run,
                 "volume_factor": torrent.volume_factor,
                 "freedate_diff": torrent.freedate_diff,
                 # "labels": torrent.labels,
@@ -2942,6 +2945,8 @@ class BrushFlowLowFreq(_PluginBase):
 
         site_id, site_name = self.__get_site_by_torrent(torrent=torrent)
 
+        tags = torrent_info.get("tags", None)
+
         torrent_task = {
             "site": site_id,
             "site_name": site_name,
@@ -2955,7 +2960,7 @@ class BrushFlowLowFreq(_PluginBase):
             "freedate": None,
             "uploadvolumefactor": None,
             "downloadvolumefactor": None,
-            "hit_and_run": None,
+            "hit_and_run": True if "H&R" in tags else None,
             "volume_factor": None,
             "freedate_diff": None,  # 假设无法从torrent_info直接获取
             "ratio": torrent_info.get("ratio", 0),
@@ -3226,7 +3231,7 @@ class BrushFlowLowFreq(_PluginBase):
             logger.error(f"Error while resetting downloader URL for torrent: {torrent_url}. Error: {str(e)}")
             return torrent_url
 
-    def __download(self, torrent: TorrentInfo) -> Optional[str]:
+    def __download(self, torrent: TorrentInfo, hit_and_run: bool) -> Optional[str]:
         """
         添加下载任务
         """
@@ -3287,7 +3292,7 @@ class BrushFlowLowFreq(_PluginBase):
                                                download_dir=download_dir,
                                                cookie=cookies,
                                                category=brush_config.qb_category,
-                                               tag=["已整理", brush_config.brush_tag, tag],
+                                               tag = ["已整理", brush_config.brush_tag, tag] + (["H&R"] if hit_and_run else None),
                                                upload_limit=up_speed,
                                                download_limit=down_speed)
                 if not state:
@@ -3315,7 +3320,7 @@ class BrushFlowLowFreq(_PluginBase):
                 torrent = downloader.add_torrent(content=torrent_content,
                                                  download_dir=download_dir,
                                                  cookie=cookies,
-                                                 labels=["已整理", brush_config.brush_tag])
+                                                 labels=["已整理", brush_config.brush_tag] + (["H&R"] if hit_and_run else None))
                 if not torrent:
                     return None
                 else:
