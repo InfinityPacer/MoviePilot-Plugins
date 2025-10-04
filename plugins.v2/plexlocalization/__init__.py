@@ -73,7 +73,7 @@ class PlexLocalization(_PluginBase):
     # 每批次处理数量
     _batch_size = None
     # timeout
-    _timeout = 10
+    _timeout = 999
     # tags_json
     _tags_json = None
     # tags
