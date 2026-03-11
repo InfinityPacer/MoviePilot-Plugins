@@ -46,7 +46,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.7.1"
+    plugin_version = "2.7.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1827,7 +1827,10 @@ class SubscribeAssistant(_PluginBase):
             return
 
         # 如果订阅类型不在清理整理记录的策略中，则直接返回
-        subscribe_type = MediaType(subscribe.type)
+        subscribe_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if subscribe_type == MediaType.UNKNOWN:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体类型无效，跳过清理整理记录处理")
+            return
         if subscribe_type not in self._auto_best_clear_history_types:
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启清理整理记录，跳过处理")
             return
@@ -2585,7 +2588,10 @@ class SubscribeAssistant(_PluginBase):
         if not subscribe:
             return
 
-        media_type = MediaType(subscribe.type)
+        media_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if media_type == MediaType.UNKNOWN:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体类型无效，跳过删除后续处理")
+            return
         update_data = {}
         if media_type == MediaType.TV:
             episodes = torrent_task.get("episodes") or []
@@ -2858,7 +2864,10 @@ class SubscribeAssistant(_PluginBase):
             return False
 
         # 检查是否已经配置了无下载天数
-        subscribe_type = MediaType(subscribe.type)
+        subscribe_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if subscribe_type == MediaType.UNKNOWN:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体类型无效，跳过自动暂停（下载）处理")
+            return False
         if subscribe_type == MediaType.TV and self._auto_pause_tv_no_download_days is None:
             return False
         if subscribe_type == MediaType.MOVIE and self._auto_pause_movie_no_download_days is None:
@@ -2987,7 +2996,10 @@ class SubscribeAssistant(_PluginBase):
             return
 
         # 检查是否已经配置了暂停天数
-        subscribe_type = MediaType(subscribe.type)
+        subscribe_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if subscribe_type == MediaType.UNKNOWN:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体类型无效，跳过自动暂停（播出）处理")
+            return
         if subscribe_type == MediaType.TV and (
                 self._auto_pause_tv_air_days is None or self._auto_pause_tv_latest_days is None):
             return
@@ -3359,11 +3371,11 @@ class SubscribeAssistant(_PluginBase):
         meta = MetaInfo(subscribe.name)
         meta.year = subscribe.year
         meta.begin_season = subscribe.season or None
-        try:
-            meta.type = MediaType(subscribe.type)
-        except ValueError:
+        meta_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if meta_type == MediaType.UNKNOWN:
             logger.error(f"订阅 {subscribe.name} 类型错误：{subscribe.type}")
             return None
+        meta.type = meta_type
         try:
             # 识别媒体信息
             mediainfo: MediaInfo = self.chain.recognize_media(
@@ -3417,8 +3429,7 @@ class SubscribeAssistant(_PluginBase):
 
         return True
 
-    @staticmethod
-    def __format_subscribe(subscribe: Subscribe) -> str:
+    def __format_subscribe(self, subscribe: Subscribe) -> str:
         """
         格式化订阅信息
         """
@@ -3426,7 +3437,7 @@ class SubscribeAssistant(_PluginBase):
             return "无效的订阅信息"
 
         # 基于订阅类型拼接不同的字符串格式
-        mediatype = MediaType(subscribe.type)
+        mediatype = self.__resolve_subscribe_media_type(subscribe=subscribe)
         year = subscribe.year if subscribe.year else "Unknown"
         if mediatype == MediaType.TV:
             return f"剧集: {subscribe.name} ({year}) 季{subscribe.season} [{subscribe.id}]"
@@ -3739,15 +3750,14 @@ class SubscribeAssistant(_PluginBase):
             return subscribe.poster.replace("original", "w500")
         return ""
 
-    @staticmethod
-    def __get_subscribe_meta(subscribe: Subscribe) -> MetaInfo:
+    def __get_subscribe_meta(self, subscribe: Subscribe) -> MetaInfo:
         """
         获取订阅元数据
         """
         meta = MetaInfo(subscribe.name)
         meta.year = subscribe.year
         meta.begin_season = subscribe.season or None
-        meta.type = MediaType(subscribe.type)
+        meta.type = self.__resolve_subscribe_media_type(subscribe=subscribe)
         return meta
 
     def process_best_version_complete(self, subscribes: list[Subscribe]):
@@ -3819,7 +3829,10 @@ class SubscribeAssistant(_PluginBase):
             return
 
         # 如果订阅类型不在自动洗版的策略中，则直接返回
-        subscribe_type = MediaType(subscribe.type)
+        subscribe_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if subscribe_type == MediaType.UNKNOWN:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体类型无效，跳过自动洗版处理")
+            return
         if subscribe_type not in self._auto_best_types:
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启自动洗版，跳过处理")
             return
@@ -3969,12 +3982,44 @@ class SubscribeAssistant(_PluginBase):
         if not subscribe:
             return False
 
+        subscribe_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if subscribe_type == MediaType.UNKNOWN:
+            logger.warning(f"检测到无效订阅媒体类型，跳过处理：{self.__format_subscribe(subscribe)}")
+            return False
+
         # 检查订阅状态是否可处理
         if subscribe.state not in ["N", "R", "P"]:
             logger.debug(
                 f"{self.__format_subscribe(subscribe)} 当前状态为 {subscribe.state}，状态不允许处理，跳过处理")
             return False
         return True
+
+    @staticmethod
+    def __resolve_subscribe_media_type(subscribe: Optional[Subscribe]) -> MediaType:
+        """
+        安全解析订阅媒体类型，兼容脏数据（如 None、空字符串、非法值）
+        """
+        if not subscribe:
+            return MediaType.UNKNOWN
+
+        media_type = getattr(subscribe, "type", None)
+        if isinstance(media_type, MediaType):
+            return media_type
+
+        if isinstance(media_type, str):
+            media_type = media_type.strip()
+
+        if not media_type:
+            logger.warning(f"订阅媒体类型为空，订阅ID={getattr(subscribe, 'id', None)}，名称={getattr(subscribe, 'name', None)}")
+            return MediaType.UNKNOWN
+
+        try:
+            return MediaType(media_type)
+        except ValueError:
+            logger.warning(
+                f"订阅媒体类型非法：{media_type}，订阅ID={getattr(subscribe, 'id', None)}，名称={getattr(subscribe, 'name', None)}"
+            )
+            return MediaType.UNKNOWN
 
     def __check_tv_season_completed(self, mediainfo: MediaInfo, season: int) -> bool:
         """
@@ -4106,7 +4151,10 @@ class SubscribeAssistant(_PluginBase):
         """
         获取关联的下载记录
         """
-        subscribe_type = MediaType(subscribe.type)
+        subscribe_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if subscribe_type == MediaType.UNKNOWN:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体类型无效，跳过下载历史匹配")
+            return []
         if subscribe_type == MediaType.TV:
             meta = self.__get_subscribe_meta(subscribe)
             downloads = self.downloadhistory_oper.get_last_by(mtype=subscribe.type, title=subscribe.name,
