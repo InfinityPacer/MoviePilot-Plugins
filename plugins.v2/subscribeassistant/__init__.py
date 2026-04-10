@@ -46,7 +46,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.7.3"
+    plugin_version = "2.7.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1323,7 +1323,7 @@ class SubscribeAssistant(_PluginBase):
         subscribes = self.subscribe_oper.list("P")
         logger.info(f"开始重置任务，共有 {len(subscribes)} 个待定订阅任务")
         for subscribe in subscribes:
-            self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R", "manual_total_episode": 0})
+            self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R", "manual_total_episode": False})
             logger.info(f"待定订阅 {self.__format_subscribe(subscribe)} 已重置订阅状态为 R，手动更新集数状态为 False")
         SubscribeChain().check()
 
@@ -1747,7 +1747,7 @@ class SubscribeAssistant(_PluginBase):
         self.__handle_resource_download_pending(subscribe=subscribe, context=context,
                                                 episodes=episodes, downloader=downloader)
 
-        self.__handle_resource_download_history_clear(subscribe=subscribe)
+        self.__handle_resource_download_history_clear(subscribe=subscribe, context=context)
 
     @eventmanager.register(etype=ChainEventType.TransferIntercept, priority=9999)
     def handle_transfer_intercept_event(self, event: Event):
@@ -1819,7 +1819,7 @@ class SubscribeAssistant(_PluginBase):
 
         logger.debug(f"已完成资源下载自动待定处理")
 
-    def __handle_resource_download_history_clear(self, subscribe: Subscribe):
+    def __handle_resource_download_history_clear(self, subscribe: Subscribe, context: Optional[Context] = None):
         """
         处理洗版资源下载时清理整理记录
         """
@@ -1834,6 +1834,16 @@ class SubscribeAssistant(_PluginBase):
         if subscribe_type not in self._auto_best_clear_history_types:
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启清理整理记录，跳过处理")
             return
+
+        if subscribe_type == MediaType.TV and context and context.torrent_info:
+            if not self.__is_episode_range_covered(
+                    title=context.torrent_info.title,
+                    subtitle=context.torrent_info.description,
+                    subscribe=subscribe):
+                logger.info(
+                    f"{self.__format_subscribe(subscribe)} 当前洗版资源未覆盖订阅剧集范围，跳过清理整理记录"
+                )
+                return
 
         if not subscribe.tmdbid:
             logger.warning(f"{self.__format_subscribe(subscribe)} 未能获取到 TMDBID，跳过处理")
@@ -3261,7 +3271,7 @@ class SubscribeAssistant(_PluginBase):
             return None
 
         # 初始化更新字段
-        update_data = {"manual_total_episode": 1 if tv_pending else 0}
+        update_data = {"manual_total_episode": tv_pending}
 
         if tv_pending:
             episode_count = int(self._auto_update_tv_pending_episodes)
@@ -4213,6 +4223,26 @@ class SubscribeAssistant(_PluginBase):
         except ValueError:
             logger.error(f"day 格式错误：{day}")
             return None, None
+
+    @staticmethod
+    def __is_episode_range_covered(title: Optional[str], subtitle: Optional[str], subscribe: Subscribe) -> bool:
+        """
+        判断种子是否覆盖订阅剧集范围。
+        无法识别到剧集范围时，按合集处理以保持兼容。
+        """
+        meta = MetaInfo(title=title, subtitle=subtitle)
+        episodes = meta.episode_list
+        if not episodes:
+            return True
+
+        min_ep = min(episodes)
+        max_ep = max(episodes)
+        start_ep = subscribe.start_episode or 1
+        end_ep = subscribe.total_episode
+        if not end_ep:
+            return True
+
+        return min_ep <= start_ep and max_ep >= end_ep
 
     @staticmethod
     def __get_default_tracker_response():
