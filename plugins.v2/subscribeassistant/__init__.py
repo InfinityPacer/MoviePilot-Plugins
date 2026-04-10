@@ -46,7 +46,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.7.2"
+    plugin_version = "2.7.3"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -3870,6 +3870,8 @@ class SubscribeAssistant(_PluginBase):
         if mediainfo.type == MediaType.TV:
             subscribe_dict["lack_episode"] = subscribe_dict.get("total_episode")
 
+        # tmdb剧集组和当前版本疑似不兼容，暂时移除
+        subscribe_dict.pop("episode_group", None)
         # 添加订阅
         sid, err_msg = self.subscribe_oper.add(mediainfo=mediainfo,
                                                **subscribe_dict)
