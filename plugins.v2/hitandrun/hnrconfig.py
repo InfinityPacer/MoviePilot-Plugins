@@ -86,11 +86,20 @@ class HNRConfig(BaseConfig):
         return values
 
     @validator("*", pre=True, allow_reuse=True)
-    def __empty_string_to_float(cls, v, values, field):
+    def __empty_string_to_float(cls, v, values, info):
         """
         校验空字符
         """
-        if field.type_ is float and not v:
+        # Pydantic v1 传入 field（ModelField），v2 传入 info（ValidationInfo）
+        field_type = getattr(info, "type_", None)
+        if field_type is None:
+            field_name = getattr(info, "field_name", None)
+            if field_name:
+                model_fields = getattr(cls, "model_fields", None) or getattr(cls, "__fields__", {})
+                field_info = model_fields.get(field_name)
+                field_type = getattr(field_info, "annotation", None) or getattr(field_info, "type_", None)
+
+        if field_type is float and not v:
             return 0.0
         return v
 
