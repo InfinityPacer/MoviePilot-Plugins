@@ -1,6 +1,6 @@
 import json
 from enum import Enum
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union, get_origin, get_args
 
 from pydantic import BaseModel, root_validator, validator
 from ruamel.yaml import YAML, YAMLError
@@ -86,11 +86,12 @@ class HNRConfig(BaseConfig):
         return values
 
     @validator("*", pre=True, allow_reuse=True)
-    def __empty_string_to_float(cls, v, values, info):
+    def __empty_string_to_float(cls, v, values, **kwargs):
         """
         校验空字符
         """
-        # Pydantic v1 传入 field（ModelField），v2 传入 info（ValidationInfo）
+        # Pydantic v1 通过 field 传字段元信息，v2 通过 info 传字段元信息
+        info = kwargs.get("info") or kwargs.get("field")
         field_type = getattr(info, "type_", None)
         if field_type is None:
             field_name = getattr(info, "field_name", None)
@@ -99,9 +100,21 @@ class HNRConfig(BaseConfig):
                 field_info = model_fields.get(field_name)
                 field_type = getattr(field_info, "annotation", None) or getattr(field_info, "type_", None)
 
-        if field_type is float and not v:
+        if cls.__is_float_field_type(field_type) and (v is None or v == ""):
             return 0.0
         return v
+
+    @staticmethod
+    def __is_float_field_type(field_type) -> bool:
+        """
+        判断字段类型是否为 float（兼容 Optional[float]）
+        """
+        if field_type is float:
+            return True
+        origin = get_origin(field_type)
+        if origin is Union:
+            return float in get_args(field_type)
+        return False
 
     @validator("auto_cleanup_days", pre=True, allow_reuse=True)
     def set_default_auto_cleanup_days(cls, v):
