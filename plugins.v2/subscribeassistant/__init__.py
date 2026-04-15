@@ -46,7 +46,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.7.4"
+    plugin_version = "2.7.5"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1323,7 +1323,7 @@ class SubscribeAssistant(_PluginBase):
         subscribes = self.subscribe_oper.list("P")
         logger.info(f"开始重置任务，共有 {len(subscribes)} 个待定订阅任务")
         for subscribe in subscribes:
-            self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R", "manual_total_episode": False})
+            self.subscribe_oper.update(sid=subscribe.id, payload={"state": "R", "manual_total_episode": 0})
             logger.info(f"待定订阅 {self.__format_subscribe(subscribe)} 已重置订阅状态为 R，手动更新集数状态为 False")
         SubscribeChain().check()
 
@@ -3271,7 +3271,7 @@ class SubscribeAssistant(_PluginBase):
             return None
 
         # 初始化更新字段
-        update_data = {"manual_total_episode": tv_pending}
+        update_data = {"manual_total_episode": 1 if tv_pending else 0}
 
         if tv_pending:
             episode_count = int(self._auto_update_tv_pending_episodes)
@@ -3868,7 +3868,7 @@ class SubscribeAssistant(_PluginBase):
             return
 
         # 更新订阅字典
-        subscribe_dict["best_version"] = True
+        subscribe_dict["best_version"] = 1
         subscribe_dict["username"] = self.plugin_name
         subscribe_dict["state"] = "N"
         fields_to_pop = [
