@@ -222,11 +222,12 @@
         "name": "订阅助手",
         "description": "多场景管理订阅，实现订阅种子删除以及自动待定/暂停/洗版。",
         "labels": "订阅",
-        "version": "2.7.5",
+        "version": "2.8",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v2.8": "下载超时改为进度感知，并支持连续超时保护",
             "v2.7.5": "修复 PostgreSQL 下订阅整数字段写入布尔值导致的类型错误",
             "v2.7.4": "适配分割放送/合集洗版的剧集范围校验，并兼容 PostgreSQL 布尔字段写入",
             "v2.7.3": "同步 EkkoG 提供的修复，移除与 TMDB 剧集组不兼容的字段",

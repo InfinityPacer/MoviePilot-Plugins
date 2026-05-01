@@ -46,7 +46,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.7.5"
+    plugin_version = "2.8"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -88,6 +88,12 @@ class SubscribeAssistant(_PluginBase):
     _skip_deletion = True
     # 超时删除时间（小时）
     _download_timeout = 3
+    # 下载超时窗口内要求的最小进度增长百分比
+    _download_timeout_progress_threshold = 5
+    # 同一订阅范围连续低进度超时后的人工处理保护次数
+    _download_timeout_retry_limit = 3
+    # 连续超时达到上限后的单种忽略时间（小时）
+    _download_timeout_ignore_hours = 48
     # 超时记录清理时间（小时）
     _timeout_history_cleanup = 24
     # 排除标签
@@ -186,6 +192,9 @@ class SubscribeAssistant(_PluginBase):
         self._auto_best_cron = config.get("auto_best_cron", "0 15 * * *")
         self._download_check_interval = self.__get_float_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_float_config(config, "download_timeout", 3)
+        self._download_timeout_progress_threshold = self.__get_float_config(
+            config, "download_timeout_progress_threshold", 5)
+        self._download_timeout_retry_limit = self.__get_int_config(config, "download_timeout_retry_limit", 3)
         self._timeout_history_cleanup = self.__get_float_config(config, "timeout_history_cleanup", 0) or None
         self._auto_tv_pending_days = self.__get_float_config(config, "auto_tv_pending_days", 0) or None
         self._auto_tv_pending_episodes = self.__get_float_config(config, "auto_tv_pending_episodes", 0) or None
@@ -654,6 +663,52 @@ class SubscribeAssistant(_PluginBase):
                                                 ]
                                             }
                                         ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'download_timeout_progress_threshold',
+                                                            'label': '下载超时进度阈值',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            "max": "100",
+                                                            'hint': '超时窗口内下载进度增长低于N%时才删除',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'download_timeout_retry_limit',
+                                                            'label': '连续超时保护次数',
+                                                            'type': 'number',
+                                                            "min": "1",
+                                                            'hint': '连续低进度超时N次后保留种子并通知',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
                                     }
                                 ]
                             },
@@ -1062,7 +1117,7 @@ class SubscribeAssistant(_PluginBase):
                         'component': 'VRow',
                         'props': {
                             'style': {
-                                'margin-top': '12px'
+                                'margin-top': '12px',
                             },
                         },
                         'content': [
@@ -1184,6 +1239,8 @@ class SubscribeAssistant(_PluginBase):
             "auto_search_when_delete": True,
             "skip_deletion": True,
             "download_timeout": 3,
+            "download_timeout_progress_threshold": 5,
+            "download_timeout_retry_limit": 3,
             "timeout_history_cleanup": 24,
             "delete_exclude_tags": "H&R",
             "auto_pause": True,
@@ -1269,10 +1326,20 @@ class SubscribeAssistant(_PluginBase):
     @staticmethod
     def __get_float_config(config: dict, key: str, default: float) -> float:
         """
-        获取int配置项
+        获取浮点数配置项
         """
         try:
             return float(config.get(key, default))
+        except (ValueError, TypeError):
+            return default
+
+    @staticmethod
+    def __get_int_config(config: dict, key: str, default: int) -> int:
+        """
+        获取整数配置项
+        """
+        try:
+            return int(float(config.get(key, default)))
         except (ValueError, TypeError):
             return default
 
@@ -1299,6 +1366,8 @@ class SubscribeAssistant(_PluginBase):
             "auto_best_clear_history_type": self._auto_best_clear_history_type,
             "skip_deletion": self._skip_deletion,
             "download_timeout": self._download_timeout,
+            "download_timeout_progress_threshold": self._download_timeout_progress_threshold,
+            "download_timeout_retry_limit": self._download_timeout_retry_limit,
             "timeout_history_cleanup": self._timeout_history_cleanup,
             "auto_tv_pending_days": self._auto_tv_pending_days,
             "auto_tv_pending_episodes": self._auto_tv_pending_episodes,
@@ -1618,6 +1687,9 @@ class SubscribeAssistant(_PluginBase):
             if not torrent:
                 logger.info(f"没有在下载器中获取到 {torrent_hash} 种子信息，跳过处理")
                 return
+            torrent_info = self.__get_torrent_info(torrent=torrent, dl_type=service.type) or {}
+            progress_percent = self.__get_torrent_progress_percent(torrent_info=torrent_info)
+            current_time = time.time()
 
             # 更新订阅下载任务
             self.__with_lock_and_update_subscribe_tasks(method=self.__update_subscribe_torrent_task,
@@ -1645,7 +1717,9 @@ class SubscribeAssistant(_PluginBase):
                         "pending_check": self._auto_download_pending,
                         "timeout_check": self._auto_download_delete,
                         "manual_check": self._manual_delete_listen,
-                        "time": time.time(),
+                        "time": current_time,
+                        "last_progress_percent": progress_percent,
+                        "last_progress_check_time": current_time,
                     }
                 })
             )
@@ -2091,6 +2165,22 @@ class SubscribeAssistant(_PluginBase):
             logger.error(f"获取种子标签失败，错误: {e}")
             return []
 
+    def __get_delete_excluded_tags(self, torrent: Any, dl_type: str) -> set[str]:
+        """
+        获取当前种子命中的删除排除标签
+        :param torrent: 下载器种子对象
+        :param dl_type: 下载器类型
+        """
+        if not self._delete_exclude_tags:
+            return set()
+
+        torrent_tags = self.__get_torrent_tags(torrent=torrent, dl_type=dl_type)
+        if not torrent_tags:
+            return set()
+
+        exclude_tags = set(tag.strip() for tag in self._delete_exclude_tags.split(",") if tag.strip())
+        return exclude_tags & set(torrent_tags)
+
     @staticmethod
     def __get_torrent_info(torrent: Any, dl_type: str) -> dict:
         """
@@ -2299,6 +2389,28 @@ class SubscribeAssistant(_PluginBase):
 
         return False, torrent_info.get("dltime")
 
+    @staticmethod
+    def __get_torrent_progress_percent(torrent_info: dict) -> float:
+        """
+        计算种子当前下载进度百分比
+        :param torrent_info: 下载器返回的种子信息
+        :return: 0-100之间的下载进度百分比
+        """
+        if not torrent_info:
+            return 0
+
+        try:
+            downloaded = float(torrent_info.get("downloaded") or 0)
+            target_size = float(torrent_info.get("target_size") or torrent_info.get("total_size") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+        if target_size <= 0:
+            return 0
+
+        progress_percent = downloaded / target_size * 100
+        return max(0, min(progress_percent, 100))
+
     def __get_subscribe_by_source(self, source: str) -> Tuple[Optional[dict], Optional[Subscribe]]:
         """
         从来源获取订阅信息
@@ -2459,7 +2571,8 @@ class SubscribeAssistant(_PluginBase):
                                                       subscribe_torrent_tasks=subscribe_torrent_tasks,
                                                       triggered_subscribe_ids=triggered_subscribe_ids,
                                                       torrent_hash=torrent_hash, torrent_task=torrent_task,
-                                                      torrent_tasks=torrent_tasks, reason="订阅种子手动删除")
+                                                      torrent_tasks=torrent_tasks, reason="订阅种子手动删除",
+                                                      reason_type="manual")
                     continue
 
             torrent_info = self.__get_torrent_info(torrent=torrent, dl_type=service.type)
@@ -2471,6 +2584,9 @@ class SubscribeAssistant(_PluginBase):
             is_completed, download_time = self.__get_torrent_completion_status(torrent_info=torrent_info)
             if is_completed:
                 logger.info(f"种子 {torrent_desc} 已完成，将从订阅种子任务中移除")
+                self.__clear_download_timeout_state(subscribe_task=subscribe_task,
+                                                    subscribe=subscribe,
+                                                    torrent_task=torrent_task)
 
                 if torrent_hash in torrent_tasks:
                     del torrent_tasks[torrent_hash]
@@ -2482,6 +2598,8 @@ class SubscribeAssistant(_PluginBase):
                 logger.debug(f"种子任务 {torrent_desc} 尚未完成，下载时长 {download_time / 3600 :.2f}")
 
                 deletion_reason = None
+                deletion_type = "timeout"
+                delete_excluded_tags = self.__get_delete_excluded_tags(torrent=torrent, dl_type=service.type)
 
                 # 1. 判断 Tracker 响应关键字是否满足删除条件
                 if self._tracker_response_listen and self._tracker_responses:
@@ -2498,28 +2616,41 @@ class SubscribeAssistant(_PluginBase):
                                 break
                         if matched_keyword:
                             deletion_reason = f"订阅种子，命中 Tracker 响应关键字（{matched_keyword}）"
+                            deletion_type = "tracker"
 
-                # 2. 判断超时删除条件（只有当 Tracker 未触发时才检查超时）
+                if deletion_reason and delete_excluded_tags:
+                    logger.debug(f"种子任务 {torrent_desc} 满足删除条件（{deletion_reason}），"
+                                 f"但满足不删除标签 {delete_excluded_tags}，跳过处理")
+                    continue
+
+                if not deletion_reason and delete_excluded_tags:
+                    logger.debug(f"种子任务 {torrent_desc} 满足不删除标签 {delete_excluded_tags}，跳过超时删除检查")
+                    continue
+
+                # 2. 判断智能超时删除条件（只有当 Tracker 未触发时才检查超时）
                 if not deletion_reason:
-                    if timeout_check and self._auto_download_delete and download_time >= self._download_timeout * 3600:
-                        deletion_reason = f"订阅种子，下载时长超时（{download_time / 3600 :.2f}）"
+                    timeout_action, timeout_reason = self.__check_download_timeout_action(
+                        subscribe=subscribe,
+                        subscribe_task=subscribe_task,
+                        torrent_task=torrent_task,
+                        torrent_info=torrent_info,
+                        download_time=download_time,
+                    )
+                    if timeout_action == "manual_review":
+                        self.__handle_download_timeout_manual_review(subscribe=subscribe,
+                                                                     torrent_task=torrent_task,
+                                                                     reason=timeout_reason)
+                        continue
+                    if timeout_action == "ignore":
+                        continue
+                    if timeout_action == "delete":
+                        deletion_reason = timeout_reason
+                        deletion_type = "timeout"
 
                 if not deletion_reason:
                     continue
 
-                # 3. 如果满足删除条件，则统一调用删除接口，检查是否存在排除删除的标签
-                if self._delete_exclude_tags:
-                    torrent_tags = self.__get_torrent_tags(torrent=torrent, dl_type=service.type)
-                    if torrent_tags:
-                        # 对配置的排除标签进行 trim 并转换为集合
-                        exclude_tags = set(
-                            tag.strip() for tag in self._delete_exclude_tags.split(",") if tag.strip())
-                        intersection_tags = exclude_tags & set(torrent_tags)
-                        if intersection_tags:
-                            logger.debug(f"种子任务 {torrent_desc} 满足删除条件（{deletion_reason}），"
-                                         f"但满足不删除标签 {intersection_tags}，跳过处理")
-                            continue
-
+                # 3. 如果满足删除条件，则统一调用删除接口并清理订阅任务记录
                 logger.info(f"种子任务 {torrent_desc} 满足删除条件：{deletion_reason}，即将删除并从订阅种子任务中移除")
                 self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
                 self.__clean_torrent_task_by_hash(
@@ -2530,15 +2661,229 @@ class SubscribeAssistant(_PluginBase):
                     torrent_hash=torrent_hash,
                     torrent_task=torrent_task,
                     torrent_tasks=torrent_tasks,
-                    reason=deletion_reason
+                    reason=deletion_reason,
+                    reason_type=deletion_type
                 )
 
         self.__clean_invalid_torrents(invalid_torrent_hashes, subscribe_tasks, torrent_tasks)
 
+    def __check_download_timeout_action(self, subscribe: Subscribe, subscribe_task: dict, torrent_task: dict,
+                                        torrent_info: dict, download_time: float) -> Tuple[str, Optional[str]]:
+        """
+        判断未完成订阅种子是否满足智能超时处理条件
+        :param subscribe: 当前订阅对象
+        :param subscribe_task: 当前订阅任务记录
+        :param torrent_task: 当前种子任务记录
+        :param torrent_info: 下载器返回的种子详情
+        :param download_time: 下载器统计的下载耗时
+        :return: 处理动作与原因，动作包括 wait/delete/ignore/manual_review
+        """
+        if not (torrent_task.get("timeout_check") and self._auto_download_delete):
+            return "wait", None
+
+        current_time = time.time()
+        scope_key = self.__get_timeout_scope_key(subscribe=subscribe, torrent_task=torrent_task)
+        timeout_state = self.__get_download_timeout_state(subscribe_task=subscribe_task, scope_key=scope_key)
+        torrent_hash = torrent_task.get("hash")
+        try:
+            ignore_until = float(timeout_state.get("ignore_until") or 0)
+        except (TypeError, ValueError):
+            ignore_until = 0
+        if timeout_state.get("last_torrent_hash") == torrent_hash and ignore_until > current_time:
+            logger.debug(f"种子 {self.__get_torrent_desc(torrent_hash=torrent_hash, torrent_task=torrent_task)} "
+                         f"处于连续超时保护期，跳过超时删除检查")
+            return "ignore", None
+
+        progress_percent = self.__get_torrent_progress_percent(torrent_info=torrent_info)
+        baseline_time = torrent_task.get("last_progress_check_time")
+        baseline_progress = torrent_task.get("last_progress_percent")
+        if baseline_time is None or baseline_progress is None:
+            self.__refresh_download_progress_baseline(torrent_task=torrent_task,
+                                                      progress_percent=progress_percent,
+                                                      current_time=current_time)
+            logger.debug(f"种子 {self.__get_torrent_desc(torrent_hash=torrent_hash, torrent_task=torrent_task)} "
+                         f"初始化下载进度基线：{progress_percent:.2f}%")
+            return "wait", None
+
+        try:
+            baseline_time = float(baseline_time)
+            baseline_progress = float(baseline_progress)
+        except (TypeError, ValueError):
+            self.__refresh_download_progress_baseline(torrent_task=torrent_task,
+                                                      progress_percent=progress_percent,
+                                                      current_time=current_time)
+            return "wait", None
+
+        timeout_seconds = max(float(self._download_timeout or 0), 0) * 3600
+        if current_time - baseline_time < timeout_seconds:
+            return "wait", None
+
+        progress_delta = max(0, progress_percent - baseline_progress)
+        progress_threshold = self.__get_download_timeout_progress_threshold()
+        if progress_delta >= progress_threshold:
+            logger.debug(f"种子 {self.__get_torrent_desc(torrent_hash=torrent_hash, torrent_task=torrent_task)} "
+                         f"在超时窗口内进度增长 {progress_delta:.2f}%，已刷新下载进度基线")
+            self.__refresh_download_progress_baseline(torrent_task=torrent_task,
+                                                      progress_percent=progress_percent,
+                                                      current_time=current_time)
+            self.__clear_download_timeout_state(subscribe_task=subscribe_task,
+                                                subscribe=subscribe,
+                                                torrent_task=torrent_task)
+            return "wait", None
+
+        timeout_state = self.__record_download_timeout_failure(timeout_state=timeout_state,
+                                                               torrent_task=torrent_task,
+                                                               progress_delta=progress_delta,
+                                                               current_time=current_time)
+        retry_limit = self.__get_download_timeout_retry_limit()
+        reason = (f"订阅种子，下载时长 {download_time / 3600:.2f} 小时，"
+                  f"超时窗口 {self._download_timeout:g} 小时内进度增长 "
+                  f"{progress_delta:.2f}%，低于 {progress_threshold:g}%"
+                  f"（连续 {timeout_state.get('fail_count', 0)}/{retry_limit} 次）")
+        timeout_state["last_reason"] = reason
+        if timeout_state.get("fail_count", 0) >= retry_limit:
+            self.__mark_download_timeout_manual_review(timeout_state=timeout_state,
+                                                       torrent_task=torrent_task,
+                                                       current_time=current_time)
+            return "manual_review", reason
+
+        return "delete", reason
+
+    def __get_download_timeout_progress_threshold(self) -> float:
+        """
+        获取下载超时进度阈值，限制在0-100之间
+        """
+        try:
+            threshold = float(self._download_timeout_progress_threshold or 0)
+        except (TypeError, ValueError):
+            threshold = 5
+        return max(0, min(threshold, 100))
+
+    def __get_download_timeout_retry_limit(self) -> int:
+        """
+        获取连续超时保护次数，至少为1次
+        """
+        try:
+            retry_limit = int(self._download_timeout_retry_limit or 3)
+        except (TypeError, ValueError):
+            retry_limit = 3
+        return max(retry_limit, 1)
+
+    def __get_download_timeout_retry_window_seconds(self) -> float:
+        """
+        获取连续超时统计窗口
+        """
+        # 连续超时统计窗口必须独立于删除记录保留时间，否则短清理周期会让保护次数永远达不到上限。
+        retry_window_hours = max(24, float(self._download_timeout or 0) * self.__get_download_timeout_retry_limit())
+        return max(float(retry_window_hours), 0) * 3600
+
+    def __get_timeout_scope_key(self, subscribe: Subscribe, torrent_task: dict) -> str:
+        """
+        生成连续超时统计范围，电影按订阅统计，剧集按季和集数范围统计
+        """
+        media_type = self.__resolve_subscribe_media_type(subscribe=subscribe)
+        if media_type != MediaType.TV:
+            return "movie"
+
+        episodes = torrent_task.get("episodes") or []
+        if not isinstance(episodes, list):
+            episodes = [episodes]
+        episode_keys = sorted(str(episode) for episode in episodes if episode is not None)
+        episode_key = ",".join(episode_keys) if episode_keys else "unknown"
+        season = subscribe.season if subscribe and subscribe.season is not None else "unknown"
+        return f"tv:{season}:{episode_key}"
+
+    @staticmethod
+    def __get_download_timeout_state(subscribe_task: dict, scope_key: str) -> dict:
+        """
+        获取订阅范围内的连续超时状态
+        """
+        timeout_states = subscribe_task.setdefault("timeout_states", {})
+        return timeout_states.setdefault(scope_key, {})
+
+    @staticmethod
+    def __refresh_download_progress_baseline(torrent_task: dict, progress_percent: float,
+                                             current_time: float):
+        """
+        刷新种子下载进度观察窗口的基线
+        """
+        torrent_task["last_progress_percent"] = progress_percent
+        torrent_task["last_progress_check_time"] = current_time
+
+    def __record_download_timeout_failure(self, timeout_state: dict, torrent_task: dict,
+                                          progress_delta: float, current_time: float) -> dict:
+        """
+        记录一次低进度下载超时，超过统计窗口时重新开始计数
+        """
+        retry_window_seconds = self.__get_download_timeout_retry_window_seconds()
+        try:
+            window_start = float(timeout_state.get("window_start") or current_time)
+        except (TypeError, ValueError):
+            window_start = current_time
+        if retry_window_seconds and current_time - window_start > retry_window_seconds:
+            timeout_state.clear()
+            window_start = current_time
+
+        timeout_state["window_start"] = window_start
+        timeout_state["fail_count"] = int(timeout_state.get("fail_count") or 0) + 1
+        timeout_state["last_fail_time"] = current_time
+        timeout_state["last_torrent_hash"] = torrent_task.get("hash")
+        timeout_state["last_progress_delta"] = progress_delta
+        return timeout_state
+
+    def __mark_download_timeout_manual_review(self, timeout_state: dict, torrent_task: dict,
+                                              current_time: float):
+        """
+        标记连续超时达到上限后的人工处理保护期
+        """
+        timeout_state["ignore_until"] = current_time + self._download_timeout_ignore_hours * 3600
+        timeout_state["last_torrent_hash"] = torrent_task.get("hash")
+        timeout_state["notified_at"] = current_time
+
+    def __clear_download_timeout_state(self, subscribe_task: dict, subscribe: Subscribe, torrent_task: dict):
+        """
+        清理订阅范围内的连续超时状态
+        """
+        if not subscribe_task:
+            return
+        timeout_states = subscribe_task.get("timeout_states")
+        if not timeout_states:
+            return
+        scope_key = self.__get_timeout_scope_key(subscribe=subscribe, torrent_task=torrent_task)
+        timeout_states.pop(scope_key, None)
+
+    def __handle_download_timeout_manual_review(self, subscribe: Subscribe, torrent_task: dict, reason: str):
+        """
+        连续低进度超时达到上限时通知用户人工处理，保留当前种子
+        """
+        torrent_hash = torrent_task.get("hash")
+        torrent_desc = self.__get_torrent_desc(torrent_hash=torrent_hash, torrent_task=torrent_task)
+        logger.warning(f"{self.__format_subscribe(subscribe)} {torrent_desc} 已达到连续超时保护上限，"
+                       f"未来 {self._download_timeout_ignore_hours} 小时内保留种子并忽略自动超时删除")
+
+        if not self._notify:
+            return
+
+        msg_parts = []
+        if torrent_task.get("title"):
+            msg_parts.append(f"标题：{torrent_task.get('title')}")
+        if torrent_task.get("description"):
+            msg_parts.append(f"内容：{torrent_task.get('description')}")
+        msg_parts.extend([
+            f"原因：{reason}",
+            f"处理：已保留当前种子，{self._download_timeout_ignore_hours} 小时内不再自动删除，请手动判断"
+        ])
+        self.post_message(
+            mtype=NotificationType.Subscribe,
+            title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 下载连续超时，请手动处理",
+            text="\n".join(part for part in msg_parts if part),
+            image=self.__get_subscribe_image(subscribe),
+        )
+
     def __clean_torrent_task_by_hash(self, subscribe: Subscribe, subscribe_task: dict,
                                      subscribe_torrent_tasks: list[dict], triggered_subscribe_ids: set,
                                      torrent_hash: str, torrent_task: dict, torrent_tasks: dict,
-                                     reason: str):
+                                     reason: str, reason_type: str = "timeout"):
         """
           清理并更新种子下载记录
 
@@ -2549,6 +2894,7 @@ class SubscribeAssistant(_PluginBase):
           :param torrent_hash: 种子哈希值
           :param torrent_task: 当前种子任务信息
           :param torrent_tasks: 所有种子任务的字典
+          :param reason_type: 删除原因类型，用于区分超时、手工删除和Tracker异常
           """
         if torrent_hash in torrent_tasks:
             del torrent_tasks[torrent_hash]
@@ -2559,7 +2905,8 @@ class SubscribeAssistant(_PluginBase):
 
         # 记录删除记录
         self.__with_lock_and_update_delete_tasks(method=self.__update_or_add_delete_tasks,
-                                                 torrent_task=torrent_task)
+                                                 torrent_task=torrent_task,
+                                                 reason_type=reason_type)
 
         # 处理删除后续逻辑
         self.__handle_timeout_seed_deletion(subscribe=subscribe, subscribe_task=subscribe_task,
@@ -3548,16 +3895,18 @@ class SubscribeAssistant(_PluginBase):
                 del torrent_tasks[k]
 
     @staticmethod
-    def __update_or_add_delete_tasks(delete_tasks: dict, torrent_task: dict):
+    def __update_or_add_delete_tasks(delete_tasks: dict, torrent_task: dict, reason_type: str = "timeout"):
         """
         更新已删除种子任务
         :param delete_tasks: 已删除种子任务
         :param torrent_task: 种子任务
+        :param reason_type: 删除原因类型
         """
         if not torrent_task:
             return
         torrent_hash = torrent_task.get("hash")
         torrent_task["delete_time"] = time.time()
+        torrent_task["delete_type"] = reason_type
         delete_tasks[torrent_hash] = torrent_task
 
     def __update_subscribe_torrent_task(self, subscribe_tasks: dict, subscribe: Subscribe,
