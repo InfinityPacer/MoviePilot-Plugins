@@ -618,12 +618,58 @@ class SubscribeAssistant(_PluginBase):
                                                             'label': '下载超时时间',
                                                             'type': 'number',
                                                             "min": "0",
-                                                            'hint': 'N小时内未完成下载任务视为超时',
+                                                            'hint': '作为下载进度观察窗口，窗口内进度增长低于阈值时视为超时',
                                                             'persistent-hint': True
                                                         }
                                                     }
                                                 ]
                                             },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'download_timeout_progress_threshold',
+                                                            'label': '下载超时进度阈值',
+                                                            'type': 'number',
+                                                            "min": "0",
+                                                            "max": "100",
+                                                            'hint': '超时窗口内下载进度增长低于N%时才删除',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 4
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'download_timeout_retry_limit',
+                                                            'label': '下载连续超时重试次数',
+                                                            'type': 'number',
+                                                            "min": "1",
+                                                            'hint': '连续低进度超时N次后保留种子并通知',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
                                             {
                                                 'component': 'VCol',
                                                 'props': {
@@ -657,52 +703,6 @@ class SubscribeAssistant(_PluginBase):
                                                             'model': 'delete_exclude_tags',
                                                             'label': '排除标签',
                                                             'hint': '需要排除的标签，多个标签用逗号分隔',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'download_timeout_progress_threshold',
-                                                            'label': '下载超时进度阈值',
-                                                            'type': 'number',
-                                                            "min": "0",
-                                                            "max": "100",
-                                                            'hint': '超时窗口内下载进度增长低于N%时才删除',
-                                                            'persistent-hint': True
-                                                        }
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                'component': 'VCol',
-                                                'props': {
-                                                    'cols': 12,
-                                                    'md': 4
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VTextField',
-                                                        'props': {
-                                                            'model': 'download_timeout_retry_limit',
-                                                            'label': '连续超时保护次数',
-                                                            'type': 'number',
-                                                            "min": "1",
-                                                            'hint': '连续低进度超时N次后保留种子并通知',
                                                             'persistent-hint': True
                                                         }
                                                     }
@@ -1114,62 +1114,78 @@ class SubscribeAssistant(_PluginBase):
                         ]
                     },
                     {
-                        'component': 'VRow',
+                        'component': 'div',
                         'props': {
                             'style': {
+                                'position': 'sticky',
+                                'bottom': '0',
+                                'z-index': '10',
                                 'margin-top': '12px',
+                                'padding-top': '12px',
+                                'padding-bottom': '1px',
+                                'background': 'rgb(var(--v-theme-surface))'
                             },
                         },
                         'content': [
                             {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                },
+                                'component': 'VRow',
                                 'content': [
                                     {
-                                        'component': 'VAlert',
+                                        'component': 'VCol',
                                         'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal',
-                                            'text': '注意：本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 '
+                                            'cols': 12,
                                         },
                                         'content': [
                                             {
-                                                'component': 'a',
+                                                'component': 'VAlert',
                                                 'props': {
-                                                    'href': 'https://github.com/jxxghp/MoviePilot/pull/3330',
-                                                    'target': '_blank'
+                                                    'type': 'info',
+                                                    'variant': 'tonal',
+                                                    'text': '注意：本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 '
                                                 },
                                                 'content': [
                                                     {
-                                                        'component': 'u',
-                                                        'text': '#3330'
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': 'https://github.com/jxxghp/MoviePilot/pull/3330',
+                                                            'target': '_blank'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'u',
+                                                                'text': '#3330'
+                                                            }
+                                                        ]
                                                     }
                                                 ]
                                             }
                                         ]
                                     }
                                 ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
+                            },
                             {
-                                'component': 'VCol',
+                                'component': 'VRow',
                                 'props': {
-                                    'cols': 12,
+                                    'style': {
+                                        'margin-top': '0'
+                                    }
                                 },
                                 'content': [
                                     {
-                                        'component': 'VAlert',
+                                        'component': 'VCol',
                                         'props': {
-                                            'type': 'error',
-                                            'variant': 'tonal',
-                                            'text': '注意：本插件可能导致订阅数据异常，媒体文件丢失，相关风险请自行评估与承担'
-                                        }
+                                            'cols': 12,
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'VAlert',
+                                                'props': {
+                                                    'type': 'error',
+                                                    'variant': 'tonal',
+                                                    'text': '注意：本插件可能导致订阅数据异常，媒体文件丢失，相关风险请自行评估与承担'
+                                                }
+                                            }
+                                        ]
                                     }
                                 ]
                             }
