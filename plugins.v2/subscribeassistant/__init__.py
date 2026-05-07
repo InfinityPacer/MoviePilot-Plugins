@@ -102,8 +102,12 @@ class SubscribeAssistant(_PluginBase):
     _recognition_guard_mode = "off"
     # 识别增强目标形态
     _recognition_guard_target_mode = "auto"
-    # 识别增强命中后是否发送独立通知
-    _recognition_guard_notify = True
+    # 识别增强通知模式：off关闭、summary汇总拦截、detail明细拦截、all观察和明细。
+    _recognition_guard_notify = "off"
+    # 同一订阅同一原因的识别增强通知限频秒数，避免自动订阅持续重试时刷屏。
+    _recognition_guard_notify_interval = 60 * 60
+    # 识别增强通知限频缓存，运行期按订阅和原因记录最近通知时间。
+    _recognition_guard_notify_cache = None
     # 识别增强同名电影/剧集保护开关
     _recognition_guard_same_name_protection = True
     # 识别增强电影年份校验策略
@@ -179,6 +183,7 @@ class SubscribeAssistant(_PluginBase):
         self.downloadhistory_oper = DownloadHistoryOper()
         self.transferhistory_oper = TransferHistoryOper()
         self.subscribe_oper = SubscribeOper()
+        self._recognition_guard_notify_cache = {}
         if not config:
             return
 
@@ -221,7 +226,9 @@ class SubscribeAssistant(_PluginBase):
         self._download_timeout_retry_limit = self.__get_int_config(config, "download_timeout_retry_limit", 3)
         self._recognition_guard_mode = config.get("recognition_guard_mode", "off")
         self._recognition_guard_target_mode = config.get("recognition_guard_target_mode", "auto")
-        self._recognition_guard_notify = config.get("recognition_guard_notify", True)
+        self._recognition_guard_notify = self.__normalize_recognition_guard_notify(
+            config.get("recognition_guard_notify", "off")
+        )
         same_name_protection_default = self.__get_bool_config(config, "recognition_guard_same_name_mode", True)
         self._recognition_guard_same_name_protection = self.__get_bool_config(
             config,
@@ -1317,7 +1324,7 @@ class SubscribeAssistant(_PluginBase):
             "tracker_response_listen": True,
             "recognition_guard_mode": "off",
             "recognition_guard_target_mode": "auto",
-            "recognition_guard_notify": True,
+            "recognition_guard_notify": "off",
             "recognition_guard_same_name_protection": True,
             "recognition_guard_keyword_dialog": False,
             "recognition_guard_movie_year_mode": "loose",
@@ -1355,7 +1362,7 @@ class SubscribeAssistant(_PluginBase):
                                     {'title': '保守拦截', 'value': 'conservative'},
                                     {'title': '严格拦截', 'value': 'strict'},
                                 ],
-                                '控制命中风险后的处理方式，观察只写日志和通知，拦截会从候选中移除资源',
+                                '控制命中风险后的处理方式，观察只写日志，拦截会从候选中移除资源，通知方式由识别增强通知控制',
                             ),
                             md=3,
                         ),
@@ -1368,10 +1375,16 @@ class SubscribeAssistant(_PluginBase):
                             md=3,
                         ),
                         self.__get_recognition_guard_control_col(
-                            self.__get_recognition_guard_switch(
+                            self.__get_recognition_guard_select(
                                 'recognition_guard_notify',
                                 '识别增强通知',
-                                '开启后命中观察或拦截时发送消息，需同时开启顶部发送通知',
+                                [
+                                    {'title': '关闭', 'value': 'off'},
+                                    {'title': '汇总', 'value': 'summary'},
+                                    {'title': '明细', 'value': 'detail'},
+                                    {'title': '观察和明细', 'value': 'all'},
+                                ],
+                                '控制识别增强命中后的消息通知，关闭只写日志，汇总按原因聚合拦截结果，明细列出拦截资源，观察和明细同时列出观察与拦截',
                             ),
                             md=3,
                         ),
@@ -1845,6 +1858,157 @@ block: []
         """
         return value if value in choices else default
 
+    @staticmethod
+    def __normalize_recognition_guard_notify(value) -> str:
+        """
+        约束识别增强通知模式，非法值按关闭处理。
+        """
+        value = str(value or "off")
+        return value if value in {"off", "summary", "detail", "all"} else "off"
+
+    @staticmethod
+    def __truncate_log_value(value: Any, max_length: int = 160, middle: bool = False) -> str:
+        """
+        截断日志中的长文本，保留足够定位问题的信息同时避免 Debug 日志刷屏。
+        """
+        if value is None:
+            return ""
+        text = str(value)
+        if len(text) <= max_length:
+            return text
+        if middle and max_length > 20:
+            left_length = max_length // 2 - 2
+            right_length = max_length - left_length - 5
+            return f"{text[:left_length]}...{text[-right_length:]}"
+        return f"{text[:max_length - 3]}..."
+
+    def __format_log_title_desc(self, title: Any = None, description: Any = None, max_length: int = 220) -> str:
+        """
+        按“标题｜副标题”格式压缩展示资源名称，过长副标题自动截断。
+        """
+        title_text = self.__truncate_log_value(title, max_length=max_length // 2)
+        desc_text = self.__truncate_log_value(description, max_length=max_length // 2)
+        if title_text and desc_text:
+            return f"{title_text}｜{desc_text}"
+        return title_text or desc_text
+
+    def __summarize_fileitem_for_log(self, fileitem: Any) -> str:
+        """
+        摘要展示文件项，长路径按中间截断保留文件名和前缀位置。
+        """
+        if not fileitem:
+            return ""
+        if isinstance(fileitem, dict):
+            name = fileitem.get("name")
+            file_type = fileitem.get("type")
+            storage = fileitem.get("storage")
+            path = fileitem.get("path")
+        else:
+            name = getattr(fileitem, "name", "")
+            file_type = getattr(fileitem, "type", None)
+            storage = getattr(fileitem, "storage", None)
+            path = getattr(fileitem, "path", "")
+        return (
+            f"name={self.__truncate_log_value(name, 100)}，"
+            f"type={file_type}，"
+            f"storage={storage}，"
+            f"path={self.__truncate_log_value(path, 180, middle=True)}"
+        )
+
+    def __summarize_torrent_info_for_log(self, torrent_info: Optional[TorrentInfo]) -> str:
+        """
+        摘要展示种子信息，避免直接输出完整 TorrentInfo 对象中的链接和长描述。
+        """
+        if not torrent_info:
+            return ""
+        title_desc = self.__format_log_title_desc(
+            title=torrent_info.title,
+            description=torrent_info.description,
+        )
+        return (
+            f"{title_desc}，站点={torrent_info.site_name or torrent_info.site}，"
+            f"分类={torrent_info.category}"
+        )
+
+    def __summarize_context_for_log(self, context: Optional[Context]) -> str:
+        """
+        摘要展示资源上下文，只输出媒体和种子的关键识别信息。
+        """
+        if not context:
+            return ""
+        torrent_summary = self.__summarize_torrent_info_for_log(context.torrent_info)
+        media_info = context.media_info
+        media_summary = ""
+        if media_info:
+            media_summary = (
+                f"媒体={getattr(media_info, 'title_year', None) or getattr(media_info, 'title', None)}，"
+                f"类型={getattr(media_info, 'type', None)}"
+            )
+        return "，".join(item for item in [torrent_summary, media_summary] if item)
+
+    def __summarize_subscribe_dict_for_log(self, subscribe_dict: Optional[dict]) -> str:
+        """
+        摘要展示订阅事件中的订阅数据，避免输出完整订阅对象。
+        """
+        if not subscribe_dict:
+            return ""
+        return (
+            f"id={subscribe_dict.get('id')}，name={self.__truncate_log_value(subscribe_dict.get('name'), 80)}，"
+            f"year={subscribe_dict.get('year')}，season={subscribe_dict.get('season')}，"
+            f"type={subscribe_dict.get('type')}，best_version={subscribe_dict.get('best_version')}"
+        )
+
+    def __summarize_mediainfo_dict_for_log(self, mediainfo_dict: Optional[dict]) -> str:
+        """
+        摘要展示媒体信息字典，只保留识别结果相关字段。
+        """
+        if not mediainfo_dict:
+            return ""
+        return (
+            f"title={self.__truncate_log_value(mediainfo_dict.get('title') or mediainfo_dict.get('title_year'), 80)}，"
+            f"year={mediainfo_dict.get('year')}，type={mediainfo_dict.get('type')}，"
+            f"tmdbid={mediainfo_dict.get('tmdb_id') or mediainfo_dict.get('tmdbid')}，"
+            f"doubanid={mediainfo_dict.get('douban_id') or mediainfo_dict.get('doubanid')}"
+        )
+
+    def __summarize_resource_download_event_for_log(self, event_data: ResourceDownloadEventData) -> str:
+        """
+        摘要展示资源下载事件，避免输出完整 Context 和事件对象。
+        """
+        if not event_data:
+            return ""
+        return (
+            f"downloader={event_data.downloader}，episodes={list(event_data.episodes or [])}，"
+            f"origin={self.__truncate_log_value(event_data.origin, 120)}，"
+            f"资源={self.__summarize_context_for_log(event_data.context)}"
+        )
+
+    def __summarize_transfer_intercept_event_for_log(self, event_data: TransferInterceptEventData) -> str:
+        """
+        摘要展示整理拦截事件，避免输出完整媒体对象和文件路径对象。
+        """
+        if not event_data:
+            return ""
+        mediainfo = event_data.mediainfo
+        media_title = getattr(mediainfo, "title_year", None) or getattr(mediainfo, "title", None)
+        return (
+            f"媒体={self.__truncate_log_value(media_title, 100)}，"
+            f"tmdbid={getattr(mediainfo, 'tmdb_id', None)}，"
+            f"target={self.__truncate_log_value(event_data.target_path, 180, middle=True)}，"
+            f"cancel={event_data.cancel}"
+        )
+
+    def __summarize_transfer_info_for_log(self, transfer_info: Optional[TransferInfo]) -> str:
+        """
+        摘要展示整理完成信息，重点保留文件名、整理类型和截断后的路径。
+        """
+        if not transfer_info:
+            return ""
+        return (
+            f"文件={self.__summarize_fileitem_for_log(getattr(transfer_info, 'fileitem', None))}，"
+            f"整理类型={getattr(transfer_info, 'transfer_type', None)}"
+        )
+
     def __get_recognition_guard_config(self, subscribe: Optional[Subscribe] = None) -> RecognitionGuardConfig:
         """
         构建识别增强配置对象，供资源选择和下载兜底链路按订阅上下文复用。
@@ -1915,36 +2079,190 @@ block: []
     def __handle_recognition_guard_decision(self, subscribe: Subscribe, decision: RecognitionGuardDecision,
                                             context: Context):
         """
-        记录识别增强命中结果，并在开启通知时向用户说明拦截或观察原因。
+        记录识别增强命中结果；通知由选择阶段统一聚合，避免同一次搜索刷屏。
         """
         if not decision or not decision.observed:
             return
 
         action = "拦截" if decision.blocked else "观察"
-        torrent_info = context.torrent_info if context else None
-        description = torrent_info.description if torrent_info else None
-        description_text = f"｜{description}" if description else ""
         message = (f"{self.__format_subscribe(subscribe=subscribe)} 识别增强{action}资源："
-                   f"{decision.candidate_title}{description_text}，原因：{decision.reason}")
+                   f"{self.__format_recognition_guard_candidate(decision=decision, context=context)}，"
+                   f"原因：{decision.reason}")
         if decision.blocked:
             logger.warning(message)
         else:
             logger.info(message)
-        if not self._notify or not self._recognition_guard_notify:
+
+    def __format_recognition_guard_candidate(
+            self,
+            decision: RecognitionGuardDecision,
+            context: Optional[Context]
+    ) -> str:
+        """
+        格式化识别增强命中的候选资源，日志中按“标题｜副标题”压缩展示。
+        """
+        title = decision.candidate_title if decision else ""
+        torrent_info = context.torrent_info if context else None
+        description = torrent_info.description if torrent_info else None
+        return self.__format_log_title_desc(title=title, description=description)
+
+    @staticmethod
+    def __format_recognition_guard_action(decision: RecognitionGuardDecision) -> str:
+        """
+        将识别增强判定结果转换为通知和日志中的处理动作。
+        """
+        return "拦截" if decision.blocked else "观察"
+
+    def __get_recognition_guard_notify_key(self, subscribe: Subscribe, decision: RecognitionGuardDecision) -> str:
+        """
+        生成识别增强通知限频键，同一订阅同一原因在限频窗口内只通知一次。
+        """
+        subscribe_id = getattr(subscribe, "id", None) or self.__format_subscribe(subscribe=subscribe)
+        action = "block" if decision.blocked else "observe"
+        return f"{subscribe_id}|{action}|{decision.code}|{decision.reason}"
+
+    def __filter_recognition_guard_notify_pairs(
+            self,
+            subscribe: Subscribe,
+            decision_contexts: List[Tuple[RecognitionGuardDecision, Context]]
+    ) -> List[Tuple[RecognitionGuardDecision, Context]]:
+        """
+        对识别增强通知做同订阅同原因限频，并保留同一次搜索内同原因的完整聚合数据。
+        """
+        notify_cache = self._recognition_guard_notify_cache
+        if notify_cache is None:
+            notify_cache = {}
+            self._recognition_guard_notify_cache = notify_cache
+
+        now = datetime.now()
+        interval = max(0, int(self._recognition_guard_notify_interval or 0))
+        grouped_pairs = {}
+        for decision, context in decision_contexts:
+            key = self.__get_recognition_guard_notify_key(subscribe=subscribe, decision=decision)
+            grouped_pairs.setdefault(key, []).append((decision, context))
+
+        included_pairs = []
+        updated_keys = []
+        for key, pairs in grouped_pairs.items():
+            last_time = notify_cache.get(key)
+            if interval and last_time and (now - last_time).total_seconds() < interval:
+                continue
+            included_pairs.extend(pairs)
+            updated_keys.append(key)
+
+        for key in updated_keys:
+            notify_cache[key] = now
+
+        if interval:
+            cleanup_seconds = interval * 2
+            for key, last_time in list(notify_cache.items()):
+                if (now - last_time).total_seconds() > cleanup_seconds:
+                    notify_cache.pop(key, None)
+
+        return included_pairs
+
+    def __format_recognition_guard_summary(
+            self,
+            decision_contexts: List[Tuple[RecognitionGuardDecision, Context]]
+    ) -> str:
+        """
+        生成识别增强汇总通知内容，仅按处理动作和原因计数。
+        """
+        grouped = {}
+        for decision, _ in decision_contexts:
+            action = self.__format_recognition_guard_action(decision=decision)
+            key = (action, decision.reason)
+            grouped[key] = grouped.get(key, 0) + 1
+
+        lines = [
+            "处理：汇总",
+            f"命中：{len(decision_contexts)} 条",
+        ]
+        for (action, reason), count in list(grouped.items())[:8]:
+            lines.append(f"- {action} {count} 条：{reason}")
+        if len(grouped) > 8:
+            lines.append(f"其余原因：{len(grouped) - 8} 类")
+        return "\n".join(lines)
+
+    def __format_recognition_guard_detail(
+            self,
+            decision_contexts: List[Tuple[RecognitionGuardDecision, Context]],
+            include_observe: bool
+    ) -> str:
+        """
+        生成识别增强明细通知内容，相同原因合并展示并限制样例条数。
+        """
+        grouped = {}
+        for decision, context in decision_contexts:
+            action = self.__format_recognition_guard_action(decision=decision)
+            key = (action, decision.reason)
+            grouped.setdefault(key, []).append((decision, context))
+
+        title = "观察和明细" if include_observe else "明细"
+        lines = [
+            f"处理：{title}",
+            f"命中：{len(decision_contexts)} 条",
+        ]
+        detail_limit = 10
+        detail_count = 0
+        for (action, reason), pairs in grouped.items():
+            lines.append(f"- {action} {len(pairs)} 条：{reason}")
+            for decision, context in pairs:
+                if detail_count >= detail_limit:
+                    continue
+                candidate = self.__format_recognition_guard_candidate(decision=decision, context=context)
+                lines.append(f"  {candidate}")
+                detail_count += 1
+        if len(decision_contexts) > detail_count:
+            lines.append(f"其余明细：{len(decision_contexts) - detail_count} 条")
+        return "\n".join(lines)
+
+    def __post_recognition_guard_decisions(
+            self,
+            subscribe: Subscribe,
+            decision_contexts: List[Tuple[RecognitionGuardDecision, Context]]
+    ):
+        """
+        按配置聚合发送识别增强通知；默认关闭通知，观察命中仅在“观察和明细”模式下推送。
+        """
+        if not self._notify:
             return
 
-        text_parts = [
-            f"处理：{action}",
-            f"原因：{decision.reason}",
-        ]
-        if torrent_info and torrent_info.site_name:
-            text_parts.append(f"站点：{torrent_info.site_name}")
-        if torrent_info and torrent_info.description:
-            text_parts.append(f"副标题：{torrent_info.description}")
+        notify_mode = self.__normalize_recognition_guard_notify(self._recognition_guard_notify)
+        if notify_mode == "off":
+            return
+
+        if notify_mode == "all":
+            notify_pairs = [(decision, context) for decision, context in decision_contexts if decision.observed]
+        else:
+            notify_pairs = [(decision, context) for decision, context in decision_contexts if decision.blocked]
+        if not notify_pairs:
+            return
+
+        notify_pairs = self.__filter_recognition_guard_notify_pairs(
+            subscribe=subscribe,
+            decision_contexts=notify_pairs,
+        )
+        if not notify_pairs:
+            return
+
+        subscribe_desc = self.__format_subscribe_desc(subscribe=subscribe)
+        if not subscribe_desc:
+            subscribe_desc = self.__format_subscribe(subscribe=subscribe)
+        if notify_mode == "summary":
+            title = f"{subscribe_desc} 识别增强汇总"
+            text = self.__format_recognition_guard_summary(decision_contexts=notify_pairs)
+        elif notify_mode == "detail":
+            title = f"{subscribe_desc} 识别增强明细"
+            text = self.__format_recognition_guard_detail(decision_contexts=notify_pairs, include_observe=False)
+        else:
+            title = f"{subscribe_desc} 识别增强观察和明细"
+            text = self.__format_recognition_guard_detail(decision_contexts=notify_pairs, include_observe=True)
+
         self.post_message(
             mtype=NotificationType.Subscribe,
-            title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 识别增强{action}",
-            text="\n".join(text_parts),
+            title=title,
+            text=text,
             image=self.__get_subscribe_image(subscribe),
         )
 
@@ -1967,9 +2285,11 @@ block: []
             f"模式：{guard.config.mode}，候选数：{len(update_contexts)}"
         )
         retained_contexts = []
+        observed_decisions = []
         for context in update_contexts:
             decision = guard.evaluate(context)
             if decision.observed:
+                observed_decisions.append((decision, context))
                 self.__handle_recognition_guard_decision(
                     subscribe=subscribe,
                     decision=decision,
@@ -1977,6 +2297,10 @@ block: []
                 )
             if not decision.blocked:
                 retained_contexts.append(context)
+        self.__post_recognition_guard_decisions(
+            subscribe=subscribe,
+            decision_contexts=observed_decisions,
+        )
         if len(retained_contexts) == len(update_contexts):
             logger.debug(
                 f"{self.__format_subscribe(subscribe=subscribe)} 识别增强未移除候选资源，"
@@ -2009,6 +2333,10 @@ block: []
             subscribe=subscribe,
             decision=decision,
             context=event_data.context,
+        )
+        self.__post_recognition_guard_decisions(
+            subscribe=subscribe,
+            decision_contexts=[(decision, event_data.context)],
         )
         if not decision.blocked:
             return False
