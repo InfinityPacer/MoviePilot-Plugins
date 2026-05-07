@@ -2531,7 +2531,10 @@ block: []
 
             subscribe_id = event.event_data.get("subscribe_id")
             subscribe_dict = event.event_data.get("subscribe_info")
-            logger.debug(f"接收到订阅删除事件，订阅 ID: {subscribe_id}，数据：{subscribe_dict}")
+            logger.debug(
+                f"接收到订阅删除事件，订阅 ID: {subscribe_id}，"
+                f"订阅：{self.__summarize_subscribe_dict_for_log(subscribe_dict)}"
+            )
             self.clear_tasks(subscribe_id=subscribe_id, subscribe=subscribe_dict)
         except Exception as e:
             logger.error(f"处理订阅删除事件时发生错误: {str(e)}")
@@ -2555,11 +2558,17 @@ block: []
             username = event.event_data.get("username")
             mediainfo_dict = event.event_data.get("mediainfo")
 
-            logger.debug(f"接收到订阅添加事件，来自用户: {username}, 订阅 ID: {subscribe_id}, 数据: {mediainfo_dict}")
+            logger.debug(
+                f"接收到订阅添加事件，来自用户: {username}，订阅 ID: {subscribe_id}，"
+                f"媒体：{self.__summarize_mediainfo_dict_for_log(mediainfo_dict)}"
+            )
 
             # 缺少订阅信息或媒体信息
             if not subscribe_id or not mediainfo_dict:
-                logger.warning(f"订阅事件数据缺失，跳过处理。订阅 ID: {subscribe_id}, 媒体信息: {mediainfo_dict}")
+                logger.warning(
+                    f"订阅事件数据缺失，跳过处理。订阅 ID: {subscribe_id}，"
+                    f"媒体：{self.__summarize_mediainfo_dict_for_log(mediainfo_dict)}"
+                )
                 return
 
             # 获取订阅信息和媒体信息
@@ -2634,7 +2643,10 @@ block: []
             subscribe_dict = event.event_data.get("subscribe_info")
             mediainfo_dict = event.event_data.get("mediainfo")
 
-            logger.debug(f"接收到订阅完成事件，订阅数据：{subscribe_dict}，媒体数据：{mediainfo_dict}")
+            logger.debug(
+                f"接收到订阅完成事件，订阅：{self.__summarize_subscribe_dict_for_log(subscribe_dict)}，"
+                f"媒体：{self.__summarize_mediainfo_dict_for_log(mediainfo_dict)}"
+            )
 
             # 订阅完成清理订阅任务数据
             self.clear_tasks(subscribe_id=subscribe_id, subscribe=subscribe_dict)
@@ -2645,7 +2657,11 @@ block: []
 
             # 缺少订阅信息或媒体信息
             if not subscribe_dict or not mediainfo_dict:
-                logger.warning(f"订阅事件数据缺失，跳过处理。订阅数据: {subscribe_dict}, 媒体信息: {mediainfo_dict}")
+                logger.warning(
+                    f"订阅事件数据缺失，跳过处理。"
+                    f"订阅：{self.__summarize_subscribe_dict_for_log(subscribe_dict)}，"
+                    f"媒体：{self.__summarize_mediainfo_dict_for_log(mediainfo_dict)}"
+                )
                 return
 
             # 获取订阅信息和媒体信息
@@ -2680,7 +2696,11 @@ block: []
             username = event.event_data.get("username")
             source = event.event_data.get("source")
 
-            logger.debug(f"接收到下载添加事件，来自用户: {username}, 数据: {event.event_data}")
+            logger.debug(
+                f"接收到下载添加事件，来自用户: {username}，hash={torrent_hash}，"
+                f"downloader={downloader}，episodes={episodes}，"
+                f"资源={self.__summarize_context_for_log(context)}"
+            )
 
             subscribe_info, subscribe = self.__get_subscribe_by_source(source=source)
             if not subscribe_info or not subscribe:
@@ -2799,7 +2819,10 @@ block: []
             for torrent_task in delete_tasks.values():
                 if self.__compare_torrent_info_and_task(torrent_info=torrent_info, torrent_task=torrent_task,
                                                         partial_match=True):
-                    logger.info(f"存在超时/手动删除的种子信息，跳过，context：{context}")
+                    logger.info(
+                        f"存在超时/手动删除的种子信息，跳过，"
+                        f"资源：{self.__summarize_context_for_log(context)}"
+                    )
                     update_contexts.remove(context)
                     updated = True
                     continue
@@ -2816,9 +2839,8 @@ block: []
         if not event or not event.event_data:
             return
 
-        logger.debug(f"接收到资源下载事件，资源信息: {event.event_data}")
-
         event_data: ResourceDownloadEventData = event.event_data
+        logger.debug(f"接收到资源下载事件，{self.__summarize_resource_download_event_for_log(event_data)}")
         if event_data.cancel:
             logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
             return
@@ -2854,9 +2876,8 @@ block: []
         if not event or not event.event_data:
             return
 
-        logger.debug(f"接收到整理拦截事件，事件信息: {event.event_data}")
-
         event_data: TransferInterceptEventData = event.event_data
+        logger.debug(f"接收到整理拦截事件，{self.__summarize_transfer_intercept_event_for_log(event_data)}")
         if event_data.cancel:
             logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
             return
@@ -2885,8 +2906,9 @@ block: []
             return
 
         logger.debug(
-            f"接收到整理完成事件，整理文件信息: {transfer_info.fileitem}，整理类型：{transfer_info.transfer_type}，"
-            f"下载器：{downloader}，种子：{download_hash}")
+            f"接收到整理完成事件，{self.__summarize_transfer_info_for_log(transfer_info)}，"
+            f"下载器={downloader}，种子={download_hash}"
+        )
 
         self.__handle_transfer_complete_remove_torrent(transfer_info, downloader, download_hash)
 
@@ -3450,7 +3472,7 @@ block: []
         try:
             subscribe_dict = json.loads(json_data)
         except Exception as e:
-            logger.error(f"解析 source 数据失败，source: {json_data}, 错误: {e}")
+            logger.error(f"解析 source 数据失败，source: {self.__truncate_log_value(json_data, 180)}，错误: {e}")
             return None, None
 
         subscribe_id = subscribe_dict.get("id")
@@ -4053,20 +4075,20 @@ block: []
                     task for task in subscribe_task.get("torrent_tasks", []) if task.get("hash") != torrent_hash
                 ]
 
-    @staticmethod
-    def __get_torrent_desc(torrent_hash: str, torrent_task: dict) -> str:
+    def __get_torrent_desc(self, torrent_hash: str, torrent_task: dict) -> str:
         """
-        获取种子的描述信息
+        获取种子的日志描述信息，标题和副标题会截断以控制日志长度。
 
         :param torrent_hash: 种子hash
         :param torrent_task: 种子任务
 
         :return: 种子的描述字符串
         """
-        title = torrent_task.get("title")
-        description = torrent_task.get("description")
-        desc_part = f"| {description} " if description else ""
-        return f"{title}{desc_part}({torrent_hash})"
+        title_desc = self.__format_log_title_desc(
+            title=torrent_task.get("title"),
+            description=torrent_task.get("description"),
+        )
+        return f"{title_desc} ({torrent_hash})"
 
     def __reset_subscribe_task_state_when_updated(self, subscribe_tasks: dict, subscribe: Subscribe,
                                                   different_keys: dict):

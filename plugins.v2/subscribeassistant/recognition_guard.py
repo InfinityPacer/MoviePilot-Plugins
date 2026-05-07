@@ -663,10 +663,21 @@ class RecognitionGuard:
         if not context or not context.torrent_info:
             return ""
         torrent_info = context.torrent_info
-        desc = torrent_info.description or ""
+        title = self._truncate_log_text(torrent_info.title or "", 120)
+        desc = self._truncate_log_text(torrent_info.description or "", 120)
         if desc:
-            return f"{torrent_info.title or ''}｜{desc}"
-        return torrent_info.title or ""
+            return f"{title}｜{desc}"
+        return title
+
+    @staticmethod
+    def _truncate_log_text(value: str, max_length: int = 120) -> str:
+        """
+        截断识别增强日志里的标题或副标题，避免二次识别 Debug 输出过长。
+        """
+        text = str(value or "")
+        if len(text) <= max_length:
+            return text
+        return f"{text[:max_length - 3]}..."
 
     def _match_patterns(self, patterns: Sequence[str], text: str) -> Optional[str]:
         """
