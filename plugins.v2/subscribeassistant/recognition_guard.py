@@ -97,6 +97,8 @@ class RecognitionGuard:
     _CACHE_REGION = "subscribeassistant_recognition_guard"
     _CACHE_TTL = 30 * 24 * 60 * 60
     _ANIMATION_GENRE_ID = 16
+    # 主程序已确认候选自身命中的媒体 ID 类型，这类候选不再执行插件启发式拦截。
+    _TRUSTED_MATCH_SOURCES = {"tmdbid", "doubanid"}
 
     def __init__(
             self,
@@ -140,6 +142,17 @@ class RecognitionGuard:
         media = context.media_info
         if not media:
             return RecognitionGuardDecision(candidate_title=candidate_title)
+
+        if self._is_trusted_candidate_media_identity(context):
+            logger.debug(
+                f"订阅识别增强跳过已确认候选资源：{self._candidate_log_text(context)}，"
+                f"匹配方式：{getattr(context, 'match_source', 'unknown')}"
+            )
+            return RecognitionGuardDecision(
+                candidate_title=candidate_title,
+                code="candidate_same_identity",
+                trusted=True,
+            )
 
         direct_id_decision = self._evaluate_direct_ids(context, media, candidate_title)
         if direct_id_decision.observed:
@@ -369,6 +382,24 @@ class RecognitionGuard:
             return bool(recognized.type and media.type and recognized.type == media.type)
         if recognized.douban_id and media.douban_id and str(recognized.douban_id) == str(media.douban_id):
             return True
+        return False
+
+    def _is_trusted_candidate_media_identity(self, context: Context) -> bool:
+        """
+        判断主程序是否已经用候选资源自身的明确媒体 ID 命中订阅，命中后跳过插件启发式校验。
+        """
+        if not getattr(context, "candidate_recognized", False):
+            return False
+        if getattr(context, "media_info_is_target", False):
+            return False
+        match_source = str(getattr(context, "match_source", "unknown") or "unknown")
+        if match_source not in self._TRUSTED_MATCH_SOURCES:
+            return False
+        media = context.media_info
+        if match_source == "tmdbid":
+            return bool(media and media.tmdb_id)
+        if match_source == "doubanid":
+            return bool(media and media.douban_id)
         return False
 
     def _handle_missing_year(self, code: str, reason: str, candidate_title: str) -> RecognitionGuardDecision:

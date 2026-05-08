@@ -50,7 +50,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.11"
+    plugin_version = "2.12"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1937,6 +1937,12 @@ block: []
         if not context:
             return ""
         torrent_summary = self.__summarize_torrent_info_for_log(context.torrent_info)
+        recognition_summary = (
+            f"来源={getattr(context, 'resource_source', 'unknown')}，"
+            f"匹配={getattr(context, 'match_source', 'unknown')}，"
+            f"候选识别={getattr(context, 'candidate_recognized', False)}，"
+            f"媒体为目标={getattr(context, 'media_info_is_target', False)}"
+        )
         media_info = context.media_info
         media_summary = ""
         if media_info:
@@ -1944,7 +1950,7 @@ block: []
                 f"媒体={getattr(media_info, 'title_year', None) or getattr(media_info, 'title', None)}，"
                 f"类型={getattr(media_info, 'type', None)}"
             )
-        return "，".join(item for item in [torrent_summary, media_summary] if item)
+        return "，".join(item for item in [torrent_summary, recognition_summary, media_summary] if item)
 
     def __summarize_subscribe_dict_for_log(self, subscribe_dict: Optional[dict]) -> str:
         """
