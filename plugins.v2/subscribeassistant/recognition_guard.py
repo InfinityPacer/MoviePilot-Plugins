@@ -431,7 +431,7 @@ class RecognitionGuard:
 
     def _recognize_candidate(self, context: Context) -> Optional[CachedRecognitionInfo]:
         """
-        识别候选资源并缓存最小结果，避免同一批订阅资源重复触发识别。
+        识别候选资源并缓存有效结果，空结果保留主程序网络错误/负缓存语义。
         """
         torrent_info = context.torrent_info
         if not torrent_info or not torrent_info.title:
@@ -465,6 +465,7 @@ class RecognitionGuard:
             )
         else:
             logger.debug(f"订阅识别增强二次识别无结果：{self._candidate_log_text(context)}")
+            return None
         self._cache.set(cache_key, self._cached_info_to_dict(cached_info))
         return cached_info
 
