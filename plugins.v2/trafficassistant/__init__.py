@@ -185,7 +185,7 @@ class TrafficAssistant(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 8
+                                    'md': 12
                                 },
                                 'content': [
                                     {
@@ -202,12 +202,17 @@ class TrafficAssistant(_PluginBase):
                                         }
                                     }
                                 ]
-                            },
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4,
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -221,53 +226,48 @@ class TrafficAssistant(_PluginBase):
                                         }
                                     }
                                 ]
-                                }
-                            ]
-                        },
-                        {
-                            'component': 'VRow',
-                            'content': [
-                                {
-                                    'component': 'VCol',
-                                    'props': {
-                                        'cols': 12,
-                                        'md': 6
-                                    },
-                                    'content': [
-                                        {
-                                            'component': 'VSwitch',
-                                            'props': {
-                                                'model': 'enable_site_config',
-                                                'label': '站点独立配置',
-                                                'hint': '启用后可通过 YAML 为不同站点覆盖流量管理配置',
-                                                'persistent-hint': True
-                                            }
-                                        }
-                                    ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
                                 },
-                                {
-                                    "component": "VCol",
-                                    "props": {
-                                        "cols": 12,
-                                        "md": 6
-                                    },
-                                    "content": [
-                                        {
-                                            "component": "VSwitch",
-                                            "props": {
-                                                "model": "site_config_dialog",
-                                                "label": "打开站点配置窗口",
-                                                "hint": "编辑各站点独立配置",
-                                                "persistent-hint": True
-                                            }
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'enable_site_config',
+                                            'label': '站点独立配置',
+                                            'hint': '启用站点独立配置',
+                                            'persistent-hint': True
                                         }
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            'component': 'VRow',
-                            'content': [
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'site_config_dialog',
+                                            'label': '打开站点配置窗口',
+                                            'hint': '点击弹出窗口以修改站点配置',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
                                 'props': {
