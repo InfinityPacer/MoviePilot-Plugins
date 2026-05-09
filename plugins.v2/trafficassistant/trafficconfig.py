@@ -87,6 +87,9 @@ class TrafficConfig(BaseConfig):
         yaml = YAML(typ="safe")
         try:
             data = yaml.load(yaml_str) or []
+            if not isinstance(data, list):
+                logger.error("站点独立配置顶层结构必须是列表")
+                return None
             site_configs = {}
             for item in data:
                 if not isinstance(item, dict):
