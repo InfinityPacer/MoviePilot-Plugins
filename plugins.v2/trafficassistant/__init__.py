@@ -16,7 +16,7 @@ from app.db.site_oper import SiteOper
 from app.db.systemconfig_oper import SystemConfigOper
 from app.log import logger
 from app.plugins import _PluginBase
-from app.plugins.trafficassistant.trafficconfig import TrafficConfig
+from app.plugins.trafficassistant.trafficconfig import BaseConfig, TrafficConfig
 from app.scheduler import Scheduler
 from app.schemas import NotificationType
 from app.schemas.types import EventType, SystemConfigKey
@@ -32,7 +32,7 @@ class TrafficAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png"
     # 插件版本
-    plugin_version = "1.5"
+    plugin_version = "1.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -119,11 +119,11 @@ class TrafficAssistant(_PluginBase):
             {
                 'component': 'VForm',
                 'content': [
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {
+                                    'component': 'VCol',
                                 'props': {
                                     'cols': 12,
                                     'md': 4
@@ -185,7 +185,7 @@ class TrafficAssistant(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 8
+                                    'md': 12
                                 },
                                 'content': [
                                     {
@@ -202,12 +202,17 @@ class TrafficAssistant(_PluginBase):
                                         }
                                     }
                                 ]
-                            },
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4,
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -217,6 +222,42 @@ class TrafficAssistant(_PluginBase):
                                             'label': '站点刷流插件',
                                             'items': self.__get_plugin_options(),
                                             'hint': '选择参与配置的刷流插件',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'enable_site_config',
+                                            'label': '站点独立配置',
+                                            'hint': '启用站点独立配置',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'site_config_dialog',
+                                            'label': '打开站点配置窗口',
+                                            'hint': '点击弹出窗口以修改站点配置',
                                             'persistent-hint': True
                                         }
                                     }
@@ -288,10 +329,10 @@ class TrafficAssistant(_PluginBase):
                             },
                         ]
                     },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
@@ -448,12 +489,65 @@ class TrafficAssistant(_PluginBase):
                                         }
                                     }
                                 ]
+                                },
+                            ]
+                        },
+                        {
+                            "component": "VDialog",
+                            "props": {
+                                "model": "site_config_dialog",
+                                "max-width": "65rem",
+                                "overlay-class": "v-dialog--scrollable v-overlay--scroll-blocked",
+                                "content-class": "v-card v-card--density-default v-card--variant-elevated rounded-t"
                             },
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
+                            "content": [
+                                {
+                                    "component": "VCard",
+                                    "props": {
+                                        "title": "设置站点配置"
+                                    },
+                                    "content": [
+                                        {
+                                            "component": "VDialogCloseBtn",
+                                            "props": {
+                                                "model": "site_config_dialog"
+                                            }
+                                        },
+                                        {
+                                            "component": "VCardText",
+                                            "props": {},
+                                            "content": [
+                                                {
+                                                    'component': 'VRow',
+                                                    'content': [
+                                                        {
+                                                            'component': 'VCol',
+                                                            'props': {
+                                                                'cols': 12,
+                                                            },
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VAceEditor',
+                                                                    'props': {
+                                                                        'modelvalue': 'site_config_str',
+                                                                        'lang': 'yaml',
+                                                                        'theme': 'monokai',
+                                                                        'style': 'height: 30rem',
+                                                                    }
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            'component': 'VRow',
+                            'content': [
                             {
                                 'component': 'VCol',
                                 'props': {
@@ -497,11 +591,14 @@ class TrafficAssistant(_PluginBase):
                     }
                 ]
             }
-        ], {
-            "enabled": False,
-            "onlyonce": False,
-            "notify": True
-        }
+            ], {
+                "enabled": False,
+                "onlyonce": False,
+                "notify": True,
+                "enable_site_config": False,
+                "site_config_dialog": False,
+                "site_config_str": self.__get_demo_config()
+            }
 
     def get_page(self) -> List[dict]:
         pass
@@ -620,11 +717,12 @@ class TrafficAssistant(_PluginBase):
             logger.warning(error_msg)
             return error_msg, stat_time
 
-        process_result = self.__process_site_traffic(traffic_config=traffic_config, site_id=site_id,
+        site_traffic_config = traffic_config.get_site_config(site_name=site_name)
+        process_result = self.__process_site_traffic(traffic_config=site_traffic_config, site_id=site_id,
                                                      site_stat=site_stat)
         return process_result, stat_time
 
-    def __process_site_traffic(self, traffic_config: TrafficConfig, site_id: int, site_stat: dict) -> str:
+    def __process_site_traffic(self, traffic_config: BaseConfig, site_id: int, site_stat: dict) -> str:
         """根据站点的流量配置和统计信息处理站点流量"""
         ratio_str = site_stat.get("ratio")
         if ratio_str is None:
@@ -653,7 +751,7 @@ class TrafficAssistant(_PluginBase):
         return (f"分享率：{ratio} ({traffic_config.ratio_lower_limit} - {traffic_config.ratio_upper_limit})\n"
                 f"- 分享率符合预期，无需调整")
 
-    def __handle_traffic(self, traffic_config: TrafficConfig, site_id: int, ratio: float, is_low: bool) -> str:
+    def __handle_traffic(self, traffic_config: BaseConfig, site_id: int, ratio: float, is_low: bool) -> str:
         """处理流量情况，可以适用于高低流量情况"""
         threshold_type = "≤" if is_low else ">"
         threshold_value = traffic_config.ratio_lower_limit if is_low else traffic_config.ratio_upper_limit
@@ -684,7 +782,7 @@ class TrafficAssistant(_PluginBase):
             traffic_config.enable_auto_brush_if_below if is_low else traffic_config.disable_auto_brush_if_above)
         if brush_condition:
             success, action_msg = self.__update_brush_sites(site_id=site_id, enable=is_low,
-                                                            plugin_id=traffic_config.brush_plugin)
+                                                            plugin_id=self._traffic_config.brush_plugin)
             actions.append(f"- {action_msg}")
             if success:
                 any_action_taken = True  # 更新操作执行标志
@@ -865,7 +963,7 @@ class TrafficAssistant(_PluginBase):
         if not traffic_config.sites:
             return False, "站点列表不能为空"
 
-        if traffic_config.enable_auto_brush_if_below or traffic_config.disable_auto_brush_if_above:
+        if self.__has_brush_action_enabled(traffic_config=traffic_config):
             if not traffic_config.brush_plugin:
                 return False, "已启用停止/开启刷流，站点刷流插件不能为空"
             if check_plugin_installed:
@@ -873,15 +971,44 @@ class TrafficAssistant(_PluginBase):
                 if not result:
                     return False, message
 
-        # 检查分享率的设置是否有效
+        result, message = self.__validate_ratio_config(traffic_config=traffic_config)
+        if not result:
+            return result, message
+
+        if traffic_config.enable_site_config:
+            for site_name, site_config in traffic_config.site_configs.items():
+                result, message = self.__validate_ratio_config(traffic_config=site_config)
+                if not result:
+                    return False, f"站点 {site_name} {message}"
+
+        return True, "所有配置项都有效"
+
+    @staticmethod
+    def __validate_ratio_config(traffic_config: BaseConfig) -> Tuple[bool, str]:
+        """
+        校验分享率阈值配置，确保后续站点动作不会基于无效阈值执行。
+        """
         if traffic_config.ratio_lower_limit <= 0 or traffic_config.ratio_upper_limit <= 0:
             return False, "分享率必须大于0"
 
-        # 检查分享率的上下限是否正确
         if traffic_config.ratio_upper_limit < traffic_config.ratio_lower_limit:
             return False, "分享率上限必须大于等于下限"
 
-        return True, "所有配置项都有效"
+        return True, "分享率配置有效"
+
+    @staticmethod
+    def __has_brush_action_enabled(traffic_config: TrafficConfig) -> bool:
+        """
+        判断全局或站点独立配置中是否启用了刷流开关动作。
+        """
+        if traffic_config.enable_auto_brush_if_below or traffic_config.disable_auto_brush_if_above:
+            return True
+        if not traffic_config.enable_site_config:
+            return False
+        return any(
+            site_config.enable_auto_brush_if_below or site_config.disable_auto_brush_if_above
+            for site_config in traffic_config.site_configs.values()
+        )
 
     def __validate_and_fix_config(self, config: dict = None) -> [bool, str]:
         """
@@ -940,8 +1067,11 @@ class TrafficAssistant(_PluginBase):
 
     def __update_config(self):
         """保存配置"""
+        if not self._traffic_config.site_config_str:
+            self._traffic_config.site_config_str = self.__get_demo_config()
         config_mapping = asdict(self._traffic_config)
         del config_mapping["site_infos"]
+        del config_mapping["site_configs"]
         del config_mapping["statistic_plugin"]
         self.update_config(config_mapping)
 
@@ -1008,3 +1138,38 @@ class TrafficAssistant(_PluginBase):
             return False, f"{plugin_name}未安装"
 
         return True, f"{plugin_name}已安装"
+
+    @staticmethod
+    def __get_demo_config() -> str:
+        """
+        获取站点独立配置示例。
+        """
+        return """####### 配置说明 BEGIN #######
+# 1. 此配置用于为不同站点覆盖流量管理配置，站点名称必须与站点列表中的名称一致。
+# 2. 配置项通过数组形式组织，每个站点配置以“-”开头。
+# 3. 未填写的字段会继承上方全局配置；如需关闭某个全局开启的动作，可显式配置为 false。
+####### 配置说明 END #######
+
+- # 站点名称，用于标识适用于哪个站点
+  site_name: '站点1'
+  # 分享率下限，低于或等于该值时执行低分享率动作
+  ratio_lower_limit: 1.0
+  # 分享率上限，高于该值时执行高分享率动作
+  ratio_upper_limit: 5.0
+  # 低于下限时是否从订阅站点中移除
+  remove_from_subscription_if_below: true
+  # 低于下限时是否从搜索站点中移除
+  remove_from_search_if_below: true
+  # 低于下限时是否开启自动刷流
+  enable_auto_brush_if_below: true
+  # 高于上限时是否增加到订阅站点
+  add_to_subscription_if_above: true
+  # 高于上限时是否增加到搜索站点
+  add_to_search_if_above: true
+  # 高于上限时是否关闭自动刷流
+  disable_auto_brush_if_above: true
+
+- # 未填写的字段将继承全局配置
+  site_name: '站点2'
+  ratio_lower_limit: 2.0
+  ratio_upper_limit: 7.5"""

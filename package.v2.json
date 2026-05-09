@@ -126,11 +126,12 @@
         "name": "站点流量管理",
         "description": "自动管理流量，保障站点分享率。",
         "labels": "站点,订阅,刷流",
-        "version": "1.5",
+        "version": "1.6",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png",
         "author": "InfinityPacer",
         "level": 2,
         "history": {
+            "v1.6": "支持站点独立配置，可按站点覆盖分享率阈值和流量管理动作",
             "v1.5": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.4": "MoviePilot V2 版本站点流量管理插件"
         }
