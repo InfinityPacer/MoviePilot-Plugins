@@ -24,14 +24,13 @@ class BaseConfig(BaseModel):
     hr_active: Optional[bool] = False  # H&R激活
     hr_deadline_days: Optional[float] = None  # H&R满足要求的期限（天数）
 
-    # 模型配置
+    # 模型配置：兼容 Pydantic V1/V2
+    # 说明：原本通过 V1 的 Config.json_dumps 钩子设置 ensure_ascii=False，
+    # 但 V2 已移除该选项并在启动时产出 UserWarning；V2 的 model_dump_json
+    # 默认即按 UTF-8 输出非 ASCII 字符，无需再覆写，因此这里直接删除该钩子。
     class Config:
         extra = "ignore"
         arbitrary_types_allowed = True
-
-        @staticmethod
-        def json_dumps(v, *, default):
-            return json.dumps(v, ensure_ascii=False, default=default)
 
     def to_dict(self, **kwargs):
         """
