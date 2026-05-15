@@ -15,6 +15,7 @@ from packaging.version import Version
 from ruamel.yaml import YAML, YAMLError
 
 from app import schemas
+from app.chain.download import DownloadChain
 from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
 from app.chain.tmdb import TmdbChain
@@ -50,7 +51,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.13"
+    plugin_version = "2.14"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -168,6 +169,8 @@ class SubscribeAssistant(_PluginBase):
     _auto_best_cron = None
     # 洗版天数
     _auto_best_remaining_days = 60
+    # 订阅目标集数满足时，是否从分集洗版切换为全集洗版订阅
+    _auto_best_episode_to_full = False
     # 重置任务
     _reset_task = False
     # 定时器
@@ -219,6 +222,7 @@ class SubscribeAssistant(_PluginBase):
         self._auto_best_clear_history_type = config.get("auto_best_clear_history_type", "no")
         self._auto_best_clear_history_types = type_mapping.get(self._auto_best_clear_history_type, set())
         self._auto_best_cron = config.get("auto_best_cron", "0 15 * * *")
+        self._auto_best_episode_to_full = self.__get_bool_config(config, "auto_best_episode_to_full", False)
         self._download_check_interval = self.__get_float_config(config, "download_check_interval", 5)
         self._download_timeout = self.__get_float_config(config, "download_timeout", 3)
         self._download_timeout_progress_threshold = self.__get_float_config(
@@ -1164,6 +1168,29 @@ class SubscribeAssistant(_PluginBase):
                                                 ]
                                             }
                                         ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {
+                                                    'cols': 12,
+                                                    'md': 6
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'auto_best_episode_to_full',
+                                                            'label': '分集转全集',
+                                                            'hint': '订阅目标集数满足时，从分集洗版切换为全集洗版',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
                                     }
                                 ]
                             },
@@ -1320,6 +1347,7 @@ class SubscribeAssistant(_PluginBase):
             "auto_best_type": "no",
             "auto_best_clear_history_type": "no",
             "auto_best_cron": "0 15 * * *",
+            "auto_best_episode_to_full": False,
             "tracker_response": self.__get_default_tracker_response(),
             "tracker_response_listen": True,
             "recognition_guard_mode": "off",
@@ -1686,7 +1714,8 @@ class SubscribeAssistant(_PluginBase):
                 "func": self.meta_check,
                 "kwargs": {"hours": self._meta_check_interval}
             })
-        if self._auto_best_type != "no" and self._auto_best_cron:
+        if (self._auto_best_type != "no" or self._auto_best_episode_to_full
+                or self._auto_best_remaining_days) and self._auto_best_cron:
             services.append({
                 "id": f"{self.__class__.__name__}_best_version",
                 "name": f"洗版检查",
@@ -2373,6 +2402,7 @@ block: []
             "auto_best_cron": self._auto_best_cron,
             "auto_best_type": self._auto_best_type,
             "auto_best_clear_history_type": self._auto_best_clear_history_type,
+            "auto_best_episode_to_full": self._auto_best_episode_to_full,
             "skip_deletion": self._skip_deletion,
             "download_timeout": self._download_timeout,
             "download_timeout_progress_threshold": self._download_timeout_progress_threshold,
@@ -2469,6 +2499,8 @@ block: []
             return
 
         logger.info("开始检查订阅洗版...")
+        if self.process_episode_best_version_to_full(subscribes):
+            subscribes = self.subscribe_oper.list(state="N,R,P")
         self.process_best_version_complete(subscribes)
         logger.info("订阅洗版检查完成...")
 
@@ -5170,12 +5202,349 @@ block: []
         meta.type = self.__resolve_subscribe_media_type(subscribe=subscribe)
         return meta
 
+    def __get_best_version_target_episodes(self, subscribe: Subscribe) -> List[int]:
+        """
+        获取剧集洗版目标集数范围，用于复刻普通订阅目标集数满足的完成语义。
+        """
+        if self.__resolve_subscribe_media_type(subscribe=subscribe) != MediaType.TV:
+            return []
+
+        try:
+            start_episode = int(subscribe.start_episode or 1)
+            total_episode = int(subscribe.total_episode or 0)
+        except (TypeError, ValueError):
+            logger.warning(f"{self.__format_subscribe(subscribe)} 剧集范围无效，跳过洗版集数判断")
+            return []
+
+        start_episode = max(start_episode, 1)
+        if total_episode < start_episode:
+            return []
+        return list(range(start_episode, total_episode + 1))
+
+    def __is_episode_best_version_subscribe(self, subscribe: Subscribe) -> bool:
+        """
+        判断是否为需要按集数覆盖判断的分集洗版订阅。
+        """
+        if not subscribe or not subscribe.best_version or subscribe.best_version_full:
+            return False
+        if self.__resolve_subscribe_media_type(subscribe=subscribe) != MediaType.TV:
+            return False
+        return bool(self.__get_best_version_target_episodes(subscribe=subscribe))
+
+    def __has_pending_subscribe_task(self, subscribe: Subscribe) -> bool:
+        """
+        判断订阅是否仍处于待定或下载待定状态，避免未成功下载时提前转全集或按时限收口。
+        """
+        if not subscribe:
+            return False
+
+        if subscribe.state == "P":
+            return True
+
+        subscribe_tasks = self.__get_data(key="subscribes")
+        subscribe_task = subscribe_tasks.get(str(subscribe.id))
+        if not subscribe_task or not self.__match_subscribe(subscribe=subscribe, subscribe_task=subscribe_task):
+            return False
+        return self.__get_subscribe_task_pending(subscribe_task=subscribe_task)
+
+    def __get_episode_best_version_state_episodes(self, subscribe: Subscribe) -> List[int]:
+        """
+        获取订阅状态中已覆盖的目标集数，兼容普通订阅 note 和洗版订阅 episode_priority。
+        """
+        target_episodes = set(self.__get_best_version_target_episodes(subscribe=subscribe))
+        if not target_episodes:
+            return []
+
+        state_episodes = set()
+        subscribe_note = subscribe.note if isinstance(subscribe.note, list) else []
+        for episode in subscribe_note:
+            try:
+                episode_number = int(episode)
+            except (TypeError, ValueError):
+                continue
+            if episode_number in target_episodes:
+                state_episodes.add(episode_number)
+
+        episode_priority = subscribe.episode_priority if isinstance(subscribe.episode_priority, dict) else {}
+        for episode, priority in episode_priority.items():
+            if priority is None:
+                continue
+            try:
+                priority = int(priority)
+            except (TypeError, ValueError):
+                continue
+            if priority <= 0:
+                continue
+            try:
+                episode_number = int(episode)
+            except (TypeError, ValueError):
+                continue
+            if episode_number in target_episodes:
+                state_episodes.add(episode_number)
+        return sorted(state_episodes)
+
+    def __is_subscribe_target_no_lefts(self, subscribe: Subscribe,
+                                       no_exists: Dict[Union[int, str], Dict[int, schemas.NotExistMediaInfo]],
+                                       mediakey: Union[int, str],
+                                       state_episodes: List[int]) -> bool:
+        """
+        按普通订阅完成语义判断订阅目标集数是否已经没有缺失，等价于主程序对 lefts 的目标范围扣减。
+        """
+        target_episodes = set(self.__get_best_version_target_episodes(subscribe=subscribe))
+        if not target_episodes:
+            return False
+
+        if not no_exists or not no_exists.get(mediakey):
+            # 与主程序 __get_subscribe_no_exits 保持一致：缺失信息为空但 exist_flag=False 时视为未确定，不收口。
+            logger.info(f"{self.__format_subscribe(subscribe)} 缺失集信息未确定，暂不触发全集洗版或洗版时限")
+            return False
+
+        no_exists_item = no_exists.get(mediakey) or {}
+        no_exist_season = no_exists_item.get(subscribe.season)
+        if no_exist_season:
+            if no_exist_season.episodes:
+                missing_episodes = set(no_exist_season.episodes)
+            else:
+                start_episode = no_exist_season.start_episode or subscribe.start_episode or 1
+                total_episode = no_exist_season.total_episode or subscribe.total_episode or 0
+                missing_episodes = set(range(start_episode, total_episode + 1)) if total_episode else set()
+        elif state_episodes:
+            # 对齐主程序：只有存在订阅状态集数时，才用订阅目标范围扣减并判断是否已全。
+            missing_episodes = set(target_episodes)
+        else:
+            logger.info(f"{self.__format_subscribe(subscribe)} 当前季缺失集信息未确定，暂不触发全集洗版或洗版时限")
+            return False
+
+        missing_episodes = (missing_episodes & target_episodes) - set(state_episodes)
+        if missing_episodes:
+            logger.info(
+                f"{self.__format_subscribe(subscribe)} 仍缺 {StringUtils.format_ep(sorted(missing_episodes))}，"
+                f"暂不触发全集洗版或洗版时限")
+            return False
+        return True
+
+    def __is_episode_best_version_target_ready(self, subscribe: Subscribe) -> bool:
+        """
+        通过媒体库缺失信息和订阅状态判断分集洗版是否满足转全集的目标集数标准。
+        """
+        if not self.__is_episode_best_version_subscribe(subscribe=subscribe):
+            return False
+
+        if self.__has_pending_subscribe_task(subscribe=subscribe):
+            logger.info(f"{self.__format_subscribe(subscribe)} 仍处于待定或下载待定状态，跳过目标集数满足判断")
+            return False
+
+        mediainfo = self.__recognize_media(subscribe=subscribe)
+        if not mediainfo:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体识别失败，跳过目标集数满足判断")
+            return False
+
+        meta = self.__get_subscribe_meta(subscribe=subscribe)
+        mediakey = subscribe.tmdbid or subscribe.doubanid or mediainfo.tmdb_id or mediainfo.douban_id
+        if not mediakey:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 缺少媒体标识，跳过目标集数满足判断")
+            return False
+        totals = {subscribe.season: subscribe.total_episode} if subscribe.season and subscribe.total_episode else {}
+        exist_flag, no_exists = DownloadChain().get_no_exists_info(
+            meta=meta,
+            mediainfo=mediainfo,
+            totals=totals,
+        )
+        state_episodes = self.__get_episode_best_version_state_episodes(subscribe=subscribe)
+        completed = exist_flag or self.__is_subscribe_target_no_lefts(
+            subscribe=subscribe,
+            no_exists=no_exists,
+            mediakey=mediakey,
+            state_episodes=state_episodes,
+        )
+        if completed:
+            logger.info(f"{self.__format_subscribe(subscribe)} 订阅目标集数已满足，允许进入全集洗版或洗版时限处理")
+        return completed
+
+    def __mark_best_version_subscription_complete(self, subscribe: Subscribe):
+        """
+        标记洗版订阅完成；剧集同时写入按集优先级，兼容主程序新的分集洗版完成判断。
+        """
+        payload = {"current_priority": 100}
+        if self.__resolve_subscribe_media_type(subscribe=subscribe) == MediaType.TV:
+            target_episodes = self.__get_best_version_target_episodes(subscribe=subscribe)
+            if target_episodes:
+                payload["episode_priority"] = {str(episode): 100 for episode in target_episodes}
+                payload["lack_episode"] = 0
+        self.subscribe_oper.update(sid=subscribe.id, payload=payload)
+
+    @staticmethod
+    def __sanitize_subscribe_payload(subscribe_dict: dict) -> dict:
+        """
+        过滤订阅快照中新增订阅接口不接收的字段，避免数据库模型字段直接透传。
+        """
+        payload = dict(subscribe_dict or {})
+        model_fields = getattr(SchemaSubscribe, "model_fields", None) or SchemaSubscribe.__fields__
+        for key in list(payload.keys()):
+            if key not in model_fields:
+                payload.pop(key)
+        return payload
+
+    @staticmethod
+    def __drop_best_version_media_fields(payload: dict):
+        """
+        移除由媒体识别结果重新生成的字段，避免旧订阅快照覆盖新洗版订阅的媒体信息。
+        """
+        fields_to_pop = [
+            "name", "year", "type", "tmdbid", "imdbid", "tvdbid", "doubanid", "bangumiid",
+            "poster", "backdrop", "vote", "description", "date", "last_update", "note", "current_priority"
+        ]
+        for field in fields_to_pop:
+            payload.pop(field, None)
+
+    def __build_best_version_payload(self, subscribe_dict: dict, mediainfo: MediaInfo,
+                                     force_full_tv: bool = False) -> dict:
+        """
+        基于旧订阅快照构造新洗版订阅载荷，保留站点、下载器、保存路径和过滤条件等用户配置。
+        """
+        payload = self.__sanitize_subscribe_payload(subscribe_dict=subscribe_dict)
+        payload.pop("id", None)
+        self.__drop_best_version_media_fields(payload=payload)
+        payload["best_version"] = 1
+        payload["username"] = self.plugin_name
+        payload["state"] = "N"
+        payload.pop("episode_group", None)
+
+        if mediainfo and mediainfo.type == MediaType.TV:
+            payload["lack_episode"] = payload.get("total_episode")
+            if force_full_tv:
+                payload["best_version_full"] = 1
+                payload.pop("episode_priority", None)
+        return payload
+
+    def __build_restore_subscribe_payload(self, subscribe_dict: dict) -> dict:
+        """
+        构造恢复旧订阅用的数据库载荷，仅用于分集转全集失败后的兜底恢复。
+        """
+        return {
+            key: value
+            for key, value in (subscribe_dict or {}).items()
+            if hasattr(Subscribe, key)
+        }
+
+    def __restore_episode_best_version_subscribe(self, subscribe_dict: dict, mediainfo: MediaInfo) -> bool:
+        """
+        转全集失败后尝试恢复原分集洗版订阅，降低删除旧订阅后的数据丢失风险。
+        """
+        try:
+            restore_payload = self.__build_restore_subscribe_payload(subscribe_dict=subscribe_dict)
+            restored_subscribe = Subscribe(**restore_payload)
+            restored_subscribe.create(self.subscribe_oper._db)
+            sid = restore_payload.get("id")
+            if sid and self.subscribe_oper.get(sid):
+                subscribe_desc = self.__format_subscribe_desc(
+                    mediainfo=mediainfo,
+                    subscribe=SchemaSubscribe(**subscribe_dict),
+                )
+                logger.info(f"{subscribe_desc} 已恢复原分集洗版订阅 (ID: {sid})")
+                eventmanager.send_event(EventType.SubscribeAdded, {
+                    "subscribe_id": sid,
+                    "username": restore_payload.get("username"),
+                    "mediainfo": mediainfo.to_dict(),
+                })
+                return True
+            logger.error("恢复原分集洗版订阅失败，未能读取恢复后的订阅记录")
+            return False
+        except Exception as e:
+            logger.error(f"恢复原分集洗版订阅时发生异常: {str(e)}")
+            return False
+
+    def __convert_episode_best_version_to_full(self, subscribe: Subscribe) -> bool:
+        """
+        将目标集数满足的分集洗版订阅替换为全集洗版订阅，保持最终只订阅一个全集种子。
+        """
+        subscribe_dict = subscribe.to_dict()
+        mediainfo = self.__recognize_media(subscribe=subscribe)
+        if not mediainfo:
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体识别失败，无法转为全集洗版订阅")
+            return False
+        subscribe_desc = self.__format_subscribe_desc(subscribe=subscribe, mediainfo=mediainfo)
+
+        full_payload = self.__build_best_version_payload(
+            subscribe_dict=subscribe_dict,
+            mediainfo=mediainfo,
+            force_full_tv=True,
+        )
+
+        try:
+            self.subscribe_oper.add_history(**subscribe_dict)
+            self.subscribe_oper.delete(sid=subscribe.id)
+            self.clear_tasks(subscribe_id=subscribe.id, subscribe=subscribe_dict)
+        except Exception as e:
+            logger.error(f"{subscribe_desc} 删除原分集洗版订阅失败，停止转全集处理: {str(e)}")
+            if self._notify:
+                self.post_message(
+                    mtype=NotificationType.Subscribe,
+                    title=f"{subscribe_desc} 转为全集洗版订阅失败！",
+                    text=str(e),
+                    image=mediainfo.get_message_image()
+                )
+            return False
+
+        try:
+            sid, err_msg = self.subscribe_oper.add(mediainfo=mediainfo, **full_payload)
+        except Exception as e:
+            sid, err_msg = None, str(e)
+
+        if sid:
+            logger.info(f"{subscribe_desc} 已成功转为全集洗版订阅 (ID: {sid})")
+            eventmanager.send_event(EventType.SubscribeAdded, {
+                "subscribe_id": sid,
+                "username": self.plugin_name,
+                "mediainfo": mediainfo.to_dict(),
+            })
+            if self._notify:
+                self.post_message(
+                    mtype=NotificationType.Subscribe,
+                    title=f"{subscribe_desc} 已转为全集洗版订阅",
+                    text=f"评分：{mediainfo.vote_average}，来自用户：{self.plugin_name}",
+                    image=mediainfo.get_message_image(),
+                    link=settings.MP_DOMAIN('#/subscribe/tv?tab=mysub')
+                )
+            return True
+
+        restored = self.__restore_episode_best_version_subscribe(subscribe_dict=subscribe_dict, mediainfo=mediainfo)
+        logger.error(f"{subscribe_desc} 转为全集洗版订阅失败，错误信息: {err_msg}，原订阅恢复状态: {restored}")
+        if self._notify:
+            restore_text = "原分集洗版订阅已尝试恢复" if restored else "原分集洗版订阅恢复失败，请手动检查"
+            self.post_message(
+                mtype=NotificationType.Subscribe,
+                title=f"{subscribe_desc} 转为全集洗版订阅失败！",
+                text=f"{err_msg}\n{restore_text}",
+                image=mediainfo.get_message_image()
+            )
+        return False
+
+    def process_episode_best_version_to_full(self, subscribes: list[Subscribe]) -> bool:
+        """
+        扫描分集洗版订阅，在订阅目标集数满足后自动替换为全集洗版订阅。
+        """
+        if not self._auto_best_episode_to_full or not subscribes:
+            return False
+
+        converted = False
+        for subscribe in subscribes:
+            if not self.__is_episode_best_version_subscribe(subscribe=subscribe):
+                continue
+            if not self.__is_episode_best_version_target_ready(subscribe=subscribe):
+                continue
+            # 覆盖完成后无论新增全集订阅是否成功，都重新读取订阅列表，避免失败恢复时继续处理旧对象。
+            converted = True
+            if self.__convert_episode_best_version_to_full(subscribe=subscribe):
+                converted = True
+        return converted
+
     def process_best_version_complete(self, subscribes: list[Subscribe]):
         """
         处理自动洗版完成检查
         :param subscribes: 订阅对象列表
         """
-        if not self._auto_best_types or not subscribes:
+        if not subscribes:
             return
 
         if not self._auto_best_remaining_days:
@@ -5190,9 +5559,17 @@ block: []
             if not subscribe.best_version:
                 continue
 
-            # 优先级已经是洗版完成，跳过
-            if subscribe.current_priority == 100:
+            if self.__has_pending_subscribe_task(subscribe=subscribe):
+                logger.info(f"{self.__format_subscribe(subscribe)} 仍处于待定或下载待定状态，跳过洗版时限处理")
+                continue
+
+            # 主程序已支持分集洗版完成判断，这里按同一语义避免只看 current_priority。
+            if SubscribeChain.is_best_version_complete(subscribe=subscribe):
                 logger.debug(f"{self.__format_subscribe(subscribe)} 优先级已标识为洗版完成，跳过处理")
+                continue
+
+            if self.__is_episode_best_version_subscribe(subscribe=subscribe) \
+                    and not self.__is_episode_best_version_target_ready(subscribe=subscribe):
                 continue
 
             # 获取最后更新的日期，优先使用 last_update，否则使用创建日期
@@ -5201,7 +5578,7 @@ block: []
                 logger.debug(f"{self.__format_subscribe(subscribe)} 没有有效的日期，跳过处理")
                 continue
 
-                # 将字符串转换为 datetime 对象
+            # 将字符串转换为 datetime 对象
             try:
                 last_update_date = datetime.strptime(last_update_date_str, "%Y-%m-%d %H:%M:%S")
             except ValueError:
@@ -5216,7 +5593,7 @@ block: []
             if remaining_days >= self._auto_best_remaining_days:
                 # 如果剩余天数已大于洗版天数，则更新优先级为100，标识为洗版完成
                 logger.info(f"{self.__format_subscribe(subscribe)} 已满足洗版天数，更新优先级为 100")
-                self.subscribe_oper.update(sid=subscribe.id, payload={"current_priority": 100})
+                self.__mark_best_version_subscription_complete(subscribe=subscribe)
             else:
                 logger.info(f"订阅 {self.__format_subscribe(subscribe)} 尚未满足洗版天数，跳过处理")
 
@@ -5227,12 +5604,9 @@ block: []
         if not subscribe_dict:
             return
 
-        subscribe_id = subscribe_dict.pop("id", None)
-        model_fields = SchemaSubscribe.__fields__
-        for key in list(subscribe_dict.keys()):
-            if key not in model_fields:
-                subscribe_dict.pop(key)
-        subscribe = SchemaSubscribe(**subscribe_dict)
+        subscribe_id = subscribe_dict.get("id")
+        subscribe_payload = self.__sanitize_subscribe_payload(subscribe_dict=subscribe_dict)
+        subscribe = SchemaSubscribe(**subscribe_payload)
 
         if subscribe.best_version:
             logger.debug(f"{self.__format_subscribe(subscribe)} 已为洗版订阅，跳过处理")
@@ -5267,24 +5641,15 @@ block: []
         if not mediainfo:
             return
 
-        # 更新订阅字典
-        subscribe_dict["best_version"] = 1
-        subscribe_dict["username"] = self.plugin_name
-        subscribe_dict["state"] = "N"
-        fields_to_pop = [
-            "name", "year", "type", "tmdbid", "imdbid", "tvdbid", "doubanid", "bangumiid",
-            "poster", "backdrop", "vote", "description", "date", "last_update", "note", "state", "current_priority"
-        ]
-        for field in fields_to_pop:
-            subscribe_dict.pop(field, None)
-        if mediainfo.type == MediaType.TV:
-            subscribe_dict["lack_episode"] = subscribe_dict.get("total_episode")
-
-        # tmdb剧集组和当前版本疑似不兼容，暂时移除
-        subscribe_dict.pop("episode_group", None)
+        # 新增自动洗版订阅时，剧集统一进入全集洗版，确保最终只保留一个全集种子。
+        best_version_payload = self.__build_best_version_payload(
+            subscribe_dict=subscribe_dict,
+            mediainfo=mediainfo,
+            force_full_tv=mediainfo.type == MediaType.TV,
+        )
         # 添加订阅
         sid, err_msg = self.subscribe_oper.add(mediainfo=mediainfo,
-                                               **subscribe_dict)
+                                               **best_version_payload)
 
         subscribe_desc = self.__format_subscribe_desc(subscribe=subscribe, mediainfo=mediainfo)
 
