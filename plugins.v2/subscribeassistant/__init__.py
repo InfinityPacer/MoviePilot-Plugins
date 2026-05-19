@@ -1274,7 +1274,7 @@ class SubscribeAssistant(_PluginBase):
                                         'content': [
                                             {
                                                 'component': 'span',
-                                                'text': '提示：详细使用说明与配置释义请参考：'
+                                                'text': '注意：详细使用说明与配置释义请参考：'
                                             },
                                             {
                                                 'component': 'a',
