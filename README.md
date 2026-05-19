@@ -15,7 +15,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ### 1. [站点刷流（低频版）](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/brushflowlowfreq/README.md)
 
 - 在官方刷流插件的基础上，新增了若干项功能优化了部分细节逻辑，目前已逐步PR至官方插件。在此，再次感谢 [@jxxghp](https://github.com/jxxghp) 提供那么优秀的开源作品。
-- 详细配置说明以及刷流规则请参考 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/brushflowlowfreq/README.md)
+- 详细配置说明以及刷流规则请参考 [README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/brushflowlowfreq/README.md)
 
 ![](images/2024-05-02-03-16-42.png)
 ![](images/2024-07-07-03-36-08.png)
@@ -237,7 +237,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-06-02-20-39-05.png)
 
-### 18. [Plex演职人员刮削](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins/plexpersonmeta/README.md)
+### 18. [Plex演职人员刮削](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/plexpersonmeta/README.md)
 
 - 实现刮削演职人员中文名称及角色
 - Plex 的 API 实现较为复杂，我在尝试为 `actor.tag.tagKey` 赋值时遇到了问题，如果您对此有所了解，请不吝赐教，可以通过新增一个 issue 与我联系，特此感谢
@@ -259,7 +259,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-07-13-00-47-11.png)
 
-### 21. 自定义插件
+### 20. 自定义插件
 
 - 实现编写自定义插件
 
@@ -332,7 +332,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-12-28-01-19-51.png)
 
-### 29. 订阅助手
+### 29. [订阅助手](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistant/README.md)
 
 - 实现多场景管理系统订阅与状态同步
 - 本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)
