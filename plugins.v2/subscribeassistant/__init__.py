@@ -51,7 +51,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.17"
+    plugin_version = "2.18"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -4515,7 +4515,8 @@ block: []
             # 与当前订阅季数匹配的首映信息
             first_air_date, first_air_day = self.__get_tv_season_air_date(
                 mediainfo=mediainfo,
-                season=subscribe.season
+                season=subscribe.season,
+                episode_group=subscribe.episode_group
             )
         else:
             # 电影只需要从 release_date 获取上映信息
@@ -4639,7 +4640,8 @@ block: []
             # 与当前订阅季数匹配的首映信息
             first_air_date, first_air_day = self.__get_tv_season_air_date(
                 mediainfo=mediainfo,
-                season=subscribe.season
+                season=subscribe.season,
+                episode_group=subscribe.episode_group
             )
         else:
             # 电影只需要从 release_date 获取上映信息
@@ -4671,7 +4673,8 @@ block: []
             air_day = "未知"
             latest_episode, next_episode = self.__get_tv_latest_episode(
                 mediainfo=mediainfo,
-                season=subscribe.season
+                season=subscribe.season,
+                episode_group=subscribe.episode_group
             )
             if latest_episode:
                 latest_ep_date, latest_air_day = self.__parse_date(day=latest_episode.air_date)
@@ -4832,8 +4835,11 @@ block: []
         if tv_pending:
             episode_count = int(self._auto_update_tv_pending_episodes)
         else:
-            episodes = mediainfo.seasons.get(subscribe.season)
-            episode_count = len(episodes) if episodes else 0
+            episode_count = self.__get_tv_season_episode_count(
+                mediainfo=mediainfo,
+                season=subscribe.season,
+                episode_group=subscribe.episode_group
+            ) or 0
         lack_episode = subscribe.lack_episode + (episode_count - subscribe.total_episode)
 
         # 如果 episode_count 不为空，则添加到更新字段
@@ -4854,13 +4860,25 @@ block: []
         :param mediainfo: 媒体信息
         """
         # 查找与当前订阅季数匹配的上映日期 (air_date)
-        air_date, air_day = self.__get_tv_season_air_date(mediainfo=mediainfo, season=subscribe.season)
+        air_date, air_day = self.__get_tv_season_air_date(
+            mediainfo=mediainfo,
+            season=subscribe.season,
+            episode_group=subscribe.episode_group
+        )
 
         # 查询与当前订阅季数匹配的剧集总数 (episode_count)
-        episode_count = self.__get_tv_season_episode_count(mediainfo=mediainfo, season=subscribe.season)
+        episode_count = self.__get_tv_season_episode_count(
+            mediainfo=mediainfo,
+            season=subscribe.season,
+            episode_group=subscribe.episode_group
+        )
 
         # 获取剧集是否已完结
-        completed = self.__check_tv_season_completed(mediainfo=mediainfo, season=subscribe.season)
+        completed = self.__check_tv_season_completed(
+            mediainfo=mediainfo,
+            season=subscribe.season,
+            episode_group=subscribe.episode_group
+        )
 
         tv_pending = False
         current_date = datetime.now()
@@ -4949,6 +4967,7 @@ block: []
                 mtype=meta.type,
                 tmdbid=subscribe.tmdbid,
                 doubanid=subscribe.doubanid,
+                episode_group=subscribe.episode_group,
                 cache=False
             )
             if not mediainfo:
@@ -4993,6 +5012,13 @@ block: []
         if subscribe.doubanid and subscribe_task.get("doubanid") != subscribe.doubanid:
             return False
 
+        # 剧集组会改变同一季的上映日期与集数，任务缓存必须按剧集组区分。
+        if subscribe.season != subscribe_task.get("season"):
+            return False
+
+        if subscribe.episode_group != subscribe_task.get("episode_group"):
+            return False
+
         return True
 
     def __format_subscribe(self, subscribe: Subscribe) -> str:
@@ -5006,7 +5032,9 @@ block: []
         mediatype = self.__resolve_subscribe_media_type(subscribe=subscribe)
         year = subscribe.year if subscribe.year else "Unknown"
         if mediatype == MediaType.TV:
-            return f"剧集: {subscribe.name} ({year}) 季{subscribe.season} [{subscribe.id}]"
+            episode_group = subscribe.episode_group
+            episode_group_text = f" 剧集组{episode_group}" if episode_group else ""
+            return f"剧集: {subscribe.name} ({year}) 季{subscribe.season}{episode_group_text} [{subscribe.id}]"
         elif mediatype == MediaType.MOVIE:
             return f"电影: {subscribe.name} ({year}) [{subscribe.id}]"
         else:
@@ -5031,6 +5059,8 @@ block: []
 
             subscribe_desc = f"{mediainfo.title_year} {meta.season}" \
                 if mediainfo.type == MediaType.TV else f"{mediainfo.title_year}"
+            if mediainfo.type == MediaType.TV and subscribe.episode_group:
+                subscribe_desc = f"{subscribe_desc} 剧集组{subscribe.episode_group}"
             return subscribe_desc
         else:
             self.__format_subscribe(subscribe=subscribe)
@@ -5289,6 +5319,7 @@ block: []
             "year": subscribe.year,
             "type": subscribe.type,
             "season": subscribe.season,
+            "episode_group": subscribe.episode_group,
             "tmdbid": subscribe.tmdbid,
             "imdbid": subscribe.imdbid,
             "tvdbid": subscribe.tvdbid,
@@ -6123,11 +6154,52 @@ block: []
             )
             return MediaType.UNKNOWN
 
-    def __check_tv_season_completed(self, mediainfo: MediaInfo, season: int) -> bool:
+    @staticmethod
+    def __is_same_season(season_value: Any, season: int) -> bool:
+        """
+        判断季编号是否一致，兼容 TMDB 普通季的 season_number 和剧集组的 order。
+        """
+        if season_value is None or season is None:
+            return False
+        try:
+            return int(season_value) == int(season)
+        except (TypeError, ValueError):
+            return str(season_value) == str(season)
+
+    def __get_tv_season_info(self, mediainfo: MediaInfo, season: int) -> Optional[dict]:
+        """
+        获取指定季的媒体季信息，兼容 TMDB 剧集组写入的原始分组季结构。
+        """
+        if not mediainfo or not season:
+            return None
+
+        for season_info in mediainfo.season_info or []:
+            season_number = season_info.get("season_number", season_info.get("order"))
+            if self.__is_same_season(season_value=season_number, season=season):
+                return season_info
+        return None
+
+    def __get_tv_episodes(self, mediainfo: MediaInfo, season: int,
+                          episode_group: Optional[str] = None) -> List[TmdbEpisode]:
+        """
+        获取指定季的 TMDB 集信息，订阅配置了剧集组时按剧集组查询。
+        """
+        if not mediainfo or not mediainfo.tmdb_id or not season:
+            return []
+
+        return self.tmdb_chain.tmdb_episodes(
+            tmdbid=mediainfo.tmdb_id,
+            season=season,
+            episode_group=episode_group
+        )
+
+    def __check_tv_season_completed(self, mediainfo: MediaInfo, season: int,
+                                    episode_group: Optional[str] = None) -> bool:
         """
         按季判断剧集是否已完结
         :param mediainfo: 媒体信息
         :param season: 季数
+        :param episode_group: 剧集组
         """
         if not mediainfo or not mediainfo.tmdb_id or not season:
             return False
@@ -6136,7 +6208,7 @@ block: []
         if mediainfo.status in ["Ended", "Canceled"]:
             return True
 
-        episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
+        episodes = self.__get_tv_episodes(mediainfo=mediainfo, season=season, episode_group=episode_group)
         if not episodes:
             return False
 
@@ -6144,17 +6216,18 @@ block: []
         completed = any(episode.episode_type == "finale" for episode in episodes) if episodes else False
         return completed
 
-    def __get_tv_latest_episode(self, mediainfo: MediaInfo, season: int) -> \
+    def __get_tv_latest_episode(self, mediainfo: MediaInfo, season: int, episode_group: Optional[str] = None) -> \
             Tuple[Optional[TmdbEpisode], Optional[TmdbEpisode]]:
         """
         按季获取剧集最新播出集和下一集
         :param mediainfo: 媒体信息
         :param season: 季数
+        :param episode_group: 剧集组
         """
         if not mediainfo or not mediainfo.tmdb_id or not season:
             return None, None
 
-        episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
+        episodes = self.__get_tv_episodes(mediainfo=mediainfo, season=season, episode_group=episode_group)
         if not episodes:
             return None, None
 
@@ -6186,21 +6259,33 @@ block: []
 
         latest_info = f"{latest_episode.episode_number} ({latest_episode.air_date})" if latest_episode else None
         next_info = f"{next_episode.episode_number} ({next_episode.air_date})" if next_episode else None
-        logger.debug(f"{mediainfo.title_year} 季{season} - latest_episode: {latest_info}, next_episode: {next_info}")
+        episode_group_text = f"，剧集组：{episode_group}" if episode_group else ""
+        logger.debug(
+            f"{mediainfo.title_year} 季{season}{episode_group_text} - "
+            f"latest_episode: {latest_info}, next_episode: {next_info}"
+        )
         return latest_episode, next_episode
 
-    def __get_tv_season_air_date(self, mediainfo: MediaInfo, season: int) -> Tuple[Optional[datetime], Optional[str]]:
+    def __get_tv_season_air_date(self, mediainfo: MediaInfo, season: int,
+                                 episode_group: Optional[str] = None) -> Tuple[Optional[datetime], Optional[str]]:
         """
         按季获取剧集上映日期
         :param mediainfo: 媒体信息
         :param season: 季数
+        :param episode_group: 剧集组
         """
         # 尝试从 season_info 中获取上映日期
         air_day = None
-        for season_info in mediainfo.season_info:
-            if season_info.get("season_number") == season:
-                air_day = season_info.get("air_date")
-                break
+        season_info = self.__get_tv_season_info(mediainfo=mediainfo, season=season)
+        if season_info:
+            air_day = season_info.get("air_date")
+            if not air_day and season_info.get("episodes"):
+                episodes = [ep for ep in season_info.get("episodes") or [] if ep.get("episode_number") is not None]
+                episodes.sort(key=lambda x: x.get("episode_number"))
+                for ep in episodes:
+                    if ep.get("air_date"):
+                        air_day = ep.get("air_date")
+                        break
 
         # 如果获取到有效的上映日期，则尝试解析后返回
         if air_day:
@@ -6208,14 +6293,18 @@ block: []
             if air_date:
                 return air_date, air_day
             else:
-                logger.warning(f"{mediainfo.title} 季 {season} 的上映日期格式不正确，尝试从集的详细信息中获取")
+                logger.warning(
+                    f"{mediainfo.title} 季 {season} 的上映日期格式不正确，尝试从集的详细信息中获取"
+                )
         else:
-            logger.warning(f"{mediainfo.title} 未找到季 {season} 的上映日期，尝试从集的详细信息中获取")
+            episode_group_text = f"，剧集组：{episode_group}" if episode_group else ""
+            logger.warning(f"{mediainfo.title} 未找到季 {season}{episode_group_text} 的上映日期，尝试从集的详细信息中获取")
 
         # 未能从 season_info 中获取有效日期时，从剧集详情中获取
-        episodes = self.tmdb_chain.tmdb_episodes(tmdbid=mediainfo.tmdb_id, season=season)
+        episodes = self.__get_tv_episodes(mediainfo=mediainfo, season=season, episode_group=episode_group)
         if not episodes:
-            logger.warning(f"{mediainfo.title} 未找到季 {season} 的剧集信息，未能获取到上映日期")
+            episode_group_text = f"，剧集组：{episode_group}" if episode_group else ""
+            logger.warning(f"{mediainfo.title} 未找到季 {season}{episode_group_text} 的剧集信息，未能获取到上映日期")
             return None, None
 
         episodes = [ep for ep in episodes if ep.episode_number is not None]
@@ -6226,25 +6315,31 @@ block: []
                 if ep_date:
                     return ep_date, ep_day
 
-        logger.warning(f"{mediainfo.title} 季 {season} 未能从剧集信息中获取到上映日期")
+        episode_group_text = f"，剧集组：{episode_group}" if episode_group else ""
+        logger.warning(f"{mediainfo.title} 季 {season}{episode_group_text} 未能从剧集信息中获取到上映日期")
         return None, None
 
-    @staticmethod
-    def __get_tv_season_episode_count(mediainfo: MediaInfo, season: int) -> Optional[int]:
+    def __get_tv_season_episode_count(self, mediainfo: MediaInfo, season: int,
+                                      episode_group: Optional[str] = None) -> Optional[int]:
         """
         按季获取剧集总数
         :param mediainfo: 媒体信息
         :param season: 季数
+        :param episode_group: 剧集组
         """
-        episode_count = None
-        for season_info in mediainfo.season_info:
-            if season_info.get("season_number") == season:
-                episode_count = season_info.get("episode_count")
-                continue
+        season_info = self.__get_tv_season_info(mediainfo=mediainfo, season=season)
+        episode_count = season_info.get("episode_count") if season_info else None
+        if episode_count is None and season_info and season_info.get("episodes"):
+            episode_count = len(season_info.get("episodes") or [])
+
+        if episode_count is None:
+            episodes = self.__get_tv_episodes(mediainfo=mediainfo, season=season, episode_group=episode_group)
+            episode_count = len([ep for ep in episodes if ep.episode_number is not None]) if episodes else None
 
         if episode_count is None:
             # 未找到与订阅季数匹配的剧集总数
-            logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season} 对应的 episode_count")
+            episode_group_text = f"，剧集组：{episode_group}" if episode_group else ""
+            logger.warning(f"{mediainfo.title} 未找到与订阅季数 {season}{episode_group_text} 对应的 episode_count")
 
         return episode_count
 
@@ -6289,6 +6384,12 @@ block: []
                 continue
             if subscribe_type == MediaType.TV:
                 if subscribe_info.get("season") != subscribe.season:
+                    continue
+                # 剧集组命中会影响订阅目标集范围；新 source 精确匹配，旧 source 缺字段时继续依赖下载历史字段。
+                source_episode_group = subscribe_info.get("episode_group")
+                if source_episode_group and source_episode_group != subscribe.episode_group:
+                    continue
+                if download.episode_group and download.episode_group != subscribe.episode_group:
                     continue
                 meta_info = MetaInfo(
                     title=download.torrent_name,

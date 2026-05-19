@@ -224,11 +224,12 @@
         "name": "订阅助手",
         "description": "多场景管理订阅，实现订阅种子删除以及自动待定/暂停/洗版。",
         "labels": "订阅",
-        "version": "2.17",
+        "version": "2.18",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v2.18": "支持订阅自动暂停和剧集待定按 TMDB 剧集组判断播出日期、集数和完结状态",
             "v2.17": "兼容工作流 RSS 下载事件中的种子信息缺少分类字段，避免日志摘要触发异常",
             "v2.16": "配置表单底部新增 README 链接，方便从 WebUI 直达详细使用说明",
             "v2.15": "支持洗版订阅按集优先级回填，将媒体库已存在集标为已洗顶档，避免被同档资源重复下载",
