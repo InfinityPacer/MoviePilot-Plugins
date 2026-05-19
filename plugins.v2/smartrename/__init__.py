@@ -24,7 +24,7 @@ class SmartRename(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/smartrename.png"
     # 插件版本
-    plugin_version = "1.4"
+    plugin_version = "1.5"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -354,8 +354,16 @@ class SmartRename(_PluginBase):
     @eventmanager.register(ChainEventType.TransferRename)
     def handle_transfer_rename(self, event: Event):
         """
-        处理 TransferRename 事件
-        :param event: 事件数据
+        处理 TransferRename 链式事件。
+
+        本插件支持与其它 TransferRename 处理器"链式叠加"：
+        - 词替换（word_replacements）始终作用在事件链上当前最新的字符串上，
+          无论上游是否已经写过 ``event_data.updated_str``。
+        - 字段级分隔符（separator_types）和模板组（template_groups）能力一旦真正
+          改写字段或切换模板，会基于 ``event_data.rename_dict``（含上游补充字段）
+          重渲整串；这会丢弃上游字符串级改写，属于"重写字符串"的预期行为。
+
+        :param event: 链式事件对象，携带 ``TransferRenameEventData``。
         """
         if not event or not event.event_data:
             return
@@ -364,55 +372,86 @@ class SmartRename(_PluginBase):
 
         logger.info(f"处理 TransferRename 事件 - {event_data}")
 
-        if event_data.updated:
-            logger.debug(f"该事件已被其他事件处理器处理，跳过后续操作")
-            return
-
         try:
-            # 调用智能重命名方法
-            logger.debug(f"开始智能重命名处理，原始值：{event_data.render_str}")
+            # 链式状态：上游是否已经写入 updated_str
+            upstream_updated = bool(event_data.updated and event_data.updated_str)
+            # 词替换的基础串：链式下沿用上游 updated_str，否则用主程序的 render_str
+            base_str = event_data.updated_str if upstream_updated else event_data.render_str
+            logger.debug(f"开始智能重命名处理，基础字符串：{base_str}（链式：{upstream_updated}）")
 
+            # 选模板：支持二级分类 / TMDB 覆盖
             template_string = event_data.template_string
+            template_override = False
 
             mediainfo: MediaInfo = event_data.rename_dict.get("__mediainfo__")
             if not mediainfo:
                 logger.info("没有获取到媒体信息，跳过自定义重命名格式处理")
             else:
-                # 二级分类
+                # 二级分类优先
                 category = mediainfo.category
                 if category:
                     category_template_str = self._template_groups.get(category)
                     if category_template_str:
                         template_string = category_template_str
+                        template_override = True
                         logger.debug(f"检测到二级分类：{category}，应用模板：{template_string}")
-                # TMDB
+                # TMDB 覆盖（若同时配置则以 TMDB 为准）
                 tmdb_id = mediainfo.tmdb_id
                 if tmdb_id:
                     tmdb_template_str = self._template_groups.get(str(tmdb_id))
                     if tmdb_template_str:
                         template_string = tmdb_template_str
+                        template_override = True
                         logger.debug(f"检测到TMDB ID：{tmdb_id}，应用模板：{template_string}")
 
             # 最终的模板字符串
             logger.debug(f"最终模板字符串：{template_string}")
 
-            updated_str = self.rename(template_string=template_string,
-                                      rename_dict=copy.deepcopy(event_data.rename_dict)) or event_data.render_str
+            # 字段级分隔符处理：返回非 None 时说明真的改写了 rename_dict 并完成了重渲
+            field_changed_str = self.rename(template_string=template_string,
+                                            rename_dict=copy.deepcopy(event_data.rename_dict))
 
-            # 调用替换词
+            # 决策候选串：依次走"字段改写 -> 模板覆盖 -> 沿用基础串"三条路径
+            if field_changed_str is not None:
+                # 字段级分隔符规则真正生效，必须以重渲结果为准
+                candidate = field_changed_str
+                if upstream_updated:
+                    logger.debug(
+                        "字段级分隔符改动触发重渲，本次将覆盖上游字符串级改动"
+                        f"（上游来源：{event_data.source}）"
+                    )
+            elif template_override:
+                # 没改字段但换了模板：基于 rename_dict（含上游补充字段）用新模板重渲
+                try:
+                    candidate = Template(template_string).render(copy.deepcopy(event_data.rename_dict))
+                except Exception as e:
+                    logger.error(f"模板组覆盖渲染失败，回退到基础串：{e}", exc_info=True)
+                    candidate = base_str
+                else:
+                    if upstream_updated:
+                        logger.debug(
+                            "模板组覆盖触发重渲，本次将覆盖上游字符串级改动"
+                            f"（上游来源：{event_data.source}）"
+                        )
+            else:
+                # 既没改字段也没换模板：沿用上游 / 原始 render_str，只承接做词替换
+                candidate = base_str
+
+            # 词替换：始终作用在候选串上，与字段重渲、模板覆盖正交
             if self._word_replacements:
-                updated_str, apply_words = WordsMatcher().prepare(title=updated_str,
-                                                                  custom_words=self._word_replacements)
-                logger.debug(f"完成词语替换，应用的替换词: {apply_words}，替换后字符串：{updated_str}")
+                candidate, apply_words = WordsMatcher().prepare(title=candidate,
+                                                                custom_words=self._word_replacements)
+                logger.debug(f"完成词语替换，应用的替换词: {apply_words}，替换后字符串：{candidate}")
 
-            # 仅在智能重命名有实际更新时，标记更新状态
-            if updated_str and updated_str != event_data.render_str:
-                event_data.updated_str = updated_str
+            # 写回：与"当前事件链上最新状态"对比，避免无意义覆盖
+            current = event_data.updated_str if upstream_updated else event_data.render_str
+            if candidate and candidate != current:
+                event_data.updated_str = candidate
                 event_data.updated = True
                 event_data.source = self.plugin_name
-                logger.info(f"重命名完成，{event_data.render_str} -> {updated_str}")
+                logger.info(f"重命名完成，{current} -> {candidate}")
             else:
-                logger.debug(f"重命名结果与原始值相同，跳过更新")
+                logger.debug("重命名结果与当前链上字符串相同，跳过更新")
         except Exception as e:
             logger.error(f"重命名发生未知异常: {e}", exc_info=True)
 
