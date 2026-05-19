@@ -51,7 +51,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.16"
+    plugin_version = "2.17"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -2050,13 +2050,15 @@ block: []
         """
         if not torrent_info:
             return ""
+        # 工作流 RSS 入口可能传入主程序 schemas 版 TorrentInfo，缺少 core 版独有字段时日志仍应可用。
         title_desc = self.__format_log_title_desc(
-            title=torrent_info.title,
-            description=torrent_info.description,
+            title=getattr(torrent_info, "title", None),
+            description=getattr(torrent_info, "description", None),
         )
+        site = getattr(torrent_info, "site_name", None) or getattr(torrent_info, "site", None)
         return (
-            f"{title_desc}，站点={torrent_info.site_name or torrent_info.site}，"
-            f"分类={torrent_info.category}"
+            f"{title_desc}，站点={site}，"
+            f"分类={getattr(torrent_info, 'category', None)}"
         )
 
     def __summarize_context_for_log(self, context: Optional[Context]) -> str:

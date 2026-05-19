@@ -578,9 +578,10 @@ class RecognitionGuard:
         从站点分类、标题解析和用户关键字中提取候选资源类型信号。
         """
         torrent_info = context.torrent_info
-        if torrent_info and torrent_info.category:
+        category = getattr(torrent_info, "category", None) if torrent_info else None
+        if category:
             try:
-                return MediaType(torrent_info.category)
+                return MediaType(category)
             except ValueError:
                 pass
         if context.meta_info and context.meta_info.type in {MediaType.MOVIE, MediaType.TV}:
@@ -671,13 +672,14 @@ class RecognitionGuard:
         torrent_info = context.torrent_info if context else None
         if not torrent_info:
             return ""
-        labels = " ".join(str(label) for label in (torrent_info.labels or []) if label)
+        # 兼容主程序工作流传入的 schemas 版 TorrentInfo，分类等 core 字段可能不存在。
+        labels = " ".join(str(label) for label in (getattr(torrent_info, "labels", []) or []) if label)
         return "\n".join(part for part in [
-            torrent_info.title,
-            torrent_info.description,
+            getattr(torrent_info, "title", None),
+            getattr(torrent_info, "description", None),
             labels,
-            torrent_info.category,
-            torrent_info.site_name,
+            getattr(torrent_info, "category", None),
+            getattr(torrent_info, "site_name", None),
         ] if part)
 
     def _candidate_title(self, context: Optional[Context]) -> str:
