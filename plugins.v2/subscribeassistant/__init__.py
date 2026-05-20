@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Tuple, Optional, Union, Callable
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from packaging.version import Version
 from ruamel.yaml import YAML, YAMLError
 
 from app import schemas
@@ -3030,7 +3029,7 @@ block: []
         self.__handle_resource_download_pending(subscribe=subscribe, context=context,
                                                 episodes=episodes, downloader=downloader)
 
-        self.__handle_resource_download_history_clear(subscribe=subscribe, context=context)
+        self.__handle_resource_download_history_clear(subscribe=subscribe, episodes=episodes)
 
     @eventmanager.register(etype=ChainEventType.TransferIntercept, priority=9999)
     def handle_transfer_intercept_event(self, event: Event):
@@ -3102,7 +3101,7 @@ block: []
 
         logger.debug(f"已完成资源下载自动待定处理")
 
-    def __handle_resource_download_history_clear(self, subscribe: Subscribe, context: Optional[Context] = None):
+    def __handle_resource_download_history_clear(self, subscribe: Subscribe, episodes: Optional[list] = None):
         """
         处理洗版资源下载时清理整理记录
         """
@@ -3118,16 +3117,6 @@ block: []
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启清理整理记录，跳过处理")
             return
 
-        if subscribe_type == MediaType.TV and context and context.torrent_info:
-            if not self.__is_episode_range_covered(
-                    title=context.torrent_info.title,
-                    subtitle=context.torrent_info.description,
-                    subscribe=subscribe):
-                logger.info(
-                    f"{self.__format_subscribe(subscribe)} 当前洗版资源未覆盖订阅剧集范围，跳过清理整理记录"
-                )
-                return
-
         if not subscribe.tmdbid:
             logger.warning(f"{self.__format_subscribe(subscribe)} 未能获取到 TMDBID，跳过处理")
 
@@ -3135,6 +3124,8 @@ block: []
             meta = self.__get_subscribe_meta(subscribe)
             histories = self.transferhistory_oper.get_by(tmdbid=subscribe.tmdbid, mtype=subscribe.type,
                                                          season=meta.season)
+            # 过滤种子不包含的记录
+            histories = self.__filter_histories_by_seed_episodes(histories, episodes)
         else:
             histories = self.transferhistory_oper.get_by(tmdbid=subscribe.tmdbid, mtype=subscribe.type)
 
@@ -3307,6 +3298,81 @@ block: []
         return service
 
     @staticmethod
+    def __filter_histories_by_seed_episodes(histories: list[TransferHistory], episodes: list) -> list[TransferHistory]:
+        """
+        根据种子集数范围过滤整理记录
+        """
+        if not histories or not episodes:
+            return []
+
+        min_episode, max_episode = min(episodes), max(episodes)
+        original_count = len(histories)
+
+        logger.info(
+            f"开始过滤整理记录，种子集数范围: E{min_episode:02d}-E{max_episode:02d}，"
+            f"原始记录数: {original_count}"
+        )
+
+        def _is_history_in_seed_episode_range(history: TransferHistory) -> bool:
+            if not history.episodes:
+                logger.debug(f"跳过无集数字段的整理记录：history_id={history.id}")
+                return False
+
+            episode_range = SubscribeAssistant.__parse_episode_range(history.episodes)
+            if not episode_range:
+                logger.warn(
+                    f"跳过无法解析的集数记录：history_id={history.id}, episodes={history.episodes}"
+                )
+                return False
+
+            episode_start, episode_end = episode_range
+            in_range = min_episode <= episode_start and episode_end <= max_episode
+            if not in_range:
+                logger.warn(
+                    f"跳过不在种子范围内的整理记录：history_id={history.id}, episodes={history.episodes}, "
+                    f"record_range=E{episode_start:02d}-E{episode_end:02d}, "
+                    f"seed_range=E{min_episode:02d}-E{max_episode:02d}"
+                )
+            return in_range
+
+        filtered_histories = [
+            history
+            for history in histories
+            if _is_history_in_seed_episode_range(history)
+        ]
+
+        logger.info(
+            f"整理记录过滤完成，原始 {original_count} 条，"
+            f"保留 {len(filtered_histories)} 条"
+        )
+        return filtered_histories
+
+    @staticmethod
+    def __parse_episode_range(episode_value) -> tuple[int, int] | None:
+        """
+        兼容 E01 / 01 / E01-E03 / 01-03 解析失败返回 None
+        """
+        if episode_value is None:
+            return None
+
+        episode_text = str(episode_value).strip().upper().replace(" ", "")
+        if not episode_text:
+            return None
+
+        if "-" in episode_text:
+            start_text, end_text = episode_text.split("-", 1)
+        else:
+            start_text = end_text = episode_text
+
+        start_text = start_text.lstrip("E")
+        end_text = end_text.lstrip("E")
+        if not start_text.isdigit() or not end_text.isdigit():
+            return None
+
+        start, end = int(start_text), int(end_text)
+        return (start, end) if start <= end else (end, start)
+
+    @staticmethod
     def __get_torrents(downloader: Optional[Union[Qbittorrent, Transmission]],
                        torrent_hashes: Optional[Union[str, List[str]]] = None) -> Optional[Any]:
         """
@@ -3333,30 +3399,6 @@ block: []
             return torrents[0] if torrents else None
 
         return torrents
-
-    @staticmethod
-    def __delete_torrents(downloader: Optional[Union[Qbittorrent, Transmission]],
-                          torrent_hashes: Optional[Union[str, List[str]]] = None) -> bool:
-        """
-        删除下载器中的种子
-        :param downloader: 下载器实例
-        :param torrent_hashes: 单个种子哈希或包含多个种子 hash 的列表
-        :return: 单个种子的具体信息或包含多个种子信息的列表
-        """
-        if not downloader:
-            logger.warning(f"获取下载器实例失败，请稍后重试")
-            return False
-
-        # 处理单个种子哈希的情况，确保其被视为列表
-        if isinstance(torrent_hashes, str):
-            torrent_hashes = [torrent_hashes]
-
-        deleted = downloader.delete_torrents(delete_file=True, ids=torrent_hashes)
-        if not deleted:
-            logger.warning(f"删除种子过程中发生异常，请检查")
-            return False
-
-        return deleted
 
     @staticmethod
     def __get_torrent_tags(torrent: Any, dl_type: str) -> list[str]:
@@ -3861,7 +3903,7 @@ block: []
 
                 # 3. 如果满足删除条件，则统一调用删除接口并清理订阅任务记录
                 logger.info(f"种子任务 {torrent_desc} 满足删除条件：{deletion_reason}，即将删除并从订阅种子任务中移除")
-                self.__delete_torrents(downloader=service.instance, torrent_hashes=torrent_hash)
+                self.chain.remove_torrents(hashs=torrent_hash, delete_file=True, downloader=downloader)
                 self.__clean_torrent_task_by_hash(
                     subscribe=subscribe,
                     subscribe_task=subscribe_task,
@@ -5349,7 +5391,7 @@ block: []
             return subscribe.poster.replace("original", "w500")
         return ""
 
-    def __get_subscribe_meta(self, subscribe: Subscribe) -> MetaInfo:
+    def __get_subscribe_meta(self, subscribe: Subscribe):
         """
         获取订阅元数据
         """
@@ -6416,52 +6458,9 @@ block: []
             return None, None
 
     @staticmethod
-    def __is_episode_range_covered(title: Optional[str], subtitle: Optional[str], subscribe: Subscribe) -> bool:
-        """
-        判断种子是否覆盖订阅剧集范围。
-        无法识别到剧集范围时，按合集处理以保持兼容。
-        """
-        meta = MetaInfo(title=title, subtitle=subtitle)
-        episodes = meta.episode_list
-        if not episodes:
-            return True
-
-        min_ep = min(episodes)
-        max_ep = max(episodes)
-        start_ep = subscribe.start_episode or 1
-        end_ep = subscribe.total_episode
-        if not end_ep:
-            return True
-
-        return min_ep <= start_ep and max_ep >= end_ep
-
-    @staticmethod
     def __get_default_tracker_response():
         """
         获取默认Tracker响应关键字
         """
         return """torrent not registered with this tracker
 torrent banned"""
-
-    @staticmethod
-    def __compare_versions(version1: str, version2: str) -> int:
-        """
-        比较两个版本号的大小
-        :param version1: version1
-        :param version2: version2
-        :return: 1 (version2 > version1)
-               0 (version2 == version1)
-              -1 (version2 < version1)
-        """
-        try:
-            v1 = Version(version1)
-            v2 = Version(version2)
-            if v2 > v1:
-                return 1
-            elif v2 == v1:
-                return 0
-            else:
-                return -1
-        except Exception as e:
-            logger.error(f"Invalid version format: {e}")
-            return 0
