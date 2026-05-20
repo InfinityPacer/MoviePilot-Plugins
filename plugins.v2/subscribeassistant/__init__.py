@@ -6208,13 +6208,27 @@ block: []
         if mediainfo.status in ["Ended", "Canceled"]:
             return True
 
-        episodes = self.__get_tv_episodes(mediainfo=mediainfo, season=season, episode_group=episode_group)
-        if not episodes:
+        last_episode = mediainfo.tmdb_info.get("last_episode_to_air") or {}
+
+        if last_episode.get("season_number", float("-inf")) > season:
+            return True
+
+        finale_type = {"finale", "mid_season"}
+
+        if (
+            last_episode.get("episode_type") in finale_type
+            or mediainfo.next_episode_to_air.get("episode_type") in finale_type
+        ):
+            return True
+
+        episodes = self.tmdb_chain.tmdb_episodes(
+            tmdbid=mediainfo.tmdb_id, season=season, episode_group=episode_group
+        )
+        if not last_episode and not episodes:
             return False
 
-        # 判断是否存在最终集，存在则认为已完结
-        completed = any(episode.episode_type == "finale" for episode in episodes) if episodes else False
-        return completed
+        # 判断是否最终集
+        return episodes[-1].episode_type in finale_type
 
     def __get_tv_latest_episode(self, mediainfo: MediaInfo, season: int, episode_group: Optional[str] = None) -> \
             Tuple[Optional[TmdbEpisode], Optional[TmdbEpisode]]:
