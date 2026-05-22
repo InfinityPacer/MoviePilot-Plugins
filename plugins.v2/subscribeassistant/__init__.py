@@ -51,7 +51,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.19"
+    plugin_version = "2.19.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -150,8 +150,8 @@ class SubscribeAssistant(_PluginBase):
     # 自动待定下载中订阅
     _auto_download_pending = False
     # 下载事件先于下载添加完成产生，无 hash 待定任务在宽限期内仍应阻止继续选资源。
-    # 宽限期超时后自动释放，避免下载器添加失败时长期卡 P。
-    _download_pending_hash_grace_seconds = 5 * 60
+    # 宽限期由下载检查巡检判断，默认 5 分钟巡检下实际释放时间约为 10-15 分钟。
+    _download_pending_hash_grace_seconds = 10 * 60
     # 剧集待定天数
     _auto_tv_pending_days = 0
     # 剧集待定集数
@@ -3105,7 +3105,7 @@ block: []
 
         self.__set_subscribe_download_pending_state(subscribe=subscribe, reason="触发下载事件，更新为下载待定")
 
-        logger.debug(f"已完成资源下载自动待定处理")
+        logger.info(f"{self.__format_subscribe(subscribe)} 已完成资源下载自动待定处理")
 
     def __ensure_download_pending_state(self, subscribe: Subscribe, reason: str) -> None:
         """
@@ -3126,19 +3126,25 @@ block: []
 
         self.__set_subscribe_download_pending_state(subscribe=subscribe, reason=reason)
 
-    def __set_subscribe_download_pending_state(self, subscribe: Subscribe, reason: str) -> None:
+    def __set_subscribe_download_pending_state(self, subscribe: Subscribe, reason: str) -> bool:
         """
         将主订阅表状态同步为下载待定，避免巡检状态和插件下载任务状态长时间不一致。
         :param subscribe: 订阅对象
         :param reason: 状态变更原因，用于日志排查
+        :return: 是否实际更新了主订阅表状态
         """
-        if not subscribe or subscribe.state == "P":
-            return
+        if not subscribe:
+            return False
+
+        if subscribe.state == "P":
+            logger.info(f"{self.__format_subscribe(subscribe)} {reason}，状态已是 P")
+            return False
 
         self.subscribe_oper.update(subscribe.id, {"state": "P"})
         logger.info(
             f"{self.__format_subscribe(subscribe)} {reason}，状态从 {subscribe.state} 更新为 P"
         )
+        return True
 
     def __handle_resource_download_history_clear(self, subscribe: Subscribe, context: Optional[Context] = None):
         """
@@ -5302,11 +5308,11 @@ block: []
 
         # 更新 tv_pending 状态
         if pending:
-            logger.debug(f"{self.__format_subscribe(subscribe)} 当前订阅剧集待定状态更新为待定")
+            logger.info(f"{self.__format_subscribe(subscribe)} 当前订阅剧集待定状态更新为待定")
             subscribe_task["tv_pending"] = True
             subscribe_task["tv_pending_time"] = time.time()
         else:
-            logger.debug(f"{self.__format_subscribe(subscribe)} 当前订阅剧集待定状态更新为订阅中")
+            logger.info(f"{self.__format_subscribe(subscribe)} 当前订阅剧集待定状态更新为订阅中")
             subscribe_task["tv_pending"] = False
             subscribe_task["tv_pending_time"] = None
 
