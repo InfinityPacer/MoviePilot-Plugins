@@ -51,7 +51,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.18"
+    plugin_version = "2.19"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -149,6 +149,9 @@ class SubscribeAssistant(_PluginBase):
     _auto_tv_pending = False
     # 自动待定下载中订阅
     _auto_download_pending = False
+    # 下载事件先于下载添加完成产生，无 hash 待定任务在宽限期内仍应阻止继续选资源。
+    # 宽限期超时后自动释放，避免下载器添加失败时长期卡 P。
+    _download_pending_hash_grace_seconds = 5 * 60
     # 剧集待定天数
     _auto_tv_pending_days = 0
     # 剧集待定集数
@@ -2887,6 +2890,7 @@ block: []
             torrent_info = self.__get_torrent_info(torrent=torrent, dl_type=service.type) or {}
             progress_percent = self.__get_torrent_progress_percent(torrent_info=torrent_info)
             current_time = time.time()
+            download_added_pending = self._auto_download_pending and bool(subscribe.best_version)
 
             # 更新订阅下载任务
             self.__with_lock_and_update_subscribe_tasks(method=self.__update_subscribe_torrent_task,
@@ -2894,7 +2898,9 @@ block: []
                                                         torrent_hash=torrent_hash,
                                                         torrent_info=context.torrent_info,
                                                         episodes=episodes,
-                                                        downloader=downloader)
+                                                        downloader=downloader,
+                                                        pending=download_added_pending,
+                                                        update_priority=download_added_pending)
 
             self.__with_lock_and_update_torrent_tasks(
                 method=lambda tasks: tasks.update({
@@ -2920,6 +2926,8 @@ block: []
                     }
                 })
             )
+
+            self.__ensure_download_pending_state(subscribe=subscribe, reason="下载添加成功，确认下载待定")
         except Exception as e:
             logger.error(f"处理下载添加事件时发生错误: {str(e)}")
 
@@ -2942,17 +2950,17 @@ block: []
             logger.debug(f"未能找到订阅信息，跳过处理")
             return
 
-        # 检查是否开启下载自动待定，并且当前是否处于待定状态
+        # 检查是否开启下载自动待定，并且当前是否已有下载中待定任务
         if self._auto_download_pending:
             subscribe_tasks = self.__get_data(key="subscribes")
             subscribe_task, exists = self.__initialize_subscribe_task(subscribe=subscribe,
                                                                       subscribe_tasks=subscribe_tasks)
 
-            # 如果存在洗版订阅任务，并处于下载待定状态，则不允许进行资源选择，否则可能会多次下载资源
-            if subscribe.best_version and subscribe.state == "P" and exists:
+            # 主程序订阅表状态可能被巡检短暂恢复为 R，这里以插件任务状态为准阻止重复洗版下载。
+            if subscribe.best_version and exists:
                 pending = self.__get_subscribe_task_download_pending(subscribe_task=subscribe_task)
                 if pending:
-                    logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 当前存在任务正在下载，取消后续资源选择")
+                    logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 当前存在下载中待定任务，取消后续资源选择")
                     event_data.updated = True
                     event_data.updated_contexts = []
                     event_data.source = self.plugin_name
@@ -3095,12 +3103,42 @@ block: []
                                                     pending=True,
                                                     update_priority=True)
 
-        # 更新订阅信息为待定
-        logger.debug(f"{self.__format_subscribe(subscribe)} 已更新为待定状态")
-        if subscribe.state != "P":
-            self.subscribe_oper.update(subscribe.id, {"state": "P"})
+        self.__set_subscribe_download_pending_state(subscribe=subscribe, reason="触发下载事件，更新为下载待定")
 
         logger.debug(f"已完成资源下载自动待定处理")
+
+    def __ensure_download_pending_state(self, subscribe: Subscribe, reason: str) -> None:
+        """
+        确认插件任务已进入下载待定后，同步主订阅表状态为 P。
+        :param subscribe: 订阅对象
+        :param reason: 状态变更原因，用于日志排查事件顺序
+        """
+        if not self._auto_download_pending or not subscribe or not subscribe.best_version:
+            return
+
+        subscribe_tasks = self.__get_data(key="subscribes")
+        subscribe_task = subscribe_tasks.get(str(subscribe.id))
+        if not subscribe_task or not self.__match_subscribe(subscribe=subscribe, subscribe_task=subscribe_task):
+            return
+
+        if not self.__get_subscribe_task_download_pending(subscribe_task=subscribe_task):
+            return
+
+        self.__set_subscribe_download_pending_state(subscribe=subscribe, reason=reason)
+
+    def __set_subscribe_download_pending_state(self, subscribe: Subscribe, reason: str) -> None:
+        """
+        将主订阅表状态同步为下载待定，避免巡检状态和插件下载任务状态长时间不一致。
+        :param subscribe: 订阅对象
+        :param reason: 状态变更原因，用于日志排查
+        """
+        if not subscribe or subscribe.state == "P":
+            return
+
+        self.subscribe_oper.update(subscribe.id, {"state": "P"})
+        logger.info(
+            f"{self.__format_subscribe(subscribe)} {reason}，状态从 {subscribe.state} 更新为 P"
+        )
 
     def __handle_resource_download_history_clear(self, subscribe: Subscribe, context: Optional[Context] = None):
         """
@@ -4134,6 +4172,8 @@ block: []
             subscribe = self.subscribe_oper.get(sid=subscribe_id)
             if not self.__check_subscribe_status(subscribe=subscribe):
                 continue
+            # 无 hash 待定只覆盖 ResourceDownload 到 DownloadAdded 的事件间隔，超时视为添加失败并释放状态。
+            self.__drop_expired_hashless_pending_tasks(subscribe=subscribe, subscribe_task=subscribe_task)
             pending = self.__get_subscribe_task_pending(subscribe_task=subscribe_task)
             # 如果当前订阅状态为待定，且订阅任务不为待定状态，则更新为订阅中
             if subscribe.state == "P" and not pending:
@@ -5201,8 +5241,14 @@ block: []
         torrent_tasks = subscribe_task.setdefault("torrent_tasks", [])
         for task in torrent_tasks:
             if torrent_hash:
-                # 如果已经有相同的 torrent_hash，直接返回
+                # 如果已经有相同的 torrent_hash，仅补齐下载待定标记，避免 DownloadAdded 补偿链路失效。
                 if task.get("hash") == torrent_hash:
+                    if pending and not task.get("pending"):
+                        task["pending"] = True
+                        task["pending_time"] = time.time()
+                        task["episodes"] = episodes
+                        task["downloader"] = downloader
+                        return True
                     return False
                 # 如果任务没有 hash 且信息匹配，更新 hash
                 if not task.get("hash") and self.__compare_torrent_info_and_task(torrent_info, task):
@@ -5211,6 +5257,9 @@ block: []
                         "episodes": episodes,
                         "downloader": downloader
                     })
+                    if pending and not task.get("pending"):
+                        task["pending"] = True
+                        task["pending_time"] = time.time()
                     return True
             else:
                 if self.__compare_torrent_info_and_task(torrent_info, task):
@@ -5276,20 +5325,78 @@ block: []
 
         return self.__get_subscribe_task_download_pending(subscribe_task=subscribe_task)
 
-    @staticmethod
-    def __get_subscribe_task_download_pending(subscribe_task: dict) -> bool:
+    def __get_subscribe_task_download_pending(self, subscribe_task: dict) -> bool:
         """
-        获取待定状态
+        获取下载待定状态，兼容已拿到 hash 的下载任务和事件间隔内的无 hash 任务。
         :param subscribe_task: 订阅任务
         """
         if not subscribe_task:
             return False
 
+        current_time = time.time()
         for task in subscribe_task.get("torrent_tasks", []):
-            if task.get("hash") and task.get("pending"):
+            if self.__is_download_pending_task_alive(task=task, current_time=current_time):
                 return True
 
         return False
+
+    def __is_download_pending_task_alive(self, task: dict, current_time: Optional[float] = None) -> bool:
+        """
+        判断下载待定任务是否仍有效；无 hash 任务只在事件宽限期内有效，避免下载添加失败后长期卡 P。
+        :param task: 订阅种子任务
+        :param current_time: 当前时间戳，批量判断时复用以减少时间漂移
+        """
+        if not task or not task.get("pending"):
+            return False
+
+        if task.get("hash"):
+            return True
+
+        try:
+            pending_time = float(task.get("pending_time") or 0)
+        except (TypeError, ValueError):
+            return False
+
+        if pending_time <= 0:
+            return False
+
+        current_time = current_time or time.time()
+        return current_time - pending_time <= self._download_pending_hash_grace_seconds
+
+    def __drop_expired_hashless_pending_tasks(self, subscribe: Subscribe, subscribe_task: dict) -> bool:
+        """
+        清理超过宽限期仍未补齐 hash 的下载待定任务，释放订阅巡检恢复状态。
+        :param subscribe: 订阅对象
+        :param subscribe_task: 订阅任务
+        :return: 是否发生清理
+        """
+        if not subscribe_task:
+            return False
+
+        torrent_tasks = subscribe_task.get("torrent_tasks") or []
+        if not torrent_tasks:
+            return False
+
+        current_time = time.time()
+        kept_tasks = []
+        changed = False
+        for task in torrent_tasks:
+            hashless_pending = task.get("pending") and not task.get("hash")
+            pending_alive = self.__is_download_pending_task_alive(task=task, current_time=current_time)
+            if hashless_pending and not pending_alive:
+                changed = True
+                title = task.get("title") or task.get("description") or task.get("enclosure") or "未知资源"
+                logger.info(
+                    f"{self.__format_subscribe(subscribe)} 下载待定任务未在 "
+                    f"{int(self._download_pending_hash_grace_seconds)} 秒内获取 hash，清理待定记录：{title}"
+                )
+                continue
+            kept_tasks.append(task)
+
+        if changed:
+            subscribe_task["torrent_tasks"] = kept_tasks
+
+        return changed
 
     def __initialize_subscribe_task(self, subscribe: Subscribe, subscribe_tasks: dict) -> tuple[dict, bool]:
         """
