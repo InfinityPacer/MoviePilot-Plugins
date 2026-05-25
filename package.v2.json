@@ -28,6 +28,18 @@
             "v1.1": "MoviePilot V2 版本自定义排序插件"
         }
     },
+    "WeatherWidget": {
+        "name": "天气",
+        "description": "定时推送天气，并在仪表盘中显示实时天气。",
+        "labels": "工具,仪表板",
+        "version": "2.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/weatherwidget.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "history": {
+            "v2.0": "MoviePilot V2 版本天气插件，优先使用 CloakBrowser 截图并保留 Playwright 兼容路径"
+        }
+    },
     "BrushManager": {
         "name": "刷流种子整理",
         "description": "针对刷流种子进行整理操作。",
