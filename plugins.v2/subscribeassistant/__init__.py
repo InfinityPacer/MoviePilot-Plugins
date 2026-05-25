@@ -51,7 +51,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.19.1"
+    plugin_version = "2.20"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -4725,16 +4725,27 @@ block: []
             if latest_episode:
                 latest_ep_date, latest_air_day = self.__parse_date(day=latest_episode.air_date)
                 if next_episode and next_episode.air_date:
-                    # 如果下集尚未下载，并当前最新集为已下载的最大集
+                    # 从订阅范围 [start, total] 内按集号顺序找第一个还没出现在 note 里的集，作为"即将下载集"。
+                    # 之前用 total - lack + 1 推算，依赖 lack_episode 语义且要求已下载集从 1 连续，对主程序
+                    # 新统一的 lack 语义（库存实缺）和起始集 > 1 的订阅都不够准确，改为直接从 note 推导。
                     downloads = subscribe.note or []
-                    start_episode = subscribe.total_episode - subscribe.lack_episode + 1
+                    downloaded_set = {
+                        int(ep) for ep in downloads
+                        if isinstance(ep, int) or (isinstance(ep, str) and ep.lstrip("-").isdigit())
+                    }
+                    sub_start = subscribe.start_episode or 1
+                    sub_total = subscribe.total_episode or 0
+                    start_episode = next(
+                        (ep for ep in range(sub_start, sub_total + 1) if ep not in downloaded_set),
+                        None
+                    )
                     next_ep_date, air_day = self.__parse_date(day=next_episode.air_date)
                     logger.debug(
                         f"{self.__format_subscribe(subscribe=subscribe)} 即将下载集：{start_episode}，已下载集数：{downloads}")
                     if (
-                            next_episode.episode_number == start_episode
-                            and next_episode.episode_number not in downloads
-                            # and latest_episode.episode_number in downloads
+                            start_episode is not None
+                            and next_episode.episode_number == start_episode
+                            and next_episode.episode_number not in downloaded_set
                     ):
                         if next_ep_date:
                             pause = next_ep_date - current_date > timedelta(days=self._auto_pause_tv_latest_days)
@@ -5773,20 +5784,18 @@ block: []
             return False, 0
 
         # 派生字段对齐主程序 SubscribeChain.update_subscribe_priority 写入风格
+        # lack_episode 由主程序按媒体库实况维护，不在回填路径内写
         subscribe_chain = SubscribeChain()
         current_priority = subscribe_chain.get_best_version_current_priority(subscribe, episode_priority)
-        lack_episode = subscribe_chain.get_best_version_lack_episode(subscribe, episode_priority)
         payload = {
             "episode_priority": episode_priority,
             "current_priority": current_priority,
-            "lack_episode": lack_episode,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.subscribe_oper.update(sid=subscribe.id, payload=payload)
         logger.info(
             f"{self.__format_subscribe(subscribe)} 按集优先级回填完成："
-            f"新增 {updated} 集为 priority=100，"
-            f"current_priority={current_priority}，lack_episode={lack_episode}"
+            f"新增 {updated} 集为 priority=100，current_priority={current_priority}"
         )
         return True, updated
 
