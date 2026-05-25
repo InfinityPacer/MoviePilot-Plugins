@@ -17,7 +17,7 @@ class ServiceManager(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/servicemanager.png"
     # 插件版本
-    plugin_version = "1.3"
+    plugin_version = "1.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -55,9 +55,16 @@ class ServiceManager(_PluginBase):
     # 正在运行的托管系统任务计数：系统任务ID -> 运行实例数
     _running_redirects: Dict[str, int] = {}
     # Scheduler.start 原始方法
+    # 注意：一旦记录就常驻不清空。APScheduler 注册任务时会快照绑定方法（指向当时的 `_wrapped_start`），
+    # 类属性恢复后这些已固化的 job.func 仍会回调 wrapper；清空 _original_* 会让 wrapper 解引用到 None，
+    # 触发 `TypeError: 'NoneType' object is not callable`。改用 `_start_hook_installed` 标志位独立跟踪安装状态。
     _original_scheduler_start = None
-    # Scheduler.init 原始方法
+    # 标记 Scheduler.start hook 是否已生效，决定 install/uninstall 路径，不与 _original_* 的存在性耦合
+    _start_hook_installed = False
+    # Scheduler.init 原始方法，同 `_original_scheduler_start` 一样常驻不清空
     _original_scheduler_init = None
+    # 标记 Scheduler.init hook 是否已生效
+    _init_hook_installed = False
     # 当前生效实例
     _active_instance = None
     # Scheduler.init 执行期上下文，用于复用主项目正在构建的系统任务模板
@@ -690,7 +697,8 @@ class ServiceManager(_PluginBase):
 
     @classmethod
     def _install_start_hook(cls):
-        if cls._original_scheduler_start:
+        # 已安装则直接返回；判断使用独立标志位，避免与 _original_scheduler_start 的常驻语义混淆
+        if cls._start_hook_installed:
             return
         original = Scheduler.start
 
@@ -727,18 +735,25 @@ class ServiceManager(_PluginBase):
                             if alias_job and not alias_job.get("pid"):
                                 alias_job["running"] = False
 
-        cls._original_scheduler_start = original
+        # 首次安装时记录真正的原始方法；后续即便卸载也保留，供 APScheduler 已固化的 job.func 透传
+        if cls._original_scheduler_start is None:
+            cls._original_scheduler_start = original
         Scheduler.start = _wrapped_start
+        cls._start_hook_installed = True
 
     @classmethod
     def _uninstall_start_hook(cls):
+        # 仅恢复类属性并清标志位；保留 _original_scheduler_start 以便 wrapper 在被存量 job 调用时仍可透传
+        if not cls._start_hook_installed:
+            return
         if cls._original_scheduler_start:
             Scheduler.start = cls._original_scheduler_start
-            cls._original_scheduler_start = None
+        cls._start_hook_installed = False
 
     @classmethod
     def _install_init_hook(cls):
-        if cls._original_scheduler_init:
+        # 已安装则直接返回；同 start hook，独立标志位与原始方法引用解耦
+        if cls._init_hook_installed:
             return
         original = Scheduler.init
 
@@ -758,11 +773,17 @@ class ServiceManager(_PluginBase):
             finally:
                 cls._scheduler_context = previous_scheduler
 
-        cls._original_scheduler_init = original
+        # 同 start hook：首次安装记录真正原始方法，卸载时不清空，确保 wrapper 透传始终有效
+        if cls._original_scheduler_init is None:
+            cls._original_scheduler_init = original
         Scheduler.init = _wrapped_init
+        cls._init_hook_installed = True
 
     @classmethod
     def _uninstall_init_hook(cls):
+        # 仅恢复类属性并清标志位，保留 _original_scheduler_init 引用
+        if not cls._init_hook_installed:
+            return
         if cls._original_scheduler_init:
             Scheduler.init = cls._original_scheduler_init
-            cls._original_scheduler_init = None
+        cls._init_hook_installed = False
