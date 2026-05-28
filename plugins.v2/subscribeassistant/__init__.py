@@ -51,7 +51,7 @@ class SubscribeAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png"
     # 插件版本
-    plugin_version = "2.20"
+    plugin_version = "2.21"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -3038,7 +3038,7 @@ block: []
         self.__handle_resource_download_pending(subscribe=subscribe, context=context,
                                                 episodes=episodes, downloader=downloader)
 
-        self.__handle_resource_download_history_clear(subscribe=subscribe, context=context)
+        self.__handle_resource_download_history_clear(subscribe=subscribe, context=context, episodes=episodes)
 
     @eventmanager.register(etype=ChainEventType.TransferIntercept, priority=9999)
     def handle_transfer_intercept_event(self, event: Event):
@@ -3146,7 +3146,8 @@ block: []
         )
         return True
 
-    def __handle_resource_download_history_clear(self, subscribe: Subscribe, context: Optional[Context] = None):
+    def __handle_resource_download_history_clear(self, subscribe: Subscribe, context: Optional[Context] = None,
+                                                 episodes: Optional[list] = None):
         """
         处理洗版资源下载时清理整理记录
         """
@@ -3163,12 +3164,13 @@ block: []
             return
 
         if subscribe_type == MediaType.TV and context and context.torrent_info:
-            if not self.__is_episode_range_covered(
-                    title=context.torrent_info.title,
-                    subtitle=context.torrent_info.description,
-                    subscribe=subscribe):
-                logger.info(
-                    f"{self.__format_subscribe(subscribe)} 当前洗版资源未覆盖订阅剧集范围，跳过清理整理记录"
+            if not self.__is_download_resource_cover_subscribe_range(
+                    subscribe=subscribe, context=context, episodes=episodes):
+                self.__warn_history_clear_skipped(
+                    subscribe=subscribe,
+                    context=context,
+                    episodes=episodes,
+                    reason="当前洗版资源未覆盖订阅剧集范围",
                 )
                 return
 
@@ -3248,6 +3250,92 @@ block: []
                 text=f"已删除 {len(histories)} 条整理记录对应的源文件",
                 image=self.__get_subscribe_image(subscribe),
             )
+
+    def __get_subscribe_target_episodes(self, subscribe: Subscribe) -> List[int]:
+        """
+        获取订阅目标集数范围。
+        """
+        if not subscribe or not subscribe.total_episode:
+            return []
+        start_episode = subscribe.start_episode or 1
+        return list(range(start_episode, subscribe.total_episode + 1))
+
+    @staticmethod
+    def __normalize_episode_numbers(episodes: Optional[Union[list, set, tuple]]) -> List[int]:
+        """
+        规整事件或标题中的集数列表，过滤无法转成整数的值。
+        """
+        result = set()
+        for episode in episodes or []:
+            try:
+                result.add(int(episode))
+            except (TypeError, ValueError):
+                continue
+        return sorted(result)
+
+    def __get_download_resource_episodes(self, context: Optional[Context],
+                                         episodes: Optional[list]) -> Tuple[List[int], str]:
+        """
+        获取本次下载资源明确声明的集数及其来源。
+        """
+        event_episodes = self.__normalize_episode_numbers(episodes)
+        if event_episodes:
+            return event_episodes, "下载事件"
+
+        selected_episodes = self.__normalize_episode_numbers(getattr(context, "selected_episodes", None))
+        if selected_episodes:
+            return selected_episodes, "下载上下文"
+
+        torrent_info = context.torrent_info if context else None
+        if not torrent_info:
+            return [], ""
+        meta = MetaInfo(title=torrent_info.title, subtitle=torrent_info.description)
+        title_episodes = self.__normalize_episode_numbers(meta.episode_list)
+        if title_episodes:
+            return title_episodes, "资源标题"
+        return [], ""
+
+    def __is_download_resource_cover_subscribe_range(self, subscribe: Subscribe, context: Optional[Context],
+                                                     episodes: Optional[list]) -> bool:
+        """
+        判断下载资源是否明确覆盖订阅目标集数范围；无法判断时保留主程序校验结果。
+        """
+        target_episodes = set(self.__get_subscribe_target_episodes(subscribe=subscribe))
+        if not target_episodes:
+            return True
+
+        actual_episodes, _ = self.__get_download_resource_episodes(context=context, episodes=episodes)
+        if not actual_episodes:
+            return True
+
+        return target_episodes.issubset(set(actual_episodes))
+
+    def __warn_history_clear_skipped(self, subscribe: Subscribe, context: Context,
+                                     episodes: Optional[list], reason: str):
+        """
+        洗版清理被资源范围保护拦截时记录告警并通知用户。
+        """
+        target_episodes = self.__get_subscribe_target_episodes(subscribe=subscribe)
+        actual_episodes, source = self.__get_download_resource_episodes(context=context, episodes=episodes)
+        torrent_title = context.torrent_info.title if context and context.torrent_info else ""
+        target_desc = StringUtils.format_ep(target_episodes) if target_episodes else "未知"
+        actual_desc = StringUtils.format_ep(actual_episodes) if actual_episodes else "未知"
+        source_desc = source or "未知来源"
+
+        logger.warning(
+            f"{self.__format_subscribe(subscribe)} {reason}，跳过清理整理记录，"
+            f"目标集数：{target_desc}，资源集数：{actual_desc}（{source_desc}），种子：{torrent_title}"
+        )
+
+        if not self._notify:
+            return
+
+        self.post_message(
+            mtype=NotificationType.Subscribe,
+            title=f"{self.__format_subscribe_desc(subscribe=subscribe)} 洗版资源未覆盖目标范围，已跳过历史清理",
+            text=f"目标集数：{target_desc}\n资源集数：{actual_desc}\n来源：{source_desc}\n种子：{torrent_title}",
+            image=self.__get_subscribe_image(subscribe),
+        )
 
     def __handle_transfer_intercept_history_clear(self, mediainfo: MediaInfo, target_path: Path):
         """
