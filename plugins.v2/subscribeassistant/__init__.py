@@ -3992,7 +3992,7 @@ block: []
         reason = (f"订阅种子，下载时长 {download_time / 3600:.2f} 小时，"
                   f"超时窗口 {self._download_timeout:g} 小时内进度增长 "
                   f"{progress_delta:.2f}%，低于 {progress_threshold:g}%"
-                  f"（连续 {timeout_state.get('fail_count', 0)}/{retry_limit} 次）")
+                  f"（低进度删除 {timeout_state.get('fail_count', 0)}/{retry_limit} 次）")
         timeout_state["last_reason"] = reason
         if timeout_state.get("fail_count", 0) >= retry_limit:
             self.__mark_download_timeout_manual_review(timeout_state=timeout_state,
