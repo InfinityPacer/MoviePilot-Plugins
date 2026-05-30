@@ -2957,8 +2957,34 @@ block: []
 
             # 主程序订阅表状态可能被巡检短暂恢复为 R，这里以插件任务状态为准阻止重复洗版下载。
             if subscribe.best_version and exists:
-                pending = self.__get_subscribe_task_download_pending(subscribe_task=subscribe_task)
-                if pending:
+                if self.__is_episode_best_version_subscribe(subscribe=subscribe):
+                    # 分集洗版按集串行：只挡覆盖待定集的候选，其余集并行洗版；待定集无法确定时保守整体串行
+                    pending_episodes, pending_has_unknown = self.__collect_pending_episodes(
+                        subscribe_task=subscribe_task)
+                    if pending_has_unknown:
+                        logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 存在集数未知的下载待定任务，取消后续资源选择")
+                        event_data.updated = True
+                        event_data.updated_contexts = []
+                        event_data.source = self.plugin_name
+                        return
+                    if pending_episodes:
+                        kept_contexts = []
+                        for context in event_data.contexts:
+                            context_episodes, _ = self.__get_download_resource_episodes(context=context, episodes=None)
+                            # 集数判不出按保守剔除，避免同集多版本绕过串行造成覆盖竞态
+                            if not context_episodes or (set(context_episodes) & pending_episodes):
+                                continue
+                            kept_contexts.append(context)
+                        if len(kept_contexts) != len(event_data.contexts):
+                            logger.info(
+                                f"{self.__format_subscribe(subscribe=subscribe)} 待定集 "
+                                f"{StringUtils.format_ep(sorted(pending_episodes))} 下载中，"
+                                f"按集串行放行其余候选 {len(kept_contexts)}/{len(event_data.contexts)}"
+                            )
+                            event_data.updated = True
+                            event_data.updated_contexts = kept_contexts
+                            event_data.source = self.plugin_name
+                elif self.__get_subscribe_task_download_pending(subscribe_task=subscribe_task):
                     logger.info(f"{self.__format_subscribe(subscribe=subscribe)} 当前存在下载中待定任务，取消后续资源选择")
                     event_data.updated = True
                     event_data.updated_contexts = []
@@ -5565,6 +5591,30 @@ block: []
                 return True
 
         return False
+
+    def __collect_pending_episodes(self, subscribe_task: dict) -> Tuple[set, bool]:
+        """
+        收集下载待定种子覆盖的集，供分集洗版按集串行放行其余集。
+
+        存在集数无法确定的待定种子时返回 has_unknown=True，调用方据此保守整体串行，避免漏挡同集竞态。
+
+        :param subscribe_task: 订阅任务
+        :return: (待定集集合, 是否存在集数未知的待定种子)
+        """
+        pending_episodes = set()
+        has_unknown = False
+        if not subscribe_task:
+            return pending_episodes, has_unknown
+        current_time = time.time()
+        for task in subscribe_task.get("torrent_tasks", []):
+            if not self.__is_download_pending_task_alive(task=task, current_time=current_time):
+                continue
+            episodes = self.__normalize_episode_numbers(task.get("episodes"))
+            if not episodes:
+                has_unknown = True
+                continue
+            pending_episodes.update(episodes)
+        return pending_episodes, has_unknown
 
     def __is_download_pending_task_alive(self, task: dict, current_time: Optional[float] = None) -> bool:
         """
