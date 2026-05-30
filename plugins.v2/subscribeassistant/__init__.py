@@ -3239,8 +3239,12 @@ block: []
             logger.debug(f"{self.__format_subscribe(subscribe)}，尚未开启清理整理记录，跳过处理")
             return
 
-        if subscribe_type == MediaType.TV and context and context.torrent_info:
-            if not self.__is_download_resource_cover_subscribe_range(
+        if subscribe_type == MediaType.TV:
+            # 分集洗版逐集替换，整季清理对它无意义，直接跳过且不通知
+            if not subscribe.best_version_full:
+                logger.debug(f"{self.__format_subscribe(subscribe)} 分集洗版，跳过整季整理记录清理")
+                return
+            if context and context.torrent_info and not self.__is_download_resource_cover_subscribe_range(
                     subscribe=subscribe, context=context, episodes=episodes):
                 self.__warn_history_clear_skipped(
                     subscribe=subscribe,
@@ -6757,26 +6761,6 @@ block: []
         except ValueError:
             logger.error(f"day 格式错误：{day}")
             return None, None
-
-    @staticmethod
-    def __is_episode_range_covered(title: Optional[str], subtitle: Optional[str], subscribe: Subscribe) -> bool:
-        """
-        判断种子是否覆盖订阅剧集范围。
-        无法识别到剧集范围时，按合集处理以保持兼容。
-        """
-        meta = MetaInfo(title=title, subtitle=subtitle)
-        episodes = meta.episode_list
-        if not episodes:
-            return True
-
-        min_ep = min(episodes)
-        max_ep = max(episodes)
-        start_ep = subscribe.start_episode or 1
-        end_ep = subscribe.total_episode
-        if not end_ep:
-            return True
-
-        return min_ep <= start_ep and max_ep >= end_ep
 
     @staticmethod
     def __get_default_tracker_response():
