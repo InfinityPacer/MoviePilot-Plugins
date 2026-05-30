@@ -2899,8 +2899,7 @@ block: []
                                                         torrent_info=context.torrent_info,
                                                         episodes=episodes,
                                                         downloader=downloader,
-                                                        pending=download_added_pending,
-                                                        update_priority=download_added_pending)
+                                                        pending=download_added_pending)
 
             self.__with_lock_and_update_torrent_tasks(
                 method=lambda tasks: tasks.update({
@@ -3038,6 +3037,10 @@ block: []
         self.__handle_resource_download_pending(subscribe=subscribe, context=context,
                                                 episodes=episodes, downloader=downloader)
 
+        # 在主程序抬高优先级前快照旧优先级，供种子删除后回滚
+        self.__capture_best_version_priority_baseline_if_needed(subscribe=subscribe, context=context,
+                                                                episodes=episodes)
+
         self.__handle_resource_download_history_clear(subscribe=subscribe, context=context, episodes=episodes)
 
     @eventmanager.register(etype=ChainEventType.TransferIntercept, priority=9999)
@@ -3100,12 +3103,85 @@ block: []
                                                     torrent_info=context.torrent_info,
                                                     episodes=episodes,
                                                     downloader=downloader,
-                                                    pending=True,
-                                                    update_priority=True)
+                                                    pending=True)
 
         self.__set_subscribe_download_pending_state(subscribe=subscribe, reason="触发下载事件，更新为下载待定")
 
         logger.info(f"{self.__format_subscribe(subscribe)} 已完成资源下载自动待定处理")
+
+    def __capture_best_version_priority_baseline_if_needed(self, subscribe: Subscribe, context: Context,
+                                                           episodes: list):
+        """
+        洗版订阅在主程序抬高优先级前快照旧优先级，供种子删除后回滚。
+
+        :param subscribe: 订阅对象
+        :param context: 资源下载上下文
+        :param episodes: 本次下载覆盖的集
+        """
+        if not subscribe or not subscribe.best_version:
+            return
+        if not (self._auto_download_delete or self._manual_delete_listen
+                or self._tracker_response_listen or self._auto_download_pending):
+            return
+        if not context or not context.torrent_info:
+            return
+        self.__with_lock_and_update_subscribe_tasks(method=self.__capture_best_version_priority_baseline,
+                                                    subscribe=subscribe,
+                                                    torrent_info=context.torrent_info,
+                                                    episodes=episodes)
+
+    def __capture_best_version_priority_baseline(self, subscribe_tasks: dict, subscribe: Subscribe,
+                                                 torrent_info: TorrentInfo, episodes: list):
+        """
+        将洗版下载前的旧优先级快照写入对应订阅种子任务，按种子标识匹配既有无 hash 任务或新建一条。
+
+        分集洗版记录每集旧 episode_priority，电影/全集洗版记录旧 current_priority 标量，
+        统一记录本种贡献档 contributed_priority，删除时据此做按集归属守卫。
+
+        :param subscribe_tasks: 订阅任务字典
+        :param subscribe: 订阅对象
+        :param torrent_info: 资源种子信息
+        :param episodes: 本次下载覆盖的集
+        """
+        if not subscribe or subscribe_tasks is None or not torrent_info:
+            return
+        subscribe_task, _ = self.__initialize_subscribe_task(subscribe, subscribe_tasks)
+        torrent_tasks = subscribe_task.setdefault("torrent_tasks", [])
+
+        # 复用下载待定可能已建的无 hash 任务，没有则新建一条非待定基线任务，等 DownloadAdded 补齐 hash
+        target = None
+        for task in torrent_tasks:
+            if not task.get("hash") and self.__compare_torrent_info_and_task(torrent_info, task):
+                target = task
+                break
+        if target is None:
+            target = {
+                "hash": None,
+                "site_id": torrent_info.site,
+                "site_name": torrent_info.site_name,
+                "title": torrent_info.title,
+                "description": torrent_info.description,
+                "enclosure": torrent_info.enclosure,
+                "page_url": torrent_info.page_url,
+                "episodes": episodes,
+                "downloader": None,
+                "time": time.time(),
+                "pending": False,
+                "pending_time": None,
+            }
+            torrent_tasks.append(target)
+
+        target["contributed_priority"] = torrent_info.pri_order
+        target["current_priority_baseline"] = subscribe.current_priority or 0
+
+        # 主程序对所有剧集洗版（含全集洗版）都按集存 episode_priority，电影才用标量
+        if self.__resolve_subscribe_media_type(subscribe=subscribe) == MediaType.TV:
+            episode_priority = subscribe.episode_priority if isinstance(subscribe.episode_priority, dict) else {}
+            # 整季包标题常不带集号，episodes 为空时对齐主程序按目标集范围回填
+            episode_set = episodes or self.__get_best_version_target_episodes(subscribe=subscribe)
+            target["episode_priority_baseline"] = {
+                str(ep): episode_priority.get(str(ep)) for ep in episode_set
+            }
 
     def __ensure_download_pending_state(self, subscribe: Subscribe, reason: str) -> None:
         """
@@ -4240,6 +4316,10 @@ block: []
         if torrent_hash in torrent_tasks:
             del torrent_tasks[torrent_hash]
 
+        # 订阅级种子任务承载洗版下载前快照，过滤移除前先取出供回滚
+        matched_subscribe_torrent_task = next(
+            (task for task in subscribe_torrent_tasks if task.get("hash") == torrent_hash), None)
+
         subscribe_task["torrent_tasks"] = [
             task for task in subscribe_torrent_tasks if task.get("hash") != torrent_hash
         ]
@@ -4252,6 +4332,7 @@ block: []
         # 处理删除后续逻辑
         self.__handle_timeout_seed_deletion(subscribe=subscribe, subscribe_task=subscribe_task,
                                             torrent_task=torrent_task,
+                                            subscribe_torrent_task=matched_subscribe_torrent_task,
                                             triggered_subscribe_ids=triggered_subscribe_ids, reason=reason)
 
     def __reset_subscribe_task_pending(self, subscribe_tasks: dict):
@@ -4275,15 +4356,17 @@ block: []
                 logger.info(f"{self.__format_subscribe(subscribe)} 状态从 {subscribe.state} 更新为 R")
 
     def __handle_timeout_seed_deletion(self, subscribe: Subscribe, subscribe_task: dict, torrent_task: dict,
-                                       triggered_subscribe_ids: set, reason: str):
+                                       triggered_subscribe_ids: set, reason: str,
+                                       subscribe_torrent_task: Optional[dict] = None):
         """
         处理删除超时种子后续相关任务
 
         :param subscribe: 订阅信息
         :param subscribe_task: 订阅任务
-        :param torrent_task: 种子任务
+        :param torrent_task: 按 hash 维护的全局种子任务
         :param triggered_subscribe_ids: 已触发的订阅任务
         :param reason: 原因
+        :param subscribe_torrent_task: 对应订阅级种子任务，承载洗版下载前快照供回滚
         """
         if not subscribe:
             return
@@ -4308,9 +4391,11 @@ block: []
         elif media_type == MediaType.MOVIE:
             update_data["note"] = []
 
-        # 如果是洗版，这里还需要处理优先级
+        # 洗版订阅回滚本种对优先级的抬高，使被删集可被重新洗回
         if subscribe.best_version:
-            update_data["current_priority"] = subscribe_task.get("current_priority", subscribe.current_priority) or 0
+            self.__rollback_best_version_priority(subscribe=subscribe,
+                                                  baseline_task=subscribe_torrent_task or torrent_task,
+                                                  update_data=update_data)
         if update_data:
             self.subscribe_oper.update(subscribe.id, update_data)
 
@@ -4348,6 +4433,44 @@ block: []
         timer = threading.Timer(random_minutes * 60,
                                 lambda sid=subscribe.id: SubscribeChain().search(sid=sid))
         timer.start()
+
+    def __rollback_best_version_priority(self, subscribe: Subscribe, baseline_task: Optional[dict], update_data: dict):
+        """
+        洗版种子被删除后回滚其对订阅优先级的抬高，使被删集可被重新洗回。
+
+        剧集洗版（含全集洗版）按集回滚 episode_priority 并重算 current_priority，电影回滚 current_priority 标量。
+        无下载前快照时跳过，避免误删按集档位。
+
+        :param subscribe: 订阅对象
+        :param baseline_task: 承载下载前快照的订阅级种子任务，缺失时不回滚
+        :param update_data: 待写入订阅的字段字典，原地补充优先级相关键
+        """
+        if not baseline_task:
+            return
+        contributed = baseline_task.get("contributed_priority")
+        episode_baseline = baseline_task.get("episode_priority_baseline")
+        if episode_baseline is not None:
+            episode_priority = dict(subscribe.episode_priority) if isinstance(subscribe.episode_priority, dict) else {}
+            changed = False
+            for key, old in episode_baseline.items():
+                if key not in episode_priority:
+                    continue
+                # 已被更高档存活种子覆盖的集不回滚，避免拉低其洗版进度
+                if contributed is not None and episode_priority.get(key) != contributed:
+                    continue
+                if old in (None, 0):
+                    episode_priority.pop(key, None)
+                else:
+                    episode_priority[key] = old
+                changed = True
+            if changed:
+                update_data["episode_priority"] = episode_priority
+                update_data["current_priority"] = SubscribeChain().get_best_version_current_priority(
+                    subscribe, episode_priority)
+        elif "current_priority_baseline" in baseline_task:
+            current = subscribe.current_priority or 0
+            if contributed is None or current == contributed:
+                update_data["current_priority"] = baseline_task.get("current_priority_baseline") or 0
 
     def __clean_invalid_torrents(self, invalid_torrent_hashes: list, subscribe_tasks: dict, torrent_tasks: dict):
         """
@@ -5296,8 +5419,7 @@ block: []
     def __update_subscribe_torrent_task(self, subscribe_tasks: dict, subscribe: Subscribe,
                                         torrent_hash: Optional[str] = None,
                                         torrent_info: Optional[TorrentInfo] = None, episodes: list[int] = None,
-                                        downloader: str = None, pending: bool = False,
-                                        update_priority=False) -> Optional[dict]:
+                                        downloader: str = None, pending: bool = False) -> Optional[dict]:
         """
         更新订阅种子任务，支持移除完成任务、更新或新增种子任务
         :param subscribe_tasks: 订阅任务字典
@@ -5307,7 +5429,6 @@ block: []
         :param episodes: 可选，需要下载的集数
         :param downloader: 可选，下载器
         :param pending: 可选，是否将种子任务标记为待定
-        :param update_priority：可选，更新优先级
         :return: 返回更新后的订阅任务对象，或者移除任务后的任务信息
         """
         if not subscribe or subscribe_tasks is None:
@@ -5319,10 +5440,6 @@ block: []
         # 更新或新增种子任务
         self.__update_or_add_subscribe_torrent_task(subscribe_task, torrent_hash, torrent_info,
                                                     episodes, downloader, pending)
-
-        # 更新优先级
-        if update_priority:
-            subscribe_task["current_priority"] = subscribe.current_priority
 
         return subscribe_task
 
@@ -5470,7 +5587,10 @@ block: []
 
     def __drop_expired_hashless_pending_tasks(self, subscribe: Subscribe, subscribe_task: dict) -> bool:
         """
-        清理超过宽限期仍未补齐 hash 的下载待定任务，释放订阅巡检恢复状态。
+        清理超过宽限期仍未补齐 hash 的无 hash 种子任务，释放订阅巡检恢复状态并回收过期基线快照。
+
+        下载待定任务按 pending_time 判活，洗版基线任务按创建时间 time 判活，超期均视为下载未成立而回收。
+
         :param subscribe: 订阅对象
         :param subscribe_task: 订阅任务
         :return: 是否发生清理
@@ -5483,20 +5603,34 @@ block: []
             return False
 
         current_time = time.time()
+        grace = self._download_pending_hash_grace_seconds
         kept_tasks = []
         changed = False
         for task in torrent_tasks:
-            hashless_pending = task.get("pending") and not task.get("hash")
-            pending_alive = self.__is_download_pending_task_alive(task=task, current_time=current_time)
-            if hashless_pending and not pending_alive:
-                changed = True
-                title = task.get("title") or task.get("description") or task.get("enclosure") or "未知资源"
-                logger.info(
-                    f"{self.__format_subscribe(subscribe)} 下载待定任务未在 "
-                    f"{int(self._download_pending_hash_grace_seconds)} 秒内获取 hash，清理待定记录：{title}"
-                )
+            if task.get("hash"):
+                kept_tasks.append(task)
                 continue
-            kept_tasks.append(task)
+            has_baseline = "current_priority_baseline" in task or "episode_priority_baseline" in task
+            if task.get("pending"):
+                alive = self.__is_download_pending_task_alive(task=task, current_time=current_time)
+            elif has_baseline:
+                try:
+                    ref_time = float(task.get("time") or 0)
+                except (TypeError, ValueError):
+                    ref_time = 0
+                alive = ref_time > 0 and (current_time - ref_time) <= grace
+            else:
+                kept_tasks.append(task)
+                continue
+            if alive:
+                kept_tasks.append(task)
+                continue
+            changed = True
+            title = task.get("title") or task.get("description") or task.get("enclosure") or "未知资源"
+            logger.info(
+                f"{self.__format_subscribe(subscribe)} 无 hash 种子任务未在 "
+                f"{int(grace)} 秒内获取 hash，清理记录：{title}"
+            )
 
         if changed:
             subscribe_task["torrent_tasks"] = kept_tasks
@@ -5538,7 +5672,6 @@ block: []
             "doubanid": subscribe.doubanid,
             "bangumiid": subscribe.bangumiid,
             "best_version": subscribe.best_version,
-            "current_priority": subscribe.current_priority,
             "pause_for_user": False,
             "pause_for_user_time": None,
             "pause_for_download": False,
