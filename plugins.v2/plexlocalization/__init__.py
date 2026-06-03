@@ -38,7 +38,7 @@ class PlexLocalization(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexlocalization.png"
     # 插件版本
-    plugin_version = "1.8"
+    plugin_version = "1.9"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1005,14 +1005,12 @@ class PlexLocalization(_PluginBase):
                  .get("Metadata", []))
         return items
 
-    def __put_title_sort(self, plex: Plex, rating_key: str, library_id: int, type_id: int, is_collection: bool,
-                         sort_title: str):
+    def __put_title_sort(self, plex: Plex, rating_key: str, library_id: int, type_id: int, sort_title: str) -> bool:
         """
-        更新标题排序
+        更新标题排序，并通过重新读取元数据确认 Plex 已真实写入。
         """
-        endpoint = f"library/metadata/{rating_key}" if is_collection else f"library/sections/{library_id}/all"
-        plex.put_data(
-            endpoint=endpoint,
+        response = plex.put_data(
+            endpoint=f"library/sections/{library_id}/all",
             params={
                 "type": type_id,
                 "id": rating_key,
@@ -1021,6 +1019,17 @@ class PlexLocalization(_PluginBase):
                 "titleSort.locked": 1 if self._lock else 0
             },
             timeout=self._timeout)
+        if not response or response.status_code >= 400:
+            logger.warning(f"更新标题排序失败，ratingKey={rating_key}，状态码："
+                           f"{response.status_code if response else '无响应'}")
+            return False
+
+        item = self.__fetch_item(plex=plex, rating_key=rating_key)
+        actual_sort_title = item.get("titleSort", "") if item else ""
+        if actual_sort_title != sort_title:
+            logger.warning(f"更新标题排序未生效，ratingKey={rating_key}，期望：{sort_title}，实际：{actual_sort_title}")
+            return False
+        return True
 
     def __put_tag(self, plex: Plex, rating_key: str, library_id: int, type_id: str, tag, new_tag, tag_type):
         """
@@ -1074,8 +1083,6 @@ class PlexLocalization(_PluginBase):
             return
 
         type_id = plexapi.utils.searchType(libtype=item_type)
-        is_collection = item_type != "collection"
-
         title = item.get("title", "")
         locked_fields = [field["name"] for field in item.get("Field") or [] if field.get("locked")]
         # 如果标题排序没有锁定，尝试更新标题排序
@@ -1085,13 +1092,13 @@ class PlexLocalization(_PluginBase):
             title_sort = item.get("titleSort", "")
             if StringUtils.is_chinese(title_sort) or title_sort == "":
                 title_sort = self.__convert_to_pinyin(title)
-                self.__put_title_sort(plex=plex,
-                                      rating_key=rating_key,
-                                      library_id=library_id,
-                                      type_id=type_id,
-                                      is_collection=is_collection,
-                                      sort_title=title_sort)
-                logger.info(f"{title} < {title_sort} >")
+                updated = self.__put_title_sort(plex=plex,
+                                                rating_key=rating_key,
+                                                library_id=library_id,
+                                                type_id=type_id,
+                                                sort_title=title_sort)
+                if updated:
+                    logger.info(f"{title} < {title_sort} >")
 
         tags: dict[str, list] = {
             "genre": [genre.get("tag") for genre in item.get("Genre", {})],  # 流派
