@@ -123,11 +123,12 @@
         "name": "Plex演职人员刮削",
         "description": "实现刮削演职人员中文名称及角色。",
         "labels": "Plex,刮削",
-        "version": "2.1",
+        "version": "2.2",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v2.2": "兼容 MoviePilot v2.13.x 的中文简繁转换接口，避免插件加载失败",
             "v2.1": "修复MoviePilot缓存接口变更导致无法启动的问题",
             "v2.0": "兼容MoviePilot的Redis缓存方案，需要MoviePilot v2.2.3+",
             "v1.9": "修复了入库执行一次失效的问题",

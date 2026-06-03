@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 import plexapi
 import plexapi.utils
 import pypinyin
-import zhconv
 from plexapi.library import LibrarySection
 
 from app.chain.mediaserver import MediaServerChain
@@ -19,6 +18,7 @@ from app.plugins import PluginChian
 from app.plugins.plexpersonmeta.helper import RatingInfo, cache_with_logging
 from app.schemas import MediaPerson, ServiceInfo
 from app.schemas.types import MediaType
+from app.utils.zhconv import convert as zhconv_convert
 from app.utils.string import StringUtils
 
 lock = threading.Lock()
@@ -648,8 +648,7 @@ class ScrapeHelper:
             if also_known_as:
                 for name in also_known_as:
                     if name and StringUtils.is_chinese(name):
-                        # 使用cn2an将繁体转化为简体
-                        return zhconv.convert(name, "zh-hans")
+                        return zhconv_convert(name, "zh-hans")
         except Exception as err:
             logger.error(f"获取人物中文名失败：{err}")
         return None
