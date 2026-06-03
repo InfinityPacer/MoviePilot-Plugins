@@ -86,12 +86,16 @@ def _prepend_sys_path(path: Path) -> None:
 
 
 def prepare_backend() -> None:
-    """隔离配置目录并加入后端到 ``sys.path``（不加载任何插件源码）。
+    """隔离配置目录、加入后端到 ``sys.path`` 并建表（不加载任何插件源码）。
 
     仅需 ``import app.*`` 而不触碰具体插件包的用例可直接调用本函数。
     """
     isolate_config_dir()
     _prepend_sys_path(_resolve_backend_path())
+    # 隔离出的临时库为空，插件读取 systemconfig 等表会报 no such table；与主程序 conftest 一致建表。
+    # init_db 仅 import models + create_all，无 alembic/网络、幂等、毫秒级。
+    from app.db.init import init_db
+    init_db()
 
 
 def prepare_v2_backend() -> None:
