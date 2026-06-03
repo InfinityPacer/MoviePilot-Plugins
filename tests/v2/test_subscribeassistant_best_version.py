@@ -2,19 +2,13 @@
 SubscribeAssistant 洗版相关核心逻辑单测。
 
 覆盖洗版核心纯逻辑：下载前优先级快照采集、删除后按集/标量回滚、按集待定集合收集。
-依赖 MoviePilot 后端（app.*）与插件包：通过共享引导隔离 CONFIG_DIR 并注入后端、
-plugins.v2 到 sys.path，用 object.__new__ 绕过插件重初始化，仅验证逻辑方法。
+依赖 MoviePilot 后端（app.*）与插件包：根 conftest 会先隔离 CONFIG_DIR 并注入后端、
+plugins.v2 到 sys.path；用例用 object.__new__ 绕过插件重初始化，仅验证逻辑方法。
 """
 import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-
-# tests 为包，相对导入同包引导（避免绝对 ``tests`` 在多仓工作区里指向其它仓）；prepare_v2_backend
-# 会隔离 CONFIG_DIR 并注入后端 + plugins.v2，必须在 import app.* / 插件包之前调用
-from .._bootstrap import prepare_v2_backend
-
-prepare_v2_backend()
 
 from app.schemas.types import MediaType  # noqa: E402
 from subscribeassistant import SubscribeAssistant  # noqa: E402
