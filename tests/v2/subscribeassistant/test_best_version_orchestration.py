@@ -273,19 +273,24 @@ class TestProcessBestVersionComplete:
 
     def test_empty_subscribes(self):
         plugin = make_plugin(_auto_best_remaining_days=30)
-        plugin.process_best_version_complete([])
+        with patch.object(plugin, "_SubscribeAssistant__mark_best_version_subscription_complete") as mark:
+            plugin.process_best_version_complete([])
+        mark.assert_not_called()
 
     def test_none_remaining_days(self):
         plugin = make_plugin(_auto_best_remaining_days=None)
         plugin.process_best_version_complete([make_subscribe(best_version=1)])
+        plugin.subscribe_oper.update.assert_not_called()
 
     def test_zero_remaining_days(self):
         plugin = make_plugin(_auto_best_remaining_days=0)
         plugin.process_best_version_complete([make_subscribe(best_version=1)])
+        plugin.subscribe_oper.update.assert_not_called()
 
     def test_negative_remaining_days(self):
         plugin = make_plugin(_auto_best_remaining_days=-1)
         plugin.process_best_version_complete([make_subscribe(best_version=1)])
+        plugin.subscribe_oper.update.assert_not_called()
 
     def test_non_best_version_skipped(self):
         plugin = make_plugin(_auto_best_remaining_days=30)
@@ -380,6 +385,8 @@ class TestProcessBestVersion:
     def test_empty_dict(self):
         plugin = make_plugin()
         plugin.process_best_version({}, make_mediainfo())
+        plugin.subscribe_oper.add.assert_not_called()
+        plugin.subscribe_oper.delete.assert_not_called()
 
     def test_already_best_version(self):
         plugin = make_plugin()

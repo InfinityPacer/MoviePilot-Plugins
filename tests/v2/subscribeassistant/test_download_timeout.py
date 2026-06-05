@@ -311,13 +311,17 @@ class TestClearDownloadTimeoutState:
     def test_no_subscribe_task(self):
         plugin = make_plugin()
         sub = make_subscribe()
-        plugin._SubscribeAssistant__clear_download_timeout_state(None, sub, {})
+        with patch.object(plugin, "_SubscribeAssistant__get_timeout_scope_key") as scope:
+            plugin._SubscribeAssistant__clear_download_timeout_state(None, sub, {})
+        scope.assert_not_called()
 
     def test_no_timeout_states(self):
         plugin = make_plugin()
         sub = make_subscribe()
         task = {}
-        plugin._SubscribeAssistant__clear_download_timeout_state(task, sub, {})
+        with patch.object(plugin, "_SubscribeAssistant__get_timeout_scope_key") as scope:
+            plugin._SubscribeAssistant__clear_download_timeout_state(task, sub, {})
+        scope.assert_not_called()
 
     def test_empty_timeout_states_noop(self):
         plugin = make_plugin()
@@ -483,10 +487,12 @@ class TestResetSubscribeTaskPending:
     def test_empty_tasks(self):
         plugin = make_plugin()
         plugin._SubscribeAssistant__reset_subscribe_task_pending({})
+        plugin.subscribe_oper.get.assert_not_called()
 
     def test_none_tasks(self):
         plugin = make_plugin()
         plugin._SubscribeAssistant__reset_subscribe_task_pending(None)
+        plugin.subscribe_oper.get.assert_not_called()
 
     def test_subscribe_not_found(self):
         plugin = make_plugin()
@@ -664,6 +670,7 @@ class TestProcessDeleteTask:
     def test_none_tasks(self):
         plugin = make_plugin(_timeout_history_cleanup=24)
         plugin._SubscribeAssistant__process_delete_task(None)
+        plugin.subscribe_oper.get.assert_not_called()
 
     def test_cleanup_disabled(self):
         plugin = make_plugin(_timeout_history_cleanup=None)

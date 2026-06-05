@@ -141,6 +141,7 @@ class TestProcessSubscribePauseForUser:
         plugin = make_plugin(_auto_pause_users={"admin"})
         plugin.subscribe_oper.get.return_value = None
         plugin.process_subscribe_pause_for_user(1)
+        plugin.save_data.assert_not_called()
 
     def test_best_version_skipped(self):
         plugin = make_plugin(_auto_pause_users={"admin"})
@@ -185,7 +186,10 @@ class TestProcessSubscribePauseForUserInner:
         sub = make_subscribe(state="R", username="admin")
         plugin.subscribe_oper.update.side_effect = RuntimeError("db error")
         tasks = {}
-        plugin._SubscribeAssistant__process_subscribe_pause_for_user(tasks, sub)
+        with patch("subscribeassistant.logger.error") as error:
+            plugin._SubscribeAssistant__process_subscribe_pause_for_user(tasks, sub)
+        assert tasks == {}
+        error.assert_called_once()
 
 
 # ===========================================================================
@@ -247,9 +251,14 @@ class TestProcessSubscribePauseInner:
     def test_tuple_input(self):
         """输入为 (subscribe, mediainfo) 元组。"""
         plugin = make_plugin()
-        sub = make_subscribe(best_version=1)
+        sub = make_subscribe(best_version=0)
         mi = make_mediainfo()
-        plugin._SubscribeAssistant__process_subscribe_pause({}, [(sub, mi)])
+        with patch.object(plugin, "_SubscribeAssistant__recognize_media") as recognize, \
+                patch.object(plugin, "_SubscribeAssistant__process_subscribe_pause_for_download",
+                             return_value=True) as download:
+            plugin._SubscribeAssistant__process_subscribe_pause({}, [(sub, mi)])
+        recognize.assert_not_called()
+        download.assert_called_once()
 
     def test_unknown_mediainfo_type_skips_pause_handlers(self):
         plugin = make_plugin()
@@ -285,8 +294,10 @@ class TestProcessSubscribePauseInner:
         plugin = make_plugin()
         sub = make_subscribe()
         with patch.object(SubscribeAssistant, "_SubscribeAssistant__initialize_subscribe_task",
-                          side_effect=RuntimeError("boom")):
+                          side_effect=RuntimeError("boom")), \
+                patch("subscribeassistant.logger.error") as error:
             plugin._SubscribeAssistant__process_subscribe_pause({}, [sub])
+        error.assert_called_once()
 
 
 # ===========================================================================

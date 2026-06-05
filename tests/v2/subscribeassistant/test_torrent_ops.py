@@ -733,8 +733,11 @@ class TestWithLockAndUpdateSubscribeTasks:
         plugin.get_data = MagicMock(return_value={})
         method = MagicMock(side_effect=RuntimeError("boom"))
         method.__name__ = "test_method"
-        plugin._SubscribeAssistant__with_lock_and_update_subscribe_tasks(method)
-        # 应该不抛异常
+        with patch("subscribeassistant.logger.error") as error:
+            plugin._SubscribeAssistant__with_lock_and_update_subscribe_tasks(method)
+        method.assert_called_once_with({})
+        plugin.save_data.assert_not_called()
+        error.assert_called_once()
 
 
 # ===========================================================================
@@ -757,7 +760,11 @@ class TestWithLockAndUpdateTorrentTasks:
         plugin.get_data = MagicMock(return_value={})
         method = MagicMock(side_effect=ValueError("bad"))
         method.__name__ = "bad_method"
-        plugin._SubscribeAssistant__with_lock_and_update_torrent_tasks(method)
+        with patch("subscribeassistant.logger.error") as error:
+            plugin._SubscribeAssistant__with_lock_and_update_torrent_tasks(method)
+        method.assert_called_once_with({})
+        plugin.save_data.assert_not_called()
+        error.assert_called_once()
 
 
 # ===========================================================================

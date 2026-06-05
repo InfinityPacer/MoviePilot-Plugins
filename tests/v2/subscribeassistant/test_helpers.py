@@ -448,6 +448,8 @@ class TestStopService:
         plugin = make_plugin(_scheduler=None)
         plugin._event = MagicMock()
         plugin.stop_service()
+        plugin._event.set.assert_not_called()
+        plugin._event.clear.assert_not_called()
 
     def test_with_running_scheduler(self):
         scheduler = MagicMock()
@@ -473,7 +475,9 @@ class TestStopService:
         scheduler.remove_all_jobs.side_effect = RuntimeError("fail")
         plugin = make_plugin(_scheduler=scheduler)
         plugin._event = MagicMock()
-        plugin.stop_service()
+        with patch("builtins.print") as print_mock:
+            plugin.stop_service()
+        print_mock.assert_called_once_with("fail")
 
 
 # ===========================================================================
@@ -509,6 +513,7 @@ class TestSchedulerEntryPoints:
     def test_meta_check_disabled(self):
         plugin = make_plugin(_auto_tv_pending=False, _auto_pause=False)
         plugin.meta_check()
+        plugin.subscribe_oper.list.assert_not_called()
 
     @patch.object(SubscribeAssistant, "process_tv_pending")
     @patch.object(SubscribeAssistant, "process_subscribe_pause")
@@ -543,6 +548,7 @@ class TestSchedulerEntryPoints:
         plugin = make_plugin()
         plugin.subscribe_oper.list.return_value = []
         plugin.best_version_check()
+        plugin.subscribe_oper.list.assert_called_once_with(state="N,R,P")
 
     @patch("subscribeassistant.SubscribeChain")
     def test_reset_task(self, mock_chain_cls):
