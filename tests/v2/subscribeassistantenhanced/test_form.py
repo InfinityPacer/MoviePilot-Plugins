@@ -1,0 +1,305 @@
+"""form 配置表单单测：聚合契约 + model 键覆盖（不漂移）+ 控件类型。"""
+import re
+
+from subscribeassistantenhanced.form import HINTS, LABELS, build_form
+from subscribeassistantenhanced.form.components import field_for
+from subscribeassistantenhanced.shared.config import PluginConfig
+
+
+def _controls_with_model(node):
+    """递归提取带 model 的表单控件，不依赖具体 Vuetify 嵌套层级。"""
+    controls = []
+    if isinstance(node, dict):
+        if node.get("props", {}).get("model"):
+            controls.append(node)
+        for child in node.get("content", []):
+            controls.extend(_controls_with_model(child))
+    elif isinstance(node, list):
+        for child in node:
+            controls.extend(_controls_with_model(child))
+    return controls
+
+
+class TestBuildForm:
+    """build_form 聚合契约。"""
+
+    def test_returns_conf_and_model(self):
+        conf, model = build_form()
+        assert isinstance(conf, list) and conf
+        assert isinstance(model, dict)
+
+    def test_model_covers_all_config_keys(self):
+        """model 默认值必须覆盖 PluginConfig 所有键，否则 v-show 联动因缺键异常。"""
+        _conf, model = build_form()
+        for key in PluginConfig({}).declared_keys():
+            assert key in model, f"表单 model 缺少配置键 {key}"
+
+    def test_five_tabs(self):
+        """配置表单使用 5 个 Tab；conf 结构：[switch_row, period_row, VTabs, VWindow]。"""
+        conf, _model = build_form()
+        # conf[2] 是 VTabs，含 5 个 VTab
+        assert conf[2]["component"] == "VTabs"
+        assert len(conf[2]["content"]) == 5
+
+    def test_bool_default_renders_switch(self):
+        col = field_for("completion_guard_enabled", "启用完结守门", True)
+        assert col["content"][0]["component"] == "VSwitch"
+        assert col["content"][0]["props"]["model"] == "completion_guard_enabled"
+
+    def test_int_default_renders_number_field(self):
+        col = field_for("download_timeout_minutes", "下载超时", 180)
+        assert col["content"][0]["props"]["type"] == "number"
+
+    def test_removed_download_pause_action_is_not_rendered(self):
+        """下载超时删种后不暂停订阅，因此不再渲染下载暂停超期动作。"""
+        conf, _model = build_form()
+        fields = _controls_with_model(conf[3])
+        models = {field["props"].get("model") for field in fields}
+        assert "download_pause_max_days" not in models
+        assert "download_pause_expire_action" not in models
+
+    def test_only_one_verify_interval_is_exposed(self):
+        """完成后验证只保留小时级周期，配置与调度不再存在重复口径。"""
+        _conf, model = build_form()
+        assert "verify_interval_hours" in model
+        assert "verify_check_interval_minutes" not in model
+
+    def test_auto_pause_users_is_editable_text_field(self):
+        """用户名自动暂停名单须作为可编辑文本框出现在表单，否则该能力用户无法启用。
+        新结构：conf[3] 为 VWindow；每个 VWindowItem.content 为若干 VRow（开关行/输入行），VRow.content 为 VCol 列表。
+        """
+        conf, _model = build_form()
+        fields = _controls_with_model(conf[3])
+        field = next((f for f in fields if f["props"].get("model") == "auto_pause_users"), None)
+        assert field is not None, "表单暂停 Tab 缺少 auto_pause_users 可编辑项"
+        assert field["component"] == "VTextField"
+
+
+class TestGetForm:
+    """插件入口 get_form 返回完整表单。"""
+
+    def test_plugin_get_form_returns_full_form(self):
+        from subscribeassistantenhanced import SubscribeAssistantEnhanced
+        conf, model = SubscribeAssistantEnhanced().get_form()
+        assert conf and isinstance(model, dict)
+        assert "completion_guard_enabled" in model
+
+
+def test_multi_select_field_renders_vselect_multiple():
+    from subscribeassistantenhanced.form.components import multi_select_field
+    col = multi_select_field("no_download_actions", "无下载处理策略",
+                             [{"title": "暂停剧集订阅", "value": "pause_tv"}])
+    sel = col["content"][0]
+    assert sel["component"] == "VSelect"
+    assert sel["props"]["multiple"] is True
+    assert sel["props"]["chips"] is True
+    assert sel["props"]["model"] == "no_download_actions"
+
+
+def test_tabs_renders_vtabs_and_vwindow():
+    from subscribeassistantenhanced.form.components import tabs
+    out = tabs(["A", "B"], [{"component": "VRow"}, {"component": "VRow"}])
+    assert out[0]["component"] == "VTabs"
+    assert out[1]["component"] == "VWindow"
+    assert out[1]["props"]["style"]["padding-top"] == "24px"
+    assert len(out[0]["content"]) == 2           # 两个 VTab
+    assert out[0]["content"][0]["text"] == "A"
+    assert out[1]["content"][0]["component"] == "VWindowItem"
+
+
+def test_form_has_top_switches_periods_and_five_tabs():
+    """配置布局：顶部开关行 + 公共周期行 + 5 个 Tab；关键新参数可编辑；多选控件存在。"""
+    import json
+    conf, model = build_form()
+    flat = json.dumps(conf, ensure_ascii=False)
+    # 顶部 4 开关
+    for key in ("enabled", "notify", "reset_task", "onlyonce"):
+        assert f'"{key}"' in flat
+    # 4 个公共周期（下载/元数据/通用巡检下拉 + 洗版 cron）
+    for key in ("download_check_interval_minutes", "meta_check_interval_hours",
+                "auto_check_interval_minutes", "best_version_cron"):
+        assert f'"{key}"' in flat
+    # 5 个 Tab + VTabs/VWindow 绑定
+    assert flat.count('"VTab"') == 5
+    assert '"_tab"' in flat
+    # 关键新参数可编辑
+    for key in ("best_version_type", "no_download_actions", "movie_air_pause_days",
+                "best_version_episode_to_full", "best_version_remaining_days",
+                "manual_delete_listen"):
+        assert f'"{key}"' in flat
+    assert '"pending_default_total_episodes"' not in flat
+    # 多选控件
+    assert '"multiple": true' in flat or '"multiple":true' in flat
+
+
+def test_form_model_covers_all_keys_after_restructure():
+    """重排后 model 依然覆盖全部 PluginConfig 键，不允许因重排丢失键。"""
+    from subscribeassistantenhanced.shared.config import PluginConfig
+    _conf, model = build_form()
+    for key in PluginConfig({}).declared_keys():
+        assert key in model, f"model 缺少 {key}"
+
+
+def test_periods_use_dropdown_and_cron():
+    """公共周期控件类型：分钟/小时周期为下拉，洗版为 cron 输入框。"""
+    conf, _model = build_form()
+    period_ctrls = {col["content"][0]["props"]["model"]: col["content"][0]["component"]
+                    for col in conf[1]["content"]}
+    assert period_ctrls["download_check_interval_minutes"] == "VSelect"
+    assert period_ctrls["meta_check_interval_hours"] == "VSelect"
+    assert period_ctrls["auto_check_interval_minutes"] == "VSelect"
+    assert period_ctrls["best_version_cron"] == "VCronField"
+
+
+def test_auto_check_interval_lives_in_public_period_row_only():
+    """通用巡检周期属于公共周期，不混在「种子删除」业务页里。"""
+    import json
+    conf, _model = build_form()
+    period_models = [col["content"][0]["props"]["model"] for col in conf[1]["content"]]
+    seed_tab = conf[3]["content"][0]["content"]
+
+    assert "auto_check_interval_minutes" in period_models
+    assert '"auto_check_interval_minutes"' not in json.dumps(seed_tab, ensure_ascii=False)
+
+
+def test_pending_numeric_fields_share_one_row_after_internal_total_removed():
+    """订阅待定只暴露开播窗口和低集数阈值，内部总集数兜底不再作为表单项。"""
+    conf, _model = build_form()
+    pending_rows = conf[3]["content"][1]["content"]
+    numeric_cols = pending_rows[1]["content"]
+
+    assert [col["content"][0]["props"]["model"] for col in numeric_cols] == [
+        "auto_tv_pending_days",
+        "auto_tv_pending_episodes",
+    ]
+    assert [col["props"]["md"] for col in numeric_cols] == [6, 6]
+
+
+def test_pending_switches_share_one_row_with_three_equal_columns():
+    """订阅待定前三个开关应在桌面宽度同一行显示，避免表单视觉上被拆成两段。"""
+    conf, _model = build_form()
+    pending_rows = conf[3]["content"][1]["content"]
+    switch_cols = pending_rows[0]["content"]
+
+    assert [col["content"][0]["props"]["model"] for col in switch_cols] == [
+        "pending_download_enabled",
+        "pending_enhanced_enabled",
+        "pending_use_volatility",
+    ]
+    assert [col["props"]["md"] for col in switch_cols] == [4, 4, 4]
+
+
+def test_best_version_tab_uses_type_without_extra_flow_switch():
+    """洗版 Tab 以枚举字段作为用户入口，不再暴露冗余布尔开关。"""
+    import json
+    conf, model = build_form()
+    best_tab = conf[3]["content"][3]["content"]
+    flat = json.dumps(best_tab, ensure_ascii=False)
+
+    assert '"best_version_type"' in flat
+    assert '"best_version_clear_history_type"' in flat
+    for key in ("best_version_enabled", "auto_best_version_on_complete",
+                "best_version_clear_history_enabled"):
+        assert key not in model
+        assert f'"{key}"' not in flat
+
+
+def test_tracker_keywords_in_dialog_as_textarea():
+    """Tracker 关键字置于「打开Tracker配置窗口」开关弹出的 VDialog 内，为多行 VTextarea。"""
+    import json
+    conf, _model = build_form()
+    # 「种子删除」页（conf[3] = VWindow，第 1 个 VWindowItem）含一个绑定 open_tracker_dialog 的 VDialog
+    seed_tab = conf[3]["content"][0]["content"]
+    dialog = next(el for el in seed_tab if el["component"] == "VDialog")
+    assert dialog["props"]["model"] == "open_tracker_dialog"
+    flat_dialog = json.dumps(dialog, ensure_ascii=False)
+    assert '"VTextarea"' in flat_dialog
+    assert '"default_tracker_response"' in flat_dialog
+
+
+def test_completion_signal_hints_explain_behavior_and_scope():
+    """完结信号说明使用短中文句，不暴露内部英文名或复合分号句。"""
+    keys = (
+        "completion_guard_enabled", "volatility_enabled", "volatility_window_days",
+        "cadence_enabled", "cadence_multiplier", "cadence_min_window_days",
+        "cadence_min_episodes", "season_cooldown_days", "verify_enabled",
+        "verify_interval_hours", "verify_retention_days", "timeout_release_enabled",
+        "timeout_release_days", "timeout_cadence_acceleration",
+    )
+    for key in keys:
+        hint = HINTS[key]
+        assert len(hint) <= 32, f"{key} hint 过长"
+        assert "；" not in hint and ";" not in hint
+        assert not re.search(r"[A-Za-z_]", hint), f"{key} hint 含英文"
+
+    assert "总集数" in HINTS["volatility_enabled"]
+    assert "不会直接判定完结" in HINTS["cadence_enabled"]
+    assert "增加" in HINTS["verify_enabled"]
+    assert "重新计时" in HINTS["timeout_release_enabled"]
+
+
+def test_common_check_interval_uses_reduced_options():
+    """通用巡检使用 30 至 240 分钟，下载检查仍保留高频选项。"""
+    conf, _model = build_form()
+    controls = {
+        col["content"][0]["props"]["model"]: col["content"][0]
+        for col in conf[1]["content"]
+    }
+
+    common_items = controls["auto_check_interval_minutes"]["props"]["items"]
+    download_items = controls["download_check_interval_minutes"]["props"]["items"]
+    assert [item["value"] for item in common_items] == [30, 60, 120, 240]
+    assert [item["value"] for item in download_items] == [5, 10, 15, 30, 60, 120]
+
+
+def test_completion_labels_use_concise_names_without_enable_prefix():
+    """完结信号配置使用简洁业务名称，不重复“启用”。"""
+    assert LABELS["completion_guard_enabled"] == "完结守卫"
+    assert LABELS["volatility_enabled"] == "变更速率信号"
+    assert LABELS["cadence_enabled"] == "播出节奏信号"
+    assert LABELS["verify_enabled"] == "自动纠错"
+    assert LABELS["verify_interval_hours"] == "自动纠错间隔（小时）"
+    assert LABELS["timeout_release_enabled"] == "待定超时释放"
+
+
+def test_completion_tab_uses_original_flat_grid():
+    """完结信号页保持统一平铺，不增加分组标题或卡片容器。"""
+    conf, _model = build_form()
+    completion_rows = conf[3]["content"][4]["content"]
+    assert len(completion_rows) == 5
+    assert all(row["component"] == "VRow" for row in completion_rows)
+    assert not any(item.get("component") == "VCard" for item in completion_rows)
+    assert [
+        [col["content"][0]["props"]["model"] for col in row["content"]]
+        for row in completion_rows
+    ] == [
+        ["completion_guard_enabled", "volatility_enabled", "cadence_enabled"],
+        ["verify_enabled", "timeout_release_enabled", "timeout_cadence_acceleration"],
+        ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
+        ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
+        ["verify_retention_days", "timeout_release_days"],
+    ]
+
+
+def test_completion_flat_grid_keeps_persistent_hints():
+    """平铺布局继续保留全部字段说明。"""
+    conf, _model = build_form()
+    completion_items = conf[3]["content"][4]["content"]
+    controls = _controls_with_model(completion_items)
+    assert {control["props"]["model"] for control in controls} == {
+        "completion_guard_enabled",
+        "volatility_enabled",
+        "cadence_enabled",
+        "volatility_window_days",
+        "cadence_multiplier",
+        "cadence_min_window_days",
+        "cadence_min_episodes",
+        "season_cooldown_days",
+        "timeout_release_enabled",
+        "timeout_cadence_acceleration",
+        "timeout_release_days",
+        "verify_enabled",
+        "verify_interval_hours",
+        "verify_retention_days",
+    }
+    assert all(control["props"].get("persistent-hint") is True for control in controls)

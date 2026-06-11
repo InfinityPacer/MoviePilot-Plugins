@@ -1,0 +1,43 @@
+"""新增奇偶配置键的默认值与类型解析测试。"""
+from subscribeassistantenhanced.shared.config import PluginConfig
+
+
+def test_new_parity_config_defaults():
+    cfg = PluginConfig({})
+    # 全局
+    assert cfg.enabled is True
+    assert cfg.notify is True
+    assert cfg.onlyonce is False
+    assert cfg.reset_task is False
+    assert cfg.meta_check_interval_hours == 6
+    # 待定
+    assert cfg.pending_download_enabled is True
+    assert cfg.auto_tv_pending_days == 0
+    assert cfg.auto_tv_pending_episodes == 1
+    assert "pending_default_total_episodes" not in cfg.declared_keys()
+    # 暂停
+    assert cfg.movie_air_pause_days == 7
+    assert cfg.tv_air_pause_days == 7
+    assert cfg.airing_pause_days == 30
+    assert cfg.movie_no_download_days == 180
+    assert cfg.tv_no_download_days == 90
+    assert cfg.no_download_actions == []
+    assert "download_pause_max_days" not in cfg.declared_keys()
+    assert "download_pause_expire_action" not in cfg.declared_keys()
+    # 种子删除门禁
+    assert cfg.manual_delete_listen is True
+    assert cfg.tracker_response_listen is True
+    assert cfg.auto_search_when_delete is True
+    assert cfg.skip_deletion is True
+    # 洗版
+    assert cfg.best_version_type == "no"
+    assert cfg.best_version_clear_history_type == "no"
+    assert cfg.best_version_remaining_days == 0
+    assert cfg.best_version_episode_to_full is False
+    assert cfg.best_version_backfill_enabled is False
+    assert cfg.backfill_best_version_now is False
+
+
+def test_no_download_actions_parses_list_or_csv():
+    assert PluginConfig({"no_download_actions": ["pause_tv", "complete_movie"]}).no_download_actions == ["pause_tv", "complete_movie"]
+    assert PluginConfig({"no_download_actions": "pause_tv,complete_movie"}).no_download_actions == ["pause_tv", "complete_movie"]

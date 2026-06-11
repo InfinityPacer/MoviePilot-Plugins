@@ -1,0 +1,200 @@
+"""shared/config.py PluginConfig 单测。"""
+from subscribeassistantenhanced.shared.config import PluginConfig
+
+
+class PluginConfigDefaultsTest:
+    """所有配置属性的默认值验证。"""
+
+    def setup_method(self):
+        self.cfg = PluginConfig({})
+
+    # --- domain switches ---
+
+    def test_completion_guard_enabled_default_true(self):
+        assert self.cfg.completion_guard_enabled is True
+
+    def test_pending_enhanced_enabled_default_true(self):
+        assert self.cfg.pending_enhanced_enabled is True
+
+    def test_pause_enhanced_enabled_default_true(self):
+        assert self.cfg.pause_enhanced_enabled is True
+
+    def test_download_monitor_enabled_default_true(self):
+        assert self.cfg.download_monitor_enabled is True
+
+    def test_verify_enabled_default_true(self):
+        assert self.cfg.verify_enabled is True
+
+    def test_timeout_release_enabled_default_true(self):
+        assert self.cfg.timeout_release_enabled is True
+
+    # --- signal engine ---
+
+    def test_volatility_enabled_default_true(self):
+        assert self.cfg.volatility_enabled is True
+
+    def test_volatility_window_days_default(self):
+        assert self.cfg.volatility_window_days == 7
+
+    def test_cadence_enabled_default_true(self):
+        assert self.cfg.cadence_enabled is True
+
+    def test_cadence_multiplier_default(self):
+        assert self.cfg.cadence_multiplier == 2.5
+
+    def test_cadence_min_window_days_default(self):
+        assert self.cfg.cadence_min_window_days == 7
+
+    def test_cadence_min_episodes_default(self):
+        assert self.cfg.cadence_min_episodes == 3
+
+    def test_season_cooldown_days_default(self):
+        assert self.cfg.season_cooldown_days == 14
+
+    # --- postcheck ---
+
+    def test_verify_interval_hours_default(self):
+        assert self.cfg.verify_interval_hours == 12
+
+    def test_verify_retention_days_default(self):
+        assert self.cfg.verify_retention_days == 90
+
+    def test_timeout_release_days_default(self):
+        assert self.cfg.timeout_release_days == 21
+
+    def test_timeout_cadence_acceleration_default(self):
+        assert self.cfg.timeout_cadence_acceleration is True
+
+    # --- download ---
+
+    def test_auto_check_interval_minutes_default(self):
+        assert self.cfg.auto_check_interval_minutes == 60
+
+    def test_download_check_interval_minutes_default(self):
+        assert self.cfg.download_check_interval_minutes == 5
+
+    def test_best_version_cron_default(self):
+        assert self.cfg.best_version_cron == "0 15 * * *"
+
+    def test_open_tracker_dialog_default_false(self):
+        assert self.cfg.open_tracker_dialog is False
+
+    def test_download_timeout_minutes_default(self):
+        assert self.cfg.download_timeout_minutes == 180
+
+    def test_download_progress_threshold_default(self):
+        assert self.cfg.download_progress_threshold == 5
+
+    def test_download_retry_limit_default(self):
+        assert self.cfg.download_retry_limit == 3
+
+    def test_delete_record_retention_hours_default_24h(self):
+        """删除指纹默认保留 24 小时，避免长期屏蔽同源资源。"""
+        assert self.cfg.delete_record_retention_hours == 24
+
+    def test_delete_exclude_tags_default_protection(self):
+        assert self.cfg.delete_exclude_tags == "H&R"
+
+    def test_default_tracker_response_default_keywords(self):
+        assert "torrent not registered" in self.cfg.default_tracker_response
+        assert "torrent banned" in self.cfg.default_tracker_response
+
+    def test_empty_tracker_defaults_fall_back_to_builtin_values(self):
+        cfg = PluginConfig({
+            "delete_exclude_tags": "",
+            "default_tracker_response": "",
+        })
+
+        assert cfg.delete_exclude_tags == "H&R"
+        assert "torrent not registered" in cfg.default_tracker_response
+
+    # --- pause ---
+
+    def test_airing_pause_days_default_legacy(self):
+        assert self.cfg.airing_pause_days == 30
+
+    def test_pre_air_pause_days_default_legacy(self):
+        assert self.cfg.movie_air_pause_days == 7
+        assert self.cfg.tv_air_pause_days == 7
+
+    def test_no_download_days_default_legacy(self):
+        assert self.cfg.movie_no_download_days == 180
+        assert self.cfg.tv_no_download_days == 90
+
+    # --- pending ---
+
+    def test_auto_tv_pending_days_default_legacy_disabled(self):
+        assert self.cfg.auto_tv_pending_days == 0
+
+    def test_auto_tv_pending_episodes_default_legacy(self):
+        assert self.cfg.auto_tv_pending_episodes == 1
+
+    def test_pending_use_volatility_default(self):
+        assert self.cfg.pending_use_volatility is True
+
+    def test_internal_pending_default_total_is_not_declared(self):
+        """待定缺总集数时直接按已播集覆盖，不再暴露虚拟总集数配置。"""
+        keys = set(self.cfg.declared_keys())
+        assert "pending_default_total_episodes" not in keys
+        assert not hasattr(self.cfg, "pending_default_total_episodes")
+
+    def test_download_pause_expiry_keys_are_not_declared(self):
+        """下载超时删种后走删除指纹与补搜，不再提供下载暂停超期配置。"""
+        keys = set(self.cfg.declared_keys())
+        assert "download_pause_max_days" not in keys
+        assert "download_pause_expire_action" not in keys
+        assert not hasattr(self.cfg, "download_pause_max_days")
+        assert not hasattr(self.cfg, "download_pause_expire_action")
+
+    def test_best_version_backfill_default_legacy_disabled(self):
+        assert self.cfg.best_version_backfill_enabled is False
+
+    def test_removed_best_version_boolean_keys_are_not_declared(self):
+        """洗版开关语义由枚举字段承载，旧布尔键不再进入默认 model。"""
+        keys = set(self.cfg.declared_keys())
+        assert "best_version_enabled" not in keys
+        assert "auto_best_version_on_complete" not in keys
+        assert "best_version_clear_history_enabled" not in keys
+
+
+class PluginConfigCoercionTest:
+    """类型强转与兜底。"""
+
+    def test_int_from_string(self):
+        cfg = PluginConfig({"volatility_window_days": "7"})
+        assert cfg.volatility_window_days == 7
+        assert isinstance(cfg.volatility_window_days, int)
+
+    def test_float_from_string(self):
+        cfg = PluginConfig({"cadence_multiplier": "3.0"})
+        assert cfg.cadence_multiplier == 3.0
+        assert isinstance(cfg.cadence_multiplier, float)
+
+    def test_bool_from_truthy_string(self):
+        cfg = PluginConfig({"volatility_enabled": "true"})
+        assert cfg.volatility_enabled is True
+
+    def test_bool_from_falsy_string(self):
+        cfg = PluginConfig({"volatility_enabled": "false"})
+        assert cfg.volatility_enabled is False
+
+    def test_invalid_int_falls_back_to_default(self):
+        cfg = PluginConfig({"volatility_window_days": "bad"})
+        assert cfg.volatility_window_days == 7
+
+    def test_invalid_float_falls_back_to_default(self):
+        cfg = PluginConfig({"cadence_multiplier": "bad"})
+        assert cfg.cadence_multiplier == 2.5
+
+    def test_missing_key_uses_default(self):
+        cfg = PluginConfig({"unrelated_key": 999})
+        assert cfg.cadence_min_episodes == 3
+
+    def test_int_from_float_string_truncates(self):
+        cfg = PluginConfig({"download_retry_limit": "3.9"})
+        assert cfg.download_retry_limit == 3
+
+    def test_bool_recognizes_on_guard_yes(self):
+        for val in ["on", "guard", "yes", "1", "TRUE"]:
+            cfg = PluginConfig({"pending_use_volatility": val})
+            assert cfg.pending_use_volatility is True, f"Expected True for {val!r}"

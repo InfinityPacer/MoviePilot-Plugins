@@ -1,0 +1,179 @@
+"""pending/judge.py 待定判定单测。"""
+from types import SimpleNamespace
+from datetime import date, timedelta
+from unittest.mock import MagicMock
+
+from subscribeassistantenhanced.pending.judge import PendingJudge
+from subscribeassistantenhanced.engine.types import CompletionSignal
+from subscribeassistantenhanced.shared.config import PluginConfig
+
+
+def _ep(num, air_date="2026-01-01"):
+    return SimpleNamespace(episode_number=num, air_date=air_date, episode_type="standard")
+
+
+def _sub(sid=1, season=1, state="R", episode_group=None):
+    return SimpleNamespace(
+        id=sid,
+        name="测试剧",
+        tmdbid=100,
+        season=season,
+        state=state,
+        episode_group=episode_group,
+        total_episode=12,
+        lack_episode=0,
+    )
+
+
+def _mi(**kwargs):
+    defaults = dict(
+        season_info=[],
+        first_air_date=None,
+    )
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
+
+
+def _judge(config=None, evaluate_result=None, store=None):
+    store = store if store is not None else {}
+    cfg = config or PluginConfig({})
+    j = PendingJudge.__new__(PendingJudge)
+    j._config = cfg
+    j._evaluate = MagicMock(return_value=evaluate_result or CompletionSignal())
+    j._subscribe_oper = MagicMock()
+    j._timeout = MagicMock()
+    j._read = lambda key: store.get(key, {})
+
+    def update_fn(key, updater):
+        data = store.get(key, {})
+        result = updater(data)
+        store[key] = result
+        return result
+
+    j._update = update_fn
+    j._store = store
+    return j
+
+
+class TestShouldEnterPending:
+
+    def test_episode_count_below_threshold(self):
+        """集数不足 → 待定。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 3}))
+        mi = _mi()
+        eps = [_ep(1), _ep(2)]
+        should, reason = j.should_enter_pending(_sub(), mi, eps)
+        assert should is True
+        assert "集数不足" in reason
+
+    def test_episode_count_above_threshold(self):
+        """集数充足 → 不待定。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 2}))
+        mi = _mi()
+        eps = [_ep(1), _ep(2), _ep(3)]
+        should, _ = j.should_enter_pending(_sub(), mi, eps)
+        assert should is False
+
+    def test_f_unstable_triggers_pending(self):
+        """F 不稳定 → 待定。"""
+        j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
+        mi = _mi()
+        sig = CompletionSignal(stable=False)
+        should, reason = j.should_enter_pending(_sub(), mi, [_ep(1), _ep(2), _ep(3)], signal=sig)
+        assert should is True
+        assert "不稳定" in reason
+
+    def test_no_air_date_triggers_pending(self):
+        """无 air_date → 待定。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 0}))
+        mi = _mi()
+        eps = [SimpleNamespace(episode_number=1, air_date=None)]
+        should, reason = j.should_enter_pending(_sub(), mi, eps)
+        assert should is True
+        assert "air_date" in reason
+
+
+class TestCheckExit:
+
+    def test_pending_judge_exits_when_conditions_clear(self):
+        """pending_judge P：条件不再满足 → 退出。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=False, stable=True)
+        j = _judge(evaluate_result=sig, store=store,
+                   config=PluginConfig({"auto_tv_pending_episodes": 0}))
+
+        def tmdb_fn(tmdbid, season, episode_group=None): return [_ep(i) for i in range(1, 13)]
+        mi = _mi()
+        result = j.check_exit(_sub(state="P"), mi, tmdb_fn)
+        assert result is True
+        assert j._subscribe_oper.update.called
+
+    def test_pending_judge_exit_uses_episode_group_scope(self):
+        """pending_judge P 退出复查必须沿用订阅剧集组，不回落到主季范围。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=False, stable=True)
+        j = _judge(evaluate_result=sig, store=store,
+                   config=PluginConfig({"auto_tv_pending_episodes": 0}))
+        tmdb_fn = MagicMock(return_value=[_ep(i) for i in range(1, 13)])
+
+        result = j.check_exit(_sub(state="P", episode_group="eg-1"), _mi(), tmdb_fn)
+
+        assert result is True
+        tmdb_fn.assert_called_once_with(100, 1, episode_group="eg-1")
+
+    def test_guard_veto_stays_until_signal_confirms(self):
+        """guard_veto P：信号未确认 → 保持 P。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
+        sig = CompletionSignal(completed=False, stable=True)
+        j = _judge(evaluate_result=sig, store=store)
+        mi = _mi()
+        result = j.check_exit(_sub(state="P"), mi, lambda *a: [])
+        assert result is False
+
+    def test_guard_veto_exits_when_completed(self):
+        """guard_veto P：信号确认完结 → 退出。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
+        sig = CompletionSignal(completed=True, confidence="high")
+        j = _judge(evaluate_result=sig, store=store)
+        mi = _mi()
+        result = j.check_exit(_sub(state="P"), mi, lambda *a: [])
+        assert result is True
+
+    def test_pending_judge_exits_on_completion(self):
+        """pending_judge P：信号确认完结 → 退出。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=True, confidence="medium")
+        j = _judge(evaluate_result=sig, store=store)
+        mi = _mi()
+        result = j.check_exit(_sub(state="P"), mi, lambda *a: [])
+        assert result is True
+
+    def test_not_pending_returns_false(self):
+        """非 P 状态 → 返回 False。"""
+        store = {"subscribes": {"1": {"state": "R"}}}
+        j = _judge(store=store)
+        mi = _mi()
+        result = j.check_exit(_sub(), mi, lambda *a: [])
+        assert result is False
+
+
+class TestMarkPending:
+
+    def test_mark_pending_writes_state_and_source(self):
+        store = {}
+        j = _judge(store=store)
+        j.mark_pending(_sub(), source="guard_veto", reason="test")
+        assert j._subscribe_oper.update.called
+        task = store.get("subscribes", {}).get("1", {})
+        assert task["state"] == "P"
+        assert task["source"] == "guard_veto"
+
+
+class TestExitPending:
+
+    def test_exit_clears_j_block(self):
+        store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
+        j = _judge(store=store)
+        j._exit_pending(_sub(), "测试退出")
+        j._timeout.clear_block.assert_called_once_with(1)
+        assert store["subscribes"]["1"]["state"] == "R"

@@ -6,7 +6,6 @@ SubscribeAssistant 洗版相关核心逻辑单测。
 plugins.v2 到 sys.path；用例用 object.__new__ 绕过插件重初始化，仅验证逻辑方法。
 """
 import time
-import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -44,10 +43,10 @@ def make_torrent_info(pri_order=80, enclosure="http://x/1.torrent") -> SimpleNam
     )
 
 
-class CollectPendingEpisodesTest(unittest.TestCase):
+class CollectPendingEpisodesTest:
     """__collect_pending_episodes：按集待定集合与未知标记。"""
 
-    def setUp(self):
+    def setup_method(self):
         self.plugin = make_plugin()
 
     def _call(self, subscribe_task):
@@ -61,8 +60,8 @@ class CollectPendingEpisodesTest(unittest.TestCase):
             {"hash": "h3", "pending": False, "episodes": [4]},
         ]}
         episodes, has_unknown = self._call(task)
-        self.assertEqual(episodes, {1, 2, 3})
-        self.assertFalse(has_unknown)
+        assert episodes == {1, 2, 3}
+        assert not has_unknown
 
     def test_empty_episodes_marks_unknown(self):
         """待定种子集数为空时标记 has_unknown，供调用方保守整体串行。"""
@@ -70,8 +69,8 @@ class CollectPendingEpisodesTest(unittest.TestCase):
             {"hash": "h1", "pending": True, "episodes": []},
         ]}
         episodes, has_unknown = self._call(task)
-        self.assertEqual(episodes, set())
-        self.assertTrue(has_unknown)
+        assert episodes == set()
+        assert has_unknown
 
     def test_expired_hashless_pending_excluded(self):
         """无 hash 待定种子超过宽限期视为失效，不计入待定集。"""
@@ -80,21 +79,23 @@ class CollectPendingEpisodesTest(unittest.TestCase):
             {"hash": None, "pending": True, "pending_time": time.time(), "episodes": [6]},
         ]}
         episodes, has_unknown = self._call(task)
-        self.assertEqual(episodes, {6})
-        self.assertFalse(has_unknown)
+        assert episodes == {6}
+        assert not has_unknown
 
 
-class RollbackPriorityTest(unittest.TestCase):
+class RollbackPriorityTest:
     """__rollback_best_version_priority：按集/标量回滚与归属守卫。"""
 
-    def setUp(self):
+    def setup_method(self):
         self.plugin = make_plugin()
         # current_priority 标量重算委托新建的 SubscribeChain（其实例化会连 systemconfig 表），
         # 按集回滚用例桩掉整个协作方，仅隔离验证回滚字典与归属守卫，不触碰真实库
-        patcher = patch("subscribeassistant.SubscribeChain")
-        self.mock_chain_cls = patcher.start()
+        self.chain_patcher = patch("subscribeassistant.SubscribeChain")
+        self.mock_chain_cls = self.chain_patcher.start()
         self.mock_chain_cls.return_value.get_best_version_current_priority.return_value = 42
-        self.addCleanup(patcher.stop)
+
+    def teardown_method(self):
+        self.chain_patcher.stop()
 
     def _call(self, subscribe, baseline_task):
         update_data = {}
@@ -111,10 +112,10 @@ class RollbackPriorityTest(unittest.TestCase):
             "episode_priority_baseline": {"1": 50, "2": 60},
         }
         update_data = self._call(subscribe, baseline_task)
-        self.assertEqual(update_data["episode_priority"]["1"], 50)
-        self.assertEqual(update_data["episode_priority"]["2"], 90)
+        assert update_data["episode_priority"]["1"] == 50
+        assert update_data["episode_priority"]["2"] == 90
         # 标量重算被桩，验证回滚后据回滚结果（仅含归属匹配集）刷新派生量 current_priority
-        self.assertEqual(update_data["current_priority"], 42)
+        assert update_data["current_priority"] == 42
         self.mock_chain_cls.return_value.get_best_version_current_priority.assert_called_once_with(
             subscribe, {"1": 50, "2": 90})
 
@@ -126,33 +127,33 @@ class RollbackPriorityTest(unittest.TestCase):
             "episode_priority_baseline": {"1": None},
         }
         update_data = self._call(subscribe, baseline_task)
-        self.assertNotIn("1", update_data["episode_priority"])
+        assert "1" not in update_data["episode_priority"]
 
     def test_movie_scalar_rollback(self):
         """电影洗版标量回滚：当前档由本种贡献时回退旧标量。"""
         subscribe = make_subscribe(type=MOVIE, current_priority=80, best_version_full=0)
         baseline_task = {"contributed_priority": 80, "current_priority_baseline": 30}
         update_data = self._call(subscribe, baseline_task)
-        self.assertEqual(update_data["current_priority"], 30)
+        assert update_data["current_priority"] == 30
 
     def test_movie_scalar_guard_skips_when_superseded(self):
         """电影洗版当前档高于本种贡献（被更高档覆盖）时不回滚。"""
         subscribe = make_subscribe(type=MOVIE, current_priority=90, best_version_full=0)
         baseline_task = {"contributed_priority": 80, "current_priority_baseline": 30}
         update_data = self._call(subscribe, baseline_task)
-        self.assertNotIn("current_priority", update_data)
+        assert "current_priority" not in update_data
 
     def test_no_baseline_no_change(self):
         """无下载前快照时不回滚，避免误删按集档位。"""
         subscribe = make_subscribe(episode_priority={"1": 80})
         update_data = self._call(subscribe, {})
-        self.assertEqual(update_data, {})
+        assert update_data == {}
 
 
-class CaptureBaselineTest(unittest.TestCase):
+class CaptureBaselineTest:
     """__capture_best_version_priority_baseline：下载前快照采集。"""
 
-    def setUp(self):
+    def setup_method(self):
         self.plugin = make_plugin()
 
     def _capture(self, subscribe, torrent_info, episodes):
@@ -166,23 +167,19 @@ class CaptureBaselineTest(unittest.TestCase):
         """分集洗版记录覆盖集的旧 episode_priority 与本种贡献档。"""
         subscribe = make_subscribe(episode_priority={"1": 50}, total_episode=3)
         target = self._capture(subscribe, make_torrent_info(pri_order=80), episodes=[1, 2])
-        self.assertEqual(target["contributed_priority"], 80)
-        self.assertEqual(target["current_priority_baseline"], 0)
-        self.assertEqual(target["episode_priority_baseline"], {"1": 50, "2": None})
+        assert target["contributed_priority"] == 80
+        assert target["current_priority_baseline"] == 0
+        assert target["episode_priority_baseline"] == {"1": 50, "2": None}
 
     def test_episode_capture_empty_episodes_falls_back_to_target_range(self):
         """整季包 episodes 为空时按目标集范围回填，对齐主程序。"""
         subscribe = make_subscribe(episode_priority={}, start_episode=1, total_episode=3)
         target = self._capture(subscribe, make_torrent_info(), episodes=[])
-        self.assertEqual(set(target["episode_priority_baseline"].keys()), {"1", "2", "3"})
+        assert set(target["episode_priority_baseline"].keys()) == {"1", "2", "3"}
 
     def test_movie_capture_scalar_only(self):
         """电影洗版只记录标量基线，不写按集快照。"""
         subscribe = make_subscribe(type=MOVIE, current_priority=30, total_episode=0)
         target = self._capture(subscribe, make_torrent_info(pri_order=70), episodes=[])
-        self.assertEqual(target["current_priority_baseline"], 30)
-        self.assertNotIn("episode_priority_baseline", target)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+        assert target["current_priority_baseline"] == 30
+        assert "episode_priority_baseline" not in target

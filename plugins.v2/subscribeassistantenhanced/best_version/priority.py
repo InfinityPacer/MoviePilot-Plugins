@@ -1,0 +1,156 @@
+"""域 ⑤：洗版优先级管理——统一 episode_priority / current_priority 读写。"""
+from typing import Callable, Optional
+
+from ..shared.log import detail
+
+
+class PriorityManager:
+    """洗版优先级管理，实现 PriorityManagerProtocol。"""
+
+    def __init__(self, task_data_read: Callable, task_data_update: Callable,
+                 subscribe_oper=None):
+        self._read = task_data_read
+        self._update = task_data_update
+        self._subscribe_oper = subscribe_oper
+
+    def capture_baseline(self, subscribe, torrent_priority: int) -> dict:
+        """下载前记录基线优先级，用于失败回滚。"""
+        sid = str(subscribe.id)
+        baseline = {
+            "episode_priority": dict(subscribe.episode_priority or {}),
+            "current_priority": subscribe.current_priority or 0,
+            "torrent_priority": torrent_priority,
+        }
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            task["priority_baseline"] = baseline
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
+        return baseline
+
+    def update_on_download(self, subscribe, episodes: list, new_priority: int):
+        """下载成功后更新对应集的优先级。"""
+        if not episodes:
+            return
+        ep_priority = dict(subscribe.episode_priority or {})
+        for ep in episodes:
+            ep_key = str(ep)
+            current = ep_priority.get(ep_key, 0)
+            if new_priority > current:
+                ep_priority[ep_key] = new_priority
+
+        payload = {"episode_priority": ep_priority}
+        max_priority = max(ep_priority.values()) if ep_priority else 0
+        if max_priority > (subscribe.current_priority or 0):
+            payload["current_priority"] = max_priority
+
+        if self._subscribe_oper:
+            self._subscribe_oper.update(subscribe.id, payload)
+
+    def rollback(self, subscribe, baseline: Optional[dict] = None):
+        """下载失败/种子删除后回滚到基线。"""
+        if not baseline:
+            sid = str(subscribe.id)
+            data = self._read("subscribes")
+            task = data.get(sid, {})
+            baseline = task.get("priority_baseline")
+        if not baseline:
+            return
+
+        payload = {
+            "episode_priority": baseline.get("episode_priority", {}),
+            "current_priority": baseline.get("current_priority", 0),
+        }
+        detail(f"洗版优先级：订阅 {subscribe.id} 整体回滚到基线 current_priority={payload['current_priority']}")
+        if self._subscribe_oper:
+            self._subscribe_oper.update(subscribe.id, payload)
+
+    def capture_torrent_baseline(self, subscribe, torrent_id, episodes, contributed_priority,
+                                 target_episodes=None):
+        """按种子记录洗版优先级基线，用于按集归属回滚，隔离不同种子的洗版贡献。
+
+        episode_priority_baseline 记每集下载前旧值，contributed_priority 记本种子贡献档位；
+        整季包 episodes 为空时回退到订阅目标集范围（target_episodes），避免漏记基线。
+        多种子并行洗版按 torrent_id 各存一份、互不覆盖，避免回滚时串号污染。
+        """
+        if not torrent_id:
+            return
+        sid = str(subscribe.id)
+        ep_priority = dict(subscribe.episode_priority or {})
+        eps = episodes or target_episodes or []
+        ep_baseline = {str(ep): ep_priority.get(str(ep), 0) for ep in eps}
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            baselines = task.get("priority_baselines", {})
+            baselines[str(torrent_id)] = {
+                "episode_priority_baseline": ep_baseline,
+                "contributed_priority": contributed_priority,
+                "current_priority_baseline": subscribe.current_priority or 0,
+            }
+            task["priority_baselines"] = baselines
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
+
+    def rollback_torrent(self, subscribe, torrent_id):
+        """按集归属回滚单个种子的洗版贡献：仅回滚"当前值==本种子贡献档位"的集，
+        跳过已被其他种子升级的集（避免串号污染）；回滚后重算 current_priority 并清掉该种子基线。"""
+        if not torrent_id:
+            return
+        sid = str(subscribe.id)
+        data = self._read("subscribes")
+        baseline = data.get(sid, {}).get("priority_baselines", {}).get(str(torrent_id))
+        if not baseline:
+            return
+        contributed = baseline.get("contributed_priority", 0)
+        ep_baseline = baseline.get("episode_priority_baseline", {})
+        ep_priority = dict(subscribe.episode_priority or {})
+        for ep_key, old_value in ep_baseline.items():
+            # 仅当该集当前值仍是本种子贡献的档位时回滚；否则已被其他种子升级，保留不动
+            if ep_priority.get(ep_key, 0) == contributed:
+                ep_priority[ep_key] = old_value
+        new_current = max(ep_priority.values()) if ep_priority else 0
+        detail(f"洗版优先级：订阅 {subscribe.id} 按集回滚种子 {torrent_id} 贡献，current_priority→{new_current}")
+        if self._subscribe_oper:
+            self._subscribe_oper.update(subscribe.id, {"episode_priority": ep_priority, "current_priority": new_current})
+
+        def cleaner(d: dict) -> dict:
+            d.get(sid, {}).get("priority_baselines", {}).pop(str(torrent_id), None)
+            return d
+
+        self._update("subscribes", cleaner)
+
+    def backfill_existing(self, subscribe, existing_episodes: list):
+        """根据媒体库已有集回填优先级为 100，跳过已有集的洗版。"""
+        if not existing_episodes:
+            return
+        ep_priority = dict(subscribe.episode_priority or {})
+        for ep in existing_episodes:
+            ep_priority[str(ep)] = 100
+
+        payload = {"episode_priority": ep_priority}
+        if self._subscribe_oper:
+            self._subscribe_oper.update(subscribe.id, payload)
+
+    def is_complete(self, subscribe) -> bool:
+        """判断洗版是否完成——所有目标集优先级达标（>=100）。"""
+        ep_priority = subscribe.episode_priority or {}
+        if not ep_priority:
+            return False
+        return all(v >= 100 for v in ep_priority.values())
+
+    def mark_complete(self, subscribe):
+        """标记洗版完成，所有集写 priority=100。"""
+        ep_priority = dict(subscribe.episode_priority or {})
+        for key in ep_priority:
+            ep_priority[key] = 100
+
+        payload = {"episode_priority": ep_priority, "current_priority": 100}
+        detail(f"洗版优先级：订阅 {subscribe.id} 标记全集洗版完成（priority=100）")
+        if self._subscribe_oper:
+            self._subscribe_oper.update(subscribe.id, payload)

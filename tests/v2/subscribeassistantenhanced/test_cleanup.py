@@ -1,0 +1,139 @@
+"""download/cleanup.py 删除后恢复单测。"""
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from subscribeassistantenhanced.download.cleanup import TorrentCleanup
+
+
+def _sub(sid=1, best_version=0):
+    return SimpleNamespace(
+        id=sid,
+        name="测试剧",
+        season=1,
+        total_episode=12,
+        lack_episode=0,
+        best_version=best_version,
+    )
+
+
+def _cleanup(store=None):
+    store = store if store is not None else {}
+    priority = MagicMock()
+    clear_fn = MagicMock()
+
+    def update_fn(key, updater):
+        data = store.get(key, {})
+        result = updater(data)
+        store[key] = result
+
+    c = TorrentCleanup(
+        priority_manager=priority,
+        clear_download_pending_fn=clear_fn,
+        task_data_update=update_fn,
+    )
+    c._store = store
+    c._priority_mock = priority
+    c._clear_mock = clear_fn
+    return c
+
+
+class TestHandleTorrentDeleted:
+
+    def test_normal_subscribe_no_rollback(self):
+        """非洗版订阅不回滚优先级。"""
+        c = _cleanup()
+        c.handle_torrent_deleted(_sub(best_version=0), "hash123")
+        c._priority_mock.rollback.assert_not_called()
+
+    def test_best_version_rollback(self):
+        """洗版订阅无 enclosure 归属信息时整体回滚。"""
+        c = _cleanup()
+        c.handle_torrent_deleted(_sub(best_version=1), "hash123")
+        c._priority_mock.rollback.assert_called_once()
+
+    def test_best_version_rollback_by_enclosure(self):
+        """洗版订阅删种 → 按 enclosure 归属回滚（rollback_torrent），隔离并行洗版。"""
+        store = {"torrents": {"h1": {"hash": "h1", "enclosure": "http://x/t.torrent"}}}
+        priority = MagicMock()
+
+        def update_fn(key, updater):
+            store[key] = updater(store.get(key, {}))
+
+        c = TorrentCleanup(
+            priority_manager=priority, clear_download_pending_fn=MagicMock(),
+            task_data_update=update_fn, task_data_read=lambda k: store.get(k, {}),
+        )
+        sub = _sub(best_version=1)
+        c.handle_torrent_deleted(sub, "h1")
+        priority.rollback_torrent.assert_called_once_with(sub, "http://x/t.torrent")
+        priority.rollback.assert_not_called()
+
+    def test_clears_download_pending(self):
+        c = _cleanup()
+        c.handle_torrent_deleted(_sub(), "hash123")
+        c._clear_mock.assert_called_once_with(1, "hash123")
+
+    def test_timeout_delete_does_not_pause_subscribe(self):
+        """超时删种后由删除指纹防重选并补搜，不把订阅置为暂停。"""
+        c = _cleanup()
+        c.handle_torrent_deleted(_sub(), "hash123", reason="timeout")
+        assert not hasattr(c, "_pause")
+
+    def test_cleans_torrent_task(self):
+        store = {"torrents": {"hash123": {"some": "data"}}}
+        c = _cleanup(store)
+        c.handle_torrent_deleted(_sub(), "hash123")
+        assert "hash123" not in store.get("torrents", {})
+
+    def test_deletes_torrent_archives_fingerprint_and_searches(self):
+        """归档指纹(清任务前读取) → 真正删下载器种子 → 延迟补搜；任务最终被清。"""
+        store = {"torrents": {"h1": {"hash": "h1", "enclosure": "http://x/t.torrent"}}}
+        priority, clear_fn = MagicMock(), MagicMock()
+        deletes, delete_fn, search_fn = MagicMock(), MagicMock(), MagicMock()
+
+        def update_fn(key, updater):
+            store[key] = updater(store.get(key, {}))
+
+        c = TorrentCleanup(
+            priority_manager=priority, clear_download_pending_fn=clear_fn,
+            task_data_update=update_fn, task_data_read=lambda k: store.get(k, {}),
+            deletes_store=deletes, delete_torrent_fn=delete_fn, search_fn=search_fn,
+        )
+        sub = _sub()
+        c.handle_torrent_deleted(sub, "h1", reason="timeout", downloader="qb")
+        # 指纹在清任务前读取并归档（含 enclosure）
+        deletes.save.assert_called_once()
+        assert deletes.save.call_args[0][0].get("enclosure") == "http://x/t.torrent"
+        # 真正从下载器删种
+        delete_fn.assert_called_once_with("qb", "h1")
+        # 延迟补搜 + 任务已清
+        search_fn.assert_called_once_with(sub)
+        assert "h1" not in store.get("torrents", {})
+
+    def test_manual_delete_skips_pause_but_keeps_fingerprint_and_search(self):
+        """手动删除归档指纹并补搜，但不暂停订阅、不调下载器删种。"""
+        store = {"torrents": {"h1": {"hash": "h1", "enclosure": "http://x/t.torrent"}}}
+        priority, clear_fn = MagicMock(), MagicMock()
+        deletes, delete_fn, search_fn = MagicMock(), MagicMock(), MagicMock()
+
+        def update_fn(key, updater):
+            store[key] = updater(store.get(key, {}))
+
+        c = TorrentCleanup(
+            priority_manager=priority, clear_download_pending_fn=clear_fn,
+            task_data_update=update_fn, task_data_read=lambda k: store.get(k, {}),
+            deletes_store=deletes, delete_torrent_fn=delete_fn, search_fn=search_fn,
+        )
+        sub = _sub()
+        c.handle_torrent_deleted(sub, "h1", reason="manual",
+                                 downloader="qb", delete_from_downloader=False)
+        deletes.save.assert_called_once()       # 删除指纹照常归档
+        search_fn.assert_called_once_with(sub)   # 仍触发补搜
+        delete_fn.assert_not_called()            # 不调下载器删种
+
+    def test_timeout_delete_also_skips_pause(self):
+        """超时删除与 Tracker 删除也不暂停，避免补搜链路被 S 状态冻结。"""
+        c = _cleanup()
+        c.handle_torrent_deleted(_sub(), "h1", reason="timeout",
+                                 downloader="qb", delete_from_downloader=True)
+        assert not hasattr(c, "_pause")
