@@ -10,20 +10,20 @@ class PluginConfigDefaultsTest:
 
     # --- domain switches ---
 
-    def test_completion_guard_enabled_default_true(self):
-        assert self.cfg.completion_guard_enabled is True
+    def test_completion_guard_enabled_default_false(self):
+        assert self.cfg.completion_guard_enabled is False
 
     def test_pending_enhanced_enabled_default_true(self):
         assert self.cfg.pending_enhanced_enabled is True
 
-    def test_pause_enhanced_enabled_default_true(self):
-        assert self.cfg.pause_enhanced_enabled is True
+    def test_pause_enhanced_enabled_default_false(self):
+        assert self.cfg.pause_enhanced_enabled is False
 
     def test_download_monitor_enabled_default_true(self):
         assert self.cfg.download_monitor_enabled is True
 
-    def test_verify_enabled_default_true(self):
-        assert self.cfg.verify_enabled is True
+    def test_verify_enabled_default_false(self):
+        assert self.cfg.verify_enabled is False
 
     def test_timeout_release_enabled_default_true(self):
         assert self.cfg.timeout_release_enabled is True
@@ -71,7 +71,7 @@ class PluginConfigDefaultsTest:
         assert self.cfg.auto_check_interval_minutes == 60
 
     def test_download_check_interval_minutes_default(self):
-        assert self.cfg.download_check_interval_minutes == 5
+        assert self.cfg.download_check_interval_minutes == 10
 
     def test_best_version_cron_default(self):
         assert self.cfg.best_version_cron == "0 15 * * *"
@@ -80,10 +80,10 @@ class PluginConfigDefaultsTest:
         assert self.cfg.open_tracker_dialog is False
 
     def test_download_timeout_minutes_default(self):
-        assert self.cfg.download_timeout_minutes == 180
+        assert self.cfg.download_timeout_minutes == 120
 
     def test_download_progress_threshold_default(self):
-        assert self.cfg.download_progress_threshold == 5
+        assert self.cfg.download_progress_threshold == 10
 
     def test_download_retry_limit_default(self):
         assert self.cfg.download_retry_limit == 3
@@ -115,11 +115,11 @@ class PluginConfigDefaultsTest:
 
     def test_pre_air_pause_days_default_legacy(self):
         assert self.cfg.movie_air_pause_days == 7
-        assert self.cfg.tv_air_pause_days == 7
+        assert self.cfg.tv_air_pause_days == 14
 
     def test_no_download_days_default_legacy(self):
-        assert self.cfg.movie_no_download_days == 180
-        assert self.cfg.tv_no_download_days == 90
+        assert self.cfg.movie_no_download_days == 365
+        assert self.cfg.tv_no_download_days == 180
 
     # --- pending ---
 

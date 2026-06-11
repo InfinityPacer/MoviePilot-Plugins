@@ -65,6 +65,7 @@ class TestScheduler:
     def test_get_service_declares_jobs_by_domain(self):
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({
+            "enabled": True,
             "download_monitor_enabled": True,
             "best_version_type": "all",
             "timeout_release_enabled": True,
@@ -81,6 +82,7 @@ class TestScheduler:
         """任务名称只描述动作；提供者列已经展示插件名，不再重复订阅助手前缀。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({
+            "enabled": True,
             "download_monitor_enabled": True,
             "timeout_release_enabled": True,
             "verify_enabled": True,
@@ -104,6 +106,7 @@ class TestScheduler:
         """业务域关闭时仍保留元数据检查和统一的通用巡检。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({
+            "enabled": True,
             "download_monitor_enabled": False,
             "timeout_release_enabled": False,
             "verify_enabled": False,
@@ -117,7 +120,7 @@ class TestScheduler:
     def test_verify_service_uses_configured_hour_interval(self):
         """完成后验证服务必须使用唯一公开的小时级周期配置。"""
         plugin = SubscribeAssistantEnhanced()
-        plugin.init_plugin({"verify_interval_hours": 6})
+        plugin.init_plugin({"enabled": True, "verify_enabled": True, "verify_interval_hours": 6})
         service = next(item for item in plugin.get_service()
                        if item["id"].endswith("_verify"))
         assert service["kwargs"] == {"hours": 6}

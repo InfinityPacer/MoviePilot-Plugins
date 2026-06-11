@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件配置项ID前缀
     plugin_config_prefix = "subscribeassistantenhanced_"
     # 加载顺序
-    plugin_order = 10
+    plugin_order = 5
     # 可使用的用户级别
     auth_level = 1
 
@@ -391,13 +391,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return services
 
     def run_all_checks(self):
-        """一次性全量巡检：串跑下载/洗版/待定/自验证/删除清理。"""
+        """一次性全量巡检：串跑所有定时任务入口，各入口按域开关自行短路。"""
         logger.info("立即运行一次：开始全量巡检")
+        self.run_meta_check()
         self.run_download_timeout_check()
         self.run_best_version_check()
-        self.run_pending_release()
         self.run_completion_verify()
-        self.run_deletes_cleanup()
+        self.run_common_check()
 
     def _reset_task_data(self):
         """清空全部插件任务数据。"""

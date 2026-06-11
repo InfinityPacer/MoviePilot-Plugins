@@ -5,11 +5,12 @@ from subscribeassistantenhanced.shared.config import PluginConfig
 def test_new_parity_config_defaults():
     cfg = PluginConfig({})
     # 全局
-    assert cfg.enabled is True
+    assert cfg.enabled is False
     assert cfg.notify is True
     assert cfg.onlyonce is False
     assert cfg.reset_task is False
-    assert cfg.meta_check_interval_hours == 6
+    assert cfg.download_check_interval_minutes == 10
+    assert cfg.meta_check_interval_hours == 3
     # 待定
     assert cfg.pending_download_enabled is True
     assert cfg.auto_tv_pending_days == 0
@@ -17,13 +18,14 @@ def test_new_parity_config_defaults():
     assert "pending_default_total_episodes" not in cfg.declared_keys()
     # 暂停
     assert cfg.movie_air_pause_days == 7
-    assert cfg.tv_air_pause_days == 7
+    assert cfg.tv_air_pause_days == 14
     assert cfg.airing_pause_days == 30
-    assert cfg.movie_no_download_days == 180
-    assert cfg.tv_no_download_days == 90
+    assert cfg.movie_no_download_days == 365
+    assert cfg.tv_no_download_days == 180
     assert cfg.no_download_actions == []
     assert "download_pause_max_days" not in cfg.declared_keys()
     assert "download_pause_expire_action" not in cfg.declared_keys()
+    assert cfg.pause_enhanced_enabled is False
     # 种子删除门禁
     assert cfg.manual_delete_listen is True
     assert cfg.tracker_response_listen is True
@@ -36,6 +38,9 @@ def test_new_parity_config_defaults():
     assert cfg.best_version_episode_to_full is False
     assert cfg.best_version_backfill_enabled is False
     assert cfg.backfill_best_version_now is False
+    # 完结信号
+    assert cfg.completion_guard_enabled is False
+    assert cfg.verify_enabled is False
 
 
 def test_no_download_actions_parses_list_or_csv():

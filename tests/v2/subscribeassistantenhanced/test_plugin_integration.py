@@ -174,7 +174,7 @@ def test_disabled_plugin_registers_no_services():
 
 def test_meta_check_service_registered():
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({"meta_check_interval_hours": 6})
+    plugin.init_plugin({"enabled": True, "meta_check_interval_hours": 6})
     svc = {s["id"]: s for s in plugin.get_service()}
     assert "SubscribeAssistantEnhanced_meta_check" in svc
     assert svc["SubscribeAssistantEnhanced_meta_check"]["kwargs"] == {"hours": 6}
@@ -183,7 +183,7 @@ def test_meta_check_service_registered():
 def test_common_check_service_registered():
     """插件启用时只注册一个通用巡检服务。"""
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({"auto_check_interval_minutes": 45})
+    plugin.init_plugin({"enabled": True, "auto_check_interval_minutes": 45})
     svc = {s["id"]: s for s in plugin.get_service()}
 
     assert "SubscribeAssistantEnhanced_common_check" in svc
@@ -397,15 +397,15 @@ def test_run_meta_check_p_state_skips_pre_air_pause():
 
 def test_run_all_checks_invokes_each_runner():
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({})
+    plugin.init_plugin({"enabled": True})
     mocks = {}
-    for name in ("run_download_timeout_check", "run_best_version_check", "run_pending_release",
-                 "run_completion_verify", "run_deletes_cleanup"):
+    for name in ("run_meta_check", "run_download_timeout_check", "run_best_version_check",
+                 "run_completion_verify", "run_common_check"):
         mocks[name] = MagicMock()
         setattr(plugin, name, mocks[name])
     plugin.run_all_checks()
-    for name in ("run_download_timeout_check", "run_best_version_check", "run_pending_release",
-                 "run_completion_verify", "run_deletes_cleanup"):
+    for name in ("run_meta_check", "run_download_timeout_check", "run_best_version_check",
+                 "run_completion_verify", "run_common_check"):
         mocks[name].assert_called_once()
 
 
@@ -465,7 +465,7 @@ def test_run_common_check_respects_domain_switches():
 def test_onlyonce_registers_one_shot_and_resets_flag():
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
-    plugin.init_plugin({"onlyonce": True})
+    plugin.init_plugin({"enabled": True, "onlyonce": True})
     assert plugin._onlyonce is True
     ids = {s["id"] for s in plugin.get_service()}
     assert "SubscribeAssistantEnhanced_onlyonce" in ids
@@ -568,6 +568,7 @@ def test_airing_checker_receives_pre_air_days():
     """插件入口必须把电影和电视剧上映前暂停天数注入播出判定器。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
+        "pause_enhanced_enabled": True,
         "movie_air_pause_days": 7,
         "tv_air_pause_days": 5,
     })
@@ -612,11 +613,11 @@ class TestPluginWiring:
 
     def test_extension_points_active(self):
         plugin = SubscribeAssistantEnhanced()
-        plugin.init_plugin({})
+        plugin.init_plugin({"enabled": True})
         assert plugin.get_command()            # /subscribe_toggle
         conf, model = plugin.get_form()
         assert conf and model
-        assert plugin.get_service()            # 默认域开 → 有定时任务
+        assert plugin.get_service()            # 启用后有定时任务
 
     def test_pause_manager_receives_subscribe_oper(self):
         """插件入口必须给 PauseManager 注入 subscribe_oper，pause/resume 才能改 DB 状态。"""
@@ -636,7 +637,7 @@ class TestPluginWiring:
     def test_download_monitor_reuses_common_check_service(self):
         """下载管理开启时删除记录清理由通用巡检承载，不单独注册任务。"""
         plugin = SubscribeAssistantEnhanced()
-        plugin.init_plugin({"download_monitor_enabled": True})
+        plugin.init_plugin({"enabled": True, "download_monitor_enabled": True})
         service_ids = {s["id"] for s in plugin.get_service()}
         assert "SubscribeAssistantEnhanced_common_check" in service_ids
         assert "SubscribeAssistantEnhanced_deletes_cleanup" not in service_ids
@@ -821,7 +822,7 @@ class TestVerifierWiring:
     def test_completion_verifier_service_registered_when_enabled(self):
         """verify_enabled 开启时应注册 H 自验证定时任务。"""
         plugin = SubscribeAssistantEnhanced()
-        plugin.init_plugin({"verify_enabled": True})
+        plugin.init_plugin({"enabled": True, "verify_enabled": True})
         service_ids = {s["id"] for s in plugin.get_service()}
         assert "SubscribeAssistantEnhanced_verify" in service_ids
 

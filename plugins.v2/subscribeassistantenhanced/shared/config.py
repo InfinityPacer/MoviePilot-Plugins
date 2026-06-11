@@ -72,7 +72,7 @@ class PluginConfig:
     @property
     def enabled(self) -> bool:
         """插件总开关：关闭后所有域与定时任务不生效。"""
-        return self.get_bool("enabled", True)
+        return self.get_bool("enabled", False)
 
     @property
     def notify(self) -> bool:
@@ -99,12 +99,12 @@ class PluginConfig:
     @property
     def download_check_interval_minutes(self) -> int:
         """下载检查周期（分钟）：定时读取下载器状态并处理超时/Tracker/手动删种。"""
-        return self.get_int("download_check_interval_minutes", 5)
+        return self.get_int("download_check_interval_minutes", 10)
 
     @property
     def meta_check_interval_hours(self) -> int:
         """元数据检查周期（小时）：定时复核订阅元数据并重评信号/待定。"""
-        return self.get_int("meta_check_interval_hours", 6)
+        return self.get_int("meta_check_interval_hours", 3)
 
     @property
     def best_version_cron(self) -> str:
@@ -139,11 +139,11 @@ class PluginConfig:
 
     @property
     def download_timeout_minutes(self) -> int:
-        return self.get_int("download_timeout_minutes", 180)
+        return self.get_int("download_timeout_minutes", 120)
 
     @property
     def download_progress_threshold(self) -> int:
-        return self.get_int("download_progress_threshold", 5)
+        return self.get_int("download_progress_threshold", 10)
 
     @property
     def download_retry_limit(self) -> int:
@@ -198,7 +198,7 @@ class PluginConfig:
 
     @property
     def pause_enhanced_enabled(self) -> bool:
-        return self.get_bool("pause_enhanced_enabled", True)
+        return self.get_bool("pause_enhanced_enabled", False)
 
     @property
     def auto_pause_users(self) -> str:
@@ -218,17 +218,17 @@ class PluginConfig:
     @property
     def tv_air_pause_days(self) -> int:
         """剧集上映暂停天数：当前日期早于开播日期减 N 天则暂停；0=不处理。"""
-        return self.get_int("tv_air_pause_days", 7)
+        return self.get_int("tv_air_pause_days", 14)
 
     @property
     def movie_no_download_days(self) -> int:
         """电影无下载处理天数：上映后 N 天内无下载则按无下载策略处理；0=不处理。"""
-        return self.get_int("movie_no_download_days", 180)
+        return self.get_int("movie_no_download_days", 365)
 
     @property
     def tv_no_download_days(self) -> int:
         """剧集无下载处理天数：上映后 N 天内无下载则按无下载策略处理；0=不处理。"""
-        return self.get_int("tv_no_download_days", 90)
+        return self.get_int("tv_no_download_days", 180)
 
     @property
     def no_download_actions(self) -> list:
@@ -273,7 +273,7 @@ class PluginConfig:
 
     @property
     def completion_guard_enabled(self) -> bool:
-        return self.get_bool("completion_guard_enabled", True)
+        return self.get_bool("completion_guard_enabled", False)
 
     @property
     def volatility_enabled(self) -> bool:
@@ -305,7 +305,7 @@ class PluginConfig:
 
     @property
     def verify_enabled(self) -> bool:
-        return self.get_bool("verify_enabled", True)
+        return self.get_bool("verify_enabled", False)
 
     @property
     def verify_interval_hours(self) -> int:
