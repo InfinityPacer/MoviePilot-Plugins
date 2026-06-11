@@ -326,7 +326,7 @@ def _footer() -> list:
             {"component": "a",
              "props": {"href": "https://github.com/jxxghp/MoviePilot/pull/3330", "target": "_blank"},
              "content": [{"component": "u", "text": "#3330"}]},
-            {"text": "、"},
+            {"component": "span", "text": "、"},
             {"component": "a",
              "props": {"href": "https://github.com/jxxghp/MoviePilot-Frontend/pull/477", "target": "_blank"},
              "content": [{"component": "u", "text": "#477"}]},

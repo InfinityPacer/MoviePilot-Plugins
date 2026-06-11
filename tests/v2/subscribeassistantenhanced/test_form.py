@@ -20,6 +20,21 @@ def _controls_with_model(node):
     return controls
 
 
+def _component_nodes(node):
+    """递归提取动态表单渲染节点；FormRender 要求 content 子节点可解析 component。"""
+    nodes = []
+    if isinstance(node, dict):
+        nodes.append(node)
+        for child in node.get("content", []):
+            nodes.extend(_component_nodes(child))
+        for slot in node.get("slots", {}).values():
+            nodes.extend(_component_nodes(slot))
+    elif isinstance(node, list):
+        for child in node:
+            nodes.extend(_component_nodes(child))
+    return nodes
+
+
 class TestBuildForm:
     """build_form 聚合契约。"""
 
@@ -73,6 +88,12 @@ class TestBuildForm:
         field = next((f for f in fields if f["props"].get("model") == "auto_pause_users"), None)
         assert field is not None, "表单暂停 Tab 缺少 auto_pause_users 可编辑项"
         assert field["component"] == "VTextField"
+
+    def test_all_render_nodes_have_component(self):
+        """表单渲染器会递归 resolveComponent，富文本 content 不能使用裸文本 dict。"""
+        conf, _model = build_form()
+        for node in _component_nodes(conf):
+            assert node.get("component"), f"表单节点缺少 component: {node}"
 
 
 class TestGetForm:
