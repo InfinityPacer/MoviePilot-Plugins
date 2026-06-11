@@ -306,7 +306,9 @@ class TestPauseManager:
         mgr.pause(_sub(), PauseRecord(reason="auto_user"))
         assert mgr.resume(_sub()) is True
         assert mgr.get_pause_record(_sub()) is None
-        mgr._subscribe_oper.update.assert_called_with(1, {"state": "R"})
+        payload = mgr._subscribe_oper.update.call_args.args[1]
+        assert payload["state"] == "R"
+        assert payload["last_update"]
 
     def test_no_record_state_s_returns_none(self):
         """无插件暂停记录时即便 state=S 也返回 None，不合成外部暂停。"""

@@ -12,7 +12,11 @@ class TestConvertToFull:
         conv = BestVersionConverter(subscribe_oper=oper)
         sub = SimpleNamespace(id=1)
         assert conv.convert_to_full(sub) is True
-        oper.update.assert_called_once_with(1, {"best_version_full": 1})
+        oper.update.assert_called_once()
+        assert oper.update.call_args.args[0] == 1
+        payload = oper.update.call_args.args[1]
+        assert payload["best_version_full"] == 1
+        assert payload["last_update"]
 
     def test_failure_keeps_original(self):
         oper = MagicMock()

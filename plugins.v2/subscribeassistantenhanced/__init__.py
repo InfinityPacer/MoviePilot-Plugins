@@ -48,6 +48,7 @@ from .shared.task import TaskDataManager
 from .shared.config import DEFAULT_DELETE_EXCLUDE_TAGS, DEFAULT_TRACKER_RESPONSE, PluginConfig
 from .shared.log import detail, truncate_log_value
 from .shared.subscribe import format_subscribe
+from .shared.update import update_subscribe
 
 
 class SubscribeAssistantEnhanced(_PluginBase):
@@ -65,7 +66,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.1"
+    plugin_version = "0.1.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -629,7 +630,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 continue
             if timeout_manager.check_release(int(sid), self._evaluate_fn(subscribe, mediainfo)):
                 logger.info(f"待定释放：{format_subscribe(subscribe)} 守门超时释放，状态置为 R")
-                self._subscribe_oper.update(int(sid), {"state": "R"})
+                update_subscribe(self._subscribe_oper, int(sid), {"state": "R"})
                 timeout_manager.clear_block(int(sid))
 
     def run_common_check(self):
@@ -723,8 +724,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 ))
             elif action == "complete":
                 logger.info(f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) 上映后超期且无下载，写入完成历史并删除订阅")
-                to_dict = getattr(subscribe, "to_dict", None)
-                payload = to_dict() if callable(to_dict) else dict(getattr(subscribe, "__dict__", {}))
+                payload = subscribe.to_dict()
                 self._subscribe_oper.add_history(**payload)
                 self._subscribe_oper.delete(subscribe_id)
             elif action == "delete":
@@ -951,7 +951,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 if info is None:
                     continue
                 matched_scope = True
-                eps = getattr(info, "episodes", None)
+                eps = info.episodes
                 if eps:
                     missing.update(eps)
                 else:
@@ -959,6 +959,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     missing.update(target)
             if not matched_scope:
                 missing.update(target)
+            if missing and missing.isdisjoint(target):
+                detail(
+                    f"媒体库缺集探测：{format_subscribe(subscribe)} 返回集号 {sorted(missing)[:5]} "
+                    f"未命中目标范围 {start_episode}-{total}，按目标仍缺失处理"
+                )
+                missing = set(target)
             missing &= target
             return sorted(target - missing), sorted(missing)
         except Exception:

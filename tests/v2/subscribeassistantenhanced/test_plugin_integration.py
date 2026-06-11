@@ -60,6 +60,30 @@ def test_episode_to_full_converts_when_current_episodes_covered():
     conv.convert_to_full.assert_called_once_with(sub)
 
 
+def test_episode_to_full_converts_when_download_chain_reports_all_exists(monkeypatch):
+    """主程序明确返回全部在库时，分集洗版仍可升级为全集洗版。"""
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+
+    class FakeDownloadChain:
+        """避免访问真实媒体库，只模拟主程序全部存在的返回值。"""
+
+        def get_no_exists_info(self, meta, mediainfo):
+            return True, {}
+
+    monkeypatch.setattr("app.chain.download.DownloadChain", FakeDownloadChain)
+    conv = plugin._modules["converter"]
+    conv.convert_to_full = MagicMock(return_value=True)
+
+    plugin.run_best_version_check()
+
+    conv.convert_to_full.assert_called_once_with(sub)
+
+
 def test_episode_to_full_skipped_when_missing_episodes():
     sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
     plugin = SubscribeAssistantEnhanced()
@@ -68,6 +92,48 @@ def test_episode_to_full_skipped_when_missing_episodes():
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
     plugin._detect_missing_episodes = MagicMock(return_value=[3])
+    conv = plugin._modules["converter"]
+    conv.convert_to_full = MagicMock(return_value=True)
+
+    plugin.run_best_version_check()
+
+    conv.convert_to_full.assert_not_called()
+
+
+def test_episode_to_full_skips_when_missing_info_uses_relative_episode_numbers(monkeypatch):
+    """媒体库缺集返回相对集号时，绝对集号订阅不能被误判为已全覆盖。"""
+    sub = _sub(
+        id=32,
+        name="航海王",
+        season=22,
+        best_version=1,
+        best_version_full=0,
+        total_episode=9999,
+        start_episode=1089,
+        lack_episode=8844,
+        episode_priority={str(ep): 100 for ep in range(1089, 1156)},
+        current_priority=100,
+    )
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+
+    class RelativeNoExistsInfo:
+        """模拟主程序按季内相对集号返回缺集范围。"""
+
+        episodes = list(range(1, 68))
+        total_episode = 67
+        start_episode = 1
+
+    class FakeDownloadChain:
+        """避免访问真实媒体库，只返回生产复现场景的缺集结构。"""
+
+        def get_no_exists_info(self, meta, mediainfo):
+            return False, {100: {22: RelativeNoExistsInfo()}}
+
+    monkeypatch.setattr("app.chain.download.DownloadChain", FakeDownloadChain)
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
@@ -819,7 +885,10 @@ class TestPeriodicJobs:
         timeout_manager.check_release.return_value = True
         plugin._modules["timeout_manager"] = timeout_manager
         plugin.run_pending_release()
-        plugin._subscribe_oper.update.assert_called_once_with(1, {"state": "R"})
+        plugin._subscribe_oper.update.assert_called_once()
+        payload = plugin._subscribe_oper.update.call_args.args[1]
+        assert payload["state"] == "R"
+        assert payload["last_update"]
         timeout_manager.clear_block.assert_called_once_with(1)
 
     def test_pending_release_checks_pending_judge_tasks(self):

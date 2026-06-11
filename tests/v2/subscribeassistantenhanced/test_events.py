@@ -345,6 +345,15 @@ class TestPluginActionToggle:
         data.setdefault("action", "subscribe_toggle")
         return SimpleNamespace(event_data=data)
 
+    @staticmethod
+    def _assert_state_update(oper, subscribe_id: int, state: str):
+        """断言真实订阅状态更新会同步刷新更新时间。"""
+        oper.update.assert_called_once()
+        assert oper.update.call_args.args[0] == subscribe_id
+        payload = oper.update.call_args.args[1]
+        assert payload["state"] == state
+        assert payload["last_update"]
+
     def test_toggle_single_match_enables(self):
         sub = _sub(id=3, name="X", state="S")
         oper = MagicMock()
@@ -352,7 +361,7 @@ class TestPluginActionToggle:
         msgs = []
         proxy = EventProxy(subscribe_oper=oper, post_message=lambda **kw: msgs.append(kw))
         proxy.on_plugin_action(self._event(arg_str="3"))
-        oper.update.assert_called_once_with(3, {"state": "R"})
+        self._assert_state_update(oper, 3, "R")
         assert msgs and "启用" in msgs[0]["title"]
 
     def test_toggle_single_match_disables(self):
@@ -361,7 +370,7 @@ class TestPluginActionToggle:
         oper.list.return_value = [sub]
         proxy = EventProxy(subscribe_oper=oper, post_message=lambda **kw: None)
         proxy.on_plugin_action(self._event(arg_str="3"))
-        oper.update.assert_called_once_with(3, {"state": "S"})
+        self._assert_state_update(oper, 3, "S")
 
     def test_toggle_by_name(self):
         sub = _sub(id=3, name="剧名", state="R")
@@ -369,7 +378,7 @@ class TestPluginActionToggle:
         oper.list.return_value = [sub]
         proxy = EventProxy(subscribe_oper=oper, post_message=lambda **kw: None)
         proxy.on_plugin_action(self._event(arg_str="剧名"))
-        oper.update.assert_called_once_with(3, {"state": "S"})
+        self._assert_state_update(oper, 3, "S")
 
     def test_no_match_notifies_without_update(self):
         oper = MagicMock()

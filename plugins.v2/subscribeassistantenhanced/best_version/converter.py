@@ -1,5 +1,6 @@
 """域 ⑤：分集→全集转换——原地 update，失败保持原状态。"""
-from typing import Optional
+
+from ..shared.update import update_subscribe
 
 
 class BestVersionConverter:
@@ -15,7 +16,7 @@ class BestVersionConverter:
             return False
 
         try:
-            self._subscribe_oper.update(sid, {"best_version_full": 1})
+            update_subscribe(self._subscribe_oper, sid, {"best_version_full": 1})
             return True
         except Exception:
             return False

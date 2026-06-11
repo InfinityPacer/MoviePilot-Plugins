@@ -22,6 +22,7 @@ from app.schemas.event import SubscribeEpisodesRefreshEventData
 from .engine.signals import last_aired_episode
 from .shared.log import detail
 from .shared.subscribe import format_subscribe, format_subscribe_label, subscribe_from_source
+from .shared.update import update_subscribe
 
 
 def _event_data(event):
@@ -459,7 +460,7 @@ class EventProxy:
             subscribe = matched[0]
             new_state = "S" if subscribe.state != "S" else "R"
             logger.info(f"订阅切换命令：{format_subscribe(subscribe)} 状态切换为 {new_state}")
-            subscribe_oper.update(subscribe.id, {"state": new_state})
+            update_subscribe(subscribe_oper, subscribe.id, {"state": new_state})
             notify(f"{format_subscribe(subscribe)} 已{'禁用' if new_state == 'S' else '启用'}")
         else:
             lines = [f"{s.id}. {s.name}" for s in matched]

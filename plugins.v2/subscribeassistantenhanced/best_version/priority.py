@@ -3,6 +3,7 @@ from typing import Callable, Optional
 
 from ..shared.log import detail
 from ..shared.subscribe import format_subscribe_label
+from ..shared.update import update_subscribe
 
 
 class PriorityManager:
@@ -49,7 +50,7 @@ class PriorityManager:
             payload["current_priority"] = max_priority
 
         if self._subscribe_oper:
-            self._subscribe_oper.update(subscribe.id, payload)
+            update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
     def rollback(self, subscribe, baseline: Optional[dict] = None):
         """下载失败/种子删除后回滚到基线。"""
@@ -67,7 +68,7 @@ class PriorityManager:
         }
         detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 整体回滚到基线 current_priority={payload['current_priority']}")
         if self._subscribe_oper:
-            self._subscribe_oper.update(subscribe.id, payload)
+            update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
     def capture_torrent_baseline(self, subscribe, torrent_id, episodes, contributed_priority,
                                  target_episodes=None):
@@ -118,7 +119,10 @@ class PriorityManager:
         new_current = max(ep_priority.values()) if ep_priority else 0
         detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 按集回滚种子 {torrent_id} 贡献，current_priority→{new_current}")
         if self._subscribe_oper:
-            self._subscribe_oper.update(subscribe.id, {"episode_priority": ep_priority, "current_priority": new_current})
+            update_subscribe(self._subscribe_oper, subscribe.id, {
+                "episode_priority": ep_priority,
+                "current_priority": new_current,
+            })
 
         def cleaner(d: dict) -> dict:
             d.get(sid, {}).get("priority_baselines", {}).pop(str(torrent_id), None)
@@ -136,7 +140,7 @@ class PriorityManager:
 
         payload = {"episode_priority": ep_priority}
         if self._subscribe_oper:
-            self._subscribe_oper.update(subscribe.id, payload)
+            update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
     def is_complete(self, subscribe) -> bool:
         """判断洗版是否完成——所有目标集优先级达标（>=100）。"""
@@ -161,7 +165,7 @@ class PriorityManager:
         mode = "全集" if subscribe.best_version_full else "分集"
         detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 标记{mode}洗版完成（priority=100）")
         if self._subscribe_oper:
-            self._subscribe_oper.update(subscribe.id, payload)
+            update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
     @staticmethod
     def _target_episodes(subscribe) -> list:

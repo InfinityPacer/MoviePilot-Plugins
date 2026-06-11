@@ -9,6 +9,7 @@ from ..shared.config import PluginConfig
 from ..shared.log import detail
 from ..shared.media import get_tv_season_air_date, parse_date
 from ..shared.subscribe import format_subscribe
+from ..shared.update import update_subscribe
 
 
 class PendingJudge:
@@ -91,7 +92,7 @@ class PendingJudge:
         sid = subscribe.id
         logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（{reason}），状态置为 R")
         if self._subscribe_oper:
-            self._subscribe_oper.update(sid, {"state": "R"})
+            update_subscribe(self._subscribe_oper, sid, {"state": "R"})
         self._timeout.clear_block(sid)
         self._update_subscribe_task(subscribe, {
             "state": "R",
@@ -105,7 +106,7 @@ class PendingJudge:
         sid = subscribe.id
         detail(f"待定进入：{format_subscribe(subscribe)} 写 P 状态（来源={source}，原因={reason}）")
         if self._subscribe_oper:
-            self._subscribe_oper.update(sid, {"state": "P"})
+            update_subscribe(self._subscribe_oper, sid, {"state": "P"})
         self._update_subscribe_task(subscribe, {
             "state": "P",
             "source": source,

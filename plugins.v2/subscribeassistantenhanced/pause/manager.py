@@ -7,6 +7,7 @@ from app.log import logger
 from ..engine.types import PauseRecord
 from ..shared.log import detail
 from ..shared.subscribe import format_subscribe
+from ..shared.update import update_subscribe
 
 # 暂停原因优先级：仅用于 pause() 时判定新原因能否覆盖旧原因。
 # pre_air / no_download / auto_user 等未列出原因隐式按 0 处理，不参与覆盖竞争。
@@ -50,7 +51,7 @@ class PauseManager:
         self._update("subscribes", updater)
 
         if self._subscribe_oper:
-            self._subscribe_oper.update(subscribe.id, {"state": "S"})
+            update_subscribe(self._subscribe_oper, subscribe.id, {"state": "S"})
 
     def resume(self, subscribe):
         """恢复订阅：清插件暂停记录并把订阅状态置回 R。
@@ -71,7 +72,7 @@ class PauseManager:
         self._update("subscribes", updater)
 
         if self._subscribe_oper:
-            self._subscribe_oper.update(subscribe.id, {"state": "R"})
+            update_subscribe(self._subscribe_oper, subscribe.id, {"state": "R"})
         return True
 
     def clear_pause_record(self, subscribe):
