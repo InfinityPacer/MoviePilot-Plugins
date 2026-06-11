@@ -43,6 +43,16 @@ class EventProxy:
     def get(self, name):
         return self._modules.get(name)
 
+    def _format_subscribe_label(self, subscribe_id):
+        """按订阅 ID 生成日志标签；查库成功时带名称/季号/ID，失败时保留 ID 兜底。"""
+        if subscribe_id is None:
+            return "未知订阅"
+        subscribe_oper = self.get("subscribe_oper")
+        subscribe = subscribe_oper.get(subscribe_id) if subscribe_oper else None
+        if subscribe and getattr(subscribe, "name", None):
+            return f"{format_subscribe(subscribe)}(id={subscribe_id})"
+        return f"订阅 {subscribe_id}"
+
     def on_completion_check(self, event):
         """CompletionCheck → guard。"""
         guard = self.get("guard")
@@ -57,7 +67,7 @@ class EventProxy:
         data: SubscribeEpisodesRefreshEventData = _event_data(event)
         if data is None:
             return
-        detail(f"集数刷新事件：订阅 {data.subscribe_id} 当前总集数 {data.current_total_episode}")
+        detail(f"集数刷新事件：{self._format_subscribe_label(data.subscribe_id)} 当前总集数 {data.current_total_episode}")
         volatility = self.get("volatility")
         if volatility:
             volatility.record(
@@ -148,7 +158,7 @@ class EventProxy:
         subscribe_id = data.get("subscribe_id") if isinstance(data, dict) else None
         task_manager = self.get("task_manager")
         if subscribe_id and task_manager:
-            detail(f"订阅删除事件：清理订阅 {subscribe_id} 关联任务数据")
+            detail(f"订阅删除事件：清理 {self._format_subscribe_label(subscribe_id)} 关联任务数据")
             task_manager.clear_tasks(subscribe_id)
 
     def on_subscribe_modified(self, event):
@@ -204,7 +214,7 @@ class EventProxy:
         if not isinstance(data, dict):
             return
         subscribe_id = data.get("subscribe_id")
-        detail(f"订阅完成事件：subscribe_id={subscribe_id}")
+        detail(f"订阅完成事件：{self._format_subscribe_label(subscribe_id)}")
         task_manager = self.get("task_manager")
         if subscribe_id and task_manager:
             task_manager.clear_tasks(subscribe_id)
@@ -408,7 +418,7 @@ class EventProxy:
                 subscribe_id = torrent_task.get("subscribe_id")
         monitor = self.get("download_monitor")
         if monitor and subscribe_id:
-            detail(f"整理完成事件：订阅 {subscribe_id} 清除种子 {download_hash} 下载待定")
+            detail(f"整理完成事件：{self._format_subscribe_label(subscribe_id)} 清除种子 {download_hash} 下载待定")
             monitor.clear_download_pending(subscribe_id, download_hash)
 
         # 移动模式：同步清理插件任务记录（源已转走、下载任务作废）

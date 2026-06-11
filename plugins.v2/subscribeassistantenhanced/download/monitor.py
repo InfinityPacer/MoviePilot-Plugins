@@ -121,13 +121,19 @@ class DownloadMonitor:
         实时状态经注入的 fetch_fn(downloader, hash)->TorrentInfo 获取；未注入 fetch_fn 时直接跳过，
         保证未接入下载器实时数据时巡检为安全空操作（不会误删）。subscribe 经 subscribe_oper 解析。
         """
-        if not self._fetch_fn:
-            return
         torrents = self._read("torrents") or {}
+        total = len(torrents)
+        if not self._fetch_fn:
+            detail(f"下载监控：未接入下载器实时状态读取，跳过 {total} 个监控任务")
+            return
+        visible_count = 0
+        skipped_count = 0
+        cleanup_count = 0
         for torrent_hash, task in list(torrents.items()):
             downloader = task.get("downloader")
             info = self._fetch_fn(downloader, torrent_hash)
             if info:
+                visible_count += 1
                 self._reset_missing(torrent_hash)
                 action = self.check_torrent(info, task.get("subscribe_id"))
                 if action in ("timeout", "delete_tracker") and cleanup:
@@ -138,12 +144,15 @@ class DownloadMonitor:
                         cleanup.handle_torrent_deleted(
                             subscribe, torrent_hash, reason=action,
                             downloader=downloader, delete_from_downloader=True)
+                        cleanup_count += 1
                 continue
             # 拿不到实时状态：仅当下载器可达且明确"不存在"且连续 miss 达阈值才算手动删除，否则按瞬断跳过
             present = self._present_fn(downloader, torrent_hash) if self._present_fn else None
             if present is not False:
+                skipped_count += 1
                 continue
             if self._bump_missing(torrent_hash) < self._manual_miss_threshold:
+                skipped_count += 1
                 continue
             subscribe = self._resolve_subscribe(task.get("subscribe_id"))
             if subscribe is not None and cleanup:
@@ -151,7 +160,12 @@ class DownloadMonitor:
                 cleanup.handle_torrent_deleted(
                     subscribe, torrent_hash, reason="manual",
                     downloader=downloader, delete_from_downloader=False)
+                cleanup_count += 1
             self._reset_missing(torrent_hash)
+        detail(
+            f"下载监控：巡检完成，监控任务={total}，实时可见={visible_count}，"
+            f"跳过={skipped_count}，删种善后={cleanup_count}"
+        )
 
     def _resolve_subscribe(self, subscribe_id):
         """按 subscribe_id 解析订阅对象，供删种善后、删除指纹归档和洗版优先级回滚使用。"""

@@ -6,6 +6,7 @@ from app.schemas.event import SubscribeEpisodesRefreshEventData
 from ..engine.scope import build_scope
 from ..shared.log import detail
 from ..shared.media import count_aired_episodes
+from ..shared.subscribe import format_subscribe
 
 
 class PendingRefresh:
@@ -51,11 +52,18 @@ class PendingRefresh:
 
         if current_total <= 0 or effective < current_total:
             original = current_total if current_total > 0 else "缺失"
-            detail(f"待定集数覆盖：订阅 {subscribe_id} 锁定为已播出集数 {effective}（原 {original}），限制搜索范围")
+            detail(f"待定集数覆盖：{self._format_subscribe_label(subscribe_id)} 锁定为已播出集数 {effective}（原 {original}），限制搜索范围")
             data.total_episode = effective
             data.updated = True
             data.source = "subscribeassistantenhanced"
             data.reason = f"待定中，锁定为已播出集数 {effective}"
+
+    def _format_subscribe_label(self, subscribe_id: int) -> str:
+        """按订阅 ID 生成日志标签；订阅仍存在时输出名称/季号/ID，查不到时保留 ID。"""
+        subscribe = self._subscribe_get(subscribe_id) if self._subscribe_get else None
+        if subscribe and getattr(subscribe, "name", None):
+            return f"{format_subscribe(subscribe)}(id={subscribe_id})"
+        return f"订阅 {subscribe_id}"
 
     def _is_pending_or_blocked(self, subscribe_id: int) -> bool:
         """检查订阅是否处于待定或被守门否决状态。"""

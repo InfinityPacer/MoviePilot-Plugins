@@ -88,6 +88,35 @@ class TestRunTimeoutCheck:
         mon.run_timeout_check(cleanup)
         cleanup.handle_torrent_deleted.assert_not_called()
 
+    def test_no_fetch_fn_logs_skip_reason(self, monkeypatch):
+        """未注入实时状态读取时应记录跳过原因，避免巡检只有开始日志。"""
+        from unittest.mock import MagicMock
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", messages.append)
+        read, update, _ = _store_mgr({"torrents": {"h1": {"subscribe_id": 1, "downloader": "qb"}}})
+        mon = DownloadMonitor(read, update)
+
+        mon.run_timeout_check(MagicMock())
+
+        assert messages == ["下载监控：未接入下载器实时状态读取，跳过 1 个监控任务"]
+
+    def test_timeout_check_logs_summary_when_no_action(self, monkeypatch):
+        """巡检完成但未删种时输出任务数和判定摘要，便于确认本轮确实执行过。"""
+        from unittest.mock import MagicMock
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", messages.append)
+        store = {"torrents": {"h1": {"subscribe_id": 1, "downloader": "qb",
+                                     "baseline_progress": 0.0, "baseline_at": time.time(),
+                                     "retry_count": 0, "manual_review_count": 0}}}
+        read, update, _ = _store_mgr(store)
+        mon = DownloadMonitor(read, update, timeout_minutes=60,
+                              fetch_fn=lambda downloader, torrent_hash: _info(
+                                  hash=torrent_hash, progress=0.0, completed=False))
+
+        mon.run_timeout_check(MagicMock())
+
+        assert messages == ["下载监控：巡检完成，监控任务=1，实时可见=1，跳过=0，删种善后=0"]
+
     def test_timeout_triggers_cleanup(self):
         """无进度且已超时、重试用尽 → check_torrent 判 timeout → cleanup 删种善后。"""
         from unittest.mock import MagicMock

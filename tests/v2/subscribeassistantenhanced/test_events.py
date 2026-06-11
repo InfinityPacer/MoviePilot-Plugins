@@ -75,6 +75,19 @@ class TestEventOrdering:
         assert data.updated is True
         assert data.total_episode == 8
 
+    def test_episodes_refresh_log_includes_subscribe_name_when_available(self, monkeypatch):
+        """EpisodesRefresh 诊断日志能展示订阅名称和季号，便于从日志区分来源订阅。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
+        oper = MagicMock()
+        oper.get.return_value = _sub(id=33, name="测试剧", season=1)
+        proxy = EventProxy(subscribe_oper=oper)
+        event = SimpleNamespace(event_data=SimpleNamespace(current_total_episode=229, subscribe_id=33))
+
+        proxy.on_episodes_refresh(event)
+
+        assert messages == ["集数刷新事件：测试剧 S1(id=33) 当前总集数 229"]
+
     def test_download_added_registers_monitor_without_resuming(self):
         """DownloadAdded → 仅经 source 解析订阅后登记监控数据，不在此处恢复暂停。"""
         sub = _sub(id=1, state="S")
