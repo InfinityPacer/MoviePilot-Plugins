@@ -10,6 +10,22 @@ def format_subscribe(subscribe) -> str:
     return f"{name} S{season}" if season else name
 
 
+def format_subscribe_label(subscribe=None, subscribe_id=None) -> str:
+    """格式化日志订阅标签；对象可用时输出名称/季号/ID，仅有 ID 时保留兜底。"""
+    if subscribe:
+        try:
+            sid = subscribe_id if subscribe_id is not None else subscribe.id
+            return f"{format_subscribe(subscribe)}(id={sid})"
+        except AttributeError:
+            try:
+                subscribe_id = subscribe.id
+            except AttributeError:
+                pass
+    if subscribe_id is not None:
+        return f"订阅 {subscribe_id}"
+    return "未知订阅"
+
+
 def format_subscribe_desc(subscribe) -> str:
     """格式化订阅描述信息。"""
     parts = [format_subscribe(subscribe)]

@@ -2,6 +2,7 @@
 from typing import Callable, Optional
 
 from ..shared.log import detail
+from ..shared.subscribe import format_subscribe_label
 
 
 class PriorityManager:
@@ -64,7 +65,7 @@ class PriorityManager:
             "episode_priority": baseline.get("episode_priority", {}),
             "current_priority": baseline.get("current_priority", 0),
         }
-        detail(f"洗版优先级：订阅 {subscribe.id} 整体回滚到基线 current_priority={payload['current_priority']}")
+        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 整体回滚到基线 current_priority={payload['current_priority']}")
         if self._subscribe_oper:
             self._subscribe_oper.update(subscribe.id, payload)
 
@@ -115,7 +116,7 @@ class PriorityManager:
             if ep_priority.get(ep_key, 0) == contributed:
                 ep_priority[ep_key] = old_value
         new_current = max(ep_priority.values()) if ep_priority else 0
-        detail(f"洗版优先级：订阅 {subscribe.id} 按集回滚种子 {torrent_id} 贡献，current_priority→{new_current}")
+        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 按集回滚种子 {torrent_id} 贡献，current_priority→{new_current}")
         if self._subscribe_oper:
             self._subscribe_oper.update(subscribe.id, {"episode_priority": ep_priority, "current_priority": new_current})
 
@@ -140,17 +141,42 @@ class PriorityManager:
     def is_complete(self, subscribe) -> bool:
         """判断洗版是否完成——所有目标集优先级达标（>=100）。"""
         ep_priority = subscribe.episode_priority or {}
-        if not ep_priority:
+        target_episodes = self._target_episodes(subscribe)
+        if not ep_priority or not target_episodes:
             return False
-        return all(v >= 100 for v in ep_priority.values())
+        return all(ep_priority.get(str(ep), 0) >= 100 for ep in target_episodes)
 
     def mark_complete(self, subscribe):
         """标记洗版完成，所有集写 priority=100。"""
         ep_priority = dict(subscribe.episode_priority or {})
-        for key in ep_priority:
-            ep_priority[key] = 100
+        target_episodes = self._target_episodes(subscribe)
+        if target_episodes:
+            for ep in target_episodes:
+                ep_priority[str(ep)] = 100
+        else:
+            for key in ep_priority:
+                ep_priority[key] = 100
 
         payload = {"episode_priority": ep_priority, "current_priority": 100}
-        detail(f"洗版优先级：订阅 {subscribe.id} 标记全集洗版完成（priority=100）")
+        mode = "全集" if subscribe.best_version_full else "分集"
+        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 标记{mode}洗版完成（priority=100）")
         if self._subscribe_oper:
             self._subscribe_oper.update(subscribe.id, payload)
+
+    @staticmethod
+    def _target_episodes(subscribe) -> list:
+        """读取订阅目标集范围；范围无效时返回空，避免只凭已有 priority 键误判完成。"""
+        try:
+            start_episode = int(subscribe.start_episode or 1)
+            total_episode = int(subscribe.total_episode or 0)
+        except (TypeError, ValueError):
+            return []
+        start_episode = max(start_episode, 1)
+        if total_episode < start_episode:
+            return []
+        return list(range(start_episode, total_episode + 1))
+
+    @staticmethod
+    def _format_subscribe_label(subscribe) -> str:
+        """生成洗版优先级日志中的订阅标签；订阅对象字段不足时保留 ID 兜底。"""
+        return format_subscribe_label(subscribe)

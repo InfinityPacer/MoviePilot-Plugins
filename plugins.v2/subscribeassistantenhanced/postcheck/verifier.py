@@ -6,6 +6,7 @@ from app.log import logger
 
 from ..engine.types import SeasonScope
 from ..shared.log import detail
+from ..shared.subscribe import format_subscribe, format_subscribe_label
 
 
 class CompletionVerifier:
@@ -51,7 +52,7 @@ class CompletionVerifier:
             data["list"] = snapshots
             return data
 
-        detail(f"完成后验证：登记完成快照 tmdbid={tmdbid} season={season}（完成时 {total} 集）")
+        detail(f"完成后验证：{format_subscribe_label(subscribe)} 登记完成快照（完成时 {total} 集）")
         self._update("snapshots", updater)
 
     def verify_all(self):
@@ -69,7 +70,8 @@ class CompletionVerifier:
 
             current_total = self._fetch_current_total(snap)
             if current_total is not None and current_total > snap.get("total_at_completion", 0):
-                logger.info(f"完成后验证：tmdbid={snap.get('tmdbid')} season={snap.get('season')} 检测到增集 {snap.get('total_at_completion', 0)}→{current_total}，尝试重建订阅")
+                snap_label = _format_snapshot_label(snap)
+                logger.info(f"完成后验证：{snap_label} 检测到增集 {snap.get('total_at_completion', 0)}→{current_total}，尝试重建订阅")
                 if self._rebuild(snap, current_total):
                     to_remove.append(snap)
 
@@ -98,7 +100,7 @@ class CompletionVerifier:
         for sub in (existing or []):
             if sub.tmdbid == tmdbid and sub.season == season:
                 if sub.best_version:
-                    logger.info(f"完成后验证：删除旧洗版订阅 id={sub.id} 以便重建增集订阅")
+                    logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
                     self._subscribe_oper.delete(sub.id)
                 else:
                     return True
@@ -129,6 +131,16 @@ class CompletionVerifier:
 
 def _snap_key(snap: dict) -> tuple:
     return (snap.get("tmdbid"), snap.get("season"), snap.get("episode_group_id"))
+
+
+def _format_snapshot_label(snap: dict) -> str:
+    """格式化完成快照日志标签；快照配置缺名称时回退到 TMDB/季号。"""
+    config = snap.get("subscribe_config") or {}
+    name = config.get("name")
+    if name:
+        probe = type("SnapshotSubscribe", (), {"name": name, "season": snap.get("season")})()
+        return format_subscribe(probe)
+    return f"TMDB {snap.get('tmdbid')} S{snap.get('season')}"
 
 
 def _extract_config(subscribe) -> dict:

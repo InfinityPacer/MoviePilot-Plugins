@@ -702,6 +702,30 @@ class TestPeriodicJobs:
         orchestrator.check_complete.assert_called_once()
         assert orchestrator.check_complete.call_args.args[2] == [3]
 
+    def test_best_version_check_keeps_episode_subscription_when_target_not_complete(self):
+        """分集洗版目标范围未全达标时，即使已有优先级都是 100 也不能判定洗版完成。"""
+        sub = _sub(
+            id=9,
+            name="测试",
+            best_version=1,
+            best_version_full=0,
+            start_episode=1,
+            total_episode=9999,
+            episode_priority={"1": 100, "2": 100},
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"best_version_type": "all"})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [sub]
+        plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+        plugin._detect_missing_episodes = MagicMock(return_value=[3])
+        priority = plugin._modules["priority_manager"]
+        priority.mark_complete = MagicMock()
+
+        plugin.run_best_version_check()
+
+        priority.mark_complete.assert_not_called()
+
     def test_detect_missing_episodes_returns_partial_missing_set(self, monkeypatch):
         """媒体库部分覆盖时，helper 返回缺失集而不是已存在集。"""
         plugin = SubscribeAssistantEnhanced()

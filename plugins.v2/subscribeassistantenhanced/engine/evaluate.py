@@ -9,6 +9,7 @@ from .cadence import check_cadence_expired
 from .volatility import VolatilityTracker
 from ..shared.config import PluginConfig
 from ..shared.log import detail
+from ..shared.subscribe import format_subscribe_label
 
 
 def evaluate(subscribe, mediainfo,
@@ -19,19 +20,20 @@ def evaluate(subscribe, mediainfo,
     """信号引擎入口——构建 scope 后按优先级逐层检查。"""
     today = as_of or date.today()
     subscribe_id = subscribe.id
+    subscribe_label = format_subscribe_label(subscribe)
 
     scope = build_scope(subscribe, mediainfo, tmdb_episodes_fn)
 
     # 1. M：mid_season 硬否决
     m_sig = check_m_signal(scope, as_of=today)
     if m_sig is not None:
-        detail(f"信号引擎：订阅 {subscribe_id} M 否决完结 — {m_sig.reason}")
+        detail(f"信号引擎：{subscribe_label} M 否决完结 — {m_sig.reason}")
         return m_sig
 
     # 2. F：变更速率否决
     if config.volatility_enabled and subscribe_id is not None:
         if not volatility_tracker.is_stable(subscribe_id):
-            detail(f"信号引擎：订阅 {subscribe_id} F 否决完结 — total_episode 近 {config.volatility_window_days} 天内变动")
+            detail(f"信号引擎：{subscribe_label} F 否决完结 — total_episode 近 {config.volatility_window_days} 天内变动")
             return CompletionSignal(
                 completed=False, stable=False,
                 signals=["F:unstable"],
@@ -41,7 +43,7 @@ def evaluate(subscribe, mediainfo,
     # 3. E：基线信号
     e_sig = check_e_signal(mediainfo, scope)
     if e_sig is not None:
-        detail(f"信号引擎：订阅 {subscribe_id} E 信号判定完结 — {e_sig.reason}（confidence={e_sig.confidence}）")
+        detail(f"信号引擎：{subscribe_label} E 信号判定完结 — {e_sig.reason}（confidence={e_sig.confidence}）")
         return e_sig
 
     # 4. I：季级信号
@@ -50,7 +52,7 @@ def evaluate(subscribe, mediainfo,
                            high_risk=scope.high_risk,
                            as_of=today)
     if i_sig is not None:
-        detail(f"信号引擎：订阅 {subscribe_id} I 信号判定完结 — {i_sig.reason}（confidence={i_sig.confidence}）")
+        detail(f"信号引擎：{subscribe_label} I 信号判定完结 — {i_sig.reason}（confidence={i_sig.confidence}）")
         return i_sig
 
     # 5. G：播出节奏（辅助信号）

@@ -21,7 +21,7 @@ from app.schemas.event import SubscribeEpisodesRefreshEventData
 
 from .engine.signals import last_aired_episode
 from .shared.log import detail
-from .shared.subscribe import format_subscribe, subscribe_from_source
+from .shared.subscribe import format_subscribe, format_subscribe_label, subscribe_from_source
 
 
 def _event_data(event):
@@ -49,9 +49,7 @@ class EventProxy:
             return "未知订阅"
         subscribe_oper = self.get("subscribe_oper")
         subscribe = subscribe_oper.get(subscribe_id) if subscribe_oper else None
-        if subscribe and getattr(subscribe, "name", None):
-            return f"{format_subscribe(subscribe)}(id={subscribe_id})"
-        return f"订阅 {subscribe_id}"
+        return format_subscribe_label(subscribe, subscribe_id)
 
     def on_completion_check(self, event):
         """CompletionCheck → guard。"""

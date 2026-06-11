@@ -50,6 +50,17 @@ class TestSnapshot:
         assert snaps[0]["subscribe_config"]["filter"] == "rule1"
         assert snaps[0]["subscribe_config"]["filter_groups"] == ["group1"]
 
+    def test_snapshot_log_uses_subscribe_label(self, monkeypatch):
+        """完成快照登记日志应带订阅名称和 ID，而不是只输出 tmdbid。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.verifier.detail", messages.append)
+        store = {}
+        v = _verifier(store)
+
+        v.snapshot(_sub(), None, SeasonScope(tmdbid=100, season=1, source="main_season"))
+
+        assert messages == ["完成后验证：测试剧 S1(id=1) 登记完成快照（完成时 12 集）"]
+
     def test_dedup_by_key(self):
         """同 (tmdbid, season, episode_group_id) 幂等去重。"""
         store = {}

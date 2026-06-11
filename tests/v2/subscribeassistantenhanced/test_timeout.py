@@ -88,3 +88,20 @@ class TestCheckRelease:
         sig = CompletionSignal(stable=False)
         assert mgr.check_release(1, sig) is False
         assert store["blocks"]["1"]["blocked_at"] > old_ts
+
+    def test_unstable_log_uses_subscribe_label(self, monkeypatch):
+        """待定超时诊断日志应优先输出可读订阅标签。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        old_ts = time.time() - 25 * 86400
+        store = {"blocks": {"1": {"blocked_at": old_ts}}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(
+            read,
+            update,
+            timeout_days=21,
+            subscribe_get_fn=lambda _sid: type("Sub", (), {"id": 1, "name": "测试剧", "season": 1})(),
+        )
+
+        assert mgr.check_release(1, CompletionSignal(stable=False)) is False
+        assert messages == ["待定超时：测试剧 S1(id=1) 信号不稳定，重置超时计时（数据变动期不计入超时额度）"]

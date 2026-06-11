@@ -5,9 +5,17 @@ from unittest.mock import MagicMock
 from subscribeassistantenhanced.best_version.priority import PriorityManager
 
 
-def _sub(sid=1, ep_priority=None, current_priority=0):
+def _sub(sid=1, ep_priority=None, current_priority=0, start_episode=1, total_episode=2, best_version_full=0,
+         name="测试剧", season=1):
     return SimpleNamespace(
-        id=sid, episode_priority=ep_priority or {}, current_priority=current_priority,
+        id=sid,
+        name=name,
+        season=season,
+        episode_priority=ep_priority or {},
+        current_priority=current_priority,
+        start_episode=start_episode,
+        total_episode=total_episode,
+        best_version_full=best_version_full,
     )
 
 
@@ -151,6 +159,11 @@ class TestIsComplete:
         mgr = _mgr()
         assert mgr.is_complete(_sub(ep_priority={"1": 100, "2": 100})) is True
 
+    def test_missing_target_episodes_not_complete(self):
+        """目标范围未全部达标时不能只因已有 priority 都是 100 就判洗版完成。"""
+        mgr = _mgr()
+        assert mgr.is_complete(_sub(ep_priority={"1": 100, "2": 100}, total_episode=9999)) is False
+
     def test_mixed_not_complete(self):
         mgr = _mgr()
         assert mgr.is_complete(_sub(ep_priority={"1": 100, "2": 50})) is False
@@ -170,3 +183,16 @@ class TestMarkComplete:
         assert call_payload["episode_priority"]["1"] == 100
         assert call_payload["episode_priority"]["2"] == 100
         assert call_payload["current_priority"] == 100
+
+    def test_mark_complete_fills_target_range_and_logs_episode_mode(self, monkeypatch):
+        """分集洗版完成标记应覆盖完整目标范围，并按分集模式记录日志。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.best_version.priority.detail", messages.append)
+        mgr = _mgr()
+        sub = _sub(ep_priority={"1": 100}, total_episode=3, best_version_full=0)
+
+        mgr.mark_complete(sub)
+
+        call_payload = mgr._oper.update.call_args[0][1]
+        assert call_payload["episode_priority"] == {"1": 100, "2": 100, "3": 100}
+        assert messages == ["洗版优先级：测试剧 S1(id=1) 标记分集洗版完成（priority=100）"]

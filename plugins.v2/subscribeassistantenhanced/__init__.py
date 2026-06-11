@@ -38,7 +38,8 @@ from .best_version.orchestrator import BestVersionOrchestrator
 from .download.monitor import DownloadMonitor
 from .download.cleanup import TorrentCleanup
 from .shared.deletes import DeletesStore
-from .postcheck.verifier import CompletionVerifier
+from .shared.subscribe import format_subscribe_label
+from .postcheck.verifier import CompletionVerifier, _format_snapshot_label
 from .postcheck.timeout import PendingTimeoutManager
 from .events import EventProxy
 from .shared.media import parse_date
@@ -168,6 +169,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             tm.read, tm.update,
             timeout_days=cfg.timeout_release_days,
             cadence_acceleration=cfg.timeout_cadence_acceleration,
+            subscribe_get_fn=self._subscribe_oper.get,
         )
         verifier = CompletionVerifier(
             tm.read, tm.update,
@@ -619,7 +621,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         for sid in list((self.get_data("blocks") or {}).keys()):
             subscribe = self._subscribe_oper.get(int(sid))
             if not subscribe:
-                detail(f"待定释放：订阅 {sid} 已不存在，清理残留待定块")
+                detail(f"待定释放：{format_subscribe_label(subscribe_id=sid)} 已不存在，清理残留待定块")
                 timeout_manager.clear_block(int(sid))
                 continue
             mediainfo = self._recognize_mediainfo(subscribe)
@@ -983,12 +985,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
         try:
             subscribe_id, _ = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
             if subscribe_id:
-                logger.info(f"完成后验证：检测到增集，已重建订阅 tmdbid={snap.get('tmdbid')} season={snap.get('season')}（新 id={subscribe_id}）")
+                logger.info(f"完成后验证：{_format_snapshot_label(snap)} 检测到增集，已重建订阅（新 id={subscribe_id}）")
             return bool(subscribe_id)
         except Exception as err:
             logger.warning(
                 "订阅助手（增强版）完成快照重建失败："
-                f"tmdbid={snap.get('tmdbid')}, season={snap.get('season')}, error={err}"
+                f"{_format_snapshot_label(snap)}, error={err}"
             )
             return False
 

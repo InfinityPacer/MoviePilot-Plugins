@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from subscribeassistantenhanced.shared.log import truncate_log_value, format_log_title_desc
 from subscribeassistantenhanced.shared.subscribe import (
-    format_subscribe, format_subscribe_desc, match_subscribe,
+    format_subscribe, format_subscribe_desc, format_subscribe_label, match_subscribe,
 )
 from subscribeassistantenhanced.shared.media import (
     parse_date, is_same_season, get_tv_season_info,
@@ -80,6 +80,19 @@ class TestFormatSubscribeDesc:
         sub = SimpleNamespace(name="测试", season=1, total_episode=0, lack_episode=0)
         result = format_subscribe_desc(sub)
         assert "测试" in result
+
+
+class TestFormatSubscribeLabel:
+
+    def test_named_subscribe_includes_id(self):
+        sub = SimpleNamespace(id=1, name="测试剧", season=2)
+        assert format_subscribe_label(sub) == "测试剧 S2(id=1)"
+
+    def test_id_only_fallback(self):
+        assert format_subscribe_label(subscribe_id=9) == "订阅 9"
+
+    def test_missing_subscribe_fallback(self):
+        assert format_subscribe_label() == "未知订阅"
 
 
 class TestMatchSubscribe:
