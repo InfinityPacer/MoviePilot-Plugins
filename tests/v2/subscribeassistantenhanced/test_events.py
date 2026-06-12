@@ -2,6 +2,9 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
+from app.core.context import MediaInfo
+from app.schemas.event import SubscribeEpisodesRefreshEventData
+
 from subscribeassistantenhanced.events import EventProxy
 
 
@@ -87,6 +90,28 @@ class TestEventOrdering:
         proxy.on_episodes_refresh(event)
 
         assert messages == ["集数刷新事件：测试剧 S1(id=33) 当前总集数 229"]
+
+    def test_episodes_refresh_create_log_uses_mediainfo_when_subscribe_id_missing(self, monkeypatch):
+        """创建订阅尚未入库时，EpisodesRefresh 日志应使用媒体信息兜底而不是未知订阅。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
+        proxy = EventProxy()
+        mediainfo = MediaInfo()
+        mediainfo.title = "凡人修仙传"
+        mediainfo.year = "2020"
+        mediainfo.tmdb_id = 106449
+        data = SubscribeEpisodesRefreshEventData(
+            current_total_episode=190,
+            subscribe_id=None,
+            season=1,
+            scene="create",
+            tmdbid=106449,
+            mediainfo=mediainfo,
+        )
+
+        proxy.on_episodes_refresh(SimpleNamespace(event_data=data))
+
+        assert messages == ["集数刷新事件：凡人修仙传 (2020) S1(tmdbid=106449, scene=create) 当前总集数 190"]
 
     def test_download_added_registers_monitor_without_resuming(self):
         """DownloadAdded → 仅经 source 解析订阅后登记监控数据，不在此处恢复暂停。"""

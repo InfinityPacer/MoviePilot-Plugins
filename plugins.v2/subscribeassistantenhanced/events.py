@@ -17,6 +17,7 @@
 from types import SimpleNamespace
 
 from app.log import logger
+from app.core.context import MediaInfo
 from app.schemas.event import SubscribeEpisodesRefreshEventData
 
 from .engine.signals import last_aired_episode
@@ -52,6 +53,44 @@ class EventProxy:
         subscribe = subscribe_oper.get(subscribe_id) if subscribe_oper else None
         return format_subscribe_label(subscribe, subscribe_id)
 
+    @staticmethod
+    def _format_episodes_refresh_label(data: SubscribeEpisodesRefreshEventData) -> str | None:
+        """格式化集数刷新事件来源；创建场景无订阅 ID 时用媒体信息兜底。"""
+        subscribe_id = data.subscribe_id
+        if subscribe_id is not None:
+            return None
+        parts = []
+        mediainfo = data.mediainfo
+        tmdbid = data.tmdbid
+        if isinstance(mediainfo, MediaInfo):
+            if mediainfo.title_year:
+                parts.append(mediainfo.title_year)
+            if tmdbid is None:
+                tmdbid = mediainfo.tmdb_id
+        elif isinstance(mediainfo, dict):
+            title = mediainfo.get("title")
+            year = mediainfo.get("year")
+            if title:
+                label = f"{title} ({year})" if year else title
+                parts.append(label)
+            if tmdbid is None:
+                tmdbid = mediainfo.get("tmdb_id")
+        season = data.season
+        if season is not None:
+            parts.append(f"S{season}")
+        markers = []
+        if tmdbid:
+            markers.append(f"tmdbid={tmdbid}")
+        if data.scene:
+            markers.append(f"scene={data.scene}")
+        if markers:
+            marker_text = f"({', '.join(markers)})"
+            if parts:
+                parts[-1] = f"{parts[-1]}{marker_text}"
+            else:
+                parts.append(marker_text)
+        return " ".join(parts) if parts else "未知订阅"
+
     def on_completion_check(self, event):
         """CompletionCheck → guard。"""
         guard = self.get("guard")
@@ -66,7 +105,8 @@ class EventProxy:
         data: SubscribeEpisodesRefreshEventData = _event_data(event)
         if data is None:
             return
-        detail(f"集数刷新事件：{self._format_subscribe_label(data.subscribe_id)} 当前总集数 {data.current_total_episode}")
+        label = self._format_episodes_refresh_label(data) or self._format_subscribe_label(data.subscribe_id)
+        detail(f"集数刷新事件：{label} 当前总集数 {data.current_total_episode}")
         volatility = self.get("volatility")
         if volatility:
             volatility.record(

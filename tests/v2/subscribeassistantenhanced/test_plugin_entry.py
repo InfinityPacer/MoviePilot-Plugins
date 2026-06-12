@@ -102,6 +102,28 @@ class TestScheduler:
         assert "删除记录清理" not in names
         assert all(not name.startswith("订阅助手-") for name in names)
 
+    def test_service_registration_log_includes_schedule_detail(self, monkeypatch):
+        """注册定时任务摘要应带周期信息，便于只看日志判断任务节奏。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.detail", messages.append)
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "enabled": True,
+            "download_monitor_enabled": True,
+            "timeout_release_enabled": True,
+            "verify_enabled": True,
+            "best_version_type": "tv_episode",
+            "download_check_interval_minutes": 10,
+            "auto_check_interval_minutes": 60,
+            "meta_check_interval_hours": 3,
+            "verify_interval_hours": 12,
+            "best_version_cron": "0 15 * * *",
+        })
+
+        plugin.get_service()
+
+        assert "注册定时任务：元数据检查=3h、下载任务检查=10m、洗版订阅检查=cron(0 15 * * *)、自动纠错=12h、通用巡检=60m" in messages
+
     def test_disabled_domains_keep_only_meta_check_scheduled(self):
         """业务域关闭时仍保留元数据检查和统一的通用巡检。"""
         plugin = SubscribeAssistantEnhanced()

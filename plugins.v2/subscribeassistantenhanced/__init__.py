@@ -66,7 +66,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.1.2"
+    plugin_version = "0.1.3"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -342,6 +342,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._event_proxy = None
         self._modules = {}
 
+    @staticmethod
+    def _format_service_registration(service: Dict[str, Any], schedules: Dict[str, str]) -> str:
+        """生成定时任务注册摘要；周期信息由注册入口按配置显式传入，避免从触发器反推。"""
+        schedule = schedules.get(service["id"])
+        if schedule:
+            return f"{service['name']}={schedule}"
+        return service["name"]
+
     def get_service(self) -> List[Dict[str, Any]]:
         """按域开关注册定时任务，并按元数据周期复查待定订阅。
 
@@ -356,54 +364,69 @@ class SubscribeAssistantEnhanced(_PluginBase):
         cfg = self._config
         name = self.__class__.__name__
         services: List[Dict[str, Any]] = []
+        service_schedules: Dict[str, str] = {}
         if self._onlyonce:
+            service_id = f"{name}_onlyonce"
             services.append({
-                "id": f"{name}_onlyonce",
+                "id": service_id,
                 "name": "立即运行一次",
                 "trigger": "date",
                 "run_date": datetime.datetime.now() + datetime.timedelta(seconds=3),
                 "func": self.run_all_checks,
                 "kwargs": {},
             })
+            service_schedules[service_id] = "约3s后"
+        service_id = f"{name}_meta_check"
         services.append({
-            "id": f"{name}_meta_check",
+            "id": service_id,
             "name": "元数据检查",
             "trigger": "interval",
             "func": self.run_meta_check,
             "kwargs": {"hours": cfg.meta_check_interval_hours},
         })
+        service_schedules[service_id] = f"{cfg.meta_check_interval_hours}h"
         if cfg.download_monitor_enabled:
+            service_id = f"{name}_download"
             services.append({
-                "id": f"{name}_download",
+                "id": service_id,
                 "name": "下载任务检查",
                 "trigger": "interval",
                 "func": self.run_download_timeout_check,
                 "kwargs": {"minutes": cfg.download_check_interval_minutes},
             })
+            service_schedules[service_id] = f"{cfg.download_check_interval_minutes}m"
         if cfg.best_version_type != "no" and cfg.best_version_cron:
             # 洗版按 cron 调度，区别于其余域的 interval 周期；cron 为空则不注册该任务
+            service_id = f"{name}_best_version"
             services.append({
-                "id": f"{name}_best_version",
+                "id": service_id,
                 "name": "洗版订阅检查",
                 "trigger": CronTrigger.from_crontab(cfg.best_version_cron),
                 "func": self.run_best_version_check,
             })
+            service_schedules[service_id] = f"cron({cfg.best_version_cron})"
         if cfg.verify_enabled:
+            service_id = f"{name}_verify"
             services.append({
-                "id": f"{name}_verify",
+                "id": service_id,
                 "name": "自动纠错",
                 "trigger": "interval",
                 "func": self.run_completion_verify,
                 "kwargs": {"hours": cfg.verify_interval_hours},
             })
+            service_schedules[service_id] = f"{cfg.verify_interval_hours}h"
+        service_id = f"{name}_common_check"
         services.append({
-            "id": f"{name}_common_check",
+            "id": service_id,
             "name": "通用巡检",
             "trigger": "interval",
             "func": self.run_common_check,
             "kwargs": {"minutes": cfg.auto_check_interval_minutes},
         })
-        detail("注册定时任务：" + "、".join(s["name"] for s in services))
+        service_schedules[service_id] = f"{cfg.auto_check_interval_minutes}m"
+        detail("注册定时任务：" + "、".join(
+            self._format_service_registration(service, service_schedules) for service in services
+        ))
         return services
 
     def run_all_checks(self):
