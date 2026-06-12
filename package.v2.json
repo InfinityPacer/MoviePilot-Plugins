@@ -11,7 +11,8 @@
         "history": {
             "v0.1.2": "补齐订阅状态、洗版订阅创建、分集转全集、删种善后和自动纠错重建的通知与事件联动。",
             "v0.1": "多场景管理订阅，实现订阅全生命周期管理。"
-        }
+        },
+        "release": true
     },
     "BrushFlowLowFreq": {
         "name": "站点刷流（低频版）",
@@ -28,7 +29,8 @@
             "v4.1": "支持通过CRON表达式配置开启时间，固定10分钟为执行周期",
             "v4.0": "站点独立配置项支持配置NexusPHP 站点自动跳过下载提示页",
             "v3.9": "MoviePilot V2 版本站点刷流（低频版）插件"
-        }
+        },
+        "release": true
     },
     "PluginReOrder": {
         "name": "插件自定义排序",
@@ -40,7 +42,8 @@
         "level": 1,
         "history": {
             "v1.1": "MoviePilot V2 版本自定义排序插件"
-        }
+        },
+        "release": true
     },
     "WeatherWidget": {
         "name": "天气",
@@ -52,7 +55,8 @@
         "level": 1,
         "history": {
             "v2.0": "MoviePilot V2 版本天气插件，优先使用 CloakBrowser 截图并保留 Playwright 兼容路径"
-        }
+        },
+        "release": true
     },
     "BrushManager": {
         "name": "刷流种子整理",
@@ -64,7 +68,8 @@
         "level": 1,
         "history": {
             "v1.5": "MoviePilot V2 版本刷流种子整理插件"
-        }
+        },
+        "release": true
     },
     "TorrentClassifier": {
         "name": "种子关键字分类整理",
@@ -77,7 +82,8 @@
         "history": {
             "v1.5": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.4": "MoviePilot V2 版本种子关键字分类整理插件"
-        }
+        },
+        "release": true
     },
     "HitAndRun": {
         "name": "H&R助手",
@@ -93,7 +99,8 @@
             "v1.5.2": "适配 Pydantic V2，修复配置模型校验导致插件加载失败的问题",
             "v1.5.1": "修复了刷流事件监听错误的问题",
             "v1.5": "MoviePilot V2 版本H&R助手插件"
-        }
+        },
+        "release": true
     },
     "PlexAutoLanguages": {
         "name": "Plex自动语言",
@@ -105,7 +112,8 @@
         "level": 1,
         "history": {
             "v0.3": "MoviePilot V2 版本Plex自动语言插件"
-        }
+        },
+        "release": true
     },
     "PlexLocalization": {
         "name": "Plex中文本地化",
@@ -119,7 +127,8 @@
             "v1.9": "修复标题排序写入端点，避免日志显示成功但 Plex 未实际更新",
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex中文本地化插件"
-        }
+        },
+        "release": true
     },
     "PlexEdition": {
         "name": "PlexEdition",
@@ -132,7 +141,8 @@
         "history": {
             "v1.2": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.1": "MoviePilot V2 版本PlexEdition插件"
-        }
+        },
+        "release": true
     },
     "PlexPersonMeta": {
         "name": "Plex演职人员刮削",
@@ -149,7 +159,8 @@
             "v1.9": "修复了入库执行一次失效的问题",
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex演职人员刮削插件"
-        }
+        },
+        "release": true
     },
     "TrafficAssistant": {
         "name": "站点流量管理",
@@ -163,7 +174,8 @@
             "v1.6": "支持站点独立配置，可按站点覆盖分享率阈值和流量管理动作",
             "v1.5": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.4": "MoviePilot V2 版本站点流量管理插件"
-        }
+        },
+        "release": true
     },
     "AuxiliaryAuth": {
         "name": "辅助认证",
@@ -176,7 +188,8 @@
         "history": {
             "v1.1": "支持 Plex 辅助认证校验",
             "v1.0": "增加辅助认证插件，支持使用第三方系统进行辅助认证"
-        }
+        },
+        "release": true
     },
     "PlexRefreshRecent": {
         "name": "Plex元数据刷新",
@@ -189,7 +202,8 @@
         "history": {
             "v1.6": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.5": "MoviePilot V2 版本Plex元数据刷新插件"
-        }
+        },
+        "release": true
     },
     "Commands": {
         "name": "命令管理",
@@ -201,7 +215,8 @@
         "level": 1,
         "history": {
             "v1.0": "增加命令管理插件，实现微信、Telegram等客户端的命令管理"
-        }
+        },
+        "release": true
     },
     "AutoDiagnosis": {
         "name": "自动诊断",
@@ -215,7 +230,8 @@
             "v1.9": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.8": "增加网络连通性测试站点",
             "v1.7": "MoviePilot V2 版本自动诊断插件"
-        }
+        },
+        "release": true
     },
     "SmartRename": {
         "name": "智能重命名",
@@ -232,7 +248,8 @@
             "v1.2": "支持更多的分隔符适用字段",
             "v1.1": "适配 MoviePilot v2.1.1",
             "v1.0": "增加智能重命名插件，自定义适配多场景重命名"
-        }
+        },
+        "release": true
     },
     "ServiceManager": {
         "name": "服务管理",
@@ -248,7 +265,8 @@
             "v1.2": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.1": "增加订阅元数据更新服务",
             "v1.0": "增加服务管理插件，实现自定义服务管理"
-        }
+        },
+        "release": true
     },
     "SubscribeAssistant": {
         "name": "订阅助手",
@@ -299,7 +317,8 @@
             "v1.2": "增加跳过超时种子以及修复一些细节问题",
             "v1.1": "增加自动洗版以及修复一些细节问题",
             "v1.0": "增加订阅助手插件，支持多场景管理订阅，实现订阅种子删除以及自动待定/暂停/洗版"
-        }
+        },
+        "release": true
     },
     "PlexMatch": {
         "name": "PlexMatch",
@@ -311,6 +330,7 @@
         "level": 1,
         "history": {
             "v1.2": "MoviePilot V2 版本PlexMatch插件"
-        }
+        },
+        "release": true
     }
 }
