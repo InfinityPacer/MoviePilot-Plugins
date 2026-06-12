@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -67,6 +67,10 @@ jobs:
 
               tag="${plugin_id}_v${plugin_version}"
               asset="${plugin_id_lc}_v${plugin_version}.zip"
+              release_notes="$(jq -r --arg plugin_id "$plugin_id" --arg version "v$plugin_version" '.[$plugin_id].history[$version] // empty' "$pkg_file")"
+              if [ -z "$release_notes" ]; then
+                release_notes="Automated release of $plugin_id $plugin_version"
+              fi
 
               if grep -qxF "$tag" processed_tags.txt; then
                 echo "Tag $tag already processed, skip."
@@ -85,6 +89,9 @@ jobs:
 
               if [ "$changed" -eq 0 ]; then
                 echo "No changes in $plugin_dir since $prev_tag, skip packaging $plugin_id."
+                if gh release view "$tag" >/dev/null 2>&1; then
+                  gh release edit "$tag" --notes "$release_notes"
+                fi
                 echo "$tag" >> processed_tags.txt
                 continue
               fi
@@ -103,7 +110,7 @@ jobs:
               git tag -d "$tag" >/dev/null 2>&1 || true
 
               echo "Creating release $tag"
-              gh release create "$tag" "$asset" --title "$tag" --notes "Automated release of $plugin_id $plugin_version" --latest --target "$GITHUB_SHA"
+              gh release create "$tag" "$asset" --title "$tag" --notes "$release_notes" --latest --target "$GITHUB_SHA"
 
               echo "$tag" >> processed_tags.txt
             done
