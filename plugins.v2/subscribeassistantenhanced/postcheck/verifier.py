@@ -90,7 +90,7 @@ class CompletionVerifier:
         return len(episodes) if episodes else None
 
     def _rebuild(self, snap: dict, current_total: int) -> bool:
-        """发现增集后协调旧订阅清理和重建；失败时返回 False 以保留快照重试。"""
+        """发现增集后协调完成记录清理和订阅重建；失败时返回 False 以保留快照重试。"""
         if not self._subscribe_oper:
             return False
         tmdbid = snap["tmdbid"]

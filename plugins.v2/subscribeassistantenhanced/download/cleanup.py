@@ -18,7 +18,9 @@ class TorrentCleanup:
                  task_data_read: Optional[Callable] = None,
                  deletes_store=None,
                  delete_torrent_fn: Optional[Callable] = None,
-                 search_fn: Optional[Callable] = None):
+                 search_fn: Optional[Callable] = None,
+                 notify_fn: Optional[Callable] = None):
+        """注入删种善后依赖；通知回调用于告知用户删除原因与补搜安排。"""
         self._priority = priority_manager
         self._clear_pending = clear_download_pending_fn
         self._update = task_data_update
@@ -26,6 +28,7 @@ class TorrentCleanup:
         self._deletes = deletes_store
         self._delete_torrent = delete_torrent_fn
         self._search = search_fn
+        self._notify = notify_fn
 
     def handle_torrent_deleted(self, subscribe, torrent_hash: str,
                                 reason: str = "download_timeout",
@@ -66,6 +69,7 @@ class TorrentCleanup:
         self._clear_pending(sid, torrent_hash)
 
         # 5. 延迟补充搜索（注入；删后重新触发该订阅搜索，避免长期缺集）
+        self._notify_deleted(subscribe, torrent_task, reason)
         if self._search and subscribe:
             self._search(subscribe)
 
@@ -81,3 +85,26 @@ class TorrentCleanup:
             data.pop(torrent_hash, None)
             return data
         self._update("torrents", updater)
+
+    def _notify_deleted(self, subscribe, torrent_task: Optional[dict], reason: str):
+        """发送删种善后通知，标题包含订阅、删除原因和最终动作。"""
+        if not self._notify:
+            return
+        reason_text = {
+            "timeout": "超时无进度",
+            "delete_tracker": "Tracker 关键字命中",
+            "manual": "订阅种子手动删除",
+            "download_timeout": "超时无进度",
+        }.get(reason, reason)
+        msg_parts = []
+        if torrent_task:
+            if torrent_task.get("title"):
+                msg_parts.append(f"标题：{torrent_task.get('title')}")
+            if torrent_task.get("description"):
+                msg_parts.append(f"内容：{torrent_task.get('description')}")
+        if self._search:
+            msg_parts.append("补全：将在 300 秒后触发搜索")
+        self._notify(
+            f"{format_subscribe(subscribe)} {reason_text}，已删除",
+            "\n".join(msg_parts) if msg_parts else None,
+        )

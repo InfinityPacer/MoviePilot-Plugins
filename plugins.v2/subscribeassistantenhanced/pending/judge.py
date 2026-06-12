@@ -20,13 +20,16 @@ class PendingJudge:
                  subscribe_oper,
                  timeout_manager: PendingTimeoutManagerProtocol,
                  task_data_read: Callable,
-                 task_data_update: Callable):
+                 task_data_update: Callable,
+                 notify_fn: Optional[Callable] = None):
+        """注入待定判定、状态写库、超时管理、任务数据和状态通知回调。"""
         self._config = config
         self._evaluate = evaluate_fn
         self._subscribe_oper = subscribe_oper
         self._timeout = timeout_manager
         self._read = task_data_read
         self._update = task_data_update
+        self._notify = notify_fn
 
     def should_enter_pending(self, subscribe, mediainfo, episodes: list,
                               signal: Optional[CompletionSignal] = None) -> tuple[bool, str]:
@@ -99,6 +102,7 @@ class PendingJudge:
             "exit_reason": reason,
             "exit_at": time.time(),
         })
+        self._notify_status(subscribe, "不再满足上映待定，已标记订阅中", detail=reason)
 
     def mark_pending(self, subscribe, source: str = "pending_judge",
                      reason: str = ""):
@@ -113,6 +117,7 @@ class PendingJudge:
             "reason": reason,
             "since": time.time(),
         })
+        self._notify_status(subscribe, "满足上映待定，已标记待定", detail=reason)
 
     def _read_subscribe_task(self, subscribe) -> dict:
         """读取订阅的任务数据。"""
@@ -131,3 +136,9 @@ class PendingJudge:
             return data
 
         self._update("subscribes", updater)
+
+    def _notify_status(self, subscribe, title_suffix: str, detail: Optional[str] = None):
+        """发送待定状态通知。"""
+        if not self._notify:
+            return
+        self._notify(subscribe, title_suffix, detail=detail)

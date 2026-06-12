@@ -35,7 +35,27 @@ def _sub(**kwargs):
         last_update=None,
     )
     defaults.update(kwargs)
-    return SimpleNamespace(**defaults)
+    subscribe = SimpleNamespace(**defaults)
+    subscribe.to_dict = lambda: dict(defaults)
+    return subscribe
+
+
+def _mediainfo(**kwargs):
+    """构造插件状态通知使用的 MediaInfo 替身。"""
+    defaults = dict(
+        tmdb_id=100,
+        title_year="测试 (2026)",
+        vote_average=8.0,
+        season_info=[],
+        first_air_date=None,
+        release_date=None,
+        type=SimpleNamespace(value="电视剧"),
+    )
+    defaults.update(kwargs)
+    media = SimpleNamespace(**defaults)
+    media.to_dict = lambda: {"tmdb_id": media.tmdb_id}
+    media.get_message_image = lambda: "poster.jpg"
+    return media
 
 
 def test_converter_is_wired():
@@ -57,7 +77,7 @@ def test_episode_to_full_converts_when_current_episodes_covered():
 
     plugin.run_best_version_check()
 
-    conv.convert_to_full.assert_called_once_with(sub)
+    conv.convert_to_full.assert_called_once_with(sub, plugin._recognize_mediainfo.return_value)
 
 
 def test_episode_to_full_converts_when_download_chain_reports_all_exists(monkeypatch):
@@ -81,7 +101,7 @@ def test_episode_to_full_converts_when_download_chain_reports_all_exists(monkeyp
 
     plugin.run_best_version_check()
 
-    conv.convert_to_full.assert_called_once_with(sub)
+    conv.convert_to_full.assert_called_once_with(sub, plugin._recognize_mediainfo.return_value)
 
 
 def test_episode_to_full_skipped_when_missing_episodes():
@@ -843,7 +863,7 @@ class TestPeriodicJobs:
         """H 重建适配器必须以 MediaInfo + kwargs 调用主程序 SubscribeOper.add。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
-        mediainfo = SimpleNamespace(tmdb_id=100)
+        mediainfo = _mediainfo()
 
         class StrictSubscribeOper:
             """仅接受主程序真实 add 签名的测试替身。"""
@@ -870,6 +890,24 @@ class TestPeriodicJobs:
         assert oper.call[1]["season"] == 1
         assert oper.call[1]["episode_group"] == "eg-1"
 
+    def test_snapshot_rebuild_sends_subscribe_added_event(self):
+        """H 重建成功后应补发 SubscribeAdded，触发主程序订阅创建链路。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.add.return_value = (88, "新增订阅成功")
+        plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+        plugin._send_subscribe_added = MagicMock()
+
+        result = plugin._rebuild_subscribe_from_snapshot(
+            {"tmdbid": 100, "season": 1, "episode_group_id": "eg-1"},
+            {"name": "测试", "start_episode": 13},
+        )
+
+        assert result is True
+        plugin._send_subscribe_added.assert_called_once()
+        assert plugin._send_subscribe_added.call_args.args[0] == 88
+
     def test_pending_release_releases_when_timed_out(self, monkeypatch):
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
@@ -877,7 +915,7 @@ class TestPeriodicJobs:
         plugin._subscribe_oper = MagicMock()
         plugin._subscribe_oper.get.return_value = sub
         plugin._subscribe_oper.list.return_value = []  # Task5 P 退出巡检：本用例只验证 blocks 超时路径
-        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: object())
+        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: _mediainfo())
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
         plugin._evaluate_fn = lambda s, m: object()
@@ -890,6 +928,33 @@ class TestPeriodicJobs:
         assert payload["state"] == "R"
         assert payload["last_update"]
         timeout_manager.clear_block.assert_called_once_with(1)
+
+    def test_pending_release_sends_guard_timeout_notification(self, monkeypatch):
+        """guard_veto 超时释放应发送订阅状态通知。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"notify": True})
+        sub = _sub(id=1, name="测试剧", username="user")
+        mediainfo = _mediainfo(
+            title_year="测试剧 (2026)",
+            vote_average=8.0,
+            type=SimpleNamespace(value="电视剧"),
+        )
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.get.return_value = sub
+        plugin._subscribe_oper.list.return_value = []
+        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: mediainfo)
+        monkeypatch.setattr(plugin, "get_data",
+                            lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
+        plugin._evaluate_fn = lambda s, m: object()
+        timeout_manager = MagicMock()
+        timeout_manager.check_release.return_value = True
+        plugin._modules["timeout_manager"] = timeout_manager
+        plugin.post_message = MagicMock()
+
+        plugin.run_pending_release()
+
+        plugin.post_message.assert_called_once()
+        assert "不再满足上映待定，已标记订阅中" in plugin.post_message.call_args.kwargs["title"]
 
     def test_pending_release_checks_pending_judge_tasks(self):
         """pending_judge 写入的 P 订阅应由定时巡检调用 check_exit，而不只处理 blocks。"""
@@ -982,7 +1047,7 @@ class TestNoDownloadCheck:
     def test_overdue_tv_delete_action_deletes_subscribe(self):
         """剧集超期且无下载时按 delete_tv 删除订阅。"""
         subscribe = _sub(id=18, state="R", name="测试", type="电视剧", season=1)
-        mediainfo = SimpleNamespace(
+        mediainfo = _mediainfo(
             season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
             first_air_date="2025-01-01",
         )
@@ -1003,7 +1068,7 @@ class TestNoDownloadCheck:
     def test_overdue_tv_pause_action_clears_plugin_tasks(self):
         """剧集超期执行暂停后清理关联插件任务。"""
         subscribe = _sub(id=19, state="R", name="测试", type="电视剧", season=1)
-        mediainfo = SimpleNamespace(
+        mediainfo = _mediainfo(
             season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
             first_air_date="2025-01-01",
         )
@@ -1023,3 +1088,59 @@ class TestNoDownloadCheck:
 
         plugin._modules["pause_manager"].pause.assert_called_once()
         plugin._task_manager.clear_tasks.assert_called_once_with(19)
+
+    def test_overdue_tv_pause_action_sends_status_notification(self):
+        """无下载暂停应发送订阅状态通知。"""
+        subscribe = _sub(id=20, state="R", name="测试", type="电视剧", season=1)
+        mediainfo = _mediainfo(
+            title_year="测试剧 (2025)",
+            vote_average=8.5,
+            season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
+            first_air_date="2025-01-01",
+            type=SimpleNamespace(value="电视剧"),
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "notify": True,
+            "tv_no_download_days": 180,
+            "no_download_actions": ["pause_tv"],
+        })
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [subscribe]
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._last_download_date = MagicMock(return_value=None)
+        plugin._modules["pause_manager"].pause = MagicMock()
+        plugin.post_message = MagicMock()
+
+        plugin.run_no_download_check()
+
+        plugin.post_message.assert_called_once()
+        assert "近" in plugin.post_message.call_args.kwargs["title"]
+        assert "已标记暂停" in plugin.post_message.call_args.kwargs["title"]
+
+    def test_overdue_movie_complete_notification_has_no_season_none(self):
+        """电影无下载状态通知不应拼出 SNone。"""
+        subscribe = _sub(id=21, state="R", name="测试电影", type="电影", season=None)
+        mediainfo = _mediainfo(
+            title_year="测试电影 (2025)",
+            vote_average=7.5,
+            release_date="2025-01-01",
+            type=SimpleNamespace(value="电影"),
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "notify": True,
+            "movie_no_download_days": 180,
+            "no_download_actions": ["complete_movie"],
+        })
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [subscribe]
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._last_download_date = MagicMock(return_value=None)
+        plugin.post_message = MagicMock()
+
+        plugin.run_no_download_check()
+
+        plugin.post_message.assert_called_once()
+        assert "SNone" not in plugin.post_message.call_args.kwargs["title"]
+        assert "已标记完成" in plugin.post_message.call_args.kwargs["title"]

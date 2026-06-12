@@ -7,6 +7,15 @@ from subscribeassistantenhanced.best_version.priority import PriorityManager
 from subscribeassistantenhanced.engine.types import CompletionSignal
 
 
+def _mediainfo():
+    """构造洗版通知需要的媒体信息替身。"""
+    return SimpleNamespace(
+        vote_average=8.8,
+        get_message_image=lambda: "poster.jpg",
+        to_dict=lambda: {"title": "测试剧"},
+    )
+
+
 def _sub(ep_priority=None, episode_group=None, **kwargs):
     defaults = dict(
         id=1, name="测试剧", tmdbid=100, season=1,
@@ -172,13 +181,28 @@ class TestStartBestVersion:
             subscribe_oper=oper, best_version_type=best_version_type)
 
     def test_creates_best_version_when_type_enabled(self):
+        """创建洗版订阅成功时应发 SubscribeAdded 事件并发送订阅通知。"""
         oper = MagicMock()
         oper.add.return_value = (5, "")
-        orch = self._orch(oper, best_version_type="all")
+        send_event = MagicMock()
+        notify = MagicMock()
+        orch = BestVersionOrchestrator(
+            priority_manager=MagicMock(spec=PriorityManager),
+            evaluate_fn=MagicMock(),
+            subscribe_oper=oper,
+            best_version_type="all",
+            send_subscribe_added_fn=send_event,
+            notify_fn=notify,
+        )
         sub = _sub(best_version=0, season=1, save_path="/m", sites="s",
                    filter="r", filter_groups=["g1"], episode_group=None)
-        sid = orch.start_best_version(sub, mediainfo=object())
+        sid = orch.start_best_version(sub, mediainfo=_mediainfo())
+
         assert sid == 5
+        send_event.assert_called_once()
+        assert send_event.call_args.args[0] == 5
+        notify.assert_called_once()
+        assert notify.call_args.args[0].endswith("已添加洗版订阅")
         _args, kwargs = oper.add.call_args
         assert kwargs["best_version"] == 1 and kwargs["season"] == 1
         assert kwargs["filter"] == "r"

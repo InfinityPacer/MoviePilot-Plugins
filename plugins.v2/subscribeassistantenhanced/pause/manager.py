@@ -18,11 +18,14 @@ class PauseManager:
     """暂停优先级管理与恢复协调。"""
 
     def __init__(self, task_data_read: Callable, task_data_update: Callable,
-                 subscribe_oper=None, auto_pause_users: Optional[list] = None):
+                 subscribe_oper=None, auto_pause_users: Optional[list] = None,
+                 notify_fn: Optional[Callable] = None):
+        """注入任务数据、订阅写库、用户名规则和状态通知回调。"""
         self._read = task_data_read
         self._update = task_data_update
         self._subscribe_oper = subscribe_oper
         self._auto_pause_users = auto_pause_users or []
+        self._notify = notify_fn
 
     def pause(self, subscribe, record: PauseRecord):
         """设置暂停，仅当新原因优先级 >= 当前原因时生效。"""
@@ -52,6 +55,7 @@ class PauseManager:
 
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "S"})
+        self._notify_pause(subscribe, record)
 
     def resume(self, subscribe):
         """恢复订阅：清插件暂停记录并把订阅状态置回 R。
@@ -59,6 +63,7 @@ class PauseManager:
         是否调用 resume 的判定（标记暂停跳过、上映条件双向恢复）由上层巡检负责。
         """
         detail(f"暂停管理：{format_subscribe(subscribe)} 清暂停记录并置订阅为启用(R)")
+        record = self.get_pause_record(subscribe)
         sid = str(subscribe.id)
 
         def updater(data: dict) -> dict:
@@ -73,13 +78,14 @@ class PauseManager:
 
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "R"})
+        self._notify_resume(subscribe, record)
         return True
 
     def clear_pause_record(self, subscribe):
         """清理插件侧暂停记录元数据，但不改订阅状态本身。
 
         用于订阅状态被用户/外部变更后重置插件的暂停跟踪；
-        与 resume 区别：resume 会把订阅状态改回 R，本方法仅丢弃插件记录、把状态归属交还调用方。
+        与 resume 区别：resume 会把订阅状态置为 R，本方法仅丢弃插件记录、把状态归属交还调用方。
         """
         detail(f"暂停管理：{format_subscribe(subscribe)} 仅清插件暂停记录（不改订阅状态）")
         sid = str(subscribe.id)
@@ -130,3 +136,33 @@ class PauseManager:
             ))
             return True
         return False
+
+    def _notify_pause(self, subscribe, record: PauseRecord):
+        """发送暂停状态通知；无下载流程由外层统一通知，避免重复消息。"""
+        if not self._notify or record.reason == "no_download":
+            return
+        reason = {
+            "pre_air": "上映",
+            "airing_gap": "播出",
+            "auto_user": "用户规则",
+        }.get(record.reason, record.reason)
+        self._notify(
+            subscribe,
+            f"{reason}满足订阅暂停，已标记暂停",
+            detail=record.detail,
+        )
+
+    def _notify_resume(self, subscribe, record: Optional[PauseRecord]):
+        """发送暂停恢复状态通知。"""
+        if not self._notify:
+            return
+        reason = {
+            "pre_air": "上映",
+            "airing_gap": "播出",
+            "auto_user": "用户规则",
+        }.get(record.reason if record else "", "暂停")
+        self._notify(
+            subscribe,
+            f"{reason}不再满足订阅暂停，已标记订阅中",
+            detail=record.detail if record else None,
+        )

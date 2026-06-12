@@ -66,7 +66,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.1.1"
+    plugin_version = "0.1.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -181,7 +181,15 @@ class SubscribeAssistantEnhanced(_PluginBase):
             rebuild_subscribe_fn=self._rebuild_subscribe_from_snapshot,
         )
         priority_manager = PriorityManager(tm.read, tm.update, subscribe_oper=self._subscribe_oper)
-        converter = BestVersionConverter(subscribe_oper=self._subscribe_oper)
+        converter = BestVersionConverter(
+            subscribe_oper=self._subscribe_oper,
+            clear_tasks_fn=self._task_manager.clear_tasks,
+            send_event_fn=eventmanager.send_event,
+            notify_fn=self._notify_subscribe,
+            restore_fn=self._restore_subscribe_from_snapshot,
+            format_desc_fn=lambda subscribe, mediainfo: self._format_subscribe_desc(subscribe, mediainfo),
+            plugin_name=self.plugin_name,
+        )
         pending_refresh = PendingRefresh(
             tm.read,
             tm.update,
@@ -196,6 +204,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             tm.update,
             subscribe_oper=self._subscribe_oper,
             auto_pause_users=auto_pause_users,
+            notify_fn=self._send_subscribe_status_notification,
         )
         no_download_policy = NoDownloadPolicy(
             movie_days=cfg.movie_no_download_days,
@@ -228,6 +237,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             deletes_store=deletes_store,
             delete_torrent_fn=self._delete_downloader_torrent,
             search_fn=self._search_subscribe if cfg.auto_search_when_delete else None,
+            notify_fn=self._notify_subscribe,
         )
 
         def evaluate_fn(subscribe, mediainfo):
@@ -253,6 +263,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             timeout_manager=timeout_manager,
             task_data_read=tm.read,
             task_data_update=tm.update,
+            notify_fn=self._send_subscribe_status_notification,
         )
 
         guard = CompletionGuard(
@@ -275,9 +286,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             delete_media_file_fn=self._delete_media_file,
             delete_history_fn=self._transferhistory_oper.delete,
             send_download_file_deleted_fn=self._send_download_file_deleted,
+            send_subscribe_added_fn=self._send_subscribe_added,
             notify_fn=self._notify_subscribe,
             best_version_type=cfg.best_version_type,
             clear_history_type=cfg.best_version_clear_history_type,
+            plugin_name=self.plugin_name,
         )
 
         self._event_proxy = EventProxy(
@@ -507,7 +520,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     and not no_exists
                 ):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} 目标集已全部在库，转为全集洗版")
-                    converter.convert_to_full(subscribe)
+                    converter.convert_to_full(subscribe, mediainfo)
                     continue
                 if orchestrator.check_complete(subscribe, mediainfo, no_exists):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} 优先级达标且缺集已补齐，判定洗版完成")
@@ -632,6 +645,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 logger.info(f"待定释放：{format_subscribe(subscribe)} 守门超时释放，状态置为 R")
                 update_subscribe(self._subscribe_oper, int(sid), {"state": "R"})
                 timeout_manager.clear_block(int(sid))
+                self._send_subscribe_status_notification(
+                    subscribe,
+                    "不再满足上映待定，已标记订阅中",
+                    mediainfo=mediainfo,
+                    detail="守门超时释放",
+                )
 
     def run_common_check(self):
         """统一执行同周期的待定释放、无下载处理和删除记录清理。
@@ -733,6 +752,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             else:
                 continue
             self._task_manager.clear_tasks(subscribe_id)
+            self._send_no_download_notification(subscribe, mediainfo, action)
 
     def run_deletes_cleanup(self):
         """删除指纹老化清理巡检：清理超过保留期的删除指纹，避免长期误杀同源资源。"""
@@ -992,6 +1012,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_id, _ = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
             if subscribe_id:
                 logger.info(f"完成后验证：{_format_snapshot_label(snap)} 检测到增集，已重建订阅（新 id={subscribe_id}）")
+                self._send_subscribe_added(subscribe_id, mediainfo)
             return bool(subscribe_id)
         except Exception as err:
             logger.warning(
@@ -1080,9 +1101,82 @@ class SubscribeAssistantEnhanced(_PluginBase):
         detail(f"洗版清理：发送 DownloadFileDeleted 事件，hash={download_hash}")
         eventmanager.send_event(EventType.DownloadFileDeleted, {"src": src, "hash": download_hash})
 
-    def _notify_subscribe(self, title, text=None):
+    def _send_subscribe_added(self, subscribe_id, mediainfo=None, username=None):
+        """发 SubscribeAdded 事件，让主程序和其他插件感知订阅创建。"""
+        eventmanager.send_event(EventType.SubscribeAdded, {
+            "subscribe_id": subscribe_id,
+            "username": username or self.plugin_name,
+            "mediainfo": mediainfo.to_dict() if mediainfo else {},
+        })
+
+    def _format_subscribe_desc(self, subscribe, mediainfo=None) -> str:
+        """生成通知标题中的订阅描述，优先使用媒体标题和季号。"""
+        title = mediainfo.title_year if mediainfo else subscribe.name
+        season = f" S{subscribe.season}" if subscribe.season is not None else ""
+        return f"{title}{season}"
+
+    def _restore_subscribe_from_snapshot(self, subscribe_dict: dict, mediainfo=None) -> bool:
+        """根据订阅快照重建分集洗版订阅，并补发 SubscribeAdded 事件。"""
+        try:
+            from app.db.models import Subscribe
+            restore_payload = {
+                key: value
+                for key, value in (subscribe_dict or {}).items()
+                if hasattr(Subscribe, key)
+            }
+            restored = Subscribe(**restore_payload)
+            restored.create(self._subscribe_oper._db)
+            sid = restore_payload.get("id")
+            if sid and self._subscribe_oper.get(sid):
+                self._send_subscribe_added(sid, mediainfo, username=restore_payload.get("username"))
+                return True
+        except Exception as err:
+            logger.error(f"重建分集洗版订阅时发生异常: {err}")
+        return False
+
+    def _send_no_download_notification(self, subscribe, mediainfo, action: str):
+        """发送无下载处理状态通知。"""
+        action_name = {"pause": "暂停", "complete": "完成", "delete": "删除"}.get(action, action)
+        days = self._config.tv_no_download_days if subscribe.type == "电视剧" else self._config.movie_no_download_days
+        title = f"{self._format_subscribe_desc(subscribe, mediainfo)} 近 {days} 天未有下载记录，已标记{action_name}"
+        text_parts = []
+        if mediainfo.vote_average:
+            text_parts.append(f"评分：{mediainfo.vote_average}")
+        if subscribe.username:
+            text_parts.append(f"来自用户：{subscribe.username}")
+        self._notify_subscribe(
+            title,
+            "，".join(text_parts) if text_parts else None,
+            image=mediainfo.get_message_image(),
+            link="#/subscribe/tv?tab=mysub" if subscribe.type == "电视剧" else "#/subscribe/movie?tab=mysub",
+        )
+
+    def _send_subscribe_status_notification(self, subscribe, title_suffix: str,
+                                            mediainfo=None, detail: Optional[str] = None):
+        """发送订阅状态变更通知，沿用状态类消息的标题和正文结构。"""
+        mediainfo = mediainfo or self._recognize_mediainfo(subscribe)
+        title = f"{self._format_subscribe_desc(subscribe, mediainfo)} {title_suffix}"
+        text_parts = []
+        if mediainfo and mediainfo.vote_average:
+            text_parts.append(f"评分：{mediainfo.vote_average}")
+        if subscribe.username:
+            text_parts.append(f"来自用户：{subscribe.username}")
+        if detail:
+            text_parts.append(detail)
+        media_type = mediainfo.type.value if mediainfo else subscribe.type
+        self._notify_subscribe(
+            title,
+            "，".join(text_parts) if text_parts else None,
+            image=mediainfo.get_message_image() if mediainfo else None,
+            link="#/subscribe/tv?tab=mysub" if media_type == "电视剧" else "#/subscribe/movie?tab=mysub",
+        )
+
+    def _notify_subscribe(self, title, text=None, image=None, link=None):
         """按通知开关发送订阅类通知（洗版清理等场景）。"""
         if not self._config or not self._config.notify:
             return
         from app.schemas import NotificationType
-        self.post_message(mtype=NotificationType.Subscribe, title=title, text=text)
+        from app.core.config import settings
+        if link and link.startswith("#"):
+            link = settings.MP_DOMAIN(link)
+        self.post_message(mtype=NotificationType.Subscribe, title=title, text=text, image=image, link=link)

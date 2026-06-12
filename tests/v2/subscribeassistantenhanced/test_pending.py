@@ -34,7 +34,7 @@ def _mi(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-def _judge(config=None, evaluate_result=None, store=None):
+def _judge(config=None, evaluate_result=None, store=None, notify=None):
     store = store if store is not None else {}
     cfg = config or PluginConfig({})
     j = PendingJudge.__new__(PendingJudge)
@@ -43,6 +43,7 @@ def _judge(config=None, evaluate_result=None, store=None):
     j._subscribe_oper = MagicMock()
     j._timeout = MagicMock()
     j._read = lambda key: store.get(key, {})
+    j._notify = notify
 
     def update_fn(key, updater):
         data = store.get(key, {})
@@ -168,6 +169,16 @@ class TestMarkPending:
         assert task["state"] == "P"
         assert task["source"] == "guard_veto"
 
+    def test_mark_pending_sends_status_notification(self):
+        """进入待定应发送状态通知。"""
+        notify = MagicMock()
+        j = _judge(notify=notify)
+
+        j.mark_pending(_sub(), source="pending_judge", reason="集数不足")
+
+        notify.assert_called_once()
+        assert "满足上映待定，已标记待定" in notify.call_args.args[1]
+
 
 class TestExitPending:
 
@@ -177,3 +188,14 @@ class TestExitPending:
         j._exit_pending(_sub(), "测试退出")
         j._timeout.clear_block.assert_called_once_with(1)
         assert store["subscribes"]["1"]["state"] == "R"
+
+    def test_exit_sends_status_notification(self):
+        """退出待定应发送状态通知。"""
+        notify = MagicMock()
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        j = _judge(store=store, notify=notify)
+
+        j._exit_pending(_sub(), "待定条件不再满足")
+
+        notify.assert_called_once()
+        assert "不再满足上映待定，已标记订阅中" in notify.call_args.args[1]

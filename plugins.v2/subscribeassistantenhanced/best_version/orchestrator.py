@@ -25,10 +25,12 @@ class BestVersionOrchestrator:
                  delete_media_file_fn: Optional[Callable] = None,
                  delete_history_fn: Optional[Callable] = None,
                  send_download_file_deleted_fn: Optional[Callable] = None,
+                 send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
                  season_of_fn: Optional[Callable] = None,
                  best_version_type: str = "no",
-                 clear_history_type: str = "no"):
+                 clear_history_type: str = "no",
+                 plugin_name: str = "订阅助手（增强版）"):
         """注入洗版流程依赖、自动洗版范围与破坏性清理范围。"""
         self._priority = priority_manager
         self._evaluate = evaluate_fn
@@ -39,10 +41,12 @@ class BestVersionOrchestrator:
         self._delete_media_file = delete_media_file_fn
         self._delete_history = delete_history_fn
         self._send_dfd = send_download_file_deleted_fn
+        self._send_subscribe_added = send_subscribe_added_fn
         self._notify = notify_fn
         self._season_of = season_of_fn
         self._best_version_type = best_version_type
         self._clear_history_type = clear_history_type
+        self._plugin_name = plugin_name
 
     def check_complete(self, subscribe, mediainfo,
                        no_exists_episodes: Optional[list] = None) -> bool:
@@ -99,6 +103,16 @@ class BestVersionOrchestrator:
         sid, _err = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
             logger.info(f"洗版编排：{format_subscribe_desc(subscribe)} 订阅完成后自动创建洗版订阅（id={sid}）")
+            if self._send_subscribe_added:
+                self._send_subscribe_added(sid, mediainfo, username=self._plugin_name)
+            if self._notify:
+                text = f"评分：{mediainfo.vote_average}，来自用户：{self._plugin_name}"
+                self._notify(
+                    f"{format_subscribe_desc(subscribe)} 已添加洗版订阅",
+                    text,
+                    image=mediainfo.get_message_image(),
+                    link="#/subscribe/tv?tab=mysub" if subscribe.type == "电视剧" else "#/subscribe/movie?tab=mysub",
+                )
         return sid
 
     def handle_resource_download_history_clear(self, subscribe, context=None, episodes=None):

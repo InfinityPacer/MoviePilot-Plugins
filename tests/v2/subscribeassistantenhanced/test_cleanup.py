@@ -89,7 +89,7 @@ class TestHandleTorrentDeleted:
         """归档指纹(清任务前读取) → 真正删下载器种子 → 延迟补搜；任务最终被清。"""
         store = {"torrents": {"h1": {"hash": "h1", "enclosure": "http://x/t.torrent"}}}
         priority, clear_fn = MagicMock(), MagicMock()
-        deletes, delete_fn, search_fn = MagicMock(), MagicMock(), MagicMock()
+        deletes, delete_fn, search_fn, notify = MagicMock(), MagicMock(), MagicMock(), MagicMock()
 
         def update_fn(key, updater):
             store[key] = updater(store.get(key, {}))
@@ -98,6 +98,7 @@ class TestHandleTorrentDeleted:
             priority_manager=priority, clear_download_pending_fn=clear_fn,
             task_data_update=update_fn, task_data_read=lambda k: store.get(k, {}),
             deletes_store=deletes, delete_torrent_fn=delete_fn, search_fn=search_fn,
+            notify_fn=notify,
         )
         sub = _sub()
         c.handle_torrent_deleted(sub, "h1", reason="timeout", downloader="qb")
@@ -109,12 +110,14 @@ class TestHandleTorrentDeleted:
         # 延迟补搜 + 任务已清
         search_fn.assert_called_once_with(sub)
         assert "h1" not in store.get("torrents", {})
+        notify.assert_called_once()
+        assert "超时无进度，已删除" in notify.call_args.args[0]
 
     def test_manual_delete_skips_pause_but_keeps_fingerprint_and_search(self):
         """手动删除归档指纹并补搜，但不暂停订阅、不调下载器删种。"""
         store = {"torrents": {"h1": {"hash": "h1", "enclosure": "http://x/t.torrent"}}}
         priority, clear_fn = MagicMock(), MagicMock()
-        deletes, delete_fn, search_fn = MagicMock(), MagicMock(), MagicMock()
+        deletes, delete_fn, search_fn, notify = MagicMock(), MagicMock(), MagicMock(), MagicMock()
 
         def update_fn(key, updater):
             store[key] = updater(store.get(key, {}))
@@ -123,6 +126,7 @@ class TestHandleTorrentDeleted:
             priority_manager=priority, clear_download_pending_fn=clear_fn,
             task_data_update=update_fn, task_data_read=lambda k: store.get(k, {}),
             deletes_store=deletes, delete_torrent_fn=delete_fn, search_fn=search_fn,
+            notify_fn=notify,
         )
         sub = _sub()
         c.handle_torrent_deleted(sub, "h1", reason="manual",
@@ -130,6 +134,8 @@ class TestHandleTorrentDeleted:
         deletes.save.assert_called_once()       # 删除指纹照常归档
         search_fn.assert_called_once_with(sub)   # 仍触发补搜
         delete_fn.assert_not_called()            # 不调下载器删种
+        notify.assert_called_once()
+        assert "订阅种子手动删除，已删除" in notify.call_args.args[0]
 
     def test_timeout_delete_also_skips_pause(self):
         """超时删除与 Tracker 删除也不暂停，避免补搜链路被 S 状态冻结。"""

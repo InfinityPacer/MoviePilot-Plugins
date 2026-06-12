@@ -260,13 +260,14 @@ class TestNoDownloadPolicy:
 
 class TestPauseManager:
 
-    def _make_manager(self, store=None, auto_users=None):
+    def _make_manager(self, store=None, auto_users=None, notify=None):
         store = store if store is not None else {}
         mgr = PauseManager(
             task_data_read=lambda key: store.get(key, {}),
             task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
             subscribe_oper=MagicMock(),
             auto_pause_users=auto_users,
+            notify_fn=notify,
         )
         mgr._store = store
         return mgr
@@ -321,6 +322,48 @@ class TestPauseManager:
         assert mgr.check_auto_pause_for_user(_sub(username="testuser")) is True
         rec = mgr.get_pause_record(_sub())
         assert rec.reason == "auto_user"
+
+    def test_pause_sends_status_notification_for_airing_rule(self):
+        """播出类暂停应发送状态通知。"""
+        notify = MagicMock()
+        mgr = self._make_manager(notify=notify)
+
+        mgr.pause(_sub(), PauseRecord(reason="airing_gap", detail="即将播出日期：2026-07-01"))
+
+        notify.assert_called_once()
+        assert "满足订阅暂停，已标记暂停" in notify.call_args.args[1]
+
+    def test_no_download_pause_does_not_duplicate_notification(self):
+        """无下载流程由巡检统一通知，PauseManager 不重复发送。"""
+        notify = MagicMock()
+        mgr = self._make_manager(notify=notify)
+
+        mgr.pause(_sub(), PauseRecord(reason="no_download", detail="无下载"))
+
+        notify.assert_not_called()
+
+    def test_resume_sends_status_notification(self):
+        """插件暂停恢复应发送状态通知。"""
+        notify = MagicMock()
+        mgr = self._make_manager(notify=notify)
+        sub = _sub()
+        mgr.pause(sub, PauseRecord(reason="airing_gap", detail="即将播出日期：2026-07-01"))
+        notify.reset_mock()
+
+        assert mgr.resume(sub) is True
+
+        notify.assert_called_once()
+        assert "不再满足订阅暂停，已标记订阅中" in notify.call_args.args[1]
+
+    def test_auto_pause_for_user_sends_status_notification(self):
+        """用户名自动暂停应发送状态通知。"""
+        notify = MagicMock()
+        mgr = self._make_manager(auto_users=["testuser"], notify=notify)
+
+        assert mgr.check_auto_pause_for_user(_sub(username="testuser")) is True
+
+        notify.assert_called_once()
+        assert "满足订阅暂停，已标记暂停" in notify.call_args.args[1]
 
     def test_auto_pause_no_match(self):
         mgr = self._make_manager(auto_users=["other"])
