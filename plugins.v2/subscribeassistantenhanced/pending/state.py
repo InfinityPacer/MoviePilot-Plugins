@@ -1,6 +1,6 @@
 """统一待定状态仲裁。
 
-该模块只负责多来源待定的状态合并与订阅表 P/R 同步，不判断具体业务条件。
+该模块只负责多来源待定合并与订阅表待定（P）/启用（R）同步，不判断具体业务条件。
 """
 import time
 from typing import Callable, Optional
@@ -14,8 +14,8 @@ from ..shared.update import update_subscribe
 class PendingStateCoordinator:
     """多来源待定状态协调器。
 
-    `pending_sources` 记录各业务域的活跃待定来源；只要任一来源存在，订阅保持 P。
-    最后一个来源清除后才恢复 R，避免下载待定、完结守卫和剧集待定互相误释放。
+    pending_sources 记录各业务域的活跃来源；任一来源存在时保持待定（P），最后一个来源清除后才恢复启用（R），
+    避免 download_pending、pending_judge 与 guard_veto 互相误释放。
     """
 
     def __init__(self, task_data_read: Callable, task_data_update: Callable,
@@ -26,7 +26,7 @@ class PendingStateCoordinator:
         self._subscribe_oper = subscribe_oper
 
     def mark_active(self, subscribe, source: str, reason: str = "") -> bool:
-        """标记某个来源进入待定，并把主订阅状态同步为 P。"""
+        """记录一个待定原因，并把主订阅状态同步为待定（P）。"""
         if not subscribe or not source:
             return False
         sid = str(subscribe.id)
@@ -51,12 +51,14 @@ class PendingStateCoordinator:
         self._update("subscribes", updater)
         if self._subscribe_oper and subscribe.state != "P":
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "P"})
-            logger.info(f"待定状态：{format_subscribe(subscribe)} 来源 {source} 进入待定，状态置为 P")
+            logger.info(
+                f"待定状态：{format_subscribe(subscribe)} 因【{self._source_label(source)}】进入待定（P）"
+            )
             return True
         return False
 
     def clear_active(self, subscribe, source: str, reason: str = "") -> bool:
-        """清除某个待定来源，并按剩余来源决定是否恢复 R。"""
+        """解除一个待定原因，并按剩余原因决定是否恢复启用（R）。"""
         if not subscribe or not source:
             return False
         sid = str(subscribe.id)
@@ -86,29 +88,29 @@ class PendingStateCoordinator:
         self._update("subscribes", updater)
         if result["active"]:
             logger.info(
-                f"待定状态：{format_subscribe(subscribe)} 来源 {source} 已释放，"
-                f"仍存在 {result['primary']} 待定，保持 P"
+                f"待定状态：{format_subscribe(subscribe)}【{self._source_label(source)}】已解除，"
+                f"仍因【{self._source_label(result['primary'])}】保持待定（P）"
             )
             return False
         if self._subscribe_oper and subscribe.state == "P":
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "R"})
-            logger.info(f"待定状态：{format_subscribe(subscribe)} 来源 {source} 已释放，状态置为 R")
+            logger.info(f"待定状态：{format_subscribe(subscribe)} 全部待定原因已解除，恢复为启用（R）")
             return True
         return False
 
     def has_active(self, subscribe_id: int) -> bool:
-        """判断订阅是否存在任一活跃待定来源。"""
+        """判断订阅是否还有未解除的待定原因。"""
         task = (self._read("subscribes") or {}).get(str(subscribe_id), {})
         return bool(self._normalize_sources(task))
 
     def active_sources(self, subscribe_id: int) -> dict:
-        """读取订阅当前活跃待定来源。"""
+        """读取订阅当前未解除的待定原因。"""
         task = (self._read("subscribes") or {}).get(str(subscribe_id), {})
         return self._normalize_sources(task)
 
     @staticmethod
     def _normalize_sources(task: Optional[dict]) -> dict:
-        """兼容旧单 source 任务数据，统一返回 pending_sources 字典。"""
+        """兼容旧版单 source 数据，统一返回 pending_sources 字典。"""
         if not task:
             return {}
         sources = task.get("pending_sources")
@@ -126,8 +128,18 @@ class PendingStateCoordinator:
 
     @staticmethod
     def _primary_source(sources: dict) -> Optional[str]:
-        """选择写回 legacy `source` 字段的主来源，保证日志和旧模块读到稳定值。"""
+        """选择写回 legacy source 字段的主来源，保证旧模块读取结果稳定。"""
         for source in ("pending_judge", "guard_veto", "download_pending"):
             if source in sources:
                 return source
         return next(iter(sources), None)
+
+    @staticmethod
+    def _source_label(source: Optional[str]) -> str:
+        """把内部待定原因转成日志中可读的中文名称。"""
+        labels = {
+            "pending_judge": "剧集信息待确认",
+            "guard_veto": "完成前检查未通过",
+            "download_pending": "下载还未整理入库",
+        }
+        return labels.get(source or "", source or "未知原因")

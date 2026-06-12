@@ -130,9 +130,9 @@ HINTS = {
     "season_cooldown_days": "最后一集播出后继续观察的天数",
     "verify_enabled": "完成后检查集数，增加时自动重建订阅",
     "verify_interval_hours": "完成后重新检查集数的间隔",
-    "verify_retention_days": "完成记录超过设置天数后停止检查",
-    "timeout_release_enabled": "守门待定超期后释放，不稳定时重新计时",
-    "timeout_release_days": "守门待定允许保留的最长天数",
+    "verify_retention_days": "完成快照超过设置天数后停止检查",
+    "timeout_release_enabled": "完成守卫待定（P）超期后释放，信号不稳定时重新计时",
+    "timeout_release_days": "完成守卫待定（P）允许保留的最长天数",
     "timeout_cadence_acceleration": "等待期结束时将待定期限缩短一半",
 }
 

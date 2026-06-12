@@ -1,6 +1,6 @@
 """订阅助手（增强版）——完整订阅生命周期管理。
 
-7 个业务域：信号引擎、完成守卫、待定判定、暂停管理、洗版流程、下载管理、完成后验证。
+7 个业务域：完结信号引擎、完成守卫、待定判定、暂停管理、洗版编排、下载管理、完成后验证。
 （识别增强为有意下线能力，不纳入增强版。）
 """
 import datetime
@@ -90,7 +90,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._event_proxy: Optional[EventProxy] = None
         self._modules: dict = {}
         self._onlyonce = False
-        # 依赖的 DB oper / chain，在 init_plugin 实例化后注入各域模块
+        # DB oper / chain 在 init_plugin 实例化后注入各业务域模块。
         self._subscribe_oper: Optional[SubscribeOper] = None
         self._subscribe_chain: Optional[SubscribeChain] = None
         self._tmdb_chain: Optional[TmdbChain] = None
@@ -98,17 +98,17 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._transferhistory_oper: Optional[TransferHistoryOper] = None
         self._downloadhistory_oper: Optional[DownloadHistoryOper] = None
         self._downloader_helper: Optional[DownloaderHelper] = None
-        # 信号引擎评估闭包，供定时巡检（待定释放/洗版完成）复用
+        # 信号引擎评估闭包供待定释放与洗版完成检查复用。
         self._evaluate_fn: Optional[Callable] = None
 
     def init_plugin(self, config: dict = None):
-        """解析配置 → 注入 DB/chain 依赖 → 初始化各域模块。"""
+        """解析配置 → 注入 DB/chain 依赖 → 初始化各业务域模块。"""
         self.stop_service()
 
         raw_config, should_persist = self._normalize_persisted_config(config or {})
         self._config = PluginConfig(raw_config)
 
-        # 依赖注入：构造即可用、不触发外部网络；供洗版/下载/补搜等域写库与查询
+        # 依赖注入：构造即可用且不触发外部网络，供洗版、下载、补搜等业务域写库与查询。
         self._subscribe_oper = SubscribeOper()
         self._subscribe_chain = SubscribeChain()
         self._tmdb_chain = TmdbChain()
@@ -117,7 +117,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._downloadhistory_oper = DownloadHistoryOper()
         self._downloader_helper = DownloaderHelper()
 
-        # 任务数据读写走 _PluginBase 的 get_data/save_data 落盘接口
+        # 任务数据统一走 _PluginBase 的 get_data/save_data 持久化接口。
         self._task_manager = TaskDataManager(
             get_data_fn=self.get_data,
             save_data_fn=self.save_data,
@@ -445,7 +445,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return services
 
     def run_all_checks(self):
-        """一次性全量巡检：串跑所有定时任务入口，各入口按域开关自行短路。"""
+        """一次性执行所有周期检查；各检查会按功能开关自行跳过。"""
         logger.info("立即运行一次：开始全量巡检")
         self.run_meta_check()
         self.run_download_timeout_check()
@@ -465,7 +465,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "best_version_clear_histories",
         ]:
             self.save_data(key, {})
-        logger.info("重置任务：已清空全部插件任务数据（订阅/种子/待定块/完成快照/删除指纹/波动/洗版历史清理）")
+        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、完成快照、删除指纹、集数变化记录、洗版清理记录）")
 
     def _run_backfill_now(self):
         """对现有洗版订阅执行一次回填已存在集。"""
@@ -480,11 +480,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         logger.info(f"洗版回填：完成，共处理 {count} 个洗版订阅")
 
     def run_download_timeout_check(self):
-        """下载超时/Tracker 删种巡检：取下载器实时种子状态判定，超时或命中 Tracker 关键字则删种并善后。"""
+        """下载任务检查：读取下载器状态，处理超时无进度、Tracker 删除关键字和手动删种。"""
         monitor = self._modules.get("download_monitor")
         cleanup = self._modules.get("torrent_cleanup")
         if monitor:
-            detail("下载超时巡检：开始")
+            detail("下载任务检查：开始")
             monitor.run_timeout_check(cleanup)
 
     def _ensure_best_version_anchor(self, sid, now) -> float:
@@ -549,7 +549,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} 超过洗版时限，标记洗版完成并停止洗版")
                     priority.mark_complete(subscribe)
                     continue
-                # 完成判定须带媒体库缺集：优先级达标 + F 稳定 + 目标集全覆盖才算洗版完成
+                # 洗版完成必须同时满足 priority 达标、F 稳定与 SeasonScope 目标集全覆盖。
                 no_exists = self._detect_missing_episodes(subscribe)
                 if (
                     self._config.best_version_episode_to_full
@@ -573,7 +573,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         - 标记暂停（no_download / auto_user）在 state=S 时直接跳过，
           不被上映检查自动恢复、也不重复处理；用户重新启用（state!=S）则清掉插件标记。
         - 上映/播出类暂停（pre_air / airing_gap）双向：条件成立时暂停，条件解除且当前为 S 时自动恢复。
-        暂停复核优先于待定：命中暂停即写状态并跳过本轮待定；洗版订阅整体跳过。各能力按对应域开关门控。
+        暂停复核优先于待定：满足暂停条件时先写状态并跳过本轮待定；洗版订阅整体跳过。
         """
         if not self._subscribe_oper:
             return
@@ -586,7 +586,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if subscribe.best_version:
                 continue
 
-            # 标记暂停跳过/清标记必须在媒体识别前判定，避免 S 态订阅被上映检查自动恢复。
+            # 标记暂停必须在媒体识别前处理，避免被上映检查误恢复。
             record = pause_manager.get_pause_record(subscribe) if pause_manager else None
             reason = record.reason if record else None
             flag_paused = reason in ("no_download", "auto_user")
@@ -629,7 +629,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 if record_now:
                     # 条件成立：尚未暂停才置 S；已是 S 则保持。暂停后本轮不再做待定
                     if state != "S":
-                        logger.info(f"元数据巡检：{format_subscribe(subscribe)} 命中{record_now.reason}暂停，置为禁用")
+                        logger.info(f"元数据巡检：{format_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
                         pause_manager.pause(subscribe, record_now)
                     continue
                 # 条件解除：仅恢复由上映/播出检查写入的 S 态订阅，避免触碰外部暂停状态。
@@ -653,11 +653,10 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
 
     def run_pending_release(self):
-        """待定释放巡检：先按来源退出 pending_judge 的 P 订阅，再兜底 guard_veto 超时释放。
+        """待定释放巡检：先处理 pending_judge，再兜底释放长期 guard_veto。
 
-        check_exit() 内部按 task source 分治：pending_judge 来源条件解除即退出；guard_veto 仅在
-        signal.completed 时退出，其余仍由下方 blocks 超时路径释放。两条路径对 guard_veto 的释放
-        （update state=R / clear_block）幂等，无副作用叠加。
+        PendingStateCoordinator 对 download_pending、pending_judge、guard_veto 做多来源仲裁；
+        解除单一来源时仍有其他来源活跃，订阅必须继续保持待定（P）。
         """
         detail("待定释放巡检：开始")
         pending_judge = self._modules.get("pending_judge")
@@ -676,14 +675,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
         for sid in list((self.get_data("blocks") or {}).keys()):
             subscribe = self._subscribe_oper.get(int(sid))
             if not subscribe:
-                detail(f"待定释放：{format_subscribe_label(subscribe_id=sid)} 已不存在，清理残留待定块")
+                detail(f"待定释放：{format_subscribe_label(subscribe_id=sid)} 已不存在，清理残留待定记录")
                 timeout_manager.clear_block(int(sid))
                 continue
             mediainfo = self._recognize_mediainfo(subscribe)
             if not mediainfo:
                 continue
             if timeout_manager.check_release(int(sid), self._evaluate_fn(subscribe, mediainfo)):
-                logger.info(f"待定释放：{format_subscribe(subscribe)} 守门超时释放")
+                logger.info(f"待定释放：{format_subscribe(subscribe)} 完成前检查长期未确认，解除该待定原因")
                 pending_state = self._modules.get("pending_state")
                 if pending_state:
                     pending_state.clear_active(subscribe, source="guard_veto", reason="守门超时释放")
@@ -700,7 +699,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     def run_common_check(self):
         """统一执行同周期的待定释放、无下载处理和删除记录清理。
 
-        每个子任务独立捕获异常，避免单个业务域失败阻断同轮其他巡检。
+        每个子任务独立捕获异常，避免单个检查失败阻断同轮其他检查。
         """
         tasks = []
         if self._config.timeout_release_enabled:
@@ -720,7 +719,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """完成后自验证巡检：复查完成快照，发现 TMDB 增集后重建订阅并通知。"""
         verifier = self._modules.get("verifier")
         if verifier:
-            detail("完成后自验证巡检：开始")
+            detail("完成后验证：开始")
             verifier.verify_all()
 
     def _last_download_date(self, subscribe) -> Optional[datetime.date]:
@@ -762,7 +761,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return None
 
     def _related_download_histories(self, subscribe) -> list:
-        """获取同订阅的分集下载历史，供 `tv_episode` 自动洗版判定。"""
+        """获取同一订阅完成后的分集下载历史，用于判断是否应自动洗版。"""
         try:
             if subscribe.type == "电影":
                 histories = self._downloadhistory_oper.get_last_by(
@@ -895,12 +894,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
             self._send_no_download_notification(subscribe, mediainfo, action)
 
     def run_deletes_cleanup(self):
-        """删除指纹老化清理巡检：清理超过保留期的删除指纹，避免长期误杀同源资源。"""
+        """删除指纹老化清理：移除超过保留期的近期删除资源，避免长期误挡同源资源。"""
         deletes_store = self._modules.get("deletes_store")
         if deletes_store:
             removed = deletes_store.cleanup_expired(self._config.delete_record_retention_hours)
             if removed:
-                logger.info(f"删除指纹清理：已清理 {removed} 条过期删除指纹")
+                logger.info(f"删除指纹清理：已清理 {removed} 条过期记录（近期删除资源）")
 
     def get_state(self) -> bool:
         """返回插件总开关状态。"""
@@ -943,13 +942,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @eventmanager.register(EventType.SubscribeComplete)
     def on_subscribe_complete(self, event):
-        """订阅完成 → 任务清理 + H 快照 + 洗版编排。"""
+        """订阅完成 → 任务清理 + H 完成快照 + 自动洗版编排。"""
         if self._event_proxy:
             self._event_proxy.on_subscribe_complete(event)
 
     @eventmanager.register(EventType.DownloadAdded)
     def on_download_added(self, event):
-        """下载添加 → 种子监控登记。"""
+        """DownloadAdded → 种子监控登记 + 下载待定 hash 确认。"""
         if self._event_proxy:
             self._event_proxy.on_download_added(event)
 
@@ -961,13 +960,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @eventmanager.register(ChainEventType.ResourceSelection)
     def on_resource_selection(self, event):
-        """资源选择 → 待定按集串行 + 删除资源防重过滤。"""
+        """ResourceSelection → 洗版待定按集串行 + 删除指纹防重过滤。"""
         if self._event_proxy:
             self._event_proxy.on_resource_selection(event)
 
     @eventmanager.register(ChainEventType.ResourceDownload, priority=9999)
     def on_resource_download(self, event):
-        """资源下载 → 洗版优先级基线快照 + 洗版历史清理。"""
+        """ResourceDownload → 无 hash 下载待定 + 洗版优先级基线 + 历史清理。"""
         if self._event_proxy:
             self._event_proxy.on_resource_download(event)
 
@@ -1005,7 +1004,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         }]
 
     def _api_summary(self) -> Dict[str, Any]:
-        """概览数据：7 域启用状态 + 待定/监控种子计数（来自配置与任务数据）。"""
+        """概览数据：6 项功能启用状态 + 待定订阅与监控种子计数。"""
         cfg = self._config or PluginConfig({})
         subscribes = self.get_data("subscribes") or {}
         torrents = self.get_data("torrents") or {}
@@ -1025,7 +1024,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         }
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """返回完整配置表单（vuetify schema 按 7 业务域折叠）+ 默认数据。"""
+        """返回完整配置表单（Vuetify schema 按 5 个功能 Tab 展示）与默认数据。"""
         from .form import build_form
         return build_form()
 
@@ -1034,7 +1033,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         pass
 
     def _tmdb_episodes(self, tmdbid: int, season: int, episode_group: str = None):
-        """查询 TMDB 季内集信息供信号引擎判定完结；缺依赖或查询失败时返回空列表。"""
+        """查询 TMDB 季内集信息供信号引擎构建 SeasonScope；不可用时返回空列表。"""
         if not self._tmdb_chain or not tmdbid or not season:
             return []
         return self._tmdb_chain.tmdb_episodes(
@@ -1115,14 +1114,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 if eps:
                     missing.update(eps)
                 else:
-                    # 主程序以空 episodes 表示该 scope 整季缺失。
+                    # 主程序以空 episodes 表示该季目标范围整季缺失。
                     missing.update(target)
             if not matched_scope:
                 missing.update(target)
             if missing and missing.isdisjoint(target):
                 detail(
                     f"媒体库缺集探测：{format_subscribe(subscribe)} 返回集号 {sorted(missing)[:5]} "
-                    f"未命中目标范围 {start_episode}-{total}，按目标仍缺失处理"
+                    f"不在订阅目标集 {start_episode}-{total} 内，按目标集仍缺失处理"
                 )
                 missing = set(target)
             missing &= target
@@ -1131,7 +1130,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return [], sorted(target)
 
     def _rebuild_subscribe_from_snapshot(self, snap: dict, config: dict) -> bool:
-        """把 H 快照配置转换为主程序要求的 MediaInfo + kwargs 订阅新增调用。"""
+        """把 H 完成快照转换为主程序要求的 MediaInfo + kwargs 订阅新增调用。"""
         if not self._subscribe_oper:
             return False
         probe = SimpleNamespace(
@@ -1156,7 +1155,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return bool(subscribe_id)
         except Exception as err:
             logger.warning(
-                "订阅助手（增强版）完成快照重建失败："
+                "订阅助手（增强版）按完成快照重建订阅失败："
                 f"{_format_snapshot_label(snap)}, error={err}"
             )
             return False
@@ -1194,7 +1193,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """探测种子是否仍在下载器：True=在；False=下载器可达但已不存在；None=不可判定（无服务/报错）。
 
         与 _fetch_downloader_torrent 的区别：后者把"报错"与"不存在"都压成 None；本方法据 get_torrents
-        的 error 标志区分，让手动删除监听把"用户删种"与"下载器瞬断"分开，避免瞬断误触发善后。
+        的 error 标志区分，让手动删除监听把"用户删种"与"下载器瞬断"分开，避免瞬断误触发删除处理。
         顺序固定为先判下载器可达、再判种子缺失，避免把瞬断当成确删。
         """
         if not self._downloader_helper or not downloader or not torrent_hash:
@@ -1213,7 +1212,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return
         sid = subscribe.id
         if sid:
-            logger.info(f"删种善后：{format_subscribe(subscribe)} 将在 300 秒后触发补全搜索")
+            logger.info(f"种子删除处理：{format_subscribe(subscribe)} 将在 300 秒后触发补全搜索")
             threading.Timer(300, lambda: self._subscribe_chain.search(sid=sid)).start()
 
     def _get_transfer_histories(self, tmdbid, mtype, season=None):
@@ -1238,7 +1237,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     def _send_download_file_deleted(self, src, download_hash):
         """发 DownloadFileDeleted 事件：主程序据此移除历史下载的旧种子（洗版"清理历史下载种子"经此达成）。"""
-        detail(f"洗版清理：发送 DownloadFileDeleted 事件，hash={download_hash}")
+        detail(f"洗版清理：发送 DownloadFileDeleted 事件，hash={download_hash}，通知主程序移除旧下载")
         eventmanager.send_event(EventType.DownloadFileDeleted, {"src": src, "hash": download_hash})
 
     def _send_subscribe_added(self, subscribe_id, mediainfo=None, username=None):

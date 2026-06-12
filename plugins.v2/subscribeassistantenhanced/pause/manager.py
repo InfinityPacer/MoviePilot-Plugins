@@ -121,14 +121,14 @@ class PauseManager:
     def check_auto_pause_for_user(self, subscribe) -> bool:
         """检查是否应按用户名自动暂停新增订阅。
 
-        命中名单时写入 reason=auto_user 的标记暂停：元数据巡检在 state=S 时跳过，
+        新增订阅用户在名单内时写入 reason=auto_user 的标记暂停：元数据巡检在 state=S 时跳过，
         不被上映检查自动恢复；用户重新启用后再清标记。
         """
         if not self._auto_pause_users:
             return False
         username = subscribe.username
         if username in self._auto_pause_users:
-            logger.info(f"暂停管理：{format_subscribe(subscribe)} 命中用户名自动暂停名单（用户 {username}），标记暂停")
+            logger.info(f"暂停管理：{format_subscribe(subscribe)} 用户 {username} 在自动暂停名单内，标记暂停")
             self.pause(subscribe, PauseRecord(
                 reason="auto_user",
                 since=time.time(),

@@ -11,7 +11,7 @@ def format_subscribe(subscribe) -> str:
 
 
 def format_subscribe_label(subscribe=None, subscribe_id=None) -> str:
-    """格式化日志订阅标签；对象可用时输出名称/季号/ID，仅有 ID 时保留兜底。"""
+    """格式化日志订阅标签；对象可用时输出名称、季号和 ID。"""
     if subscribe:
         try:
             sid = subscribe_id if subscribe_id is not None else subscribe.id
@@ -60,7 +60,8 @@ def subscribe_from_source(origin, subscribe_oper) -> Tuple[Optional[dict], Optio
 
     origin 是主程序订阅来源约定 ``Subscribe|<json>``（json 内含订阅 id）。解析失败、前缀不符或
     缺 id 一律返回 ``(None, None)``，调用方据此跳过——避免把消息/手动等非订阅来源误当订阅处理。
-    返回 ``(subscribe_dict, subscribe)``：前者为来源内联快照，后者为库内最新对象（可能已被删而为 None）。
+    返回 ``(subscribe_dict, subscribe)``：前者为事件来源携带的订阅快照，后者为订阅表最新对象
+    （订阅已删除时为 None）。
     """
     if not origin or "|" not in str(origin):
         return None, None

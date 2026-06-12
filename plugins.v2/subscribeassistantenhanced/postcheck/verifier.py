@@ -1,4 +1,4 @@
-"""域 ⑦H：完成后异步自验证——scope-aware 快照 + 增集检测 + 重建。"""
+"""完成后异步自验证：保存完成快照、检测增集并重建订阅。"""
 import time
 from typing import Callable, Optional
 
@@ -18,7 +18,7 @@ class CompletionVerifier:
                  retention_days: int = 90,
                  notify_fn: Optional[Callable] = None,
                  rebuild_subscribe_fn: Optional[Callable] = None):
-        """注入快照存储、集数查询、订阅查询和真实订阅重建能力。"""
+        """注入完成快照存储、集数查询、订阅查询和真实订阅重建能力。"""
         self._read = task_data_read
         self._update = task_data_update
         self._tmdb_fn = tmdb_episodes_fn
@@ -28,7 +28,7 @@ class CompletionVerifier:
         self._rebuild_subscribe = rebuild_subscribe_fn
 
     def snapshot(self, subscribe, mediainfo, scope: Optional[SeasonScope]):
-        """保存完成快照，幂等去重 (tmdbid, season, episode_group_id)。"""
+        """保存完成快照，同一季同一剧集组只保留最新记录。"""
         tmdbid = subscribe.tmdbid
         season = subscribe.season
         episode_group_id = subscribe.episode_group
@@ -52,11 +52,11 @@ class CompletionVerifier:
             data["list"] = snapshots
             return data
 
-        detail(f"完成后验证：{format_subscribe_label(subscribe)} 登记完成快照（完成时 {total} 集）")
+        detail(f"完成后验证：{format_subscribe_label(subscribe)} 登记完成快照（完成时总集数={total}）")
         self._update("snapshots", updater)
 
     def verify_all(self):
-        """定时复查所有快照。"""
+        """定时复查所有完成快照。"""
         data = self._read("snapshots")
         snapshots = data.get("list", [])
         now = time.time()
@@ -90,7 +90,7 @@ class CompletionVerifier:
         return len(episodes) if episodes else None
 
     def _rebuild(self, snap: dict, current_total: int) -> bool:
-        """发现增集后协调完成记录清理和订阅重建；失败时返回 False 以保留快照重试。"""
+        """发现增集后清理完成快照并重建订阅；失败时保留快照重试。"""
         if not self._subscribe_oper:
             return False
         tmdbid = snap["tmdbid"]
@@ -134,7 +134,7 @@ def _snap_key(snap: dict) -> tuple:
 
 
 def _format_snapshot_label(snap: dict) -> str:
-    """格式化完成快照日志标签；快照配置缺名称时回退到 TMDB/季号。"""
+    """格式化完成快照日志标签；配置缺名称时回退到 TMDB/季号。"""
     config = snap.get("subscribe_config") or {}
     name = config.get("name")
     if name:

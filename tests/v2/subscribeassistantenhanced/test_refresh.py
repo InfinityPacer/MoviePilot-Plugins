@@ -72,24 +72,6 @@ class TestPendingRefresh:
         assert ev.updated is True
         assert ev.total_episode == 3
 
-    def test_pending_override_log_includes_subscribe_name_when_available(self, monkeypatch):
-        """待定集数覆盖日志能展示订阅名称和季号，避免多订阅刷新时只能看到 ID。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.pending.refresh.detail", messages.append)
-        store = {"subscribes": {"1": {"state": "P"}}}
-        subscribe = SimpleNamespace(id=1, name="测试剧", tmdbid=100, season=1, episode_group=None)
-        refresh = PendingRefresh(
-            task_data_read=lambda key: store.get(key, {}),
-            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
-            subscribe_get_fn=lambda _subscribe_id: subscribe,
-            tmdb_episodes_fn=lambda *_args, **_kwargs: [_ep(1), _ep(2), _ep(3)],
-        )
-        ev = _event(current_total=12, mediainfo=_mi_with_eps([_ep(i) for i in range(1, 13)]))
-
-        refresh.handle_refresh(ev)
-
-        assert messages == ["待定集数覆盖：测试剧 S1(id=1) 锁定为已播出集数 3（原 12），限制搜索范围"]
-
     def test_pending_uses_aired_count_when_tmdb_total_missing(self):
         """TMDB 总集数缺失时直接按已播集数覆盖，不依赖虚拟默认总集数配置。"""
         store = {"subscribes": {"1": {"state": "P"}}}

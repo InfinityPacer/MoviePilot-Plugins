@@ -239,7 +239,7 @@ def test_tracker_keywords_in_dialog_as_textarea():
 
 
 def test_completion_signal_hints_explain_behavior_and_scope():
-    """完结信号说明使用短中文句，不暴露内部英文名或复合分号句。"""
+    """完结信号说明使用短中文句；允许待定（P）等已解释的状态码。"""
     keys = (
         "completion_guard_enabled", "volatility_enabled", "volatility_window_days",
         "cadence_enabled", "cadence_multiplier", "cadence_min_window_days",
@@ -251,7 +251,8 @@ def test_completion_signal_hints_explain_behavior_and_scope():
         hint = HINTS[key]
         assert len(hint) <= 32, f"{key} hint 过长"
         assert "；" not in hint and ";" not in hint
-        assert not re.search(r"[A-Za-z_]", hint), f"{key} hint 含英文"
+        readable_hint = hint.replace("待定（P）", "待定")
+        assert not re.search(r"[A-Za-z_]", readable_hint), f"{key} hint 含未解释英文"
 
     assert "总集数" in HINTS["volatility_enabled"]
     assert "不会直接判定完结" in HINTS["cadence_enabled"]

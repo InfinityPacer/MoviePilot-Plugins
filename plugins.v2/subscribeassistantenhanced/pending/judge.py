@@ -1,4 +1,4 @@
-"""域 ③：待定进入/退出判定——P 来源分治。"""
+"""待定（P）进入与退出判定，按状态来源分治。"""
 import time
 from typing import Callable, Optional
 
@@ -13,7 +13,7 @@ from .state import PendingStateCoordinator
 
 
 class PendingJudge:
-    """订阅待定进入/退出判定，区分 pending_judge 和 guard_veto 来源。"""
+    """待定判定器，区分 pending_judge 与 guard_veto 来源。"""
 
     def __init__(self, config: PluginConfig,
                  evaluate_fn: Callable,
@@ -36,7 +36,7 @@ class PendingJudge:
 
     def should_enter_pending(self, subscribe, mediainfo, episodes: list,
                               signal: Optional[CompletionSignal] = None) -> tuple[bool, str]:
-        """判断是否应进入待定状态（OR 逻辑）。"""
+        """按 OR 逻辑判断是否进入待定（P），任一条件满足即待定。"""
         season_air_date = get_tv_season_air_date(mediainfo, subscribe.season)
         air_date = parse_date(season_air_date or mediainfo.first_air_date)
 
@@ -60,7 +60,7 @@ class PendingJudge:
         return False, ""
 
     def check_exit(self, subscribe, mediainfo, tmdb_episodes_fn) -> bool:
-        """检查待定是否应退出。返回 True 表示已退出。"""
+        """检查待定是否应退出，返回 True 表示已退出。"""
         task_data = self._read_subscribe_task(subscribe)
         if not task_data or task_data.get("state") != "P":
             return False
@@ -94,9 +94,9 @@ class PendingJudge:
         return False
 
     def _exit_pending(self, subscribe, reason: str):
-        """退出待定的完整操作序列。"""
+        """退出当前待定来源，并由 PendingStateCoordinator 仲裁是否恢复启用（R）。"""
         sid = subscribe.id
-        logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（{reason}）")
+        logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（P），原因：{reason}")
         self._timeout.clear_block(sid)
         restored = self._state.clear_active(
             subscribe,
@@ -112,9 +112,12 @@ class PendingJudge:
 
     def mark_pending(self, subscribe, source: str = "pending_judge",
                      reason: str = ""):
-        """写入 P 状态。"""
+        """登记待定来源并同步订阅 P 状态。"""
         sid = subscribe.id
-        detail(f"待定进入：{format_subscribe(subscribe)} 写 P 状态（来源={source}，原因={reason}）")
+        detail(
+            f"待定进入：{format_subscribe(subscribe)} 标记为待定（P），"
+            f"来源={source}，原因：{reason}"
+        )
         self._state.mark_active(subscribe, source=source, reason=reason)
         self._notify_status(subscribe, "满足上映待定，已标记待定", detail=reason)
 

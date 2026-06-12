@@ -1,11 +1,11 @@
-"""完结信号引擎数据类型与跨域协议桩。"""
+"""完结信号引擎数据类型与跨模块协议。"""
 from dataclasses import dataclass, field
 from typing import Protocol, Optional, runtime_checkable
 
 
 @dataclass
 class CompletionSignal:
-    """完结信号引擎输出——描述当前 scope 的播出完成状态。"""
+    """完结信号引擎输出，描述当前 SeasonScope 的播出完成状态。"""
     completed: bool = False           # 是否判定为已完结
     confidence: str = "none"          # 置信度档位：none/low/medium/high
     stable: bool = True               # F 信号：total_episode 近窗口内是否稳定（不稳定则否决完成）
@@ -16,14 +16,14 @@ class CompletionSignal:
 
 @dataclass
 class SeasonScope:
-    """当前订阅的逻辑季范围——所有域共用此结构。"""
+    """当前订阅的逻辑季范围，供信号引擎、待定和完成后验证统一使用。"""
     tmdbid: int = 0                   # TMDB 媒体 ID
     season: int = 0                   # 订阅季号
     episode_group_id: Optional[str] = None  # 剧集组 ID，非空表示按 episode_group 取集
-    episodes: list = field(default_factory=list)  # scope 内的 TMDB 集对象列表
-    total: int = 0                    # scope 目标总集数
+    episodes: list = field(default_factory=list)  # SeasonScope 内的 TMDB 集对象列表
+    total: int = 0                    # SeasonScope 目标总集数
     source: str = "main_season"       # 集来源：main_season=主季 / episode_group=剧集组
-    high_risk: bool = False           # 是否高风险绝对季（超长/断档/多组），影响 I-3/I-4 放行
+    high_risk: bool = False           # 是否为高风险绝对季范围，影响 I-3/I-4 放行
 
 
 @dataclass
@@ -39,7 +39,7 @@ class PauseRecord:
 
 @runtime_checkable
 class CompletionVerifierProtocol(Protocol):
-    """完成后异步自验证的协议接口，供守门依赖而不耦合具体实现。"""
+    """完成快照与增集复查接口，供完成守卫依赖而不耦合具体实现。"""
     def snapshot(self, subscribe, mediainfo, scope: SeasonScope) -> None: ...
 
 

@@ -44,7 +44,7 @@ def get_tv_season_air_date(mediainfo, season: int) -> Optional[str]:
 
 
 def count_aired_episodes(episodes: list, as_of: Optional[date] = None) -> int:
-    """统计 scope 内已播出的集数。"""
+    """统计目标范围内已播出的集数。"""
     today = as_of or date.today()
     count = 0
     for ep in episodes:
@@ -55,7 +55,7 @@ def count_aired_episodes(episodes: list, as_of: Optional[date] = None) -> int:
 
 
 def last_aired_episode(episodes: list, as_of: Optional[date] = None):
-    """scope 内最后一个已播出的集。"""
+    """返回目标范围内最后一个已播出的集。"""
     today = as_of or date.today()
     aired = []
     for ep in episodes:
@@ -69,7 +69,7 @@ def last_aired_episode(episodes: list, as_of: Optional[date] = None):
 
 
 def all_aired(episodes: list, as_of: Optional[date] = None) -> bool:
-    """scope 内所有集是否都已播出。"""
+    """判断目标范围内所有集是否都已播出。"""
     if not episodes:
         return False
     today = as_of or date.today()

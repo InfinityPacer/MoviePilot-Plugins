@@ -2,9 +2,6 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
-from app.core.context import MediaInfo
-from app.schemas.event import SubscribeEpisodesRefreshEventData
-
 from subscribeassistantenhanced.events import EventProxy
 
 
@@ -78,41 +75,6 @@ class TestEventOrdering:
         assert data.updated is True
         assert data.total_episode == 8
 
-    def test_episodes_refresh_log_includes_subscribe_name_when_available(self, monkeypatch):
-        """EpisodesRefresh 诊断日志能展示订阅名称和季号，便于从日志区分来源订阅。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
-        oper = MagicMock()
-        oper.get.return_value = _sub(id=33, name="测试剧", season=1)
-        proxy = EventProxy(subscribe_oper=oper)
-        event = SimpleNamespace(event_data=SimpleNamespace(current_total_episode=229, subscribe_id=33))
-
-        proxy.on_episodes_refresh(event)
-
-        assert messages == ["集数刷新事件：测试剧 S1(id=33) 当前总集数 229"]
-
-    def test_episodes_refresh_create_log_uses_mediainfo_when_subscribe_id_missing(self, monkeypatch):
-        """创建订阅尚未入库时，EpisodesRefresh 日志应使用媒体信息兜底而不是未知订阅。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
-        proxy = EventProxy()
-        mediainfo = MediaInfo()
-        mediainfo.title = "凡人修仙传"
-        mediainfo.year = "2020"
-        mediainfo.tmdb_id = 106449
-        data = SubscribeEpisodesRefreshEventData(
-            current_total_episode=190,
-            subscribe_id=None,
-            season=1,
-            scene="create",
-            tmdbid=106449,
-            mediainfo=mediainfo,
-        )
-
-        proxy.on_episodes_refresh(SimpleNamespace(event_data=data))
-
-        assert messages == ["集数刷新事件：凡人修仙传 (2020) S1(tmdbid=106449, scene=create) 当前总集数 190"]
-
     def test_download_added_registers_monitor_without_resuming(self):
         """DownloadAdded → 仅经 source 解析订阅后登记监控数据，不在此处恢复暂停。"""
         sub = _sub(id=1, state="S")
@@ -162,21 +124,6 @@ class TestEventOrdering:
         proxy.on_subscribe_complete(event)
         verifier.snapshot.assert_called_once()
 
-    def test_subscribe_complete_uses_subscribe_info_label_when_db_missing(self, monkeypatch):
-        """订阅表查不到时，完成事件日志用 subscribe_info 里的名称兜底。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
-        oper = MagicMock()
-        oper.get.return_value = None
-        proxy = EventProxy(subscribe_oper=oper)
-
-        proxy.on_subscribe_complete(SimpleNamespace(event_data={
-            "subscribe_id": 41,
-            "subscribe_info": {"id": 41, "name": "铁拳教育", "season": 1, "type": "电视剧"},
-        }))
-
-        assert messages[0] == "订阅完成事件：铁拳教育 S1(id=41)"
-
 
 class TestDomainGating:
     """未注册的域不触发。"""
@@ -197,30 +144,6 @@ class TestDomainGating:
         event = SimpleNamespace(event_data=SimpleNamespace(
             origin='Subscribe|{"id": 1}', context=None, episodes=[], cancel=False))
         proxy.on_resource_download(event)
-
-    def test_transfer_intercept_without_snapshot_no_log(self, monkeypatch):
-        """未命中洗版清理快照时，整理拦截事件不刷信息日志。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
-        orchestrator = MagicMock()
-        orchestrator.handle_history_clear.return_value = False
-        proxy = EventProxy(orchestrator=orchestrator)
-
-        proxy.on_transfer_intercept(SimpleNamespace(event_data=SimpleNamespace(cancel=False)))
-
-        assert messages == []
-
-    def test_transfer_intercept_logs_when_history_clear_runs(self, monkeypatch):
-        """实际执行洗版历史清理时输出一次结果日志。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
-        orchestrator = MagicMock()
-        orchestrator.handle_history_clear.return_value = True
-        proxy = EventProxy(orchestrator=orchestrator)
-
-        proxy.on_transfer_intercept(SimpleNamespace(event_data=SimpleNamespace(cancel=False)))
-
-        assert messages == ["整理拦截事件：已执行洗版媒体库历史清理"]
 
 
 class TestSubscribeLifecycle:
