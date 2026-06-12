@@ -1,4 +1,5 @@
 """域 ⑥：下载超时检测 + 进度监控 + tracker 关键字删种 + 人工保护期。"""
+import hashlib
 import time
 from typing import Callable, Optional
 
@@ -21,7 +22,9 @@ class DownloadMonitor:
                  fetch_fn: Optional[Callable] = None,
                  present_fn: Optional[Callable] = None,
                  manual_miss_threshold: int = 2,
-                 pending_download_enabled: bool = True):
+                 pending_download_enabled: bool = True,
+                 state_coordinator=None,
+                 pending_hash_grace_seconds: int = 10 * 60):
         """保存下载监控参数；pending_download_enabled 只控制下载中待定标记，不影响删种监控。"""
         self._read = task_data_read
         self._update = task_data_update
@@ -40,44 +43,86 @@ class DownloadMonitor:
         # 连续确认"可达且不存在" miss 达到该阈值才判手动删除，去抖避免单次抖动误判。
         self._manual_miss_threshold = manual_miss_threshold
         self._pending_download_enabled = pending_download_enabled
+        self._state = state_coordinator
+        self._pending_hash_grace_seconds = pending_hash_grace_seconds
 
     def mark_download_pending(self, subscribe_id: int, torrent_hash: str):
-        """标记任务数据中的下载待定（不写 subscribe.state）。"""
+        """标记任务数据中的下载待定（兼容既有 hash-only 调用）。"""
+        if not self._pending_download_enabled:
+            return
         sid = str(subscribe_id)
+        now = time.time()
 
         def updater(data: dict) -> dict:
             task = data.get(sid, {})
             pending = task.get("download_pending", {})
-            pending[torrent_hash] = {"started_at": time.time()}
+            pending[torrent_hash] = {"hash": torrent_hash, "started_at": now}
             task["download_pending"] = pending
             data[sid] = task
             return data
 
         self._update("subscribes", updater)
 
-    def clear_download_pending(self, subscribe_id: int, torrent_hash: str):
-        """清除下载待定标记。"""
-        sid = str(subscribe_id)
+    def mark_download_started(self, subscribe, episodes=None, downloader: Optional[str] = None,
+                              enclosure: Optional[str] = None, page_url: Optional[str] = None,
+                              title: Optional[str] = None):
+        """ResourceDownload 阶段登记无 hash 下载待定，覆盖到 DownloadAdded 落 hash 前的完成检查空窗。"""
+        if not self._pending_download_enabled or not subscribe:
+            return
+        sid = str(subscribe.id)
+        now = time.time()
+        key = self._pending_key(enclosure=enclosure, page_url=page_url, title=title)
 
         def updater(data: dict) -> dict:
             task = data.get(sid, {})
             pending = task.get("download_pending", {})
+            pending[key] = {
+                "hash": None,
+                "started_at": now,
+                "episodes": list(episodes or []),
+                "downloader": downloader,
+                "enclosure": enclosure,
+                "page_url": page_url,
+                "title": title,
+            }
+            task["download_pending"] = pending
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
+        if self._state:
+            self._state.mark_active(subscribe, source="download_pending", reason="下载已发起，等待 hash 确认")
+
+    def clear_download_pending(self, subscribe_id: int, torrent_hash: str):
+        """清除下载待定标记。"""
+        sid = str(subscribe_id)
+        result = {"had_pending": False, "active": False}
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            pending = task.get("download_pending", {})
+            result["had_pending"] = torrent_hash in pending
             pending.pop(torrent_hash, None)
             if not pending:
                 task.pop("download_pending", None)
             else:
                 task["download_pending"] = pending
+                result["active"] = True
             data[sid] = task
             return data
 
         self._update("subscribes", updater)
+        if result["had_pending"] and not result["active"] and self._state:
+            subscribe = self._resolve_subscribe(subscribe_id)
+            if subscribe:
+                self._state.clear_active(subscribe, source="download_pending", reason="下载待定已清除")
 
     def has_active_downloads(self, subscribe_id: int) -> bool:
         """检查是否存在进行中的下载。"""
         sid = str(subscribe_id)
         data = self._read("subscribes")
         task = data.get(sid, {})
-        return bool(task.get("download_pending"))
+        return self._drop_expired_hashless_pending(subscribe_id, task)
 
     def on_download(self, subscribe_id, torrent_hash: str, episodes=None,
                     downloader: Optional[str] = None, progress: float = 0.0,
@@ -113,7 +158,16 @@ class DownloadMonitor:
 
         self._update("torrents", updater)
         if subscribe_id and self._pending_download_enabled:
-            self.mark_download_pending(subscribe_id, torrent_hash)
+            self._confirm_download_pending(
+                subscribe_id,
+                torrent_hash,
+                episodes=episodes,
+                downloader=downloader,
+                enclosure=enclosure,
+                page_url=page_url,
+                title=title,
+                now=now,
+            )
 
     def run_timeout_check(self, cleanup=None):
         """定时巡检监控中的种子：取实时状态判定，超时/Tracker 命中则交 cleanup 删种善后。
@@ -123,6 +177,9 @@ class DownloadMonitor:
         """
         torrents = self._read("torrents") or {}
         total = len(torrents)
+        if total == 0:
+            detail("下载监控：当前没有记录中的下载任务，跳过本轮检查")
+            return
         if not self._fetch_fn:
             detail(f"下载监控：未接入下载器实时状态读取，跳过 {total} 个监控任务")
             return
@@ -163,14 +220,109 @@ class DownloadMonitor:
                 cleanup_count += 1
             self._reset_missing(torrent_hash)
         detail(
-            f"下载监控：巡检完成，监控任务={total}，实时可见={visible_count}，"
-            f"跳过={skipped_count}，删种善后={cleanup_count}"
+            f"下载监控：本轮检查 {total} 个下载任务，下载器确认存在 {visible_count} 个，"
+            f"暂时无法确认 {skipped_count} 个，触发删除处理 {cleanup_count} 个"
         )
 
     def _resolve_subscribe(self, subscribe_id):
         """按 subscribe_id 解析订阅对象，供删种善后、删除指纹归档和洗版优先级回滚使用。"""
         if self._subscribe_oper and subscribe_id:
             return self._subscribe_oper.get(subscribe_id)
+        return None
+
+    def _confirm_download_pending(self, subscribe_id, torrent_hash: str, episodes=None,
+                                  downloader: Optional[str] = None,
+                                  enclosure: Optional[str] = None,
+                                  page_url: Optional[str] = None,
+                                  title: Optional[str] = None,
+                                  now: Optional[float] = None):
+        """DownloadAdded 补齐下载待定 hash；优先复用 ResourceDownload 建立的无 hash 记录。"""
+        sid = str(subscribe_id)
+        now = now or time.time()
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            pending = task.get("download_pending", {})
+            matched_key = self._find_hashless_pending_key(pending, enclosure=enclosure, page_url=page_url)
+            base = pending.pop(matched_key, {}) if matched_key else {}
+            pending[torrent_hash] = {
+                "hash": torrent_hash,
+                "started_at": base.get("started_at", now),
+                "episodes": list(episodes if episodes is not None else base.get("episodes") or []),
+                "downloader": downloader or base.get("downloader"),
+                "enclosure": enclosure or base.get("enclosure"),
+                "page_url": page_url or base.get("page_url"),
+                "title": title or base.get("title"),
+            }
+            task["download_pending"] = pending
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
+        subscribe = self._resolve_subscribe(subscribe_id)
+        if subscribe and self._state:
+            self._state.mark_active(subscribe, source="download_pending", reason="下载添加成功，确认下载待定")
+
+    def _drop_expired_hashless_pending(self, subscribe_id: int, task: dict) -> bool:
+        """清理超过宽限期仍未补 hash 的下载待定，并返回是否仍有活跃下载。"""
+        pending = (task or {}).get("download_pending") or {}
+        if not pending:
+            return False
+        now = time.time()
+        kept = {}
+        changed = False
+        for key, item in pending.items():
+            if item.get("hash"):
+                kept[key] = item
+                continue
+            try:
+                started_at = float(item.get("started_at") or 0)
+            except (TypeError, ValueError):
+                started_at = 0
+            if started_at > 0 and now - started_at <= self._pending_hash_grace_seconds:
+                kept[key] = item
+                continue
+            changed = True
+            detail(f"下载待定：订阅 {subscribe_id} 无 hash 任务超过 {self._pending_hash_grace_seconds} 秒未确认，释放待定")
+        if not changed:
+            return True
+
+        sid = str(subscribe_id)
+
+        def updater(data: dict) -> dict:
+            sub_task = data.get(sid, {})
+            if kept:
+                sub_task["download_pending"] = kept
+            else:
+                sub_task.pop("download_pending", None)
+            data[sid] = sub_task
+            return data
+
+        self._update("subscribes", updater)
+        if not kept and self._state:
+            subscribe = self._resolve_subscribe(subscribe_id)
+            if subscribe:
+                self._state.clear_active(subscribe, source="download_pending", reason="下载 hash 确认超时")
+        return bool(kept)
+
+    @staticmethod
+    def _pending_key(enclosure: Optional[str] = None, page_url: Optional[str] = None,
+                     title: Optional[str] = None) -> str:
+        """生成无 hash 下载待定 key，优先使用 enclosure/page_url/title 指纹。"""
+        raw = enclosure or page_url or title or str(time.time())
+        return f"pending:{hashlib.sha1(raw.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _find_hashless_pending_key(pending: dict, enclosure: Optional[str] = None,
+                                   page_url: Optional[str] = None) -> Optional[str]:
+        """按 enclosure/page_url 匹配 ResourceDownload 阶段写入的无 hash 待定。"""
+        for key, item in pending.items():
+            if item.get("hash"):
+                continue
+            if enclosure and item.get("enclosure") == enclosure:
+                return key
+            if page_url and item.get("page_url") == page_url:
+                return key
         return None
 
     def _bump_missing(self, torrent_hash: str) -> int:

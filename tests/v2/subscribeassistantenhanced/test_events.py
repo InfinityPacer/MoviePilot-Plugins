@@ -162,6 +162,21 @@ class TestEventOrdering:
         proxy.on_subscribe_complete(event)
         verifier.snapshot.assert_called_once()
 
+    def test_subscribe_complete_uses_subscribe_info_label_when_db_missing(self, monkeypatch):
+        """订阅表查不到时，完成事件日志用 subscribe_info 里的名称兜底。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
+        oper = MagicMock()
+        oper.get.return_value = None
+        proxy = EventProxy(subscribe_oper=oper)
+
+        proxy.on_subscribe_complete(SimpleNamespace(event_data={
+            "subscribe_id": 41,
+            "subscribe_info": {"id": 41, "name": "铁拳教育", "season": 1, "type": "电视剧"},
+        }))
+
+        assert messages[0] == "订阅完成事件：铁拳教育 S1(id=41)"
+
 
 class TestDomainGating:
     """未注册的域不触发。"""
@@ -182,6 +197,30 @@ class TestDomainGating:
         event = SimpleNamespace(event_data=SimpleNamespace(
             origin='Subscribe|{"id": 1}', context=None, episodes=[], cancel=False))
         proxy.on_resource_download(event)
+
+    def test_transfer_intercept_without_snapshot_no_log(self, monkeypatch):
+        """未命中洗版清理快照时，整理拦截事件不刷信息日志。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
+        orchestrator = MagicMock()
+        orchestrator.handle_history_clear.return_value = False
+        proxy = EventProxy(orchestrator=orchestrator)
+
+        proxy.on_transfer_intercept(SimpleNamespace(event_data=SimpleNamespace(cancel=False)))
+
+        assert messages == []
+
+    def test_transfer_intercept_logs_when_history_clear_runs(self, monkeypatch):
+        """实际执行洗版历史清理时输出一次结果日志。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
+        orchestrator = MagicMock()
+        orchestrator.handle_history_clear.return_value = True
+        proxy = EventProxy(orchestrator=orchestrator)
+
+        proxy.on_transfer_intercept(SimpleNamespace(event_data=SimpleNamespace(cancel=False)))
+
+        assert messages == ["整理拦截事件：已执行洗版媒体库历史清理"]
 
 
 class TestSubscribeLifecycle:
@@ -501,8 +540,8 @@ class TestResourceSelectionDedup:
 class TestResourceDownloadHistoryClear:
     """ResourceDownload 触发洗版旧整理记录清理。"""
 
-    def test_triggers_history_clear(self):
-        sub = _sub(id=1)
+    def test_best_version_triggers_history_clear(self):
+        sub = _sub(id=1, best_version=1)
         oper = MagicMock()
         oper.get.return_value = sub
         orch = MagicMock()
@@ -512,6 +551,34 @@ class TestResourceDownloadHistoryClear:
             origin='Subscribe|{"id": 1}', context=ctx, episodes=[1], cancel=False)))
         orch.handle_resource_download_history_clear.assert_called_once_with(
             sub, context=ctx, episodes=[1])
+
+    def test_non_best_version_skips_history_clear_but_marks_download_started(self):
+        """普通订阅 ResourceDownload 只写下载待定，不打洗版清理链路。"""
+        sub = _sub(id=1, best_version=0)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        orch = MagicMock()
+        monitor = MagicMock()
+        torrent_info = SimpleNamespace(
+            enclosure="https://example/torrent",
+            page_url="https://example/page",
+            title="测试剧 S01E01",
+        )
+        ctx = SimpleNamespace(torrent_info=torrent_info)
+        proxy = EventProxy(subscribe_oper=oper, orchestrator=orch, download_monitor=monitor)
+
+        proxy.on_resource_download(SimpleNamespace(event_data=SimpleNamespace(
+            origin='Subscribe|{"id": 1}', context=ctx, episodes=[1], downloader="qb", cancel=False)))
+
+        orch.handle_resource_download_history_clear.assert_not_called()
+        monitor.mark_download_started.assert_called_once_with(
+            sub,
+            episodes=[1],
+            downloader="qb",
+            enclosure="https://example/torrent",
+            page_url="https://example/page",
+            title="测试剧 S01E01",
+        )
 
     def test_cancelled_event_skipped(self):
         orch = MagicMock()

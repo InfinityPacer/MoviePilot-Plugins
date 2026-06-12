@@ -4,6 +4,8 @@
 （识别增强为有意下线能力，不纳入增强版。）
 """
 import datetime
+import json
+import re
 import threading
 import time
 from types import SimpleNamespace
@@ -14,6 +16,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.plugins import _PluginBase
 from app.log import logger
 from app.core.event import eventmanager
+from app.core.metainfo import MetaInfo
 from app.schemas.types import EventType, ChainEventType
 from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
@@ -29,6 +32,7 @@ from .engine.evaluate import evaluate as engine_evaluate
 from .guard import CompletionGuard
 from .pending.judge import PendingJudge
 from .pending.refresh import PendingRefresh
+from .pending.state import PendingStateCoordinator
 from .pause.airing import AiringPauseChecker
 from .pause.manager import PauseManager
 from .pause.nodownload import NoDownloadPolicy
@@ -66,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.1.3"
+    plugin_version = "0.1.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -215,6 +219,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if not cfg.tracker_response_listen:
             tracker_keywords = []
         exclude_tags = [t.strip() for t in (cfg.delete_exclude_tags or "").replace("&", ",").split(",") if t.strip()]
+        pending_state = PendingStateCoordinator(
+            tm.read,
+            tm.update,
+            subscribe_oper=self._subscribe_oper,
+        )
+
         download_monitor = DownloadMonitor(
             tm.read, tm.update,
             timeout_minutes=cfg.download_timeout_minutes,
@@ -223,6 +233,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             tracker_keywords=tracker_keywords,
             exclude_tags=exclude_tags,
             subscribe_oper=self._subscribe_oper,
+            state_coordinator=pending_state,
             fetch_fn=self._fetch_downloader_torrent,
             present_fn=self._downloader_torrent_present if cfg.manual_delete_listen else None,
             pending_download_enabled=cfg.pending_download_enabled,
@@ -264,6 +275,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             task_data_read=tm.read,
             task_data_update=tm.update,
             notify_fn=self._send_subscribe_status_notification,
+            state_coordinator=pending_state,
         )
 
         guard = CompletionGuard(
@@ -288,6 +300,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             send_download_file_deleted_fn=self._send_download_file_deleted,
             send_subscribe_added_fn=self._send_subscribe_added,
             notify_fn=self._notify_subscribe,
+            related_downloads_fn=self._related_download_histories,
             best_version_type=cfg.best_version_type,
             clear_history_type=cfg.best_version_clear_history_type,
             plugin_name=self.plugin_name,
@@ -307,13 +320,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
             pause_manager=pause_manager if cfg.pause_enhanced_enabled else None,
             airing_checker=airing_checker if cfg.pause_enhanced_enabled else None,
             pending_judge=pending_judge if cfg.pending_enhanced_enabled else None,
+            pending_state=pending_state,
             evaluate_fn=evaluate_fn,
             tmdb_episodes_fn=self._tmdb_episodes,
             mediainfo_from_dict=self._mediainfo_from_dict,
             is_tv_fn=self._is_tv_media,
             detect_existing_episodes_fn=self._detect_existing_episodes,
             priority_manager=priority_manager,
-            download_monitor=download_monitor if cfg.download_monitor_enabled else None,
+            download_monitor=download_monitor,
             verifier=verifier if cfg.verify_enabled else None,
             orchestrator=orchestrator,
         )
@@ -325,6 +339,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "priority_manager": priority_manager,
             "converter": converter,
             "pending_judge": pending_judge,
+            "pending_state": pending_state,
             "pending_refresh": pending_refresh,
             "pause_manager": pause_manager,
             # airing_checker 同时放入 _modules，供 run_meta_check 周期巡检按 enabled 门控读取
@@ -646,8 +661,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """
         detail("待定释放巡检：开始")
         pending_judge = self._modules.get("pending_judge")
+        download_monitor = self._modules.get("download_monitor")
         if pending_judge and self._subscribe_oper:
             for subscribe in (self._subscribe_oper.list(state="P") or []):
+                if download_monitor:
+                    download_monitor.has_active_downloads(subscribe.id)
                 mediainfo = self._recognize_mediainfo(subscribe)
                 if mediainfo:
                     pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes)
@@ -665,8 +683,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if not mediainfo:
                 continue
             if timeout_manager.check_release(int(sid), self._evaluate_fn(subscribe, mediainfo)):
-                logger.info(f"待定释放：{format_subscribe(subscribe)} 守门超时释放，状态置为 R")
-                update_subscribe(self._subscribe_oper, int(sid), {"state": "R"})
+                logger.info(f"待定释放：{format_subscribe(subscribe)} 守门超时释放")
+                pending_state = self._modules.get("pending_state")
+                if pending_state:
+                    pending_state.clear_active(subscribe, source="guard_veto", reason="守门超时释放")
+                else:
+                    update_subscribe(self._subscribe_oper, int(sid), {"state": "R"})
                 timeout_manager.clear_block(int(sid))
                 self._send_subscribe_status_notification(
                     subscribe,
@@ -738,6 +760,101 @@ class SubscribeAssistantEnhanced(_PluginBase):
             )
         except Exception:
             return None
+
+    def _related_download_histories(self, subscribe) -> list:
+        """获取同订阅的分集下载历史，供 `tv_episode` 自动洗版判定。"""
+        try:
+            if subscribe.type == "电影":
+                histories = self._downloadhistory_oper.get_last_by(
+                    mtype=subscribe.type,
+                    title=subscribe.name,
+                    year=subscribe.year,
+                    tmdbid=subscribe.tmdbid,
+                )
+            else:
+                histories = self._downloadhistory_oper.get_last_by(
+                    mtype=subscribe.type,
+                    title=subscribe.name,
+                    year=subscribe.year,
+                    season=f"S{int(subscribe.season):02d}" if subscribe.season is not None else None,
+                    tmdbid=subscribe.tmdbid,
+                )
+        except Exception as err:
+            logger.warning(f"洗版编排：查询关联下载历史失败，跳过分集洗版判定：{err}")
+            return []
+
+        related = []
+        subscribe_date = self._parse_datetime(subscribe.date)
+        for history in histories or []:
+            source = history.note.get("source") if isinstance(history.note, dict) else ""
+            source_info = self._subscribe_info_from_source(source)
+            if not source_info:
+                continue
+            if source_info.get("id") != subscribe.id:
+                continue
+            if source_info.get("tmdbid") != subscribe.tmdbid:
+                continue
+            if source_info.get("year") != subscribe.year:
+                continue
+            history_date = self._parse_datetime(history.date)
+            if subscribe_date and history_date and history_date <= subscribe_date:
+                continue
+            if subscribe.type != "电影":
+                if source_info.get("season") != subscribe.season:
+                    continue
+                source_episode_group = source_info.get("episode_group")
+                if source_episode_group and source_episode_group != subscribe.episode_group:
+                    continue
+                if history.episode_group and history.episode_group != subscribe.episode_group:
+                    continue
+                if self._is_full_pack_download(history, subscribe.total_episode):
+                    continue
+            related.append(history)
+        return related
+
+    @staticmethod
+    def _is_full_pack_download(history, total_episode: Optional[int]) -> bool:
+        """判断下载历史是否为合集/全集包；全集包不参与分集洗版触发计数。"""
+        if not total_episode:
+            return False
+        meta_info = MetaInfo(title=history.torrent_name, subtitle=history.torrent_description)
+        if meta_info.total_episode == total_episode:
+            return True
+        text = f"{history.torrent_name or ''} {history.torrent_description or ''}"
+        patterns = (
+            rf"全\s*{int(total_episode)}\s*集",
+            rf"complete\s*{int(total_episode)}\s*(?:episodes?|eps?)",
+            rf"{int(total_episode)}\s*(?:episodes?|eps?)\s*complete",
+        )
+        return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+
+    @staticmethod
+    def _subscribe_info_from_source(source: str) -> dict:
+        """从下载历史 source 中解析订阅信息；解析失败按无关联处理。"""
+        if not source or "|" not in source:
+            return {}
+        _prefix, raw = source.split("|", 1)
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def _parse_datetime(value):
+        """解析下载历史/订阅时间，无法解析时返回 None。"""
+        if not value:
+            return None
+        if isinstance(value, datetime.datetime):
+            return value
+        if isinstance(value, datetime.date):
+            return datetime.datetime.combine(value, datetime.time.min)
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.datetime.strptime(str(value), fmt)
+            except ValueError:
+                continue
+        return None
 
     def run_no_download_check(self):
         """无下载处理巡检：上映后超期且无下载的订阅按策略暂停、完成或删除。"""

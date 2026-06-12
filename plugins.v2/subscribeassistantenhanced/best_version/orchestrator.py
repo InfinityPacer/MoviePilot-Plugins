@@ -28,6 +28,7 @@ class BestVersionOrchestrator:
                  send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
                  season_of_fn: Optional[Callable] = None,
+                 related_downloads_fn: Optional[Callable] = None,
                  best_version_type: str = "no",
                  clear_history_type: str = "no",
                  plugin_name: str = "订阅助手（增强版）"):
@@ -44,6 +45,7 @@ class BestVersionOrchestrator:
         self._send_subscribe_added = send_subscribe_added_fn
         self._notify = notify_fn
         self._season_of = season_of_fn
+        self._related_downloads = related_downloads_fn
         self._best_version_type = best_version_type
         self._clear_history_type = clear_history_type
         self._plugin_name = plugin_name
@@ -90,6 +92,15 @@ class BestVersionOrchestrator:
             return None
         if not self._type_matches(subscribe, self._best_version_type):
             return None
+        if self._best_version_type == "tv_episode" and subscribe.type != "电影":
+            downloads = self._related_downloads(subscribe) if self._related_downloads else []
+            download_count = len(downloads or [])
+            if download_count <= 1:
+                logger.info(
+                    f"洗版编排：{format_subscribe_desc(subscribe)} 关联下载记录共 "
+                    f"{download_count} 条，不是分集下载订阅，跳过自动洗版"
+                )
+                return None
         payload = {
             "best_version": 1,
             "season": subscribe.season,
@@ -174,26 +185,28 @@ class BestVersionOrchestrator:
                 f"已删除 {len(histories)} 条整理记录对应的源文件",
             )
 
-    def handle_history_clear(self, event):
+    def handle_history_clear(self, event) -> bool:
         """TransferIntercept 阶段：按快照删除旧媒体库目标文件，成功后移除该快照。"""
         data = event.event_data
         if not data or data.cancel:
-            return
+            return False
         mediainfo = data.mediainfo
         tmdb_id = mediainfo.tmdb_id if mediainfo else None
         if tmdb_id is None or not self._read:
-            return
+            return False
         key = str(tmdb_id)
         snapshots = self._read("best_version_clear_histories") or {}
         task = snapshots.get(key)
         if not task:
-            return
+            return False
         if self.clear_transfer_dest_histories(task):
             def updater(data: dict) -> dict:
                 data.pop(key, None)
                 return data
             if self._update:
                 self._update("best_version_clear_histories", updater)
+            return True
+        return False
 
     def clear_transfer_dest_histories(self, task) -> bool:
         """删除快照内每条整理记录的媒体库目标文件（dest_fileitem，非源文件、非种子）；空记录也视为成功。"""

@@ -1,9 +1,11 @@
 """download/monitor.py 超时检测单测。"""
 import time
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from subscribeassistantenhanced.download.monitor import DownloadMonitor
 from subscribeassistantenhanced.download.torrent import TorrentInfo
+from subscribeassistantenhanced.pending.state import PendingStateCoordinator
 
 
 def _store_mgr(store=None):
@@ -42,6 +44,77 @@ class TestMarkDownloadPending:
         read, update, store = _store_mgr()
         mon = DownloadMonitor(read, update)
         assert mon.has_active_downloads(1) is False
+
+    def test_hashless_pending_blocks_until_grace_expires(self, monkeypatch):
+        """ResourceDownload 无 hash 待定在宽限期内阻止完成，超时后自动释放。"""
+        read, update, store = _store_mgr()
+        oper = MagicMock()
+        coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
+        mon = DownloadMonitor(
+            read, update,
+            subscribe_oper=oper,
+            state_coordinator=coordinator,
+            pending_hash_grace_seconds=60,
+        )
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 100.0)
+        subscribe = SimpleNamespace(id=1, name="测试剧", season=1, state="R")
+        oper.get.return_value = SimpleNamespace(id=1, name="测试剧", season=1, state="P")
+
+        mon.mark_download_started(
+            subscribe,
+            episodes=[1, 2],
+            downloader="qb",
+            enclosure="https://example/torrent",
+            page_url="https://example/page",
+            title="测试剧 S01E01-E02",
+        )
+
+        assert mon.has_active_downloads(1) is True
+        task = store["subscribes"]["1"]
+        assert task["state"] == "P"
+        assert task["source"] == "download_pending"
+        pending = task["download_pending"]
+        pending_key = next(iter(pending))
+        assert pending[pending_key]["hash"] is None
+        assert pending[pending_key]["episodes"] == [1, 2]
+
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 161.0)
+        assert mon.has_active_downloads(1) is False
+        assert store["subscribes"]["1"]["state"] == "R"
+
+    def test_download_added_replaces_matching_hashless_pending(self, monkeypatch):
+        """DownloadAdded 按 enclosure/page_url 补齐 ResourceDownload 建立的无 hash 待定。"""
+        read, update, store = _store_mgr()
+        oper = MagicMock()
+        coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
+        mon = DownloadMonitor(read, update, subscribe_oper=oper, state_coordinator=coordinator)
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 200.0)
+        subscribe = SimpleNamespace(id=1, name="测试剧", season=1, state="R")
+        oper.get.return_value = SimpleNamespace(id=1, name="测试剧", season=1, state="P")
+        mon.mark_download_started(
+            subscribe,
+            episodes=[3],
+            downloader="qb",
+            enclosure="magnet:?xt=abc",
+            page_url="https://example/detail",
+            title="测试剧 S01E03",
+        )
+
+        mon.on_download(
+            1,
+            "hash-real",
+            episodes=[3],
+            downloader="qb",
+            enclosure="magnet:?xt=abc",
+            page_url="https://example/detail",
+            title="测试剧 S01E03",
+        )
+
+        pending = store["subscribes"]["1"]["download_pending"]
+        assert list(pending.keys()) == ["hash-real"]
+        assert pending["hash-real"]["hash"] == "hash-real"
+        assert pending["hash-real"]["started_at"] == 200.0
+        assert store["torrents"]["hash-real"]["subscribe_id"] == 1
 
 
 class TestOnDownload:
@@ -100,8 +173,23 @@ class TestRunTimeoutCheck:
 
         assert messages == ["下载监控：未接入下载器实时状态读取，跳过 1 个监控任务"]
 
+    def test_no_torrent_tasks_logs_short_skip(self, monkeypatch):
+        """没有监控任务时只输出简短跳过日志，避免定时巡检刷零值摘要。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", messages.append)
+        read, update, _ = _store_mgr({"torrents": {}})
+        mon = DownloadMonitor(
+            read,
+            update,
+            fetch_fn=lambda downloader, torrent_hash: _info(hash=torrent_hash),
+        )
+
+        mon.run_timeout_check(MagicMock())
+
+        assert messages == ["下载监控：当前没有记录中的下载任务，跳过本轮检查"]
+
     def test_timeout_check_logs_summary_when_no_action(self, monkeypatch):
-        """巡检完成但未删种时输出任务数和判定摘要，便于确认本轮确实执行过。"""
+        """巡检完成但未删种时输出用户可读的任务数和判定摘要。"""
         from unittest.mock import MagicMock
         messages = []
         monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", messages.append)
@@ -115,7 +203,7 @@ class TestRunTimeoutCheck:
 
         mon.run_timeout_check(MagicMock())
 
-        assert messages == ["下载监控：巡检完成，监控任务=1，实时可见=1，跳过=0，删种善后=0"]
+        assert messages == ["下载监控：本轮检查 1 个下载任务，下载器确认存在 1 个，暂时无法确认 0 个，触发删除处理 0 个"]
 
     def test_timeout_triggers_cleanup(self):
         """无进度且已超时、重试用尽 → check_torrent 判 timeout → cleanup 删种善后。"""

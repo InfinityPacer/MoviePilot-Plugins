@@ -911,10 +911,22 @@ class TestPeriodicJobs:
     def test_pending_release_releases_when_timed_out(self, monkeypatch):
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
-        sub = _sub(id=1)
+        sub = _sub(id=1, state="P")
         plugin._subscribe_oper = MagicMock()
         plugin._subscribe_oper.get.return_value = sub
         plugin._subscribe_oper.list.return_value = []  # Task5 P 退出巡检：本用例只验证 blocks 超时路径
+        task_store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
+        plugin._task_manager.read = MagicMock(side_effect=lambda key: task_store.get(key, {}))
+
+        def update_task(key, updater):
+            data = task_store.get(key, {})
+            task_store[key] = updater(data)
+            return task_store[key]
+
+        plugin._task_manager.update = MagicMock(side_effect=update_task)
+        plugin._modules["pending_state"]._read = plugin._task_manager.read
+        plugin._modules["pending_state"]._update = plugin._task_manager.update
+        plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: _mediainfo())
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
@@ -928,6 +940,51 @@ class TestPeriodicJobs:
         assert payload["state"] == "R"
         assert payload["last_update"]
         timeout_manager.clear_block.assert_called_once_with(1)
+
+    def test_pending_release_keeps_p_when_download_pending_active(self, monkeypatch):
+        """guard_veto 超时释放时若下载待定仍在，不能把订阅恢复 R。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        sub = _sub(id=1, state="P")
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.get.return_value = sub
+        plugin._subscribe_oper.list.return_value = []
+        task_store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "guard_veto",
+            "pending_sources": {
+                "guard_veto": {"reason": "未完结"},
+                "download_pending": {"reason": "下载中"},
+            },
+            "download_pending": {"hash1": {"hash": "hash1"}},
+        }}}
+        plugin._task_manager.read = MagicMock(side_effect=lambda key: task_store.get(key, {}))
+
+        def update_task(key, updater):
+            data = task_store.get(key, {})
+            task_store[key] = updater(data)
+            return task_store[key]
+
+        plugin._task_manager.update = MagicMock(side_effect=update_task)
+        plugin._modules["pending_state"]._read = plugin._task_manager.read
+        plugin._modules["pending_state"]._update = plugin._task_manager.update
+        plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: _mediainfo())
+        monkeypatch.setattr(plugin, "get_data",
+                            lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
+        plugin._evaluate_fn = lambda s, m: object()
+        timeout_manager = MagicMock()
+        timeout_manager.check_release.return_value = True
+        plugin._modules["timeout_manager"] = timeout_manager
+
+        plugin.run_pending_release()
+
+        assert task_store["subscribes"]["1"]["state"] == "P"
+        assert task_store["subscribes"]["1"]["source"] == "download_pending"
+        assert not any(
+            call_args.args[1]["state"] == "R"
+            for call_args in plugin._subscribe_oper.update.call_args_list
+        )
 
     def test_pending_release_sends_guard_timeout_notification(self, monkeypatch):
         """guard_veto 超时释放应发送订阅状态通知。"""
@@ -973,6 +1030,25 @@ class TestPeriodicJobs:
 
         pending_judge.check_exit.assert_called_once()
 
+    def test_pending_release_reconciles_download_pending_expiry(self):
+        """待定释放巡检应触发下载待定过期清理，避免无 hash 任务长期卡 P。"""
+        sub = _sub(id=7, state="P", name="测试", best_version=0)
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"timeout_release_enabled": True, "pending_download_enabled": True})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [sub]
+        plugin._subscribe_oper.get.return_value = sub
+        download_monitor = plugin._modules["download_monitor"]
+        download_monitor.has_active_downloads = MagicMock(return_value=False)
+        pending_judge = plugin._modules["pending_judge"]
+        pending_judge.check_exit = MagicMock(return_value=False)
+        plugin.get_data = MagicMock(return_value={})
+        plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+
+        plugin.run_pending_release()
+
+        download_monitor.has_active_downloads.assert_called_once_with(7)
+
 
 class TestVerifierWiring:
     """H 自验证：service 注册 + verifier 运行依赖注入。"""
@@ -1001,6 +1077,26 @@ def test_download_pause_expiry_runtime_is_removed():
 
     assert "download_pause_checker" not in plugin._modules
     assert not hasattr(plugin, "run_download_pause_expiry")
+
+
+def test_orchestrator_uses_related_download_history_helper():
+    """自动洗版编排器应注入真实关联下载历史 helper。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "tv_episode"})
+
+    assert plugin._modules["orchestrator"]._related_downloads == plugin._related_download_histories
+
+
+def test_download_pending_works_when_timeout_delete_disabled():
+    """下载待定只受 pending_download_enabled 控制，不随下载超时自动删除关闭。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({
+        "download_monitor_enabled": False,
+        "pending_download_enabled": True,
+    })
+
+    assert plugin._event_proxy.get("download_monitor") is plugin._modules["download_monitor"]
+    assert plugin._event_proxy.get("pending_download_enabled") is True
 
 
 class TestNoDownloadCheck:
@@ -1043,6 +1139,50 @@ class TestNoDownloadCheck:
             year="2025",
             tmdbid=100,
         )
+
+    def test_related_episode_download_histories_filters_full_pack_and_source(self):
+        """分集洗版历史只保留同订阅分集下载，排除全集包和其他订阅 source。"""
+        subscribe = _sub(
+            id=18,
+            type="电视剧",
+            name="测试",
+            year="2025",
+            season=1,
+            tmdbid=100,
+            total_episode=12,
+            date="2025-01-01 00:00:00",
+        )
+        episode_download = SimpleNamespace(
+            date="2025-02-01 00:00:00",
+            note={"source": 'Subscribe|{"id":18,"tmdbid":100,"year":"2025","season":1}'},
+            episode_group=None,
+            torrent_name="测试 S01E01",
+            torrent_description="",
+        )
+        full_pack = SimpleNamespace(
+            date="2025-02-02 00:00:00",
+            note={"source": 'Subscribe|{"id":18,"tmdbid":100,"year":"2025","season":1}'},
+            episode_group=None,
+            torrent_name="测试 S01",
+            torrent_description="Complete 12 Episodes",
+        )
+        other_subscribe = SimpleNamespace(
+            date="2025-02-03 00:00:00",
+            note={"source": 'Subscribe|{"id":99,"tmdbid":100,"year":"2025","season":1}'},
+            episode_group=None,
+            torrent_name="测试 S01E02",
+            torrent_description="",
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin._downloadhistory_oper = MagicMock()
+        plugin._downloadhistory_oper.get_last_by.return_value = [
+            episode_download,
+            full_pack,
+            other_subscribe,
+        ]
+
+        assert plugin._related_download_histories(subscribe) == [episode_download]
 
     def test_overdue_tv_delete_action_deletes_subscribe(self):
         """剧集超期且无下载时按 delete_tv 删除订阅。"""

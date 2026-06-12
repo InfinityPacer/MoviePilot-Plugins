@@ -9,7 +9,7 @@ from ..shared.config import PluginConfig
 from ..shared.log import detail
 from ..shared.media import get_tv_season_air_date, parse_date
 from ..shared.subscribe import format_subscribe
-from ..shared.update import update_subscribe
+from .state import PendingStateCoordinator
 
 
 class PendingJudge:
@@ -21,7 +21,8 @@ class PendingJudge:
                  timeout_manager: PendingTimeoutManagerProtocol,
                  task_data_read: Callable,
                  task_data_update: Callable,
-                 notify_fn: Optional[Callable] = None):
+                 notify_fn: Optional[Callable] = None,
+                 state_coordinator: Optional[PendingStateCoordinator] = None):
         """注入待定判定、状态写库、超时管理、任务数据和状态通知回调。"""
         self._config = config
         self._evaluate = evaluate_fn
@@ -30,6 +31,8 @@ class PendingJudge:
         self._read = task_data_read
         self._update = task_data_update
         self._notify = notify_fn
+        self._state = state_coordinator or PendingStateCoordinator(
+            task_data_read, task_data_update, subscribe_oper=subscribe_oper)
 
     def should_enter_pending(self, subscribe, mediainfo, episodes: list,
                               signal: Optional[CompletionSignal] = None) -> tuple[bool, str]:
@@ -93,30 +96,26 @@ class PendingJudge:
     def _exit_pending(self, subscribe, reason: str):
         """退出待定的完整操作序列。"""
         sid = subscribe.id
-        logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（{reason}），状态置为 R")
-        if self._subscribe_oper:
-            update_subscribe(self._subscribe_oper, sid, {"state": "R"})
+        logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（{reason}）")
         self._timeout.clear_block(sid)
-        self._update_subscribe_task(subscribe, {
-            "state": "R",
-            "exit_reason": reason,
-            "exit_at": time.time(),
-        })
+        restored = self._state.clear_active(
+            subscribe,
+            source=self._read_subscribe_task(subscribe).get("source", "pending_judge"),
+            reason=reason,
+        )
         self._notify_status(subscribe, "不再满足上映待定，已标记订阅中", detail=reason)
+        if not restored:
+            self._update_subscribe_task(subscribe, {
+                "exit_reason": reason,
+                "exit_at": time.time(),
+            })
 
     def mark_pending(self, subscribe, source: str = "pending_judge",
                      reason: str = ""):
         """写入 P 状态。"""
         sid = subscribe.id
         detail(f"待定进入：{format_subscribe(subscribe)} 写 P 状态（来源={source}，原因={reason}）")
-        if self._subscribe_oper:
-            update_subscribe(self._subscribe_oper, sid, {"state": "P"})
-        self._update_subscribe_task(subscribe, {
-            "state": "P",
-            "source": source,
-            "reason": reason,
-            "since": time.time(),
-        })
+        self._state.mark_active(subscribe, source=source, reason=reason)
         self._notify_status(subscribe, "满足上映待定，已标记待定", detail=reason)
 
     def _read_subscribe_task(self, subscribe) -> dict:

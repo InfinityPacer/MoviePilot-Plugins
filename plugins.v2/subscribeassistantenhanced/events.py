@@ -253,16 +253,16 @@ class EventProxy:
         if not isinstance(data, dict):
             return
         subscribe_id = data.get("subscribe_id")
-        detail(f"订阅完成事件：{self._format_subscribe_label(subscribe_id)}")
-        task_manager = self.get("task_manager")
-        if subscribe_id and task_manager:
-            task_manager.clear_tasks(subscribe_id)
-
         subscribe_info = data.get("subscribe_info") or {}
         subscribe_oper = self.get("subscribe_oper")
         subscribe = subscribe_oper.get(subscribe_id) if (subscribe_oper and subscribe_id) else None
         if subscribe is None and subscribe_info:
             subscribe = SimpleNamespace(**subscribe_info)
+        detail(f"订阅完成事件：{format_subscribe_label(subscribe, subscribe_id)}")
+        task_manager = self.get("task_manager")
+        if subscribe_id and task_manager:
+            task_manager.clear_tasks(subscribe_id)
+
         if not subscribe:
             return
 
@@ -282,9 +282,8 @@ class EventProxy:
     def on_transfer_intercept(self, event):
         """TransferIntercept → 洗版历史清理。"""
         orchestrator = self.get("orchestrator")
-        if orchestrator:
-            detail("整理拦截事件：触发洗版媒体库历史清理")
-            orchestrator.handle_history_clear(event)
+        if orchestrator and orchestrator.handle_history_clear(event):
+            detail("整理拦截事件：已执行洗版媒体库历史清理")
 
     def on_resource_selection(self, event):
         """ResourceSelection → 洗版待定按集串行 + 剔除已删除资源防重选。
@@ -370,11 +369,11 @@ class EventProxy:
             page_url=getattr(torrent_info, "page_url", None))
 
     def on_resource_download(self, event):
-        """ResourceDownload → 洗版下载前清理旧整理记录 + 按种子记录优先级基线。
+        """ResourceDownload → 下载待定 + 洗版下载前清理旧整理记录 + 按种子记录优先级基线。
 
         从 event.event_data 取 origin/context/episodes；订阅经 source 解析。
+        下载待定在无 hash 阶段先登记，覆盖 DownloadAdded 落 hash 前的完成检查空窗。
         优先级基线按种子 enclosure 归属快照（在主程序抬高优先级前），供删种后按集归属回滚、隔离并行洗版。
-        下载待定按 hash 标记移至 DownloadAdded（此阶段尚无 hash）。
         """
         data = _event_data(event)
         if not data or data.cancel:
@@ -383,8 +382,22 @@ class EventProxy:
         _, subscribe = subscribe_from_source(data.origin, subscribe_oper)
         if not subscribe:
             return
+        # context.torrent_info 仍是跨来源对象（context 可能是裸 object/None），保留 getattr 边界容错
+        torrent_info = getattr(data.context, "torrent_info", None)
+        monitor = self.get("download_monitor")
+        if monitor and self.get("pending_download_enabled") and torrent_info:
+            detail(f"资源下载事件：{format_subscribe(subscribe)} 写入下载待定（无 hash，等待 DownloadAdded 确认）")
+            monitor.mark_download_started(
+                subscribe,
+                episodes=self._normalize_episodes(data.episodes),
+                downloader=getattr(data, "downloader", None),
+                enclosure=getattr(torrent_info, "enclosure", None),
+                page_url=getattr(torrent_info, "page_url", None),
+                title=getattr(torrent_info, "title", None),
+            )
+
         orchestrator = self.get("orchestrator")
-        if orchestrator:
+        if orchestrator and subscribe.best_version:
             detail(f"资源下载事件：{format_subscribe(subscribe)} 洗版下载前清理旧整理记录")
             orchestrator.handle_resource_download_history_clear(
                 subscribe,
@@ -392,8 +405,6 @@ class EventProxy:
                 episodes=data.episodes,
             )
         priority = self.get("priority_manager")
-        # context.torrent_info 仍是跨来源对象（context 可能是裸 object/None），保留 getattr 边界容错
-        torrent_info = getattr(data.context, "torrent_info", None)
         if priority and subscribe.best_version and torrent_info:
             enclosure = getattr(torrent_info, "enclosure", None)
             if enclosure:
