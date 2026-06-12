@@ -154,7 +154,7 @@ class EventProxy:
         if airing and pause_manager:
             record = airing.check_pre_air(subscribe, mediainfo)
             if record:
-                logger.info(f"订阅新增：{format_subscribe(subscribe)} 命中上映前暂停，置为禁用")
+                logger.info(f"订阅新增：{format_subscribe(subscribe)} 满足上映前暂停条件，置为禁用")
                 pause_manager.pause(subscribe, record)
                 return
 
@@ -169,7 +169,7 @@ class EventProxy:
             episode_group=subscribe.episode_group,
         ) if tmdb_episodes_fn else []
 
-        # TV 待定优先于播出暂停：命中待定即进入待定并跳过播出暂停
+        # TV 待定优先于播出暂停：满足待定条件即进入待定并跳过播出暂停。
         pending_judge = self.get("pending_judge")
         evaluate = self.get("evaluate_fn")
         if pending_judge:
@@ -188,7 +188,7 @@ class EventProxy:
                 latest_episode=last_aired_episode(episodes),
             )
             if record:
-                logger.info(f"订阅新增：{format_subscribe(subscribe)} 命中播出间隔暂停，置为禁用")
+                logger.info(f"订阅新增：{format_subscribe(subscribe)} 满足播出间隔暂停条件，置为禁用")
                 pause_manager.pause(subscribe, record)
 
     def on_subscribe_deleted(self, event):
@@ -226,7 +226,7 @@ class EventProxy:
         if "state" in different_keys:
             pause_manager = self.get("pause_manager")
             if pause_manager:
-                detail(f"订阅修改事件：{format_subscribe(subscribe)} state 变化，重置插件暂停记录")
+                detail(f"订阅修改事件：{format_subscribe(subscribe)} 状态已变更，清理插件暂停记录")
                 pause_manager.clear_pause_record(subscribe)
 
         # 仅在旧假新真的转洗版边沿回填，避免内部 update 反复触发
@@ -253,16 +253,16 @@ class EventProxy:
         if not isinstance(data, dict):
             return
         subscribe_id = data.get("subscribe_id")
-        detail(f"订阅完成事件：{self._format_subscribe_label(subscribe_id)}")
-        task_manager = self.get("task_manager")
-        if subscribe_id and task_manager:
-            task_manager.clear_tasks(subscribe_id)
-
         subscribe_info = data.get("subscribe_info") or {}
         subscribe_oper = self.get("subscribe_oper")
         subscribe = subscribe_oper.get(subscribe_id) if (subscribe_oper and subscribe_id) else None
         if subscribe is None and subscribe_info:
             subscribe = SimpleNamespace(**subscribe_info)
+        detail(f"订阅完成事件：{format_subscribe_label(subscribe, subscribe_id)}")
+        task_manager = self.get("task_manager")
+        if subscribe_id and task_manager:
+            task_manager.clear_tasks(subscribe_id)
+
         if not subscribe:
             return
 
@@ -276,21 +276,20 @@ class EventProxy:
         if orchestrator and mediainfo_from_dict:
             mediainfo = mediainfo_from_dict(data.get("mediainfo"))
             if mediainfo:
-                detail(f"订阅完成：{format_subscribe(subscribe)} 触发自动洗版编排")
+                detail(f"订阅完成：{format_subscribe(subscribe)} 检查是否需要自动创建洗版订阅")
                 orchestrator.start_best_version(subscribe, mediainfo)
 
     def on_transfer_intercept(self, event):
         """TransferIntercept → 洗版历史清理。"""
         orchestrator = self.get("orchestrator")
-        if orchestrator:
-            detail("整理拦截事件：触发洗版媒体库历史清理")
-            orchestrator.handle_history_clear(event)
+        if orchestrator and orchestrator.handle_history_clear(event):
+            detail("整理拦截事件：已清理本次洗版对应的旧媒体库文件")
 
     def on_resource_selection(self, event):
-        """ResourceSelection → 洗版待定按集串行 + 剔除已删除资源防重选。
+        """ResourceSelection → 洗版待定按集串行 + 剔除近期删除资源防重选。
 
-        洗版订阅存在下载待定时，挡下覆盖待定集的候选、其余集并行放行（待定集未知则保守全挡）；
-        再按删除指纹剔除此前超时/手动删除的资源，避免刚删的种子被立即重选成回环。
+        洗版订阅存在下载待定时挡住覆盖待定集的候选，其余集仍可并行；
+        待定集未知时保守全挡，避免同集多版本并发下载产生覆盖竞态。
         """
         data = _event_data(event)
         if not data:
@@ -317,15 +316,18 @@ class EventProxy:
                     kept, changed = deduped, True
 
         if changed:
-            detail(f"资源选择事件：候选过滤 {len(base)} → {len(kept)}（洗版串行/删除指纹防重）")
+            detail(
+                f"ResourceSelection：候选从 {len(base)} 个减少到 {len(kept)} 个"
+                "（洗版按集串行 + 删除指纹防重）"
+            )
             data.updated = True
             data.updated_contexts = kept
             data.source = "订阅助手（增强版）"
 
     def _filter_pending_serial(self, data, contexts):
-        """洗版订阅有下载待定时，剔除覆盖待定集的候选（按集串行）；待定集未知则全剔。
+        """洗版订阅有下载待定时，剔除覆盖待定集的候选，实现按集串行。
 
-        返回过滤后列表；不适用（非洗版/无待定/无任务管理器）时返回 None 表示本规则不参与。
+        返回过滤后列表；非洗版、无待定或无任务管理器时返回 None，表示本规则不参与。
         """
         task_manager = self.get("task_manager")
         if not self.get("pending_download_enabled"):
@@ -349,7 +351,7 @@ class EventProxy:
             else:
                 unknown = True
         if unknown:
-            return []  # 待定集无法确定 → 保守全挡，避免同集多版本绕过串行造成覆盖竞态
+            return []  # 待定集无法确定时保守全挡，避免同集多版本绕过串行造成覆盖竞态。
         kept = []
         for ctx in contexts:
             ctx_eps = set(self._normalize_episodes(
@@ -361,7 +363,7 @@ class EventProxy:
 
     @staticmethod
     def _is_deleted_resource(ctx, deletes_store) -> bool:
-        """候选资源是否命中已删除指纹（enclosure/page_url）。"""
+        """判断候选资源是否命中删除指纹（enclosure/page_url）。"""
         torrent_info = getattr(ctx, "torrent_info", None)
         if not torrent_info:
             return False
@@ -370,11 +372,10 @@ class EventProxy:
             page_url=getattr(torrent_info, "page_url", None))
 
     def on_resource_download(self, event):
-        """ResourceDownload → 洗版下载前清理旧整理记录 + 按种子记录优先级基线。
+        """ResourceDownload → 下载待定 + 洗版历史清理 + 按种子记录优先级基线。
 
-        从 event.event_data 取 origin/context/episodes；订阅经 source 解析。
-        优先级基线按种子 enclosure 归属快照（在主程序抬高优先级前），供删种后按集归属回滚、隔离并行洗版。
-        下载待定按 hash 标记移至 DownloadAdded（此阶段尚无 hash）。
+        ResourceDownload 阶段尚无 hash，先写无 hash 待定以覆盖 DownloadAdded 前的完成检查空窗；
+        洗版优先级基线按 enclosure 归属，便于删种后按集回滚并隔离并行洗版。
         """
         data = _event_data(event)
         if not data or data.cancel:
@@ -383,21 +384,36 @@ class EventProxy:
         _, subscribe = subscribe_from_source(data.origin, subscribe_oper)
         if not subscribe:
             return
+        # context.torrent_info 来自主程序事件，可能为空或对象结构不完整。
+        torrent_info = getattr(data.context, "torrent_info", None)
+        monitor = self.get("download_monitor")
+        if monitor and self.get("pending_download_enabled") and torrent_info:
+            detail(
+                f"ResourceDownload：{format_subscribe(subscribe)} 写入无 hash 下载待定，"
+                "等待 DownloadAdded 确认"
+            )
+            monitor.mark_download_started(
+                subscribe,
+                episodes=self._normalize_episodes(data.episodes),
+                downloader=getattr(data, "downloader", None),
+                enclosure=getattr(torrent_info, "enclosure", None),
+                page_url=getattr(torrent_info, "page_url", None),
+                title=getattr(torrent_info, "title", None),
+            )
+
         orchestrator = self.get("orchestrator")
-        if orchestrator:
-            detail(f"资源下载事件：{format_subscribe(subscribe)} 洗版下载前清理旧整理记录")
+        if orchestrator and subscribe.best_version:
+            detail(f"ResourceDownload：{format_subscribe(subscribe)} 执行洗版历史清理前置检查")
             orchestrator.handle_resource_download_history_clear(
                 subscribe,
                 context=data.context,
                 episodes=data.episodes,
             )
         priority = self.get("priority_manager")
-        # context.torrent_info 仍是跨来源对象（context 可能是裸 object/None），保留 getattr 边界容错
-        torrent_info = getattr(data.context, "torrent_info", None)
         if priority and subscribe.best_version and torrent_info:
             enclosure = getattr(torrent_info, "enclosure", None)
             if enclosure:
-                detail(f"资源下载：{format_subscribe(subscribe)} 记录洗版优先级基线（按 enclosure 归属）")
+                detail(f"ResourceDownload：{format_subscribe(subscribe)} 记录按种子洗版优先级基线")
                 priority.capture_torrent_baseline(
                     subscribe, enclosure,
                     self._normalize_episodes(data.episodes),
@@ -406,11 +422,9 @@ class EventProxy:
                 )
 
     def on_download_added(self, event):
-        """DownloadAdded → 登记种子监控数据。
+        """DownloadAdded → 登记种子监控数据，并为无 hash 下载待定补齐真实 hash。
 
-        从 event.event_data（dict）取 hash/source/episodes/downloader；订阅经 source 解析。
-        监控登记走 monitor.on_download（此阶段 hash 已确定）。
-        下载添加不在此处恢复暂停；暂停恢复仅由元数据巡检的上映条件双向判定负责，
+        下载添加不在此处恢复暂停；暂停恢复仅由元数据检查的上映条件双向判定负责，
         避免下载落地即把上映暂停或标记暂停误清掉。
         """
         data = event.event_data
@@ -422,7 +436,7 @@ class EventProxy:
             return
         monitor = self.get("download_monitor")
         if monitor:
-            detail(f"下载添加事件：{format_subscribe(subscribe)} 登记种子监控 hash={data.get('hash')}")
+            detail(f"DownloadAdded：{format_subscribe(subscribe)} 登记种子监控 hash={data.get('hash')}")
             torrent_info = getattr(data.get("context"), "torrent_info", None)
             monitor.on_download(
                 subscribe.id,
@@ -437,9 +451,8 @@ class EventProxy:
     def on_transfer_complete(self, event):
         """TransferComplete → 清下载待定 + 移动模式同步清理种子任务记录。
 
-        从 event.event_data（dict）取 transferinfo/download_hash；订阅归属由 torrents[hash] 反查。
-        移动模式（transfer_type=="move"）下源已整理入库、原下载任务作废，需同步清理插件任务记录
-        （本方法做任务记录同步，不调用下载器删除 API）。
+        订阅归属需在清理 torrents 任务前反查；移动模式下源已转走，只同步清理插件任务记录，
+        不在此处调用下载器删除 API。
         """
         data = event.event_data
         if not isinstance(data, dict):
@@ -449,7 +462,7 @@ class EventProxy:
             return
         task_manager = self.get("task_manager")
 
-        # 反查种子归属订阅，清其下载待定标记（须在清理任务前读取）
+        # 先查下载任务归属，再清下载待定，避免任务记录删掉后找不到订阅。
         subscribe_id = None
         if task_manager:
             torrent_task = (task_manager.read("torrents") or {}).get(download_hash)
@@ -457,13 +470,16 @@ class EventProxy:
                 subscribe_id = torrent_task.get("subscribe_id")
         monitor = self.get("download_monitor")
         if monitor and subscribe_id:
-            detail(f"整理完成事件：{self._format_subscribe_label(subscribe_id)} 清除种子 {download_hash} 下载待定")
+            detail(
+                f"TransferComplete：{self._format_subscribe_label(subscribe_id)} "
+                f"下载已入库，解除 hash={download_hash} 的下载待定"
+            )
             monitor.clear_download_pending(subscribe_id, download_hash)
 
-        # 移动模式：同步清理插件任务记录（源已转走、下载任务作废）
+        # 移动模式下下载源已转走，插件不再继续检查该下载任务。
         transfer_info = data.get("transferinfo")
         if transfer_info and transfer_info.transfer_type == "move" and task_manager:
-            detail(f"整理完成：移动模式，同步清理种子 {download_hash} 任务记录")
+            detail(f"TransferComplete：移动模式清理已完成下载任务 hash={download_hash}")
             task_manager.clean_torrent_tasks(download_hash)
 
     def on_plugin_action(self, event):

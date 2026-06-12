@@ -71,7 +71,7 @@ class PendingRefresh:
         return task.get("state") in ("P",)
 
     def _get_scope_episodes(self, subscribe_id: int, mediainfo, season: int) -> list:
-        """按订阅 episode_group 构建统一 scope，不从主季 season_info 猜测范围。"""
+        """按 episode_group 构建统一 SeasonScope，不从主季 season_info 猜测范围。"""
         if not mediainfo or not self._subscribe_get or not self._tmdb_episodes:
             return []
         subscribe = self._subscribe_get(subscribe_id)

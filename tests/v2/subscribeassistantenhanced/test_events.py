@@ -2,9 +2,6 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
-from app.core.context import MediaInfo
-from app.schemas.event import SubscribeEpisodesRefreshEventData
-
 from subscribeassistantenhanced.events import EventProxy
 
 
@@ -77,41 +74,6 @@ class TestEventOrdering:
         assert call_order[1] == ("pending", 1)
         assert data.updated is True
         assert data.total_episode == 8
-
-    def test_episodes_refresh_log_includes_subscribe_name_when_available(self, monkeypatch):
-        """EpisodesRefresh 诊断日志能展示订阅名称和季号，便于从日志区分来源订阅。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
-        oper = MagicMock()
-        oper.get.return_value = _sub(id=33, name="测试剧", season=1)
-        proxy = EventProxy(subscribe_oper=oper)
-        event = SimpleNamespace(event_data=SimpleNamespace(current_total_episode=229, subscribe_id=33))
-
-        proxy.on_episodes_refresh(event)
-
-        assert messages == ["集数刷新事件：测试剧 S1(id=33) 当前总集数 229"]
-
-    def test_episodes_refresh_create_log_uses_mediainfo_when_subscribe_id_missing(self, monkeypatch):
-        """创建订阅尚未入库时，EpisodesRefresh 日志应使用媒体信息兜底而不是未知订阅。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.events.detail", messages.append)
-        proxy = EventProxy()
-        mediainfo = MediaInfo()
-        mediainfo.title = "凡人修仙传"
-        mediainfo.year = "2020"
-        mediainfo.tmdb_id = 106449
-        data = SubscribeEpisodesRefreshEventData(
-            current_total_episode=190,
-            subscribe_id=None,
-            season=1,
-            scene="create",
-            tmdbid=106449,
-            mediainfo=mediainfo,
-        )
-
-        proxy.on_episodes_refresh(SimpleNamespace(event_data=data))
-
-        assert messages == ["集数刷新事件：凡人修仙传 (2020) S1(tmdbid=106449, scene=create) 当前总集数 190"]
 
     def test_download_added_registers_monitor_without_resuming(self):
         """DownloadAdded → 仅经 source 解析订阅后登记监控数据，不在此处恢复暂停。"""
@@ -501,8 +463,8 @@ class TestResourceSelectionDedup:
 class TestResourceDownloadHistoryClear:
     """ResourceDownload 触发洗版旧整理记录清理。"""
 
-    def test_triggers_history_clear(self):
-        sub = _sub(id=1)
+    def test_best_version_triggers_history_clear(self):
+        sub = _sub(id=1, best_version=1)
         oper = MagicMock()
         oper.get.return_value = sub
         orch = MagicMock()
@@ -512,6 +474,34 @@ class TestResourceDownloadHistoryClear:
             origin='Subscribe|{"id": 1}', context=ctx, episodes=[1], cancel=False)))
         orch.handle_resource_download_history_clear.assert_called_once_with(
             sub, context=ctx, episodes=[1])
+
+    def test_non_best_version_skips_history_clear_but_marks_download_started(self):
+        """普通订阅 ResourceDownload 只写下载待定，不打洗版清理链路。"""
+        sub = _sub(id=1, best_version=0)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        orch = MagicMock()
+        monitor = MagicMock()
+        torrent_info = SimpleNamespace(
+            enclosure="https://example/torrent",
+            page_url="https://example/page",
+            title="测试剧 S01E01",
+        )
+        ctx = SimpleNamespace(torrent_info=torrent_info)
+        proxy = EventProxy(subscribe_oper=oper, orchestrator=orch, download_monitor=monitor)
+
+        proxy.on_resource_download(SimpleNamespace(event_data=SimpleNamespace(
+            origin='Subscribe|{"id": 1}', context=ctx, episodes=[1], downloader="qb", cancel=False)))
+
+        orch.handle_resource_download_history_clear.assert_not_called()
+        monitor.mark_download_started.assert_called_once_with(
+            sub,
+            episodes=[1],
+            downloader="qb",
+            enclosure="https://example/torrent",
+            page_url="https://example/page",
+            title="测试剧 S01E01",
+        )
 
     def test_cancelled_event_skipped(self):
         orch = MagicMock()

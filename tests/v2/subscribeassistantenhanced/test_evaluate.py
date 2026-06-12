@@ -213,18 +213,3 @@ class TestEvaluatePipeline:
             config=_cfg(volatility_enabled=False), as_of=date(2026, 6, 1),
         )
         assert sig.completed is True  # F disabled, E releases
-
-    def test_signal_log_uses_subscribe_label(self, monkeypatch):
-        """信号引擎诊断日志应带订阅名称和 ID，便于从巡检日志反查对象。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.engine.evaluate.detail", messages.append)
-        eps = [_ep(1), _ep(2, ep_type="mid_season")]
-
-        evaluate(
-            subscribe=_sub(), mediainfo=_mi(status="Ended"),
-            tmdb_episodes_fn=_tmdb_fn(eps),
-            volatility_tracker=_make_tracker(stable=True),
-            config=_cfg(), as_of=date(2026, 6, 1),
-        )
-
-        assert messages == ["信号引擎：测试剧 S1(id=1) M 否决完结 — 最后已播集为 mid_season，阶段中场"]

@@ -170,15 +170,33 @@ class TestHistoryClear:
         assert deletes == [{"path": "/dest/a.mkv"}]
         assert "100" not in store["best_version_clear_histories"]
 
+    def test_transfer_intercept_without_snapshot_returns_false(self):
+        """无洗版清理快照时整理拦截不产生日志噪音。"""
+        orch, _store, _deletes, _events, _hist = self._orch_clear({})
+        event = SimpleNamespace(event_data=SimpleNamespace(
+            cancel=False, mediainfo=SimpleNamespace(tmdb_id=100)))
+
+        assert orch.handle_history_clear(event) is False
+
+    def test_transfer_intercept_clear_returns_true(self):
+        """命中清理快照并完成清理时返回 True，供事件层输出结果日志。"""
+        store = {"best_version_clear_histories": {"100": {"subscribe_desc": "X", "histories": []}}}
+        orch, _store, _deletes, _events, _hist = self._orch_clear(store)
+        event = SimpleNamespace(event_data=SimpleNamespace(
+            cancel=False, mediainfo=SimpleNamespace(tmdb_id=100)))
+
+        assert orch.handle_history_clear(event) is True
+
 
 class TestStartBestVersion:
     """订阅完成后按洗版类型自动创建洗版订阅。"""
 
-    def _orch(self, oper, best_version_type="all"):
+    def _orch(self, oper, best_version_type="all", related_downloads_fn=None):
         """构造带自动洗版类型范围的编排器。"""
         return BestVersionOrchestrator(
             priority_manager=MagicMock(spec=PriorityManager), evaluate_fn=MagicMock(),
-            subscribe_oper=oper, best_version_type=best_version_type)
+            subscribe_oper=oper, best_version_type=best_version_type,
+            related_downloads_fn=related_downloads_fn)
 
     def test_creates_best_version_when_type_enabled(self):
         """创建洗版订阅成功时应发 SubscribeAdded 事件并发送订阅通知。"""
@@ -248,3 +266,48 @@ class TestStartBestVersion:
 
         assert sid is None
         oper.add.assert_not_called()
+
+    def test_tv_episode_skips_without_related_episode_downloads(self):
+        """分集洗版：没有关联分集下载历史时不自动创建洗版订阅。"""
+        oper = MagicMock()
+        sub = _sub(best_version=0, type="电视剧")
+        related = MagicMock(return_value=[])
+
+        sid = self._orch(
+            oper,
+            best_version_type="tv_episode",
+            related_downloads_fn=related,
+        ).start_best_version(sub, object())
+
+        assert sid is None
+        related.assert_called_once_with(sub)
+        oper.add.assert_not_called()
+
+    def test_tv_episode_skips_single_related_episode_download(self):
+        """分集洗版：只有 1 条关联下载历史视为合集/单次下载，不自动洗版。"""
+        oper = MagicMock()
+        sub = _sub(best_version=0, type="电视剧")
+
+        sid = self._orch(
+            oper,
+            best_version_type="tv_episode",
+            related_downloads_fn=MagicMock(return_value=[object()]),
+        ).start_best_version(sub, object())
+
+        assert sid is None
+        oper.add.assert_not_called()
+
+    def test_tv_episode_creates_when_multiple_related_episode_downloads(self):
+        """分集洗版：存在多条关联分集下载历史时创建洗版订阅。"""
+        oper = MagicMock()
+        oper.add.return_value = (7, "")
+        sub = _sub(best_version=0, type="电视剧")
+
+        sid = self._orch(
+            oper,
+            best_version_type="tv_episode",
+            related_downloads_fn=MagicMock(return_value=[object(), object()]),
+        ).start_best_version(sub, object())
+
+        assert sid == 7
+        oper.add.assert_called_once()

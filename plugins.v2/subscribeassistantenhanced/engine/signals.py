@@ -14,7 +14,7 @@ def _field(data, name: str, default=None):
 
 
 def check_m_signal(scope: SeasonScope, as_of: Optional[date] = None) -> Optional[CompletionSignal]:
-    """M：mid_season 硬否决——scope 内最后已播集为 mid_season 时无条件否决。"""
+    """M：mid_season 硬否决，SeasonScope 内最后已播集为阶段中场时判定未完结。"""
     last = _last_aired(scope.episodes, as_of=as_of)
     if not last:
         return None
@@ -28,7 +28,7 @@ def check_m_signal(scope: SeasonScope, as_of: Optional[date] = None) -> Optional
 
 
 def check_e_signal(mediainfo, scope: SeasonScope) -> Optional[CompletionSignal]:
-    """E：基线信号——剧级状态或 scope 末集 finale。"""
+    """E：基线信号，按剧级状态或 SeasonScope 末集 finale 判断完结。"""
     status = _field(mediainfo.tmdb_info, "status", "")
     if status in ("Ended", "Canceled"):
         return CompletionSignal(
@@ -40,7 +40,7 @@ def check_e_signal(mediainfo, scope: SeasonScope) -> Optional[CompletionSignal]:
         return CompletionSignal(
             completed=True, confidence="high",
             signals=["E:finale"],
-            reason="scope 末集有 finale 标记",
+            reason="目标范围末集有 finale 标记",
         )
     return None
 
@@ -48,7 +48,7 @@ def check_e_signal(mediainfo, scope: SeasonScope) -> Optional[CompletionSignal]:
 def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
                    high_risk: bool = False,
                    as_of: Optional[date] = None) -> Optional[CompletionSignal]:
-    """I：季级信号——直接判断当前季播出状态。"""
+    """I：季级信号；I-3/I-4 在 high_risk 范围内不放行。"""
     today = as_of or date.today()
     tmdb_info = mediainfo.tmdb_info
     if not tmdb_info:
@@ -75,11 +75,11 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
             reason=f"last_episode_to_air 属于 S{last_season}",
         )
 
-    # I-3 和 I-4 在高风险绝对季不放行
+    # I-3 和 I-4 在 high_risk 范围内不放行，避免绝对季断档期间误判完结。
     if high_risk or scope.high_risk:
         return None
 
-    # I-3：scope 内所有集已播 + 无同季 next_episode_to_air
+    # I-3：SeasonScope 内所有集已播，且 TMDB 没有同季 next_episode_to_air。
     next_ep = _field(tmdb_info, "next_episode_to_air", None)
     has_next_this_season = (
         next_ep is not None
@@ -90,10 +90,10 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
         return CompletionSignal(
             completed=True, confidence="low",
             signals=["I:all_aired"],
-            reason="scope 内所有集已播且无同季 next_episode",
+            reason="目标范围内所有集已播且无同季下一集",
         )
 
-    # I-4：最后集播出超冷却期（且 scope 内无未来集）
+    # I-4：SeasonScope 内无未来集，且最后已播集超过冷却期。
     if not _has_future_episodes(scope.episodes, today):
         last_aired = _last_aired(scope.episodes, as_of=today)
         if last_aired:
@@ -110,7 +110,7 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
 
 
 def _has_future_episodes(episodes: list, today: date) -> bool:
-    """scope 内是否存在 air_date 在未来的集。"""
+    """判断 SeasonScope 内是否存在未来播出的集。"""
     for ep in episodes:
         air = parse_date(ep.air_date)
         if air and air > today:
@@ -119,7 +119,7 @@ def _has_future_episodes(episodes: list, today: date) -> bool:
 
 
 def has_scope_finale(scope: SeasonScope) -> bool:
-    """finale 必须是 scope 的最后目标集才放行。"""
+    """finale 必须是 SeasonScope 的最后目标集才放行。"""
     if not scope.episodes:
         return False
     last_ep = scope.episodes[-1]
@@ -127,5 +127,5 @@ def has_scope_finale(scope: SeasonScope) -> bool:
 
 
 def last_aired_episode(episodes: list, as_of: Optional[date] = None):
-    """scope 内最后一个已播出的集（re-export from shared.media）。"""
+    """返回 SeasonScope 内最后一个已播出的集。"""
     return _last_aired(episodes, as_of=as_of)

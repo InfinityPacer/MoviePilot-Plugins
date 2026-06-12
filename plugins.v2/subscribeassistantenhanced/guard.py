@@ -10,7 +10,7 @@ from .shared.subscribe import format_subscribe
 
 
 class CompletionGuard:
-    """订阅完成前的最后裁决：下载待定检查 + 信号引擎评估。"""
+    """完成守卫：下载待定检查 + 完结信号引擎最终裁决。"""
 
     def __init__(self,
                  evaluate_fn: Callable,
@@ -60,7 +60,7 @@ class CompletionGuard:
             return
 
         if not signal.stable:
-            logger.info(f"完成守卫：{format_subscribe(subscribe)} 信号不稳定（{signal.reason}），否决完成并进入待定")
+            logger.info(f"完成守卫：{format_subscribe(subscribe)} 信号不稳定（{signal.reason}），否决完成并进入待定（P）")
             data.cancel = True
             data.source = "subscribeassistantenhanced"
             data.reason = signal.reason
@@ -69,13 +69,13 @@ class CompletionGuard:
 
         if signal.completed:
             if signal.confidence != "high":
-                detail(f"完成守卫：{format_subscribe(subscribe)} 完结但置信度非高，放行完成并登记完成后验证快照")
+                detail(f"完成守卫：{format_subscribe(subscribe)} 已判定完结但置信度非高，放行完成并登记完成快照")
                 self.verifier.snapshot(subscribe, data.mediainfo, None)
             else:
                 detail(f"完成守卫：{format_subscribe(subscribe)} 高置信完结，放行完成")
             return
 
-        logger.info(f"完成守卫：{format_subscribe(subscribe)} 未完结（{signal.reason}），否决完成、进入待定并开始超时计时")
+        logger.info(f"完成守卫：{format_subscribe(subscribe)} 未完结（{signal.reason}），否决完成、进入待定（P）并开始超时计时")
         data.cancel = True
         data.source = "subscribeassistantenhanced"
         data.reason = signal.reason

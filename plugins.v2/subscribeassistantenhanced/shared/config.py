@@ -119,12 +119,12 @@ class PluginConfig:
 
     @property
     def manual_delete_listen(self) -> bool:
-        """监听用户手动删除的种子并按 manual 善后；关闭后下载器侧消失不触发善后。"""
+        """监听用户手动删除的种子；关闭后下载器侧消失不触发删除处理。"""
         return self.get_bool("manual_delete_listen", True)
 
     @property
     def tracker_response_listen(self) -> bool:
-        """命中 Tracker 响应关键字时自动删种；关闭后不按 tracker 删种。"""
+        """Tracker 返回内容包含关键字时自动删种；关闭后不按 Tracker 返回内容删种。"""
         return self.get_bool("tracker_response_listen", True)
 
     @property
@@ -134,7 +134,7 @@ class PluginConfig:
 
     @property
     def skip_deletion(self) -> bool:
-        """资源选择阶段跳过最近删除指纹命中的资源，避免再次下载刚删的种子。"""
+        """资源选择阶段跳过删除指纹命中的近期删除资源，避免再次下载刚删的种子。"""
         return self.get_bool("skip_deletion", True)
 
     @property
@@ -151,7 +151,7 @@ class PluginConfig:
 
     @property
     def delete_exclude_tags(self) -> str:
-        """自动删种排除标签：命中任一标签的种子不参与超时或 Tracker 关键字删除。"""
+        """自动删种排除标签：带有任一标签的种子不参与超时或 Tracker 关键字删除。"""
         return self.get_non_empty_str("delete_exclude_tags", DEFAULT_DELETE_EXCLUDE_TAGS)
 
     @property
@@ -202,7 +202,7 @@ class PluginConfig:
 
     @property
     def auto_pause_users(self) -> str:
-        """用户名自动暂停名单，逗号分隔；命中名单的用户新增订阅时自动暂停，空串表示不启用。"""
+        """用户名自动暂停名单，逗号分隔；新增订阅用户在名单内时自动暂停，空串表示不启用。"""
         return self.get_str("auto_pause_users", "")
 
     @property

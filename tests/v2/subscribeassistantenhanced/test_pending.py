@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 from subscribeassistantenhanced.pending.judge import PendingJudge
+from subscribeassistantenhanced.pending.state import PendingStateCoordinator
 from subscribeassistantenhanced.engine.types import CompletionSignal
 from subscribeassistantenhanced.shared.config import PluginConfig
 
@@ -52,6 +53,7 @@ def _judge(config=None, evaluate_result=None, store=None, notify=None):
         return result
 
     j._update = update_fn
+    j._state = PendingStateCoordinator(j._read, j._update, subscribe_oper=j._subscribe_oper)
     j._store = store
     return j
 
@@ -199,3 +201,25 @@ class TestExitPending:
 
         notify.assert_called_once()
         assert "不再满足上映待定，已标记订阅中" in notify.call_args.args[1]
+
+    def test_exit_keeps_p_when_download_pending_active(self):
+        """业务待定退出时若下载待定仍活跃，则订阅保持 P。"""
+        store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "pending_judge",
+            "pending_sources": {
+                "pending_judge": {"reason": "集数不足"},
+                "download_pending": {"reason": "下载中"},
+            },
+        }}}
+        j = _judge(store=store)
+
+        j._exit_pending(_sub(state="P"), "待定条件不再满足")
+
+        assert store["subscribes"]["1"]["state"] == "P"
+        assert store["subscribes"]["1"]["source"] == "download_pending"
+        assert "pending_judge" not in store["subscribes"]["1"]["pending_sources"]
+        assert not any(
+            call_args.args[1]["state"] == "R"
+            for call_args in j._subscribe_oper.update.call_args_list
+        )

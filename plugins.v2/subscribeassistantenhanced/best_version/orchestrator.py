@@ -1,4 +1,4 @@
-"""域 ⑤：洗版编排入口 + 洗版完成判定 + 洗版清理。"""
+"""洗版全流程编排：订阅创建、完成判定与破坏性历史清理。"""
 import time
 from typing import Callable, Optional
 
@@ -11,9 +11,9 @@ from .priority import PriorityManager
 
 
 class BestVersionOrchestrator:
-    """洗版全流程编排。
+    """洗版全流程编排器。
 
-    洗版清理涉及删除源文件 / 媒体库文件，均经注入回调执行，避免流程直接绑定下载器或文件系统实现。
+    洗版清理涉及删除源文件与媒体库文件，均经注入回调执行，避免流程直接绑定下载器或文件系统实现。
     """
 
     def __init__(self, priority_manager: PriorityManager,
@@ -28,10 +28,11 @@ class BestVersionOrchestrator:
                  send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
                  season_of_fn: Optional[Callable] = None,
+                 related_downloads_fn: Optional[Callable] = None,
                  best_version_type: str = "no",
                  clear_history_type: str = "no",
                  plugin_name: str = "订阅助手（增强版）"):
-        """注入洗版流程依赖、自动洗版范围与破坏性清理范围。"""
+        """注入洗版编排依赖、自动洗版范围与破坏性清理范围。"""
         self._priority = priority_manager
         self._evaluate = evaluate_fn
         self._subscribe_oper = subscribe_oper
@@ -44,13 +45,14 @@ class BestVersionOrchestrator:
         self._send_subscribe_added = send_subscribe_added_fn
         self._notify = notify_fn
         self._season_of = season_of_fn
+        self._related_downloads = related_downloads_fn
         self._best_version_type = best_version_type
         self._clear_history_type = clear_history_type
         self._plugin_name = plugin_name
 
     def check_complete(self, subscribe, mediainfo,
                        no_exists_episodes: Optional[list] = None) -> bool:
-        """洗版完成判定：priority 达标 + F 稳定 + 目标范围全覆盖。"""
+        """洗版完成判定：priority 达标 + F 稳定 + SeasonScope 目标集全覆盖。"""
         if not self._priority.is_complete(subscribe):
             return False
 
@@ -80,9 +82,9 @@ class BestVersionOrchestrator:
         return payload
 
     def start_best_version(self, subscribe, mediainfo):
-        """订阅完成后按洗版类型自动创建洗版订阅（best_version=1）。
+        """普通订阅完成后按配置自动创建洗版订阅。
 
-        name/tmdbid/type 由 mediainfo 提供，payload 只带洗版相关设置（季/剧集组/保存路径/站点/过滤）。
+        分集下载洗版只在历史上存在多次分集下载时创建，避免单次全集包完成后误进入洗版。
         """
         if not self._subscribe_oper or not mediainfo:
             return None
@@ -90,6 +92,15 @@ class BestVersionOrchestrator:
             return None
         if not self._type_matches(subscribe, self._best_version_type):
             return None
+        if self._best_version_type == "tv_episode" and subscribe.type != "电影":
+            downloads = self._related_downloads(subscribe) if self._related_downloads else []
+            download_count = len(downloads or [])
+            if download_count <= 1:
+                logger.info(
+                    f"洗版编排：{format_subscribe_desc(subscribe)} 只找到 {download_count} 条分集下载记录，"
+                    f"不是多次分集下载完成，跳过自动创建洗版订阅"
+                )
+                return None
         payload = {
             "best_version": 1,
             "season": subscribe.season,
@@ -102,7 +113,7 @@ class BestVersionOrchestrator:
         payload = {key: value for key, value in payload.items() if value is not None}
         sid, _err = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
-            logger.info(f"洗版编排：{format_subscribe_desc(subscribe)} 订阅完成后自动创建洗版订阅（id={sid}）")
+            logger.info(f"洗版编排：{format_subscribe_desc(subscribe)} 已创建洗版订阅（id={sid}）")
             if self._send_subscribe_added:
                 self._send_subscribe_added(sid, mediainfo, username=self._plugin_name)
             if self._notify:
@@ -116,17 +127,17 @@ class BestVersionOrchestrator:
         return sid
 
     def handle_resource_download_history_clear(self, subscribe, context=None, episodes=None):
-        """ResourceDownload 阶段：洗版下载前清理旧整理记录的源文件 + 源历史，并发 DownloadFileDeleted。
+        """ResourceDownload 阶段清理旧整理记录的源文件，并发送 DownloadFileDeleted。
 
-        仅整季洗版（best_version_full）执行——分集洗版逐集替换、整季清理无意义；清理为破坏性操作。
-        ``clear_history_type=no`` 关闭清理，其余取值按媒体类型限制范围；源文件删除经注入回调，单测 mock 不真删。
+        仅整季洗版执行；分集洗版逐集替换，不做整季清理。clear_history_type 按媒体类型门控，
+        源文件删除与历史下载种子移除均属于破坏性副作用。
         """
         if not subscribe.best_version:
             return
         if not self._type_matches(subscribe, self._clear_history_type):
             return
         if not subscribe.best_version_full:
-            detail(f"洗版清理：{format_subscribe_desc(subscribe)} 非整季洗版，跳过历史清理（分集洗版逐集替换）")
+            detail(f"洗版清理：{format_subscribe_desc(subscribe)} 是分集洗版，不清理整季旧文件")
             return
         tmdbid = subscribe.tmdbid
         if not tmdbid or not self._get_histories:
@@ -138,9 +149,11 @@ class BestVersionOrchestrator:
         self.clear_transfer_src_histories(subscribe, histories)
 
     def clear_transfer_src_histories(self, subscribe, histories):
-        """删源文件 + 源整理历史，并对每条记录发 DownloadFileDeleted（携带旧 download_hash，
-        主程序据此移除历史下载的旧种子）。删除前把记录快照存入 best_version_clear_histories，
-        key 统一用 str(tmdbid)，供 TransferIntercept 阶段按媒体 tmdb_id 消费（两侧 str 一致避免漏删）。"""
+        """删除源文件与整理历史，并保存 TransferIntercept 阶段消费的清理快照。
+
+        快照 key 统一为 str(tmdbid)，避免写入与读取类型不一致；旧媒体库目标文件必须等
+        主程序整理新文件前再删，因此由后续 TransferIntercept 消费。
+        """
         tmdbid = str(subscribe.tmdbid or "")
         if not tmdbid:
             return
@@ -157,7 +170,7 @@ class BestVersionOrchestrator:
         if self._update:
             self._update("best_version_clear_histories", updater)
 
-        logger.info(f"洗版清理：{format_subscribe_desc(subscribe)} 开始清理 {len(histories)} 条整理记录的源文件（不可逆）")
+        logger.info(f"洗版清理：{format_subscribe_desc(subscribe)} 开始删除 {len(histories)} 条旧整理记录的源文件（不可逆）")
         for history in histories:
             src_fileitem = self._field(history, "src_fileitem")
             if src_fileitem and self._delete_media_file:
@@ -174,32 +187,34 @@ class BestVersionOrchestrator:
                 f"已删除 {len(histories)} 条整理记录对应的源文件",
             )
 
-    def handle_history_clear(self, event):
-        """TransferIntercept 阶段：按快照删除旧媒体库目标文件，成功后移除该快照。"""
+    def handle_history_clear(self, event) -> bool:
+        """TransferIntercept 阶段按清理快照删除旧媒体库目标文件，成功后移除快照。"""
         data = event.event_data
         if not data or data.cancel:
-            return
+            return False
         mediainfo = data.mediainfo
         tmdb_id = mediainfo.tmdb_id if mediainfo else None
         if tmdb_id is None or not self._read:
-            return
+            return False
         key = str(tmdb_id)
         snapshots = self._read("best_version_clear_histories") or {}
         task = snapshots.get(key)
         if not task:
-            return
+            return False
         if self.clear_transfer_dest_histories(task):
             def updater(data: dict) -> dict:
                 data.pop(key, None)
                 return data
             if self._update:
                 self._update("best_version_clear_histories", updater)
+            return True
+        return False
 
     def clear_transfer_dest_histories(self, task) -> bool:
-        """删除快照内每条整理记录的媒体库目标文件（dest_fileitem，非源文件、非种子）；空记录也视为成功。"""
+        """删除清理快照中的媒体库目标文件；空快照也视为已处理。"""
         histories = (task or {}).get("histories") or []
         if histories:
-            detail(f"洗版整理拦截：清理 {len(histories)} 条整理记录对应的媒体库目标文件（不可逆）")
+            detail(f"洗版整理拦截：删除 {len(histories)} 条旧整理记录对应的媒体库文件（不可逆）")
         for history in histories:
             dest_fileitem = history.get("dest_fileitem") if isinstance(history, dict) else None
             if dest_fileitem and self._delete_media_file:
@@ -212,7 +227,7 @@ class BestVersionOrchestrator:
         return True
 
     def _type_matches(self, subscribe, type_setting) -> bool:
-        """媒体类型是否落在洗版/清理范围内：no=全不匹配；all=全匹配；movie/tv/tv_episode 按订阅类型匹配。"""
+        """判断媒体类型是否落在洗版或清理范围：no/all/movie/tv/tv_episode。"""
         if type_setting == "no":
             return False
         if type_setting == "all":
@@ -226,14 +241,14 @@ class BestVersionOrchestrator:
 
     @staticmethod
     def _field(history, name):
-        """兼容 TransferHistory 对象与 dict 两种历史记录形态的取值。"""
+        """兼容 TransferHistory 对象与 dict 两种整理记录形态。"""
         if isinstance(history, dict):
             return history.get(name)
         return getattr(history, name, None)
 
     @staticmethod
     def _history_to_dict(history) -> dict:
-        """历史记录转 dict 存快照：对象用 to_dict()，已是 dict 直接用。"""
+        """把整理记录转换为可持久化到清理快照的 dict。"""
         if isinstance(history, dict):
             return history
         to_dict = getattr(history, "to_dict", None)

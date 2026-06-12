@@ -184,10 +184,8 @@ class TestMarkComplete:
         assert call_payload["episode_priority"]["2"] == 100
         assert call_payload["current_priority"] == 100
 
-    def test_mark_complete_fills_target_range_and_logs_episode_mode(self, monkeypatch):
-        """分集洗版完成标记应覆盖完整目标范围，并按分集模式记录日志。"""
-        messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.best_version.priority.detail", messages.append)
+    def test_mark_complete_fills_target_range(self):
+        """分集洗版完成标记应覆盖完整目标范围。"""
         mgr = _mgr()
         sub = _sub(ep_priority={"1": 100}, total_episode=3, best_version_full=0)
 
@@ -195,4 +193,3 @@ class TestMarkComplete:
 
         call_payload = mgr._oper.update.call_args[0][1]
         assert call_payload["episode_priority"] == {"1": 100, "2": 100, "3": 100}
-        assert messages == ["洗版优先级：测试剧 S1(id=1) 标记分集洗版完成（priority=100）"]

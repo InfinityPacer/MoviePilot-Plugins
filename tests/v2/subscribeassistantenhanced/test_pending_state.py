@@ -1,0 +1,81 @@
+"""pending/state.py 统一待定状态仲裁单测。"""
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from subscribeassistantenhanced.pending.state import PendingStateCoordinator
+
+
+def _store_mgr(store=None):
+    """构造插件任务存储替身，模拟 TaskDataManager 的 read/update 契约。"""
+    store = store if store is not None else {}
+
+    def read(key):
+        return store.get(key, {})
+
+    def update(key, updater):
+        data = store.get(key, {})
+        result = updater(data)
+        store[key] = result
+        return result
+
+    return read, update, store
+
+
+def _sub(state="R"):
+    """构造订阅替身。"""
+    return SimpleNamespace(id=1, name="测试剧", season=1, state=state)
+
+
+class TestPendingStateCoordinator:
+    """多来源待定仲裁：任一来源仍活跃时订阅保持 P。"""
+
+    def test_clear_one_source_keeps_p_when_another_source_active(self):
+        read, update, store = _store_mgr()
+        oper = MagicMock()
+        coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
+
+        coordinator.mark_active(_sub(), source="download_pending", reason="下载中")
+        coordinator.mark_active(_sub(state="P"), source="pending_judge", reason="集数不足")
+        coordinator.clear_active(_sub(state="P"), source="download_pending", reason="下载完成")
+
+        task = store["subscribes"]["1"]
+        assert task["state"] == "P"
+        assert task["source"] == "pending_judge"
+        assert "download_pending" not in task["pending_sources"]
+        assert "pending_judge" in task["pending_sources"]
+        assert any(
+            call_args.args[0] == 1 and call_args.args[1]["state"] == "P"
+            for call_args in oper.update.call_args_list
+        )
+        assert oper.update.call_args_list[-1].args[1]["state"] != "R"
+
+    def test_clear_last_source_restores_r(self):
+        read, update, store = _store_mgr()
+        oper = MagicMock()
+        coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
+
+        coordinator.mark_active(_sub(), source="download_pending", reason="下载中")
+        coordinator.clear_active(_sub(state="P"), source="download_pending", reason="下载完成")
+
+        task = store["subscribes"]["1"]
+        assert task["state"] == "R"
+        assert task["pending_sources"] == {}
+        assert any(
+            call_args.args[0] == 1 and call_args.args[1]["state"] == "R"
+            for call_args in oper.update.call_args_list
+        )
+
+    def test_has_active_reads_pending_sources(self):
+        read, update, _ = _store_mgr({
+            "subscribes": {
+                "1": {
+                    "state": "P",
+                    "source": "guard_veto",
+                    "pending_sources": {"guard_veto": {"reason": "未完结"}},
+                }
+            }
+        })
+        coordinator = PendingStateCoordinator(read, update)
+
+        assert coordinator.has_active(1) is True
+        assert coordinator.has_active(2) is False

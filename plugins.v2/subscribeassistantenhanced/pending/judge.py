@@ -1,4 +1,4 @@
-"""域 ③：待定进入/退出判定——P 来源分治。"""
+"""待定（P）进入与退出判定，按状态来源分治。"""
 import time
 from typing import Callable, Optional
 
@@ -9,11 +9,11 @@ from ..shared.config import PluginConfig
 from ..shared.log import detail
 from ..shared.media import get_tv_season_air_date, parse_date
 from ..shared.subscribe import format_subscribe
-from ..shared.update import update_subscribe
+from .state import PendingStateCoordinator
 
 
 class PendingJudge:
-    """订阅待定进入/退出判定，区分 pending_judge 和 guard_veto 来源。"""
+    """待定判定器，区分 pending_judge 与 guard_veto 来源。"""
 
     def __init__(self, config: PluginConfig,
                  evaluate_fn: Callable,
@@ -21,7 +21,8 @@ class PendingJudge:
                  timeout_manager: PendingTimeoutManagerProtocol,
                  task_data_read: Callable,
                  task_data_update: Callable,
-                 notify_fn: Optional[Callable] = None):
+                 notify_fn: Optional[Callable] = None,
+                 state_coordinator: Optional[PendingStateCoordinator] = None):
         """注入待定判定、状态写库、超时管理、任务数据和状态通知回调。"""
         self._config = config
         self._evaluate = evaluate_fn
@@ -30,10 +31,12 @@ class PendingJudge:
         self._read = task_data_read
         self._update = task_data_update
         self._notify = notify_fn
+        self._state = state_coordinator or PendingStateCoordinator(
+            task_data_read, task_data_update, subscribe_oper=subscribe_oper)
 
     def should_enter_pending(self, subscribe, mediainfo, episodes: list,
                               signal: Optional[CompletionSignal] = None) -> tuple[bool, str]:
-        """判断是否应进入待定状态（OR 逻辑）。"""
+        """按 OR 逻辑判断是否进入待定（P），任一条件满足即待定。"""
         season_air_date = get_tv_season_air_date(mediainfo, subscribe.season)
         air_date = parse_date(season_air_date or mediainfo.first_air_date)
 
@@ -57,7 +60,7 @@ class PendingJudge:
         return False, ""
 
     def check_exit(self, subscribe, mediainfo, tmdb_episodes_fn) -> bool:
-        """检查待定是否应退出。返回 True 表示已退出。"""
+        """检查待定是否应退出，返回 True 表示已退出。"""
         task_data = self._read_subscribe_task(subscribe)
         if not task_data or task_data.get("state") != "P":
             return False
@@ -91,32 +94,31 @@ class PendingJudge:
         return False
 
     def _exit_pending(self, subscribe, reason: str):
-        """退出待定的完整操作序列。"""
+        """退出当前待定来源，并由 PendingStateCoordinator 仲裁是否恢复启用（R）。"""
         sid = subscribe.id
-        logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（{reason}），状态置为 R")
-        if self._subscribe_oper:
-            update_subscribe(self._subscribe_oper, sid, {"state": "R"})
+        logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（P），原因：{reason}")
         self._timeout.clear_block(sid)
-        self._update_subscribe_task(subscribe, {
-            "state": "R",
-            "exit_reason": reason,
-            "exit_at": time.time(),
-        })
+        restored = self._state.clear_active(
+            subscribe,
+            source=self._read_subscribe_task(subscribe).get("source", "pending_judge"),
+            reason=reason,
+        )
         self._notify_status(subscribe, "不再满足上映待定，已标记订阅中", detail=reason)
+        if not restored:
+            self._update_subscribe_task(subscribe, {
+                "exit_reason": reason,
+                "exit_at": time.time(),
+            })
 
     def mark_pending(self, subscribe, source: str = "pending_judge",
                      reason: str = ""):
-        """写入 P 状态。"""
+        """登记待定来源并同步订阅 P 状态。"""
         sid = subscribe.id
-        detail(f"待定进入：{format_subscribe(subscribe)} 写 P 状态（来源={source}，原因={reason}）")
-        if self._subscribe_oper:
-            update_subscribe(self._subscribe_oper, sid, {"state": "P"})
-        self._update_subscribe_task(subscribe, {
-            "state": "P",
-            "source": source,
-            "reason": reason,
-            "since": time.time(),
-        })
+        detail(
+            f"待定进入：{format_subscribe(subscribe)} 标记为待定（P），"
+            f"来源={source}，原因：{reason}"
+        )
+        self._state.mark_active(subscribe, source=source, reason=reason)
         self._notify_status(subscribe, "满足上映待定，已标记待定", detail=reason)
 
     def _read_subscribe_task(self, subscribe) -> dict:

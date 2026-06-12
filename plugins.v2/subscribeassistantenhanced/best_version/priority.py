@@ -1,4 +1,4 @@
-"""域 ⑤：洗版优先级管理——统一 episode_priority / current_priority 读写。"""
+"""洗版优先级管理：统一 episode_priority / current_priority 与按种子基线。"""
 from typing import Callable, Optional
 
 from ..shared.log import detail
@@ -16,7 +16,7 @@ class PriorityManager:
         self._subscribe_oper = subscribe_oper
 
     def capture_baseline(self, subscribe, torrent_priority: int) -> dict:
-        """下载前记录基线优先级，用于失败回滚。"""
+        """下载前记录整体优先级基线，用于失败回滚。"""
         sid = str(subscribe.id)
         baseline = {
             "episode_priority": dict(subscribe.episode_priority or {}),
@@ -53,7 +53,7 @@ class PriorityManager:
             update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
     def rollback(self, subscribe, baseline: Optional[dict] = None):
-        """下载失败/种子删除后回滚到基线。"""
+        """下载失败或种子删除后整体回滚到优先级基线。"""
         if not baseline:
             sid = str(subscribe.id)
             data = self._read("subscribes")
@@ -66,17 +66,16 @@ class PriorityManager:
             "episode_priority": baseline.get("episode_priority", {}),
             "current_priority": baseline.get("current_priority", 0),
         }
-        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 整体回滚到基线 current_priority={payload['current_priority']}")
+        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 已恢复到下载前优先级 current_priority={payload['current_priority']}")
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
     def capture_torrent_baseline(self, subscribe, torrent_id, episodes, contributed_priority,
                                  target_episodes=None):
-        """按种子记录洗版优先级基线，用于按集归属回滚，隔离不同种子的洗版贡献。
+        """按种子记录洗版优先级基线，用于按集归属回滚。
 
-        episode_priority_baseline 记每集下载前旧值，contributed_priority 记本种子贡献档位；
-        整季包 episodes 为空时回退到订阅目标集范围（target_episodes），避免漏记基线。
-        多种子并行洗版按 torrent_id 各存一份、互不覆盖，避免回滚时串号污染。
+        episode_priority_baseline 保存各集旧值，contributed_priority 保存本种子贡献档位；
+        整季包 episodes 为空时回退到目标集范围。多种子并行时各自保存基线，避免串号污染。
         """
         if not torrent_id:
             return
@@ -100,8 +99,7 @@ class PriorityManager:
         self._update("subscribes", updater)
 
     def rollback_torrent(self, subscribe, torrent_id):
-        """按集归属回滚单个种子的洗版贡献：仅回滚"当前值==本种子贡献档位"的集，
-        跳过已被其他种子升级的集（避免串号污染）；回滚后重算 current_priority 并清掉该种子基线。"""
+        """按集归属回滚单个种子的洗版贡献，并保留其他种子已提升的优先级。"""
         if not torrent_id:
             return
         sid = str(subscribe.id)
@@ -113,11 +111,11 @@ class PriorityManager:
         ep_baseline = baseline.get("episode_priority_baseline", {})
         ep_priority = dict(subscribe.episode_priority or {})
         for ep_key, old_value in ep_baseline.items():
-            # 仅当该集当前值仍是本种子贡献的档位时回滚；否则已被其他种子升级，保留不动
+            # 仅回滚当前值仍等于本种子贡献档位的集；其他种子已升级的集必须保留。
             if ep_priority.get(ep_key, 0) == contributed:
                 ep_priority[ep_key] = old_value
         new_current = max(ep_priority.values()) if ep_priority else 0
-        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 按集回滚种子 {torrent_id} 贡献，current_priority→{new_current}")
+        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 已恢复种子 {torrent_id} 对应集的优先级，current_priority→{new_current}")
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, {
                 "episode_priority": ep_priority,
@@ -182,5 +180,5 @@ class PriorityManager:
 
     @staticmethod
     def _format_subscribe_label(subscribe) -> str:
-        """生成洗版优先级日志中的订阅标签；订阅对象字段不足时保留 ID 兜底。"""
+        """生成洗版优先级日志标签；字段不足时由公共格式化器回退到 ID。"""
         return format_subscribe_label(subscribe)
