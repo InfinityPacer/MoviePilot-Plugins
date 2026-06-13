@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import type { PluginConfigModel } from './types'
-import { fieldSections } from './config/fields'
 import DomainNav, { type DomainItem } from './components/DomainNav.vue'
-import FieldControl from './components/FieldControl.vue'
 import GlobalControls from './components/GlobalControls.vue'
 import RuntimePlan from './components/RuntimePlan.vue'
-import SectionPanel from './components/SectionPanel.vue'
+import BestVersionTab from './tabs/BestVersionTab.vue'
+import CompletionSignalTab from './tabs/CompletionSignalTab.vue'
+import DeleteTab from './tabs/DeleteTab.vue'
+import PauseTab from './tabs/PauseTab.vue'
+import PendingTab from './tabs/PendingTab.vue'
 
 /**
  * 插件 Vue 配置页接收的宿主参数。
@@ -34,23 +36,18 @@ const props = withDefaults(defineProps<ConfigProps>(), {
 const emit = defineEmits<ConfigEmits>()
 
 const config = reactive<PluginConfigModel>({})
-const activeDomain = ref('种子删除')
+const activeDomain = ref('delete')
 
 /**
- * 业务域导航项，标题与字段分区标题保持一致以便直接定位分区。
+ * 业务域导航项，key 只服务于前端分区切换，不写入插件配置。
  */
 const domains: DomainItem[] = [
-  { key: '种子删除', title: '种子删除', icon: 'mdi-delete-clock' },
-  { key: '订阅待定', title: '订阅待定', icon: 'mdi-timer-sand' },
-  { key: '订阅暂停', title: '订阅暂停', icon: 'mdi-pause-circle-outline' },
-  { key: '订阅洗版', title: '订阅洗版', icon: 'mdi-auto-fix' },
-  { key: '完结信号', title: '完结信号', icon: 'mdi-shield-check-outline' },
+  { key: 'delete', title: '种子删除', icon: 'mdi-delete-clock' },
+  { key: 'pending', title: '订阅待定', icon: 'mdi-timer-sand' },
+  { key: 'pause', title: '订阅暂停', icon: 'mdi-pause-circle-outline' },
+  { key: 'best-version', title: '订阅洗版', icon: 'mdi-auto-fix' },
+  { key: 'completion', title: '完结信号', icon: 'mdi-shield-check-outline' },
 ]
-
-/**
- * 当前业务域字段分区，所有配置字段都通过 FieldControl 进入保存路径。
- */
-const activeSection = computed(() => fieldSections.find(section => section.title === activeDomain.value) ?? fieldSections[0])
 
 /** 保持本地编辑副本与宿主传入配置同步，避免直接修改 props。 */
 function syncConfig(nextConfig: PluginConfigModel) {
@@ -99,22 +96,11 @@ watch(
       <div class="config-domains">
         <DomainNav v-model="activeDomain" :items="domains" />
         <main class="domain-content">
-          <SectionPanel :title="activeSection.title" :subtitle="activeSection.subtitle">
-            <VRow
-              v-for="(row, rowIndex) in activeSection.rows"
-              :key="`${activeSection.title}-${rowIndex}`"
-              dense
-            >
-              <VCol
-                v-for="field in row"
-                :key="field.key"
-                cols="12"
-                :md="field.md ?? 4"
-              >
-                <FieldControl :field="field" :model="config" />
-              </VCol>
-            </VRow>
-          </SectionPanel>
+          <DeleteTab v-if="activeDomain === 'delete'" :model="config" />
+          <PendingTab v-else-if="activeDomain === 'pending'" :model="config" />
+          <PauseTab v-else-if="activeDomain === 'pause'" :model="config" />
+          <BestVersionTab v-else-if="activeDomain === 'best-version'" :model="config" />
+          <CompletionSignalTab v-else :model="config" />
         </main>
       </div>
     </VCardText>
