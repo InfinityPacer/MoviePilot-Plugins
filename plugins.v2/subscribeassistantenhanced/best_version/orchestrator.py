@@ -29,6 +29,8 @@ class BestVersionOrchestrator:
                  send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
                  season_of_fn: Optional[Callable] = None,
+                 torrent_exists_fn: Optional[Callable] = None,
+                 sleep_fn: Optional[Callable] = None,
                  related_downloads_fn: Optional[Callable] = None,
                  best_version_type: str = "no",
                  clear_history_type: str = "no",
@@ -46,6 +48,8 @@ class BestVersionOrchestrator:
         self._send_subscribe_added = send_subscribe_added_fn
         self._notify = notify_fn
         self._season_of = season_of_fn
+        self._torrent_exists = torrent_exists_fn
+        self._sleep = sleep_fn or time.sleep
         self._related_downloads = related_downloads_fn
         self._best_version_type = best_version_type
         self._clear_history_type = clear_history_type
@@ -132,28 +136,112 @@ class BestVersionOrchestrator:
                 )
         return sid
 
-    def handle_resource_download_history_clear(self, subscribe, context=None, episodes=None):
-        """ResourceDownload 阶段清理旧整理记录的源文件，并发送 DownloadFileDeleted。
+    def handle_resource_download_history_clear(self, subscribe, context=None, episodes=None) -> bool:
+        """清理旧整理记录并等待关联下载任务释放，允许继续下载时返回 True。
 
         仅整季洗版执行；分集洗版逐集替换，不做整季清理。clear_history_type 按媒体类型门控，
-        源文件删除与历史下载种子移除均属于破坏性副作用。
+        源文件删除与历史下载种子移除均属于破坏性副作用。明确存在的旧 hash 最多等待
+        3 分钟，查询失败最多等待 1 分钟，达到上限后降级放行。
         """
         if not subscribe.best_version:
-            return
+            return True
         media_type = resolve_subscribe_media_type(subscribe)
         if not self._type_matches(media_type, self._clear_history_type):
-            return
+            return True
         if not subscribe.best_version_full:
             detail(f"洗版清理：{format_subscribe_desc(subscribe)} 是分集洗版，不清理整季旧文件")
-            return
+            return True
         tmdbid = subscribe.tmdbid
         if not tmdbid or not self._get_histories:
-            return
-        season = self._season_of(subscribe) if self._season_of else subscribe.season
+            return True
+        season = self._history_season(subscribe)
+        if media_type == MediaType.TV and not season:
+            logger.warning(
+                f"洗版清理：{format_subscribe_desc(subscribe)} 无法确定有效季号，"
+                "为避免扩大清理范围，跳过旧整理记录清理"
+            )
+            return True
         histories = self._get_histories(tmdbid, subscribe.type, season) or []
         if not histories:
-            return
+            logger.info(
+                f"洗版清理：{format_subscribe_desc(subscribe)} 未找到匹配的整理记录，"
+                f"查询季号={season or '无'}，跳过清理"
+            )
+            return True
         self.clear_transfer_src_histories(subscribe, histories)
+        old_hashes = {
+            self._field(history, "download_hash")
+            for history in histories
+            if self._field(history, "download_hash")
+        }
+        return self._wait_for_torrents_removed(subscribe=subscribe, download_hashes=old_hashes)
+
+    def _wait_for_torrents_removed(self, subscribe, download_hashes: set[str]) -> bool:
+        """每 5 秒确认旧 hash：查询失败等 1 分钟，明确存在等 3 分钟，超限后放行。"""
+        if not download_hashes or not self._torrent_exists:
+            # 删除事件由主程序异步处理，即使无法确认 hash，也保留固定的首轮处理窗口。
+            self._sleep(5)
+            return True
+        pending_hashes = set(download_hashes)
+        exists_wait = {download_hash: 0 for download_hash in pending_hashes}
+        query_failure_wait = {download_hash: 0 for download_hash in pending_hashes}
+        for waited_seconds in range(5, 181, 5):
+            self._sleep(5)
+            next_pending_hashes = set()
+            for download_hash in pending_hashes:
+                # DownloadFileDeleted 会跨下载器删除旧任务，确认时也必须跨下载器查询。
+                exists = self._torrent_exists(download_hash)
+                if exists is None:
+                    query_failure_wait[download_hash] += 5
+                    if query_failure_wait[download_hash] >= 60:
+                        logger.warning(
+                            f"洗版清理：{format_subscribe_desc(subscribe)} 累计 60 秒无法查询旧下载任务，"
+                            f"降级放行 hash={download_hash}"
+                        )
+                        continue
+                    next_pending_hashes.add(download_hash)
+                    continue
+                if exists:
+                    exists_wait[download_hash] += 5
+                    if exists_wait[download_hash] >= 180:
+                        logger.warning(
+                            f"洗版清理：{format_subscribe_desc(subscribe)} 旧下载任务持续存在 180 秒，"
+                            f"降级放行 hash={download_hash}"
+                        )
+                        continue
+                    next_pending_hashes.add(download_hash)
+            pending_hashes = next_pending_hashes
+            if not pending_hashes:
+                logger.info(
+                    f"洗版清理：{format_subscribe_desc(subscribe)} 旧下载任务确认完成，"
+                    f"等待 {waited_seconds} 秒后继续下载"
+                )
+                return True
+            detail(
+                f"洗版清理：{format_subscribe_desc(subscribe)} 等待旧下载任务释放 "
+                f"({waited_seconds}/180 秒)，剩余 {len(pending_hashes)} 个"
+            )
+        logger.warning(
+            f"洗版清理：{format_subscribe_desc(subscribe)} 等待旧下载任务达到 180 秒总上限，"
+            f"降级放行剩余 {len(pending_hashes)} 个 hash"
+        )
+        return True
+
+    def _history_season(self, subscribe) -> Optional[str]:
+        """按主程序整理历史口径把订阅季号转换为 Sxx。"""
+        if self._season_of:
+            return self._season_of(subscribe)
+        season = subscribe.season
+        if season is None:
+            return None
+        try:
+            return f"S{int(season):02d}"
+        except (TypeError, ValueError):
+            logger.warning(
+                f"洗版清理：{format_subscribe_desc(subscribe)} 季号无效，"
+                f"无法匹配整理记录：{season}"
+            )
+            return None
 
     def clear_transfer_src_histories(self, subscribe, histories):
         """删除源文件与整理历史，并保存 TransferIntercept 阶段消费的清理快照。

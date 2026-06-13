@@ -3,6 +3,9 @@
 这些断言保护"集成层"不被退回占位原型——继承缺失会导致数据层/生命周期全部失效；
 PriorityManager 缺 subscribe_oper 注入会让洗版优先级写入静默 no-op。
 """
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 from app.core.event import eventmanager
 from app.plugins import _PluginBase
 
@@ -38,6 +41,46 @@ class TestPluginEntry:
         plugin.init_plugin({})
         pm = plugin._modules["priority_manager"]
         assert pm._subscribe_oper is not None
+
+    def test_torrent_exists_returns_true_when_any_downloader_contains_hash(self):
+        """跨下载器查询任一命中 hash 时返回 True。"""
+        plugin = SubscribeAssistantEnhanced()
+        found = SimpleNamespace(instance=MagicMock())
+        absent = SimpleNamespace(instance=MagicMock())
+        found.instance.get_torrents.return_value = ([{"hash": "abc"}], False)
+        absent.instance.get_torrents.return_value = ([], False)
+        plugin._downloader_helper = MagicMock()
+        plugin._downloader_helper.get_services.return_value = {
+            "下载器A": absent,
+            "下载器B": found,
+        }
+
+        assert plugin._torrent_exists("abc") is True
+
+    def test_torrent_exists_returns_false_when_all_downloaders_confirm_absent(self):
+        """全部下载器查询成功且均无 hash 时返回 False。"""
+        plugin = SubscribeAssistantEnhanced()
+        service = SimpleNamespace(instance=MagicMock())
+        service.instance.get_torrents.return_value = ([], False)
+        plugin._downloader_helper = MagicMock()
+        plugin._downloader_helper.get_services.return_value = {"下载器A": service}
+
+        assert plugin._torrent_exists("abc") is False
+
+    def test_torrent_exists_returns_none_when_absent_result_includes_query_failure(self):
+        """未命中 hash 且任一下载器查询失败时返回 None，不能误判为不存在。"""
+        plugin = SubscribeAssistantEnhanced()
+        failed = SimpleNamespace(instance=MagicMock())
+        absent = SimpleNamespace(instance=MagicMock())
+        failed.instance.get_torrents.return_value = ([], True)
+        absent.instance.get_torrents.return_value = ([], False)
+        plugin._downloader_helper = MagicMock()
+        plugin._downloader_helper.get_services.return_value = {
+            "下载器A": failed,
+            "下载器B": absent,
+        }
+
+        assert plugin._torrent_exists("abc") is None
 
 
 class TestEventRegistration:

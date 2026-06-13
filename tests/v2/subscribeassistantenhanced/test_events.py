@@ -588,12 +588,36 @@ class TestResourceDownloadHistoryClear:
         oper = MagicMock()
         oper.get.return_value = sub
         orch = MagicMock()
+        orch.handle_resource_download_history_clear.return_value = True
         proxy = EventProxy(subscribe_oper=oper, orchestrator=orch)
         ctx = object()
         proxy.on_resource_download(SimpleNamespace(event_data=SimpleNamespace(
-            origin='Subscribe|{"id": 1}', context=ctx, episodes=[1], cancel=False)))
+            origin='Subscribe|{"id": 1}', context=ctx, episodes=[1],
+            downloader="下载", cancel=False)))
         orch.handle_resource_download_history_clear.assert_called_once_with(
             sub, context=ctx, episodes=[1])
+
+    def test_history_clear_degraded_result_does_not_cancel_download(self):
+        """清理链路的返回值不得转换为取消下载，最终始终放行。"""
+        sub = _sub(id=1, best_version=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        orch = MagicMock()
+        orch.handle_resource_download_history_clear.return_value = False
+        proxy = EventProxy(subscribe_oper=oper, orchestrator=orch)
+        data = SimpleNamespace(
+            origin='Subscribe|{"id": 1}',
+            context=SimpleNamespace(torrent_info=None),
+            episodes=[1],
+            downloader="下载",
+            cancel=False,
+            source="",
+            reason="",
+        )
+
+        proxy.on_resource_download(SimpleNamespace(event_data=data))
+
+        assert data.cancel is False
 
     def test_non_best_version_skips_history_clear_but_marks_download_started(self):
         """普通订阅 ResourceDownload 只写下载待定，不打洗版清理链路。"""

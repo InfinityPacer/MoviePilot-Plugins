@@ -70,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.1.6"
+    plugin_version = "0.1.7"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -300,6 +300,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             send_download_file_deleted_fn=self._send_download_file_deleted,
             send_subscribe_added_fn=self._send_subscribe_added,
             notify_fn=self._notify_subscribe,
+            torrent_exists_fn=self._torrent_exists,
             related_downloads_fn=self._related_download_histories,
             best_version_type=cfg.best_version_type,
             clear_history_type=cfg.best_version_clear_history_type,
@@ -1257,6 +1258,34 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """发 DownloadFileDeleted 事件：主程序据此移除历史下载的旧种子（洗版"清理历史下载种子"经此达成）。"""
         detail(f"洗版清理：发送 DownloadFileDeleted 事件，hash={download_hash}，通知主程序移除旧下载")
         eventmanager.send_event(EventType.DownloadFileDeleted, {"src": src, "hash": download_hash})
+
+    def _torrent_exists(self, download_hash: str) -> Optional[bool]:
+        """跨全部下载器查询旧 hash；任一查询失败且均未命中时返回 None。"""
+        if not self._downloader_helper or not download_hash:
+            return None
+        services = self._downloader_helper.get_services()
+        if not services:
+            return None
+        query_failed = False
+        for name, service in services.items():
+            if not service or not service.instance:
+                query_failed = True
+                continue
+            try:
+                torrents, error = service.instance.get_torrents(ids=download_hash)
+            except Exception as err:
+                logger.warning(f"洗版清理：查询下载器 {name} 的旧任务失败 hash={download_hash}，错误信息：{err}")
+                query_failed = True
+                continue
+            if error:
+                logger.warning(f"洗版清理：下载器 {name} 查询旧任务失败 hash={download_hash}")
+                query_failed = True
+                continue
+            if torrents:
+                return True
+        if query_failed:
+            return None
+        return False
 
     def _send_subscribe_added(self, subscribe_id, mediainfo=None, username=None):
         """发 SubscribeAdded 事件，让主程序和其他插件感知订阅创建。"""
