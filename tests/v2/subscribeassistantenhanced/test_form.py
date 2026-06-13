@@ -50,11 +50,18 @@ class TestBuildForm:
             assert key in model, f"表单 model 缺少配置键 {key}"
 
     def test_five_tabs(self):
-        """配置表单使用 5 个 Tab；conf 结构：[switch_row, period_row, VTabs, VWindow]。"""
+        """配置表单使用 5 个 Tab；顶部 BETA 提示不改变 Tab 数量。"""
         conf, _model = build_form()
-        # conf[2] 是 VTabs，含 5 个 VTab
-        assert conf[2]["component"] == "VTabs"
-        assert len(conf[2]["content"]) == 5
+        assert conf[3]["component"] == "VTabs"
+        assert len(conf[3]["content"]) == 5
+
+    def test_beta_alert_precedes_form_controls(self):
+        """BETA 风险提示固定显示在开关、周期和分页配置之前。"""
+        conf, _model = build_form()
+        assert conf[0]["component"] == "VRow"
+        alert = conf[0]["content"][0]["content"][0]
+        assert alert["component"] == "VAlert"
+        assert "BETA 版本提示" in alert["props"]["text"]
 
     def test_bool_default_renders_switch(self):
         col = field_for("completion_guard_enabled", "启用完结守门", True)
@@ -68,7 +75,7 @@ class TestBuildForm:
     def test_removed_download_pause_action_is_not_rendered(self):
         """下载超时删种后不暂停订阅，因此不再渲染下载暂停超期动作。"""
         conf, _model = build_form()
-        fields = _controls_with_model(conf[3])
+        fields = _controls_with_model(conf[4])
         models = {field["props"].get("model") for field in fields}
         assert "download_pause_max_days" not in models
         assert "download_pause_expire_action" not in models
@@ -81,10 +88,10 @@ class TestBuildForm:
 
     def test_auto_pause_users_is_editable_text_field(self):
         """用户名自动暂停名单须作为可编辑文本框出现在表单，否则该能力用户无法启用。
-        新结构：conf[3] 为 VWindow；每个 VWindowItem.content 为若干 VRow（开关行/输入行），VRow.content 为 VCol 列表。
+        conf[4] 为 VWindow；每个 VWindowItem.content 为若干 VRow，VRow.content 为 VCol 列表。
         """
         conf, _model = build_form()
-        fields = _controls_with_model(conf[3])
+        fields = _controls_with_model(conf[4])
         field = next((f for f in fields if f["props"].get("model") == "auto_pause_users"), None)
         assert field is not None, "表单暂停 Tab 缺少 auto_pause_users 可编辑项"
         assert field["component"] == "VTextField"
@@ -165,7 +172,7 @@ def test_periods_use_dropdown_and_cron():
     """公共周期控件类型：分钟/小时周期为下拉，洗版为 cron 输入框。"""
     conf, _model = build_form()
     period_ctrls = {col["content"][0]["props"]["model"]: col["content"][0]["component"]
-                    for col in conf[1]["content"]}
+                    for col in conf[2]["content"]}
     assert period_ctrls["download_check_interval_minutes"] == "VSelect"
     assert period_ctrls["meta_check_interval_hours"] == "VSelect"
     assert period_ctrls["auto_check_interval_minutes"] == "VSelect"
@@ -176,8 +183,8 @@ def test_auto_check_interval_lives_in_public_period_row_only():
     """通用巡检周期属于公共周期，不混在「种子删除」业务页里。"""
     import json
     conf, _model = build_form()
-    period_models = [col["content"][0]["props"]["model"] for col in conf[1]["content"]]
-    seed_tab = conf[3]["content"][0]["content"]
+    period_models = [col["content"][0]["props"]["model"] for col in conf[2]["content"]]
+    seed_tab = conf[4]["content"][0]["content"]
 
     assert "auto_check_interval_minutes" in period_models
     assert '"auto_check_interval_minutes"' not in json.dumps(seed_tab, ensure_ascii=False)
@@ -186,7 +193,7 @@ def test_auto_check_interval_lives_in_public_period_row_only():
 def test_pending_numeric_fields_share_one_row_after_internal_total_removed():
     """订阅待定只暴露开播窗口和低集数阈值，内部总集数兜底不再作为表单项。"""
     conf, _model = build_form()
-    pending_rows = conf[3]["content"][1]["content"]
+    pending_rows = conf[4]["content"][1]["content"]
     numeric_cols = pending_rows[1]["content"]
 
     assert [col["content"][0]["props"]["model"] for col in numeric_cols] == [
@@ -199,7 +206,7 @@ def test_pending_numeric_fields_share_one_row_after_internal_total_removed():
 def test_pending_switches_share_one_row_with_three_equal_columns():
     """订阅待定前三个开关应在桌面宽度同一行显示，避免表单视觉上被拆成两段。"""
     conf, _model = build_form()
-    pending_rows = conf[3]["content"][1]["content"]
+    pending_rows = conf[4]["content"][1]["content"]
     switch_cols = pending_rows[0]["content"]
 
     assert [col["content"][0]["props"]["model"] for col in switch_cols] == [
@@ -214,7 +221,7 @@ def test_best_version_tab_uses_type_without_extra_flow_switch():
     """洗版 Tab 以枚举字段作为用户入口，不再暴露冗余布尔开关。"""
     import json
     conf, model = build_form()
-    best_tab = conf[3]["content"][3]["content"]
+    best_tab = conf[4]["content"][3]["content"]
     flat = json.dumps(best_tab, ensure_ascii=False)
 
     assert '"best_version_type"' in flat
@@ -229,8 +236,8 @@ def test_tracker_keywords_in_dialog_as_textarea():
     """Tracker 关键字置于「打开Tracker配置窗口」开关弹出的 VDialog 内，为多行 VTextarea。"""
     import json
     conf, _model = build_form()
-    # 「种子删除」页（conf[3] = VWindow，第 1 个 VWindowItem）含一个绑定 open_tracker_dialog 的 VDialog
-    seed_tab = conf[3]["content"][0]["content"]
+    # 「种子删除」页（conf[4] = VWindow，第 1 个 VWindowItem）含一个绑定 open_tracker_dialog 的 VDialog
+    seed_tab = conf[4]["content"][0]["content"]
     dialog = next(el for el in seed_tab if el["component"] == "VDialog")
     assert dialog["props"]["model"] == "open_tracker_dialog"
     flat_dialog = json.dumps(dialog, ensure_ascii=False)
@@ -265,7 +272,7 @@ def test_common_check_interval_uses_reduced_options():
     conf, _model = build_form()
     controls = {
         col["content"][0]["props"]["model"]: col["content"][0]
-        for col in conf[1]["content"]
+        for col in conf[2]["content"]
     }
 
     common_items = controls["auto_check_interval_minutes"]["props"]["items"]
@@ -287,7 +294,7 @@ def test_completion_labels_use_concise_names_without_enable_prefix():
 def test_completion_tab_uses_original_flat_grid():
     """完结信号页保持统一平铺，不增加分组标题或卡片容器。"""
     conf, _model = build_form()
-    completion_rows = conf[3]["content"][4]["content"]
+    completion_rows = conf[4]["content"][4]["content"]
     assert len(completion_rows) == 5
     assert all(row["component"] == "VRow" for row in completion_rows)
     assert not any(item.get("component") == "VCard" for item in completion_rows)
@@ -306,7 +313,7 @@ def test_completion_tab_uses_original_flat_grid():
 def test_completion_flat_grid_keeps_persistent_hints():
     """平铺布局继续保留全部字段说明。"""
     conf, _model = build_form()
-    completion_items = conf[3]["content"][4]["content"]
+    completion_items = conf[4]["content"][4]["content"]
     controls = _controls_with_model(completion_items)
     assert {control["props"]["model"] for control in controls} == {
         "completion_guard_enabled",
