@@ -103,6 +103,30 @@ class TestESignal:
         assert sig.completed is True
         assert "E:finale" in sig.signals
 
+    def test_future_finale_does_not_complete_returning_series(self):
+        """未来 finale 只是排期信息，不能提前确认仍在播出的目标范围已完结。"""
+        eps = [
+            _ep(76, air_date="2026-06-10"),
+            _ep(77, ep_type="mid_season", air_date="2026-06-17"),
+            _ep(85, ep_type="finale", air_date="2026-09-30"),
+        ]
+        scope = SeasonScope(episodes=eps)
+        sig = check_e_signal(_mi(), scope, as_of=date(2026, 6, 13))
+        assert sig is None
+
+    def test_multiple_finale_markers_do_not_complete(self):
+        """同一目标范围出现多个 finale 标记时按 TMDB 异常处理，不作为高置信完结依据。"""
+        eps = [
+            _ep(1),
+            _ep(2, ep_type="finale", air_date="2026-01-08"),
+            _ep(3, ep_type="finale", air_date="2026-01-15"),
+        ]
+        scope = SeasonScope(episodes=eps)
+
+        sig = check_e_signal(_mi(), scope, as_of=date(2026, 1, 16))
+
+        assert sig is None
+
     def test_ended_status_from_tmdb_info_dict(self):
         """TMDB 原始信息为 dict 时，E 信号仍能读取剧级状态。"""
         scope = SeasonScope(episodes=[_ep(1)])

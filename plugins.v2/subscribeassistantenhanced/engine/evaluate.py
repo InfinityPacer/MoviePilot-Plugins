@@ -44,7 +44,7 @@ def evaluate(subscribe, mediainfo,
             ), scope)
 
     # 3. 剧级完结（E）：剧级状态或 finale 可提供强完结信号。
-    e_sig = check_e_signal(mediainfo, scope)
+    e_sig = check_e_signal(mediainfo, scope, as_of=today)
     if e_sig is not None:
         detail(
             f"信号引擎[剧级完结（E）]：{subscribe_label} 判定完结，"

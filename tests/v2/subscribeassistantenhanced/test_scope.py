@@ -73,11 +73,17 @@ class TestDetectHighRisk:
         scope = SeasonScope(episodes=eps, total=3)
         assert detect_high_risk(scope, make_mediainfo()) is True
 
-    def test_finale_in_middle_high_risk(self, make_mediainfo):
-        """条件 2：中间有 finale（不是末集）。"""
+    def test_single_finale_in_middle_high_risk(self, make_mediainfo):
+        """条件 2：唯一 finale 不在末集，代表范围后续仍有内容。"""
         eps = [_ep(1), _ep(2, ep_type="finale"), _ep(3)]
         scope = SeasonScope(episodes=eps, total=3)
         assert detect_high_risk(scope, make_mediainfo()) is True
+
+    def test_multiple_finales_not_high_risk_by_itself(self, make_mediainfo):
+        """多个 finale 只说明标记不可信，不单独阻止后续低置信观察。"""
+        eps = [_ep(1), _ep(2, ep_type="finale"), _ep(3, ep_type="finale")]
+        scope = SeasonScope(episodes=eps, total=3)
+        assert detect_high_risk(scope, make_mediainfo()) is False
 
     def test_finale_as_last_ep_not_high_risk(self, make_mediainfo):
         """末集 finale 不算高风险。"""

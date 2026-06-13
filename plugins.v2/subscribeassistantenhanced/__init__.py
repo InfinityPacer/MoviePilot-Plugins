@@ -70,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.1.7"
+    plugin_version = "0.1.8"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -285,6 +285,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mark_pending_fn=pending_judge.mark_pending,
             verifier=verifier,
             timeout_manager=timeout_manager,
+            detect_existing_episodes_fn=self._detect_existing_episodes,
+            detect_missing_episodes_fn=self._detect_missing_episodes,
+            tmdb_episodes_fn=self._tmdb_episodes,
             pending_download_enabled=cfg.pending_download_enabled,
         )
 

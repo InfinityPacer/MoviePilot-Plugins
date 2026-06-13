@@ -27,7 +27,8 @@ def check_m_signal(scope: SeasonScope, as_of: Optional[date] = None) -> Optional
     return None
 
 
-def check_e_signal(mediainfo, scope: SeasonScope) -> Optional[CompletionSignal]:
+def check_e_signal(mediainfo, scope: SeasonScope,
+                   as_of: Optional[date] = None) -> Optional[CompletionSignal]:
     """E：基线信号，按剧级状态或 SeasonScope 末集 finale 判断完结。"""
     status = _field(mediainfo.tmdb_info, "status", "")
     if status in ("Ended", "Canceled"):
@@ -36,7 +37,7 @@ def check_e_signal(mediainfo, scope: SeasonScope) -> Optional[CompletionSignal]:
             signals=[f"E:{status.lower()}"],
             reason=f"status={status}",
         )
-    if has_scope_finale(scope):
+    if has_scope_finale(scope, as_of=as_of):
         return CompletionSignal(
             completed=True, confidence="high",
             signals=["E:finale"],
@@ -118,12 +119,25 @@ def _has_future_episodes(episodes: list, today: date) -> bool:
     return False
 
 
-def has_scope_finale(scope: SeasonScope) -> bool:
-    """finale 必须是 SeasonScope 的最后目标集才放行。"""
+def scope_finale_episode(scope: SeasonScope):
+    """返回可信的目标范围 finale；多标记或非末集标记均视为 TMDB 数据异常。"""
     if not scope.episodes:
+        return None
+    finale_episodes = [ep for ep in scope.episodes if ep.episode_type == "finale"]
+    if len(finale_episodes) != 1:
+        return None
+    if finale_episodes[0] is not scope.episodes[-1]:
+        return None
+    return finale_episodes[0]
+
+
+def has_scope_finale(scope: SeasonScope, as_of: Optional[date] = None) -> bool:
+    """finale 必须在 SeasonScope 内唯一、位于最后一集且已播出，才可确认当前范围完结。"""
+    finale = scope_finale_episode(scope)
+    if not finale:
         return False
-    last_ep = scope.episodes[-1]
-    return last_ep.episode_type == "finale"
+    air = parse_date(finale.air_date)
+    return bool(air and air <= (as_of or date.today()))
 
 
 def last_aired_episode(episodes: list, as_of: Optional[date] = None):
