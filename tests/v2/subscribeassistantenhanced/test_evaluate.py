@@ -121,6 +121,17 @@ class TestEvaluatePipeline:
         assert sig.completed is True
         assert "I:next_season" in sig.signals
 
+    def test_signal_carries_scope_total_for_timeout_observation(self):
+        """信号携带本轮 TMDB scope 总集数，避免待定释放依赖滞后的订阅表字段。"""
+        eps = [_ep(1), _ep(2), _ep(3)]
+        sig = evaluate(
+            subscribe=_sub(), mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(), as_of=date(2026, 6, 1),
+        )
+        assert sig.scope_total == 3
+
     def test_i_all_aired_no_next_releases(self):
         """I-3：所有集已播 + 无 next → 低置信度放行。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]

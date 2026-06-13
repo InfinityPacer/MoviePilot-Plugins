@@ -86,8 +86,15 @@ class PendingJudge:
             return False
 
         elif source == "guard_veto":
-            if signal.completed:
+            if signal.completed and signal.confidence != "low":
                 self._exit_pending(subscribe, "信号确认完结")
+                return True
+            if self._timeout.check_release(
+                subscribe.id,
+                signal,
+                total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
+            ):
+                self._exit_pending(subscribe, "完成前观察结束")
                 return True
             return False
 

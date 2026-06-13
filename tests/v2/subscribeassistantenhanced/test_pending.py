@@ -13,7 +13,7 @@ def _ep(num, air_date="2026-01-01"):
     return SimpleNamespace(episode_number=num, air_date=air_date, episode_type="standard")
 
 
-def _sub(sid=1, season=1, state="R", episode_group=None):
+def _sub(sid=1, season=1, state="R", episode_group=None, total_episode=12):
     return SimpleNamespace(
         id=sid,
         name="测试剧",
@@ -21,7 +21,7 @@ def _sub(sid=1, season=1, state="R", episode_group=None):
         season=season,
         state=state,
         episode_group=episode_group,
-        total_episode=12,
+        total_episode=total_episode,
         lack_episode=0,
     )
 
@@ -43,6 +43,7 @@ def _judge(config=None, evaluate_result=None, store=None, notify=None):
     j._evaluate = MagicMock(return_value=evaluate_result or CompletionSignal())
     j._subscribe_oper = MagicMock()
     j._timeout = MagicMock()
+    j._timeout.check_release.return_value = False
     j._read = lambda key: store.get(key, {})
     j._notify = notify
 
@@ -141,6 +142,43 @@ class TestCheckExit:
         mi = _mi()
         result = j.check_exit(_sub(state="P"), mi, lambda *a: [])
         assert result is True
+
+    def test_guard_veto_uses_timeout_release_for_low_confidence_completion(self):
+        """guard_veto 低置信完成需等待 timeout_manager 释放。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
+        sig = CompletionSignal(completed=True, confidence="low", stable=True, signals=["I:all_aired"])
+        j = _judge(evaluate_result=sig, store=store)
+        j._timeout.check_release.return_value = True
+
+        result = j.check_exit(_sub(state="P", total_episode=2), _mi(), lambda *a: [])
+
+        assert result is True
+        j._timeout.check_release.assert_called_once_with(1, sig, total_episode=2)
+
+    def test_guard_veto_low_confidence_stays_before_timeout_release(self):
+        """guard_veto 低置信完成未超观察期时继续保持 P。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
+        sig = CompletionSignal(completed=True, confidence="low", stable=True, signals=["I:all_aired"])
+        j = _judge(evaluate_result=sig, store=store)
+        j._timeout.check_release.return_value = False
+
+        result = j.check_exit(_sub(state="P", total_episode=2), _mi(), lambda *a: [])
+
+        assert result is False
+        j._timeout.check_release.assert_called_once_with(1, sig, total_episode=2)
+
+    def test_guard_veto_uses_signal_scope_total_when_available(self):
+        """guard_veto 释放判断优先使用本轮 TMDB scope 总数。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
+        sig = CompletionSignal(completed=True, confidence="low", stable=True,
+                               signals=["I:all_aired"], scope_total=3)
+        j = _judge(evaluate_result=sig, store=store)
+        j._timeout.check_release.return_value = True
+
+        result = j.check_exit(_sub(state="P", total_episode=2), _mi(), lambda *a: [])
+
+        assert result is True
+        j._timeout.check_release.assert_called_once_with(1, sig, total_episode=3)
 
     def test_pending_judge_exits_on_completion(self):
         """pending_judge P：信号确认完结 → 退出。"""

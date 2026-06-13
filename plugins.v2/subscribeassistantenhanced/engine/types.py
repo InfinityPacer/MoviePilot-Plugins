@@ -12,6 +12,7 @@ class CompletionSignal:
     cadence_expired: bool = False     # G 信号：按播出节奏是否已超期
     signals: list = field(default_factory=list)  # 命中的信号标识，如 ["E:ended"]
     reason: str = ""                  # 人类可读的判定理由
+    scope_total: int = 0              # 本轮 SeasonScope 的 TMDB 目标总集数，用于观察期增集判断
 
 
 @dataclass
@@ -46,9 +47,16 @@ class CompletionVerifierProtocol(Protocol):
 @runtime_checkable
 class PendingTimeoutManagerProtocol(Protocol):
     """待定超时释放的协议接口，供守门/待定判定依赖而不耦合具体实现。"""
-    def record_block(self, subscribe_id: int) -> None: ...
+    def record_block(self, subscribe_id: int,
+                     signal: Optional[CompletionSignal] = None,
+                     total_episode: Optional[int] = None) -> None: ...
     def clear_block(self, subscribe_id: int) -> None: ...
-    def check_release(self, subscribe_id: int, signal: CompletionSignal) -> bool: ...
+    def check_release(self, subscribe_id: int,
+                      signal: CompletionSignal,
+                      total_episode: Optional[int] = None) -> bool: ...
+    def consume_release(self, subscribe_id: int,
+                        signal: CompletionSignal,
+                        total_episode: Optional[int] = None) -> bool: ...
 
 
 @runtime_checkable

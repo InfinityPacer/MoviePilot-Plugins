@@ -200,6 +200,22 @@ class TestCheckTorrent:
         result = mon.check_torrent(info, subscribe_id=1)
         assert result == "delete_tracker"
 
+    def test_tracker_regex_keyword_returns_delete(self):
+        """Tracker 关键字支持正则表达式，便于合并相近错误文本。"""
+        read, update, store = _store_mgr()
+        mon = DownloadMonitor(read, update, tracker_keywords=[r"torrent\s+(?:is\s+)?not\s+registered"])
+        info = _info(tracker_responses=["Tracker error: Torrent is not registered"])
+        result = mon.check_torrent(info, subscribe_id=1)
+        assert result == "delete_tracker"
+
+    def test_invalid_tracker_regex_falls_back_to_text_contains(self):
+        """非法正则按普通文本包含匹配处理，避免配置错误打断监控。"""
+        read, update, store = _store_mgr()
+        mon = DownloadMonitor(read, update, tracker_keywords=["torrent [bad"])
+        info = _info(tracker_responses=["Tracker error: torrent [bad"])
+        result = mon.check_torrent(info, subscribe_id=1)
+        assert result == "delete_tracker"
+
     def test_first_check_inits_task(self):
         read, update, store = _store_mgr()
         mon = DownloadMonitor(read, update, timeout_minutes=60)

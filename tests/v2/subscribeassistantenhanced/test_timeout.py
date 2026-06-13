@@ -88,3 +88,69 @@ class TestCheckRelease:
         sig = CompletionSignal(stable=False)
         assert mgr.check_release(1, sig) is False
         assert store["blocks"]["1"]["blocked_at"] > old_ts
+
+    def test_low_confidence_timeout_records_release_token(self):
+        """低置信观察超时后记录一次性放行标记。"""
+        store = {"blocks": {"1": {
+            "blocked_at": time.time() - 25 * 86400,
+            "signals": ["I:all_aired"],
+            "confidence": "low",
+            "total_episode": 2,
+        }}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(read, update, timeout_days=21)
+        sig = CompletionSignal(completed=True, confidence="low", stable=True, signals=["I:all_aired"])
+
+        assert mgr.check_release(1, sig, total_episode=2) is True
+
+        assert store["releases"]["1"]["signals"] == ["I:all_aired"]
+        assert store["releases"]["1"]["total_episode"] == 2
+
+    def test_legacy_block_does_not_grant_low_confidence_release_token(self):
+        """旧 guard_veto 计时不能借给低置信完成观察。"""
+        store = {"blocks": {"1": {
+            "blocked_at": time.time() - 25 * 86400,
+            "reason": "guard_veto",
+        }}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(read, update, timeout_days=21)
+        sig = CompletionSignal(completed=True, confidence="low", stable=True, signals=["I:all_aired"])
+
+        assert mgr.check_release(1, sig, total_episode=2) is False
+
+        assert store["blocks"]["1"]["signals"] == ["I:all_aired"]
+        assert store["blocks"]["1"]["confidence"] == "low"
+        assert store["blocks"]["1"]["total_episode"] == 2
+        assert store.get("releases", {}) == {}
+
+    def test_total_growth_resets_observation_without_release_token(self):
+        """观察期间 TMDB 增集属于明确不放行，释放本轮 guard 但不写放行标记。"""
+        store = {"blocks": {"1": {
+            "blocked_at": time.time() - 25 * 86400,
+            "signals": ["I:all_aired"],
+            "confidence": "low",
+            "total_episode": 2,
+        }}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(read, update, timeout_days=21)
+        sig = CompletionSignal(completed=False, confidence="none", stable=True, signals=["none"])
+
+        assert mgr.check_release(1, sig, total_episode=3) is True
+
+        assert "1" not in store.get("releases", {})
+
+    def test_mismatched_release_token_is_discarded(self):
+        """一次性放行标记不匹配当前信号时立即失效。"""
+        store = {"releases": {"1": {
+            "signals": ["I:all_aired"],
+            "confidence": "low",
+            "total_episode": 2,
+            "released_at": time.time(),
+        }}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(read, update, timeout_days=21)
+        sig = CompletionSignal(completed=False, confidence="none", stable=True, signals=["none"])
+
+        assert mgr.consume_release(1, sig, total_episode=3) is False
+
+        assert "1" not in store.get("releases", {})

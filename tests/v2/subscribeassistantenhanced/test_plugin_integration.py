@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 from app.schemas.types import MediaType
 
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.engine.types import PauseRecord
+from subscribeassistantenhanced.engine.types import CompletionSignal, PauseRecord
 
 
 def _sub(**kwargs):
@@ -94,7 +94,7 @@ def test_episode_to_full_converts_when_download_chain_reports_all_exists(monkeyp
     class FakeDownloadChain:
         """避免访问真实媒体库，只模拟主程序全部存在的返回值。"""
 
-        def get_no_exists_info(self, meta, mediainfo):
+        def get_no_exists_info(self, meta, mediainfo, totals=None):
             return True, {}
 
     monkeypatch.setattr("app.chain.download.DownloadChain", FakeDownloadChain)
@@ -152,7 +152,7 @@ def test_episode_to_full_skips_when_missing_info_uses_relative_episode_numbers(m
     class FakeDownloadChain:
         """避免访问真实媒体库，只返回生产复现场景的缺集结构。"""
 
-        def get_no_exists_info(self, meta, mediainfo):
+        def get_no_exists_info(self, meta, mediainfo, totals=None):
             return False, {100: {22: RelativeNoExistsInfo()}}
 
     monkeypatch.setattr("app.chain.download.DownloadChain", FakeDownloadChain)
@@ -378,6 +378,19 @@ def test_run_meta_check_resumes_when_airing_condition_no_longer_holds():
     pause_manager.clear_pause_record.assert_not_called()
 
 
+def test_run_meta_check_queries_paused_airing_subscriptions_for_resume():
+    """元数据巡检必须扫描 S 态上映/播出暂停订阅，否则条件解除后无法自动恢复。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = []
+
+    plugin.run_meta_check()
+
+    plugin._subscribe_oper.list.assert_called_once()
+    assert "S" in plugin._subscribe_oper.list.call_args.kwargs["state"]
+
+
 def test_run_meta_check_skips_flag_paused_no_download_subscription():
     """无下载标记暂停（reason=no_download，state=S）的订阅被 run_meta_check 跳过，不触发恢复。
 
@@ -590,7 +603,7 @@ def test_reset_task_clears_data_and_resets_flag():
     plugin.save_data = MagicMock()
     plugin.init_plugin({"reset_task": True})
     cleared = {c.args[0] for c in plugin.save_data.call_args_list}
-    assert {"subscribes", "torrents", "blocks", "snapshots", "deletes", "volatility"} <= cleared
+    assert {"subscribes", "torrents", "blocks", "releases", "snapshots", "deletes", "volatility"} <= cleared
     plugin.update_config.assert_called()
 
 
@@ -771,6 +784,32 @@ class TestEventDelegation:
         plugin._event_proxy = None
         plugin.on_subscribe_deleted(SimpleNamespace(event_data={}))  # 不应抛错
 
+    def test_transfer_complete_event_converts_ready_episode_best_version(self):
+        """真实插件入口接通分集洗版转全集补偿依赖。"""
+        sub = _sub(id=7, best_version=1, best_version_full=0, lack_episode=0)
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+        oper = MagicMock()
+        oper.get.return_value = sub
+        plugin._subscribe_oper = oper
+        plugin._event_proxy._modules["subscribe_oper"] = oper
+        plugin._task_manager.update("torrents", lambda _data: {"abc": {"subscribe_id": 7}})
+        plugin._detect_missing_episodes = MagicMock(return_value=[])
+        mediainfo = _mediainfo()
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        converter = plugin._modules["converter"]
+        converter.convert_to_full = MagicMock(return_value=True)
+        # init_plugin 时注入的是绑定方法；替换 mock 后需同步给事件代理，验证入口 wiring 与事件链路。
+        plugin._event_proxy._modules["detect_missing_episodes_fn"] = plugin._detect_missing_episodes
+        plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
+
+        plugin.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc",
+            "transferinfo": None,
+        }))
+
+        converter.convert_to_full.assert_called_once_with(sub, mediainfo)
+
     def test_stop_service_clears_state(self):
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
@@ -884,6 +923,26 @@ class TestPeriodicJobs:
         )
 
         assert plugin._detect_missing_episodes(sub) == []
+
+    def test_detect_missing_episodes_passes_subscribe_total_to_download_chain(self, monkeypatch):
+        """媒体库缺集探测按订阅目标总集数调用主程序，避免 start 调整后范围漂移。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        sub = _sub(id=9, name="测试", season=2, start_episode=3, total_episode=8)
+        plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+        captured = {}
+
+        def fake_no_exists(*args, **kwargs):
+            captured.update(kwargs)
+            return True, {}
+
+        monkeypatch.setattr(
+            "app.chain.download.DownloadChain.get_no_exists_info",
+            fake_no_exists,
+        )
+
+        assert plugin._detect_missing_episodes(sub) == []
+        assert captured["totals"] == {2: 8}
 
     def test_snapshot_rebuild_calls_real_subscribe_add_contract(self):
         """H 重建适配器必须以 MediaInfo + kwargs 调用主程序 SubscribeOper.add。"""
@@ -1038,6 +1097,116 @@ class TestPeriodicJobs:
 
         plugin.post_message.assert_called_once()
         assert "不再满足上映待定，已标记订阅中" in plugin.post_message.call_args.kwargs["title"]
+
+    def test_pending_release_legacy_block_starts_low_confidence_observation_without_token(self, monkeypatch):
+        """run_pending_release 不能把旧 guard_veto 超时时长借给首次低置信观察。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "timeout_release_enabled": True,
+            "timeout_release_days": 7,
+        })
+        sub = _sub(id=1, state="P", name="测试", type="电视剧", total_episode=2)
+        data_store = {
+            "subscribes": {
+                "1": {
+                    "state": "P",
+                    "source": "guard_veto",
+                    "pending_sources": {"guard_veto": {"reason": "未完结"}},
+                }
+            },
+            "blocks": {
+                "1": {
+                    "blocked_at": time.time() - 30 * 86400,
+                    "reason": "guard_veto",
+                }
+            },
+        }
+        plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+        plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+        plugin._task_manager._get = plugin.get_data
+        plugin._task_manager._save = plugin.save_data
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.get.return_value = sub
+        plugin._subscribe_oper.list.return_value = []
+        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda _subscribe: _mediainfo())
+        plugin._evaluate_fn = lambda _subscribe, _mediainfo: CompletionSignal(
+            completed=True,
+            confidence="low",
+            stable=True,
+            signals=["I:all_aired"],
+            scope_total=2,
+        )
+
+        plugin.run_pending_release()
+
+        assert data_store["blocks"]["1"]["signals"] == ["I:all_aired"]
+        assert data_store["blocks"]["1"]["confidence"] == "low"
+        assert data_store["blocks"]["1"]["total_episode"] == 2
+        assert data_store.get("releases", {}) == {}
+        assert data_store["subscribes"]["1"]["state"] == "P"
+
+    def test_low_confidence_guard_timeout_release_allows_next_completion(self, monkeypatch):
+        """低置信 guard_veto 超时释放后，下次完成检查可放行并登记 H 快照。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "completion_guard_enabled": True,
+            "timeout_release_enabled": True,
+            "verify_enabled": True,
+            "timeout_release_days": 21,
+        })
+        sub = _sub(id=1, state="P", name="测试", type="电视剧", total_episode=2)
+        mediainfo = _mediainfo()
+        data_store = {
+            "subscribes": {
+                "1": {
+                    "state": "P",
+                    "source": "guard_veto",
+                    "pending_sources": {"guard_veto": {"reason": "低置信"}},
+                }
+            },
+            "blocks": {
+                "1": {
+                    "blocked_at": time.time() - 25 * 86400,
+                    "signals": ["I:all_aired"],
+                    "confidence": "low",
+                    "total_episode": 2,
+                }
+            },
+        }
+
+        plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+        plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+        plugin._task_manager._get = plugin.get_data
+        plugin._task_manager._save = plugin.save_data
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.get.return_value = sub
+        plugin._subscribe_oper.list.return_value = [sub]
+        plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: mediainfo)
+        sig = CompletionSignal(
+            completed=True,
+            confidence="low",
+            stable=True,
+            signals=["I:all_aired"],
+            reason="低置信",
+        )
+        plugin._evaluate_fn = MagicMock(return_value=sig)
+        plugin._modules["pending_judge"]._evaluate = plugin._evaluate_fn
+        plugin._modules["guard"].evaluate_fn = plugin._evaluate_fn
+
+        plugin.run_pending_release()
+
+        event = SimpleNamespace(event_data=SimpleNamespace(
+            subscribe=sub,
+            mediainfo=mediainfo,
+            cancel=False,
+            source="",
+            reason="",
+        ))
+        plugin._modules["guard"].handle(event)
+
+        assert event.event_data.cancel is False
+        assert data_store["snapshots"]["list"]
 
     def test_pending_release_checks_pending_judge_tasks(self):
         """pending_judge 写入的 P 订阅应由定时巡检调用 check_exit，而不只处理 blocks。"""

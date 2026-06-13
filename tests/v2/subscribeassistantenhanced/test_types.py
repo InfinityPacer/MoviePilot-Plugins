@@ -117,13 +117,16 @@ class ProtocolStubTest:
 
     def test_pending_timeout_manager_protocol_checkable(self):
         class Dummy:
-            def record_block(self, subscribe_id):
+            def record_block(self, subscribe_id, signal=None, total_episode=None):
                 pass
 
             def clear_block(self, subscribe_id):
                 pass
 
-            def check_release(self, subscribe_id, signal):
+            def check_release(self, subscribe_id, signal, total_episode=None):
+                return False
+
+            def consume_release(self, subscribe_id, signal, total_episode=None):
                 return False
 
         assert isinstance(Dummy(), PendingTimeoutManagerProtocol)

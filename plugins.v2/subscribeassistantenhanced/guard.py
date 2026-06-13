@@ -65,10 +65,30 @@ class CompletionGuard:
             data.cancel = True
             data.source = "subscribeassistantenhanced"
             data.reason = signal.reason
-            self.mark_pending_fn(subscribe, source="guard_veto")
+            self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
             return
 
         if signal.completed:
+            if signal.confidence == "low":
+                if self.timeout_manager.consume_release(
+                    subscribe.id,
+                    signal,
+                    total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
+                ):
+                    detail(f"完成守卫：{format_subscribe(subscribe)} 低置信观察已释放，放行完成并登记完成快照")
+                    self.verifier.snapshot(subscribe, data.mediainfo, None)
+                    return
+                logger.info(f"完成守卫：{format_subscribe(subscribe)} 低置信完结（{signal.reason}），进入完成前观察")
+                data.cancel = True
+                data.source = "subscribeassistantenhanced"
+                data.reason = signal.reason
+                self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
+                self.timeout_manager.record_block(
+                    subscribe.id,
+                    signal=signal,
+                    total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
+                )
+                return
             if signal.confidence != "high":
                 detail(f"完成守卫：{format_subscribe(subscribe)} 已判定完结但置信度非高，放行完成并登记完成快照")
                 self.verifier.snapshot(subscribe, data.mediainfo, None)
@@ -80,5 +100,5 @@ class CompletionGuard:
         data.cancel = True
         data.source = "subscribeassistantenhanced"
         data.reason = signal.reason
-        self.mark_pending_fn(subscribe, source="guard_veto")
+        self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
         self.timeout_manager.record_block(subscribe.id)

@@ -22,6 +22,7 @@ def _sub(**kwargs):
         total_episode=12,
         start_episode=1,
         lack_episode=0,
+        episode_priority={},
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -114,6 +115,93 @@ class TestEventOrdering:
             "download_hash": "abc", "transferinfo": SimpleNamespace(transfer_type="move"),
         }))
         tm.clean_torrent_tasks.assert_called_once_with("abc")
+
+    def test_transfer_complete_converts_ready_episode_best_version_to_full(self):
+        """分集洗版整理完成且目标集齐全时，当前订阅立即转全集洗版。"""
+        sub = _sub(
+            id=1,
+            best_version=1,
+            best_version_full=0,
+            lack_episode=0,
+            episode_priority={str(ep): 10 for ep in range(1, 13)},
+        )
+        media = SimpleNamespace(tmdb_id=100)
+        tm = MagicMock()
+        tm.read.return_value = {"abc": {"subscribe_id": 1}}
+        oper = MagicMock()
+        oper.get.return_value = sub
+        converter = MagicMock()
+        proxy = EventProxy(
+            task_manager=tm,
+            subscribe_oper=oper,
+            download_monitor=MagicMock(),
+            converter=converter,
+            best_version_episode_to_full=True,
+            detect_missing_episodes_fn=MagicMock(return_value=[]),
+            recognize_mediainfo_fn=MagicMock(return_value=media),
+        )
+
+        proxy.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc", "transferinfo": None,
+        }))
+
+        converter.convert_to_full.assert_called_once_with(sub, media)
+
+    def test_transfer_complete_keeps_episode_best_version_when_target_missing(self):
+        """分集洗版整理完成但目标集未齐全时，不提前转全集。"""
+        sub = _sub(
+            id=1,
+            best_version=1,
+            best_version_full=0,
+            lack_episode=0,
+            episode_priority={str(ep): 10 for ep in range(1, 13)},
+        )
+        tm = MagicMock()
+        tm.read.return_value = {"abc": {"subscribe_id": 1}}
+        oper = MagicMock()
+        oper.get.return_value = sub
+        converter = MagicMock()
+        proxy = EventProxy(
+            task_manager=tm,
+            subscribe_oper=oper,
+            download_monitor=MagicMock(),
+            converter=converter,
+            best_version_episode_to_full=True,
+            detect_missing_episodes_fn=MagicMock(return_value=[2]),
+            recognize_mediainfo_fn=MagicMock(return_value=SimpleNamespace(tmdb_id=100)),
+        )
+
+        proxy.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc", "transferinfo": None,
+        }))
+
+        converter.convert_to_full.assert_not_called()
+
+    def test_transfer_complete_skips_library_check_when_episodes_still_missing(self):
+        """分集洗版目标集仍有未下载集时，不触发媒体库缺集探测。"""
+        sub = _sub(id=1, best_version=1, best_version_full=0, lack_episode=1, episode_priority={"1": 100})
+        tm = MagicMock()
+        tm.read.return_value = {"abc": {"subscribe_id": 1}}
+        oper = MagicMock()
+        oper.get.return_value = sub
+        detect_missing = MagicMock(return_value=[])
+        converter = MagicMock()
+        proxy = EventProxy(
+            task_manager=tm,
+            subscribe_oper=oper,
+            download_monitor=MagicMock(),
+            converter=converter,
+            best_version_episode_to_full=True,
+            detect_missing_episodes_fn=detect_missing,
+            recognize_mediainfo_fn=MagicMock(return_value=SimpleNamespace(tmdb_id=100)),
+        )
+
+        proxy.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc", "transferinfo": None,
+        }))
+
+        detect_missing.assert_not_called()
+        converter.convert_to_full.assert_not_called()
 
     def test_subscribe_complete_triggers_snapshot(self):
         """SubscribeComplete 触发 H snapshot（subscribe 由 subscribe_info 重建）。"""

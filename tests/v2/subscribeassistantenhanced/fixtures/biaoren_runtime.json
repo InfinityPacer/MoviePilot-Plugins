@@ -1,0 +1,64 @@
+{
+  "subscriptions": {
+    "s01": {
+      "id": 41,
+      "name": "镖人",
+      "tmdbid": 325228,
+      "season": 1,
+      "state": "S",
+      "best_version": 0,
+      "total_episode": 15,
+      "lack_episode": 15,
+      "manual_total_episode": 0,
+      "start_episode": 1,
+      "current_priority": 0,
+      "last_update": "2026-06-12 22:50:15"
+    },
+    "s02_best_version": {
+      "id": 45,
+      "name": "镖人",
+      "tmdbid": 325228,
+      "season": 2,
+      "state": "R",
+      "best_version": 1,
+      "total_episode": 2,
+      "lack_episode": 0,
+      "manual_total_episode": 0,
+      "start_episode": 1,
+      "current_priority": 98,
+      "last_update": "2026-06-12 23:23:34"
+    }
+  },
+  "transferhistory": [
+    {"id": 10017, "tmdbid": 325228, "seasons": "S02", "episodes": "E02", "date": "2026-06-12 22:58:34", "status": 1, "mode": "link", "category": "动漫/国产"},
+    {"id": 10018, "tmdbid": 325228, "seasons": "S02", "episodes": "E01", "date": "2026-06-12 22:58:34", "status": 1, "mode": "link", "category": "动漫/国产"},
+    {"id": 10032, "tmdbid": 325228, "seasons": "S02", "episodes": "E01", "date": "2026-06-12 23:23:34", "status": 1, "mode": "link", "category": "动漫/国产"},
+    {"id": 10033, "tmdbid": 325228, "seasons": "S02", "episodes": "E02", "date": "2026-06-12 23:23:34", "status": 1, "mode": "link", "category": "动漫/国产"}
+  ],
+  "downloadhistory": [
+    {"id": 1401, "tmdbid": 325228, "seasons": "S02", "episodes": "E01", "date": "2026-06-12 22:58:34"},
+    {"id": 1402, "tmdbid": 325228, "seasons": "S02", "episodes": "E02", "date": "2026-06-12 22:58:34"},
+    {"id": 1414, "tmdbid": 325228, "seasons": "S02", "episodes": "E01-E02", "date": "2026-06-12 23:23:34"}
+  ],
+  "plugin_state": {
+    "snapshots": [
+      {"subscribe_id": 45, "tmdbid": 325228, "season": 2, "total_at_completion": 2, "source": "H"}
+    ],
+    "subscribes": {
+      "41": {
+        "state": "S",
+        "pause_reason": "airing_gap",
+        "pause_detail": "最后集播出距今 1030 天，无下一集信息"
+      },
+      "45": {
+        "state": "R",
+        "source": null,
+        "pending_sources": {},
+        "priority_baselines": {"1": 98, "2": 98}
+      }
+    },
+    "torrents": [
+      {"subscribe_id": 45, "episodes": [1, 2], "baseline_progress": 0.6326}
+    ]
+  }
+}

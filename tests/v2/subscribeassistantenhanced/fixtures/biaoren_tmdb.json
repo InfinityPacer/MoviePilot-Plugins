@@ -1,0 +1,60 @@
+{
+  "tv": {
+    "id": 325228,
+    "name": "镖人",
+    "status": "Returning Series",
+    "number_of_seasons": 2,
+    "number_of_episodes": 17,
+    "last_episode_to_air": {
+      "season_number": 2,
+      "episode_number": 2,
+      "air_date": "2026-06-11",
+      "episode_type": "standard"
+    },
+    "next_episode_to_air": null,
+    "seasons": [
+      {
+        "season_number": 1,
+        "episode_count": 15,
+        "air_date": "2023-06-01"
+      },
+      {
+        "season_number": 2,
+        "episode_count": 2,
+        "air_date": "2026-06-11"
+      }
+    ],
+    "episode_groups": []
+  },
+  "seasons": {
+    "1": {
+      "season_number": 1,
+      "air_date": "2023-06-01",
+      "episodes": [
+        {"season_number": 1, "episode_number": 1, "air_date": "2023-06-01", "episode_type": "standard", "name": "E1"},
+        {"season_number": 1, "episode_number": 2, "air_date": "2023-06-01", "episode_type": "standard", "name": "E2"},
+        {"season_number": 1, "episode_number": 3, "air_date": "2023-06-08", "episode_type": "standard", "name": "E3"},
+        {"season_number": 1, "episode_number": 4, "air_date": "2023-06-15", "episode_type": "standard", "name": "E4"},
+        {"season_number": 1, "episode_number": 5, "air_date": "2023-06-22", "episode_type": "standard", "name": "E5"},
+        {"season_number": 1, "episode_number": 6, "air_date": "2023-06-29", "episode_type": "standard", "name": "E6"},
+        {"season_number": 1, "episode_number": 7, "air_date": "2023-07-06", "episode_type": "standard", "name": "E7"},
+        {"season_number": 1, "episode_number": 8, "air_date": "2023-07-13", "episode_type": "standard", "name": "E8"},
+        {"season_number": 1, "episode_number": 9, "air_date": "2023-07-20", "episode_type": "standard", "name": "E9"},
+        {"season_number": 1, "episode_number": 10, "air_date": "2023-07-27", "episode_type": "standard", "name": "E10"},
+        {"season_number": 1, "episode_number": 11, "air_date": "2023-08-03", "episode_type": "standard", "name": "E11"},
+        {"season_number": 1, "episode_number": 12, "air_date": "2023-08-10", "episode_type": "standard", "name": "E12"},
+        {"season_number": 1, "episode_number": 13, "air_date": "2023-08-17", "episode_type": "standard", "name": "E13"},
+        {"season_number": 1, "episode_number": 14, "air_date": "2023-08-17", "episode_type": "standard", "name": "E14"},
+        {"season_number": 1, "episode_number": 15, "air_date": "2023-08-17", "episode_type": "standard", "name": "E15"}
+      ]
+    },
+    "2": {
+      "season_number": 2,
+      "air_date": "2026-06-11",
+      "episodes": [
+        {"season_number": 2, "episode_number": 1, "air_date": "2026-06-11", "episode_type": "standard", "name": "E1"},
+        {"season_number": 2, "episode_number": 2, "air_date": "2026-06-11", "episode_type": "standard", "name": "E2"}
+      ]
+    }
+  }
+}

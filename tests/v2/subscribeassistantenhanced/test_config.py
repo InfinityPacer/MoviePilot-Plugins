@@ -60,7 +60,7 @@ class PluginConfigDefaultsTest:
         assert self.cfg.verify_retention_days == 90
 
     def test_timeout_release_days_default(self):
-        assert self.cfg.timeout_release_days == 21
+        assert self.cfg.timeout_release_days == 7
 
     def test_timeout_cadence_acceleration_default(self):
         assert self.cfg.timeout_cadence_acceleration is True

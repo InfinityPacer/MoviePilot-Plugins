@@ -222,6 +222,7 @@ class TestPendingSourceSplit:
         judge._evaluate = MagicMock(return_value=sig)
         judge._subscribe_oper = MagicMock()
         judge._timeout = MagicMock()
+        judge._timeout.check_release.return_value = False
         judge._read = tm.read
         judge._update = tm.update
         result = judge.check_exit(_sub(state="P"), _mi(), lambda *a: [])

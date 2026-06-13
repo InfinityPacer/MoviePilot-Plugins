@@ -39,6 +39,7 @@ def _guard(signal=None, has_active=False):
     g.mark_pending_fn = MagicMock()
     g.verifier = MagicMock()
     g.timeout_manager = MagicMock()
+    g.timeout_manager.consume_release.return_value = False
     return g
 
 
@@ -104,13 +105,57 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is False
         g.verifier.snapshot.assert_not_called()
 
-    def test_low_confidence_releases_with_snapshot(self):
-        """中/低置信度放行，加 H 快照。"""
+    def test_low_confidence_with_release_token_snapshots(self):
+        """低置信观察已释放时才放行并登记 H 快照。"""
         sig = CompletionSignal(completed=True, confidence="low", signals=["I:all_aired"])
         g = _guard(signal=sig)
+        g.timeout_manager.consume_release.return_value = True
         ev = _event()
         g.handle(ev)
         assert ev.event_data.cancel is False
+        g.verifier.snapshot.assert_called_once()
+
+    def test_low_confidence_completion_enters_guard_observation_without_snapshot(self):
+        """低置信 I 完成首次命中时进入 guard_veto 观察，不登记 H 快照。"""
+        sig = CompletionSignal(
+            completed=True,
+            confidence="low",
+            signals=["I:all_aired"],
+            reason="目标范围内所有集已播且无同季下一集",
+        )
+        g = _guard(signal=sig)
+        g.timeout_manager.consume_release.return_value = False
+        ev = _event()
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "目标范围内所有集已播且无同季下一集"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once_with(
+            1,
+            signal=sig,
+            total_episode=12,
+        )
+        g.verifier.snapshot.assert_not_called()
+
+    def test_low_confidence_completion_after_observation_release_snapshots(self):
+        """低置信观察释放后，同一轮信号允许完成并登记 H 快照。"""
+        sig = CompletionSignal(
+            completed=True,
+            confidence="low",
+            signals=["I:all_aired"],
+            reason="目标范围内所有集已播且无同季下一集",
+        )
+        g = _guard(signal=sig)
+        g.timeout_manager.consume_release.return_value = True
+        ev = _event()
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
         g.verifier.snapshot.assert_called_once()
 
     def test_medium_confidence_releases_with_snapshot(self):

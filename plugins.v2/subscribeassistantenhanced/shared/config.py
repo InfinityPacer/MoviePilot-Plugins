@@ -321,7 +321,7 @@ class PluginConfig:
 
     @property
     def timeout_release_days(self) -> int:
-        return self.get_int("timeout_release_days", 21)
+        return self.get_int("timeout_release_days", 7)
 
     @property
     def timeout_cadence_acceleration(self) -> bool:

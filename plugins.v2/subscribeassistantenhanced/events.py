@@ -11,7 +11,7 @@
 - ResourceSelection → 洗版串行与删除指纹过滤（识别增强保持下线）
 - ResourceDownload → monitor.mark_pending
 - DownloadAdded → monitor.on_download
-- TransferComplete → monitor.on_transfer + best_version.on_transfer
+- TransferComplete → 清下载待定 + 移动模式清理 + 分集转全集补偿
 - PluginAction → toggle_subscribe_state
 """
 from types import SimpleNamespace
@@ -481,6 +481,31 @@ class EventProxy:
         if transfer_info and transfer_info.transfer_type == "move" and task_manager:
             detail(f"TransferComplete：移动模式清理已完成下载任务 hash={download_hash}")
             task_manager.clean_torrent_tasks(download_hash)
+        self._convert_episode_best_version_to_full_if_ready(subscribe_id)
+
+    def _convert_episode_best_version_to_full_if_ready(self, subscribe_id):
+        """整理完成后补偿检查当前分集洗版订阅，避免目标集已齐全还要等下一次洗版巡检。"""
+        if not subscribe_id or not self.get("best_version_episode_to_full"):
+            return
+        subscribe_oper = self.get("subscribe_oper")
+        converter = self.get("converter")
+        detect_missing = self.get("detect_missing_episodes_fn")
+        recognize = self.get("recognize_mediainfo_fn")
+        if not (subscribe_oper and converter and detect_missing and recognize):
+            return
+        subscribe = subscribe_oper.get(subscribe_id)
+        if not subscribe or not subscribe.best_version or subscribe.best_version_full:
+            return
+        if (subscribe.lack_episode or 0) > 0:
+            return
+        no_exists = detect_missing(subscribe)
+        if no_exists:
+            return
+        mediainfo = recognize(subscribe)
+        if not mediainfo:
+            return
+        detail(f"TransferComplete：{format_subscribe(subscribe)} 目标集已全部在库，立即转为全集洗版")
+        converter.convert_to_full(subscribe, mediainfo)
 
     def on_plugin_action(self, event):
         """PluginAction → /subscribe_toggle 切换订阅启用(R)/禁用(S)状态。

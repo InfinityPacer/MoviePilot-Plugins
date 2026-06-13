@@ -1,5 +1,6 @@
 """下载生命周期状态机、自动删种与下载待定管理。"""
 import hashlib
+import re
 import time
 from typing import Callable, Optional
 
@@ -399,9 +400,17 @@ class DownloadMonitor:
             return False
         for response in info.tracker_responses:
             for kw in self._tracker_keywords:
-                if kw.lower() in response.lower():
+                if self._tracker_keyword_matches(kw, response):
                     return True
         return False
+
+    @staticmethod
+    def _tracker_keyword_matches(keyword: str, response: str) -> bool:
+        """Tracker 关键字优先按正则匹配；表达式非法时退回大小写不敏感文本包含。"""
+        try:
+            return bool(re.search(keyword, response, flags=re.IGNORECASE))
+        except re.error:
+            return keyword.lower() in response.lower()
 
     def _get_torrent_task(self, torrent_hash: str) -> Optional[dict]:
         data = self._read("torrents")

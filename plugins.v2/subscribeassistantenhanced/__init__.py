@@ -326,10 +326,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mediainfo_from_dict=self._mediainfo_from_dict,
             is_tv_fn=self._is_tv_media,
             detect_existing_episodes_fn=self._detect_existing_episodes,
+            detect_missing_episodes_fn=self._detect_missing_episodes,
+            recognize_mediainfo_fn=self._recognize_mediainfo,
             priority_manager=priority_manager,
             download_monitor=download_monitor,
             verifier=verifier if cfg.verify_enabled else None,
             orchestrator=orchestrator,
+            converter=converter,
+            best_version_episode_to_full=cfg.best_version_episode_to_full,
         )
 
         self._modules = {
@@ -459,13 +463,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "subscribes",
             "torrents",
             "blocks",
+            "releases",
             "snapshots",
             "deletes",
             "volatility",
             "best_version_clear_histories",
         ]:
             self.save_data(key, {})
-        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、完成快照、删除指纹、集数变化记录、洗版清理记录）")
+        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、洗版清理记录）")
 
     def _run_backfill_now(self):
         """对现有洗版订阅执行一次回填已存在集。"""
@@ -582,7 +587,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         airing = self._modules.get("airing_checker")
         pause_manager = self._modules.get("pause_manager")
         detail("元数据巡检：开始")
-        for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
+        for subscribe in (self._subscribe_oper.list(state="N,R,P,S") or []):
             if subscribe.best_version:
                 continue
 
@@ -684,7 +689,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mediainfo = self._recognize_mediainfo(subscribe)
             if not mediainfo:
                 continue
-            if timeout_manager.check_release(int(sid), self._evaluate_fn(subscribe, mediainfo)):
+            signal = self._evaluate_fn(subscribe, mediainfo)
+            if timeout_manager.check_release(
+                int(sid),
+                signal,
+                total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
+            ):
                 logger.info(f"待定释放：{format_subscribe(subscribe)} 完成前检查长期未确认，解除该待定原因")
                 pending_state = self._modules.get("pending_state")
                 if pending_state:
@@ -1107,7 +1117,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             season = subscribe.season or 0
             meta = MetaInfo(subscribe.name or "")
             meta.begin_season = season or None
-            exist_flag, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
+            totals = {season: total} if season and total else {}
+            exist_flag, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo, totals=totals)
             if exist_flag:
                 return sorted(target), []
             missing = set()

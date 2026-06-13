@@ -28,7 +28,7 @@ def evaluate(subscribe, mediainfo,
     m_sig = check_m_signal(scope, as_of=today)
     if m_sig is not None:
         detail(f"信号引擎[元数据硬否决（M）]：{subscribe_label} 否决完结，原因：{m_sig.reason}")
-        return m_sig
+        return _attach_scope_total(m_sig, scope)
 
     # 2. 集数稳定性（F）：total_episode 仍在变化时拒绝提前完结。
     if config.volatility_enabled and subscribe_id is not None:
@@ -37,11 +37,11 @@ def evaluate(subscribe, mediainfo,
                 f"信号引擎[集数稳定性（F）]：{subscribe_label} 否决完结，"
                 f"原因：total_episode 近 {config.volatility_window_days} 天内变动"
             )
-            return CompletionSignal(
+            return _attach_scope_total(CompletionSignal(
                 completed=False, stable=False,
                 signals=["F:unstable"],
                 reason=f"total_episode 近 {config.volatility_window_days} 天内变动",
-            )
+            ), scope)
 
     # 3. 剧级完结（E）：剧级状态或 finale 可提供强完结信号。
     e_sig = check_e_signal(mediainfo, scope)
@@ -50,7 +50,7 @@ def evaluate(subscribe, mediainfo,
             f"信号引擎[剧级完结（E）]：{subscribe_label} 判定完结，"
             f"原因：{e_sig.reason}，置信度：{_confidence_label(e_sig.confidence)}"
         )
-        return e_sig
+        return _attach_scope_total(e_sig, scope)
 
     # 4. 季级完结（I）：high_risk SeasonScope 使用更保守的分支。
     i_sig = check_i_signal(mediainfo, scope,
@@ -62,7 +62,7 @@ def evaluate(subscribe, mediainfo,
             f"信号引擎[季级完结（I）]：{subscribe_label} 判定完结，"
             f"原因：{i_sig.reason}，置信度：{_confidence_label(i_sig.confidence)}"
         )
-        return i_sig
+        return _attach_scope_total(i_sig, scope)
 
     # 5. 播出节奏（G）：只辅助待定释放，不单独确认完结。
     cadence_expired = False
@@ -87,11 +87,11 @@ def evaluate(subscribe, mediainfo,
     )
 
     # 6. 兜底：没有任何信号确认完结时，按未完结处理。
-    return CompletionSignal(
+    return _attach_scope_total(CompletionSignal(
         completed=False, stable=True, cadence_expired=cadence_expired,
         signals=["none"],
         reason="无信号确认当前目标范围已播完",
-    )
+    ), scope)
 
 
 def _confidence_label(confidence: str) -> str:
@@ -102,3 +102,9 @@ def _confidence_label(confidence: str) -> str:
         "low": "低",
         "none": "无",
     }.get(confidence, confidence)
+
+
+def _attach_scope_total(signal: CompletionSignal, scope) -> CompletionSignal:
+    """把本轮 TMDB 目标范围总数写入信号，供后续观察期判断增集。"""
+    signal.scope_total = scope.total
+    return signal
