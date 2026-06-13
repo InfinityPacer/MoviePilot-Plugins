@@ -285,6 +285,82 @@ class TestCheckTorrent:
 class TestManualDeleteListen:
     """下载器侧种子消失：区分'用户删种'(present=False) 与'下载器瞬断'(present=None)。"""
 
+    def test_missing_torrent_releases_download_pending_like_legacy(self):
+        """下载器确认种子已不存在时，按旧版口径清理下载待定，避免已结束任务长期卡 P。"""
+        read, update, store = _store_mgr({
+            "torrents": {"h1": {"hash": "h1", "subscribe_id": 6, "downloader": "qb"}},
+            "subscribes": {
+                "6": {
+                    "download_pending": {"h1": {"hash": "h1"}},
+                    "pending_sources": {"download_pending": {"reason": "下载中"}},
+                    "state": "P",
+                    "source": "download_pending",
+                    "reason": "下载中",
+                }
+            },
+        })
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=6, name="测试剧", season=1, state="P")
+        coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
+        mon = DownloadMonitor(read, update, subscribe_oper=oper,
+                              state_coordinator=coordinator,
+                              fetch_fn=lambda dl, h: None,
+                              present_fn=lambda dl, h: False,
+                              manual_delete_enabled=False,
+                              manual_miss_threshold=1)
+
+        mon.run_timeout_check(MagicMock())
+
+        assert store["torrents"] == {}
+        assert "download_pending" not in store["subscribes"]["6"]
+        assert store["subscribes"]["6"]["state"] == "R"
+
+    def test_missing_torrent_without_manual_listen_skips_miss_threshold_like_legacy(self):
+        """关闭手动删除监听时，旧版本轮直接 invalid cleanup，不等待连续 miss 阈值。"""
+        read, update, store = _store_mgr({
+            "torrents": {"h1": {"hash": "h1", "subscribe_id": 6, "downloader": "qb"}},
+            "subscribes": {"6": {"download_pending": {"h1": {"hash": "h1"}}}},
+        })
+        mon = DownloadMonitor(read, update,
+                              fetch_fn=lambda dl, h: None,
+                              present_fn=lambda dl, h: False,
+                              manual_delete_enabled=False)
+        cleanup = MagicMock()
+
+        mon.run_timeout_check(cleanup)
+
+        assert store["torrents"] == {}
+        assert "download_pending" not in store["subscribes"]["6"]
+        cleanup.handle_torrent_deleted.assert_not_called()
+
+    def test_completed_torrent_releases_download_pending_like_legacy(self):
+        """下载器返回已完成时，按旧版口径移除下载任务并释放下载待定。"""
+        read, update, store = _store_mgr({
+            "torrents": {"h1": {"hash": "h1", "subscribe_id": 6, "downloader": "qb"}},
+            "subscribes": {
+                "6": {
+                    "download_pending": {"h1": {"hash": "h1"}},
+                    "pending_sources": {"download_pending": {"reason": "下载中"}},
+                    "state": "P",
+                    "source": "download_pending",
+                    "reason": "下载中",
+                }
+            },
+        })
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=6, name="测试剧", season=1, state="P")
+        coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
+        mon = DownloadMonitor(read, update, subscribe_oper=oper,
+                              state_coordinator=coordinator,
+                              fetch_fn=lambda dl, h: _info(hash=h, completed=True),
+                              manual_miss_threshold=1)
+
+        mon.run_timeout_check(MagicMock())
+
+        assert store["torrents"] == {}
+        assert "download_pending" not in store["subscribes"]["6"]
+        assert store["subscribes"]["6"]["state"] == "R"
+
     def test_missing_torrent_with_reachable_downloader_triggers_manual_delete(self):
         """下载器可达且种子确实不存在（present=False）达阈值 → 按 manual 进入 cleanup。"""
         from unittest.mock import MagicMock
@@ -297,6 +373,7 @@ class TestManualDeleteListen:
         mon = DownloadMonitor(read, update, subscribe_oper=oper,
                               fetch_fn=lambda dl, h: None,
                               present_fn=lambda dl, h: False,
+                              manual_delete_enabled=True,
                               manual_miss_threshold=1)
         mon.run_timeout_check(cleanup)
         cleanup.handle_torrent_deleted.assert_called_once_with(
@@ -311,6 +388,7 @@ class TestManualDeleteListen:
         mon = DownloadMonitor(read, update, subscribe_oper=MagicMock(),
                               fetch_fn=lambda dl, h: None,
                               present_fn=lambda dl, h: None,
+                              manual_delete_enabled=True,
                               manual_miss_threshold=1)
         mon.run_timeout_check(cleanup)
         cleanup.handle_torrent_deleted.assert_not_called()
@@ -326,8 +404,35 @@ class TestManualDeleteListen:
         mon = DownloadMonitor(read, update, subscribe_oper=oper,
                               fetch_fn=lambda dl, h: None,
                               present_fn=lambda dl, h: False,
+                              manual_delete_enabled=True,
                               manual_miss_threshold=2)
         mon.run_timeout_check(cleanup)        # 第一次 miss → 计数 1，不动手
         cleanup.handle_torrent_deleted.assert_not_called()
         mon.run_timeout_check(cleanup)        # 第二次 miss → 达阈值 2，触发
         cleanup.handle_torrent_deleted.assert_called_once()
+
+    def test_same_subscribe_manual_delete_search_deduped_per_check(self):
+        """同一轮同一订阅多个缺失种子都清理，但只允许首个触发补搜。"""
+        read, update, _ = _store_mgr({
+            "torrents": {
+                "h1": {"hash": "h1", "subscribe_id": 6, "downloader": "qb"},
+                "h2": {"hash": "h2", "subscribe_id": 6, "downloader": "qb"},
+            }
+        })
+        sub = SimpleNamespace(id=6)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        cleanup = MagicMock()
+        mon = DownloadMonitor(read, update, subscribe_oper=oper,
+                              fetch_fn=lambda dl, h: None,
+                              present_fn=lambda dl, h: False,
+                              manual_delete_enabled=True,
+                              manual_miss_threshold=1)
+
+        mon.run_timeout_check(cleanup)
+
+        assert cleanup.handle_torrent_deleted.call_count == 2
+        cleanup.handle_torrent_deleted.assert_any_call(
+            sub, "h1", reason="manual", downloader="qb", delete_from_downloader=False)
+        cleanup.handle_torrent_deleted.assert_any_call(
+            sub, "h2", reason="manual", downloader="qb", delete_from_downloader=False, search_enabled=False)

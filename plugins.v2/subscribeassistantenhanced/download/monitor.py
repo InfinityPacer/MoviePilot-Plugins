@@ -22,6 +22,7 @@ class DownloadMonitor:
                  subscribe_oper=None,
                  fetch_fn: Optional[Callable] = None,
                  present_fn: Optional[Callable] = None,
+                 manual_delete_enabled: bool = True,
                  manual_miss_threshold: int = 2,
                  pending_download_enabled: bool = True,
                  state_coordinator=None,
@@ -39,6 +40,8 @@ class DownloadMonitor:
         self._fetch_fn = fetch_fn
         # present_fn(downloader, hash) -> Optional[bool]：True=存在，False=可达但不存在，None=不可判定。
         self._present_fn = present_fn
+        # 关闭监听手动删除时，仍按旧版口径清理本地失效任务，但不触发删种善后。
+        self._manual_delete_enabled = manual_delete_enabled
         # 连续 miss 达阈值才判手动删除，避免下载器瞬断触发误删善后。
         self._manual_miss_threshold = manual_miss_threshold
         self._pending_download_enabled = pending_download_enabled
@@ -169,8 +172,8 @@ class DownloadMonitor:
     def run_timeout_check(self, cleanup=None):
         """定时巡检种子实时状态，将超时、Tracker 命中与手动删除交给 cleanup 善后。
 
-        fetch_fn 未注入时安全空操作；取不到实时状态时，只有 present_fn 明确返回 False
-        且连续 miss 达阈值，才按用户手动删除处理。
+        fetch_fn 未注入时安全空操作；完成或本地失效任务按旧版口径释放下载待定。
+        只有启用监听手动删除且 present_fn 明确返回 False，才进入删除善后。
         """
         torrents = self._read("torrents") or {}
         total = len(torrents)
@@ -183,20 +186,26 @@ class DownloadMonitor:
         visible_count = 0
         skipped_count = 0
         cleanup_count = 0
+        triggered_subscribe_ids = set()
         for torrent_hash, task in list(torrents.items()):
             downloader = task.get("downloader")
             info = self._fetch_fn(downloader, torrent_hash)
             if info:
                 visible_count += 1
                 self._reset_missing(torrent_hash)
+                if info.completed:
+                    logger.info(f"下载监控：种子 {torrent_hash} 已完成，将从订阅下载任务中移除")
+                    self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
+                    continue
                 action = self.check_torrent(info, task.get("subscribe_id"))
                 if action in ("timeout", "delete_tracker") and cleanup:
                     subscribe = self._resolve_subscribe(task.get("subscribe_id"))
                     if subscribe is not None:
                         reason_text = "Tracker 返回内容包含删除关键字" if action == "delete_tracker" else "连续观察后仍无进度"
                         logger.info(f"下载监控：种子 {torrent_hash} 需要删除，原因：{reason_text}")
-                        cleanup.handle_torrent_deleted(
-                            subscribe, torrent_hash, reason=action,
+                        self._handle_cleanup_once_per_subscribe(
+                            cleanup, subscribe, triggered_subscribe_ids,
+                            torrent_hash, reason=action,
                             downloader=downloader, delete_from_downloader=True)
                         cleanup_count += 1
                 continue
@@ -205,18 +214,27 @@ class DownloadMonitor:
             if present is not False:
                 skipped_count += 1
                 continue
+            if not self._manual_delete_enabled:
+                logger.info(f"下载监控：种子 {torrent_hash} 不在下载器中，将按失效下载任务清理")
+                self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
+                self._reset_missing(torrent_hash)
+                continue
             if self._bump_missing(torrent_hash) < self._manual_miss_threshold:
                 skipped_count += 1
                 continue
             subscribe = self._resolve_subscribe(task.get("subscribe_id"))
-            if subscribe is not None and cleanup:
+            if self._manual_delete_enabled and subscribe is not None and cleanup:
                 logger.info(
                     f"下载监控：种子 {torrent_hash} 连续 {self._manual_miss_threshold} 次不在下载器中，按用户手动删除处理"
                 )
-                cleanup.handle_torrent_deleted(
-                    subscribe, torrent_hash, reason="manual",
+                self._handle_cleanup_once_per_subscribe(
+                    cleanup, subscribe, triggered_subscribe_ids,
+                    torrent_hash, reason="manual",
                     downloader=downloader, delete_from_downloader=False)
                 cleanup_count += 1
+            else:
+                logger.info(f"下载监控：种子 {torrent_hash} 不在下载器中，将按失效下载任务清理")
+                self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
             self._reset_missing(torrent_hash)
         detail(
             f"下载监控：本轮检查 {total} 个下载任务，下载器中仍存在 {visible_count} 个，"
@@ -228,6 +246,48 @@ class DownloadMonitor:
         if self._subscribe_oper and subscribe_id:
             return self._subscribe_oper.get(subscribe_id)
         return None
+
+    @staticmethod
+    def _handle_cleanup_once_per_subscribe(cleanup, subscribe, triggered_subscribe_ids: set,
+                                           torrent_hash: str, **kwargs):
+        """同一轮同一订阅只允许首个删种善后触发补搜，其余种子仍完整清理。"""
+        if subscribe.id in triggered_subscribe_ids:
+            cleanup.handle_torrent_deleted(subscribe, torrent_hash, search_enabled=False, **kwargs)
+            return
+        triggered_subscribe_ids.add(subscribe.id)
+        cleanup.handle_torrent_deleted(subscribe, torrent_hash, **kwargs)
+
+    def _clean_local_torrent_task(self, subscribe_id: int, torrent_hash: str):
+        """只清理本地下载任务和下载待定，不记录坏种、不回滚优先级、不触发补搜。"""
+        self._remove_torrent_task(torrent_hash)
+        if subscribe_id:
+            self.clear_download_pending(subscribe_id, torrent_hash)
+            self._remove_subscribe_torrent_task(subscribe_id, torrent_hash)
+
+    def _remove_torrent_task(self, torrent_hash: str):
+        """从下载任务表移除指定 hash。"""
+        def updater(data: dict) -> dict:
+            data.pop(torrent_hash, None)
+            return data
+
+        self._update("torrents", updater)
+
+    def _remove_subscribe_torrent_task(self, subscribe_id: int, torrent_hash: str):
+        """兼容旧版 subscribes.torrent_tasks 结构，移除订阅内的同名种子任务。"""
+        sid = str(subscribe_id)
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            torrent_tasks = task.get("torrent_tasks")
+            if torrent_tasks:
+                task["torrent_tasks"] = [
+                    item for item in torrent_tasks
+                    if item.get("hash") != torrent_hash
+                ]
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
 
     def _confirm_download_pending(self, subscribe_id, torrent_hash: str, episodes=None,
                                   downloader: Optional[str] = None,

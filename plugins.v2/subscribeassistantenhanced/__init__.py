@@ -235,7 +235,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
             state_coordinator=pending_state,
             fetch_fn=self._fetch_downloader_torrent,
-            present_fn=self._downloader_torrent_present if cfg.manual_delete_listen else None,
+            present_fn=self._downloader_torrent_present,
+            manual_delete_enabled=cfg.manual_delete_listen,
             pending_download_enabled=cfg.pending_download_enabled,
         )
 
@@ -249,6 +250,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             delete_torrent_fn=self._delete_downloader_torrent,
             search_fn=self._search_subscribe if cfg.auto_search_when_delete else None,
             notify_fn=self._notify_subscribe,
+            subscribe_oper=self._subscribe_oper,
         )
 
         def evaluate_fn(subscribe, mediainfo):

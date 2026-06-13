@@ -653,14 +653,17 @@ def test_notify_gate_blocks_when_disabled():
     notifying_plugin.post_message.assert_called_once()
 
 
-def test_manual_delete_listen_off_disables_present_fn():
+def test_manual_delete_listen_off_keeps_present_fn_for_legacy_cleanup():
+    """关闭监听手动删除只禁用手动删除善后，不禁用下载器种子存在性探测。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"manual_delete_listen": False})
-    assert plugin._modules["download_monitor"]._present_fn is None
+    assert plugin._modules["download_monitor"]._present_fn is not None
+    assert plugin._modules["download_monitor"]._manual_delete_enabled is False
 
     plugin2 = SubscribeAssistantEnhanced()
     plugin2.init_plugin({"manual_delete_listen": True})
     assert plugin2._modules["download_monitor"]._present_fn is not None
+    assert plugin2._modules["download_monitor"]._manual_delete_enabled is True
 
 
 def test_tracker_listen_off_clears_keywords():
