@@ -1057,10 +1057,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "monitored_torrents": len(torrents),
         }
 
-    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """返回完整配置表单（Vuetify schema 按 5 个功能 Tab 展示）与默认数据。"""
-        from .form import build_form
-        return build_form()
+    def get_render_mode(self) -> Tuple[str, str]:
+        """声明配置页由 Vue 联邦资源渲染，资源目录相对插件包根目录解析。"""
+        return "vue", "dist/assets"
+
+    def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
+        """返回 Vue 配置页默认 model；schema 由前端组件负责维护。"""
+        return None, dict(PluginConfig.defaults())
 
     def get_page(self) -> Optional[List[dict]]:
         """不提供详情页：框架按 has_page=False 处理，运行概况由 summary API 提供。"""

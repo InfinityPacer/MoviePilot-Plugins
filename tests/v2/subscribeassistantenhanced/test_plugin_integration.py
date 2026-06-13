@@ -749,11 +749,15 @@ class TestPluginWiring:
         assert proxy.get("deletes_store") is not None
 
     def test_extension_points_active(self):
+        """插件入口扩展点可用；配置页由 Vue 渲染时后端只返回默认 model。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({"enabled": True})
         assert plugin.get_command()            # /subscribe_toggle
+        assert plugin.get_render_mode() == ("vue", "dist/assets")
         conf, model = plugin.get_form()
-        assert conf and model
+        assert conf is None
+        assert isinstance(model, dict)
+        assert model["completion_guard_mode"] == "balanced"
         assert plugin.get_service()            # 启用后有定时任务
 
     def test_pause_manager_receives_subscribe_oper(self):
