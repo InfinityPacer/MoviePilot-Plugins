@@ -520,7 +520,7 @@ def test_run_meta_check_p_state_skips_pre_air_pause():
     pause_manager.pause.assert_not_called()
 
 
-def test_run_all_checks_invokes_each_runner():
+def test_run_all_checks_skips_verify_when_disabled():
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"enabled": True})
     mocks = {}
@@ -529,9 +529,24 @@ def test_run_all_checks_invokes_each_runner():
         mocks[name] = MagicMock()
         setattr(plugin, name, mocks[name])
     plugin.run_all_checks()
-    for name in ("run_meta_check", "run_download_timeout_check", "run_best_version_check",
-                 "run_completion_verify", "run_common_check"):
+    for name in ("run_meta_check", "run_download_timeout_check", "run_best_version_check", "run_common_check"):
         mocks[name].assert_called_once()
+    mocks["run_completion_verify"].assert_not_called()
+
+
+def test_run_all_checks_invokes_verify_when_enabled():
+    """立即运行一次遵守自动纠错开关，开启时才执行完成后验证。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"enabled": True, "verify_enabled": True})
+    plugin.run_meta_check = MagicMock()
+    plugin.run_download_timeout_check = MagicMock()
+    plugin.run_best_version_check = MagicMock()
+    plugin.run_completion_verify = MagicMock()
+    plugin.run_common_check = MagicMock()
+
+    plugin.run_all_checks()
+
+    plugin.run_completion_verify.assert_called_once()
 
 
 def test_run_common_check_runs_enabled_subtasks():

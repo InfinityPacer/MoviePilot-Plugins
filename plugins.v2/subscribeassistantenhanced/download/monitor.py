@@ -429,26 +429,29 @@ class DownloadMonitor:
 
         if self._has_progress(torrent_info, torrent_task):
             self._refresh_baseline(torrent_info)
+            self._clear_timeout_state(subscribe_id, torrent_task)
             return "ok"
 
         elapsed = time.time() - torrent_task.get("baseline_at", time.time())
         if elapsed < self._timeout_seconds:
             return "ok"
 
-        retry_count = torrent_task.get("retry_count", 0)
-        if retry_count >= self._retry_limit:
-            manual_count = torrent_task.get("manual_review_count", 0)
-            if manual_count > 0:
-                detail(f"下载监控：种子 {torrent_info.hash} 再次长时间无进度，本轮不再自动删除，请人工确认")
-                return "manual_review"
-            detail(f"下载监控：种子 {torrent_info.hash} 已连续 {retry_count}/{self._retry_limit} 轮无明显进度，准备删除")
-            self._mark_manual_review(torrent_info.hash)
-            return "timeout"
+        if self._is_timeout_ignore_active(subscribe_id, torrent_info.hash, torrent_task):
+            detail(f"下载监控：种子 {torrent_info.hash} 处于连续低进度保护期，本轮跳过")
+            return "ignored"
 
-        detail(f"下载监控：种子 {torrent_info.hash} 本轮无明显进度，继续观察（第 {retry_count + 1}/{self._retry_limit} 轮）")
-        self._increment_retry(torrent_info.hash, retry_count)
-        self._refresh_baseline(torrent_info)
-        return "ok"
+        timeout_state = self._record_timeout_failure(subscribe_id, torrent_info.hash, torrent_task)
+        retry_limit = max(int(self._retry_limit or 1), 1)
+        if timeout_state.get("fail_count", 0) >= retry_limit:
+            self._mark_timeout_manual_review(subscribe_id, torrent_task)
+            detail(f"下载监控：种子 {torrent_info.hash} 已达到连续低进度保护上限，本轮保留种子并等待人工确认")
+            return "manual_review"
+
+        detail(
+            f"下载监控：种子 {torrent_info.hash} 低进度超时"
+            f"（连续 {timeout_state.get('fail_count', 0)}/{retry_limit} 次），准备删除"
+        )
+        return "timeout"
 
     def _should_exclude(self, info: TorrentInfo) -> bool:
         if not self._exclude_tags:
@@ -517,3 +520,97 @@ class DownloadMonitor:
             data[torrent_hash] = task
             return data
         self._update("torrents", updater)
+
+    def _timeout_scope_key(self, subscribe_id: int, torrent_task: dict) -> str:
+        """生成旧版连续低进度统计范围；剧集按季和集数，其他订阅按 movie 兜底。"""
+        subscribe = self._resolve_subscribe(subscribe_id)
+        media_type = getattr(getattr(subscribe, "type", None), "value", getattr(subscribe, "type", None))
+        if media_type == "电视剧":
+            episodes = torrent_task.get("episodes") or []
+            if not isinstance(episodes, list):
+                episodes = [episodes]
+            episode_key = ",".join(sorted(str(ep) for ep in episodes if ep is not None)) or "unknown"
+            season = getattr(subscribe, "season", None) if subscribe else None
+            return f"tv:{season if season is not None else 'unknown'}:{episode_key}"
+        return "movie"
+
+    def _record_timeout_failure(self, subscribe_id: int, torrent_hash: str, torrent_task: dict) -> dict:
+        """按订阅范围记录低进度超时次数，换种子后仍继承同一 scope 的保护计数。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+        now = time.time()
+        result = {"state": {}}
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            states = task.get("timeout_states", {})
+            state = states.get(scope_key, {})
+            try:
+                window_start = float(state.get("window_start") or now)
+            except (TypeError, ValueError):
+                window_start = now
+            if self._timeout_retry_window_seconds() and now - window_start > self._timeout_retry_window_seconds():
+                state = {}
+                window_start = now
+            state["fail_count"] = int(state.get("fail_count") or 0) + 1
+            state["window_start"] = window_start
+            state["last_fail_time"] = now
+            state["last_torrent_hash"] = torrent_hash
+            states[scope_key] = state
+            task["timeout_states"] = states
+            data[sid] = task
+            result["state"] = state
+            return data
+
+        self._update("subscribes", updater)
+        return result["state"]
+
+    def _timeout_retry_window_seconds(self) -> float:
+        """旧版连续低进度统计窗口：至少 24 小时，或超时窗口乘保护次数。"""
+        return max(24 * 3600, self._timeout_seconds * max(int(self._retry_limit or 1), 1))
+
+    def _is_timeout_ignore_active(self, subscribe_id: int, torrent_hash: str, torrent_task: dict) -> bool:
+        """读取旧版人工保护期：同一 hash 在 ignore_until 前不再重复计数或处理。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+        task = (self._read("subscribes") or {}).get(sid, {})
+        state = (task.get("timeout_states") or {}).get(scope_key, {})
+        try:
+            ignore_until = float(state.get("ignore_until") or 0)
+        except (TypeError, ValueError):
+            ignore_until = 0
+        return state.get("last_torrent_hash") == torrent_hash and ignore_until > time.time()
+
+    def _mark_timeout_manual_review(self, subscribe_id: int, torrent_task: dict):
+        """达到旧版连续低进度保护上限后，给当前 scope 写入人工处理保护期。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+        ignore_until = time.time() + self._timeout_seconds * max(int(self._retry_limit or 1), 1)
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            states = task.get("timeout_states", {})
+            state = states.get(scope_key, {})
+            state["ignore_until"] = ignore_until
+            states[scope_key] = state
+            task["timeout_states"] = states
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
+
+    def _clear_timeout_state(self, subscribe_id: int, torrent_task: dict):
+        """进度恢复增长时清理同一订阅范围的连续低进度状态。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            states = task.get("timeout_states")
+            if states:
+                states.pop(scope_key, None)
+                task["timeout_states"] = states
+                data[sid] = task
+            return data
+
+        self._update("subscribes", updater)

@@ -247,39 +247,137 @@ class TestCheckTorrent:
         assert result == "ok"
 
     def test_timeout_after_retries_exhausted(self):
-        """超时 + 重试耗尽 → timeout。"""
+        """旧版口径：低进度超时未达保护上限时直接删种。"""
         store = {"torrents": {"h1": {
             "baseline_progress": 0.5, "baseline_at": time.time() - 7200,
-            "retry_count": 3, "manual_review_count": 0,
+            "retry_count": 0, "manual_review_count": 0,
+            "subscribe_id": 1, "episodes": [1],
         }}}
         read, update, _ = _store_mgr(store)
-        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3, subscribe_oper=oper)
         result = mon.check_torrent(_info(progress=0.5), subscribe_id=1)
         assert result == "timeout"
+        state = store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]
+        assert state["fail_count"] == 1
 
     def test_retry_increments_count(self):
-        """超时但未耗尽重试 → 重试计数递增 + 基线刷新。"""
+        """旧版口径：低进度超时记录订阅范围失败次数，不刷新种子基线。"""
         now = time.time()
         store = {"torrents": {"h1": {
             "baseline_progress": 0.5, "baseline_at": now - 7200,
             "retry_count": 1, "manual_review_count": 0,
+            "subscribe_id": 1, "episodes": [1],
         }}}
         read, update, _ = _store_mgr(store)
-        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3, subscribe_oper=oper)
         result = mon.check_torrent(_info(progress=0.5), subscribe_id=1)
-        assert result == "ok"
-        assert store["torrents"]["h1"]["retry_count"] == 2
+        assert result == "timeout"
+        assert store["torrents"]["h1"]["retry_count"] == 1
+        assert store["torrents"]["h1"]["baseline_at"] == now - 7200
 
     def test_manual_review_after_timeout(self):
-        """连续超时 + 已有 manual_review 记录 → manual_review。"""
-        store = {"torrents": {"h1": {
-            "baseline_progress": 0.5, "baseline_at": time.time() - 7200,
-            "retry_count": 3, "manual_review_count": 1,
-        }}}
+        """旧版口径：同一订阅/集数范围达到保护上限时保留种子，进入人工处理。"""
+        store = {
+            "torrents": {"h1": {
+                "baseline_progress": 0.5, "baseline_at": time.time() - 7200,
+                "retry_count": 0, "manual_review_count": 0,
+                "subscribe_id": 1, "episodes": [1],
+            }},
+            "subscribes": {"1": {"timeout_states": {
+                "tv:unknown:1": {"fail_count": 2, "window_start": time.time() - 60},
+            }}},
+        }
         read, update, _ = _store_mgr(store)
-        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3, subscribe_oper=oper)
         result = mon.check_torrent(_info(progress=0.5), subscribe_id=1)
         assert result == "manual_review"
+        state = store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]
+        assert state["fail_count"] == 3
+        assert state["ignore_until"] > time.time()
+
+    def test_timeout_count_is_scope_level_across_replaced_torrents(self):
+        """连续低进度保护按订阅和集数范围累计，换种子后仍沿用旧版 scope 计数。"""
+        now = time.time()
+        store = {
+            "torrents": {"h2": {
+                "baseline_progress": 0.5, "baseline_at": now - 7200,
+                "subscribe_id": 1, "episodes": [1],
+            }},
+            "subscribes": {"1": {"timeout_states": {
+                "tv:unknown:1": {"fail_count": 1, "last_torrent_hash": "h1", "window_start": now - 60},
+            }}},
+        }
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3, subscribe_oper=oper)
+
+        result = mon.check_torrent(_info(hash="h2", progress=0.5), subscribe_id=1)
+
+        assert result == "timeout"
+        state = store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]
+        assert state["fail_count"] == 2
+        assert state["last_torrent_hash"] == "h2"
+
+    def test_timeout_ignore_until_skips_same_torrent_like_legacy(self):
+        """同一 hash 处于连续超时保护期时，本轮忽略且不继续累加失败次数。"""
+        now = time.time()
+        store = {
+            "torrents": {"h1": {
+                "baseline_progress": 0.5, "baseline_at": now - 7200,
+                "subscribe_id": 1, "episodes": [1],
+            }},
+            "subscribes": {"1": {"timeout_states": {
+                "tv:unknown:1": {
+                    "fail_count": 3,
+                    "last_torrent_hash": "h1",
+                    "ignore_until": now + 3600,
+                },
+            }}},
+        }
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3, subscribe_oper=oper)
+
+        result = mon.check_torrent(_info(hash="h1", progress=0.5), subscribe_id=1)
+
+        assert result == "ignored"
+        assert store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]["fail_count"] == 3
+
+    def test_timeout_window_expired_resets_scope_count_like_legacy(self):
+        """连续低进度统计窗口过期后，旧计数清零并从本次重新开始。"""
+        now = time.time()
+        store = {
+            "torrents": {"h2": {
+                "baseline_progress": 0.5, "baseline_at": now - 7200,
+                "subscribe_id": 1, "episodes": [1],
+            }},
+            "subscribes": {"1": {"timeout_states": {
+                "tv:unknown:1": {
+                    "fail_count": 2,
+                    "last_torrent_hash": "h1",
+                    "window_start": now - 25 * 3600,
+                },
+            }}},
+        }
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3, subscribe_oper=oper)
+
+        result = mon.check_torrent(_info(hash="h2", progress=0.5), subscribe_id=1)
+
+        assert result == "timeout"
+        state = store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]
+        assert state["fail_count"] == 1
+        assert state["last_torrent_hash"] == "h2"
 
 
 class TestManualDeleteListen:

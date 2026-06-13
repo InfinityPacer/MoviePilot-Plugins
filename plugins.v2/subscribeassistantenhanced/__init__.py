@@ -459,7 +459,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self.run_meta_check()
         self.run_download_timeout_check()
         self.run_best_version_check()
-        self.run_completion_verify()
+        if self._config.verify_enabled:
+            self.run_completion_verify()
         self.run_common_check()
 
     def _reset_task_data(self):

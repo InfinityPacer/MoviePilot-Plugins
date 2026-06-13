@@ -145,6 +145,15 @@ class EventProxy:
         if pause_manager:
             pause_manager.check_auto_pause_for_user(subscribe)
 
+        if subscribe.best_version and self.get("backfill_enabled"):
+            priority = self.get("priority_manager")
+            detect = self.get("detect_existing_episodes_fn")
+            if priority and detect:
+                existing = detect(subscribe)
+                if existing:
+                    logger.info(f"订阅新增：{format_subscribe(subscribe)} 洗版订阅回填在库集 {existing}")
+                    priority.backfill_existing(subscribe, existing)
+
         # 洗版订阅不做播出暂停/待定
         if subscribe.best_version:
             detail(f"订阅新增：{format_subscribe(subscribe)} 为洗版订阅，跳过播出暂停/待定")
