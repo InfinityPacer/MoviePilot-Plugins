@@ -272,8 +272,10 @@ class PluginConfig:
     # ---- 完结信号与验证 ----
 
     @property
-    def completion_guard_enabled(self) -> bool:
-        return self.get_bool("completion_guard_enabled", False)
+    def completion_guard_mode(self) -> str:
+        """完结守卫模式：关闭、严格、平衡或宽松。"""
+        value = self.get_str("completion_guard_mode", "balanced").strip().lower()
+        return value if value in {"off", "strict", "balanced", "loose"} else "balanced"
 
     @property
     def volatility_enabled(self) -> bool:
@@ -313,7 +315,8 @@ class PluginConfig:
 
     @property
     def verify_retention_days(self) -> int:
-        return self.get_int("verify_retention_days", 90)
+        """完成快照保留天数；用户配置覆盖默认的 180 天。"""
+        return self.get_int("verify_retention_days", 180)
 
     @property
     def timeout_release_enabled(self) -> bool:

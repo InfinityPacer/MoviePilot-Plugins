@@ -13,6 +13,7 @@ class CompletionSignal:
     signals: list = field(default_factory=list)  # 命中的信号标识，如 ["E:ended"]
     reason: str = ""                  # 人类可读的判定理由
     scope_total: int = 0              # 本轮 SeasonScope 的 TMDB 目标总集数，用于观察期增集判断
+    scope_high_risk: bool = False      # 当前目标范围是否属于 absolute-season 等高风险范围
 
 
 @dataclass

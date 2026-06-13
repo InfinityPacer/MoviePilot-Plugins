@@ -33,8 +33,11 @@ def _make_tracker(stable=True):
     mgr = TaskDataManager(get_data_fn=lambda k: store.get(k), save_data_fn=lambda k, v: store.__setitem__(k, v))
     tracker = VolatilityTracker(mgr, window_days=7)
     if not stable:
-        tracker.record(total=10, subscribe_id=1)
-        tracker.record(total=15, subscribe_id=1)
+        subscribe = SimpleNamespace(
+            id=1, tmdbid=100, season=1, episode_group=None
+        )
+        tracker.record(total=10, subscribe=subscribe)
+        tracker.record(total=15, subscribe=subscribe)
     return tracker
 
 
@@ -143,6 +146,24 @@ class TestEvaluatePipeline:
         )
         assert sig.completed is True
         assert sig.confidence == "low"
+
+    def test_i_all_aired_same_day_next_releases(self):
+        """next_episode_to_air 在当天时按已播处理，避免最后一集延迟完结。"""
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 12)]
+        eps.append(_ep(12, air_date="2026-06-13"))
+        next_ep = SimpleNamespace(
+            season_number=1, episode_number=12, air_date="2026-06-13"
+        )
+
+        sig = evaluate(
+            subscribe=_sub(), mediainfo=_mi(next_ep=next_ep),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(), as_of=date(2026, 6, 13),
+        )
+
+        assert sig.completed is True
+        assert sig.signals == ["I:all_aired"]
 
     def test_multiple_finale_markers_enter_low_confidence_observation(self):
         """同一范围多 finale 不高置信完成，但全播完时可低置信进入完成前观察。"""

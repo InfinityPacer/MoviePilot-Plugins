@@ -1,5 +1,6 @@
 """engine/volatility.py F 变更速率追踪单测。"""
 import time
+from types import SimpleNamespace
 
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 
@@ -81,3 +82,16 @@ class TestVolatilityTracker:
         self.tracker.record(total=10, subscribe_id=2)
         assert self.tracker.is_stable(subscribe_id=1) is False
         assert self.tracker.is_stable(subscribe_id=2) is True
+
+    def test_reused_id_with_different_media_starts_new_history(self):
+        """同一数据库 ID 被新媒体复用时不得继承旧媒体的总集数变化。"""
+        old = SimpleNamespace(id=41, tmdbid=100, season=1, episode_group=None)
+        new = SimpleNamespace(id=41, tmdbid=200, season=2, episode_group=None)
+
+        self.tracker.record(total=10, subscribe=old)
+        self.tracker.record(total=15, subscribe=new)
+
+        assert self.tracker.is_stable(subscribe=new) is True
+        entry = self.store["volatility"]["41"]
+        assert entry["identity"]["tmdbid"] == 200
+        assert [record["total"] for record in entry["records"]] == [15]

@@ -10,8 +10,8 @@ class PluginConfigDefaultsTest:
 
     # --- domain switches ---
 
-    def test_completion_guard_enabled_default_false(self):
-        assert self.cfg.completion_guard_enabled is False
+    def test_completion_guard_mode_default_balanced(self):
+        assert self.cfg.completion_guard_mode == "balanced"
 
     def test_pending_enhanced_enabled_default_true(self):
         assert self.cfg.pending_enhanced_enabled is True
@@ -57,7 +57,7 @@ class PluginConfigDefaultsTest:
         assert self.cfg.verify_interval_hours == 12
 
     def test_verify_retention_days_default(self):
-        assert self.cfg.verify_retention_days == 90
+        assert self.cfg.verify_retention_days == 180
 
     def test_timeout_release_days_default(self):
         assert self.cfg.timeout_release_days == 7
@@ -165,6 +165,11 @@ class PluginConfigCoercionTest:
         assert cfg.volatility_window_days == 7
         assert isinstance(cfg.volatility_window_days, int)
 
+    def test_verify_retention_days_uses_user_value(self):
+        """H 快照实际保留期必须服从用户配置。"""
+        cfg = PluginConfig({"verify_retention_days": "30"})
+        assert cfg.verify_retention_days == 30
+
     def test_float_from_string(self):
         cfg = PluginConfig({"cadence_multiplier": "3.0"})
         assert cfg.cadence_multiplier == 3.0
@@ -189,6 +194,13 @@ class PluginConfigCoercionTest:
     def test_missing_key_uses_default(self):
         cfg = PluginConfig({"unrelated_key": 999})
         assert cfg.cadence_min_episodes == 3
+
+    def test_completion_guard_mode_accepts_declared_values(self):
+        for mode in ("off", "strict", "balanced", "loose"):
+            assert PluginConfig({"completion_guard_mode": mode}).completion_guard_mode == mode
+
+    def test_invalid_completion_guard_mode_falls_back_to_balanced(self):
+        assert PluginConfig({"completion_guard_mode": "bad"}).completion_guard_mode == "balanced"
 
     def test_int_from_float_string_truncates(self):
         cfg = PluginConfig({"download_retry_limit": "3.9"})

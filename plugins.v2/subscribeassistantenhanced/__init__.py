@@ -143,7 +143,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         cfg = self._config
         logger.info(
             "初始化完成："
-            f"总开关={cfg.enabled} 完成守卫={cfg.completion_guard_enabled} "
+            f"总开关={cfg.enabled} 完成守卫模式={cfg.completion_guard_mode} "
             f"待定增强={cfg.pending_enhanced_enabled} 暂停优化={cfg.pause_enhanced_enabled} "
             f"洗版类型={cfg.best_version_type} 下载管理={cfg.download_monitor_enabled} "
             f"完成验证={cfg.verify_enabled} 通知={cfg.notify}"
@@ -283,11 +283,10 @@ class SubscribeAssistantEnhanced(_PluginBase):
             has_active_downloads_fn=lambda sub: download_monitor.has_active_downloads(
                 sub.id),
             mark_pending_fn=pending_judge.mark_pending,
-            verifier=verifier,
             timeout_manager=timeout_manager,
-            detect_existing_episodes_fn=self._detect_existing_episodes,
             detect_missing_episodes_fn=self._detect_missing_episodes,
             tmdb_episodes_fn=self._tmdb_episodes,
+            mode=cfg.completion_guard_mode,
             pending_download_enabled=cfg.pending_download_enabled,
         )
 
@@ -318,7 +317,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             skip_deletion=cfg.skip_deletion,
             backfill_enabled=cfg.best_version_backfill_enabled,
             pending_download_enabled=cfg.pending_download_enabled,
-            guard=guard if cfg.completion_guard_enabled else None,
+            guard=guard if cfg.completion_guard_mode != "off" else None,
             volatility=volatility if cfg.volatility_enabled else None,
             pending_refresh=pending_refresh if cfg.pending_enhanced_enabled else None,
             pause_manager=pause_manager if cfg.pause_enhanced_enabled else None,
@@ -334,7 +333,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             recognize_mediainfo_fn=self._recognize_mediainfo,
             priority_manager=priority_manager,
             download_monitor=download_monitor,
-            verifier=verifier if cfg.verify_enabled else None,
+            verifier=verifier,
             orchestrator=orchestrator,
             converter=converter,
             best_version_episode_to_full=cfg.best_version_episode_to_full,
@@ -695,7 +694,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 continue
             signal = self._evaluate_fn(subscribe, mediainfo)
             if timeout_manager.check_release(
-                int(sid),
+                subscribe,
                 signal,
                 total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
             ):
@@ -714,7 +713,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 )
 
     def run_common_check(self):
-        """统一执行同周期的待定释放、无下载处理和删除记录清理。
+        """统一执行待定、无下载及各类本地过期数据清理。
 
         每个子任务独立捕获异常，避免单个检查失败阻断同轮其他检查。
         """
@@ -724,6 +723,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         tasks.append(("无下载处理", self.run_no_download_check))
         if self._config.download_monitor_enabled:
             tasks.append(("删除记录清理", self.run_deletes_cleanup))
+        tasks.append(("完成快照清理", self.run_completion_snapshot_cleanup))
+        tasks.append(("洗版清理事务清理", self.run_best_version_history_cleanup))
 
         detail("通用巡检：开始")
         for task_name, task in tasks:
@@ -738,6 +739,22 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if verifier:
             detail("完成后验证：开始")
             verifier.verify_all()
+
+    def run_completion_snapshot_cleanup(self):
+        """按 verify_retention_days 清理 H 快照，不触发自动纠错或 TMDB 请求。"""
+        verifier = self._modules.get("verifier")
+        if verifier:
+            removed = verifier.cleanup_expired()
+            if removed:
+                logger.info(f"完成快照清理：已清理 {removed} 条过期快照")
+
+    def run_best_version_history_cleanup(self):
+        """清理超过 72 小时的全集洗版文件清理事务。"""
+        orchestrator = self._modules.get("orchestrator")
+        if orchestrator:
+            removed = orchestrator.cleanup_expired_clear_histories()
+            if removed:
+                logger.info(f"洗版清理事务：已清理 {removed} 条超过 72 小时的记录")
 
     def _last_download_date(self, subscribe) -> Optional[datetime.date]:
         """订阅最近一次真实下载日期（取自主程序下载历史），无则 None。"""
@@ -1029,7 +1046,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                       if isinstance(task, dict) and task.get("state") == "P")
         return {
             "domains": {
-                "完成守卫": cfg.completion_guard_enabled,
+                "完结守卫模式": cfg.completion_guard_mode,
                 "待定增强": cfg.pending_enhanced_enabled,
                 "暂停优化": cfg.pause_enhanced_enabled,
                 "自动洗版": cfg.best_version_type != "no",

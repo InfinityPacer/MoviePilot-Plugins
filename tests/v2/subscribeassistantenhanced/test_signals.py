@@ -225,13 +225,47 @@ class TestISignal:
         assert "I:all_aired" in sig.signals
 
     def test_has_next_ep_same_season_blocks(self):
-        """有同季 next_episode → I-3 不满足。"""
+        """明确晚于当前日期的同季 next_episode → I-3 不满足。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
         next_ep = SimpleNamespace(season_number=1, episode_number=13, air_date="2026-06-13")
         mi = _mi(next_ep=next_ep)
         scope = SeasonScope(season=1, episodes=eps)
         sig = check_i_signal(mi, scope, cooldown_days=14, high_risk=False,
                              as_of=date(2026, 6, 1))
+        assert sig is None
+
+    def test_same_day_next_ep_same_season_allows(self):
+        """当天播出的 next_episode 已进入可播日期，不应继续阻止完结。"""
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 12)]
+        eps.append(_ep(12, air_date="2026-06-13"))
+        next_ep = SimpleNamespace(
+            season_number=1, episode_number=12, air_date="2026-06-13"
+        )
+        mi = _mi(next_ep=next_ep)
+        scope = SeasonScope(season=1, episodes=eps)
+
+        sig = check_i_signal(
+            mi, scope, cooldown_days=14, high_risk=False,
+            as_of=date(2026, 6, 13),
+        )
+
+        assert sig is not None
+        assert sig.signals == ["I:all_aired"]
+
+    def test_next_ep_without_air_date_blocks(self):
+        """下一集缺少播出日期时保守视为未来集。"""
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        next_ep = SimpleNamespace(
+            season_number=1, episode_number=13, air_date=None
+        )
+        mi = _mi(next_ep=next_ep)
+        scope = SeasonScope(season=1, episodes=eps)
+
+        sig = check_i_signal(
+            mi, scope, cooldown_days=14, high_risk=False,
+            as_of=date(2026, 6, 13),
+        )
+
         assert sig is None
 
     def test_next_ep_same_season_blocks_from_dict(self):

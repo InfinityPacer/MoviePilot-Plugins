@@ -150,10 +150,11 @@ class TestCheckExit:
         j = _judge(evaluate_result=sig, store=store)
         j._timeout.check_release.return_value = True
 
-        result = j.check_exit(_sub(state="P", total_episode=2), _mi(), lambda *a: [])
+        subscribe = _sub(state="P", total_episode=2)
+        result = j.check_exit(subscribe, _mi(), lambda *a: [])
 
         assert result is True
-        j._timeout.check_release.assert_called_once_with(1, sig, total_episode=2)
+        j._timeout.check_release.assert_called_once_with(subscribe, sig, total_episode=2)
 
     def test_guard_veto_low_confidence_stays_before_timeout_release(self):
         """guard_veto 低置信完成未超观察期时继续保持 P。"""
@@ -162,10 +163,11 @@ class TestCheckExit:
         j = _judge(evaluate_result=sig, store=store)
         j._timeout.check_release.return_value = False
 
-        result = j.check_exit(_sub(state="P", total_episode=2), _mi(), lambda *a: [])
+        subscribe = _sub(state="P", total_episode=2)
+        result = j.check_exit(subscribe, _mi(), lambda *a: [])
 
         assert result is False
-        j._timeout.check_release.assert_called_once_with(1, sig, total_episode=2)
+        j._timeout.check_release.assert_called_once_with(subscribe, sig, total_episode=2)
 
     def test_guard_veto_uses_signal_scope_total_when_available(self):
         """guard_veto 释放判断优先使用本轮 TMDB scope 总数。"""
@@ -175,10 +177,11 @@ class TestCheckExit:
         j = _judge(evaluate_result=sig, store=store)
         j._timeout.check_release.return_value = True
 
-        result = j.check_exit(_sub(state="P", total_episode=2), _mi(), lambda *a: [])
+        subscribe = _sub(state="P", total_episode=2)
+        result = j.check_exit(subscribe, _mi(), lambda *a: [])
 
         assert result is True
-        j._timeout.check_release.assert_called_once_with(1, sig, total_episode=3)
+        j._timeout.check_release.assert_called_once_with(subscribe, sig, total_episode=3)
 
     def test_pending_judge_exits_on_completion(self):
         """pending_judge P：信号确认完结 → 退出。"""

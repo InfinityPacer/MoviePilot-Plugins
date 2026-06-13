@@ -56,7 +56,7 @@ LABELS = {
     "best_version_clear_history_type": "清理整理记录范围",
     "best_version_remaining_days": "洗版时限（天）",
     # 完结信号
-    "completion_guard_enabled": "完结守卫",
+    "completion_guard_mode": "完结守卫模式",
     "volatility_enabled": "变更速率信号",
     "volatility_window_days": "变更速率窗口（天）",
     "cadence_enabled": "播出节奏信号",
@@ -120,7 +120,7 @@ HINTS = {
     "best_version_clear_history_type": "洗版下载时清理整理记录和文件的范围（破坏性）",
     "best_version_remaining_days": "达到指定天数后自动终止洗版，有下载则按最新时间计算，为0时不限",
     # 完结信号
-    "completion_guard_enabled": "完成前复核完结状态，未播完时转为待定",
+    "completion_guard_mode": "选择完成前复核强度，默认使用平衡策略",
     "volatility_enabled": "总集数近期变化时视为不稳定",
     "volatility_window_days": "统计总集数变化的天数，越长越保守",
     "cadence_enabled": "按已播间隔判断等待期，不会直接判定完结",
@@ -130,7 +130,7 @@ HINTS = {
     "season_cooldown_days": "最后一集播出后继续观察的天数",
     "verify_enabled": "完成后检查集数，增加时自动重建订阅",
     "verify_interval_hours": "完成后重新检查集数的间隔",
-    "verify_retention_days": "完成快照超过设置天数后停止检查",
+    "verify_retention_days": "完成快照按设置天数保留并自动清理，默认180天",
     "timeout_release_enabled": "完成守卫待定（P）超期后释放，信号不稳定时重新计时",
     "timeout_release_days": "完成守卫待定（P）允许保留的最长天数",
     "timeout_cadence_acceleration": "等待期结束时将待定期限缩短一半",
@@ -168,7 +168,7 @@ TABS = [
         ["best_version_episode_to_full", "best_version_backfill_enabled", "backfill_best_version_now"],
     ]),
     ("完结信号", [
-        ["completion_guard_enabled", "volatility_enabled", "cadence_enabled"],
+        ["completion_guard_mode", "volatility_enabled", "cadence_enabled"],
         ["verify_enabled", "timeout_release_enabled", "timeout_cadence_acceleration"],
         ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
         ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
@@ -196,6 +196,12 @@ _COMMON_INTERVAL_ITEMS = [
 
 # 固定枚举选择项（非布尔/字符串/数值，需限定候选集的字段）
 SELECT_ITEMS = {
+    "completion_guard_mode": [
+        {"title": "关闭", "value": "off"},
+        {"title": "严格", "value": "strict"},
+        {"title": "平衡", "value": "balanced"},
+        {"title": "宽松", "value": "loose"},
+    ],
     "download_check_interval_minutes": _MINUTE_INTERVAL_ITEMS,
     "auto_check_interval_minutes": _COMMON_INTERVAL_ITEMS,
     "meta_check_interval_hours": [

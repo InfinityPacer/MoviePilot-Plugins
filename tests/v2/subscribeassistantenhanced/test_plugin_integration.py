@@ -249,7 +249,7 @@ def test_get_state_uses_global_enabled():
     assert plugin.get_state() is False
 
     enabled_plugin = SubscribeAssistantEnhanced()
-    enabled_plugin.init_plugin({"enabled": True, "completion_guard_enabled": False})
+    enabled_plugin.init_plugin({"enabled": True, "completion_guard_mode": "off"})
     assert enabled_plugin.get_state() is True
 
 
@@ -535,7 +535,7 @@ def test_run_all_checks_invokes_each_runner():
 
 
 def test_run_common_check_runs_enabled_subtasks():
-    """通用巡检按域开关执行待定释放、无下载处理和删除记录清理。"""
+    """通用巡检按域开关执行任务，并始终清理两个生命周期存储。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
         "timeout_release_enabled": True,
@@ -544,12 +544,16 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_pending_release = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
+    plugin.run_completion_snapshot_cleanup = MagicMock()
+    plugin.run_best_version_history_cleanup = MagicMock()
 
     plugin.run_common_check()
 
     plugin.run_pending_release.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
+    plugin.run_completion_snapshot_cleanup.assert_called_once()
+    plugin.run_best_version_history_cleanup.assert_called_once()
 
 
 def test_run_common_check_isolates_subtask_failures():
@@ -562,15 +566,19 @@ def test_run_common_check_isolates_subtask_failures():
     plugin.run_pending_release = MagicMock(side_effect=RuntimeError("pending failed"))
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
+    plugin.run_completion_snapshot_cleanup = MagicMock()
+    plugin.run_best_version_history_cleanup = MagicMock()
 
     plugin.run_common_check()
 
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
+    plugin.run_completion_snapshot_cleanup.assert_called_once()
+    plugin.run_best_version_history_cleanup.assert_called_once()
 
 
 def test_run_common_check_respects_domain_switches():
-    """关闭对应域后，通用巡检不执行待定释放和删除记录清理。"""
+    """关闭可选域后，生命周期存储清理仍必须执行。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
         "timeout_release_enabled": False,
@@ -579,12 +587,16 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_pending_release = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
+    plugin.run_completion_snapshot_cleanup = MagicMock()
+    plugin.run_best_version_history_cleanup = MagicMock()
 
     plugin.run_common_check()
 
     plugin.run_pending_release.assert_not_called()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_not_called()
+    plugin.run_completion_snapshot_cleanup.assert_called_once()
+    plugin.run_best_version_history_cleanup.assert_called_once()
 
 
 def test_onlyonce_registers_one_shot_and_resets_flag():
@@ -1098,8 +1110,8 @@ class TestPeriodicJobs:
         plugin.post_message.assert_called_once()
         assert "不再满足上映待定，已标记订阅中" in plugin.post_message.call_args.kwargs["title"]
 
-    def test_pending_release_legacy_block_starts_low_confidence_observation_without_token(self, monkeypatch):
-        """run_pending_release 不能把旧 guard_veto 超时时长借给首次低置信观察。"""
+    def test_pending_release_legacy_block_is_discarded_without_token(self, monkeypatch):
+        """缺少媒体身份的旧 guard_veto 不能借给当前订阅。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({
             "timeout_release_enabled": True,
@@ -1139,9 +1151,7 @@ class TestPeriodicJobs:
 
         plugin.run_pending_release()
 
-        assert data_store["blocks"]["1"]["signals"] == ["I:all_aired"]
-        assert data_store["blocks"]["1"]["confidence"] == "low"
-        assert data_store["blocks"]["1"]["total_episode"] == 2
+        assert "1" not in data_store.get("blocks", {})
         assert data_store.get("releases", {}) == {}
         assert data_store["subscribes"]["1"]["state"] == "P"
 
@@ -1149,7 +1159,7 @@ class TestPeriodicJobs:
         """低置信 guard_veto 超时释放后，下次完成检查可放行并登记 H 快照。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({
-            "completion_guard_enabled": True,
+            "completion_guard_mode": "strict",
             "timeout_release_enabled": True,
             "verify_enabled": True,
             "timeout_release_days": 21,
@@ -1170,6 +1180,12 @@ class TestPeriodicJobs:
                     "signals": ["I:all_aired"],
                     "confidence": "low",
                     "total_episode": 2,
+                    "identity": {
+                        "subscribe_id": 1,
+                        "tmdbid": 100,
+                        "season": 1,
+                        "episode_group": None,
+                    },
                 }
             },
         }
@@ -1206,7 +1222,7 @@ class TestPeriodicJobs:
         plugin._modules["guard"].handle(event)
 
         assert event.event_data.cancel is False
-        assert data_store["snapshots"]["list"]
+        assert data_store.get("snapshots", {}) == {}
 
     def test_pending_release_checks_pending_judge_tasks(self):
         """pending_judge 写入的 P 订阅应由定时巡检调用 check_exit，而不只处理 blocks。"""
@@ -1254,6 +1270,15 @@ class TestVerifierWiring:
         plugin.init_plugin({"enabled": True, "verify_enabled": True})
         service_ids = {s["id"] for s in plugin.get_service()}
         assert "SubscribeAssistantEnhanced_verify" in service_ids
+
+    def test_snapshot_collector_is_wired_when_auto_correction_disabled(self):
+        """关闭自动纠错只停止定时复查，完成事件仍必须采集快照。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"enabled": True, "verify_enabled": False})
+
+        assert plugin._event_proxy.get("verifier") is plugin._modules["verifier"]
+        service_ids = {s["id"] for s in plugin.get_service()}
+        assert "SubscribeAssistantEnhanced_verify" not in service_ids
 
     def test_completion_verifier_has_runtime_dependencies(self):
         """CompletionVerifier 必须能 fetch TMDB、重建订阅并通知。"""

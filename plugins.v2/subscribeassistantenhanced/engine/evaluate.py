@@ -4,7 +4,10 @@ from typing import Optional, Callable
 
 from .types import CompletionSignal, SeasonScope
 from .scope import build_scope
-from .signals import check_m_signal, check_e_signal, check_i_signal, _field
+from .signals import (
+    check_m_signal, check_e_signal, check_i_signal,
+    has_future_next_episode,
+)
 from .cadence import check_cadence_expired
 from .volatility import VolatilityTracker
 from ..shared.config import PluginConfig
@@ -32,7 +35,7 @@ def evaluate(subscribe, mediainfo,
 
     # 2. 集数稳定性（F）：total_episode 仍在变化时拒绝提前完结。
     if config.volatility_enabled and subscribe_id is not None:
-        if not volatility_tracker.is_stable(subscribe_id):
+        if not volatility_tracker.is_stable(subscribe=subscribe):
             detail(
                 f"信号引擎[集数稳定性（F）]：{subscribe_label} 否决完结，"
                 f"原因：total_episode 近 {config.volatility_window_days} 天内变动"
@@ -69,8 +72,9 @@ def evaluate(subscribe, mediainfo,
     if scope.high_risk:
         from ..shared.media import all_aired as _all_aired
         tmdb_info = mediainfo.tmdb_info
-        next_ep = _field(tmdb_info, "next_episode_to_air", None) if tmdb_info else None
-        has_next = next_ep is not None and _field(next_ep, "season_number", 0) == scope.season
+        has_next = has_future_next_episode(
+            tmdb_info, scope.season, as_of=today
+        )
         if _all_aired(scope.episodes, as_of=today) and not has_next:
             cadence_expired = True
     elif config.cadence_enabled:
@@ -107,4 +111,5 @@ def _confidence_label(confidence: str) -> str:
 def _attach_scope_total(signal: CompletionSignal, scope) -> CompletionSignal:
     """把本轮 TMDB 目标范围总数写入信号，供后续观察期判断增集。"""
     signal.scope_total = scope.total
+    signal.scope_high_risk = scope.high_risk
     return signal

@@ -39,7 +39,7 @@ def test_new_parity_config_defaults():
     assert cfg.best_version_backfill_enabled is False
     assert cfg.backfill_best_version_now is False
     # 完结信号
-    assert cfg.completion_guard_enabled is False
+    assert cfg.completion_guard_mode == "balanced"
     assert cfg.verify_enabled is False
 
 

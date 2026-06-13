@@ -1,4 +1,5 @@
 """best_version/orchestrator.py 洗版编排单测。"""
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -303,7 +304,10 @@ class TestHistoryClear:
 
     def test_transfer_intercept_clear_deletes_dest_and_removes_snapshot(self):
         store = {"best_version_clear_histories": {"100": {
-            "subscribe_desc": "X", "histories": [{"dest_fileitem": {"path": "/dest/a.mkv"}}]}}}
+            "subscribe_desc": "X",
+            "histories": [{"dest_fileitem": {"path": "/dest/a.mkv"}}],
+            "time": time.time(),
+        }}}
         orch, store, deletes, _e, _h = self._orch_clear(store)
         event = SimpleNamespace(event_data=SimpleNamespace(
             cancel=False, mediainfo=SimpleNamespace(tmdb_id=100)))
@@ -321,12 +325,43 @@ class TestHistoryClear:
 
     def test_transfer_intercept_clear_returns_true(self):
         """命中清理快照并完成清理时返回 True，供事件层输出结果日志。"""
-        store = {"best_version_clear_histories": {"100": {"subscribe_desc": "X", "histories": []}}}
+        store = {"best_version_clear_histories": {"100": {
+            "subscribe_desc": "X", "histories": [], "time": time.time(),
+        }}}
         orch, _store, _deletes, _events, _hist = self._orch_clear(store)
         event = SimpleNamespace(event_data=SimpleNamespace(
             cancel=False, mediainfo=SimpleNamespace(tmdb_id=100)))
 
         assert orch.handle_history_clear(event) is True
+
+    def test_transfer_intercept_drops_expired_history_without_deleting_dest(self):
+        """超过 72 小时的清理事务失效，不得删除旧媒体库目标文件。"""
+        store = {"best_version_clear_histories": {"100": {
+            "subscribe_desc": "X",
+            "histories": [{"dest_fileitem": {"path": "/dest/a.mkv"}}],
+            "time": time.time() - 73 * 3600,
+        }}}
+        orch, _store, deletes, _events, _histories = self._orch_clear(store)
+        event = SimpleNamespace(event_data=SimpleNamespace(
+            cancel=False, mediainfo=SimpleNamespace(tmdb_id=100)))
+
+        assert orch.handle_history_clear(event) is False
+
+        assert deletes == []
+        assert "100" not in store["best_version_clear_histories"]
+
+    def test_cleanup_expired_clear_histories_keeps_recent_tasks(self):
+        """通用清理只移除超过 72 小时的洗版清理事务。"""
+        now = time.time()
+        store = {"best_version_clear_histories": {
+            "expired": {"time": now - 73 * 3600},
+            "recent": {"time": now - 71 * 3600},
+        }}
+        orch, _store, _deletes, _events, _histories = self._orch_clear(store)
+
+        assert orch.cleanup_expired_clear_histories() == 1
+
+        assert set(store["best_version_clear_histories"]) == {"recent"}
 
 
 class TestStartBestVersion:
