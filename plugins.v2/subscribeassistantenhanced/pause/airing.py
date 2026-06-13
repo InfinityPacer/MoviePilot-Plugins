@@ -6,6 +6,13 @@ from ..engine.types import CompletionSignal, PauseRecord
 from ..shared.media import get_tv_season_air_date, parse_date
 
 
+def _episode_air_date(episode) -> Optional[str]:
+    """读取 TMDB 集信息播出日期；TMDB 原始字段可能是 dict，仓内整理后通常是对象。"""
+    if isinstance(episode, dict):
+        return episode.get("air_date")
+    return episode.air_date
+
+
 class AiringPauseChecker:
     """播出暂停判定：完结信号确认后不暂停，否则按间隔判断。"""
 
@@ -74,19 +81,21 @@ class AiringPauseChecker:
             return None
 
         if next_episode:
-            air = parse_date(next_episode.air_date)
+            next_air_date = _episode_air_date(next_episode)
+            air = parse_date(next_air_date)
             if air:
                 days_until = (air - today).days
                 if days_until > self._pause_days:
                     return PauseRecord(
                         reason="airing_gap",
                         since=0.0,
-                        detail=f"下一集 {next_episode.air_date}，距今 {days_until} 天",
+                        detail=f"下一集 {next_air_date}，距今 {days_until} 天",
                     )
                 return None
 
         if latest_episode:
-            air = parse_date(latest_episode.air_date)
+            latest_air_date = _episode_air_date(latest_episode)
+            air = parse_date(latest_air_date)
             if air:
                 days_since = (today - air).days
                 if days_since > self._pause_days:

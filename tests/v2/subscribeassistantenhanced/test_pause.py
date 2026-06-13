@@ -143,6 +143,16 @@ class TestAiringPause:
         assert result is not None
         assert result.reason == "airing_gap"
 
+    def test_next_episode_dict_far_away_pauses(self):
+        """下一集为 TMDB dict 形态时，仍按 air_date 判断播出间隔。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        far = (date(2026, 6, 1) + timedelta(days=30)).isoformat()
+        result = checker.check(_sub(), None, next_episode={"air_date": far}, latest_episode=None,
+                               as_of=date(2026, 6, 1))
+        assert result is not None
+        assert result.reason == "airing_gap"
+
     def test_next_episode_near_no_pause(self):
         """下一集在阈值内 → 不暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
@@ -158,6 +168,16 @@ class TestAiringPause:
         checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
         old = (date(2026, 6, 1) - timedelta(days=30)).isoformat()
         result = checker.check(_sub(), None, next_episode=None, latest_episode=_ep(old),
+                               as_of=date(2026, 6, 1))
+        assert result is not None
+        assert result.reason == "airing_gap"
+
+    def test_latest_episode_dict_old_pauses(self):
+        """最后集为 TMDB dict 形态时，仍按 air_date 判断播出间隔。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        old = (date(2026, 6, 1) - timedelta(days=30)).isoformat()
+        result = checker.check(_sub(), None, next_episode=None, latest_episode={"air_date": old},
                                as_of=date(2026, 6, 1))
         assert result is not None
         assert result.reason == "airing_gap"
