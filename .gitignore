@@ -15,6 +15,7 @@ dist/
 plugins.v2/subscribeassistantenhanced/dist/*
 !plugins.v2/subscribeassistantenhanced/dist/assets/
 !plugins.v2/subscribeassistantenhanced/dist/assets/**
+node_modules/
 downloads/
 eggs/
 .eggs/
