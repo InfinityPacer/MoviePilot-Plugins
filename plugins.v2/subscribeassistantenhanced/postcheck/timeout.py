@@ -4,7 +4,9 @@ from typing import Callable, Optional
 
 from ..engine.types import CompletionSignal
 from ..shared.log import detail
-from ..shared.subscribe import format_subscribe_label
+from ..shared.subscribe import (
+    format_subscribe_label, identity_matches, subscribe_identity,
+)
 
 
 class PendingTimeoutManager:
@@ -20,13 +22,18 @@ class PendingTimeoutManager:
         self._cadence_acceleration = cadence_acceleration
         self._subscribe_get = subscribe_get_fn
 
-    def record_block(self, subscribe_id: int, signal: Optional[CompletionSignal] = None,
+    def record_block(self, subscribe_id, signal: Optional[CompletionSignal] = None,
                      total_episode: Optional[int] = None):
         """CompletionCheck 否决时开始计时，并记录本轮观察的信号上下文。"""
+        subscribe, subscribe_id = self._resolve_subscribe(subscribe_id)
         sid = str(subscribe_id)
 
         def updater(data: dict) -> dict:
-            if sid not in data:
+            current = data.get(sid)
+            if current is None or (
+                subscribe is not None
+                and not identity_matches(current.get("identity"), subscribe)
+            ):
                 data[sid] = {
                     "blocked_at": time.time(),
                     "reason": "guard_veto",
@@ -34,6 +41,8 @@ class PendingTimeoutManager:
                     "confidence": signal.confidence if signal else "",
                     "total_episode": total_episode,
                 }
+                if subscribe is not None:
+                    data[sid]["identity"] = subscribe_identity(subscribe)
             return data
 
         self._update("blocks", updater)
@@ -48,9 +57,10 @@ class PendingTimeoutManager:
 
         self._update("blocks", updater)
 
-    def record_release(self, subscribe_id: int, signal: CompletionSignal,
+    def record_release(self, subscribe_id, signal: CompletionSignal,
                        total_episode: Optional[int] = None):
         """记录一次性低置信放行标记，供下一次 CompletionCheck 消费。"""
+        subscribe, subscribe_id = self._resolve_subscribe(subscribe_id)
         sid = str(subscribe_id)
         token = {
             "signals": list(signal.signals),
@@ -58,6 +68,8 @@ class PendingTimeoutManager:
             "total_episode": total_episode,
             "released_at": time.time(),
         }
+        if subscribe is not None:
+            token["identity"] = subscribe_identity(subscribe)
 
         def updater(data: dict) -> dict:
             data[sid] = token
@@ -65,14 +77,20 @@ class PendingTimeoutManager:
 
         self._update("releases", updater)
 
-    def consume_release(self, subscribe_id: int, signal: CompletionSignal,
+    def consume_release(self, subscribe_id, signal: CompletionSignal,
                         total_episode: Optional[int] = None) -> bool:
         """消费匹配当前低置信信号的一次性放行标记。"""
+        subscribe, subscribe_id = self._resolve_subscribe(subscribe_id)
         sid = str(subscribe_id)
         total_episode = self._resolve_total(signal, total_episode)
         releases = self._read("releases")
         token = releases.get(sid)
         if not token:
+            return False
+        if subscribe is not None and not identity_matches(
+            token.get("identity"), subscribe
+        ):
+            self._clear_release(sid)
             return False
 
         if not self._matches_token(token, signal, total_episode):
@@ -82,7 +100,7 @@ class PendingTimeoutManager:
         self._clear_release(sid)
         return True
 
-    def check_release(self, subscribe_id: int,
+    def check_release(self, subscribe_id,
                       signal: CompletionSignal,
                       total_episode: Optional[int] = None) -> bool:
         """检查是否应释放 P 状态。
@@ -91,11 +109,18 @@ class PendingTimeoutManager:
         观察期间若总集数增长或低置信信号消失，释放当前 guard 来源但不写放行标记；
         开启 cadence_acceleration 且节奏已到期时，超时阈值减半以加速释放。
         """
+        subscribe, subscribe_id = self._resolve_subscribe(subscribe_id)
         sid = str(subscribe_id)
         total_episode = self._resolve_total(signal, total_episode)
         data = self._read("blocks")
         block = data.get(sid)
         if not block:
+            return False
+        if subscribe is not None and not identity_matches(
+            block.get("identity"), subscribe
+        ):
+            self.clear_block(subscribe_id)
+            self._clear_release(sid)
             return False
         label = self._format_subscribe_label(subscribe_id)
 
@@ -132,8 +157,17 @@ class PendingTimeoutManager:
             return False
 
         if signal.completed and signal.confidence == "low":
-            self.record_release(subscribe_id, signal, total_episode=total_episode)
+            self.record_release(
+                subscribe or subscribe_id, signal, total_episode=total_episode
+            )
         return True
+
+    @staticmethod
+    def _resolve_subscribe(subscribe_or_id):
+        """兼容旧整数调用，并在对象调用时返回完整订阅身份。"""
+        if hasattr(subscribe_or_id, "id"):
+            return subscribe_or_id, subscribe_or_id.id
+        return None, subscribe_or_id
 
     def _format_subscribe_label(self, subscribe_id: int) -> str:
         """按订阅 ID 生成超时诊断标签；查库失败时仍保留 ID。"""

@@ -6,8 +6,9 @@ from app.schemas.event import SubscribeCompletionCheckEventData
 from app.schemas.types import MediaType
 
 from .engine.scope import build_scope
-from .engine.signals import scope_finale_episode
-from .engine.types import CompletionSignal, CompletionVerifierProtocol, PendingTimeoutManagerProtocol
+from .engine.local import check_l_signal
+from .engine.signals import has_future_next_episode
+from .engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from .shared.log import detail
 from .shared.subscribe import format_subscribe, resolve_subscribe_media_type
 
@@ -19,21 +20,19 @@ class CompletionGuard:
                  evaluate_fn: Callable,
                  has_active_downloads_fn: Callable,
                  mark_pending_fn: Callable,
-                 verifier: CompletionVerifierProtocol,
                  timeout_manager: PendingTimeoutManagerProtocol,
-                 detect_existing_episodes_fn: Callable = None,
                  detect_missing_episodes_fn: Callable = None,
                  tmdb_episodes_fn: Callable = None,
+                 mode: str = "balanced",
                  pending_download_enabled: bool = True):
         """保存完成守卫依赖与下载中待定开关。"""
         self.evaluate_fn = evaluate_fn
         self.has_active_downloads_fn = has_active_downloads_fn
         self.mark_pending_fn = mark_pending_fn
-        self.verifier = verifier
         self.timeout_manager = timeout_manager
-        self.detect_existing_episodes_fn = detect_existing_episodes_fn
         self.detect_missing_episodes_fn = detect_missing_episodes_fn
         self.tmdb_episodes_fn = tmdb_episodes_fn
+        self.mode = mode
         self.pending_download_enabled = pending_download_enabled
 
     def handle(self, event):
@@ -76,60 +75,82 @@ class CompletionGuard:
             self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
             return
 
-        if signal.completed:
-            if signal.confidence == "low":
-                if self.timeout_manager.consume_release(
-                    subscribe.id,
-                    signal,
-                    total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
-                ):
-                    detail(f"完成守卫：{format_subscribe(subscribe)} 低置信观察已释放，放行完成并登记完成快照")
-                    self.verifier.snapshot(subscribe, data.mediainfo, None)
-                    return
-                logger.info(f"完成守卫：{format_subscribe(subscribe)} 低置信完结（{signal.reason}），进入完成前观察")
-                data.cancel = True
-                data.source = "subscribeassistantenhanced"
-                data.reason = signal.reason
-                self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
-                self.timeout_manager.record_block(
-                    subscribe.id,
-                    signal=signal,
-                    total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
-                )
-                return
-            if signal.confidence != "high":
-                detail(f"完成守卫：{format_subscribe(subscribe)} 已判定完结但置信度非高，放行完成并登记完成快照")
-                self.verifier.snapshot(subscribe, data.mediainfo, None)
-            else:
-                detail(f"完成守卫：{format_subscribe(subscribe)} 高置信完结，放行完成")
+        if "M:mid_season" in signal.signals:
+            self._block_completion(data, subscribe, signal)
             return
 
-        logger.info(f"完成守卫：{format_subscribe(subscribe)} 未完结（{signal.reason}），否决完成、进入待定（P）并开始超时计时")
-        if self._is_locally_complete(subscribe, data.mediainfo):
-            logger.info(f"完成守卫：{format_subscribe(subscribe)} 媒体库已覆盖订阅目标集且包含目标范围 finale，放行完成并登记完成快照")
-            self.verifier.snapshot(subscribe, data.mediainfo, None)
+        if signal.completed:
+            if signal.confidence == "low" and not self._allow_low_confidence(signal):
+                self._observe_low_confidence(data, subscribe, signal)
+                return
+            detail(
+                f"完成守卫：{format_subscribe(subscribe)} "
+                f"{signal.confidence or '未知'}置信完结，按 {self.mode} 模式放行"
+            )
             return
+
+        local_signal = self._local_signal(subscribe, data.mediainfo)
+        if local_signal is not None:
+            if self._allow_low_confidence(local_signal):
+                detail(
+                    f"完成守卫：{format_subscribe(subscribe)} 命中 L 本地覆盖信号，"
+                    f"按 {self.mode} 模式放行"
+                )
+                return
+            self._observe_low_confidence(data, subscribe, local_signal)
+            return
+
+        self._block_completion(data, subscribe, signal)
+
+    def _local_signal(self, subscribe, mediainfo):
+        """计算 L 信号；明确存在未来集时不允许本地覆盖绕过排期。"""
+        if not (self.detect_missing_episodes_fn and self.tmdb_episodes_fn):
+            return None
+        tmdb_info = mediainfo.tmdb_info if mediainfo else None
+        if has_future_next_episode(tmdb_info, subscribe.season):
+            return None
+        scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
+        return check_l_signal(
+            subscribe, scope,
+            detect_missing_episodes_fn=self.detect_missing_episodes_fn,
+        )
+
+    def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
+        """按守卫模式判断低置信 I/L 是否可立即完成。"""
+        if self.mode == "loose":
+            return True
+        if self.mode == "balanced":
+            return signal.scope_total >= 3 and not signal.scope_high_risk
+        return False
+
+    def _observe_low_confidence(self, data, subscribe, signal: CompletionSignal):
+        """低置信信号未获策略直接放行时，消费令牌或进入完成前观察。"""
+        total_episode = signal.scope_total or subscribe.total_episode
+        if self.timeout_manager.consume_release(
+            subscribe, signal, total_episode=total_episode
+        ):
+            detail(f"完成守卫：{format_subscribe(subscribe)} 低置信观察已释放，放行完成")
+            return
+        logger.info(
+            f"完成守卫：{format_subscribe(subscribe)} 低置信完结（{signal.reason}），"
+            "进入完成前观察"
+        )
         data.cancel = True
         data.source = "subscribeassistantenhanced"
         data.reason = signal.reason
         self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
-        self.timeout_manager.record_block(subscribe.id)
+        self.timeout_manager.record_block(
+            subscribe, signal=signal, total_episode=total_episode
+        )
 
-    def _is_locally_complete(self, subscribe, mediainfo) -> bool:
-        """判断媒体库是否已覆盖订阅目标集，并确认目标范围 finale 已经入库。"""
-        if not (self.detect_existing_episodes_fn and self.detect_missing_episodes_fn and self.tmdb_episodes_fn):
-            return False
-        missing = self.detect_missing_episodes_fn(subscribe)
-        if missing != []:
-            return False
-        existing = self.detect_existing_episodes_fn(subscribe)
-        finale_episode = self._scope_finale_episode_number(subscribe, mediainfo)
-        if finale_episode is None:
-            return False
-        return finale_episode in set(existing or [])
-
-    def _scope_finale_episode_number(self, subscribe, mediainfo):
-        """返回当前 TMDB 目标范围的 finale 集号；没有明确 finale 时返回 None。"""
-        scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
-        finale = scope_finale_episode(scope)
-        return finale.episode_number if finale else None
+    def _block_completion(self, data, subscribe, signal: CompletionSignal):
+        """记录普通完成否决并进入待定观察。"""
+        logger.info(
+            f"完成守卫：{format_subscribe(subscribe)} 未完结（{signal.reason}），"
+            "否决完成、进入待定（P）并开始超时计时"
+        )
+        data.cancel = True
+        data.source = "subscribeassistantenhanced"
+        data.reason = signal.reason
+        self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
+        self.timeout_manager.record_block(subscribe)

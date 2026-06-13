@@ -81,10 +81,8 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
         return None
 
     # I-3：SeasonScope 内所有集已播，且 TMDB 没有同季 next_episode_to_air。
-    next_ep = _field(tmdb_info, "next_episode_to_air", None)
-    has_next_this_season = (
-        next_ep is not None
-        and _field(next_ep, "season_number", 0) == scope.season
+    has_next_this_season = has_future_next_episode(
+        tmdb_info, scope.season, as_of=today
     )
 
     if _all_aired(scope.episodes, as_of=today) and not has_next_this_season:
@@ -108,6 +106,24 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
                     )
 
     return None
+
+
+def has_future_next_episode(tmdb_info, season: int,
+                            as_of: Optional[date] = None) -> bool:
+    """判断 TMDB 下一集是否属于当前季且明确尚未到播出日期。
+
+    TMDB 在播出当天仍可能保留 next_episode_to_air；日期等于当天时按已播处理。
+    日期缺失或无法解析时保守视为未来集，避免未知排期被提前完成。
+    """
+    if not tmdb_info:
+        return False
+    next_ep = _field(tmdb_info, "next_episode_to_air", None)
+    if next_ep is None or _field(next_ep, "season_number", 0) != season:
+        return False
+    air_date = parse_date(_field(next_ep, "air_date", None))
+    if air_date is None:
+        return True
+    return air_date > (as_of or date.today())
 
 
 def _has_future_episodes(episodes: list, today: date) -> bool:

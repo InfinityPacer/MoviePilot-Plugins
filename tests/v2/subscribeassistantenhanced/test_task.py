@@ -60,13 +60,23 @@ class TaskDataManagerTest:
         lock2 = self.mgr._lock_for("subscribes")
         assert lock1 is lock2
 
-    def test_clear_tasks_removes_subscribe_and_its_torrents(self):
-        """清理订阅任务的同时清掉名下种子任务，其余订阅/种子不受影响。"""
+    def test_clear_tasks_removes_all_subscription_instance_state(self):
+        """清理订阅实例数据，但保留按媒体或事务保存的长期数据。"""
         self.mgr.write("subscribes", {"9": {"x": 1}, "10": {"y": 2}})
         self.mgr.write("torrents", {"h1": {"subscribe_id": 9}, "h2": {"subscribe_id": 10}})
+        self.mgr.write("volatility", {"9": [{"total": 2}], "10": [{"total": 3}]})
+        self.mgr.write("blocks", {"9": {"blocked_at": 1}, "10": {"blocked_at": 2}})
+        self.mgr.write("releases", {"9": {"signals": []}, "10": {"signals": []}})
+        self.mgr.write("snapshots", {"list": [{"tmdbid": 100}]})
+        self.mgr.write("deletes", {"hash": {"time": 1}})
         self.mgr.clear_tasks(9)
         assert self.mgr.read("subscribes") == {"10": {"y": 2}}
         assert self.mgr.read("torrents") == {"h2": {"subscribe_id": 10}}
+        assert self.mgr.read("volatility") == {"10": [{"total": 3}]}
+        assert self.mgr.read("blocks") == {"10": {"blocked_at": 2}}
+        assert self.mgr.read("releases") == {"10": {"signals": []}}
+        assert self.mgr.read("snapshots") == {"list": [{"tmdbid": 100}]}
+        assert self.mgr.read("deletes") == {"hash": {"time": 1}}
 
     def test_clean_torrent_tasks_removes_by_hash(self):
         """按 hash 清理：从 torrents 移除，并从订阅 torrent_tasks 移除该 hash。"""

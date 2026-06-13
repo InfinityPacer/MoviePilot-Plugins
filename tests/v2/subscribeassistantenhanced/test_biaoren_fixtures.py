@@ -138,8 +138,8 @@ def test_biaoren_s02_low_confidence_enters_guard_observation_before_snapshot():
         evaluate_fn=MagicMock(return_value=signal),
         has_active_downloads_fn=MagicMock(return_value=False),
         mark_pending_fn=MagicMock(),
-        verifier=MagicMock(),
         timeout_manager=PendingTimeoutManager(manager.read, manager.update, timeout_days=7),
+        mode="balanced",
         pending_download_enabled=True,
     )
     event = SimpleNamespace(event_data=SimpleNamespace(
@@ -159,7 +159,6 @@ def test_biaoren_s02_low_confidence_enters_guard_observation_before_snapshot():
     assert store["blocks"]["45"]["signals"] == ["I:all_aired"]
     assert store["blocks"]["45"]["total_episode"] == 2
     guard.mark_pending_fn.assert_called_once()
-    guard.verifier.snapshot.assert_not_called()
 
 
 def test_biaoren_s02_observation_timeout_records_release_and_next_guard_snapshots():
@@ -171,25 +170,20 @@ def test_biaoren_s02_observation_timeout_records_release_and_next_guard_snapshot
     subscribe.best_version = 0
     episodes_fn = _tmdb_episodes(tmdb)
     signal = _evaluate_fixture(subscribe, mediainfo, episodes_fn, as_of=date(2026, 6, 12))
-    manager, store = _store({"blocks": {"45": {
-        "blocked_at": time.time() - 8 * 86400,
-        "reason": "guard_veto",
-        "signals": ["I:all_aired"],
-        "confidence": "low",
-        "total_episode": 2,
-    }}})
+    manager, store = _store()
     timeout = PendingTimeoutManager(manager.read, manager.update, timeout_days=7)
+    timeout.record_block(subscribe, signal=signal, total_episode=2)
+    store["blocks"]["45"]["blocked_at"] = time.time() - 8 * 86400
 
-    assert timeout.check_release(subscribe.id, signal, total_episode=2) is True
+    assert timeout.check_release(subscribe, signal, total_episode=2) is True
     assert store["releases"]["45"]["total_episode"] == 2
 
-    verifier = MagicMock()
     guard = CompletionGuard(
         evaluate_fn=MagicMock(return_value=signal),
         has_active_downloads_fn=MagicMock(return_value=False),
         mark_pending_fn=MagicMock(),
-        verifier=verifier,
         timeout_manager=timeout,
+        mode="balanced",
         pending_download_enabled=True,
     )
     event = SimpleNamespace(event_data=SimpleNamespace(
@@ -204,7 +198,6 @@ def test_biaoren_s02_observation_timeout_records_release_and_next_guard_snapshot
 
     assert event.event_data.cancel is False
     assert "45" not in store.get("releases", {})
-    verifier.snapshot.assert_called_once_with(subscribe, mediainfo, None)
 
 
 def test_biaoren_s02_total_growth_releases_observation_without_allowing_completion():

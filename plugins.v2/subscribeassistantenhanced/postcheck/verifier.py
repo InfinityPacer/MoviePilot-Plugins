@@ -15,7 +15,7 @@ class CompletionVerifier:
     def __init__(self, task_data_read: Callable, task_data_update: Callable,
                  tmdb_episodes_fn: Optional[Callable] = None,
                  subscribe_oper=None,
-                 retention_days: int = 90,
+                 retention_days: int = 180,
                  notify_fn: Optional[Callable] = None,
                  rebuild_subscribe_fn: Optional[Callable] = None):
         """注入完成快照存储、集数查询、订阅查询和真实订阅重建能力。"""
@@ -57,17 +57,12 @@ class CompletionVerifier:
 
     def verify_all(self):
         """定时复查所有完成快照。"""
+        self.cleanup_expired()
         data = self._read("snapshots")
         snapshots = data.get("list", [])
-        now = time.time()
         to_remove = []
 
         for snap in snapshots:
-            age = now - snap.get("completed_at", now)
-            if age > self._retention_seconds:
-                to_remove.append(snap)
-                continue
-
             current_total = self._fetch_current_total(snap)
             if current_total is not None and current_total > snap.get("total_at_completion", 0):
                 snap_label = _format_snapshot_label(snap)
@@ -77,6 +72,19 @@ class CompletionVerifier:
 
         if to_remove:
             self._remove_snapshots(to_remove)
+
+    def cleanup_expired(self) -> int:
+        """按用户配置的保留期清理 H 快照，不请求 TMDB。"""
+        data = self._read("snapshots")
+        snapshots = data.get("list", [])
+        now = time.time()
+        expired = [
+            snap for snap in snapshots
+            if now - snap.get("completed_at", now) > self._retention_seconds
+        ]
+        if expired:
+            self._remove_snapshots(expired)
+        return len(expired)
 
     def _fetch_current_total(self, snap: dict) -> Optional[int]:
         if not self._tmdb_fn:
@@ -95,10 +103,15 @@ class CompletionVerifier:
             return False
         tmdbid = snap["tmdbid"]
         season = snap["season"]
+        episode_group_id = snap.get("episode_group_id")
 
         existing = self._subscribe_oper.list()
         for sub in (existing or []):
-            if sub.tmdbid == tmdbid and sub.season == season:
+            if (
+                sub.tmdbid == tmdbid
+                and sub.season == season
+                and sub.episode_group == episode_group_id
+            ):
                 if sub.best_version:
                     logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
                     self._subscribe_oper.delete(sub.id)

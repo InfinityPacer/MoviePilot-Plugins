@@ -63,10 +63,18 @@ class TestBuildForm:
         assert alert["component"] == "VAlert"
         assert "BETA 版本提示" in alert["props"]["text"]
 
-    def test_bool_default_renders_switch(self):
-        col = field_for("completion_guard_enabled", "启用完结守门", True)
-        assert col["content"][0]["component"] == "VSwitch"
-        assert col["content"][0]["props"]["model"] == "completion_guard_enabled"
+    def test_completion_guard_mode_renders_select(self):
+        conf, _model = build_form()
+        fields = _controls_with_model(conf[4])
+        control = next(field for field in fields
+                       if field["props"].get("model") == "completion_guard_mode")
+        assert control["component"] == "VSelect"
+        assert control["props"]["items"] == [
+            {"title": "关闭", "value": "off"},
+            {"title": "严格", "value": "strict"},
+            {"title": "平衡", "value": "balanced"},
+            {"title": "宽松", "value": "loose"},
+        ]
 
     def test_int_default_renders_number_field(self):
         col = field_for("download_timeout_minutes", "下载超时", 180)
@@ -110,7 +118,9 @@ class TestGetForm:
         from subscribeassistantenhanced import SubscribeAssistantEnhanced
         conf, model = SubscribeAssistantEnhanced().get_form()
         assert conf and isinstance(model, dict)
-        assert "completion_guard_enabled" in model
+        assert model["completion_guard_mode"] == "balanced"
+        assert model["verify_retention_days"] == 180
+        assert "completion_guard_enabled" not in model
 
 
 def test_multi_select_field_renders_vselect_multiple():
@@ -248,7 +258,7 @@ def test_tracker_keywords_in_dialog_as_textarea():
 def test_completion_signal_hints_explain_behavior_and_scope():
     """完结信号说明使用短中文句；允许待定（P）等已解释的状态码。"""
     keys = (
-        "completion_guard_enabled", "volatility_enabled", "volatility_window_days",
+        "completion_guard_mode", "volatility_enabled", "volatility_window_days",
         "cadence_enabled", "cadence_multiplier", "cadence_min_window_days",
         "cadence_min_episodes", "season_cooldown_days", "verify_enabled",
         "verify_interval_hours", "verify_retention_days", "timeout_release_enabled",
@@ -283,7 +293,7 @@ def test_common_check_interval_uses_reduced_options():
 
 def test_completion_labels_use_concise_names_without_enable_prefix():
     """完结信号配置使用简洁业务名称，不重复“启用”。"""
-    assert LABELS["completion_guard_enabled"] == "完结守卫"
+    assert LABELS["completion_guard_mode"] == "完结守卫模式"
     assert LABELS["volatility_enabled"] == "变更速率信号"
     assert LABELS["cadence_enabled"] == "播出节奏信号"
     assert LABELS["verify_enabled"] == "自动纠错"
@@ -302,7 +312,7 @@ def test_completion_tab_uses_original_flat_grid():
         [col["content"][0]["props"]["model"] for col in row["content"]]
         for row in completion_rows
     ] == [
-        ["completion_guard_enabled", "volatility_enabled", "cadence_enabled"],
+        ["completion_guard_mode", "volatility_enabled", "cadence_enabled"],
         ["verify_enabled", "timeout_release_enabled", "timeout_cadence_acceleration"],
         ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
         ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
@@ -316,7 +326,7 @@ def test_completion_flat_grid_keeps_persistent_hints():
     completion_items = conf[4]["content"][4]["content"]
     controls = _controls_with_model(completion_items)
     assert {control["props"]["model"] for control in controls} == {
-        "completion_guard_enabled",
+        "completion_guard_mode",
         "volatility_enabled",
         "cadence_enabled",
         "volatility_window_days",

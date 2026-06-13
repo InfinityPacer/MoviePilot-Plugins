@@ -16,7 +16,7 @@ class TestFrontend:
 
     def test_api_summary_shape(self):
         summary = self._plugin()._api_summary()
-        assert "完成守卫" in summary["domains"]
+        assert summary["domains"]["完结守卫模式"] == "balanced"
         assert "pending_count" in summary and "monitored_torrents" in summary
 
     def test_detail_page_offline(self):

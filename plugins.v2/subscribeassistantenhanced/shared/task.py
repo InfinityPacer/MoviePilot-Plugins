@@ -67,6 +67,8 @@ class TaskDataManager:
 
         self.update("subscribes", _clear_subscribe)
         self.update("torrents", _clear_torrents)
+        for key in ("volatility", "blocks", "releases"):
+            self.update(key, _clear_subscribe)
 
     def clean_torrent_tasks(self, torrent_hash):
         """按 hash 同步清理单个种子的任务记录：从 torrents 移除，并从各订阅的 torrent_tasks 移除。

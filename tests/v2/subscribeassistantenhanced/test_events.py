@@ -413,9 +413,12 @@ class TestSubscribeLifecycle:
         pause.check_auto_pause_for_user.assert_called_once_with(sub)
 
     def test_complete_clears_tasks_and_snapshots(self):
-        """SubscribeComplete → 先清任务再 H 快照，快照用查库订阅对象（非整个 event_data）。"""
+        """SubscribeComplete → 先保存 H 快照再清实例数据，避免历史被清理丢失。"""
+        order = []
         tm = MagicMock()
+        tm.clear_tasks.side_effect = lambda _sid: order.append("clear")
         verifier = MagicMock()
+        verifier.snapshot.side_effect = lambda **_kwargs: order.append("snapshot")
         sub = _sub(id=5, tmdbid=100, season=1)
         oper = MagicMock()
         oper.get.return_value = sub
@@ -426,8 +429,23 @@ class TestSubscribeLifecycle:
         }))
         tm.clear_tasks.assert_called_once_with(5)
         verifier.snapshot.assert_called_once()
+        assert order == ["snapshot", "clear"]
         _, kwargs = verifier.snapshot.call_args
         assert kwargs.get("subscribe") is sub
+
+    def test_complete_without_subscribe_snapshot_still_clears_instance_state(self):
+        """完成事件缺少订阅快照时仍按 ID 清理实例状态。"""
+        task_manager = MagicMock()
+        verifier = MagicMock()
+        proxy = EventProxy(task_manager=task_manager, verifier=verifier)
+
+        proxy.on_subscribe_complete(SimpleNamespace(event_data={
+            "subscribe_id": 5,
+            "subscribe_info": {},
+        }))
+
+        task_manager.clear_tasks.assert_called_once_with(5)
+        verifier.snapshot.assert_not_called()
 
     def test_complete_triggers_best_version_creation(self):
         """SubscribeComplete → 委托洗版编排创建洗版订阅（mediainfo 由事件重建）。"""

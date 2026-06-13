@@ -63,8 +63,9 @@ def _tracker(stable=True):
     tm, _ = _store()
     t = VolatilityTracker(tm, window_days=7)
     if not stable:
-        t.record(10, 1)
-        t.record(15, 1)
+        subscribe = _sub()
+        t.record(10, subscribe=subscribe)
+        t.record(15, subscribe=subscribe)
     return t
 
 
@@ -301,7 +302,9 @@ class TestHVerifier:
     def test_rebuild_deletes_bv(self):
         tm, store = _store()
         oper = MagicMock()
-        bv = SimpleNamespace(id=99, tmdbid=100, season=1, best_version=1)
+        bv = SimpleNamespace(
+            id=99, tmdbid=100, season=1, episode_group=None, best_version=1
+        )
         oper.list.return_value = [bv]
         verifier = CompletionVerifier(
             tm.read, tm.update,

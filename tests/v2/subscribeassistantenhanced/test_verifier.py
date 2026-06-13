@@ -132,6 +132,31 @@ class TestVerifyAll:
         v.verify_all()
         assert len(store["snapshots"]["list"]) == 0
 
+    def test_cleanup_expired_uses_configured_retention_without_tmdb(self):
+        """纯清理入口按用户保留期删除快照，不触发 TMDB 查询。"""
+        now = time.time()
+        store = {"snapshots": {"list": [
+            {
+                "tmdbid": 100, "season": 1, "episode_group_id": None,
+                "total_at_completion": 12,
+                "completed_at": now - 31 * 86400,
+                "subscribe_config": {},
+            },
+            {
+                "tmdbid": 101, "season": 1, "episode_group_id": None,
+                "total_at_completion": 12,
+                "completed_at": now - 29 * 86400,
+                "subscribe_config": {},
+            },
+        ]}}
+        tmdb_fn = MagicMock()
+        v = _verifier(store, tmdb_fn=tmdb_fn, retention_days=30)
+
+        assert v.cleanup_expired() == 1
+
+        assert [snap["tmdbid"] for snap in store["snapshots"]["list"]] == [101]
+        tmdb_fn.assert_not_called()
+
     def test_scope_aware_group_verification(self):
         """group scope 快照用 group 集数验证。"""
         store = {"snapshots": {"list": [{
@@ -157,13 +182,38 @@ class TestVerifyAll:
             "total_at_completion": 12, "completed_at": time.time(),
             "subscribe_config": {"name": "测试"},
         }]}}
-        existing_bv = SimpleNamespace(id=99, tmdbid=100, season=1, best_version=1)
+        existing_bv = SimpleNamespace(
+            id=99, tmdbid=100, season=1, episode_group=None, best_version=1
+        )
         rebuild = MagicMock(return_value=True)
         v = _verifier(store, tmdb_fn=lambda *a, **kw: [object()] * 15,
                       rebuild_fn=rebuild)
         v._oper.list.return_value = [existing_bv]
         v.verify_all()
         v._oper.delete.assert_called_once_with(99)
+        rebuild.assert_called_once()
+
+    def test_rebuild_does_not_touch_different_episode_group(self):
+        """同 TMDB 同季但不同剧集组不是同一目标范围。"""
+        store = {"snapshots": {"list": [{
+            "tmdbid": 100, "season": 1, "episode_group_id": "eg-new",
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "测试"},
+        }]}}
+        other_group = SimpleNamespace(
+            id=99, tmdbid=100, season=1,
+            episode_group="eg-old", best_version=1,
+        )
+        rebuild = MagicMock(return_value=True)
+        v = _verifier(
+            store, tmdb_fn=lambda *a, **kw: [object()] * 15,
+            rebuild_fn=rebuild,
+        )
+        v._oper.list.return_value = [other_group]
+
+        v.verify_all()
+
+        v._oper.delete.assert_not_called()
         rebuild.assert_called_once()
 
     def test_rebuild_sends_notification(self):
@@ -187,7 +237,9 @@ class TestVerifyAll:
             "total_at_completion": 12, "completed_at": time.time(),
             "subscribe_config": {"name": "测试"},
         }]}}
-        existing = SimpleNamespace(id=50, tmdbid=100, season=1, best_version=0)
+        existing = SimpleNamespace(
+            id=50, tmdbid=100, season=1, episode_group=None, best_version=0
+        )
         v = _verifier(store, tmdb_fn=lambda *a, **kw: [object()] * 15)
         v._oper.list.return_value = [existing]
         v.verify_all()

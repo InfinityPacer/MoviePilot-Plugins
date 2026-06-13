@@ -31,7 +31,7 @@ class TestPluginEntry:
     def test_data_layer_roundtrip(self):
         """get_data/save_data 由 _PluginBase 真实落盘，不再是返回 {} 的占位。"""
         plugin = SubscribeAssistantEnhanced()
-        plugin.init_plugin({"completion_guard_enabled": True})
+        plugin.init_plugin({"completion_guard_mode": "strict"})
         plugin.save_data("subscribes", {"1": {"flag": 1}})
         assert plugin.get_data("subscribes") == {"1": {"flag": 1}}
 

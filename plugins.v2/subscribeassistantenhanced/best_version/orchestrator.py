@@ -10,6 +10,8 @@ from ..shared.log import detail
 from ..shared.subscribe import format_subscribe_desc, resolve_subscribe_media_type
 from .priority import PriorityManager
 
+BEST_VERSION_CLEAR_HISTORY_TTL_SECONDS = 72 * 3600
+
 
 class BestVersionOrchestrator:
     """洗版全流程编排器。
@@ -296,14 +298,51 @@ class BestVersionOrchestrator:
         task = snapshots.get(key)
         if not task:
             return False
+        if self._clear_history_task_expired(task):
+            self._remove_clear_history_task(key)
+            detail(f"洗版整理拦截：TMDB {key} 的清理事务已超过 72 小时，丢弃且不删除媒体库文件")
+            return False
         if self.clear_transfer_dest_histories(task):
-            def updater(data: dict) -> dict:
-                data.pop(key, None)
-                return data
-            if self._update:
-                self._update("best_version_clear_histories", updater)
+            self._remove_clear_history_task(key)
             return True
         return False
+
+    def cleanup_expired_clear_histories(self) -> int:
+        """清理超过 72 小时或缺少有效时间戳的洗版文件清理事务。"""
+        snapshots = self._read("best_version_clear_histories") if self._read else {}
+        expired_keys = [
+            str(key) for key, task in (snapshots or {}).items()
+            if self._clear_history_task_expired(task)
+        ]
+        if not expired_keys or not self._update:
+            return 0
+
+        def updater(data: dict) -> dict:
+            for key in expired_keys:
+                data.pop(key, None)
+            return data
+
+        self._update("best_version_clear_histories", updater)
+        return len(expired_keys)
+
+    @staticmethod
+    def _clear_history_task_expired(task: dict) -> bool:
+        """判断破坏性清理事务是否仍处于允许消费的 72 小时窗口。"""
+        created_at = (task or {}).get("time")
+        if not isinstance(created_at, (int, float)):
+            return True
+        return time.time() - created_at > BEST_VERSION_CLEAR_HISTORY_TTL_SECONDS
+
+    def _remove_clear_history_task(self, key: str):
+        """按 TMDBID 删除已消费或失效的洗版清理事务。"""
+        if not self._update:
+            return
+
+        def updater(data: dict) -> dict:
+            data.pop(key, None)
+            return data
+
+        self._update("best_version_clear_histories", updater)
 
     def clear_transfer_dest_histories(self, task) -> bool:
         """删除清理快照中的媒体库目标文件；空快照也视为已处理。"""

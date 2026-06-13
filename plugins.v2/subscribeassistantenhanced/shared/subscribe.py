@@ -75,6 +75,21 @@ def match_subscribe(subscribe, task: dict) -> bool:
     return True
 
 
+def subscribe_identity(subscribe) -> dict:
+    """提取订阅实例的媒体身份，防止数据库 ID 复用时读取旧状态。"""
+    return {
+        "subscribe_id": subscribe.id,
+        "tmdbid": subscribe.tmdbid,
+        "season": subscribe.season,
+        "episode_group": subscribe.episode_group,
+    }
+
+
+def identity_matches(identity: dict, subscribe) -> bool:
+    """判断持久化身份是否仍属于当前订阅实例。"""
+    return bool(identity) and identity == subscribe_identity(subscribe)
+
+
 def subscribe_from_source(origin, subscribe_oper) -> Tuple[Optional[dict], Optional[object]]:
     """从事件 origin/source 解析订阅。
 

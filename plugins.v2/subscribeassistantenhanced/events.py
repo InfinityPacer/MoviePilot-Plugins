@@ -109,10 +109,17 @@ class EventProxy:
         detail(f"集数刷新事件：{label} 当前总集数 {data.current_total_episode}")
         volatility = self.get("volatility")
         if volatility:
-            volatility.record(
-                total=data.current_total_episode,
-                subscribe_id=data.subscribe_id,
-            )
+            subscribe_oper = self.get("subscribe_oper")
+            subscribe = subscribe_oper.get(data.subscribe_id) if (
+                subscribe_oper and data.subscribe_id
+            ) else None
+            record_kwargs = {
+                "total": data.current_total_episode,
+                "subscribe_id": data.subscribe_id,
+            }
+            if subscribe is not None:
+                record_kwargs["subscribe"] = subscribe
+            volatility.record(**record_kwargs)
         pending_refresh = self.get("pending_refresh")
         if pending_refresh:
             pending_refresh.handle_refresh(data)
@@ -259,16 +266,17 @@ class EventProxy:
         if subscribe is None and subscribe_info:
             subscribe = SimpleNamespace(**subscribe_info)
         detail(f"订阅完成事件：{format_subscribe_label(subscribe, subscribe_id)}")
+
+        verifier = self.get("verifier")
+        if subscribe and verifier:
+            verifier.snapshot(subscribe=subscribe, mediainfo=None, scope=None)
+
         task_manager = self.get("task_manager")
         if subscribe_id and task_manager:
             task_manager.clear_tasks(subscribe_id)
 
         if not subscribe:
             return
-
-        verifier = self.get("verifier")
-        if verifier:
-            verifier.snapshot(subscribe=subscribe, mediainfo=None, scope=None)
 
         # 自动洗版创建（按开关；mediainfo 由事件重建，洗版编排判断是否新建洗版订阅）
         orchestrator = self.get("orchestrator")
