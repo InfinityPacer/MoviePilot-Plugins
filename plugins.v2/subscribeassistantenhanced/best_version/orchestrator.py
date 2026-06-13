@@ -110,6 +110,9 @@ class BestVersionOrchestrator:
             "filter": subscribe.filter,
             "filter_groups": subscribe.filter_groups,
         }
+        # 普通剧集订阅完成后直接进入全集洗版，才能在新资源下载前执行整季旧版本清理。
+        if subscribe.type != "电影":
+            payload["best_version_full"] = 1
         payload = {key: value for key, value in payload.items() if value is not None}
         sid, _err = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:

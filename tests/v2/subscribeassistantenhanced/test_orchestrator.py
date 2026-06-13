@@ -223,6 +223,7 @@ class TestStartBestVersion:
         assert notify.call_args.args[0].endswith("已添加洗版订阅")
         _args, kwargs = oper.add.call_args
         assert kwargs["best_version"] == 1 and kwargs["season"] == 1
+        assert kwargs["best_version_full"] == 1
         assert kwargs["filter"] == "r"
         assert kwargs["filter_groups"] == ["g1"]
 
@@ -256,6 +257,8 @@ class TestStartBestVersion:
 
         assert sid == 6
         oper.add.assert_called_once()
+        _args, kwargs = oper.add.call_args
+        assert "best_version_full" not in kwargs
 
     def test_no_type_skips_all_subscriptions(self):
         """关闭洗版类型范围时不应创建任何洗版订阅。"""
@@ -311,3 +314,5 @@ class TestStartBestVersion:
 
         assert sid == 7
         oper.add.assert_called_once()
+        _args, kwargs = oper.add.call_args
+        assert kwargs["best_version_full"] == 1
