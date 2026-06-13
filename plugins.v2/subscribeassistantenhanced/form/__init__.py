@@ -338,6 +338,10 @@ def _footer() -> list:
 def build_form():
     """聚合表单：顶部开关行 + 周期行 + 5 个 Tab + 底部提示；model 为全部配置键默认值。"""
     defaults = PluginConfig.defaults()
+    beta_alert = alert_row(
+        "warning",
+        text="BETA 版本提示：本插件仍处于测试阶段，可能调整订阅状态、洗版记录、下载任务和媒体文件。"
+    )
     # 顶部一行：4 个全局开关（一行铺满 4 列）
     switch_row = _row([switch_col(k, LABELS.get(k, k), HINTS.get(k, ""), md=3)
                        for k in TOP_SWITCHES])
@@ -345,5 +349,5 @@ def build_form():
     period_row = _row([_field(k, defaults, md=3) for k in PERIODS])
     titles = [t for t, _ in TABS]
     windows = _tab_windows(defaults)
-    conf = [switch_row, period_row, *tabs(titles, windows), *_footer()]
+    conf = [beta_alert, switch_row, period_row, *tabs(titles, windows), *_footer()]
     return conf, dict(defaults)
