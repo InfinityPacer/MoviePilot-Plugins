@@ -322,7 +322,7 @@ class TestHVerifier:
 class TestCodexReviewFindings:
 
     def test_manual_review_reachable(self):
-        """MANUAL_REVIEW 状态可达：旧版 scope 低进度计数达到上限后保留种子。"""
+        """MANUAL_REVIEW 状态可达：范围级低进度计数达到上限后保留种子。"""
         tm, store = _store()
         import time
         store["torrents"] = {

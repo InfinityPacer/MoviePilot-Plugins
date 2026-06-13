@@ -110,7 +110,7 @@ class PendingStateCoordinator:
 
     @staticmethod
     def _normalize_sources(task: Optional[dict]) -> dict:
-        """兼容旧版单 source 数据，统一返回 pending_sources 字典。"""
+        """兼容单 source 待定数据，统一返回 pending_sources 字典。"""
         if not task:
             return {}
         sources = task.get("pending_sources")
@@ -128,7 +128,7 @@ class PendingStateCoordinator:
 
     @staticmethod
     def _primary_source(sources: dict) -> Optional[str]:
-        """选择写回 legacy source 字段的主来源，保证旧模块读取结果稳定。"""
+        """选择写回单 source 字段的主来源，保证待定状态读取结果稳定。"""
         for source in ("pending_judge", "guard_veto", "download_pending"):
             if source in sources:
                 return source

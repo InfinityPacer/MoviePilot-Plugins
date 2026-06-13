@@ -40,7 +40,7 @@ class DownloadMonitor:
         self._fetch_fn = fetch_fn
         # present_fn(downloader, hash) -> Optional[bool]：True=存在，False=可达但不存在，None=不可判定。
         self._present_fn = present_fn
-        # 关闭监听手动删除时，仍按旧版口径清理本地失效任务，但不触发删种善后。
+        # 关闭监听手动删除时，仍清理本地失效任务，但不触发删种善后。
         self._manual_delete_enabled = manual_delete_enabled
         # 连续 miss 达阈值才判手动删除，避免下载器瞬断触发误删善后。
         self._manual_miss_threshold = manual_miss_threshold
@@ -172,7 +172,7 @@ class DownloadMonitor:
     def run_timeout_check(self, cleanup=None):
         """定时巡检种子实时状态，将超时、Tracker 命中与手动删除交给 cleanup 善后。
 
-        fetch_fn 未注入时安全空操作；完成或本地失效任务按旧版口径释放下载待定。
+        fetch_fn 未注入时安全空操作；完成或本地失效任务会释放下载待定。
         只有启用监听手动删除且 present_fn 明确返回 False，才进入删除善后。
         """
         torrents = self._read("torrents") or {}
@@ -273,7 +273,7 @@ class DownloadMonitor:
         self._update("torrents", updater)
 
     def _remove_subscribe_torrent_task(self, subscribe_id: int, torrent_hash: str):
-        """兼容旧版 subscribes.torrent_tasks 结构，移除订阅内的同名种子任务。"""
+        """移除订阅内 subscribes.torrent_tasks 的同名种子任务。"""
         sid = str(subscribe_id)
 
         def updater(data: dict) -> dict:
@@ -522,7 +522,7 @@ class DownloadMonitor:
         self._update("torrents", updater)
 
     def _timeout_scope_key(self, subscribe_id: int, torrent_task: dict) -> str:
-        """生成旧版连续低进度统计范围；剧集按季和集数，其他订阅按 movie 兜底。"""
+        """生成连续低进度统计范围；剧集按季和集数，其他订阅按 movie 兜底。"""
         subscribe = self._resolve_subscribe(subscribe_id)
         media_type = getattr(getattr(subscribe, "type", None), "value", getattr(subscribe, "type", None))
         if media_type == "电视剧":
@@ -566,11 +566,11 @@ class DownloadMonitor:
         return result["state"]
 
     def _timeout_retry_window_seconds(self) -> float:
-        """旧版连续低进度统计窗口：至少 24 小时，或超时窗口乘保护次数。"""
+        """连续低进度统计窗口：至少 24 小时，或超时窗口乘保护次数。"""
         return max(24 * 3600, self._timeout_seconds * max(int(self._retry_limit or 1), 1))
 
     def _is_timeout_ignore_active(self, subscribe_id: int, torrent_hash: str, torrent_task: dict) -> bool:
-        """读取旧版人工保护期：同一 hash 在 ignore_until 前不再重复计数或处理。"""
+        """读取人工保护期：同一 hash 在 ignore_until 前不再重复计数或处理。"""
         sid = str(subscribe_id)
         scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
         task = (self._read("subscribes") or {}).get(sid, {})
@@ -582,7 +582,7 @@ class DownloadMonitor:
         return state.get("last_torrent_hash") == torrent_hash and ignore_until > time.time()
 
     def _mark_timeout_manual_review(self, subscribe_id: int, torrent_task: dict):
-        """达到旧版连续低进度保护上限后，给当前 scope 写入人工处理保护期。"""
+        """达到连续低进度保护上限后，给当前范围写入人工处理保护期。"""
         sid = str(subscribe_id)
         scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
         ignore_until = time.time() + self._timeout_seconds * max(int(self._retry_limit or 1), 1)

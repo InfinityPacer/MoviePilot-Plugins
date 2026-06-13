@@ -201,7 +201,7 @@ def test_biaoren_s02_observation_timeout_records_release_and_next_guard_snapshot
 
 
 def test_biaoren_s02_total_growth_releases_observation_without_allowing_completion():
-    """观察期内 TMDB 增集代表明确反证：释放旧 guard_veto，但不授予完成放行 token。"""
+    """观察期内 TMDB 增集代表明确反证：释放 guard_veto，但不授予完成放行 token。"""
     manager, store = _store({"blocks": {"45": {
         "blocked_at": time.time() - 8 * 86400,
         "reason": "guard_veto",

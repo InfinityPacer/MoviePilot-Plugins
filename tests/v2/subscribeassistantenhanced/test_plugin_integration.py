@@ -668,7 +668,7 @@ def test_notify_gate_blocks_when_disabled():
     notifying_plugin.post_message.assert_called_once()
 
 
-def test_manual_delete_listen_off_keeps_present_fn_for_legacy_cleanup():
+def test_manual_delete_listen_off_keeps_present_fn_for_invalid_cleanup():
     """关闭监听手动删除只禁用手动删除善后，不禁用下载器种子存在性探测。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"manual_delete_listen": False})
@@ -1128,8 +1128,8 @@ class TestPeriodicJobs:
         plugin.post_message.assert_called_once()
         assert "不再满足上映待定，已标记订阅中" in plugin.post_message.call_args.kwargs["title"]
 
-    def test_pending_release_legacy_block_is_discarded_without_token(self, monkeypatch):
-        """缺少媒体身份的旧 guard_veto 不能借给当前订阅。"""
+    def test_pending_release_guard_block_is_discarded_without_token(self, monkeypatch):
+        """缺少媒体身份的 guard_veto 不能借给当前订阅。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({
             "timeout_release_enabled": True,

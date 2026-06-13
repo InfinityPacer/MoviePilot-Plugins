@@ -110,23 +110,23 @@ class PluginConfigDefaultsTest:
 
     # --- pause ---
 
-    def test_airing_pause_days_default_legacy(self):
+    def test_airing_pause_days_default(self):
         assert self.cfg.airing_pause_days == 30
 
-    def test_pre_air_pause_days_default_legacy(self):
+    def test_pre_air_pause_days_default(self):
         assert self.cfg.movie_air_pause_days == 7
         assert self.cfg.tv_air_pause_days == 14
 
-    def test_no_download_days_default_legacy(self):
+    def test_no_download_days_default(self):
         assert self.cfg.movie_no_download_days == 365
         assert self.cfg.tv_no_download_days == 180
 
     # --- pending ---
 
-    def test_auto_tv_pending_days_default_legacy_disabled(self):
+    def test_auto_tv_pending_days_default_disabled(self):
         assert self.cfg.auto_tv_pending_days == 0
 
-    def test_auto_tv_pending_episodes_default_legacy(self):
+    def test_auto_tv_pending_episodes_default(self):
         assert self.cfg.auto_tv_pending_episodes == 1
 
     def test_pending_use_volatility_default(self):
@@ -146,7 +146,7 @@ class PluginConfigDefaultsTest:
         assert not hasattr(self.cfg, "download_pause_max_days")
         assert not hasattr(self.cfg, "download_pause_expire_action")
 
-    def test_best_version_backfill_default_legacy_disabled(self):
+    def test_best_version_backfill_default_disabled(self):
         assert self.cfg.best_version_backfill_enabled is False
 
     def test_removed_best_version_boolean_keys_are_not_declared(self):

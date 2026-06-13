@@ -247,7 +247,7 @@ class TestCheckTorrent:
         assert result == "ok"
 
     def test_timeout_after_retries_exhausted(self):
-        """旧版口径：低进度超时未达保护上限时直接删种。"""
+        """低进度超时未达保护上限时直接删种。"""
         store = {"torrents": {"h1": {
             "baseline_progress": 0.5, "baseline_at": time.time() - 7200,
             "retry_count": 0, "manual_review_count": 0,
@@ -263,7 +263,7 @@ class TestCheckTorrent:
         assert state["fail_count"] == 1
 
     def test_retry_increments_count(self):
-        """旧版口径：低进度超时记录订阅范围失败次数，不刷新种子基线。"""
+        """低进度超时记录订阅范围失败次数，不刷新种子基线。"""
         now = time.time()
         store = {"torrents": {"h1": {
             "baseline_progress": 0.5, "baseline_at": now - 7200,
@@ -280,7 +280,7 @@ class TestCheckTorrent:
         assert store["torrents"]["h1"]["baseline_at"] == now - 7200
 
     def test_manual_review_after_timeout(self):
-        """旧版口径：同一订阅/集数范围达到保护上限时保留种子，进入人工处理。"""
+        """同一订阅/集数范围达到保护上限时保留种子，进入人工处理。"""
         store = {
             "torrents": {"h1": {
                 "baseline_progress": 0.5, "baseline_at": time.time() - 7200,
@@ -302,7 +302,7 @@ class TestCheckTorrent:
         assert state["ignore_until"] > time.time()
 
     def test_timeout_count_is_scope_level_across_replaced_torrents(self):
-        """连续低进度保护按订阅和集数范围累计，换种子后仍沿用旧版 scope 计数。"""
+        """连续低进度保护按订阅和集数范围累计，换种子后仍沿用同一范围计数。"""
         now = time.time()
         store = {
             "torrents": {"h2": {
@@ -325,7 +325,7 @@ class TestCheckTorrent:
         assert state["fail_count"] == 2
         assert state["last_torrent_hash"] == "h2"
 
-    def test_timeout_ignore_until_skips_same_torrent_like_legacy(self):
+    def test_timeout_ignore_until_skips_same_torrent(self):
         """同一 hash 处于连续超时保护期时，本轮忽略且不继续累加失败次数。"""
         now = time.time()
         store = {
@@ -351,7 +351,7 @@ class TestCheckTorrent:
         assert result == "ignored"
         assert store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]["fail_count"] == 3
 
-    def test_timeout_window_expired_resets_scope_count_like_legacy(self):
+    def test_timeout_window_expired_resets_scope_count(self):
         """连续低进度统计窗口过期后，旧计数清零并从本次重新开始。"""
         now = time.time()
         store = {
@@ -383,8 +383,8 @@ class TestCheckTorrent:
 class TestManualDeleteListen:
     """下载器侧种子消失：区分'用户删种'(present=False) 与'下载器瞬断'(present=None)。"""
 
-    def test_missing_torrent_releases_download_pending_like_legacy(self):
-        """下载器确认种子已不存在时，按旧版口径清理下载待定，避免已结束任务长期卡 P。"""
+    def test_missing_torrent_releases_download_pending(self):
+        """下载器确认种子已不存在时清理下载待定，避免已结束任务长期卡 P。"""
         read, update, store = _store_mgr({
             "torrents": {"h1": {"hash": "h1", "subscribe_id": 6, "downloader": "qb"}},
             "subscribes": {
@@ -413,8 +413,8 @@ class TestManualDeleteListen:
         assert "download_pending" not in store["subscribes"]["6"]
         assert store["subscribes"]["6"]["state"] == "R"
 
-    def test_missing_torrent_without_manual_listen_skips_miss_threshold_like_legacy(self):
-        """关闭手动删除监听时，旧版本轮直接 invalid cleanup，不等待连续 miss 阈值。"""
+    def test_missing_torrent_without_manual_listen_skips_miss_threshold(self):
+        """关闭手动删除监听时本轮直接清理失效任务，不等待连续 miss 阈值。"""
         read, update, store = _store_mgr({
             "torrents": {"h1": {"hash": "h1", "subscribe_id": 6, "downloader": "qb"}},
             "subscribes": {"6": {"download_pending": {"h1": {"hash": "h1"}}}},
@@ -431,8 +431,8 @@ class TestManualDeleteListen:
         assert "download_pending" not in store["subscribes"]["6"]
         cleanup.handle_torrent_deleted.assert_not_called()
 
-    def test_completed_torrent_releases_download_pending_like_legacy(self):
-        """下载器返回已完成时，按旧版口径移除下载任务并释放下载待定。"""
+    def test_completed_torrent_releases_download_pending(self):
+        """下载器返回已完成时移除下载任务并释放下载待定。"""
         read, update, store = _store_mgr({
             "torrents": {"h1": {"hash": "h1", "subscribe_id": 6, "downloader": "qb"}},
             "subscribes": {

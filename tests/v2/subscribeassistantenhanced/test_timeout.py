@@ -129,8 +129,8 @@ class TestCheckRelease:
         assert store["releases"]["1"]["signals"] == ["I:all_aired"]
         assert store["releases"]["1"]["total_episode"] == 2
 
-    def test_legacy_block_does_not_grant_low_confidence_release_token(self):
-        """旧 guard_veto 计时不能借给低置信完成观察。"""
+    def test_guard_block_does_not_grant_low_confidence_release_token(self):
+        """guard_veto 计时不能借给低置信完成观察。"""
         store = {"blocks": {"1": {
             "blocked_at": time.time() - 25 * 86400,
             "reason": "guard_veto",

@@ -57,7 +57,7 @@ class TorrentCleanup:
             detail(f"种子删除处理：已记录种子 {torrent_hash}，避免后续被重新选中")
             self._deletes.save(torrent_task, reason=reason)
 
-        # 旧版删除善后会把已记为完成的剧集重新标为缺失，补搜前先恢复订阅缺集状态。
+        # 删种后需要把已记为完成的剧集重新标为缺失，补搜前先恢复订阅缺集状态。
         self._restore_subscribe_missing_state(subscribe, torrent_task)
 
         # 2. 下载器主动删除场景真正删种；用户手动删除场景种子已不存在。
@@ -92,7 +92,7 @@ class TorrentCleanup:
         return (self._read("torrents") or {}).get(torrent_hash)
 
     def _restore_subscribe_missing_state(self, subscribe, torrent_task: Optional[dict]):
-        """按旧版删种善后恢复订阅缺集状态，确保后续补搜能覆盖被删集。"""
+        """删种善后恢复订阅缺集状态，确保后续补搜能覆盖被删集。"""
         if not self._subscribe_oper or not subscribe or not torrent_task:
             return
         media_type = resolve_subscribe_media_type(subscribe)
@@ -122,7 +122,7 @@ class TorrentCleanup:
         self._update("torrents", updater)
 
     def _clean_subscribe_torrent_task(self, subscribe_id: int, torrent_hash: str):
-        """同步清理订阅内 torrent_tasks，兼容旧版运行态的订阅级种子记录。"""
+        """同步清理订阅内 torrent_tasks，兼容订阅级种子记录。"""
         sid = str(subscribe_id)
 
         def updater(data: dict) -> dict:

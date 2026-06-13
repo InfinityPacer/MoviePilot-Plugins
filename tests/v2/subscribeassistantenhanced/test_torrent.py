@@ -38,7 +38,7 @@ class TestFromQB:
         assert info.target_size == 500
 
     def test_tracker_responses_from_qb_trackers(self):
-        """QB Tracker 响应沿用旧版 trackers.msg 口径，供删除关键字监听使用。"""
+        """QB Tracker 响应读取 trackers.msg，供删除关键字监听使用。"""
         qb = {
             "hash": "tracker", "state": "downloading",
             "downloaded": 100, "size": 1000, "total_size": 1000,
@@ -105,8 +105,8 @@ class TestFromTR:
         assert info.completed is True
         assert info.target_size == 1000
 
-    def test_legacy_snake_case_object_does_not_complete_early(self):
-        """TR 旧版 snake_case 字段必须正确读取，不能因大小为 0 被误判完成。"""
+    def test_snake_case_object_does_not_complete_early(self):
+        """TR snake_case 字段必须正确读取，不能因大小为 0 被误判完成。"""
         tr = SimpleNamespace(
             hashString="tr-snake", progress=50.0,
             name="", status="downloading", total_size=2000,

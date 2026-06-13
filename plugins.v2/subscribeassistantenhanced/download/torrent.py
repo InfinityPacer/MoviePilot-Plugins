@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 @dataclass
 class TorrentInfo:
-    """QB/TR 种子信息标准化结构，保留旧版下载任务判定需要的核心字段。"""
+    """QB/TR 种子信息标准化结构，保留下载任务判定需要的核心字段。"""
     hash: str = ""
     title: str = ""
     state: str = ""
@@ -33,7 +33,7 @@ class TorrentAdapter:
 
     @staticmethod
     def from_qb(torrent: dict) -> TorrentInfo:
-        """QB 种子字典 → TorrentInfo，按旧版以 size 作为目标下载体积。"""
+        """QB 种子字典 → TorrentInfo，以 size 作为已选文件目标体积。"""
         total_size = torrent.get("total_size", 0)
         target_size = torrent.get("size") or total_size
         downloaded = torrent.get("downloaded", 0)
@@ -71,7 +71,7 @@ class TorrentAdapter:
 
     @staticmethod
     def from_tr(torrent) -> TorrentInfo:
-        """TR 种子对象 → TorrentInfo，按旧版优先使用 size_when_done 作为目标体积。"""
+        """TR 种子对象 → TorrentInfo，优先使用 size_when_done 作为已选文件目标体积。"""
         total_size = _get_attr(torrent, "total_size", "totalSize", default=0)
         target_size = total_size
         fields = getattr(torrent, "fields", None)
@@ -145,7 +145,7 @@ class TorrentAdapter:
 
 def _completion_status(state: str, seeding_time: int, downloaded: int,
                        target_size: int, dltime: int) -> tuple[bool, float]:
-    """按旧版订阅助手口径判断完成：做种、已有做种时长或已下载达到目标体积。"""
+    """判断种子是否完成：做种、已有做种时长或已下载达到目标体积。"""
     if state in ["seeding", "seed_pending"]:
         return True, 0.0
     if seeding_time:
@@ -156,7 +156,7 @@ def _completion_status(state: str, seeding_time: int, downloaded: int,
 
 
 def _progress_fraction(downloaded: int, target_size: int) -> float:
-    """返回 0-1 的下载进度，内部复用旧版百分比口径并做边界裁剪。"""
+    """返回 0-1 的下载进度，内部复用百分比计算并做边界裁剪。"""
     return _progress_percent(downloaded, target_size) / 100
 
 
@@ -190,7 +190,7 @@ def _get_attr(obj, *names, default=None):
 
 
 def _get_qb_tracker_responses(torrent) -> list:
-    """按旧版 qB 口径读取 tracker.msg，过滤禁用 tier 和空响应。"""
+    """读取 qB tracker.msg，过滤禁用 tier 和空响应。"""
     trackers = getattr(torrent, "trackers", []) or []
     responses = []
     for tracker in trackers:

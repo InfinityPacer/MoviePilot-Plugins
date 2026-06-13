@@ -94,7 +94,7 @@ class TestHandleTorrentDeleted:
         c.handle_torrent_deleted(_sub(), "hash123")
         assert "hash123" not in store.get("torrents", {})
 
-    def test_updates_tv_note_and_lack_episode_like_legacy(self):
+    def test_updates_tv_note_and_lack_episode_after_delete(self):
         """删除剧集种子后，从订阅 note 扣除对应集并按起始集重算缺集数。"""
         sub = _sub(note=[1, 2, 3, 4], total_episode=12, start_episode=1)
         store = {"torrents": {"h1": {"hash": "h1", "episodes": [2, 3]}}}
@@ -117,8 +117,8 @@ class TestHandleTorrentDeleted:
         assert payload["note"] == [1, 4]
         assert payload["lack_episode"] == 10
 
-    def test_cleans_subscribe_torrent_tasks_like_legacy(self):
-        """删除种子后同步清理订阅内 torrent_tasks，兼容旧版运行态结构。"""
+    def test_cleans_subscribe_torrent_tasks_after_delete(self):
+        """删除种子后同步清理订阅内 torrent_tasks。"""
         store = {
             "torrents": {"h1": {"hash": "h1"}},
             "subscribes": {"1": {"torrent_tasks": [{"hash": "h1"}, {"hash": "h2"}]}},
