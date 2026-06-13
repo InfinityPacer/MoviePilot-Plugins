@@ -3,6 +3,7 @@ import time
 from typing import Callable, Optional
 
 from app.log import logger
+from app.schemas.types import MediaType
 
 from ..engine.types import CompletionSignal
 from ..shared.log import detail
@@ -92,7 +93,8 @@ class BestVersionOrchestrator:
             return None
         if not self._type_matches(subscribe, self._best_version_type):
             return None
-        if self._best_version_type == "tv_episode" and subscribe.type != "电影":
+        is_movie = self._is_movie(subscribe)
+        if self._best_version_type == "tv_episode" and not is_movie:
             downloads = self._related_downloads(subscribe) if self._related_downloads else []
             download_count = len(downloads or [])
             if download_count <= 1:
@@ -111,7 +113,7 @@ class BestVersionOrchestrator:
             "filter_groups": subscribe.filter_groups,
         }
         # 普通剧集订阅完成后直接进入全集洗版，才能在新资源下载前执行整季旧版本清理。
-        if subscribe.type != "电影":
+        if not is_movie:
             payload["best_version_full"] = 1
         payload = {key: value for key, value in payload.items() if value is not None}
         sid, _err = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
@@ -125,7 +127,7 @@ class BestVersionOrchestrator:
                     f"{format_subscribe_desc(subscribe)} 已添加洗版订阅",
                     text,
                     image=mediainfo.get_message_image(),
-                    link="#/subscribe/tv?tab=mysub" if subscribe.type == "电视剧" else "#/subscribe/movie?tab=mysub",
+                    link="#/subscribe/movie?tab=mysub" if is_movie else "#/subscribe/tv?tab=mysub",
                 )
         return sid
 
@@ -235,12 +237,21 @@ class BestVersionOrchestrator:
             return False
         if type_setting == "all":
             return True
-        is_movie = subscribe.type == "电影"
+        is_movie = self._is_movie(subscribe)
         if type_setting == "movie":
             return is_movie
         if type_setting in ("tv", "tv_episode"):
             return not is_movie
         return False
+
+    @staticmethod
+    def _is_movie(subscribe) -> bool:
+        """按主程序媒体类型枚举判断电影，兼容 DB 字符串与枚举对象。"""
+        media_type = getattr(subscribe, "type", None)
+        if isinstance(media_type, MediaType):
+            return media_type == MediaType.MOVIE
+        value = getattr(media_type, "value", media_type)
+        return value == MediaType.MOVIE.value
 
     @staticmethod
     def _field(history, name):

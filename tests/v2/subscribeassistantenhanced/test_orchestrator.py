@@ -2,6 +2,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.schemas.types import MediaType
+
 from subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
 from subscribeassistantenhanced.best_version.priority import PriorityManager
 from subscribeassistantenhanced.engine.types import CompletionSignal
@@ -251,7 +253,7 @@ class TestStartBestVersion:
         """电影洗版范围应为电影订阅创建洗版。"""
         oper = MagicMock()
         oper.add.return_value = (6, "")
-        sub = _sub(best_version=0, type="电影")
+        sub = _sub(best_version=0, type=MediaType.MOVIE)
 
         sid = self._orch(oper, best_version_type="movie").start_best_version(sub, object())
 

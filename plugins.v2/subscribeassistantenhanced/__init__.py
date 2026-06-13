@@ -612,8 +612,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes)
                 continue
 
+            # 新增态仍处于首次搜索阶段，不做上映/播出暂停，避免冻结还没有机会下载的订阅。
+            check_airing_pause = state != "N"
+
             # 上映/播出暂停复核（双向）：上映前（电影/剧集）+ 播出间隔（仅剧集）
-            if cfg.pause_enhanced_enabled and airing and pause_manager:
+            if check_airing_pause and cfg.pause_enhanced_enabled and airing and pause_manager:
                 record_now = airing.check_pre_air(subscribe, mediainfo)
                 if not record_now and self._is_tv_media(mediainfo):
                     episodes = self._tmdb_episodes(

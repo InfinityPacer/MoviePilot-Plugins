@@ -319,6 +319,30 @@ def test_run_meta_check_calls_pause_when_pre_air_condition_holds():
     assert call_args.args[1].reason == "pre_air"
 
 
+def test_run_meta_check_skips_airing_pause_for_new_subscription():
+    """N 状态订阅仍在首次搜索阶段，元数据巡检不应用播出暂停冻结搜索。"""
+    from subscribeassistantenhanced.engine.types import PauseRecord
+
+    sub = _sub(id=13, state="N", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.pause = MagicMock()
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=PauseRecord(reason="pre_air", since=0.0, detail="等待开播"))
+    airing.check = MagicMock(return_value=PauseRecord(reason="airing_gap", since=0.0, detail="播出间隔"))
+
+    plugin.run_meta_check()
+
+    airing.check_pre_air.assert_not_called()
+    airing.check.assert_not_called()
+    pause_manager.pause.assert_not_called()
+
+
 def test_run_meta_check_resumes_when_airing_condition_no_longer_holds():
     """上映/播出暂停（reason=pre_air，state=S）条件已不成立时，run_meta_check 双向自动恢复。
 
