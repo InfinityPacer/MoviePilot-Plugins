@@ -11,6 +11,10 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!plugins.v2/subscribeassistantenhanced/dist/
+plugins.v2/subscribeassistantenhanced/dist/*
+!plugins.v2/subscribeassistantenhanced/dist/assets/
+!plugins.v2/subscribeassistantenhanced/dist/assets/**
 downloads/
 eggs/
 .eggs/

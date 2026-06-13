@@ -1,5 +1,6 @@
 """配置入口契约单测：Vue 渲染模式 + 默认 model 覆盖 + 字段元数据。"""
 import re
+from pathlib import Path
 
 from subscribeassistantenhanced.form import HINTS, LABELS
 from subscribeassistantenhanced.form.components import field_for, multi_select_field
@@ -14,6 +15,16 @@ class TestGetForm:
         from subscribeassistantenhanced import SubscribeAssistantEnhanced
 
         assert SubscribeAssistantEnhanced().get_render_mode() == ("vue", "dist/assets")
+
+    def test_vue_config_remote_entry_exists_under_render_assets(self):
+        """联邦配置页入口文件必须落在 render mode 声明的产物目录下。"""
+        from subscribeassistantenhanced import SubscribeAssistantEnhanced
+
+        mode, assets_path = SubscribeAssistantEnhanced().get_render_mode()
+        plugin_root = Path(__file__).resolve().parents[3] / "plugins.v2" / "subscribeassistantenhanced"
+
+        assert mode == "vue"
+        assert (plugin_root / assets_path / "remoteEntry.js").is_file()
 
     def test_plugin_get_form_returns_vue_model_defaults(self):
         """Vue 模式下后端不再返回 Vuetify schema，但仍提供完整默认 model。"""
