@@ -38,8 +38,12 @@ def detect_high_risk(scope: SeasonScope, mediainfo) -> bool:
         return True
 
     for ep in scope.episodes[:-1]:
-        if ep.episode_type in ("mid_season", "finale"):
+        if ep.episode_type == "mid_season":
             return True
+
+    finale_episodes = [ep for ep in scope.episodes if ep.episode_type == "finale"]
+    if len(finale_episodes) == 1 and finale_episodes[0] is not scope.episodes[-1]:
+        return True
 
     production_count = _count_production_groups(mediainfo)
     if production_count >= 2:

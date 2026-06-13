@@ -144,6 +144,25 @@ class TestEvaluatePipeline:
         assert sig.completed is True
         assert sig.confidence == "low"
 
+    def test_multiple_finale_markers_enter_low_confidence_observation(self):
+        """同一范围多 finale 不高置信完成，但全播完时可低置信进入完成前观察。"""
+        eps = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, ep_type="finale", air_date="2026-01-08"),
+            _ep(3, ep_type="finale", air_date="2026-01-15"),
+        ]
+
+        sig = evaluate(
+            subscribe=_sub(), mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(), as_of=date(2026, 1, 16),
+        )
+
+        assert sig.completed is True
+        assert sig.confidence == "low"
+        assert sig.signals == ["I:all_aired"]
+
     def test_high_risk_next_ep_dict_blocks_cadence_release(self):
         """高风险 scope 中，dict 形态的同季 next_episode 会阻止 G 辅助释放。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 50)]

@@ -9,6 +9,17 @@ from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.engine.types import CompletionSignal
 
 
+def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
+    """构造 TMDB 集对象替身。"""
+    return SimpleNamespace(
+        episode_number=num,
+        season_number=season,
+        air_date=air_date,
+        episode_type=ep_type,
+        name=f"E{num}",
+    )
+
+
 def _sub(sid=1, stype="电视剧", best_version=0, state="R"):
     return SimpleNamespace(
         id=sid, name="测试剧", tmdbid=100, season=1,
@@ -35,6 +46,9 @@ def _guard(signal=None, has_active=False):
     g = CompletionGuard.__new__(CompletionGuard)
     g.evaluate_fn = MagicMock(return_value=signal or CompletionSignal())
     g.has_active_downloads_fn = MagicMock(return_value=has_active)
+    g.detect_existing_episodes_fn = MagicMock(return_value=None)
+    g.detect_missing_episodes_fn = MagicMock(return_value=None)
+    g.tmdb_episodes_fn = MagicMock(return_value=[])
     g.pending_download_enabled = True
     g.mark_pending_fn = MagicMock()
     g.verifier = MagicMock()
@@ -175,6 +189,95 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is True
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once()
+
+    def test_not_completed_local_targets_and_finale_covered_allows_completion_snapshot(self):
+        """目标集全覆盖且 finale 已入库时，允许提前点播完成写入快照。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig)
+        g.detect_existing_episodes_fn.return_value = list(range(1, 13))
+        g.detect_missing_episodes_fn.return_value = []
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 12)] + [_ep(12, ep_type="finale")]
+        ev = _event()
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
+        g.verifier.snapshot.assert_called_once_with(ev.event_data.subscribe, ev.event_data.mediainfo, None)
+
+    def test_not_completed_local_targets_covered_without_finale_still_blocks(self):
+        """只满足订阅目标集不足以放行，必须确认目标范围 finale 集也在本地。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig)
+        g.detect_existing_episodes_fn.return_value = list(range(1, 12))
+        g.detect_missing_episodes_fn.return_value = []
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 12)] + [_ep(12, ep_type="finale")]
+        ev = _event()
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "无信号"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
+        g.verifier.snapshot.assert_not_called()
+
+    def test_not_completed_local_targets_covered_without_scope_finale_still_blocks(self):
+        """TMDB 未给出明确 finale 时，不用本地覆盖推断整季完结。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig)
+        g.detect_existing_episodes_fn.return_value = list(range(1, 13))
+        g.detect_missing_episodes_fn.return_value = []
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        ev = _event()
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "无信号"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
+        g.verifier.snapshot.assert_not_called()
+
+    def test_not_completed_local_targets_covered_with_multiple_finales_still_blocks(self):
+        """TMDB 同范围多 finale 时不做本地完成兜底，避免把异常排期当作可靠大结局。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig)
+        g.detect_existing_episodes_fn.return_value = list(range(1, 13))
+        g.detect_missing_episodes_fn.return_value = []
+        g.tmdb_episodes_fn.return_value = (
+            [_ep(i) for i in range(1, 6)]
+            + [_ep(6, ep_type="finale")]
+            + [_ep(i) for i in range(7, 12)]
+            + [_ep(12, ep_type="finale")]
+        )
+        ev = _event()
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "无信号"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
+        g.verifier.snapshot.assert_not_called()
+
+    def test_not_completed_local_targets_missing_still_blocks(self):
+        """仍缺目标集时继续否决完成，避免只因主程序事件触发就放行。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig)
+        g.detect_existing_episodes_fn.return_value = list(range(1, 11))
+        g.detect_missing_episodes_fn.return_value = [11]
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 12)] + [_ep(12, ep_type="finale")]
+        ev = _event()
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "无信号"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
+        g.verifier.snapshot.assert_not_called()
 
     def test_best_version_only_checks_f(self):
         """洗版订阅只检查 F，不要求 E/I。"""
