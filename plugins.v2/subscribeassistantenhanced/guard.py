@@ -3,10 +3,11 @@ from typing import Callable
 
 from app.log import logger
 from app.schemas.event import SubscribeCompletionCheckEventData
+from app.schemas.types import MediaType
 
 from .engine.types import CompletionSignal, CompletionVerifierProtocol, PendingTimeoutManagerProtocol
 from .shared.log import detail
-from .shared.subscribe import format_subscribe
+from .shared.subscribe import format_subscribe, resolve_subscribe_media_type
 
 
 class CompletionGuard:
@@ -39,7 +40,7 @@ class CompletionGuard:
         subscribe = data.subscribe
         detail(f"完成守卫：收到完成检查 {format_subscribe(subscribe)}")
 
-        if subscribe.type == "电影":
+        if resolve_subscribe_media_type(subscribe) != MediaType.TV:
             return
 
         if self.pending_download_enabled and self.has_active_downloads_fn(subscribe):

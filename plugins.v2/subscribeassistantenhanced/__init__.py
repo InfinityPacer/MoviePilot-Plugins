@@ -42,7 +42,7 @@ from .best_version.orchestrator import BestVersionOrchestrator
 from .download.monitor import DownloadMonitor
 from .download.cleanup import TorrentCleanup
 from .shared.deletes import DeletesStore
-from .shared.subscribe import format_subscribe_label
+from .shared.subscribe import format_subscribe_label, resolve_subscribe_media_type
 from .postcheck.verifier import CompletionVerifier, _format_snapshot_label
 from .postcheck.timeout import PendingTimeoutManager
 from .events import EventProxy
@@ -1066,7 +1066,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         meta = MetaInfo(subscribe.name or "")
         meta.year = subscribe.year
         meta.begin_season = subscribe.season or None
-        meta.type = MediaType.TV if str(subscribe.type) == MediaType.TV.value else MediaType.MOVIE
+        media_type = resolve_subscribe_media_type(subscribe)
+        if media_type not in (MediaType.MOVIE, MediaType.TV):
+            logger.warning(f"媒体识别失败：{format_subscribe(subscribe)}，订阅媒体类型无效：{subscribe.type}")
+            return None
+        meta.type = media_type
         try:
             return self.chain.recognize_media(
                 meta=meta, mtype=meta.type,

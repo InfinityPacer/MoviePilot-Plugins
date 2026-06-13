@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from datetime import date
 from unittest.mock import MagicMock, patch
 
+from app.schemas.types import MediaType
+
 from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.engine.types import CompletionSignal
 
@@ -49,6 +51,17 @@ class TestCompletionGuard:
         g.handle(ev)
         assert ev.event_data.cancel is False
         g.evaluate_fn.assert_not_called()
+
+    def test_unknown_media_type_not_intercepted(self):
+        """未知媒体类型不按剧集完成守卫处理，避免无效类型被写入待定。"""
+        g = _guard()
+        ev = _event(subscribe=_sub(stype=MediaType.UNKNOWN))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.evaluate_fn.assert_not_called()
+        g.mark_pending_fn.assert_not_called()
 
     def test_active_download_blocks_no_p(self):
         """存在进行中下载 → 否决但不写 P。"""

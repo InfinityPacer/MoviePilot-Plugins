@@ -7,7 +7,7 @@ from app.schemas.types import MediaType
 
 from ..engine.types import CompletionSignal
 from ..shared.log import detail
-from ..shared.subscribe import format_subscribe_desc
+from ..shared.subscribe import format_subscribe_desc, resolve_subscribe_media_type
 from .priority import PriorityManager
 
 
@@ -91,9 +91,10 @@ class BestVersionOrchestrator:
             return None
         if subscribe.best_version:
             return None
-        if not self._type_matches(subscribe, self._best_version_type):
+        media_type = resolve_subscribe_media_type(subscribe)
+        if not self._type_matches(media_type, self._best_version_type):
             return None
-        is_movie = self._is_movie(subscribe)
+        is_movie = media_type == MediaType.MOVIE
         if self._best_version_type == "tv_episode" and not is_movie:
             downloads = self._related_downloads(subscribe) if self._related_downloads else []
             download_count = len(downloads or [])
@@ -139,7 +140,8 @@ class BestVersionOrchestrator:
         """
         if not subscribe.best_version:
             return
-        if not self._type_matches(subscribe, self._clear_history_type):
+        media_type = resolve_subscribe_media_type(subscribe)
+        if not self._type_matches(media_type, self._clear_history_type):
             return
         if not subscribe.best_version_full:
             detail(f"洗版清理：{format_subscribe_desc(subscribe)} 是分集洗版，不清理整季旧文件")
@@ -231,27 +233,20 @@ class BestVersionOrchestrator:
             )
         return True
 
-    def _type_matches(self, subscribe, type_setting) -> bool:
+    @staticmethod
+    def _type_matches(media_type: MediaType, type_setting) -> bool:
         """判断媒体类型是否落在洗版或清理范围：no/all/movie/tv/tv_episode。"""
+        if media_type == MediaType.UNKNOWN:
+            return False
         if type_setting == "no":
             return False
         if type_setting == "all":
             return True
-        is_movie = self._is_movie(subscribe)
         if type_setting == "movie":
-            return is_movie
-        if type_setting in ("tv", "tv_episode"):
-            return not is_movie
-        return False
-
-    @staticmethod
-    def _is_movie(subscribe) -> bool:
-        """按主程序媒体类型枚举判断电影，兼容 DB 字符串与枚举对象。"""
-        media_type = getattr(subscribe, "type", None)
-        if isinstance(media_type, MediaType):
             return media_type == MediaType.MOVIE
-        value = getattr(media_type, "value", media_type)
-        return value == MediaType.MOVIE.value
+        if type_setting in ("tv", "tv_episode"):
+            return media_type == MediaType.TV
+        return False
 
     @staticmethod
     def _field(history, name):

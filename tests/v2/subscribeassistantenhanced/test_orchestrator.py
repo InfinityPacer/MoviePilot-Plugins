@@ -262,6 +262,16 @@ class TestStartBestVersion:
         _args, kwargs = oper.add.call_args
         assert "best_version_full" not in kwargs
 
+    def test_unknown_media_type_skips_all_scope(self):
+        """未知媒体类型不能被 all 范围误当成剧集创建洗版。"""
+        oper = MagicMock()
+        sub = _sub(best_version=0, type=MediaType.UNKNOWN)
+
+        sid = self._orch(oper, best_version_type="all").start_best_version(sub, object())
+
+        assert sid is None
+        oper.add.assert_not_called()
+
     def test_no_type_skips_all_subscriptions(self):
         """关闭洗版类型范围时不应创建任何洗版订阅。"""
         oper = MagicMock()

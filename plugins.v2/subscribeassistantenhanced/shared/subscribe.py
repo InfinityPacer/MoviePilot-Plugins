@@ -2,6 +2,26 @@
 import json
 from typing import Optional, Tuple
 
+from app.schemas.types import MediaType
+
+
+def resolve_subscribe_media_type(subscribe) -> MediaType:
+    """解析订阅媒体类型，非法或缺失时返回 UNKNOWN，供状态变更链路 fail-closed。"""
+    if not subscribe:
+        return MediaType.UNKNOWN
+    media_type = getattr(subscribe, "type", None)
+    if isinstance(media_type, MediaType):
+        return media_type
+    value = getattr(media_type, "value", media_type)
+    if isinstance(value, str):
+        value = value.strip()
+    if not value:
+        return MediaType.UNKNOWN
+    try:
+        return MediaType(value)
+    except ValueError:
+        return MediaType.UNKNOWN
+
 
 def format_subscribe(subscribe) -> str:
     """格式化订阅为可读字符串。"""

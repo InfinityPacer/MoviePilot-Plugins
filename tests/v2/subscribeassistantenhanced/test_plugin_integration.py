@@ -4,6 +4,8 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.schemas.types import MediaType
+
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
 from subscribeassistantenhanced.engine.types import PauseRecord
 
@@ -1125,6 +1127,18 @@ def test_download_pending_works_when_timeout_delete_disabled():
 
 class TestNoDownloadCheck:
     """无下载处理巡检执行策略返回的订阅动作。"""
+
+    def test_recognize_mediainfo_skips_unknown_media_type(self):
+        """未知订阅类型不默认当电影识别，避免脏数据进入错误媒体链路。"""
+        subscribe = _sub(type=MediaType.UNKNOWN, name="测试", year="2025", season=1, tmdbid=100)
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin.chain = MagicMock()
+
+        result = plugin._recognize_mediainfo(subscribe)
+
+        assert result is None
+        plugin.chain.recognize_media.assert_not_called()
 
     def test_last_download_date_queries_tv_history_and_returns_latest_date(self):
         """电视剧按媒体信息和季查询下载历史，并返回最近下载日期。"""

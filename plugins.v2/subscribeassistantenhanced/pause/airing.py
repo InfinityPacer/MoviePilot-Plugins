@@ -2,8 +2,11 @@
 from datetime import date, timedelta
 from typing import Callable, Optional
 
+from app.schemas.types import MediaType
+
 from ..engine.types import CompletionSignal, PauseRecord
 from ..shared.media import get_tv_season_air_date, parse_date
+from ..shared.subscribe import resolve_subscribe_media_type
 
 
 def _episode_air_date(episode) -> Optional[str]:
@@ -28,9 +31,9 @@ class AiringPauseChecker:
                       as_of: Optional[date] = None) -> Optional[PauseRecord]:
         """检查电影上映或电视剧开播前是否应暂停。"""
         today = as_of or date.today()
-        is_movie = subscribe.type == "电影"
+        media_type = resolve_subscribe_media_type(subscribe)
 
-        if is_movie:
+        if media_type == MediaType.MOVIE:
             if not self._movie_air_days:
                 return None
             release_date = parse_date(mediainfo.release_date)
@@ -47,6 +50,9 @@ class AiringPauseChecker:
                     since=0.0,
                     detail=f"电影 {release_date} 上映，暂未到订阅窗口",
                 )
+            return None
+
+        if media_type != MediaType.TV:
             return None
 
         if not self._tv_air_days:
@@ -92,17 +98,5 @@ class AiringPauseChecker:
                         detail=f"下一集 {next_air_date}，距今 {days_until} 天",
                     )
                 return None
-
-        if latest_episode:
-            latest_air_date = _episode_air_date(latest_episode)
-            air = parse_date(latest_air_date)
-            if air:
-                days_since = (today - air).days
-                if days_since > self._pause_days:
-                    return PauseRecord(
-                        reason="airing_gap",
-                        since=0.0,
-                        detail=f"最后集播出距今 {days_since} 天，无下一集信息",
-                    )
 
         return None

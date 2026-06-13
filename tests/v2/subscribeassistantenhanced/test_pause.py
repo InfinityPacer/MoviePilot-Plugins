@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from datetime import date, timedelta
 from unittest.mock import MagicMock
 
+from app.schemas.types import MediaType
+
 from subscribeassistantenhanced.pause.airing import AiringPauseChecker
 from subscribeassistantenhanced.pause.manager import PauseManager
 from subscribeassistantenhanced.pause.nodownload import NoDownloadPolicy
@@ -108,6 +110,28 @@ class TestAiringPause:
         assert result is not None
         assert result.reason == "pre_air"
 
+    def test_pre_air_unknown_media_type_returns_none(self):
+        """未知媒体类型不走电影或剧集上映前暂停，避免脏数据被误暂停。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evaluate_fn=MagicMock(),
+            movie_air_days=7,
+            tv_air_days=5,
+        )
+        mediainfo = SimpleNamespace(
+            release_date="2026-02-01",
+            season_info=[{"season_number": 1, "air_date": "2026-02-01"}],
+            first_air_date="2026-02-01",
+        )
+
+        result = checker.check_pre_air(
+            _sub(media_type=MediaType.UNKNOWN),
+            mediainfo,
+            as_of=date(2026, 1, 1),
+        )
+
+        assert result is None
+
     def test_pre_air_zero_days_disabled(self):
         """电影上映前暂停天数为零时关闭该规则。"""
         checker = AiringPauseChecker(
@@ -162,25 +186,23 @@ class TestAiringPause:
                                as_of=date(2026, 6, 1))
         assert result is None
 
-    def test_no_next_last_old_pauses(self):
-        """无下一集 + 最后集超阈值 → 暂停。"""
+    def test_no_next_last_old_no_pause(self):
+        """无下一集 + 最后集超阈值不再直接暂停，避免历史季全缺被搜索前冻结。"""
         evaluate = MagicMock(return_value=CompletionSignal())
         checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
         old = (date(2026, 6, 1) - timedelta(days=30)).isoformat()
         result = checker.check(_sub(), None, next_episode=None, latest_episode=_ep(old),
                                as_of=date(2026, 6, 1))
-        assert result is not None
-        assert result.reason == "airing_gap"
+        assert result is None
 
-    def test_latest_episode_dict_old_pauses(self):
-        """最后集为 TMDB dict 形态时，仍按 air_date 判断播出间隔。"""
+    def test_latest_episode_dict_old_no_pause(self):
+        """最后集为 TMDB dict 形态时，也不因无下一集直接暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
         checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
         old = (date(2026, 6, 1) - timedelta(days=30)).isoformat()
         result = checker.check(_sub(), None, next_episode=None, latest_episode={"air_date": old},
                                as_of=date(2026, 6, 1))
-        assert result is not None
-        assert result.reason == "airing_gap"
+        assert result is None
 
     def test_pre_air_unknown_date_pauses_when_movie_air_days_configured(self):
         """电影上映日期无法解析且 movie_air_days 已配置时，默认暂停等待。"""
@@ -259,6 +281,26 @@ class TestNoDownloadPolicy:
         result = policy.evaluate(_sub(), mediainfo, last_download_date=None)
 
         assert result == "delete"
+
+    def test_unknown_media_type_no_action(self):
+        """未知媒体类型不套用电影或剧集无下载动作。"""
+        policy = NoDownloadPolicy(
+            movie_days=180,
+            tv_days=180,
+            actions=["delete_tv", "complete_movie"],
+        )
+        mediainfo = SimpleNamespace(
+            release_date=(date.today() - timedelta(days=181)).isoformat(),
+            season_info=[{
+                "season_number": 1,
+                "air_date": (date.today() - timedelta(days=181)).isoformat(),
+            }],
+            first_air_date=(date.today() - timedelta(days=181)).isoformat(),
+        )
+
+        result = policy.evaluate(_sub(media_type=MediaType.UNKNOWN), mediainfo, last_download_date=None)
+
+        assert result is None
 
     def test_first_configured_action_wins(self):
         """同一媒体类型配置多个动作时按配置顺序取第一个。"""

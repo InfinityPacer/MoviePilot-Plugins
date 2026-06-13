@@ -2,9 +2,11 @@
 from datetime import date, timedelta
 from typing import Optional
 
+from app.schemas.types import MediaType
+
 from ..shared.log import detail
 from ..shared.media import get_tv_season_air_date, parse_date
-from ..shared.subscribe import format_subscribe
+from ..shared.subscribe import format_subscribe, resolve_subscribe_media_type
 
 
 class NoDownloadPolicy:
@@ -25,8 +27,15 @@ class NoDownloadPolicy:
         再加对应类型的无下载天数。今天超过截止日才处理；
         动作按配置顺序取该媒体类型的第一个。
         """
-        is_movie = subscribe.type == "电影"
-        days = self._movie_days if is_movie else self._tv_days
+        media_type = resolve_subscribe_media_type(subscribe)
+        if media_type == MediaType.MOVIE:
+            is_movie = True
+            days = self._movie_days
+        elif media_type == MediaType.TV:
+            is_movie = False
+            days = self._tv_days
+        else:
+            return None
         if not days:
             return None
 
