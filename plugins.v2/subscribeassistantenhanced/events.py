@@ -180,12 +180,12 @@ class EventProxy:
                 pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
                 return
 
-        # 播出暂停：下一集距今过远则暂停
+        # 新增订阅尚未经过媒体库/下载状态沉淀，只处理明确的下一集断档，避免历史季全缺时被最后已播日期直接暂停。
         if airing and pause_manager:
             record = airing.check(
                 subscribe, mediainfo,
                 next_episode=mediainfo.next_episode_to_air,
-                latest_episode=last_aired_episode(episodes),
+                latest_episode=None,
             )
             if record:
                 logger.info(f"订阅新增：{format_subscribe(subscribe)} 满足播出间隔暂停条件，置为禁用")

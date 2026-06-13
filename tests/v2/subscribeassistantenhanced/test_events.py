@@ -2,7 +2,9 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
+from subscribeassistantenhanced.engine.types import CompletionSignal
 from subscribeassistantenhanced.events import EventProxy
+from subscribeassistantenhanced.pause.airing import AiringPauseChecker
 
 
 def _sub(**kwargs):
@@ -283,6 +285,36 @@ class TestSubscribeLifecycle:
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
         pending.mark_pending.assert_not_called()
         pause.pause.assert_called_once_with(sub, record)
+
+    def test_added_history_season_without_next_episode_does_not_pause_by_latest_air_date(self):
+        """新增历史季订阅没有下一集信息时，不按最后已播日期直接暂停。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        pause = MagicMock()
+        pending = MagicMock()
+        pending.should_enter_pending.return_value = (False, "")
+        airing = AiringPauseChecker(
+            pause_days=14,
+            evaluate_fn=MagicMock(return_value=CompletionSignal()),
+        )
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            pause_manager=pause,
+            pending_judge=pending,
+            airing_checker=airing,
+            mediainfo_from_dict=lambda _data: _mi(next_episode_to_air=None),
+            is_tv_fn=lambda _mi: True,
+            tmdb_episodes_fn=lambda tmdbid, season, episode_group=None: [
+                SimpleNamespace(air_date="2000-01-01", episode_number=15)
+            ],
+            evaluate_fn=lambda _subscribe, _mediainfo: None,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        pending.mark_pending.assert_not_called()
+        pause.pause.assert_not_called()
 
     def test_added_best_version_skips_pause_pending(self):
         """洗版订阅 → 只跑用户名暂停，不做播出暂停/待定。"""
