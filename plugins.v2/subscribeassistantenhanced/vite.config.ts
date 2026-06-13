@@ -37,7 +37,7 @@ export default defineConfig({
   ],
   build: {
     target: 'esnext',
-    minify: false,
+    minify: 'esbuild',
     cssCodeSplit: true,
     rollupOptions: {
       input: './src/Config.vue',
