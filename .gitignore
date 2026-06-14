@@ -122,12 +122,16 @@ celerybeat.pid
 
 # Environments
 .env
+.envrc
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Local linked worktrees
+.worktrees/
 
 # Spyder project settings
 .spyderproject

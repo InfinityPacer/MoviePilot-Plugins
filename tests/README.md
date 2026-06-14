@@ -16,17 +16,27 @@ tests/
 
 ## 运行
 
-需要 MoviePilot 后端置于插件仓**同级目录**（或设环境变量 `MOVIEPILOT_BACKEND_PATH`），
-并使用带后端依赖的解释器（如 `<workspace>/.venv/bin/python`）。
+普通检出中，MoviePilot 后端应置于插件仓**同级目录**。仓库内 `.worktrees/<branch>/`
+工作树的层级不同，测试引导无法再按同级目录自动定位后端，必须显式设置
+`MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot`。
+
+单测优先使用工作区根的 `<workspace>/.venv-test/bin/python`。不要根据当前 worktree 深度
+手写 `../../..` 等相对路径；worktree 名称和放置层级变化后，这类命令会定位到错误解释器或后端。
 
 ```bash
 # 全量（推荐入口）：v1/v2 各自独立会话依次跑，命令行参数透传给 pytest
-<workspace>/.venv/bin/python tests/run.py
+MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot \
+  <workspace>/.venv-test/bin/python tests/run.py
 
 # 也可按代单独跑（v1/v2 必须分会话，勿混跑）
-<workspace>/.venv/bin/python -m pytest tests/v2
-<workspace>/.venv/bin/python -m pytest tests/v1
+MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot \
+  <workspace>/.venv-test/bin/python -m pytest tests/v2
+MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot \
+  <workspace>/.venv-test/bin/python -m pytest tests/v1
 ```
+
+本地可在被 `.gitignore` 排除的 `.envrc` 中固定导出 `MOVIEPILOT_BACKEND_PATH`，但公开文档、
+PR 验证记录和脚本不得写入个人绝对路径。
 
 `tests/run.py` 把 v1/v2 放在独立子进程依次运行、无用例的代自动跳过——两代存在同名
 插件包（如 `brushflowlowfreq`、`torrentclassifier`），同一解释器进程无法同时加载、混跑
@@ -37,7 +47,7 @@ autouse 网络守卫等引导逻辑统一在主程序 `app/testing`（`bootstrap
 
 ## 提 PR / push 前
 
-先本地 `python tests/run.py` 跑**全量并确认通过**，再 push / 提 PR。
+先按上面的解释器与后端路径约定运行 `tests/run.py`，跑**全量并确认通过**，再 push / 提 PR。
 
 ## 新增用例
 
