@@ -1,6 +1,6 @@
 """订阅匹配/格式化工具函数。"""
 import json
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from app.schemas.types import MediaType
 
@@ -54,6 +54,37 @@ def format_subscribe_desc(subscribe) -> str:
     if total:
         parts.append(f"({total - lack}/{total})")
     return " ".join(parts)
+
+
+def pending_subscription_episodes(subscribe) -> List[int]:
+    """返回目标范围内尚未下载到任何版本的集数。
+
+    note 记录订阅下载历史；分集洗版还会把已取得版本的集写入
+    episode_priority。正优先级表示该集已有可用版本，即使仍需继续洗版，
+    也不属于从未下载的集。
+    """
+    start_episode = subscribe.start_episode or 1
+    total_episode = subscribe.total_episode or 0
+    if total_episode < start_episode:
+        return []
+    downloaded = {
+        int(episode) for episode in (subscribe.note or [])
+        if isinstance(episode, int) or (
+            isinstance(episode, str) and episode.lstrip("-").isdigit()
+        )
+    }
+    for episode, priority in (subscribe.episode_priority or {}).items():
+        if not str(episode).isdigit():
+            continue
+        try:
+            if float(priority) > 0:
+                downloaded.add(int(episode))
+        except (TypeError, ValueError):
+            continue
+    return [
+        episode for episode in range(start_episode, total_episode + 1)
+        if episode not in downloaded
+    ]
 
 
 def match_subscribe(subscribe, task: dict) -> bool:

@@ -17,6 +17,7 @@ def _sub(**kwargs):
         episode_group=None,
         type="电视剧",
         best_version=0,
+        best_version_full=0,
         total_episode=12,
         lack_episode=0,
     )
@@ -139,8 +140,8 @@ def test_subscribe_modified_backfills_existing_episodes_when_enabled():
     priority_manager.backfill_existing.assert_called_once_with(subscribe, [3])
 
 
-def test_subscribe_added_backfills_best_version_before_skip():
-    """新建洗版订阅先回填媒体库已有集，再跳过播出暂停/待定。"""
+def test_subscribe_added_backfills_episode_best_version():
+    """新建分集洗版订阅先回填媒体库已有集。"""
     subscribe = _sub(best_version=1)
     subscribe_oper = MagicMock()
     subscribe_oper.get.return_value = subscribe

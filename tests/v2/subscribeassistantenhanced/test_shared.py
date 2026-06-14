@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from subscribeassistantenhanced.shared.log import truncate_log_value, format_log_title_desc
 from subscribeassistantenhanced.shared.subscribe import (
     format_subscribe, format_subscribe_desc, format_subscribe_label, match_subscribe,
+    pending_subscription_episodes,
 )
 from subscribeassistantenhanced.shared.media import (
     parse_date, is_same_season, get_tv_season_info,
@@ -80,6 +81,20 @@ class TestFormatSubscribeDesc:
         sub = SimpleNamespace(name="测试", season=1, total_episode=0, lack_episode=0)
         result = format_subscribe_desc(sub)
         assert "测试" in result
+
+
+class TestPendingSubscriptionEpisodes:
+
+    def test_episode_best_version_uses_note_and_positive_priority(self):
+        """按集订阅统一合并下载历史和正优先级状态。"""
+        subscribe = SimpleNamespace(
+            start_episode=3,
+            total_episode=7,
+            note=[3, "4"],
+            episode_priority={"5": 10, "6": 0, "7": 100},
+        )
+
+        assert pending_subscription_episodes(subscribe) == [6]
 
 
 class TestFormatSubscribeLabel:

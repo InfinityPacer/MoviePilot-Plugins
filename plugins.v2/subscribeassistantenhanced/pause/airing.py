@@ -5,15 +5,13 @@ from typing import Callable, Optional
 from app.schemas.types import MediaType
 
 from ..engine.types import CompletionSignal, PauseRecord
-from ..shared.media import get_tv_season_air_date, parse_date
+from ..shared.media import (
+    episode_field,
+    get_tv_season_air_date,
+    parse_date,
+    resolve_airing_next_episode,
+)
 from ..shared.subscribe import resolve_subscribe_media_type
-
-
-def _episode_air_date(episode) -> Optional[str]:
-    """读取 TMDB 集信息播出日期；TMDB 原始字段可能是 dict，仓内整理后通常是对象。"""
-    if isinstance(episode, dict):
-        return episode.get("air_date")
-    return episode.air_date
 
 
 class AiringPauseChecker:
@@ -78,16 +76,23 @@ class AiringPauseChecker:
         return None
 
     def check(self, subscribe, mediainfo, next_episode, latest_episode,
+              episodes: Optional[list] = None,
               as_of: Optional[date] = None) -> Optional[PauseRecord]:
-        """检查是否应播出暂停。返回 PauseRecord 或 None。"""
+        """按聚合字段、SeasonScope 和 note 首待下载集检查是否应播出暂停。"""
         today = as_of or date.today()
 
         signal: CompletionSignal = self._evaluate(subscribe, mediainfo)
         if signal.completed:
             return None
 
-        if next_episode:
-            next_air_date = _episode_air_date(next_episode)
+        resolved_next = resolve_airing_next_episode(
+            subscribe,
+            next_episode,
+            episodes or [],
+            as_of=today,
+        )
+        if resolved_next:
+            next_air_date = episode_field(resolved_next, "air_date")
             air = parse_date(next_air_date)
             if air:
                 days_until = (air - today).days

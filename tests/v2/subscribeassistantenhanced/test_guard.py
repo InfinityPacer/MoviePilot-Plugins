@@ -27,6 +27,7 @@ def _sub(sid=1, stype="电视剧", best_version=0, state="R"):
         id=sid, name="测试剧", tmdbid=100, season=1,
         episode_group=None, type=stype, state=state,
         best_version=best_version, total_episode=12, lack_episode=0,
+        start_episode=1, note=[], episode_priority={},
     )
 
 
@@ -187,37 +188,60 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once()
 
-    def test_l_signal_reports_library_coverage(self):
-        """L 信号只依赖当前目标范围已全部入库，不要求 finale。"""
+    def test_l_signal_reports_target_satisfied(self):
+        """L 信号按 note 确认当前目标范围已无待下载集，不要求 finale。"""
         subscribe = _sub()
+        subscribe.note = list(range(1, 13))
         mediainfo = _event().event_data.mediainfo
         episodes = [_ep(i) for i in range(1, 13)]
         scope = build_scope(subscribe, mediainfo, lambda *_args, **_kwargs: episodes)
 
-        signal = check_l_signal(
-            subscribe, scope,
-            detect_missing_episodes_fn=lambda _subscribe: [],
-        )
+        signal = check_l_signal(subscribe, scope)
 
         assert signal.completed is True
         assert signal.confidence == "low"
-        assert signal.signals == ["L:library_covered"]
+        assert signal.signals == ["L:target_satisfied"]
         assert signal.scope_total == 12
+
+    def test_l_signal_uses_note_when_downloaded_episode_was_deleted(self):
+        """普通订阅已下载集由 note 认定覆盖，不因媒体库文件后来删除而重新变成待下载。"""
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        scope = build_scope(
+            subscribe,
+            _event().event_data.mediainfo,
+            lambda *_args, **_kwargs: [_ep(i) for i in range(1, 13)],
+        )
+
+        signal = check_l_signal(subscribe, scope)
+
+        assert signal is not None
+        assert signal.completed is True
 
     def test_l_signal_uses_subscribe_total_when_scope_is_temporarily_empty(self):
         """TMDB 集列表暂不可用时，L 使用订阅目标总数参与模式判断。"""
         subscribe = _sub()
+        subscribe.note = list(range(1, 13))
         scope = build_scope(
             subscribe, _event().event_data.mediainfo,
             lambda *_args, **_kwargs: [],
         )
 
-        signal = check_l_signal(
-            subscribe, scope,
-            detect_missing_episodes_fn=lambda _subscribe: [],
-        )
+        signal = check_l_signal(subscribe, scope)
 
         assert signal.scope_total == 12
+
+    def test_l_signal_not_emitted_when_target_range_is_unknown(self):
+        """订阅总集数未知时不能把空目标范围误判为已经全部下载。"""
+        subscribe = _sub()
+        subscribe.total_episode = 0
+        scope = build_scope(
+            subscribe,
+            _event().event_data.mediainfo,
+            lambda *_args, **_kwargs: [],
+        )
+
+        assert check_l_signal(subscribe, scope) is None
 
     def test_balanced_local_targets_covered_allows_completion(self):
         """平衡模式下三集及以上的 L 信号直接放行。"""
@@ -227,12 +251,31 @@ class TestCompletionGuard:
         g.detect_missing_episodes_fn.return_value = []
         g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
         ev = _event()
+        ev.event_data.subscribe.note = list(range(1, 13))
 
         g.handle(ev)
 
         assert ev.event_data.cancel is False
         g.mark_pending_fn.assert_not_called()
         g.timeout_manager.record_block.assert_not_called()
+
+    def test_local_coverage_does_not_complete_when_scope_has_future_episode(self):
+        """聚合下一集缺失但 SeasonScope 已有未来集时，L 信号不得提前完成订阅。"""
+        g = _guard(mode="balanced")
+        g.detect_missing_episodes_fn.return_value = []
+        g.tmdb_episodes_fn.return_value = [
+            *[_ep(i, air_date="2026-01-01") for i in range(1, 88)],
+            _ep(88, air_date="2026-06-21"),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 87
+        subscribe.note = list(range(1, 88))
+        mediainfo = _event().event_data.mediainfo
+        mediainfo.tmdb_info.next_episode_to_air = None
+
+        signal = g._local_signal(subscribe, mediainfo)
+
+        assert signal is None
 
     def test_strict_local_targets_covered_enters_observation(self):
         """严格模式把 L 作为低置信信号进入观察。"""
@@ -241,14 +284,15 @@ class TestCompletionGuard:
         g.detect_missing_episodes_fn.return_value = []
         g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
         ev = _event()
+        ev.event_data.subscribe.note = list(range(1, 13))
 
         g.handle(ev)
 
         assert ev.event_data.cancel is True
-        assert ev.event_data.reason == "媒体库已覆盖当前订阅目标范围"
+        assert ev.event_data.reason == "订阅目标范围已无待下载集"
         g.mark_pending_fn.assert_called_once()
         block = g.timeout_manager.record_block.call_args
-        assert block.kwargs["signal"].signals == ["L:library_covered"]
+        assert block.kwargs["signal"].signals == ["L:target_satisfied"]
 
     def test_balanced_two_episode_l_signal_enters_observation(self):
         """平衡模式保留一至两集短样本观察，避免镖人 S02 类提前完成。"""
@@ -257,6 +301,8 @@ class TestCompletionGuard:
         g.detect_missing_episodes_fn.return_value = []
         g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
         ev = _event()
+        ev.event_data.subscribe.total_episode = 2
+        ev.event_data.subscribe.note = [1, 2]
 
         g.handle(ev)
 
@@ -271,6 +317,8 @@ class TestCompletionGuard:
         g.detect_missing_episodes_fn.return_value = []
         g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
         ev = _event()
+        ev.event_data.subscribe.total_episode = 2
+        ev.event_data.subscribe.note = [1, 2]
 
         g.handle(ev)
 

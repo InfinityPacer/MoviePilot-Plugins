@@ -321,6 +321,76 @@ def test_run_meta_check_calls_pause_when_pre_air_condition_holds():
     assert call_args.args[1].reason == "pre_air"
 
 
+def test_run_meta_check_passes_scope_to_airing_checker():
+    """周期巡检把 SeasonScope 交给按 note 判定的播出暂停检查。"""
+    sub = _sub(id=3, state="R", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    mediainfo = SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    )
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    episodes = [
+        SimpleNamespace(
+            episode_number=88,
+            season_number=1,
+            air_date="2026-06-21",
+            episode_type="standard",
+        )
+    ]
+    plugin._tmdb_episodes = MagicMock(return_value=episodes)
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+
+    plugin.run_meta_check()
+
+    airing.check.assert_called_once_with(
+        sub,
+        mediainfo,
+        next_episode=None,
+        latest_episode=None,
+        episodes=episodes,
+    )
+
+
+def test_run_meta_check_includes_episode_best_version_subscription():
+    """元数据巡检对分集洗版执行按集播出检查。"""
+    sub = _sub(
+        id=3,
+        state="R",
+        name="X",
+        best_version=1,
+        best_version_full=0,
+        type="电视剧",
+    )
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    ))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+
+    plugin.run_meta_check()
+
+    airing.check.assert_called_once()
+
+
 def test_run_meta_check_skips_airing_pause_for_new_subscription():
     """N 状态订阅仍在首次搜索阶段，元数据巡检不应用播出暂停冻结搜索。"""
     from subscribeassistantenhanced.engine.types import PauseRecord
