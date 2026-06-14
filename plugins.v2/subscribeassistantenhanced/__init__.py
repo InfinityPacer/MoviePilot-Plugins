@@ -478,15 +478,16 @@ class SubscribeAssistantEnhanced(_PluginBase):
         logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、洗版清理记录）")
 
     def _run_backfill_now(self):
-        """对现有洗版订阅执行一次回填已存在集。"""
+        """对现有分集洗版订阅执行一次回填已存在集。"""
         count = 0
+        priority = self._modules["priority_manager"]
         for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
-            if subscribe.best_version:
-                existing = self._detect_existing_episodes(subscribe)
-                if existing:
-                    self._modules["priority_manager"].backfill_existing(subscribe, existing)
-                    count += 1
-                    detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {existing}")
+            if not priority.can_backfill(subscribe):
+                continue
+            existing = self._detect_existing_episodes(subscribe)
+            if existing and priority.backfill_existing(subscribe, existing):
+                count += 1
+                detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {existing}")
         logger.info(f"洗版回填：完成，共处理 {count} 个洗版订阅")
 
     def run_download_timeout_check(self):

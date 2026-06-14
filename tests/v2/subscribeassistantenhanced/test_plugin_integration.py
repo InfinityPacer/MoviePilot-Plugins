@@ -706,10 +706,11 @@ def test_reset_task_clears_data_and_resets_flag():
 
 def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(monkeypatch):
     """立即回填会扫描存量洗版订阅，并在执行后关闭一次性标志。"""
-    sub = _sub(id=5, name="X", best_version=1)
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
     subscribe_oper = MagicMock()
     subscribe_oper.list.return_value = [sub]
     priority_manager = MagicMock()
+    priority_manager.can_backfill.return_value = True
     monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
     monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
     plugin = SubscribeAssistantEnhanced()
@@ -721,6 +722,47 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
     priority_manager.backfill_existing.assert_called_once_with(sub, [3])
     plugin.update_config.assert_called_once()
     assert plugin.update_config.call_args.args[0]["backfill_best_version_now"] is False
+
+
+def test_backfill_best_version_now_skips_full_best_version_before_detection(monkeypatch):
+    """立即回填不得探测或改写全集洗版订阅。"""
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
+    subscribe_oper = MagicMock()
+    subscribe_oper.list.return_value = [sub]
+    priority_manager = MagicMock()
+    priority_manager.can_backfill.return_value = False
+    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
+    plugin = SubscribeAssistantEnhanced()
+    plugin.update_config = MagicMock()
+    plugin._detect_existing_episodes = MagicMock(return_value=list(range(1, 13)))
+
+    plugin.init_plugin({"backfill_best_version_now": True})
+
+    plugin._detect_existing_episodes.assert_not_called()
+    priority_manager.backfill_existing.assert_not_called()
+
+
+def test_full_best_version_existing_library_does_not_complete_via_backfill(monkeypatch):
+    """媒体库已有全集但没有新下载时，全集洗版不能通过回填进入完成路径。"""
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=1, total_episode=3)
+    subscribe_oper = MagicMock()
+    subscribe_oper.list.return_value = [sub]
+    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    plugin = SubscribeAssistantEnhanced()
+    plugin.update_config = MagicMock()
+    plugin._detect_existing_episodes = MagicMock(return_value=[1, 2, 3])
+
+    plugin.init_plugin({
+        "best_version_type": "all",
+        "backfill_best_version_now": True,
+    })
+
+    priority_manager = plugin._modules["priority_manager"]
+    plugin._detect_existing_episodes.assert_not_called()
+    subscribe_oper.update.assert_not_called()
+    assert sub.episode_priority == {}
+    assert priority_manager.is_complete(sub) is False
 
 
 def test_notify_gate_blocks_when_disabled():

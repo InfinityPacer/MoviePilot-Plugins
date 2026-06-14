@@ -2,15 +2,19 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.schemas.types import MediaType
+
 from subscribeassistantenhanced.best_version.priority import PriorityManager
 
 
-def _sub(sid=1, ep_priority=None, current_priority=0, start_episode=1, total_episode=2, best_version_full=0,
-         name="测试剧", season=1):
+def _sub(sid=1, ep_priority=None, current_priority=0, start_episode=1, total_episode=2, best_version=1,
+         best_version_full=0, media_type="电视剧", name="测试剧", season=1):
     return SimpleNamespace(
         id=sid,
         name=name,
         season=season,
+        type=media_type,
+        best_version=best_version,
         episode_priority=ep_priority or {},
         current_priority=current_priority,
         start_episode=start_episode,
@@ -141,11 +145,49 @@ class TestBackfillExisting:
 
     def test_backfill_sets_100(self):
         mgr = _mgr()
-        sub = _sub(ep_priority={"1": 0, "2": 0, "3": 0})
+        sub = _sub(ep_priority={"2": 0})
         mgr.backfill_existing(sub, existing_episodes=[1, 3])
         call_payload = mgr._oper.update.call_args[0][1]
         assert call_payload["episode_priority"]["1"] == 100
         assert call_payload["episode_priority"]["3"] == 100
+
+    def test_can_backfill_only_episode_best_version_tv(self):
+        """回填仅适用于电视剧分集洗版。"""
+        mgr = _mgr()
+
+        assert mgr.can_backfill(_sub()) is True
+        assert mgr.can_backfill(_sub(media_type=MediaType.TV)) is True
+        assert mgr.can_backfill(_sub(best_version=0)) is False
+        assert mgr.can_backfill(_sub(best_version_full=1)) is False
+        assert mgr.can_backfill(_sub(media_type="电影")) is False
+
+    def test_full_best_version_does_not_backfill(self):
+        """全集洗版必须等待整季资源，不使用媒体库已有集回填优先级。"""
+        mgr = _mgr()
+
+        mgr.backfill_existing(_sub(best_version_full=1), existing_episodes=[1, 2])
+
+        mgr._oper.update.assert_not_called()
+
+    def test_backfill_preserves_existing_priority(self):
+        """回填只补缺，不覆盖下载流程已写入的中间档位。"""
+        mgr = _mgr()
+        sub = _sub(ep_priority={"1": 80})
+
+        mgr.backfill_existing(sub, existing_episodes=[1, 2])
+
+        payload = mgr._oper.update.call_args.args[1]
+        assert payload["episode_priority"] == {"1": 80, "2": 100}
+
+    def test_backfill_updates_current_priority(self):
+        """回填后按主程序口径同步当前优先级。"""
+        mgr = _mgr()
+        sub = _sub(ep_priority={"1": 80}, current_priority=0)
+
+        mgr.backfill_existing(sub, existing_episodes=[2])
+
+        payload = mgr._oper.update.call_args.args[1]
+        assert payload["current_priority"] == 80
 
     def test_backfill_empty_no_op(self):
         mgr = _mgr()

@@ -142,8 +142,11 @@ class ProtocolStubTest:
             def rollback(self, subscribe, baseline):
                 pass
 
+            def can_backfill(self, subscribe):
+                return False
+
             def backfill_existing(self, subscribe, existing_episodes):
-                pass
+                return False
 
             def is_complete(self, subscribe):
                 return False
