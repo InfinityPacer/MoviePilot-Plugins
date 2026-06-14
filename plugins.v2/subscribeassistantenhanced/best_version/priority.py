@@ -1,8 +1,11 @@
 """洗版优先级管理：统一 episode_priority / current_priority 与按种子基线。"""
 from typing import Callable, Optional
 
+from app.chain.subscribe import SubscribeChain
+from app.schemas.types import MediaType
+
 from ..shared.log import detail
-from ..shared.subscribe import format_subscribe_label
+from ..shared.subscribe import format_subscribe_label, resolve_subscribe_media_type
 from ..shared.update import update_subscribe
 
 
@@ -128,17 +131,35 @@ class PriorityManager:
 
         self._update("subscribes", cleaner)
 
-    def backfill_existing(self, subscribe, existing_episodes: list):
-        """根据媒体库已有集回填优先级为 100，跳过已有集的洗版。"""
-        if not existing_episodes:
-            return
-        ep_priority = dict(subscribe.episode_priority or {})
-        for ep in existing_episodes:
-            ep_priority[str(ep)] = 100
+    @staticmethod
+    def can_backfill(subscribe) -> bool:
+        """判断订阅是否允许按媒体库已有集回填；仅电视剧分集洗版适用。"""
+        if not subscribe or not subscribe.best_version or subscribe.best_version_full:
+            return False
+        return resolve_subscribe_media_type(subscribe) == MediaType.TV
 
-        payload = {"episode_priority": ep_priority}
+    def backfill_existing(self, subscribe, existing_episodes: list) -> bool:
+        """为分集洗版补齐尚无记录的在库集优先级，产生写入时返回 True。"""
+        if not self.can_backfill(subscribe) or not existing_episodes:
+            return False
+        ep_priority = dict(subscribe.episode_priority or {})
+        updated = False
+        for ep in existing_episodes:
+            ep_key = str(ep)
+            if ep_key in ep_priority:
+                continue
+            ep_priority[ep_key] = 100
+            updated = True
+        if not updated:
+            return False
+
+        payload = {
+            "episode_priority": ep_priority,
+            "current_priority": SubscribeChain.get_best_version_current_priority(subscribe, ep_priority),
+        }
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, payload)
+        return True
 
     def is_complete(self, subscribe) -> bool:
         """判断洗版是否完成——所有目标集优先级达标（>=100）。"""

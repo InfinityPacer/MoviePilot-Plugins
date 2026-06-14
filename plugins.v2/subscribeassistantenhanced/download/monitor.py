@@ -22,6 +22,7 @@ class DownloadMonitor:
                  subscribe_oper=None,
                  fetch_fn: Optional[Callable] = None,
                  present_fn: Optional[Callable] = None,
+                 manual_delete_enabled: bool = True,
                  manual_miss_threshold: int = 2,
                  pending_download_enabled: bool = True,
                  state_coordinator=None,
@@ -39,6 +40,8 @@ class DownloadMonitor:
         self._fetch_fn = fetch_fn
         # present_fn(downloader, hash) -> Optional[bool]：True=存在，False=可达但不存在，None=不可判定。
         self._present_fn = present_fn
+        # 关闭监听手动删除时，仍清理本地失效任务，但不触发删种善后。
+        self._manual_delete_enabled = manual_delete_enabled
         # 连续 miss 达阈值才判手动删除，避免下载器瞬断触发误删善后。
         self._manual_miss_threshold = manual_miss_threshold
         self._pending_download_enabled = pending_download_enabled
@@ -169,8 +172,8 @@ class DownloadMonitor:
     def run_timeout_check(self, cleanup=None):
         """定时巡检种子实时状态，将超时、Tracker 命中与手动删除交给 cleanup 善后。
 
-        fetch_fn 未注入时安全空操作；取不到实时状态时，只有 present_fn 明确返回 False
-        且连续 miss 达阈值，才按用户手动删除处理。
+        fetch_fn 未注入时安全空操作；完成或本地失效任务会释放下载待定。
+        只有启用监听手动删除且 present_fn 明确返回 False，才进入删除善后。
         """
         torrents = self._read("torrents") or {}
         total = len(torrents)
@@ -183,20 +186,26 @@ class DownloadMonitor:
         visible_count = 0
         skipped_count = 0
         cleanup_count = 0
+        triggered_subscribe_ids = set()
         for torrent_hash, task in list(torrents.items()):
             downloader = task.get("downloader")
             info = self._fetch_fn(downloader, torrent_hash)
             if info:
                 visible_count += 1
                 self._reset_missing(torrent_hash)
+                if info.completed:
+                    logger.info(f"下载监控：种子 {torrent_hash} 已完成，将从订阅下载任务中移除")
+                    self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
+                    continue
                 action = self.check_torrent(info, task.get("subscribe_id"))
                 if action in ("timeout", "delete_tracker") and cleanup:
                     subscribe = self._resolve_subscribe(task.get("subscribe_id"))
                     if subscribe is not None:
                         reason_text = "Tracker 返回内容包含删除关键字" if action == "delete_tracker" else "连续观察后仍无进度"
                         logger.info(f"下载监控：种子 {torrent_hash} 需要删除，原因：{reason_text}")
-                        cleanup.handle_torrent_deleted(
-                            subscribe, torrent_hash, reason=action,
+                        self._handle_cleanup_once_per_subscribe(
+                            cleanup, subscribe, triggered_subscribe_ids,
+                            torrent_hash, reason=action,
                             downloader=downloader, delete_from_downloader=True)
                         cleanup_count += 1
                 continue
@@ -205,18 +214,27 @@ class DownloadMonitor:
             if present is not False:
                 skipped_count += 1
                 continue
+            if not self._manual_delete_enabled:
+                logger.info(f"下载监控：种子 {torrent_hash} 不在下载器中，将按失效下载任务清理")
+                self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
+                self._reset_missing(torrent_hash)
+                continue
             if self._bump_missing(torrent_hash) < self._manual_miss_threshold:
                 skipped_count += 1
                 continue
             subscribe = self._resolve_subscribe(task.get("subscribe_id"))
-            if subscribe is not None and cleanup:
+            if self._manual_delete_enabled and subscribe is not None and cleanup:
                 logger.info(
                     f"下载监控：种子 {torrent_hash} 连续 {self._manual_miss_threshold} 次不在下载器中，按用户手动删除处理"
                 )
-                cleanup.handle_torrent_deleted(
-                    subscribe, torrent_hash, reason="manual",
+                self._handle_cleanup_once_per_subscribe(
+                    cleanup, subscribe, triggered_subscribe_ids,
+                    torrent_hash, reason="manual",
                     downloader=downloader, delete_from_downloader=False)
                 cleanup_count += 1
+            else:
+                logger.info(f"下载监控：种子 {torrent_hash} 不在下载器中，将按失效下载任务清理")
+                self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
             self._reset_missing(torrent_hash)
         detail(
             f"下载监控：本轮检查 {total} 个下载任务，下载器中仍存在 {visible_count} 个，"
@@ -228,6 +246,48 @@ class DownloadMonitor:
         if self._subscribe_oper and subscribe_id:
             return self._subscribe_oper.get(subscribe_id)
         return None
+
+    @staticmethod
+    def _handle_cleanup_once_per_subscribe(cleanup, subscribe, triggered_subscribe_ids: set,
+                                           torrent_hash: str, **kwargs):
+        """同一轮同一订阅只允许首个删种善后触发补搜，其余种子仍完整清理。"""
+        if subscribe.id in triggered_subscribe_ids:
+            cleanup.handle_torrent_deleted(subscribe, torrent_hash, search_enabled=False, **kwargs)
+            return
+        triggered_subscribe_ids.add(subscribe.id)
+        cleanup.handle_torrent_deleted(subscribe, torrent_hash, **kwargs)
+
+    def _clean_local_torrent_task(self, subscribe_id: int, torrent_hash: str):
+        """只清理本地下载任务和下载待定，不记录坏种、不回滚优先级、不触发补搜。"""
+        self._remove_torrent_task(torrent_hash)
+        if subscribe_id:
+            self.clear_download_pending(subscribe_id, torrent_hash)
+            self._remove_subscribe_torrent_task(subscribe_id, torrent_hash)
+
+    def _remove_torrent_task(self, torrent_hash: str):
+        """从下载任务表移除指定 hash。"""
+        def updater(data: dict) -> dict:
+            data.pop(torrent_hash, None)
+            return data
+
+        self._update("torrents", updater)
+
+    def _remove_subscribe_torrent_task(self, subscribe_id: int, torrent_hash: str):
+        """移除订阅内 subscribes.torrent_tasks 的同名种子任务。"""
+        sid = str(subscribe_id)
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            torrent_tasks = task.get("torrent_tasks")
+            if torrent_tasks:
+                task["torrent_tasks"] = [
+                    item for item in torrent_tasks
+                    if item.get("hash") != torrent_hash
+                ]
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
 
     def _confirm_download_pending(self, subscribe_id, torrent_hash: str, episodes=None,
                                   downloader: Optional[str] = None,
@@ -369,26 +429,29 @@ class DownloadMonitor:
 
         if self._has_progress(torrent_info, torrent_task):
             self._refresh_baseline(torrent_info)
+            self._clear_timeout_state(subscribe_id, torrent_task)
             return "ok"
 
         elapsed = time.time() - torrent_task.get("baseline_at", time.time())
         if elapsed < self._timeout_seconds:
             return "ok"
 
-        retry_count = torrent_task.get("retry_count", 0)
-        if retry_count >= self._retry_limit:
-            manual_count = torrent_task.get("manual_review_count", 0)
-            if manual_count > 0:
-                detail(f"下载监控：种子 {torrent_info.hash} 再次长时间无进度，本轮不再自动删除，请人工确认")
-                return "manual_review"
-            detail(f"下载监控：种子 {torrent_info.hash} 已连续 {retry_count}/{self._retry_limit} 轮无明显进度，准备删除")
-            self._mark_manual_review(torrent_info.hash)
-            return "timeout"
+        if self._is_timeout_ignore_active(subscribe_id, torrent_info.hash, torrent_task):
+            detail(f"下载监控：种子 {torrent_info.hash} 处于连续低进度保护期，本轮跳过")
+            return "ignored"
 
-        detail(f"下载监控：种子 {torrent_info.hash} 本轮无明显进度，继续观察（第 {retry_count + 1}/{self._retry_limit} 轮）")
-        self._increment_retry(torrent_info.hash, retry_count)
-        self._refresh_baseline(torrent_info)
-        return "ok"
+        timeout_state = self._record_timeout_failure(subscribe_id, torrent_info.hash, torrent_task)
+        retry_limit = max(int(self._retry_limit or 1), 1)
+        if timeout_state.get("fail_count", 0) >= retry_limit:
+            self._mark_timeout_manual_review(subscribe_id, torrent_task)
+            detail(f"下载监控：种子 {torrent_info.hash} 已达到连续低进度保护上限，本轮保留种子并等待人工确认")
+            return "manual_review"
+
+        detail(
+            f"下载监控：种子 {torrent_info.hash} 低进度超时"
+            f"（连续 {timeout_state.get('fail_count', 0)}/{retry_limit} 次），准备删除"
+        )
+        return "timeout"
 
     def _should_exclude(self, info: TorrentInfo) -> bool:
         if not self._exclude_tags:
@@ -457,3 +520,97 @@ class DownloadMonitor:
             data[torrent_hash] = task
             return data
         self._update("torrents", updater)
+
+    def _timeout_scope_key(self, subscribe_id: int, torrent_task: dict) -> str:
+        """生成连续低进度统计范围；剧集按季和集数，其他订阅按 movie 兜底。"""
+        subscribe = self._resolve_subscribe(subscribe_id)
+        media_type = getattr(getattr(subscribe, "type", None), "value", getattr(subscribe, "type", None))
+        if media_type == "电视剧":
+            episodes = torrent_task.get("episodes") or []
+            if not isinstance(episodes, list):
+                episodes = [episodes]
+            episode_key = ",".join(sorted(str(ep) for ep in episodes if ep is not None)) or "unknown"
+            season = getattr(subscribe, "season", None) if subscribe else None
+            return f"tv:{season if season is not None else 'unknown'}:{episode_key}"
+        return "movie"
+
+    def _record_timeout_failure(self, subscribe_id: int, torrent_hash: str, torrent_task: dict) -> dict:
+        """按订阅范围记录低进度超时次数，换种子后仍继承同一 scope 的保护计数。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+        now = time.time()
+        result = {"state": {}}
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            states = task.get("timeout_states", {})
+            state = states.get(scope_key, {})
+            try:
+                window_start = float(state.get("window_start") or now)
+            except (TypeError, ValueError):
+                window_start = now
+            if self._timeout_retry_window_seconds() and now - window_start > self._timeout_retry_window_seconds():
+                state = {}
+                window_start = now
+            state["fail_count"] = int(state.get("fail_count") or 0) + 1
+            state["window_start"] = window_start
+            state["last_fail_time"] = now
+            state["last_torrent_hash"] = torrent_hash
+            states[scope_key] = state
+            task["timeout_states"] = states
+            data[sid] = task
+            result["state"] = state
+            return data
+
+        self._update("subscribes", updater)
+        return result["state"]
+
+    def _timeout_retry_window_seconds(self) -> float:
+        """连续低进度统计窗口：至少 24 小时，或超时窗口乘保护次数。"""
+        return max(24 * 3600, self._timeout_seconds * max(int(self._retry_limit or 1), 1))
+
+    def _is_timeout_ignore_active(self, subscribe_id: int, torrent_hash: str, torrent_task: dict) -> bool:
+        """读取人工保护期：同一 hash 在 ignore_until 前不再重复计数或处理。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+        task = (self._read("subscribes") or {}).get(sid, {})
+        state = (task.get("timeout_states") or {}).get(scope_key, {})
+        try:
+            ignore_until = float(state.get("ignore_until") or 0)
+        except (TypeError, ValueError):
+            ignore_until = 0
+        return state.get("last_torrent_hash") == torrent_hash and ignore_until > time.time()
+
+    def _mark_timeout_manual_review(self, subscribe_id: int, torrent_task: dict):
+        """达到连续低进度保护上限后，给当前范围写入人工处理保护期。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+        ignore_until = time.time() + self._timeout_seconds * max(int(self._retry_limit or 1), 1)
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            states = task.get("timeout_states", {})
+            state = states.get(scope_key, {})
+            state["ignore_until"] = ignore_until
+            states[scope_key] = state
+            task["timeout_states"] = states
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
+
+    def _clear_timeout_state(self, subscribe_id: int, torrent_task: dict):
+        """进度恢复增长时清理同一订阅范围的连续低进度状态。"""
+        sid = str(subscribe_id)
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            states = task.get("timeout_states")
+            if states:
+                states.pop(scope_key, None)
+                task["timeout_states"] = states
+                data[sid] = task
+            return data
+
+        self._update("subscribes", updater)

@@ -321,6 +321,76 @@ def test_run_meta_check_calls_pause_when_pre_air_condition_holds():
     assert call_args.args[1].reason == "pre_air"
 
 
+def test_run_meta_check_passes_scope_to_airing_checker():
+    """周期巡检把 SeasonScope 交给按 note 判定的播出暂停检查。"""
+    sub = _sub(id=3, state="R", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    mediainfo = SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    )
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    episodes = [
+        SimpleNamespace(
+            episode_number=88,
+            season_number=1,
+            air_date="2026-06-21",
+            episode_type="standard",
+        )
+    ]
+    plugin._tmdb_episodes = MagicMock(return_value=episodes)
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+
+    plugin.run_meta_check()
+
+    airing.check.assert_called_once_with(
+        sub,
+        mediainfo,
+        next_episode=None,
+        latest_episode=None,
+        episodes=episodes,
+    )
+
+
+def test_run_meta_check_includes_episode_best_version_subscription():
+    """元数据巡检对分集洗版执行按集播出检查。"""
+    sub = _sub(
+        id=3,
+        state="R",
+        name="X",
+        best_version=1,
+        best_version_full=0,
+        type="电视剧",
+    )
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    ))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+
+    plugin.run_meta_check()
+
+    airing.check.assert_called_once()
+
+
 def test_run_meta_check_skips_airing_pause_for_new_subscription():
     """N 状态订阅仍在首次搜索阶段，元数据巡检不应用播出暂停冻结搜索。"""
     from subscribeassistantenhanced.engine.types import PauseRecord
@@ -520,7 +590,7 @@ def test_run_meta_check_p_state_skips_pre_air_pause():
     pause_manager.pause.assert_not_called()
 
 
-def test_run_all_checks_invokes_each_runner():
+def test_run_all_checks_skips_verify_when_disabled():
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"enabled": True})
     mocks = {}
@@ -529,9 +599,24 @@ def test_run_all_checks_invokes_each_runner():
         mocks[name] = MagicMock()
         setattr(plugin, name, mocks[name])
     plugin.run_all_checks()
-    for name in ("run_meta_check", "run_download_timeout_check", "run_best_version_check",
-                 "run_completion_verify", "run_common_check"):
+    for name in ("run_meta_check", "run_download_timeout_check", "run_best_version_check", "run_common_check"):
         mocks[name].assert_called_once()
+    mocks["run_completion_verify"].assert_not_called()
+
+
+def test_run_all_checks_invokes_verify_when_enabled():
+    """立即运行一次遵守自动纠错开关，开启时才执行完成后验证。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"enabled": True, "verify_enabled": True})
+    plugin.run_meta_check = MagicMock()
+    plugin.run_download_timeout_check = MagicMock()
+    plugin.run_best_version_check = MagicMock()
+    plugin.run_completion_verify = MagicMock()
+    plugin.run_common_check = MagicMock()
+
+    plugin.run_all_checks()
+
+    plugin.run_completion_verify.assert_called_once()
 
 
 def test_run_common_check_runs_enabled_subtasks():
@@ -621,10 +706,11 @@ def test_reset_task_clears_data_and_resets_flag():
 
 def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(monkeypatch):
     """立即回填会扫描存量洗版订阅，并在执行后关闭一次性标志。"""
-    sub = _sub(id=5, name="X", best_version=1)
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
     subscribe_oper = MagicMock()
     subscribe_oper.list.return_value = [sub]
     priority_manager = MagicMock()
+    priority_manager.can_backfill.return_value = True
     monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
     monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
     plugin = SubscribeAssistantEnhanced()
@@ -636,6 +722,47 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
     priority_manager.backfill_existing.assert_called_once_with(sub, [3])
     plugin.update_config.assert_called_once()
     assert plugin.update_config.call_args.args[0]["backfill_best_version_now"] is False
+
+
+def test_backfill_best_version_now_skips_full_best_version_before_detection(monkeypatch):
+    """立即回填不得探测或改写全集洗版订阅。"""
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
+    subscribe_oper = MagicMock()
+    subscribe_oper.list.return_value = [sub]
+    priority_manager = MagicMock()
+    priority_manager.can_backfill.return_value = False
+    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
+    plugin = SubscribeAssistantEnhanced()
+    plugin.update_config = MagicMock()
+    plugin._detect_existing_episodes = MagicMock(return_value=list(range(1, 13)))
+
+    plugin.init_plugin({"backfill_best_version_now": True})
+
+    plugin._detect_existing_episodes.assert_not_called()
+    priority_manager.backfill_existing.assert_not_called()
+
+
+def test_full_best_version_existing_library_does_not_complete_via_backfill(monkeypatch):
+    """媒体库已有全集但没有新下载时，全集洗版不能通过回填进入完成路径。"""
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=1, total_episode=3)
+    subscribe_oper = MagicMock()
+    subscribe_oper.list.return_value = [sub]
+    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    plugin = SubscribeAssistantEnhanced()
+    plugin.update_config = MagicMock()
+    plugin._detect_existing_episodes = MagicMock(return_value=[1, 2, 3])
+
+    plugin.init_plugin({
+        "best_version_type": "all",
+        "backfill_best_version_now": True,
+    })
+
+    priority_manager = plugin._modules["priority_manager"]
+    plugin._detect_existing_episodes.assert_not_called()
+    subscribe_oper.update.assert_not_called()
+    assert sub.episode_priority == {}
+    assert priority_manager.is_complete(sub) is False
 
 
 def test_notify_gate_blocks_when_disabled():
@@ -653,14 +780,17 @@ def test_notify_gate_blocks_when_disabled():
     notifying_plugin.post_message.assert_called_once()
 
 
-def test_manual_delete_listen_off_disables_present_fn():
+def test_manual_delete_listen_off_keeps_present_fn_for_invalid_cleanup():
+    """关闭监听手动删除只禁用手动删除善后，不禁用下载器种子存在性探测。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"manual_delete_listen": False})
-    assert plugin._modules["download_monitor"]._present_fn is None
+    assert plugin._modules["download_monitor"]._present_fn is not None
+    assert plugin._modules["download_monitor"]._manual_delete_enabled is False
 
     plugin2 = SubscribeAssistantEnhanced()
     plugin2.init_plugin({"manual_delete_listen": True})
     assert plugin2._modules["download_monitor"]._present_fn is not None
+    assert plugin2._modules["download_monitor"]._manual_delete_enabled is True
 
 
 def test_tracker_listen_off_clears_keywords():
@@ -1114,8 +1244,8 @@ class TestPeriodicJobs:
         plugin.post_message.assert_called_once()
         assert "不再满足上映待定，已标记订阅中" in plugin.post_message.call_args.kwargs["title"]
 
-    def test_pending_release_legacy_block_is_discarded_without_token(self, monkeypatch):
-        """缺少媒体身份的旧 guard_veto 不能借给当前订阅。"""
+    def test_pending_release_guard_block_is_discarded_without_token(self, monkeypatch):
+        """缺少媒体身份的 guard_veto 不能借给当前订阅。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({
             "timeout_release_enabled": True,

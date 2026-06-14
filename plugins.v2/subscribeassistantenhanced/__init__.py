@@ -70,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.1.8"
+    plugin_version = "0.2.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -235,7 +235,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
             state_coordinator=pending_state,
             fetch_fn=self._fetch_downloader_torrent,
-            present_fn=self._downloader_torrent_present if cfg.manual_delete_listen else None,
+            present_fn=self._downloader_torrent_present,
+            manual_delete_enabled=cfg.manual_delete_listen,
             pending_download_enabled=cfg.pending_download_enabled,
         )
 
@@ -249,6 +250,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             delete_torrent_fn=self._delete_downloader_torrent,
             search_fn=self._search_subscribe if cfg.auto_search_when_delete else None,
             notify_fn=self._notify_subscribe,
+            subscribe_oper=self._subscribe_oper,
         )
 
         def evaluate_fn(subscribe, mediainfo):
@@ -284,7 +286,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 sub.id),
             mark_pending_fn=pending_judge.mark_pending,
             timeout_manager=timeout_manager,
-            detect_missing_episodes_fn=self._detect_missing_episodes,
             tmdb_episodes_fn=self._tmdb_episodes,
             mode=cfg.completion_guard_mode,
             pending_download_enabled=cfg.pending_download_enabled,
@@ -457,7 +458,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self.run_meta_check()
         self.run_download_timeout_check()
         self.run_best_version_check()
-        self.run_completion_verify()
+        if self._config.verify_enabled:
+            self.run_completion_verify()
         self.run_common_check()
 
     def _reset_task_data(self):
@@ -476,15 +478,16 @@ class SubscribeAssistantEnhanced(_PluginBase):
         logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、洗版清理记录）")
 
     def _run_backfill_now(self):
-        """对现有洗版订阅执行一次回填已存在集。"""
+        """对现有分集洗版订阅执行一次回填已存在集。"""
         count = 0
+        priority = self._modules["priority_manager"]
         for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
-            if subscribe.best_version:
-                existing = self._detect_existing_episodes(subscribe)
-                if existing:
-                    self._modules["priority_manager"].backfill_existing(subscribe, existing)
-                    count += 1
-                    detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {existing}")
+            if not priority.can_backfill(subscribe):
+                continue
+            existing = self._detect_existing_episodes(subscribe)
+            if existing and priority.backfill_existing(subscribe, existing):
+                count += 1
+                detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {existing}")
         logger.info(f"洗版回填：完成，共处理 {count} 个洗版订阅")
 
     def run_download_timeout_check(self):
@@ -581,7 +584,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         - 标记暂停（no_download / auto_user）在 state=S 时直接跳过，
           不被上映检查自动恢复、也不重复处理；用户重新启用（state!=S）则清掉插件标记。
         - 上映/播出类暂停（pre_air / airing_gap）双向：条件成立时暂停，条件解除且当前为 S 时自动恢复。
-        暂停复核优先于待定：满足暂停条件时先写状态并跳过本轮待定；洗版订阅整体跳过。
+        暂停复核优先于待定：满足暂停条件时先写状态并跳过本轮待定；
+        全集洗版因不按集搜索而跳过。
         """
         if not self._subscribe_oper:
             return
@@ -591,7 +595,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         pause_manager = self._modules.get("pause_manager")
         detail("元数据巡检：开始")
         for subscribe in (self._subscribe_oper.list(state="N,R,P,S") or []):
-            if subscribe.best_version:
+            if subscribe.best_version and subscribe.best_version_full:
                 continue
 
             # 标记暂停必须在媒体识别前处理，避免被上映检查误恢复。
@@ -636,6 +640,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                         subscribe, mediainfo,
                         next_episode=mediainfo.next_episode_to_air,
                         latest_episode=last_aired_episode(episodes),
+                        episodes=episodes,
                     )
                 if record_now:
                     # 条件成立：尚未暂停才置 S；已是 S 则保持。暂停后本轮不再做待定

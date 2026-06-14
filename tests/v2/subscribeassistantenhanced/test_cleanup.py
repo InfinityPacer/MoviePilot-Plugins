@@ -5,14 +5,21 @@ from unittest.mock import MagicMock
 from subscribeassistantenhanced.download.cleanup import TorrentCleanup
 
 
-def _sub(sid=1, best_version=0):
+def _sub(sid=1, best_version=0, **kwargs):
+    data = {
+        "id": sid,
+        "name": "测试剧",
+        "season": 1,
+        "total_episode": 12,
+        "start_episode": 1,
+        "lack_episode": 0,
+        "note": [],
+        "best_version": best_version,
+        "type": "电视剧",
+    }
+    data.update(kwargs)
     return SimpleNamespace(
-        id=sid,
-        name="测试剧",
-        season=1,
-        total_episode=12,
-        lack_episode=0,
-        best_version=best_version,
+        **data,
     )
 
 
@@ -20,6 +27,7 @@ def _cleanup(store=None):
     store = store if store is not None else {}
     priority = MagicMock()
     clear_fn = MagicMock()
+    subscribe_oper = MagicMock()
 
     def update_fn(key, updater):
         data = store.get(key, {})
@@ -34,6 +42,7 @@ def _cleanup(store=None):
     c._store = store
     c._priority_mock = priority
     c._clear_mock = clear_fn
+    c._subscribe_oper_mock = subscribe_oper
     return c
 
 
@@ -84,6 +93,41 @@ class TestHandleTorrentDeleted:
         c = _cleanup(store)
         c.handle_torrent_deleted(_sub(), "hash123")
         assert "hash123" not in store.get("torrents", {})
+
+    def test_updates_tv_note_and_lack_episode_after_delete(self):
+        """删除剧集种子后，从订阅 note 扣除对应集并按起始集重算缺集数。"""
+        sub = _sub(note=[1, 2, 3, 4], total_episode=12, start_episode=1)
+        store = {"torrents": {"h1": {"hash": "h1", "episodes": [2, 3]}}}
+        subscribe_oper = MagicMock()
+
+        def update_fn(key, updater):
+            store[key] = updater(store.get(key, {}))
+
+        c = TorrentCleanup(
+            priority_manager=MagicMock(), clear_download_pending_fn=MagicMock(),
+            task_data_update=update_fn, task_data_read=lambda k: store.get(k, {}),
+            subscribe_oper=subscribe_oper,
+        )
+
+        c.handle_torrent_deleted(sub, "h1")
+
+        subscribe_oper.update.assert_called_once()
+        assert subscribe_oper.update.call_args.args[0] == 1
+        payload = subscribe_oper.update.call_args.args[1]
+        assert payload["note"] == [1, 4]
+        assert payload["lack_episode"] == 10
+
+    def test_cleans_subscribe_torrent_tasks_after_delete(self):
+        """删除种子后同步清理订阅内 torrent_tasks。"""
+        store = {
+            "torrents": {"h1": {"hash": "h1"}},
+            "subscribes": {"1": {"torrent_tasks": [{"hash": "h1"}, {"hash": "h2"}]}},
+        }
+        c = _cleanup(store)
+
+        c.handle_torrent_deleted(_sub(), "h1")
+
+        assert store["subscribes"]["1"]["torrent_tasks"] == [{"hash": "h2"}]
 
     def test_deletes_torrent_archives_fingerprint_and_searches(self):
         """归档指纹(清任务前读取) → 真正删下载器种子 → 延迟补搜；任务最终被清。"""

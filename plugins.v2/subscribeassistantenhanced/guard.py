@@ -7,7 +7,7 @@ from app.schemas.types import MediaType
 
 from .engine.scope import build_scope
 from .engine.local import check_l_signal
-from .engine.signals import has_future_next_episode
+from .engine.signals import has_future_episodes, has_future_next_episode
 from .engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from .shared.log import detail
 from .shared.subscribe import format_subscribe, resolve_subscribe_media_type
@@ -21,7 +21,6 @@ class CompletionGuard:
                  has_active_downloads_fn: Callable,
                  mark_pending_fn: Callable,
                  timeout_manager: PendingTimeoutManagerProtocol,
-                 detect_missing_episodes_fn: Callable = None,
                  tmdb_episodes_fn: Callable = None,
                  mode: str = "balanced",
                  pending_download_enabled: bool = True):
@@ -30,7 +29,6 @@ class CompletionGuard:
         self.has_active_downloads_fn = has_active_downloads_fn
         self.mark_pending_fn = mark_pending_fn
         self.timeout_manager = timeout_manager
-        self.detect_missing_episodes_fn = detect_missing_episodes_fn
         self.tmdb_episodes_fn = tmdb_episodes_fn
         self.mode = mode
         self.pending_download_enabled = pending_download_enabled
@@ -104,16 +102,15 @@ class CompletionGuard:
 
     def _local_signal(self, subscribe, mediainfo):
         """计算 L 信号；明确存在未来集时不允许本地覆盖绕过排期。"""
-        if not (self.detect_missing_episodes_fn and self.tmdb_episodes_fn):
+        if not self.tmdb_episodes_fn:
             return None
         tmdb_info = mediainfo.tmdb_info if mediainfo else None
         if has_future_next_episode(tmdb_info, subscribe.season):
             return None
         scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
-        return check_l_signal(
-            subscribe, scope,
-            detect_missing_episodes_fn=self.detect_missing_episodes_fn,
-        )
+        if has_future_episodes(scope.episodes):
+            return None
+        return check_l_signal(subscribe, scope)
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""

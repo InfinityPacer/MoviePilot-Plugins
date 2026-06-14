@@ -21,15 +21,22 @@ def _sub(sid=1, state="R", username="", media_type="电视剧"):
         season=1,
         type=media_type,
         name="测试剧",
+        start_episode=1,
         total_episode=12,
         lack_episode=0,
+        note=[],
+        episode_priority={},
         date=None,
         last_update=None,
     )
 
 
-def _ep(air_date):
-    return SimpleNamespace(air_date=air_date, episode_number=1)
+def _ep(air_date, episode_number=1, season_number=1):
+    return SimpleNamespace(
+        air_date=air_date,
+        episode_number=episode_number,
+        season_number=season_number,
+    )
 
 
 def test_clear_pause_record_drops_metadata_without_state_change():
@@ -185,6 +192,108 @@ class TestAiringPause:
         result = checker.check(_sub(), None, next_episode=_ep(near), latest_episode=None,
                                as_of=date(2026, 6, 1))
         assert result is None
+
+    def test_stale_same_day_aggregate_falls_back_to_scope_first_missing_episode(self):
+        """聚合字段停留在当天已播集时，按分集表中的订阅首缺集判断播出间隔。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 92
+        subscribe.note = list(range(1, 88))
+        episodes = [
+            _ep("2026-06-14", episode_number=87),
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-14", episode_number=87),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 14),
+        )
+
+        assert result is not None
+        assert result.reason == "airing_gap"
+        assert "2026-06-21" in result.detail
+
+    def test_future_scope_episode_does_not_pause_when_it_is_not_first_missing(self):
+        """未来排期不是订阅首缺集时不暂停，避免冻结仍有早期缺集可搜索的订阅。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 12
+        subscribe.note = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11]
+        episodes = [
+            _ep("2026-01-01", episode_number=5),
+            _ep("2026-06-21", episode_number=12),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-21", episode_number=12),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 14),
+        )
+
+        assert result is None
+
+    def test_deleted_downloaded_episode_does_not_override_note(self):
+        """已下载集即使从媒体库删除，播出暂停仍按 note 推导首个待下载集。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 12
+        subscribe.note = list(range(1, 12))
+        episodes = [
+            _ep("2026-01-01", episode_number=5),
+            _ep("2026-06-21", episode_number=12),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-21", episode_number=12),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 14),
+        )
+
+        assert result is not None
+        assert result.reason == "airing_gap"
+        assert "2026-06-21" in result.detail
+
+    def test_episode_best_version_uses_positive_priority_as_downloaded(self):
+        """分集洗版已有任意优先级版本的集不再作为首待下载集。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.best_version = 1
+        subscribe.best_version_full = 0
+        subscribe.total_episode = 12
+        subscribe.note = list(range(1, 11))
+        subscribe.episode_priority = {"11": 10}
+        episodes = [
+            _ep("2026-01-01", episode_number=11),
+            _ep("2026-06-21", episode_number=12),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-21", episode_number=12),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 14),
+        )
+
+        assert result is not None
+        assert result.reason == "airing_gap"
+        assert "2026-06-21" in result.detail
 
     def test_no_next_last_old_no_pause(self):
         """无下一集 + 最后集超阈值不再直接暂停，避免历史季全缺被搜索前冻结。"""

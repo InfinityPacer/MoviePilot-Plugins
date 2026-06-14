@@ -261,12 +261,12 @@ class PluginConfig:
 
     @property
     def best_version_backfill_enabled(self) -> bool:
-        """回填已存在集：新建或转洗版时把媒体库已有集标为顶档，跳过其洗版。"""
+        """回填已存在集：新建或转分集洗版时把媒体库已有集标为顶档。"""
         return self.get_bool("best_version_backfill_enabled", False)
 
     @property
     def backfill_best_version_now(self) -> bool:
-        """立即扫描存量并回填：对现有洗版订阅执行一次回填，执行后自动复位。"""
+        """立即扫描存量并回填：对现有分集洗版订阅执行一次回填。"""
         return self.get_bool("backfill_best_version_now", False)
 
     # ---- 完结信号与验证 ----

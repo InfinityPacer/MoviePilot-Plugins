@@ -322,26 +322,29 @@ class TestHVerifier:
 class TestCodexReviewFindings:
 
     def test_manual_review_reachable(self):
-        """MANUAL_REVIEW 状态可达：timeout 后 manual_review_count 递增。"""
+        """MANUAL_REVIEW 状态可达：范围级低进度计数达到上限后保留种子。"""
         tm, store = _store()
         import time
-        store["torrents"] = {"h1": {
-            "baseline_progress": 0.5,
-            "baseline_at": time.time() - 7200,
-            "retry_count": 3,
-            "manual_review_count": 0,
-        }}
+        store["torrents"] = {
+            "h1": {
+                "baseline_progress": 0.5,
+                "baseline_at": time.time() - 7200,
+                "subscribe_id": 1,
+                "episodes": [1],
+            },
+        }
+        store["subscribes"] = {"1": {"timeout_states": {
+            "movie": {"fail_count": 2, "window_start": time.time() - 60},
+        }}}
         monitor = DownloadMonitor(tm.read, tm.update, timeout_minutes=60, retry_limit=3)
         from subscribeassistantenhanced.download.torrent import TorrentInfo
         info = TorrentInfo(hash="h1", progress=0.5)
 
         result = monitor.check_torrent(info, subscribe_id=1)
-        assert result == "timeout"
-        assert store["torrents"]["h1"]["manual_review_count"] == 1
-
-        store["torrents"]["h1"]["baseline_at"] = time.time() - 7200
-        result2 = monitor.check_torrent(info, subscribe_id=1)
-        assert result2 == "manual_review"
+        assert result == "manual_review"
+        state = store["subscribes"]["1"]["timeout_states"]["movie"]
+        assert state["fail_count"] == 3
+        assert state["ignore_until"] > time.time()
 
     def test_cleanup_call_order(self):
         """删除后恢复调用顺序：rollback → clean → clear_pending；不暂停订阅。"""

@@ -22,6 +22,7 @@ def _sub(**kwargs):
         total_episode=12,
         start_episode=1,
         lack_episode=0,
+        note=[],
         episode_priority={},
     )
     defaults.update(kwargs)
@@ -277,10 +278,11 @@ class TestSubscribeLifecycle:
 
     def test_modified_convert_to_best_version_backfills(self):
         """普通转洗版（best_version 假→真）→ 媒体库已有集回填 priority=100。"""
-        sub = _sub(id=9)
+        sub = _sub(id=9, best_version=1)
         oper = MagicMock()
         oper.get.return_value = sub
         priority = MagicMock()
+        priority.can_backfill.return_value = True
         proxy = EventProxy(subscribe_oper=oper, priority_manager=priority,
                            detect_existing_episodes_fn=lambda s: [1, 2, 3])
         proxy.on_subscribe_modified(SimpleNamespace(event_data={
@@ -289,6 +291,30 @@ class TestSubscribeLifecycle:
             "old_subscribe_info": {"best_version": 0},
         }))
         priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3])
+
+    def test_modified_convert_directly_to_full_skips_backfill(self):
+        """普通订阅直接转全集洗版时不探测媒体库，也不回填按集优先级。"""
+        sub = _sub(id=9, best_version=1, best_version_full=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        priority = MagicMock()
+        priority.can_backfill.return_value = False
+        detect_existing = MagicMock(return_value=[1, 2, 3])
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            priority_manager=priority,
+            detect_existing_episodes_fn=detect_existing,
+            backfill_enabled=True,
+        )
+
+        proxy.on_subscribe_modified(SimpleNamespace(event_data={
+            "subscribe_id": 9,
+            "subscribe_info": {"best_version": 1, "best_version_full": 1},
+            "old_subscribe_info": {"best_version": 0, "best_version_full": 0},
+        }))
+
+        detect_existing.assert_not_called()
+        priority.backfill_existing.assert_not_called()
 
     def test_modified_already_best_version_no_backfill(self):
         """已是洗版（非边沿）→ 不回填。"""
@@ -313,6 +339,26 @@ class TestSubscribeLifecycle:
         proxy = EventProxy(subscribe_oper=oper, pause_manager=pause)
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7}))
         pause.check_auto_pause_for_user.assert_called_once_with(sub)
+
+    def test_added_full_best_version_skips_backfill_detection(self):
+        """新增全集洗版订阅不探测媒体库已有集。"""
+        sub = _sub(id=7, best_version=1, best_version_full=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        priority = MagicMock()
+        priority.can_backfill.return_value = False
+        detect_existing = MagicMock(return_value=[1, 2, 3])
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            priority_manager=priority,
+            detect_existing_episodes_fn=detect_existing,
+            backfill_enabled=True,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7}))
+
+        detect_existing.assert_not_called()
+        priority.backfill_existing.assert_not_called()
 
     def _added_proxy(self, sub, pending_result, airing_record):
         oper = MagicMock()
@@ -369,9 +415,37 @@ class TestSubscribeLifecycle:
         """不待定 → 播出暂停命中则 pause。"""
         sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
         record = object()
-        proxy, pause, pending, airing = self._added_proxy(sub, (False, ""), record)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        pause = MagicMock()
+        pending = MagicMock()
+        pending.should_enter_pending.return_value = (False, "")
+        airing = MagicMock()
+        airing.check_pre_air.return_value = None
+        airing.check.return_value = record
+        episodes = [SimpleNamespace(air_date="2026-06-21", episode_number=12)]
+        mediainfo = _mi(next_episode_to_air=None)
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            pause_manager=pause,
+            pending_judge=pending,
+            airing_checker=airing,
+            mediainfo_from_dict=lambda _data: mediainfo,
+            is_tv_fn=lambda _mi: True,
+            tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: episodes,
+            evaluate_fn=lambda _subscribe, _mediainfo: None,
+        )
+
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
         pending.mark_pending.assert_not_called()
+        airing.check.assert_called_once_with(
+            sub,
+            mediainfo,
+            next_episode=None,
+            latest_episode=None,
+            episodes=episodes,
+        )
         pause.pause.assert_called_once_with(sub, record)
 
     def test_added_history_season_without_next_episode_does_not_pause_by_latest_air_date(self):
@@ -404,13 +478,27 @@ class TestSubscribeLifecycle:
         pending.mark_pending.assert_not_called()
         pause.pause.assert_not_called()
 
-    def test_added_best_version_skips_pause_pending(self):
-        """洗版订阅 → 只跑用户名暂停，不做播出暂停/待定。"""
-        sub = _sub(id=7, best_version=1)
+    def test_added_full_best_version_skips_pause_pending(self):
+        """全集洗版只跑用户名暂停，不做按集播出暂停或待定。"""
+        sub = _sub(id=7, best_version=1, best_version_full=1)
         proxy, pause, pending, _airing = self._added_proxy(sub, (False, ""), None)
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
         pending.should_enter_pending.assert_not_called()
         pause.check_auto_pause_for_user.assert_called_once_with(sub)
+
+    def test_added_episode_best_version_uses_same_pending_flow(self):
+        """分集洗版使用按集订阅的待定判定流程。"""
+        sub = _sub(id=7, best_version=1, best_version_full=0)
+        proxy, _pause, pending, _airing = self._added_proxy(sub, (True, "集数不足"), None)
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        pending.should_enter_pending.assert_called_once()
+        pending.mark_pending.assert_called_once_with(
+            sub,
+            source="pending_judge",
+            reason="集数不足",
+        )
 
     def test_complete_clears_tasks_and_snapshots(self):
         """SubscribeComplete → 先保存 H 快照再清实例数据，避免历史被清理丢失。"""

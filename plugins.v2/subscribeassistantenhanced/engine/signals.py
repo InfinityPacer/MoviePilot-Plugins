@@ -93,7 +93,7 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
         )
 
     # I-4：SeasonScope 内无未来集，且最后已播集超过冷却期。
-    if not _has_future_episodes(scope.episodes, today):
+    if not has_future_episodes(scope.episodes, as_of=today):
         last_aired = _last_aired(scope.episodes, as_of=today)
         if last_aired:
             air = parse_date(last_aired.air_date)
@@ -126,8 +126,9 @@ def has_future_next_episode(tmdb_info, season: int,
     return air_date > (as_of or date.today())
 
 
-def _has_future_episodes(episodes: list, today: date) -> bool:
+def has_future_episodes(episodes: list, as_of: Optional[date] = None) -> bool:
     """判断 SeasonScope 内是否存在未来播出的集。"""
+    today = as_of or date.today()
     for ep in episodes:
         air = parse_date(ep.air_date)
         if air and air > today:
