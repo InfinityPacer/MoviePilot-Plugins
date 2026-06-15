@@ -22,11 +22,11 @@ def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
     )
 
 
-def _sub(sid=1, stype="电视剧", best_version=0, state="R"):
+def _sub(sid=1, stype="电视剧", best_version=0, best_version_full=0, state="R"):
     return SimpleNamespace(
         id=sid, name="测试剧", tmdbid=100, season=1,
         episode_group=None, type=stype, state=state,
-        best_version=best_version, total_episode=12, lack_episode=0,
+        best_version=best_version, best_version_full=best_version_full, total_episode=12, lack_episode=0,
         start_episode=1, note=[], episode_priority={},
     )
 

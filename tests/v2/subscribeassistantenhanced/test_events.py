@@ -117,6 +117,15 @@ class TestEventOrdering:
         }))
         tm.clean_torrent_tasks.assert_called_once_with("abc")
 
+    def test_non_best_version_mode_label_is_empty(self):
+        """普通订阅不应被洗版模式标签误标。"""
+        assert EventProxy._best_version_mode_label(_sub(best_version=0)) == ""
+
+    def test_best_version_mode_label_distinguishes_episode_and_full(self):
+        """洗版订阅按 best_version_full 区分分集和全集。"""
+        assert EventProxy._best_version_mode_label(_sub(best_version=1, best_version_full=0)) == "分集洗版"
+        assert EventProxy._best_version_mode_label(_sub(best_version=1, best_version_full=1)) == "全集洗版"
+
     def test_transfer_complete_converts_ready_episode_best_version_to_full(self):
         """分集洗版整理完成且目标集齐全时，当前订阅立即转全集洗版。"""
         sub = _sub(

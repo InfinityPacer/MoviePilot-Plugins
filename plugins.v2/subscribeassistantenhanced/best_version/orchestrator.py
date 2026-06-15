@@ -125,13 +125,14 @@ class BestVersionOrchestrator:
         payload = {key: value for key, value in payload.items() if value is not None}
         sid, _err = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
-            logger.info(f"洗版编排：{format_subscribe_desc(subscribe)} 已创建洗版订阅（id={sid}）")
+            mode_label = "电影洗版" if is_movie else "全集洗版"
+            logger.info(f"洗版编排：{format_subscribe_desc(subscribe)} 已创建{mode_label}订阅（id={sid}）")
             if self._send_subscribe_added:
                 self._send_subscribe_added(sid, mediainfo, username=self._plugin_name)
             if self._notify:
                 text = f"评分：{mediainfo.vote_average}，来自用户：{self._plugin_name}"
                 self._notify(
-                    f"{format_subscribe_desc(subscribe)} 已添加洗版订阅",
+                    f"{format_subscribe_desc(subscribe)} 已添加{mode_label}订阅",
                     text,
                     image=mediainfo.get_message_image(),
                     link="#/subscribe/movie?tab=mysub" if is_movie else "#/subscribe/tv?tab=mysub",
@@ -153,20 +154,21 @@ class BestVersionOrchestrator:
         if not subscribe.best_version_full:
             detail(f"洗版清理：{format_subscribe_desc(subscribe)} 是分集洗版，不清理整季旧文件")
             return True
+        mode_label = self._mode_label(subscribe)
         tmdbid = subscribe.tmdbid
         if not tmdbid or not self._get_histories:
             return True
         season = self._history_season(subscribe)
         if media_type == MediaType.TV and not season:
             logger.warning(
-                f"洗版清理：{format_subscribe_desc(subscribe)} 无法确定有效季号，"
+                f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}无法确定有效季号，"
                 "为避免扩大清理范围，跳过旧整理记录清理"
             )
             return True
         histories = self._get_histories(tmdbid, subscribe.type, season) or []
         if not histories:
             logger.info(
-                f"洗版清理：{format_subscribe_desc(subscribe)} 未找到匹配的整理记录，"
+                f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}未找到匹配的整理记录，"
                 f"查询季号={season or '无'}，跳过清理"
             )
             return True
@@ -197,7 +199,8 @@ class BestVersionOrchestrator:
                     query_failure_wait[download_hash] += 5
                     if query_failure_wait[download_hash] >= 60:
                         logger.warning(
-                            f"洗版清理：{format_subscribe_desc(subscribe)} 累计 60 秒无法查询旧下载任务，"
+                            f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}"
+                            "累计 60 秒无法查询旧下载任务，"
                             f"降级放行 hash={download_hash}"
                         )
                         continue
@@ -207,7 +210,8 @@ class BestVersionOrchestrator:
                     exists_wait[download_hash] += 5
                     if exists_wait[download_hash] >= 180:
                         logger.warning(
-                            f"洗版清理：{format_subscribe_desc(subscribe)} 旧下载任务持续存在 180 秒，"
+                            f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}"
+                            "旧下载任务持续存在 180 秒，"
                             f"降级放行 hash={download_hash}"
                         )
                         continue
@@ -215,16 +219,17 @@ class BestVersionOrchestrator:
             pending_hashes = next_pending_hashes
             if not pending_hashes:
                 logger.info(
-                    f"洗版清理：{format_subscribe_desc(subscribe)} 旧下载任务确认完成，"
+                    f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}旧下载任务确认完成，"
                     f"等待 {waited_seconds} 秒后继续下载"
                 )
                 return True
             detail(
-                f"洗版清理：{format_subscribe_desc(subscribe)} 等待旧下载任务释放 "
+                f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}等待旧下载任务释放 "
                 f"({waited_seconds}/180 秒)，剩余 {len(pending_hashes)} 个"
             )
         logger.warning(
-            f"洗版清理：{format_subscribe_desc(subscribe)} 等待旧下载任务达到 180 秒总上限，"
+            f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}"
+            "等待旧下载任务达到 180 秒总上限，"
             f"降级放行剩余 {len(pending_hashes)} 个 hash"
         )
         return True
@@ -240,7 +245,7 @@ class BestVersionOrchestrator:
             return f"S{int(season):02d}"
         except (TypeError, ValueError):
             logger.warning(
-                f"洗版清理：{format_subscribe_desc(subscribe)} 季号无效，"
+                f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}季号无效，"
                 f"无法匹配整理记录：{season}"
             )
             return None
@@ -259,6 +264,7 @@ class BestVersionOrchestrator:
             data[tmdbid] = {
                 "subscribe_id": subscribe.id,
                 "subscribe_desc": format_subscribe_desc(subscribe),
+                "mode_label": self._mode_label(subscribe),
                 "histories": [self._history_to_dict(h) for h in histories],
                 "time": time.time(),
             }
@@ -267,7 +273,11 @@ class BestVersionOrchestrator:
         if self._update:
             self._update("best_version_clear_histories", updater)
 
-        logger.info(f"洗版清理：{format_subscribe_desc(subscribe)} 开始删除 {len(histories)} 条旧整理记录的源文件（不可逆）")
+        mode_label = self._mode_label(subscribe)
+        logger.info(
+            f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}开始删除 "
+            f"{len(histories)} 条旧整理记录的源文件（不可逆）"
+        )
         for history in histories:
             src_fileitem = self._field(history, "src_fileitem")
             if src_fileitem and self._delete_media_file:
@@ -280,8 +290,8 @@ class BestVersionOrchestrator:
 
         if self._notify:
             self._notify(
-                f"{format_subscribe_desc(subscribe)} 即将开始洗版下载",
-                f"已删除 {len(histories)} 条整理记录对应的源文件",
+                f"{format_subscribe_desc(subscribe)} 即将开始{mode_label}下载",
+                f"{mode_label}已删除 {len(histories)} 条整理记录对应的源文件",
             )
 
     def handle_history_clear(self, event) -> bool:
@@ -299,7 +309,6 @@ class BestVersionOrchestrator:
         if not task:
             return False
         if self._clear_history_task_expired(task):
-            self._remove_clear_history_task(key)
             detail(f"洗版整理拦截：TMDB {key} 的清理事务已超过 72 小时，丢弃且不删除媒体库文件")
             return False
         if self.clear_transfer_dest_histories(task):
@@ -347,18 +356,26 @@ class BestVersionOrchestrator:
     def clear_transfer_dest_histories(self, task) -> bool:
         """删除清理快照中的媒体库目标文件；空快照也视为已处理。"""
         histories = (task or {}).get("histories") or []
+        mode_label = (task or {}).get("mode_label") or "全集洗版"
         if histories:
-            detail(f"洗版整理拦截：删除 {len(histories)} 条旧整理记录对应的媒体库文件（不可逆）")
+            detail(f"洗版整理拦截：{mode_label}删除 {len(histories)} 条旧整理记录对应的媒体库文件（不可逆）")
         for history in histories:
             dest_fileitem = history.get("dest_fileitem") if isinstance(history, dict) else None
             if dest_fileitem and self._delete_media_file:
                 self._delete_media_file(dest_fileitem)
         if self._notify:
             self._notify(
-                f"{(task or {}).get('subscribe_desc', '洗版订阅')} 即将开始洗版整理",
-                f"已删除 {len(histories)} 条整理记录对应的媒体库文件",
+                f"{(task or {}).get('subscribe_desc', '洗版订阅')} 即将开始{mode_label}整理",
+                f"{mode_label}已删除 {len(histories)} 条整理记录对应的媒体库文件",
             )
         return True
+
+    @staticmethod
+    def _mode_label(subscribe) -> str:
+        """按订阅实际洗版形态返回用户可见标签，避免把分集和全集清理混写成泛化洗版。"""
+        if not subscribe.best_version:
+            return ""
+        return "全集洗版" if subscribe.best_version_full else "分集洗版"
 
     @staticmethod
     def _type_matches(media_type: MediaType, type_setting) -> bool:

@@ -70,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.2.3"
+    plugin_version = "0.2.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -488,7 +488,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if existing and priority.backfill_existing(subscribe, existing):
                 count += 1
                 detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {existing}")
-        logger.info(f"洗版回填：完成，共处理 {count} 个洗版订阅")
+        logger.info(f"洗版回填：完成，共处理 {count} 个分集洗版订阅")
 
     def run_download_timeout_check(self):
         """下载任务检查：读取下载器状态，处理超时无进度、Tracker 删除关键字和手动删种。"""
@@ -554,10 +554,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
             if not subscribe.best_version:
                 continue
+            mode_label = self._best_version_mode_label(subscribe)
             mediainfo = self._recognize_mediainfo(subscribe)
             if mediainfo:
                 if self._best_version_overdue(subscribe):
-                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} 超过洗版时限，标记洗版完成并停止洗版")
+                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}超过洗版时限，标记洗版完成并停止洗版")
                     priority.mark_complete(subscribe)
                     continue
                 # 洗版完成必须同时满足 priority 达标、F 稳定与 SeasonScope 目标集全覆盖。
@@ -568,14 +569,19 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     and not subscribe.best_version_full
                     and not no_exists
                 ):
-                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} 目标集已全部在库，转为全集洗版")
+                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} 分集洗版目标集已全部在库，转为全集洗版")
                     converter.convert_to_full(subscribe, mediainfo)
                     continue
                 if orchestrator.check_complete(subscribe, mediainfo, no_exists):
-                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} 优先级达标且缺集已补齐，判定洗版完成")
+                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}优先级达标且缺集已补齐，判定洗版完成")
                     priority.mark_complete(subscribe)
             else:
-                detail(f"洗版巡检：{format_subscribe(subscribe)} 媒体识别失败，本轮跳过")
+                detail(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}媒体识别失败，本轮跳过")
+
+    @staticmethod
+    def _best_version_mode_label(subscribe) -> str:
+        """按订阅实际洗版形态返回日志标签，避免分集和全集洗版输出混淆。"""
+        return "全集洗版" if subscribe.best_version_full else "分集洗版"
 
     def run_meta_check(self):
         """元数据检查巡检：对活动订阅周期性复核上映前/播出暂停（双向）与待定（进入/退出）。
