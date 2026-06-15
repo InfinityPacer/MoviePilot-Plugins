@@ -1,0 +1,4 @@
+interface:
+  display_name: "MoviePilot 插件发版"
+  short_description: "完整校验插件版本、提 PR、自动合并并核验 GitHub Release"
+  default_prompt: "Use $moviepilot-plugin-release to release a MoviePilot plugin through the guarded PR workflow."
