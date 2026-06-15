@@ -70,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.2.2"
+    plugin_version = "0.2.3"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1073,7 +1073,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     def _tmdb_episodes(self, tmdbid: int, season: int, episode_group: str = None):
         """查询 TMDB 季内集信息供信号引擎构建 SeasonScope；不可用时返回空列表。"""
-        if not self._tmdb_chain or not tmdbid or not season:
+        if not self._tmdb_chain or not tmdbid or season is None:
             return []
         return self._tmdb_chain.tmdb_episodes(
             tmdbid=tmdbid, season=season, episode_group=episode_group

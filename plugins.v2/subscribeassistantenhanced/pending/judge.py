@@ -3,12 +3,13 @@ import time
 from typing import Callable, Optional
 
 from app.log import logger
+from app.schemas.types import MediaType
 
 from ..engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from ..shared.config import PluginConfig
 from ..shared.log import detail
 from ..shared.media import get_tv_season_air_date, parse_date
-from ..shared.subscribe import format_subscribe
+from ..shared.subscribe import format_subscribe, resolve_subscribe_media_type
 from .state import PendingStateCoordinator
 
 
@@ -37,6 +38,9 @@ class PendingJudge:
     def should_enter_pending(self, subscribe, mediainfo, episodes: list,
                               signal: Optional[CompletionSignal] = None) -> tuple[bool, str]:
         """按 OR 逻辑判断是否进入待定（P），任一条件满足即待定。"""
+        if resolve_subscribe_media_type(subscribe) != MediaType.TV:
+            return False, ""
+
         season_air_date = get_tv_season_air_date(mediainfo, subscribe.season)
         air_date = parse_date(season_air_date or mediainfo.first_air_date)
 
