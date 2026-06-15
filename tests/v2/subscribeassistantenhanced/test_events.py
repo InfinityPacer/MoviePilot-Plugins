@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
-from subscribeassistantenhanced.engine.types import CompletionSignal
+from subscribeassistantenhanced.engine.types import CompletionSignal, PauseRecord
 from subscribeassistantenhanced.events import EventProxy
 from subscribeassistantenhanced.pause.airing import AiringPauseChecker
 
@@ -116,6 +116,71 @@ class TestEventOrdering:
             "download_hash": "abc", "transferinfo": SimpleNamespace(transfer_type="move"),
         }))
         tm.clean_torrent_tasks.assert_called_once_with("abc")
+
+    def test_transfer_complete_pauses_running_subscription_after_library_update(self):
+        """订阅下载入库后，当天应立即按播出间隔暂停已进入 R 态的订阅。"""
+        sub = _sub(id=1, state="R", lack_episode=5, note=list(range(31, 88)), total_episode=92)
+        tm = MagicMock()
+        tm.read.return_value = {"abc": {"subscribe_id": 1}}
+        oper = MagicMock()
+        oper.get.return_value = sub
+        monitor = MagicMock()
+        pause = MagicMock()
+        airing = MagicMock()
+        airing.check_pre_air.return_value = None
+        record = PauseRecord(reason="airing_gap", detail="下一集 2026-06-21，距今 7 天")
+        airing.check.return_value = record
+        episodes = [SimpleNamespace(air_date="2026-06-21", episode_number=88)]
+        mediainfo = _mi(next_episode_to_air=None)
+        tmdb_episodes = MagicMock(return_value=episodes)
+        proxy = EventProxy(
+            download_monitor=monitor,
+            task_manager=tm,
+            subscribe_oper=oper,
+            pause_manager=pause,
+            airing_checker=airing,
+            recognize_mediainfo_fn=MagicMock(return_value=mediainfo),
+            is_tv_fn=lambda _mi: True,
+            tmdb_episodes_fn=tmdb_episodes,
+        )
+
+        proxy.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc", "transferinfo": None,
+        }))
+
+        monitor.clear_download_pending.assert_called_once_with(1, "abc")
+        airing.check.assert_called_once_with(
+            sub,
+            mediainfo,
+            next_episode=None,
+            latest_episode=None,
+            episodes=episodes,
+        )
+        pause.pause.assert_called_once_with(sub, record)
+
+    def test_transfer_complete_does_not_pause_new_subscription(self):
+        """订阅仍为 N 态时，入库事件不触发播出暂停。"""
+        sub = _sub(id=1, state="N")
+        tm = MagicMock()
+        tm.read.return_value = {"abc": {"subscribe_id": 1}}
+        oper = MagicMock()
+        oper.get.return_value = sub
+        pause = MagicMock()
+        airing = MagicMock()
+        proxy = EventProxy(
+            task_manager=tm,
+            subscribe_oper=oper,
+            pause_manager=pause,
+            airing_checker=airing,
+            recognize_mediainfo_fn=MagicMock(return_value=_mi()),
+        )
+
+        proxy.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc", "transferinfo": None,
+        }))
+
+        airing.check.assert_not_called()
+        pause.pause.assert_not_called()
 
     def test_non_best_version_mode_label_is_empty(self):
         """普通订阅不应被洗版模式标签误标。"""
@@ -420,9 +485,9 @@ class TestSubscribeLifecycle:
 
         tmdb_episodes.assert_called_once_with(100, 1, episode_group="eg-1")
 
-    def test_added_airing_pause_when_not_pending(self):
-        """不待定 → 播出暂停命中则 pause。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
+    def test_added_new_subscription_does_not_airing_pause_when_not_pending(self):
+        """新增订阅仍为 N 态时不做播出暂停，需等首轮搜索后进入 R 态。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="N")
         record = object()
         oper = MagicMock()
         oper.get.return_value = sub
@@ -448,14 +513,8 @@ class TestSubscribeLifecycle:
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
 
         pending.mark_pending.assert_not_called()
-        airing.check.assert_called_once_with(
-            sub,
-            mediainfo,
-            next_episode=None,
-            latest_episode=None,
-            episodes=episodes,
-        )
-        pause.pause.assert_called_once_with(sub, record)
+        airing.check.assert_not_called()
+        pause.pause.assert_not_called()
 
     def test_added_history_season_without_next_episode_does_not_pause_by_latest_air_date(self):
         """新增历史季订阅没有下一集信息时，不按最后已播日期直接暂停。"""

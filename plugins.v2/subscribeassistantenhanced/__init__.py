@@ -70,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.2.6"
+    plugin_version = "0.2.7"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -660,6 +660,22 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     continue
                 # 条件解除：仅恢复由上映/播出检查写入的 S 态订阅，避免触碰外部暂停状态。
                 if state == "S":
+                    current_record = pause_manager.get_pause_record(subscribe)
+                    current_reason = current_record.reason if current_record else None
+                    if current_reason not in ("pre_air", "airing_gap"):
+                        detail(f"元数据巡检：{format_subscribe(subscribe)} 非插件上映/播出暂停，本轮不恢复")
+                        continue
+                    if current_reason == "airing_gap":
+                        should_resume = airing.should_resume_airing_gap(
+                            subscribe,
+                            mediainfo,
+                            next_episode=mediainfo.next_episode_to_air,
+                            episodes=episodes if self._is_tv_media(mediainfo) else [],
+                            current_record=current_record,
+                        )
+                        if not should_resume:
+                            detail(f"元数据巡检：{format_subscribe(subscribe)} 播出暂停记录保留，等待明确下一集窗口释放")
+                            continue
                     logger.info(f"元数据巡检：{format_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
                     pause_manager.resume(subscribe)
 

@@ -225,6 +225,7 @@ class TestAiringPause:
         checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
         subscribe = _sub()
         subscribe.total_episode = 12
+        subscribe.lack_episode = 2
         subscribe.note = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11]
         episodes = [
             _ep("2026-01-01", episode_number=5),
@@ -241,6 +242,205 @@ class TestAiringPause:
         )
 
         assert result is None
+
+    def test_inventory_caught_up_uses_future_episode_when_note_has_historical_gap(self):
+        """媒体库实缺只剩未来集时，note 历史空洞不应阻止播出暂停。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 92
+        subscribe.lack_episode = 5
+        subscribe.note = list(range(31, 88))
+        episodes = [
+            _ep("2026-06-14", episode_number=87),
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+            _ep("2026-07-05", episode_number=90),
+            _ep("2026-07-12", episode_number=91),
+            _ep("2026-07-19", episode_number=92),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-14", episode_number=87),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 14),
+        )
+
+        assert result is not None
+        assert result.reason == "airing_gap"
+        assert "2026-06-21" in result.detail
+
+    def test_short_window_does_not_pause_before_same_day_episode_is_ingested(self):
+        """当天已播集尚未入库时，短窗口配置不应提前暂停。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 92
+        subscribe.lack_episode = 6
+        subscribe.note = list(range(31, 87))
+        episodes = [
+            _ep("2026-06-15", episode_number=87),
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+            _ep("2026-07-05", episode_number=90),
+            _ep("2026-07-12", episode_number=91),
+            _ep("2026-07-19", episode_number=92),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-15", episode_number=87),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 15),
+        )
+
+        assert result is None
+
+    def test_short_window_pauses_after_same_day_episode_is_ingested(self):
+        """当天已播集入库后，短窗口配置应立即暂停等待下一集。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 92
+        subscribe.lack_episode = 5
+        subscribe.note = list(range(31, 88))
+        episodes = [
+            _ep("2026-06-15", episode_number=87),
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+            _ep("2026-07-05", episode_number=90),
+            _ep("2026-07-12", episode_number=91),
+            _ep("2026-07-19", episode_number=92),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-15", episode_number=87),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 15),
+        )
+
+        assert result is not None
+        assert result.reason == "airing_gap"
+        assert "2026-06-21" in result.detail
+
+    def test_inventory_fallback_requires_lack_to_match_future_count(self):
+        """媒体库实缺数量少于未来排期时不按库存口径暂停，避免陈旧缺集数量误判。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 92
+        subscribe.lack_episode = 4
+        subscribe.note = list(range(31, 88))
+        episodes = [
+            _ep("2026-06-14", episode_number=87),
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+            _ep("2026-07-05", episode_number=90),
+            _ep("2026-07-12", episode_number=91),
+            _ep("2026-07-19", episode_number=92),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-14", episode_number=87),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 14),
+        )
+
+        assert result is None
+
+    def test_inventory_fallback_counts_manual_total_tail_without_tmdb_schedule(self):
+        """手动总集数大于 TMDB 已知排期时，尾部未知集也属于实缺未来目标。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 95
+        subscribe.lack_episode = 8
+        subscribe.note = list(range(31, 88))
+        episodes = [
+            _ep("2026-06-14", episode_number=87),
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+            _ep("2026-07-05", episode_number=90),
+            _ep("2026-07-12", episode_number=91),
+            _ep("2026-07-19", episode_number=92),
+        ]
+
+        result = checker.check(
+            subscribe,
+            None,
+            next_episode=_ep("2026-06-14", episode_number=87),
+            latest_episode=episodes[0],
+            episodes=episodes,
+            as_of=date(2026, 6, 14),
+        )
+
+        assert result is not None
+        assert result.reason == "airing_gap"
+        assert "2026-06-21" in result.detail
+
+    def test_airing_gap_resumes_when_next_episode_reaches_airing_day_with_historical_note_gap(self):
+        """下一集已到播出日时，即使 note 有历史空洞也应明确释放播出暂停。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 92
+        subscribe.lack_episode = 5
+        subscribe.note = list(range(31, 88))
+        episodes = [
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+            _ep("2026-07-05", episode_number=90),
+            _ep("2026-07-12", episode_number=91),
+            _ep("2026-07-19", episode_number=92),
+        ]
+
+        result = checker.should_resume_airing_gap(
+            subscribe,
+            None,
+            next_episode=None,
+            episodes=episodes,
+            as_of=date(2026, 6, 21),
+        )
+
+        assert result is True
+
+    def test_airing_gap_resumes_when_check_runs_after_next_episode_air_day(self):
+        """巡检晚于下一集播出日时，已进入窗口的锚点集仍应释放播出暂停。"""
+        evaluate = MagicMock(return_value=CompletionSignal())
+        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        subscribe = _sub()
+        subscribe.total_episode = 92
+        subscribe.lack_episode = 5
+        subscribe.note = list(range(31, 88))
+        episodes = [
+            _ep("2026-06-21", episode_number=88),
+            _ep("2026-06-28", episode_number=89),
+            _ep("2026-07-05", episode_number=90),
+            _ep("2026-07-12", episode_number=91),
+            _ep("2026-07-19", episode_number=92),
+        ]
+
+        result = checker.should_resume_airing_gap(
+            subscribe,
+            None,
+            next_episode=None,
+            episodes=episodes,
+            current_record=PauseRecord(reason="airing_gap", detail="下一集 2026-06-21，距今 7 天"),
+            as_of=date(2026, 6, 23),
+        )
+
+        assert result is True
 
     def test_deleted_downloaded_episode_does_not_override_note(self):
         """已下载集即使从媒体库删除，播出暂停仍按 note 推导首个待下载集。"""
