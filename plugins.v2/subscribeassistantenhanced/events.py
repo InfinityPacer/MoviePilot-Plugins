@@ -202,17 +202,12 @@ class EventProxy:
                 pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
                 return
 
-        # 新增订阅尚未经过媒体库/下载状态沉淀，只处理明确的下一集断档，避免历史季全缺时被最后已播日期直接暂停。
-        if airing and pause_manager:
-            record = airing.check(
-                subscribe, mediainfo,
-                next_episode=mediainfo.next_episode_to_air,
-                latest_episode=last_aired_episode(episodes),
-                episodes=episodes,
-            )
-            if record:
-                logger.info(f"订阅新增：{format_subscribe(subscribe)} 满足播出间隔暂停条件，置为禁用")
-                pause_manager.pause(subscribe, record)
+        # N 态订阅尚未跑完首轮搜索，不做播出间隔暂停；下载整理入库后由 TransferComplete 即时复核。
+        if subscribe.state == "N":
+            detail(f"订阅新增：{format_subscribe(subscribe)} 仍为新增态，跳过播出间隔暂停")
+            return
+
+        self._pause_after_library_update(subscribe, mediainfo, episodes, source="订阅新增")
 
     def on_subscribe_deleted(self, event):
         """SubscribeDeleted → 清理该订阅关联的全部任务数据（订阅任务 + 名下种子任务）。"""
@@ -513,7 +508,47 @@ class EventProxy:
         if transfer_info and transfer_info.transfer_type == "move" and task_manager:
             detail(f"TransferComplete：移动模式清理已完成下载任务 hash={download_hash}")
             task_manager.clean_torrent_tasks(download_hash)
+        self._pause_after_transfer_complete(subscribe_id)
         self._convert_episode_best_version_to_full_if_ready(subscribe_id)
+
+    def _pause_after_transfer_complete(self, subscribe_id):
+        """整理入库后即时复核播出暂停，避免短窗口配置只能等周期巡检。"""
+        if not subscribe_id:
+            return
+        subscribe_oper = self.get("subscribe_oper")
+        recognize = self.get("recognize_mediainfo_fn")
+        is_tv = self.get("is_tv_fn")
+        tmdb_episodes_fn = self.get("tmdb_episodes_fn")
+        if not (subscribe_oper and recognize and is_tv and tmdb_episodes_fn):
+            return
+        subscribe = subscribe_oper.get(subscribe_id)
+        if not subscribe or subscribe.state != "R" or (subscribe.best_version and subscribe.best_version_full):
+            return
+        mediainfo = recognize(subscribe)
+        if not mediainfo or not is_tv(mediainfo):
+            return
+        episodes = tmdb_episodes_fn(
+            subscribe.tmdbid,
+            subscribe.season,
+            episode_group=subscribe.episode_group,
+        )
+        self._pause_after_library_update(subscribe, mediainfo, episodes, source="TransferComplete")
+
+    def _pause_after_library_update(self, subscribe, mediainfo, episodes: list, source: str):
+        """媒体库状态已更新后，按当前播出窗口决定是否暂停订阅。"""
+        airing = self.get("airing_checker")
+        pause_manager = self.get("pause_manager")
+        if not (airing and pause_manager):
+            return
+        record = airing.check(
+            subscribe, mediainfo,
+            next_episode=mediainfo.next_episode_to_air,
+            latest_episode=last_aired_episode(episodes),
+            episodes=episodes,
+        )
+        if record:
+            logger.info(f"{source}：{format_subscribe(subscribe)} 满足播出间隔暂停条件，置为禁用")
+            pause_manager.pause(subscribe, record)
 
     def _convert_episode_best_version_to_full_if_ready(self, subscribe_id):
         """整理完成后补偿检查当前分集洗版订阅，避免目标集已齐全还要等下一次洗版巡检。"""

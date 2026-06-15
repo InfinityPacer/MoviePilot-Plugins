@@ -26,6 +26,7 @@ def _sub(**kwargs):
         total_episode=12,
         start_episode=1,
         lack_episode=0,
+        note=[],
         episode_priority={},
         current_priority=0,
         username="",
@@ -460,6 +461,71 @@ def test_run_meta_check_resumes_when_airing_condition_no_longer_holds():
     plugin.run_meta_check()
 
     pause_manager.resume.assert_called_once_with(sub)
+    pause_manager.pause.assert_not_called()
+    pause_manager.clear_pause_record.assert_not_called()
+
+
+def test_run_meta_check_keeps_airing_gap_when_current_check_is_inconclusive():
+    """airing_gap 暂停没有明确恢复证据时，元数据巡检应保留暂停记录。"""
+    sub = _sub(id=3, state="S", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=SimpleNamespace(value="电视剧"),
+        tmdb_info={},
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    ))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(
+        return_value=PauseRecord(reason="airing_gap", since=0.0, detail="下一集 2026-06-21，距今 7 天"))
+    pause_manager.resume = MagicMock()
+    pause_manager.pause = MagicMock()
+    pause_manager.clear_pause_record = MagicMock()
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+
+    plugin.run_meta_check()
+
+    pause_manager.resume.assert_not_called()
+    pause_manager.pause.assert_not_called()
+    pause_manager.clear_pause_record.assert_not_called()
+
+
+def test_run_meta_check_does_not_resume_manual_pause_without_plugin_record():
+    """无插件暂停记录的 S 态订阅属于外部暂停，元数据巡检不得恢复。"""
+    sub = _sub(id=3, state="S", name="X", best_version=0, type="电影", season=0)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=SimpleNamespace(value="电影"),
+        release_date="2026-01-01",
+    ))
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(return_value=None)
+    pause_manager.resume = MagicMock()
+    pause_manager.pause = MagicMock()
+    pause_manager.clear_pause_record = MagicMock()
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+
+    plugin.run_meta_check()
+
+    pause_manager.resume.assert_not_called()
     pause_manager.pause.assert_not_called()
     pause_manager.clear_pause_record.assert_not_called()
 
@@ -1054,6 +1120,53 @@ class TestEventDelegation:
         }))
 
         converter.convert_to_full.assert_called_once_with(sub, mediainfo)
+
+    def test_transfer_complete_event_pauses_after_lack_is_refreshed(self):
+        """整理完成事件应读取入库后的订阅状态，并在短窗口下立即进入播出暂停。"""
+        sub = _sub(
+            id=7,
+            state="R",
+            best_version=0,
+            total_episode=92,
+            lack_episode=5,
+            note=list(range(31, 88)),
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"pause_enhanced_enabled": True, "airing_pause_days": 1})
+        oper = MagicMock()
+        oper.get.return_value = sub
+        plugin._subscribe_oper = oper
+        plugin._event_proxy._modules["subscribe_oper"] = oper
+        plugin._task_manager.update("torrents", lambda _data: {"abc": {"subscribe_id": 7}})
+        mediainfo = _mediainfo(next_episode_to_air=SimpleNamespace(
+            air_date="2026-06-15",
+            episode_number=87,
+            season_number=1,
+        ), type=MediaType.TV)
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._tmdb_episodes = MagicMock(return_value=[
+            SimpleNamespace(air_date="2026-06-15", episode_number=87, season_number=1),
+            SimpleNamespace(air_date="2026-06-21", episode_number=88, season_number=1),
+            SimpleNamespace(air_date="2026-06-28", episode_number=89, season_number=1),
+            SimpleNamespace(air_date="2026-07-05", episode_number=90, season_number=1),
+            SimpleNamespace(air_date="2026-07-12", episode_number=91, season_number=1),
+            SimpleNamespace(air_date="2026-07-19", episode_number=92, season_number=1),
+        ])
+        plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
+        plugin._event_proxy._modules["tmdb_episodes_fn"] = plugin._tmdb_episodes
+        plugin._modules["airing_checker"]._evaluate = MagicMock(return_value=CompletionSignal())
+        pause_manager = plugin._modules["pause_manager"]
+        pause_manager.pause = MagicMock()
+
+        plugin.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc",
+            "transferinfo": None,
+        }))
+
+        pause_manager.pause.assert_called_once()
+        record = pause_manager.pause.call_args.args[1]
+        assert record.reason == "airing_gap"
+        assert "2026-06-21" in record.detail
 
     def test_stop_service_clears_state(self):
         plugin = SubscribeAssistantEnhanced()

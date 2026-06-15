@@ -1,4 +1,5 @@
 """域 ④：播出暂停——完结信号前置过滤后按间隔判断。"""
+import re
 from datetime import date, timedelta
 from typing import Callable, Optional
 
@@ -6,6 +7,7 @@ from app.schemas.types import MediaType
 
 from ..engine.types import CompletionSignal, PauseRecord
 from ..shared.media import (
+    episode_candidates_after,
     episode_field,
     get_tv_season_air_date,
     parse_date,
@@ -105,3 +107,69 @@ class AiringPauseChecker:
                 return None
 
         return None
+
+    def should_resume_airing_gap(self, subscribe, mediainfo, next_episode,
+                                 episodes: Optional[list] = None,
+                                 current_record: Optional[PauseRecord] = None,
+                                 as_of: Optional[date] = None) -> bool:
+        """判断已有 airing_gap 暂停是否具备明确恢复证据。"""
+        today = as_of or date.today()
+
+        signal: CompletionSignal = self._evaluate(subscribe, mediainfo)
+        if signal.completed:
+            return True
+
+        paused_air_date = self._parse_pause_air_date(current_record)
+        if paused_air_date and paused_air_date <= today:
+            return True
+
+        resolved_next = self._resolve_airing_resume_episode(
+            subscribe,
+            next_episode,
+            episodes or [],
+            as_of=today,
+        )
+        if not resolved_next:
+            return False
+        next_air_date = episode_field(resolved_next, "air_date")
+        air = parse_date(next_air_date)
+        if not air:
+            return False
+        return (air - today).days <= self._pause_days
+
+    def _resolve_airing_resume_episode(self, subscribe, aggregate_episode,
+                                       episodes: list, as_of: date):
+        """解析 airing_gap 恢复使用的窗口集，允许下一集已进入下载窗口。"""
+        resolved_next = resolve_airing_next_episode(
+            subscribe,
+            aggregate_episode,
+            episodes,
+            as_of=as_of,
+        )
+        if resolved_next:
+            return resolved_next
+        window_start = as_of - timedelta(days=self._pause_days)
+        candidates = [
+            episode
+            for episode in episode_candidates_after(subscribe, episodes, date.min)
+            if parse_date(episode_field(episode, "air_date")) >= window_start
+        ]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda episode: (
+                parse_date(episode_field(episode, "air_date")),
+                episode_field(episode, "episode_number", 0),
+            ),
+        )
+
+    @staticmethod
+    def _parse_pause_air_date(record: Optional[PauseRecord]) -> Optional[date]:
+        """从已保存的播出暂停说明中提取当时的下一集日期。"""
+        if not record or record.reason != "airing_gap" or not record.detail:
+            return None
+        match = re.search(r"\d{4}-\d{2}-\d{2}", record.detail)
+        if not match:
+            return None
+        return parse_date(match.group(0))
