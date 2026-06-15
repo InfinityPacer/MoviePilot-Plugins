@@ -79,3 +79,27 @@ class TestPendingStateCoordinator:
 
         assert coordinator.has_active(1) is True
         assert coordinator.has_active(2) is False
+
+    def test_clear_all_owned_keeps_task_evidence_when_database_update_fails(self):
+        """数据库恢复失败时必须保留插件待定记录，供后续巡检重试。"""
+        read, update, store = _store_mgr({
+            "subscribes": {
+                "1": {
+                    "state": "P",
+                    "source": "pending_judge",
+                    "pending_sources": {"pending_judge": {"reason": "集数不足"}},
+                }
+            }
+        })
+        oper = MagicMock()
+        oper.update.side_effect = RuntimeError("database unavailable")
+        coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
+
+        try:
+            coordinator.clear_all_owned(_sub(state="P"), reason="插件任务重置")
+        except RuntimeError:
+            pass
+
+        task = store["subscribes"]["1"]
+        assert task["state"] == "P"
+        assert "pending_judge" in task["pending_sources"]

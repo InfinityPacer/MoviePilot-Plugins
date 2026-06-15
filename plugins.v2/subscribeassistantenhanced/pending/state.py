@@ -98,6 +98,47 @@ class PendingStateCoordinator:
             return True
         return False
 
+    def clear_all_owned(self, subscribe, reason: str = "") -> bool:
+        """清除增强版明确持有的全部待定来源，并把主订阅恢复为启用（R）。"""
+        if not subscribe:
+            return False
+        sid = str(subscribe.id)
+        task = (self._read("subscribes") or {}).get(sid)
+        if not task or task.get("state") != "P":
+            return False
+
+        restored = False
+        if self._subscribe_oper and subscribe.state == "P":
+            # 数据库是用户可见状态事实源；必须先恢复成功，再清除插件侧归属证据。
+            update_subscribe(self._subscribe_oper, subscribe.id, {"state": "R"})
+            restored = True
+
+        def updater(data: dict) -> dict:
+            current = data.get(sid, {})
+            current["pending_sources"] = {}
+            current["state"] = "R"
+            current["source"] = None
+            current["reason"] = reason
+            current["exit_at"] = time.time()
+            data[sid] = current
+            return data
+
+        self._update("subscribes", updater)
+        if restored:
+            logger.info(f"待定状态：{format_subscribe(subscribe)} {reason}，恢复为启用（R）")
+            return True
+        return False
+
+    def reconcile_orphaned(self, subscribe, reason: str = "") -> bool:
+        """恢复任务记录仍声明待定、但已无任何有效待定来源的订阅。"""
+        if not subscribe or subscribe.state != "P":
+            return False
+        sid = str(subscribe.id)
+        task = (self._read("subscribes") or {}).get(sid)
+        if not task or task.get("state") != "P" or self._normalize_sources(task):
+            return False
+        return self.clear_all_owned(subscribe, reason=reason)
+
     def has_active(self, subscribe_id: int) -> bool:
         """判断订阅是否还有未解除的待定原因。"""
         task = (self._read("subscribes") or {}).get(str(subscribe_id), {})

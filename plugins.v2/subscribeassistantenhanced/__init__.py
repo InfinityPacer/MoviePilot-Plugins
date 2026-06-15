@@ -70,7 +70,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.2.5"
+    plugin_version = "0.2.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -463,7 +463,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self.run_common_check()
 
     def _reset_task_data(self):
-        """清空全部插件任务数据。"""
+        """先释放增强版持有的待定订阅，再清空全部插件任务数据。"""
+        pending_state = self._modules.get("pending_state")
+        if pending_state and self._subscribe_oper:
+            for subscribe in (self._subscribe_oper.list(state="P") or []):
+                pending_state.clear_all_owned(subscribe, reason="插件任务重置")
         for key in [
             "subscribes",
             "torrents",
@@ -723,6 +727,28 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     detail="守门超时释放",
                 )
 
+    def run_pending_state_reconcile(self):
+        """修复增强版任务仍声明 P、但所有待定来源均已丢失的状态残留。
+
+        完成守卫记录和下载待定任务是独立的活跃证据，存在时不得恢复；完全没有增强版任务记录的 P
+        也不属于插件可安全接管的范围。
+        """
+        pending_state = self._modules.get("pending_state")
+        if not pending_state or not self._subscribe_oper:
+            return
+        blocks = self.get_data("blocks") or {}
+        download_monitor = self._modules.get("download_monitor")
+        for subscribe in (self._subscribe_oper.list(state="P") or []):
+            sid = str(subscribe.id)
+            if download_monitor and download_monitor.has_active_downloads(subscribe.id):
+                continue
+            if pending_state.has_active(subscribe.id) or sid in blocks:
+                continue
+            pending_state.reconcile_orphaned(
+                subscribe,
+                reason="无有效待定来源，状态自愈",
+            )
+
     def run_common_check(self):
         """统一执行待定、无下载及各类本地过期数据清理。
 
@@ -731,6 +757,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         tasks = []
         if self._config.timeout_release_enabled:
             tasks.append(("待定释放", self.run_pending_release))
+        tasks.append(("待定状态一致性检查", self.run_pending_state_reconcile))
         tasks.append(("无下载处理", self.run_no_download_check))
         if self._config.download_monitor_enabled:
             tasks.append(("删除记录清理", self.run_deletes_cleanup))
