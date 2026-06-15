@@ -22,6 +22,15 @@ def episode_field(episode, name: str, default=None):
     return getattr(episode, name, default)
 
 
+def target_episode_range(subscribe) -> list[int]:
+    """返回订阅目标集范围，按主程序 start_episode/total_episode 契约解释。"""
+    start_episode = subscribe.start_episode or 1
+    total_episode = subscribe.total_episode or 0
+    if total_episode < start_episode:
+        return []
+    return list(range(start_episode, total_episode + 1))
+
+
 def resolve_airing_next_episode(subscribe, aggregate_episode, episodes: list,
                                 as_of: Optional[date] = None):
     """解析播出暂停使用的下一集，并限定为订阅范围内首个待下载集。
@@ -59,6 +68,8 @@ def resolve_airing_next_episode(subscribe, aggregate_episode, episodes: list,
 
     candidates = [episode for episode in (episodes or []) if valid_candidate(episode)]
     if not candidates:
+        candidates = resolve_inventory_next_episodes(subscribe, episodes, as_of=today)
+    if not candidates:
         return None
     return min(
         candidates,
@@ -67,6 +78,73 @@ def resolve_airing_next_episode(subscribe, aggregate_episode, episodes: list,
             episode_field(episode, "episode_number", 0),
         ),
     )
+
+
+def future_episode_candidates(subscribe, episodes: list, as_of: Optional[date] = None) -> list:
+    """返回当前季订阅目标范围内已知的未来集候选。"""
+    today = as_of or date.today()
+    return episode_candidates_after(subscribe, episodes, today)
+
+
+def unknown_tail_episode_count(subscribe, episodes: list) -> int:
+    """统计订阅尾部超出 TMDB 当前分集表的目标集数量。"""
+    target_episodes = target_episode_range(subscribe)
+    if not target_episodes:
+        return 0
+    known_numbers = []
+    for episode in (episodes or []):
+        season_number = episode_field(episode, "season_number")
+        if season_number is not None and subscribe.season and season_number != subscribe.season:
+            continue
+        episode_number = episode_field(episode, "episode_number")
+        if episode_number is not None:
+            known_numbers.append(episode_number)
+    if not known_numbers:
+        return 0
+    max_known = max(known_numbers)
+    return sum(1 for episode_number in target_episodes if episode_number > max_known)
+
+
+def episode_candidates_after(subscribe, episodes: list, cutoff: date) -> list:
+    """返回当前季订阅目标范围内晚于指定日期的集候选。"""
+    target_episodes = set(target_episode_range(subscribe))
+    candidates = []
+    for episode in (episodes or []):
+        season_number = episode_field(episode, "season_number")
+        if season_number is not None and subscribe.season and season_number != subscribe.season:
+            continue
+        episode_number = episode_field(episode, "episode_number")
+        if episode_number is None or (target_episodes and episode_number not in target_episodes):
+            continue
+        air = parse_date(episode_field(episode, "air_date"))
+        if air and air > cutoff:
+            candidates.append(episode)
+    return candidates
+
+
+def resolve_inventory_next_episodes(subscribe, episodes: list,
+                                    as_of: Optional[date] = None) -> list:
+    """按媒体库实缺数量判断追更已到当前已播最新时，返回未来集候选。
+
+    ``note`` 只记录订阅链路下载历史，手动下载后整理入库不会补写；播出暂停需要判断
+    真实库存是否已经追到当前已播最新，因此以主程序维护的 ``lack_episode`` 与未来未播集数量对齐为准。
+    """
+    futures = future_episode_candidates(subscribe, episodes, as_of=as_of)
+    if not futures:
+        return []
+    lack_episode = subscribe.lack_episode
+    if lack_episode is None:
+        return []
+    try:
+        lack_count = int(lack_episode)
+    except (TypeError, ValueError):
+        return []
+    if lack_count < 0:
+        return []
+    future_count = len(futures) + unknown_tail_episode_count(subscribe, episodes)
+    if lack_count == future_count:
+        return futures
+    return []
 
 
 def is_same_season(season_info: dict, season: int) -> bool:
