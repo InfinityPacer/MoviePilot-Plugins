@@ -13,10 +13,12 @@ def _ep(num, air_date="2026-01-01"):
     return SimpleNamespace(episode_number=num, air_date=air_date, episode_type="standard")
 
 
-def _sub(sid=1, season=1, state="R", episode_group=None, total_episode=12):
+def _sub(sid=1, season=1, state="R", episode_group=None, total_episode=12,
+         media_type="电视剧"):
     return SimpleNamespace(
         id=sid,
         name="测试剧",
+        type=media_type,
         tmdbid=100,
         season=season,
         state=state,
@@ -60,6 +62,17 @@ def _judge(config=None, evaluate_result=None, store=None, notify=None):
 
 
 class TestShouldEnterPending:
+
+    def test_movie_skips_tv_episode_pending_rules(self):
+        """电影没有剧集列表时不得命中电视剧的集数不足待定规则。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 3}))
+        should, reason = j.should_enter_pending(
+            _sub(season=0, media_type="电影"),
+            _mi(),
+            [],
+        )
+        assert should is False
+        assert reason == ""
 
     def test_episode_count_below_threshold(self):
         """集数不足 → 待定。"""

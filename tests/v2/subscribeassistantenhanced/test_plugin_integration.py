@@ -66,6 +66,22 @@ def test_converter_is_wired():
     assert plugin._modules.get("converter") is not None
 
 
+def test_tmdb_episodes_queries_special_season_zero():
+    """特别季 S0 是合法 TMDB 季号，必须继续查询季内剧集。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin._tmdb_chain = MagicMock()
+    plugin._tmdb_chain.tmdb_episodes.return_value = [SimpleNamespace(episode_number=1)]
+
+    episodes = plugin._tmdb_episodes(tmdbid=91097, season=0)
+
+    assert len(episodes) == 1
+    plugin._tmdb_chain.tmdb_episodes.assert_called_once_with(
+        tmdbid=91097,
+        season=0,
+        episode_group=None,
+    )
+
+
 def test_episode_to_full_converts_when_current_episodes_covered():
     sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
     plugin = SubscribeAssistantEnhanced()
