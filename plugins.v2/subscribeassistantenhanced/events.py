@@ -310,9 +310,9 @@ class EventProxy:
             detail("整理拦截事件：已完成历史记录清理")
 
     def on_resource_selection(self, event):
-        """ResourceSelection → 洗版待定按集串行 + 剔除近期删除资源防重选。
+        """ResourceSelection → 洗版下载串行控制 + 剔除近期删除资源防重选。
 
-        洗版订阅存在下载待定时挡住覆盖待定集的候选，其余集仍可并行；
+        全集洗版存在下载待定时不再选择其他资源；分集洗版只挡住覆盖待定集的候选，
         待定集未知时保守全挡，避免同集多版本并发下载产生覆盖竞态。
         """
         data = _event_data(event)
@@ -342,16 +342,16 @@ class EventProxy:
         if changed:
             detail(
                 f"ResourceSelection：候选从 {len(base)} 个减少到 {len(kept)} 个"
-                "（洗版按集串行 + 删除指纹防重）"
+                "（洗版下载串行控制 + 删除指纹防重）"
             )
             data.updated = True
             data.updated_contexts = kept
             data.source = "订阅助手（增强版）"
 
     def _filter_pending_serial(self, data, contexts):
-        """洗版订阅有下载待定时，剔除覆盖待定集的候选，实现按集串行。
+        """洗版订阅有下载待定时，根据洗版模式过滤后续候选。
 
-        返回过滤后列表；非洗版、无待定或无任务管理器时返回 None，表示本规则不参与。
+        全集洗版整体串行，分集洗版按集串行；非洗版、无待定或无任务管理器时返回 None。
         """
         task_manager = self.get("task_manager")
         if not self.get("pending_download_enabled"):
@@ -366,6 +366,8 @@ class EventProxy:
         pending = (task_manager.read("subscribes") or {}).get(str(sid), {}).get("download_pending", {})
         if not pending:
             return None
+        if subscribe.best_version_full:
+            return []
         torrents = task_manager.read("torrents") or {}
         pending_eps, unknown = set(), False
         for torrent_hash in pending:
