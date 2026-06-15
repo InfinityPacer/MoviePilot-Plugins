@@ -89,6 +89,19 @@ class TestBuildPayload:
         assert "episode_group" not in payload or payload.get("episode_group") is None
 
 
+class TestModeLabel:
+    """洗版模式标签只描述真实洗版订阅。"""
+
+    def test_non_best_version_returns_empty_label(self):
+        """普通订阅不是洗版形态，标签应为空避免日志误标。"""
+        assert BestVersionOrchestrator._mode_label(_sub(best_version=0)) == ""
+
+    def test_episode_and_full_best_version_labels(self):
+        """分集 / 全集洗版按 best_version_full 区分。"""
+        assert BestVersionOrchestrator._mode_label(_sub(best_version=1, best_version_full=0)) == "分集洗版"
+        assert BestVersionOrchestrator._mode_label(_sub(best_version=1, best_version_full=1)) == "全集洗版"
+
+
 class TestHistoryClear:
     """洗版清理：源文件 / 媒体库文件删除经注入回调（mock 不触达真实文件系统）。"""
 
@@ -122,7 +135,9 @@ class TestHistoryClear:
 
     def test_resource_download_clear_deletes_src_and_emits_event(self):
         h = self._history("1", {"path": "/src/a.mkv"}, {"path": "/dest/a.mkv"}, "/src/a.mkv", "hashA")
+        notifies = []
         orch, store, deletes, events, hist_deletes = self._orch_clear()
+        orch._notify = lambda title, text=None, **kwargs: notifies.append((title, text, kwargs))
         orch._get_histories = lambda tmdbid, mtype, season=None: [h]
         sub = _sub(name="X", total_episode=0, lack_episode=0)
         orch.handle_resource_download_history_clear(sub)
@@ -130,6 +145,8 @@ class TestHistoryClear:
         assert events == [("/src/a.mkv", "hashA")]   # 携带旧 download_hash → 主程序删历史种子
         assert hist_deletes == ["1"]
         assert "100" in store["best_version_clear_histories"]   # 快照 key 为 str(tmdbid)
+        assert notifies[0][0].endswith("即将开始全集洗版下载")
+        assert "全集洗版" in notifies[0][1]
 
     def test_clear_type_no_skips(self):
         """清理范围为 no 时不触发任何破坏性历史清理。"""
@@ -303,17 +320,22 @@ class TestHistoryClear:
         assert sleeps == [5] * 36
 
     def test_transfer_intercept_clear_deletes_dest_and_removes_snapshot(self):
+        notifies = []
         store = {"best_version_clear_histories": {"100": {
             "subscribe_desc": "X",
+            "mode_label": "全集洗版",
             "histories": [{"dest_fileitem": {"path": "/dest/a.mkv"}}],
             "time": time.time(),
         }}}
         orch, store, deletes, _e, _h = self._orch_clear(store)
+        orch._notify = lambda title, text=None, **kwargs: notifies.append((title, text, kwargs))
         event = SimpleNamespace(event_data=SimpleNamespace(
             cancel=False, mediainfo=SimpleNamespace(tmdb_id=100)))
         orch.handle_history_clear(event)
         assert deletes == [{"path": "/dest/a.mkv"}]
         assert "100" not in store["best_version_clear_histories"]
+        assert notifies[0][0] == "X 即将开始全集洗版整理"
+        assert "全集洗版" in notifies[0][1]
 
     def test_transfer_intercept_without_snapshot_returns_false(self):
         """无洗版清理快照时整理拦截不产生日志噪音。"""
@@ -326,7 +348,7 @@ class TestHistoryClear:
     def test_transfer_intercept_clear_returns_true(self):
         """命中清理快照并完成清理时返回 True，供事件层输出结果日志。"""
         store = {"best_version_clear_histories": {"100": {
-            "subscribe_desc": "X", "histories": [], "time": time.time(),
+            "subscribe_desc": "X", "mode_label": "全集洗版", "histories": [], "time": time.time(),
         }}}
         orch, _store, _deletes, _events, _hist = self._orch_clear(store)
         event = SimpleNamespace(event_data=SimpleNamespace(
@@ -348,7 +370,7 @@ class TestHistoryClear:
         assert orch.handle_history_clear(event) is False
 
         assert deletes == []
-        assert "100" not in store["best_version_clear_histories"]
+        assert "100" in store["best_version_clear_histories"]
 
     def test_cleanup_expired_clear_histories_keeps_recent_tasks(self):
         """通用清理只移除超过 72 小时的洗版清理事务。"""
@@ -396,7 +418,7 @@ class TestStartBestVersion:
         send_event.assert_called_once()
         assert send_event.call_args.args[0] == 5
         notify.assert_called_once()
-        assert notify.call_args.args[0].endswith("已添加洗版订阅")
+        assert notify.call_args.args[0].endswith("已添加全集洗版订阅")
         _args, kwargs = oper.add.call_args
         assert kwargs["best_version"] == 1 and kwargs["season"] == 1
         assert kwargs["best_version_full"] == 1

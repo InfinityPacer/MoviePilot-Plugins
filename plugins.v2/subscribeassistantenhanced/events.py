@@ -157,7 +157,7 @@ class EventProxy:
             if detect:
                 existing = detect(subscribe)
                 if existing:
-                    logger.info(f"订阅新增：{format_subscribe(subscribe)} 洗版订阅回填在库集 {existing}")
+                    logger.info(f"订阅新增：{format_subscribe(subscribe)} 分集洗版订阅回填在库集 {existing}")
                     priority.backfill_existing(subscribe, existing)
 
         # 全集洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
@@ -307,7 +307,7 @@ class EventProxy:
         """TransferIntercept → 洗版历史清理。"""
         orchestrator = self.get("orchestrator")
         if orchestrator and orchestrator.handle_history_clear(event):
-            detail("整理拦截事件：已清理本次洗版对应的旧媒体库文件")
+            detail("整理拦截事件：已完成历史记录清理")
 
     def on_resource_selection(self, event):
         """ResourceSelection → 洗版待定按集串行 + 剔除近期删除资源防重选。
@@ -427,7 +427,10 @@ class EventProxy:
 
         orchestrator = self.get("orchestrator")
         if orchestrator and subscribe.best_version:
-            detail(f"ResourceDownload：{format_subscribe(subscribe)} 执行洗版历史清理前置检查")
+            detail(
+                f"ResourceDownload：{format_subscribe(subscribe)} "
+                f"{self._best_version_mode_label(subscribe)}执行历史清理前置检查"
+            )
             orchestrator.handle_resource_download_history_clear(
                 subscribe,
                 context=data.context,
@@ -437,7 +440,10 @@ class EventProxy:
         if priority and subscribe.best_version and torrent_info:
             enclosure = getattr(torrent_info, "enclosure", None)
             if enclosure:
-                detail(f"ResourceDownload：{format_subscribe(subscribe)} 记录按种子洗版优先级基线")
+                detail(
+                    f"ResourceDownload：{format_subscribe(subscribe)} "
+                    f"{self._best_version_mode_label(subscribe)}记录按种子优先级基线"
+                )
                 priority.capture_torrent_baseline(
                     subscribe, enclosure,
                     self._normalize_episodes(data.episodes),
@@ -530,6 +536,13 @@ class EventProxy:
             return
         detail(f"TransferComplete：{format_subscribe(subscribe)} 目标集已全部在库，立即转为全集洗版")
         converter.convert_to_full(subscribe, mediainfo)
+
+    @staticmethod
+    def _best_version_mode_label(subscribe) -> str:
+        """按订阅实际洗版形态返回日志标签，避免分集和全集洗版输出混淆。"""
+        if not subscribe.best_version:
+            return ""
+        return "全集洗版" if subscribe.best_version_full else "分集洗版"
 
     def on_plugin_action(self, event):
         """PluginAction → /subscribe_toggle 切换订阅启用(R)/禁用(S)状态。

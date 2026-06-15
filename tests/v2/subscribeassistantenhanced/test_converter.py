@@ -69,7 +69,7 @@ class TestConvertToFull:
         send_event.assert_called_once()
         assert send_event.call_args.args[1]["subscribe_id"] == 9
         notify.assert_called_once()
-        assert notify.call_args.args[0] == "测试剧 S1 已转为全集洗版订阅"
+        assert notify.call_args.args[0] == "测试剧 S1 已从分集洗版转为全集洗版订阅"
 
     def test_failure_keeps_original(self):
         """删除分集订阅失败时不得创建全集洗版，并通知失败。"""

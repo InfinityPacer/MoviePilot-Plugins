@@ -59,7 +59,8 @@ class CompletionGuard:
 
         if subscribe.best_version:
             if not signal.stable:
-                logger.info(f"完成守卫：{format_subscribe(subscribe)} 洗版订阅信号不稳定（{signal.reason}），否决完成")
+                mode_label = "全集洗版" if subscribe.best_version_full else "分集洗版"
+                logger.info(f"完成守卫：{format_subscribe(subscribe)} {mode_label}信号不稳定（{signal.reason}），否决完成")
                 data.cancel = True
                 data.source = "subscribeassistantenhanced"
                 data.reason = signal.reason

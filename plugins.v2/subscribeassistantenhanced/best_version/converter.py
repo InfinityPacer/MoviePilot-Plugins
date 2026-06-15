@@ -57,7 +57,7 @@ class BestVersionConverter:
             new_sid, err_msg = None, str(err)
 
         if new_sid:
-            logger.info(f"{subscribe_desc} 已成功转为全集洗版订阅 (ID: {new_sid})")
+            logger.info(f"{subscribe_desc} 已从分集洗版成功转为全集洗版订阅 (ID: {new_sid})")
             self._send_subscribe_added(new_sid, mediainfo)
             self._notify_success(subscribe_desc, mediainfo)
             return True
@@ -106,7 +106,7 @@ class BestVersionConverter:
             text_parts.append(f"评分：{mediainfo.vote_average}")
         text_parts.append(f"来自用户：{self._plugin_name}")
         self._notify(
-            f"{subscribe_desc} 已转为全集洗版订阅",
+            f"{subscribe_desc} 已从分集洗版转为全集洗版订阅",
             "，".join(text_parts),
             image=mediainfo.get_message_image(),
             link="#/subscribe/tv?tab=mysub",
