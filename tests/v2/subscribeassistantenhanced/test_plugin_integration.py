@@ -643,6 +643,7 @@ def test_run_common_check_runs_enabled_subtasks():
         "download_monitor_enabled": True,
     })
     plugin.run_pending_release = MagicMock()
+    plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
@@ -651,6 +652,7 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_common_check()
 
     plugin.run_pending_release.assert_called_once()
+    plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
@@ -665,6 +667,7 @@ def test_run_common_check_isolates_subtask_failures():
         "download_monitor_enabled": True,
     })
     plugin.run_pending_release = MagicMock(side_effect=RuntimeError("pending failed"))
+    plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
@@ -672,6 +675,7 @@ def test_run_common_check_isolates_subtask_failures():
 
     plugin.run_common_check()
 
+    plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
@@ -686,6 +690,7 @@ def test_run_common_check_respects_domain_switches():
         "download_monitor_enabled": False,
     })
     plugin.run_pending_release = MagicMock()
+    plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
@@ -694,6 +699,7 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_common_check()
 
     plugin.run_pending_release.assert_not_called()
+    plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_not_called()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
@@ -710,14 +716,95 @@ def test_onlyonce_registers_one_shot_and_resets_flag():
     plugin.update_config.assert_called()
 
 
-def test_reset_task_clears_data_and_resets_flag():
+def test_reset_task_restores_owned_pending_before_clearing_data(monkeypatch):
+    """重置插件数据前必须恢复由增强版持有的待定订阅。"""
+    sub = _sub(id=7, state="P")
+    subscribe_oper = MagicMock()
+    subscribe_oper.list.return_value = [sub]
+    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+
+    data_store = {
+        "subscribes": {
+            "7": {
+                "state": "P",
+                "source": "pending_judge",
+                "pending_sources": {"pending_judge": {"reason": "集数不足"}},
+            }
+        }
+    }
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
-    plugin.save_data = MagicMock()
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+
     plugin.init_plugin({"reset_task": True})
+
+    subscribe_oper.update.assert_called_once()
+    assert subscribe_oper.update.call_args.args[0] == 7
+    assert subscribe_oper.update.call_args.args[1]["state"] == "R"
     cleared = {c.args[0] for c in plugin.save_data.call_args_list}
     assert {"subscribes", "torrents", "blocks", "releases", "snapshots", "deletes", "volatility"} <= cleared
     plugin.update_config.assert_called()
+
+
+def test_pending_state_reconcile_restores_owned_p_without_sources():
+    """插件记录仍声明 P 但已无任何来源时，通用巡检应恢复订阅。"""
+    sub = _sub(id=7, state="P")
+    data_store = {
+        "subscribes": {
+            "7": {
+                "state": "P",
+                "source": None,
+                "pending_sources": {},
+                "download_pending": {},
+            }
+        },
+        "blocks": {},
+    }
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+
+    plugin.run_pending_state_reconcile()
+
+    plugin._subscribe_oper.update.assert_called_once()
+    assert plugin._subscribe_oper.update.call_args.args[1]["state"] == "R"
+    assert data_store["subscribes"]["7"]["state"] == "R"
+
+
+def test_pending_state_reconcile_keeps_unowned_and_guarded_p():
+    """无增强版归属或仍有完成守卫记录的 P 状态不得被自愈覆盖。"""
+    unowned = _sub(id=7, state="P")
+    guarded = _sub(id=8, state="P")
+    data_store = {
+        "subscribes": {
+            "8": {
+                "state": "P",
+                "source": None,
+                "pending_sources": {},
+            }
+        },
+        "blocks": {"8": {"reason": "guard_veto"}},
+    }
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [unowned, guarded]
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+
+    plugin.run_pending_state_reconcile()
+
+    plugin._subscribe_oper.update.assert_not_called()
 
 
 def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(monkeypatch):
