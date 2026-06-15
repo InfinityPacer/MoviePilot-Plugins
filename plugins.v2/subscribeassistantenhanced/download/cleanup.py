@@ -23,6 +23,7 @@ class TorrentCleanup:
                  delete_torrent_fn: Optional[Callable] = None,
                  search_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
+                 get_subscribe_image_fn: Optional[Callable] = None,
                  subscribe_oper=None):
         """注入删种、任务清理、补搜和通知依赖。"""
         self._priority = priority_manager
@@ -33,10 +34,12 @@ class TorrentCleanup:
         self._delete_torrent = delete_torrent_fn
         self._search = search_fn
         self._notify = notify_fn
+        self._get_subscribe_image = get_subscribe_image_fn
         self._subscribe_oper = subscribe_oper
 
     def handle_torrent_deleted(self, subscribe, torrent_hash: str,
                                 reason: str = "download_timeout",
+                                reason_detail: Optional[str] = None,
                                 downloader: Optional[str] = None,
                                 delete_from_downloader: bool = True,
                                 search_enabled: bool = True):
@@ -81,9 +84,37 @@ class TorrentCleanup:
         self._clear_pending(sid, torrent_hash)
 
         # 5. 按配置触发补搜，避免删种后长期缺集。
-        self._notify_deleted(subscribe, torrent_task, reason, search_enabled=search_enabled)
+        search_delay_seconds = None
         if search_enabled and self._search and subscribe:
-            self._search(subscribe)
+            search_delay_seconds = self._search(subscribe)
+            if not isinstance(search_delay_seconds, (int, float)):
+                search_delay_seconds = None
+        self._notify_deleted(
+            subscribe, torrent_task, reason,
+            reason_detail=reason_detail,
+            search_delay_seconds=search_delay_seconds,
+        )
+
+    def handle_timeout_manual_review(self, subscribe, torrent_hash: str,
+                                     reason_detail: str, ignore_hours: int = 48):
+        """连续低进度达到保护上限时保留种子，并通知用户人工判断。"""
+        if not self._notify:
+            return
+        torrent_task = self._read_torrent_task(torrent_hash) or {}
+        msg_parts = []
+        if torrent_task.get("title"):
+            msg_parts.append(f"标题：{torrent_task.get('title')}")
+        if torrent_task.get("description"):
+            msg_parts.append(f"内容：{torrent_task.get('description')}")
+        msg_parts.extend([
+            f"原因：{reason_detail}",
+            f"处理：已保留当前种子，{ignore_hours} 小时内不再自动删除，请手动判断",
+        ])
+        self._notify(
+            f"{format_subscribe(subscribe)} 下载连续超时，请手动处理",
+            "\n".join(msg_parts),
+            image=self._subscribe_image(subscribe),
+        )
 
     def _read_torrent_task(self, torrent_hash: str) -> Optional[dict]:
         """删除前读取种子任务，供删除指纹归档与按集基线回滚。"""
@@ -139,7 +170,8 @@ class TorrentCleanup:
         self._update("subscribes", updater)
 
     def _notify_deleted(self, subscribe, torrent_task: Optional[dict], reason: str,
-                        search_enabled: bool = True):
+                        reason_detail: Optional[str] = None,
+                        search_delay_seconds: Optional[float] = None):
         """发送种子删除通知，标题包含订阅、删除原因和最终动作。"""
         if not self._notify:
             return
@@ -155,9 +187,14 @@ class TorrentCleanup:
                 msg_parts.append(f"标题：{torrent_task.get('title')}")
             if torrent_task.get("description"):
                 msg_parts.append(f"内容：{torrent_task.get('description')}")
-        if search_enabled and self._search:
-            msg_parts.append("补全：将在 300 秒后触发搜索")
+        if search_delay_seconds is not None:
+            msg_parts.append(f"补全：将在 {search_delay_seconds / 60:.2f} 分钟 后触发搜索")
         self._notify(
-            f"{format_subscribe(subscribe)} {reason_text}，已删除",
+            f"{format_subscribe(subscribe)} {reason_detail or reason_text}，已删除",
             "\n".join(msg_parts) if msg_parts else None,
+            image=self._subscribe_image(subscribe),
         )
+
+    def _subscribe_image(self, subscribe):
+        """读取订阅通知图片；未注入图片解析器时保持兼容。"""
+        return self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
