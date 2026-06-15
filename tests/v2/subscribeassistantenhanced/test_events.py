@@ -651,8 +651,8 @@ class TestResourceSelectionDedup:
         proxy.on_resource_selection(SimpleNamespace(event_data=data))
         assert data.updated is False
 
-    def _serial_proxy(self, pending_episodes):
-        sub = _sub(id=1, best_version=1)
+    def _serial_proxy(self, pending_episodes, best_version_full=0):
+        sub = _sub(id=1, best_version=1, best_version_full=best_version_full)
         oper = MagicMock()
         oper.get.return_value = sub
         tm = MagicMock()
@@ -691,6 +691,25 @@ class TestResourceSelectionDedup:
         data = SimpleNamespace(origin='Subscribe|{"id": 1}', contexts=[self._ep_ctx([4])],
                                updated=False, updated_contexts=None, source="")
         proxy.on_resource_selection(SimpleNamespace(event_data=data))
+        assert data.updated is True
+        assert data.updated_contexts == []
+
+    def test_full_best_version_pending_blocks_all_candidates(self):
+        """全集洗版已有下载待定时，不再选择其他候选资源。"""
+        proxy = self._serial_proxy(
+            pending_episodes=list(range(1, 21)),
+            best_version_full=1,
+        )
+        data = SimpleNamespace(
+            origin='Subscribe|{"id": 1}',
+            contexts=[self._ep_ctx([]), self._ep_ctx(list(range(1, 21)))],
+            updated=False,
+            updated_contexts=None,
+            source="",
+        )
+
+        proxy.on_resource_selection(SimpleNamespace(event_data=data))
+
         assert data.updated is True
         assert data.updated_contexts == []
 
