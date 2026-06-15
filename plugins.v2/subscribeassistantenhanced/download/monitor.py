@@ -9,6 +9,8 @@ from app.log import logger
 from .torrent import TorrentInfo
 from ..shared.log import detail
 
+TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS = 48
+
 
 class DownloadMonitor:
     """下载状态机：DOWNLOADING → TIMEOUT_CHECK → DELETED/MANUAL_REVIEW/IGNORED。"""
@@ -203,11 +205,25 @@ class DownloadMonitor:
                     if subscribe is not None:
                         reason_text = "Tracker 返回内容包含删除关键字" if action == "delete_tracker" else "连续观察后仍无进度"
                         logger.info(f"下载监控：种子 {torrent_hash} 需要删除，原因：{reason_text}")
+                        reason_detail = (
+                            self.get_timeout_reason(task.get("subscribe_id"), task, info)
+                            if action == "timeout" else None
+                        )
                         self._handle_cleanup_once_per_subscribe(
                             cleanup, subscribe, triggered_subscribe_ids,
                             torrent_hash, reason=action,
+                            reason_detail=reason_detail,
                             downloader=downloader, delete_from_downloader=True)
                         cleanup_count += 1
+                elif action == "manual_review" and cleanup:
+                    subscribe = self._resolve_subscribe(task.get("subscribe_id"))
+                    if subscribe is not None:
+                        cleanup.handle_timeout_manual_review(
+                            subscribe,
+                            torrent_hash,
+                            self.get_timeout_reason(task.get("subscribe_id"), task, info),
+                            ignore_hours=TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS,
+                        )
                 continue
             # 拿不到实时状态时，只有下载器可达且连续确认种子不存在，才按用户手动删除处理。
             present = self._present_fn(downloader, torrent_hash) if self._present_fn else None
@@ -449,7 +465,7 @@ class DownloadMonitor:
 
         detail(
             f"下载监控：种子 {torrent_info.hash} 低进度超时"
-            f"（连续 {timeout_state.get('fail_count', 0)}/{retry_limit} 次），准备删除"
+            f"（低进度删除 {timeout_state.get('fail_count', 0)}/{retry_limit} 次），准备删除"
         )
         return "timeout"
 
@@ -565,6 +581,23 @@ class DownloadMonitor:
         self._update("subscribes", updater)
         return result["state"]
 
+    def get_timeout_reason(self, subscribe_id: int, torrent_task: dict, torrent_info: TorrentInfo) -> str:
+        """按旧版通知口径描述下载时长、观察窗口、进度增长和连续超时次数。"""
+        scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
+        subscribe_task = (self._read("subscribes") or {}).get(str(subscribe_id), {})
+        timeout_state = (subscribe_task.get("timeout_states") or {}).get(scope_key, {})
+        started_at = torrent_task.get("time") or torrent_task.get("baseline_at") or time.time()
+        download_hours = max(time.time() - started_at, 0) / 3600
+        progress_delta = (torrent_info.progress - torrent_task.get("baseline_progress", 0.0)) * 100
+        timeout_hours = self._timeout_seconds / 3600
+        retry_limit = max(int(self._retry_limit or 1), 1)
+        return (
+            f"订阅种子，下载时长 {download_hours:.2f} 小时，"
+            f"超时窗口 {timeout_hours:g} 小时内进度增长 {progress_delta:.2f}%，"
+            f"低于 {self._progress_threshold:g}%"
+            f"（低进度删除 {timeout_state.get('fail_count', 0)}/{retry_limit} 次）"
+        )
+
     def _timeout_retry_window_seconds(self) -> float:
         """连续低进度统计窗口：至少 24 小时，或超时窗口乘保护次数。"""
         return max(24 * 3600, self._timeout_seconds * max(int(self._retry_limit or 1), 1))
@@ -585,7 +618,7 @@ class DownloadMonitor:
         """达到连续低进度保护上限后，给当前范围写入人工处理保护期。"""
         sid = str(subscribe_id)
         scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
-        ignore_until = time.time() + self._timeout_seconds * max(int(self._retry_limit or 1), 1)
+        ignore_until = time.time() + TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS * 3600
 
         def updater(data: dict) -> dict:
             task = data.get(sid, {})

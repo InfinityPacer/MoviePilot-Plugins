@@ -2,8 +2,10 @@
 import time
 from typing import Callable, Optional
 
+from app.core.metainfo import MetaInfo
 from app.log import logger
 from app.schemas.types import MediaType
+from app.utils.string import StringUtils
 
 from ..engine.types import CompletionSignal
 from ..shared.log import detail
@@ -30,6 +32,7 @@ class BestVersionOrchestrator:
                  send_download_file_deleted_fn: Optional[Callable] = None,
                  send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
+                 get_subscribe_image_fn: Optional[Callable] = None,
                  season_of_fn: Optional[Callable] = None,
                  torrent_exists_fn: Optional[Callable] = None,
                  sleep_fn: Optional[Callable] = None,
@@ -49,6 +52,7 @@ class BestVersionOrchestrator:
         self._send_dfd = send_download_file_deleted_fn
         self._send_subscribe_added = send_subscribe_added_fn
         self._notify = notify_fn
+        self._get_subscribe_image = get_subscribe_image_fn
         self._season_of = season_of_fn
         self._torrent_exists = torrent_exists_fn
         self._sleep = sleep_fn or time.sleep
@@ -123,7 +127,7 @@ class BestVersionOrchestrator:
         if not is_movie:
             payload["best_version_full"] = 1
         payload = {key: value for key, value in payload.items() if value is not None}
-        sid, _err = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
+        sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
             mode_label = "电影洗版" if is_movie else "全集洗版"
             logger.info(f"洗版编排：{format_subscribe_desc(subscribe)} 已创建{mode_label}订阅（id={sid}）")
@@ -137,6 +141,13 @@ class BestVersionOrchestrator:
                     image=mediainfo.get_message_image(),
                     link="#/subscribe/movie?tab=mysub" if is_movie else "#/subscribe/tv?tab=mysub",
                 )
+        elif self._notify:
+            logger.error(f"洗版编排：{format_subscribe_desc(subscribe)} 添加洗版订阅失败：{err_msg}")
+            self._notify(
+                f"{format_subscribe_desc(subscribe)} 添加洗版订阅失败！",
+                err_msg,
+                image=mediainfo.get_message_image(),
+            )
         return sid
 
     def handle_resource_download_history_clear(self, subscribe, context=None, episodes=None) -> bool:
@@ -154,6 +165,18 @@ class BestVersionOrchestrator:
         if not subscribe.best_version_full:
             detail(f"洗版清理：{format_subscribe_desc(subscribe)} 是分集洗版，不清理整季旧文件")
             return True
+        if media_type == MediaType.TV and context and getattr(context, "torrent_info", None):
+            actual_episodes, source = self._download_resource_episodes(context=context, episodes=episodes)
+            target_episodes = self._subscribe_target_episodes(subscribe)
+            if actual_episodes and target_episodes and not set(target_episodes).issubset(actual_episodes):
+                self._notify_history_clear_skipped(
+                    subscribe=subscribe,
+                    context=context,
+                    target_episodes=target_episodes,
+                    actual_episodes=actual_episodes,
+                    source=source,
+                )
+                return True
         mode_label = self._mode_label(subscribe)
         tmdbid = subscribe.tmdbid
         if not tmdbid or not self._get_histories:
@@ -179,6 +202,73 @@ class BestVersionOrchestrator:
             if self._field(history, "download_hash")
         }
         return self._wait_for_torrents_removed(subscribe=subscribe, download_hashes=old_hashes)
+
+    @staticmethod
+    def _subscribe_target_episodes(subscribe) -> list[int]:
+        """返回电视剧订阅明确声明的目标集数范围。"""
+        if not subscribe or not subscribe.total_episode:
+            return []
+        start_episode = subscribe.start_episode or 1
+        return list(range(start_episode, subscribe.total_episode + 1))
+
+    @staticmethod
+    def _normalize_episode_numbers(episodes) -> list[int]:
+        """规整事件或标题中的集数，忽略不能转换为正整数的值。"""
+        normalized = set()
+        for episode in episodes or []:
+            try:
+                number = int(episode)
+            except (TypeError, ValueError):
+                continue
+            if number > 0:
+                normalized.add(number)
+        return sorted(normalized)
+
+    def _download_resource_episodes(self, context=None, episodes=None) -> tuple[list[int], str]:
+        """按下载事件、上下文和资源标题顺序解析本次资源覆盖的集数。"""
+        event_episodes = self._normalize_episode_numbers(episodes)
+        if event_episodes:
+            return event_episodes, "下载事件"
+
+        selected_episodes = self._normalize_episode_numbers(
+            getattr(context, "selected_episodes", None)
+        )
+        if selected_episodes:
+            return selected_episodes, "下载上下文"
+
+        torrent_info = getattr(context, "torrent_info", None)
+        if not torrent_info:
+            return [], ""
+        meta = MetaInfo(
+            title=getattr(torrent_info, "title", "") or "",
+            subtitle=getattr(torrent_info, "description", "") or "",
+        )
+        title_episodes = self._normalize_episode_numbers(meta.episode_list)
+        if title_episodes:
+            return title_episodes, "资源标题"
+        return [], ""
+
+    def _notify_history_clear_skipped(self, subscribe, context, target_episodes: list[int],
+                                      actual_episodes: list[int], source: str):
+        """全集资源范围不足时保留旧文件，并发送可人工核对的保护通知。"""
+        torrent_info = getattr(context, "torrent_info", None)
+        torrent_title = getattr(torrent_info, "title", "") if torrent_info else ""
+        target_desc = StringUtils.format_ep(target_episodes) if target_episodes else "未知"
+        actual_desc = StringUtils.format_ep(actual_episodes) if actual_episodes else "未知"
+        source_desc = source or "未知来源"
+        logger.warning(
+            f"洗版清理：{format_subscribe_desc(subscribe)} 当前全集资源未覆盖订阅目标范围，"
+            f"跳过旧整理记录清理；目标集数={target_desc}，资源集数={actual_desc}，"
+            f"来源={source_desc}，种子={torrent_title}"
+        )
+        if self._notify:
+            image = self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
+            self._notify(
+                f"{format_subscribe_desc(subscribe)} 洗版资源未覆盖目标范围，已跳过历史清理",
+                f"目标集数：{target_desc}\n资源集数：{actual_desc}\n"
+                f"来源：{source_desc}\n种子：{torrent_title}",
+                image=image,
+            )
 
     def _wait_for_torrents_removed(self, subscribe, download_hashes: set[str]) -> bool:
         """每 5 秒确认旧 hash：查询失败等 1 分钟，明确存在等 3 分钟，超限后放行。"""
@@ -259,11 +349,13 @@ class BestVersionOrchestrator:
         tmdbid = str(subscribe.tmdbid or "")
         if not tmdbid:
             return
+        subscribe_image = self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
 
         def updater(data: dict) -> dict:
             data[tmdbid] = {
                 "subscribe_id": subscribe.id,
                 "subscribe_desc": format_subscribe_desc(subscribe),
+                "subscribe_image": subscribe_image,
                 "mode_label": self._mode_label(subscribe),
                 "histories": [self._history_to_dict(h) for h in histories],
                 "time": time.time(),
@@ -292,6 +384,7 @@ class BestVersionOrchestrator:
             self._notify(
                 f"{format_subscribe_desc(subscribe)} 即将开始{mode_label}下载",
                 f"{mode_label}已删除 {len(histories)} 条整理记录对应的源文件",
+                image=subscribe_image,
             )
 
     def handle_history_clear(self, event) -> bool:
@@ -367,6 +460,7 @@ class BestVersionOrchestrator:
             self._notify(
                 f"{(task or {}).get('subscribe_desc', '洗版订阅')} 即将开始{mode_label}整理",
                 f"{mode_label}已删除 {len(histories)} 条整理记录对应的媒体库文件",
+                image=(task or {}).get("subscribe_image"),
             )
         return True
 

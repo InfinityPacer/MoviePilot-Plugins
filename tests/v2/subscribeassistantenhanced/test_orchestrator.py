@@ -118,7 +118,8 @@ class TestHistoryClear:
             delete_media_file_fn=lambda fi: deletes.append(fi),
             delete_history_fn=lambda hid: hist_deletes.append(hid),
             send_download_file_deleted_fn=lambda src, h: events.append((src, h)),
-            notify_fn=lambda t, x=None: notifies.append((t, x)),
+            notify_fn=lambda t, x=None, **kwargs: notifies.append((t, x, kwargs)),
+            get_subscribe_image_fn=lambda subscribe: "subscribe.jpg",
             clear_history_type=clear_history_type,
             torrent_exists_fn=torrent_exists_fn,
             sleep_fn=sleep_fn,
@@ -147,6 +148,8 @@ class TestHistoryClear:
         assert "100" in store["best_version_clear_histories"]   # 快照 key 为 str(tmdbid)
         assert notifies[0][0].endswith("即将开始全集洗版下载")
         assert "全集洗版" in notifies[0][1]
+        assert notifies[0][2]["image"] == "subscribe.jpg"
+        assert store["best_version_clear_histories"]["100"]["subscribe_image"] == "subscribe.jpg"
 
     def test_clear_type_no_skips(self):
         """清理范围为 no 时不触发任何破坏性历史清理。"""
@@ -162,6 +165,37 @@ class TestHistoryClear:
         sub = _sub(best_version_full=0)
         orch.handle_resource_download_history_clear(sub)
         assert deletes == []   # 分集洗版跳过整季清理
+
+    def test_full_best_version_incomplete_resource_skips_history_clear_and_notifies(self):
+        """全集资源明确未覆盖目标范围时不得删除旧文件，并通知用户人工检查。"""
+        orch, _store, deletes, events, hist_deletes = self._orch_clear()
+        orch._get_histories = MagicMock(return_value=[
+            self._history("1", {"path": "/src/a.mkv"}, None, "/src/a.mkv", "hashA"),
+        ])
+        notify = MagicMock()
+        orch._notify = notify
+        context = SimpleNamespace(
+            selected_episodes=None,
+            torrent_info=SimpleNamespace(title="测试剧 S01E01-E02", description="两集资源"),
+        )
+
+        result = orch.handle_resource_download_history_clear(
+            _sub(start_episode=1, total_episode=12),
+            context=context,
+            episodes=[1, 2],
+        )
+
+        assert result is True
+        orch._get_histories.assert_not_called()
+        assert deletes == []
+        assert events == []
+        assert hist_deletes == []
+        assert notify.call_args.args[0].endswith("洗版资源未覆盖目标范围，已跳过历史清理")
+        assert "目标集数：" in notify.call_args.args[1]
+        assert "资源集数：" in notify.call_args.args[1]
+        assert "来源：下载事件" in notify.call_args.args[1]
+        assert "种子：测试剧 S01E01-E02" in notify.call_args.args[1]
+        assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_movie_clear_type_skips_tv_subscription(self):
         """电影清理范围不应读取电视剧洗版历史。"""
@@ -324,6 +358,7 @@ class TestHistoryClear:
         store = {"best_version_clear_histories": {"100": {
             "subscribe_desc": "X",
             "mode_label": "全集洗版",
+            "subscribe_image": "subscribe.jpg",
             "histories": [{"dest_fileitem": {"path": "/dest/a.mkv"}}],
             "time": time.time(),
         }}}
@@ -336,6 +371,7 @@ class TestHistoryClear:
         assert "100" not in store["best_version_clear_histories"]
         assert notifies[0][0] == "X 即将开始全集洗版整理"
         assert "全集洗版" in notifies[0][1]
+        assert notifies[0][2]["image"] == "subscribe.jpg"
 
     def test_transfer_intercept_without_snapshot_returns_false(self):
         """无洗版清理快照时整理拦截不产生日志噪音。"""
@@ -424,6 +460,28 @@ class TestStartBestVersion:
         assert kwargs["best_version_full"] == 1
         assert kwargs["filter"] == "r"
         assert kwargs["filter_groups"] == ["g1"]
+
+    def test_create_failure_notifies_error_and_image(self):
+        """自动创建洗版订阅失败时应推送主程序返回的错误原因。"""
+        oper = MagicMock()
+        oper.add.return_value = (None, "订阅已存在")
+        notify = MagicMock()
+        orch = BestVersionOrchestrator(
+            priority_manager=MagicMock(spec=PriorityManager),
+            evaluate_fn=MagicMock(),
+            subscribe_oper=oper,
+            best_version_type="all",
+            notify_fn=notify,
+        )
+        sub = _sub(best_version=0)
+
+        sid = orch.start_best_version(sub, mediainfo=_mediainfo())
+
+        assert sid is None
+        notify.assert_called_once()
+        assert notify.call_args.args[0].endswith("添加洗版订阅失败！")
+        assert notify.call_args.args[1] == "订阅已存在"
+        assert notify.call_args.kwargs["image"] == "poster.jpg"
 
     def test_skips_when_already_best_version(self):
         oper = MagicMock()

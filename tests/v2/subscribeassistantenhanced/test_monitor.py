@@ -175,8 +175,13 @@ class TestRunTimeoutCheck:
                               fetch_fn=lambda dl, h: _info(hash=h, progress=0.0, completed=False))
         cleanup = MagicMock()
         mon.run_timeout_check(cleanup)
-        cleanup.handle_torrent_deleted.assert_called_once_with(
-            sub, "h1", reason="timeout", downloader="qb", delete_from_downloader=True)
+        cleanup.handle_torrent_deleted.assert_called_once()
+        args, kwargs = cleanup.handle_torrent_deleted.call_args
+        assert args == (sub, "h1")
+        assert kwargs["reason"] == "timeout"
+        assert kwargs["downloader"] == "qb"
+        assert kwargs["delete_from_downloader"] is True
+        assert "（低进度删除 1/3 次）" in kwargs["reason_detail"]
 
 
 class TestCheckTorrent:
@@ -261,6 +266,9 @@ class TestCheckTorrent:
         assert result == "timeout"
         state = store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]
         assert state["fail_count"] == 1
+        reason = mon.get_timeout_reason(1, store["torrents"]["h1"], _info(progress=0.5))
+        assert "超时窗口 1 小时内进度增长 0.00%" in reason
+        assert "（低进度删除 1/3 次）" in reason
 
     def test_retry_increments_count(self):
         """低进度超时记录订阅范围失败次数，不刷新种子基线。"""

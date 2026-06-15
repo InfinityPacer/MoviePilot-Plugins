@@ -884,11 +884,17 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
     monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
+    plugin.post_message = MagicMock()
     plugin._detect_existing_episodes = MagicMock(return_value=[3])
 
     plugin.init_plugin({"backfill_best_version_now": True})
 
     priority_manager.backfill_existing.assert_called_once_with(sub, [3])
+    plugin.post_message.assert_called_once()
+    assert plugin.post_message.call_args.kwargs["title"] == "【订阅助手】洗版订阅按集优先级回填"
+    assert "扫描 1 个订阅" in plugin.post_message.call_args.kwargs["text"]
+    assert "成功回填 1 个" in plugin.post_message.call_args.kwargs["text"]
+    assert "累计补写 1 集" in plugin.post_message.call_args.kwargs["text"]
     plugin.update_config.assert_called_once()
     assert plugin.update_config.call_args.args[0]["backfill_best_version_now"] is False
 

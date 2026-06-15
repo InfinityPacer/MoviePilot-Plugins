@@ -5,6 +5,7 @@
 """
 import datetime
 import json
+import random
 import re
 import threading
 import time
@@ -70,7 +71,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.2.7"
+    plugin_version = "0.2.8"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -250,6 +251,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             delete_torrent_fn=self._delete_downloader_torrent,
             search_fn=self._search_subscribe if cfg.auto_search_when_delete else None,
             notify_fn=self._notify_subscribe,
+            get_subscribe_image_fn=self._get_subscribe_image,
             subscribe_oper=self._subscribe_oper,
         )
 
@@ -303,6 +305,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             send_download_file_deleted_fn=self._send_download_file_deleted,
             send_subscribe_added_fn=self._send_subscribe_added,
             notify_fn=self._notify_subscribe,
+            get_subscribe_image_fn=self._get_subscribe_image,
             torrent_exists_fn=self._torrent_exists,
             related_downloads_fn=self._related_download_histories,
             best_version_type=cfg.best_version_type,
@@ -482,17 +485,36 @@ class SubscribeAssistantEnhanced(_PluginBase):
         logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、洗版清理记录）")
 
     def _run_backfill_now(self):
-        """对现有分集洗版订阅执行一次回填已存在集。"""
-        count = 0
+        """对现有洗版订阅执行一次按集回填，并推送扫描结果汇总。"""
+        results = {"scanned": 0, "updated": 0, "skipped": 0, "filled_episodes": 0}
         priority = self._modules["priority_manager"]
         for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
+            if not subscribe or not subscribe.best_version:
+                continue
+            results["scanned"] += 1
             if not priority.can_backfill(subscribe):
+                results["skipped"] += 1
                 continue
             existing = self._detect_existing_episodes(subscribe)
+            filled_episodes = [
+                episode for episode in existing
+                if str(episode) not in (subscribe.episode_priority or {})
+            ]
             if existing and priority.backfill_existing(subscribe, existing):
-                count += 1
-                detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {existing}")
-        logger.info(f"洗版回填：完成，共处理 {count} 个分集洗版订阅")
+                results["updated"] += 1
+                results["filled_episodes"] += len(filled_episodes)
+                detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {filled_episodes}")
+            else:
+                results["skipped"] += 1
+        logger.info(
+            f"洗版回填：完成，扫描 {results['scanned']} 个，写入 {results['updated']} 个，"
+            f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
+        )
+        self._notify_subscribe(
+            "【订阅助手】洗版订阅按集优先级回填",
+            f"扫描 {results['scanned']} 个订阅，成功回填 {results['updated']} 个，"
+            f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集",
+        )
 
     def run_download_timeout_check(self):
         """下载任务检查：读取下载器状态，处理超时无进度、Tracker 删除关键字和手动删种。"""
@@ -1300,13 +1322,19 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return bool(torrents)
 
     def _search_subscribe(self, subscribe):
-        """删种后延迟触发该订阅补全搜索，避免长期缺集；延迟用于等待下载器清理与外部事件落定。"""
+        """删种后随机延迟 3-5 分钟补搜，并返回实际延迟秒数供通知展示。"""
         if not self._subscribe_chain or not subscribe:
-            return
+            return None
         sid = subscribe.id
         if sid:
-            logger.info(f"种子删除处理：{format_subscribe(subscribe)} 将在 300 秒后触发补全搜索")
-            threading.Timer(300, lambda: self._subscribe_chain.search(sid=sid)).start()
+            delay_minutes = random.uniform(3, 5)
+            delay_seconds = delay_minutes * 60
+            logger.info(
+                f"种子删除处理：{format_subscribe(subscribe)} 将在 {delay_minutes:.2f} 分钟后触发补全搜索"
+            )
+            threading.Timer(delay_seconds, lambda: self._subscribe_chain.search(sid=sid)).start()
+            return delay_seconds
+        return None
 
     def _get_transfer_histories(self, tmdbid, mtype, season=None):
         """按 tmdbid/类型/季获取整理历史记录，供洗版清理定位旧文件。"""
@@ -1440,3 +1468,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if link and link.startswith("#"):
             link = settings.MP_DOMAIN(link)
         self.post_message(mtype=NotificationType.Subscribe, title=title, text=text, image=image, link=link)
+
+    @staticmethod
+    def _get_subscribe_image(subscribe):
+        """按旧版优先级返回订阅背景图或海报的 w500 地址。"""
+        if subscribe.backdrop:
+            return subscribe.backdrop.replace("original", "w500")
+        if subscribe.poster:
+            return subscribe.poster.replace("original", "w500")
+        return ""
