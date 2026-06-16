@@ -2,7 +2,9 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from subscribeassistantenhanced.engine.types import PauseRecord
 from subscribeassistantenhanced.pending.state import PendingStateCoordinator
+from subscribeassistantenhanced.pause.manager import PauseManager
 
 
 def _store_mgr(store=None):
@@ -103,3 +105,28 @@ class TestPendingStateCoordinator:
         task = store["subscribes"]["1"]
         assert task["state"] == "P"
         assert "pending_judge" in task["pending_sources"]
+
+    def test_pause_overrides_owned_pending_without_restoring_r(self):
+        """插件暂停优先级高于插件待定，暂停时直接置 S 并清理待定归属。"""
+        read, update, store = _store_mgr({
+            "subscribes": {
+                "1": {
+                    "state": "P",
+                    "source": "pending_judge",
+                    "pending_sources": {"pending_judge": {"reason": "集数不足"}},
+                }
+            }
+        })
+        oper = MagicMock()
+        pending = PendingStateCoordinator(read, update, subscribe_oper=oper)
+        pause = PauseManager(read, update, subscribe_oper=oper, pending_state=pending)
+
+        pause.pause(_sub(state="P"), PauseRecord(reason="pre_air", since=1.0, detail="未上映"))
+
+        task = store["subscribes"]["1"]
+        assert task["state"] == "S"
+        assert task["pending_sources"] == {}
+        assert task["source"] is None
+        assert task["pause_reason"] == "pre_air"
+        assert oper.update.call_args.args[1]["state"] == "S"
+        assert not any(call.args[1].get("state") == "R" for call in oper.update.call_args_list)

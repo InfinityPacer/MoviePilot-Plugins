@@ -19,13 +19,14 @@ class PauseManager:
 
     def __init__(self, task_data_read: Callable, task_data_update: Callable,
                  subscribe_oper=None, auto_pause_users: Optional[list] = None,
-                 notify_fn: Optional[Callable] = None):
+                 notify_fn: Optional[Callable] = None, pending_state=None):
         """注入任务数据、订阅写库、用户名规则和状态通知回调。"""
         self._read = task_data_read
         self._update = task_data_update
         self._subscribe_oper = subscribe_oper
         self._auto_pause_users = auto_pause_users or []
         self._notify = notify_fn
+        self._pending_state = pending_state
 
     def pause(self, subscribe, record: PauseRecord):
         """设置暂停，仅当新原因优先级 >= 当前原因时生效。"""
@@ -42,6 +43,8 @@ class PauseManager:
 
         sid = str(subscribe.id)
         detail(f"暂停管理：{format_subscribe(subscribe)} 写暂停记录（原因={record.reason}，detail={record.detail}）并置订阅为禁用(S)")
+        if self._pending_state:
+            self._pending_state.clear_for_pause(subscribe, reason=f"暂停覆盖：{record.reason}")
 
         def updater(data: dict) -> dict:
             task = data.get(sid, {})
@@ -57,7 +60,7 @@ class PauseManager:
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "S"})
         self._notify_pause(subscribe, record)
 
-    def resume(self, subscribe):
+    def resume(self, subscribe, notify: bool = True):
         """恢复订阅：清插件暂停记录并把订阅状态置回 R。
 
         是否调用 resume 的判定（标记暂停跳过、上映条件双向恢复）由上层巡检负责。
@@ -78,7 +81,8 @@ class PauseManager:
 
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "R"})
-        self._notify_resume(subscribe, record)
+        if notify:
+            self._notify_resume(subscribe, record)
         return True
 
     def clear_pause_record(self, subscribe):

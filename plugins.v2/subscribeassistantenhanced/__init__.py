@@ -71,7 +71,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.2.9"
+    plugin_version = "0.3.0"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -201,6 +201,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_get_fn=self._subscribe_oper.get,
             tmdb_episodes_fn=self._tmdb_episodes,
         )
+        pending_state = PendingStateCoordinator(
+            tm.read,
+            tm.update,
+            subscribe_oper=self._subscribe_oper,
+        )
         # 用户名自动暂停名单：逗号分隔字符串解析为列表，剔除空白与空项；空名单即不启用该能力
         auto_pause_users = [u.strip() for u in (cfg.auto_pause_users or "").split(",") if u.strip()]
         # 注入 subscribe_oper：pause()/resume() 据此真实写订阅 DB state（S/R），否则只写插件任务数据
@@ -210,6 +215,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
             auto_pause_users=auto_pause_users,
             notify_fn=self._send_subscribe_status_notification,
+            pending_state=pending_state,
         )
         no_download_policy = NoDownloadPolicy(
             movie_days=cfg.movie_no_download_days,
@@ -220,12 +226,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if not cfg.tracker_response_listen:
             tracker_keywords = []
         exclude_tags = [t.strip() for t in (cfg.delete_exclude_tags or "").replace("&", ",").split(",") if t.strip()]
-        pending_state = PendingStateCoordinator(
-            tm.read,
-            tm.update,
-            subscribe_oper=self._subscribe_oper,
-        )
-
         download_monitor = DownloadMonitor(
             tm.read, tm.update,
             timeout_minutes=cfg.download_timeout_minutes,
@@ -466,11 +466,17 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self.run_common_check()
 
     def _reset_task_data(self):
-        """先释放增强版持有的待定订阅，再清空全部插件任务数据。"""
+        """先恢复增强版持有的订阅状态，再清空全部插件任务数据。"""
         pending_state = self._modules.get("pending_state")
         if pending_state and self._subscribe_oper:
             for subscribe in (self._subscribe_oper.list(state="P") or []):
                 pending_state.clear_all_owned(subscribe, reason="插件任务重置")
+        pause_manager = self._modules.get("pause_manager")
+        if pause_manager and self._subscribe_oper:
+            for subscribe in (self._subscribe_oper.list(state="S") or []):
+                record = pause_manager.get_pause_record(subscribe)
+                if record and record.reason in ("pre_air", "airing_gap"):
+                    pause_manager.resume(subscribe, notify=False)
         for key in [
             "subscribes",
             "torrents",
@@ -630,8 +636,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return
         cfg = self._config
         pending_judge = self._modules.get("pending_judge")
+        pending_state = self._modules.get("pending_state")
         airing = self._modules.get("airing_checker")
         pause_manager = self._modules.get("pause_manager")
+        download_monitor = self._modules.get("download_monitor")
+        blocks = self.get_data("blocks") or {}
         detail("元数据巡检：开始")
         for subscribe in (self._subscribe_oper.list(state="N,R,P,S") or []):
             if subscribe.best_version and subscribe.best_version_full:
@@ -650,6 +659,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 logger.info(f"元数据巡检：{format_subscribe(subscribe)} 用户已重新启用，清除插件暂停标记({reason})")
                 pause_manager.clear_pause_record(subscribe)
 
+            if pending_state and state == "P":
+                sid = str(subscribe.id)
+                has_active_download = bool(download_monitor and download_monitor.has_active_downloads(subscribe.id))
+                if not has_active_download and not pending_state.has_active(subscribe.id) and sid not in blocks:
+                    if pending_state.reconcile_orphaned(subscribe, reason="无有效待定来源，状态自愈"):
+                        continue
+
             mediainfo = self._recognize_mediainfo(subscribe)
             if not mediainfo:
                 continue
@@ -659,9 +675,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 and pending_judge
                 and subscribe.state == "P"
             ):
-                # P 状态由待定域负责退出，避免上映前/播出暂停在同一轮把待定状态覆盖为 S。
-                pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes)
-                continue
+                # P 状态先尝试由待定域退出；若仍未退出，后续上映/播出暂停可按 S 高优先级覆盖 P。
+                if pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes):
+                    continue
 
             # 新增态仍处于首次搜索阶段，不做上映/播出暂停，避免冻结还没有机会下载的订阅。
             check_airing_pause = state != "N"
@@ -775,8 +791,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
     def run_pending_state_reconcile(self):
         """修复增强版任务仍声明 P、但所有待定来源均已丢失的状态残留。
 
-        完成守卫记录和下载待定任务是独立的活跃证据，存在时不得恢复；完全没有增强版任务记录的 P
-        也不属于插件可安全接管的范围。
+        完成守卫记录和下载待定任务是独立的活跃证据，存在时不得恢复；主程序 WebUI 不能手工恢复 P，
+        因此完全没有增强版任务记录的 P 也按历史残留恢复。
         """
         pending_state = self._modules.get("pending_state")
         if not pending_state or not self._subscribe_oper:

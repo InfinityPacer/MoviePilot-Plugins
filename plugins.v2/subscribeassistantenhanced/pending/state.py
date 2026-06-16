@@ -130,14 +130,62 @@ class PendingStateCoordinator:
         return False
 
     def reconcile_orphaned(self, subscribe, reason: str = "") -> bool:
-        """恢复任务记录仍声明待定、但已无任何有效待定来源的订阅。"""
+        """恢复 DB 仍为待定、但增强版已无有效待定来源的订阅。"""
         if not subscribe or subscribe.state != "P":
             return False
         sid = str(subscribe.id)
         task = (self._read("subscribes") or {}).get(sid)
-        if not task or task.get("state") != "P" or self._normalize_sources(task):
+        if not task:
+            return self._restore_unowned_pending(subscribe, reason=reason)
+        if task.get("state") != "P" or self._normalize_sources(task):
             return False
         return self.clear_all_owned(subscribe, reason=reason)
+
+    def clear_for_pause(self, subscribe, reason: str = "") -> bool:
+        """插件暂停覆盖待定时清除待定归属，但不把订阅恢复为 R。"""
+        if not subscribe:
+            return False
+        sid = str(subscribe.id)
+        task = (self._read("subscribes") or {}).get(sid)
+        if not task or task.get("state") != "P":
+            return False
+        if not self._normalize_sources(task):
+            return False
+
+        def updater(data: dict) -> dict:
+            current = data.get(sid, {})
+            current["pending_sources"] = {}
+            current["state"] = "S"
+            current["source"] = None
+            current["reason"] = reason
+            current["exit_at"] = time.time()
+            data[sid] = current
+            return data
+
+        self._update("subscribes", updater)
+        logger.info(f"待定状态：{format_subscribe(subscribe)} 被暂停状态覆盖，清理待定归属")
+        return True
+
+    def _restore_unowned_pending(self, subscribe, reason: str = "") -> bool:
+        """恢复缺少插件归属记录的 P 状态残留。"""
+        if not self._subscribe_oper:
+            return False
+        update_subscribe(self._subscribe_oper, subscribe.id, {"state": "R"})
+        sid = str(subscribe.id)
+
+        def updater(data: dict) -> dict:
+            current = data.get(sid, {})
+            current["pending_sources"] = {}
+            current["state"] = "R"
+            current["source"] = None
+            current["reason"] = reason
+            current["exit_at"] = time.time()
+            data[sid] = current
+            return data
+
+        self._update("subscribes", updater)
+        logger.info(f"待定状态：{format_subscribe(subscribe)} {reason}，恢复为启用（R）")
+        return True
 
     def has_active(self, subscribe_id: int) -> bool:
         """判断订阅是否还有未解除的待定原因。"""
