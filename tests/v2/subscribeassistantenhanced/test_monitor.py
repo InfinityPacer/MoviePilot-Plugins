@@ -499,6 +499,50 @@ class TestManualDeleteListen:
         mon.run_timeout_check(cleanup)
         cleanup.handle_torrent_deleted.assert_not_called()
 
+    def test_uncertain_status_summary_breaks_down_reasons(self, monkeypatch):
+        """实时状态缺失时按原因汇总，避免把所有跳过都写成下载器状态不确定。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", messages.append)
+        read, update, _ = _store_mgr({
+            "torrents": {
+                "no-present-check": {"hash": "no-present-check", "subscribe_id": 6, "downloader": "qb"},
+                "unknown-present": {"hash": "unknown-present", "subscribe_id": 7, "downloader": "tr"},
+                "debounced": {"hash": "debounced", "subscribe_id": 8, "downloader": "qb"},
+            }
+        })
+
+        mon = DownloadMonitor(
+            read, update,
+            fetch_fn=lambda dl, h: None,
+            manual_delete_enabled=True,
+            manual_miss_threshold=2,
+        )
+        mon.run_timeout_check(MagicMock())
+
+        assert any(
+            "未取到实时任务信息 3 个" in message
+            and "缺少任务存在性确认能力 3 个" in message
+            and "建议检查下载器连接、下载器别名配置和本轮任务是否刚被客户端刷新" in message
+            for message in messages
+        )
+
+        def present(downloader, torrent_hash):
+            if torrent_hash == "unknown-present":
+                return None
+            return False
+
+        messages.clear()
+        mon._present_fn = present
+        mon.run_timeout_check(MagicMock())
+
+        assert any(
+            "未取到实时任务信息 3 个" in message
+            and "无法确认任务是否仍存在 1 个" in message
+            and "连续缺失未达阈值 2 个" in message
+            and "因下载器状态不确定暂不处理" not in message
+            for message in messages
+        )
+
     def test_missing_torrent_debounced_until_threshold(self):
         """连续 miss 未达阈值不动手，达阈值才触发（去抖）。"""
         from unittest.mock import MagicMock

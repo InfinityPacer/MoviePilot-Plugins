@@ -98,7 +98,7 @@ class TestShouldEnterPending:
         sig = CompletionSignal(stable=False)
         should, reason = j.should_enter_pending(_sub(), mi, [_ep(1), _ep(2), _ep(3)], signal=sig)
         assert should is True
-        assert "不稳定" in reason
+        assert reason == "目标总集数近期变化"
 
     def test_no_air_date_triggers_pending(self):
         """无 air_date → 待定。"""
