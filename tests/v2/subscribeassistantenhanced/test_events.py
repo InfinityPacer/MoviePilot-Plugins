@@ -92,7 +92,7 @@ class TestEventOrdering:
         }))
         monitor.on_download.assert_called_once_with(
             1, "h1", episodes=[1, 2], downloader="qb",
-            enclosure=None, page_url=None, title=None)
+            enclosure=None, page_url=None, title=None, description=None)
         # 下载添加事件不触发暂停恢复；恢复仅由元数据巡检的上映双向判定负责。
         pause_mgr.resume.assert_not_called()
 
@@ -823,6 +823,7 @@ class TestResourceDownloadHistoryClear:
             enclosure="https://example/torrent",
             page_url="https://example/page",
             title="测试剧 S01E01",
+            description="首集资源",
         )
         ctx = SimpleNamespace(torrent_info=torrent_info)
         proxy = EventProxy(subscribe_oper=oper, orchestrator=orch, download_monitor=monitor)
@@ -838,6 +839,7 @@ class TestResourceDownloadHistoryClear:
             enclosure="https://example/torrent",
             page_url="https://example/page",
             title="测试剧 S01E01",
+            description="首集资源",
         )
 
     def test_cancelled_event_skipped(self):

@@ -7,7 +7,8 @@ from typing import Callable, Optional
 from app.log import logger
 
 from .torrent import TorrentInfo
-from ..shared.log import detail
+from ..shared.log import detail, format_log_title_desc
+from ..shared.subscribe import format_subscribe_label
 
 TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS = 24
 
@@ -69,7 +70,7 @@ class DownloadMonitor:
 
     def mark_download_started(self, subscribe, episodes=None, downloader: Optional[str] = None,
                               enclosure: Optional[str] = None, page_url: Optional[str] = None,
-                              title: Optional[str] = None):
+                              title: Optional[str] = None, description: Optional[str] = None):
         """ResourceDownload 阶段登记无 hash 下载待定，覆盖 DownloadAdded 前的完成检查空窗。"""
         if not self._pending_download_enabled or not subscribe:
             return
@@ -88,6 +89,7 @@ class DownloadMonitor:
                 "enclosure": enclosure,
                 "page_url": page_url,
                 "title": title,
+                "description": description,
             }
             task["download_pending"] = pending
             data[sid] = task
@@ -131,7 +133,7 @@ class DownloadMonitor:
     def on_download(self, subscribe_id, torrent_hash: str, episodes=None,
                     downloader: Optional[str] = None, progress: float = 0.0,
                     enclosure: Optional[str] = None, page_url: Optional[str] = None,
-                    title: Optional[str] = None):
+                    title: Optional[str] = None, description: Optional[str] = None):
         """DownloadAdded 阶段按 hash 登记种子监控与归属信息。
 
         enclosure 用于洗版按集基线回滚，enclosure/page_url 用于删除指纹防重；
@@ -150,6 +152,7 @@ class DownloadMonitor:
                 "enclosure": enclosure,
                 "page_url": page_url,
                 "title": title,
+                "description": description,
                 "baseline_progress": progress,
                 "baseline_at": now,
                 "retry_count": 0,
@@ -168,6 +171,7 @@ class DownloadMonitor:
                 enclosure=enclosure,
                 page_url=page_url,
                 title=title,
+                description=description,
                 now=now,
             )
 
@@ -193,6 +197,7 @@ class DownloadMonitor:
         present_exists_count = 0
         pending_miss_count = 0
         cleanup_count = 0
+        removed_count = 0
         triggered_subscribe_ids = set()
         for torrent_hash, task in list(torrents.items()):
             downloader = task.get("downloader")
@@ -201,15 +206,24 @@ class DownloadMonitor:
                 visible_count += 1
                 self._reset_missing(torrent_hash)
                 if info.completed:
-                    logger.info(f"下载监控：种子 {torrent_hash} 已完成，将从订阅下载任务中移除")
+                    logger.info(
+                        f"下载监控：种子 {self._format_torrent_desc(torrent_hash, task)} 已完成，"
+                        f"{self._format_task_subscribe_label(task)}，"
+                        f"关联集数={self._format_task_episodes(task)}，将从订阅下载任务中移除"
+                    )
                     self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
+                    removed_count += 1
                     continue
                 action = self.check_torrent(info, task.get("subscribe_id"))
                 if action in ("timeout", "delete_tracker") and cleanup:
                     subscribe = self._resolve_subscribe(task.get("subscribe_id"))
                     if subscribe is not None:
                         reason_text = "Tracker 返回内容包含删除关键字" if action == "delete_tracker" else "连续观察后仍无进度"
-                        logger.info(f"下载监控：种子 {torrent_hash} 需要删除，原因：{reason_text}")
+                        logger.info(
+                            f"下载监控：种子 {self._format_torrent_desc(torrent_hash, task)} 需要删除，"
+                            f"{self._format_task_subscribe_label(task)}，"
+                            f"关联集数={self._format_task_episodes(task)}，原因：{reason_text}"
+                        )
                         reason_detail = (
                             self.get_timeout_reason(task.get("subscribe_id"), task, info)
                             if action == "timeout" else None
@@ -245,8 +259,13 @@ class DownloadMonitor:
                 skipped_count += 1
                 continue
             if not self._manual_delete_enabled:
-                logger.info(f"下载监控：种子 {torrent_hash} 不在下载器中，将按失效下载任务清理")
+                logger.info(
+                    f"下载监控：种子 {self._format_torrent_desc(torrent_hash, task)} 不在下载器中，"
+                    f"{self._format_task_subscribe_label(task)}，"
+                    f"关联集数={self._format_task_episodes(task)}，将按失效下载任务清理"
+                )
                 self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
+                removed_count += 1
                 self._reset_missing(torrent_hash)
                 continue
             if self._bump_missing(torrent_hash) < self._manual_miss_threshold:
@@ -256,7 +275,10 @@ class DownloadMonitor:
             subscribe = self._resolve_subscribe(task.get("subscribe_id"))
             if self._manual_delete_enabled and subscribe is not None and cleanup:
                 logger.info(
-                    f"下载监控：种子 {torrent_hash} 连续 {self._manual_miss_threshold} 次不在下载器中，按用户手动删除处理"
+                    f"下载监控：种子 {self._format_torrent_desc(torrent_hash, task)} "
+                    f"连续 {self._manual_miss_threshold} 次不在下载器中，"
+                    f"{self._format_task_subscribe_label(task)}，"
+                    f"关联集数={self._format_task_episodes(task)}，按用户手动删除处理"
                 )
                 self._handle_cleanup_once_per_subscribe(
                     cleanup, subscribe, triggered_subscribe_ids,
@@ -264,8 +286,13 @@ class DownloadMonitor:
                     downloader=downloader, delete_from_downloader=False)
                 cleanup_count += 1
             else:
-                logger.info(f"下载监控：种子 {torrent_hash} 不在下载器中，将按失效下载任务清理")
+                logger.info(
+                    f"下载监控：种子 {self._format_torrent_desc(torrent_hash, task)} 不在下载器中，"
+                    f"{self._format_task_subscribe_label(task)}，"
+                    f"关联集数={self._format_task_episodes(task)}，将按失效下载任务清理"
+                )
                 self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
+                removed_count += 1
             self._reset_missing(torrent_hash)
         skip_detail = self._format_skip_summary(
             missing_realtime_count=missing_realtime_count,
@@ -277,8 +304,31 @@ class DownloadMonitor:
         )
         detail(
             f"下载监控：本轮检查 {total} 个下载任务，下载器中仍存在 {visible_count} 个，"
-            f"{skip_detail}，已处理删除 {cleanup_count} 个"
+            f"{skip_detail}，已处理删除 {cleanup_count} 个，从订阅下载任务移除 {removed_count} 个"
         )
+
+    def _format_task_subscribe_label(self, task: dict) -> str:
+        """下载任务日志中的订阅标签；优先展示订阅名、季号和订阅 ID。"""
+        subscribe_id = (task or {}).get("subscribe_id")
+        subscribe = self._resolve_subscribe(subscribe_id)
+        return format_subscribe_label(subscribe, subscribe_id)
+
+    @staticmethod
+    def _format_task_episodes(task: dict) -> str:
+        """格式化下载任务关联集数，未知集数保持可诊断。"""
+        episodes = (task or {}).get("episodes") or []
+        if not episodes:
+            return "未知"
+        return ",".join(str(episode) for episode in episodes)
+
+    @staticmethod
+    def _format_torrent_desc(torrent_hash: str, task: dict) -> str:
+        """格式化种子标题和内容；hash 固定放在括号中，便于日志检索。"""
+        title_desc = format_log_title_desc(
+            title=(task or {}).get("title"),
+            description=(task or {}).get("description"),
+        )
+        return f"{title_desc} ({torrent_hash})" if title_desc else f"({torrent_hash})"
 
     @staticmethod
     def _format_skip_summary(missing_realtime_count: int,
@@ -357,6 +407,7 @@ class DownloadMonitor:
                                   enclosure: Optional[str] = None,
                                   page_url: Optional[str] = None,
                                   title: Optional[str] = None,
+                                  description: Optional[str] = None,
                                   now: Optional[float] = None):
         """DownloadAdded 补齐下载待定 hash，优先复用 ResourceDownload 的无 hash 记录。"""
         sid = str(subscribe_id)
@@ -375,6 +426,7 @@ class DownloadMonitor:
                 "enclosure": enclosure or base.get("enclosure"),
                 "page_url": page_url or base.get("page_url"),
                 "title": title or base.get("title"),
+                "description": description or base.get("description"),
             }
             task["download_pending"] = pending
             data[sid] = task
