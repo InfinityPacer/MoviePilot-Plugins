@@ -151,6 +151,48 @@ class TestHistoryClear:
         assert notifies[0][2]["image"] == "subscribe.jpg"
         assert store["best_version_clear_histories"]["100"]["subscribe_image"] == "subscribe.jpg"
 
+    def test_source_history_clear_logs_final_summary(self, monkeypatch):
+        """源文件清理完成后输出最终摘要，便于用户确认破坏性动作结果。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.best_version.orchestrator.logger.info", messages.append)
+        histories = [
+            self._history("1", {"path": "/src/a.mkv"}, {"path": "/dest/a.mkv"}, "/src/a.mkv", "hashA"),
+            self._history("2", None, {"path": "/dest/b.mkv"}, "/src/b.mkv", "hashB"),
+        ]
+        orch, _store, _deletes, _events, _hist_deletes = self._orch_clear()
+
+        orch.clear_transfer_src_histories(_sub(), histories)
+
+        assert any(
+            "源文件清理完成" in message
+            and "整理记录 2/2 条" in message
+            and "源文件 1/2 个" in message
+            and "下载记录通知 2/2 个" in message
+            for message in messages
+        )
+
+    def test_dest_history_clear_logs_final_summary(self, monkeypatch):
+        """媒体库目标文件清理完成后输出最终摘要，避免只有事前警示。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.best_version.orchestrator.logger.info", messages.append)
+        histories = [
+            {"dest_fileitem": {"path": "/dest/a.mkv"}},
+            {"dest_fileitem": None},
+        ]
+        orch, _store, _deletes, _events, _hist_deletes = self._orch_clear()
+
+        assert orch.clear_transfer_dest_histories({
+            "subscribe_desc": "测试剧",
+            "mode_label": "全集洗版",
+            "histories": histories,
+        }) is True
+
+        assert any(
+            "媒体库文件清理完成" in message
+            and "目标文件 1/2 个" in message
+            for message in messages
+        )
+
     def test_clear_type_no_skips(self):
         """清理范围为 no 时不触发任何破坏性历史清理。"""
         orch, store, deletes, _e, _h = self._orch_clear(clear_history_type="no")

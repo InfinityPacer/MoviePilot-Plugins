@@ -56,7 +56,7 @@ class PendingJudge:
             return True, f"集数不足（{ep_count} ≤ {pending_episodes}）"
 
         if self._config.pending_use_volatility and signal and not signal.stable:
-            return True, "total_episode 数据不稳定"
+            return True, "目标总集数近期变化"
 
         if episodes and not any(ep.air_date for ep in episodes):
             return True, "本季无任何 air_date 信息"

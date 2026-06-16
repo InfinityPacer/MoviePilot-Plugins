@@ -187,6 +187,11 @@ class DownloadMonitor:
             return
         visible_count = 0
         skipped_count = 0
+        missing_realtime_count = 0
+        no_present_check_count = 0
+        unknown_present_count = 0
+        present_exists_count = 0
+        pending_miss_count = 0
         cleanup_count = 0
         triggered_subscribe_ids = set()
         for torrent_hash, task in list(torrents.items()):
@@ -226,8 +231,17 @@ class DownloadMonitor:
                         )
                 continue
             # 拿不到实时状态时，只有下载器可达且连续确认种子不存在，才按用户手动删除处理。
+            missing_realtime_count += 1
+            if not self._present_fn:
+                no_present_check_count += 1
+                skipped_count += 1
+                continue
             present = self._present_fn(downloader, torrent_hash) if self._present_fn else None
             if present is not False:
+                if present is True:
+                    present_exists_count += 1
+                else:
+                    unknown_present_count += 1
                 skipped_count += 1
                 continue
             if not self._manual_delete_enabled:
@@ -236,6 +250,7 @@ class DownloadMonitor:
                 self._reset_missing(torrent_hash)
                 continue
             if self._bump_missing(torrent_hash) < self._manual_miss_threshold:
+                pending_miss_count += 1
                 skipped_count += 1
                 continue
             subscribe = self._resolve_subscribe(task.get("subscribe_id"))
@@ -252,10 +267,42 @@ class DownloadMonitor:
                 logger.info(f"下载监控：种子 {torrent_hash} 不在下载器中，将按失效下载任务清理")
                 self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
             self._reset_missing(torrent_hash)
+        skip_detail = self._format_skip_summary(
+            missing_realtime_count=missing_realtime_count,
+            no_present_check_count=no_present_check_count,
+            unknown_present_count=unknown_present_count,
+            present_exists_count=present_exists_count,
+            pending_miss_count=pending_miss_count,
+            skipped_count=skipped_count,
+        )
         detail(
             f"下载监控：本轮检查 {total} 个下载任务，下载器中仍存在 {visible_count} 个，"
-            f"因下载器状态不确定暂不处理 {skipped_count} 个，已处理删除 {cleanup_count} 个"
+            f"{skip_detail}，已处理删除 {cleanup_count} 个"
         )
+
+    @staticmethod
+    def _format_skip_summary(missing_realtime_count: int,
+                             no_present_check_count: int,
+                             unknown_present_count: int,
+                             present_exists_count: int,
+                             pending_miss_count: int,
+                             skipped_count: int) -> str:
+        """把保守跳过的下载任务拆成可诊断原因，便于区分连接失败和去抖保护。"""
+        if skipped_count <= 0:
+            return "暂不处理 0 个"
+        parts = [f"暂不处理 {skipped_count} 个"]
+        if missing_realtime_count:
+            parts.append(f"未取到实时任务信息 {missing_realtime_count} 个")
+        if no_present_check_count:
+            parts.append(f"缺少任务存在性确认能力 {no_present_check_count} 个")
+        if unknown_present_count:
+            parts.append(f"无法确认任务是否仍存在 {unknown_present_count} 个")
+        if present_exists_count:
+            parts.append(f"存在性确认仍在下载器中 {present_exists_count} 个")
+        if pending_miss_count:
+            parts.append(f"连续缺失未达阈值 {pending_miss_count} 个")
+        parts.append("建议检查下载器连接、下载器别名配置和本轮任务是否刚被客户端刷新")
+        return "，".join(parts)
 
     def _resolve_subscribe(self, subscribe_id):
         """按 subscribe_id 解析订阅对象，供删种善后与优先级回滚使用。"""
@@ -582,7 +629,7 @@ class DownloadMonitor:
         return result["state"]
 
     def get_timeout_reason(self, subscribe_id: int, torrent_task: dict, torrent_info: TorrentInfo) -> str:
-        """按旧版通知口径描述下载时长、观察窗口、进度增长和连续超时次数。"""
+        """描述下载时长、观察窗口、进度增长和连续超时次数。"""
         scope_key = self._timeout_scope_key(subscribe_id, torrent_task)
         subscribe_task = (self._read("subscribes") or {}).get(str(subscribe_id), {})
         timeout_state = (subscribe_task.get("timeout_states") or {}).get(scope_key, {})

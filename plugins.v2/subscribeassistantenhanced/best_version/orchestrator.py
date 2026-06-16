@@ -370,15 +370,37 @@ class BestVersionOrchestrator:
             f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}开始删除 "
             f"{len(histories)} 条旧整理记录的源文件（不可逆）"
         )
+        source_file_total = 0
+        source_file_deleted = 0
+        download_notice_total = 0
+        download_notice_sent = 0
+        history_delete_total = 0
+        history_deleted = 0
         for history in histories:
             src_fileitem = self._field(history, "src_fileitem")
+            if src_fileitem:
+                source_file_total += 1
             if src_fileitem and self._delete_media_file:
                 self._delete_media_file(src_fileitem)
+                source_file_deleted += 1
+            if self._field(history, "src") or self._field(history, "download_hash"):
+                download_notice_total += 1
             if self._send_dfd:
                 self._send_dfd(self._field(history, "src"), self._field(history, "download_hash"))
+                download_notice_sent += 1
             history_id = self._field(history, "id")
+            if history_id is not None:
+                history_delete_total += 1
             if history_id is not None and self._delete_history:
                 self._delete_history(history_id)
+                history_deleted += 1
+
+        logger.info(
+            f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}源文件清理完成，"
+            f"整理记录 {history_deleted}/{history_delete_total} 条，"
+            f"源文件 {source_file_deleted}/{len(histories)} 个，"
+            f"下载记录通知 {download_notice_sent}/{download_notice_total} 个"
+        )
 
         if self._notify:
             self._notify(
@@ -456,6 +478,14 @@ class BestVersionOrchestrator:
             dest_fileitem = history.get("dest_fileitem") if isinstance(history, dict) else None
             if dest_fileitem and self._delete_media_file:
                 self._delete_media_file(dest_fileitem)
+        dest_file_total = sum(
+            1 for history in histories
+            if isinstance(history, dict) and history.get("dest_fileitem")
+        )
+        logger.info(
+            f"洗版整理拦截：{(task or {}).get('subscribe_desc', '洗版订阅')} "
+            f"{mode_label}媒体库文件清理完成，目标文件 {dest_file_total}/{len(histories)} 个"
+        )
         if self._notify:
             self._notify(
                 f"{(task or {}).get('subscribe_desc', '洗版订阅')} 即将开始{mode_label}整理",

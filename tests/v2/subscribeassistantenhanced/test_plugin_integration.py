@@ -139,6 +139,33 @@ def test_episode_to_full_skipped_when_missing_episodes():
     conv.convert_to_full.assert_not_called()
 
 
+def test_best_version_check_logs_actionable_recognition_failure(monkeypatch):
+    """洗版巡检识别失败时给出订阅上下文和用户下一步。"""
+    messages = []
+    monkeypatch.setattr("subscribeassistantenhanced.detail", messages.append)
+    plugin = SubscribeAssistantEnhanced()
+    plugin._config = SimpleNamespace(best_version_type="all")
+    sub = _sub(id=42, name="识别失败剧", best_version=1, best_version_full=0,
+               tmdbid=100, season=1, type="电视剧")
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=None)
+    plugin._modules = {
+        "orchestrator": MagicMock(),
+        "priority_manager": MagicMock(),
+    }
+
+    plugin.run_best_version_check()
+
+    assert any(
+        "媒体识别失败" in message
+        and "订阅ID：42" in message
+        and "TMDB：100" in message
+        and "建议检查订阅名称、年份、TMDB ID、媒体类型和季号" in message
+        for message in messages
+    )
+
+
 def test_episode_to_full_skips_when_missing_info_uses_relative_episode_numbers(monkeypatch):
     """媒体库缺集返回相对集号时，绝对集号订阅不能被误判为已全覆盖。"""
     sub = _sub(

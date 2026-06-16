@@ -36,14 +36,15 @@ def evaluate(subscribe, mediainfo,
     # 2. 集数稳定性（F）：total_episode 仍在变化时拒绝提前完结。
     if config.volatility_enabled and subscribe_id is not None:
         if not volatility_tracker.is_stable(subscribe=subscribe):
+            unstable_reason = f"目标总集数最近 {config.volatility_window_days} 天发生变化"
             detail(
                 f"信号引擎[集数稳定性（F）]：{subscribe_label} 否决完结，"
-                f"原因：total_episode 近 {config.volatility_window_days} 天内变动"
+                f"原因：{unstable_reason}"
             )
             return _attach_scope_total(CompletionSignal(
                 completed=False, stable=False,
                 signals=["F:unstable"],
-                reason=f"total_episode 近 {config.volatility_window_days} 天内变动",
+                reason=unstable_reason,
             ), scope)
 
     # 3. 剧级完结（E）：剧级状态或 finale 可提供强完结信号。

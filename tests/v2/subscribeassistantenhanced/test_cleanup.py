@@ -170,8 +170,8 @@ class TestHandleTorrentDeleted:
         assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_manual_review_notification_keeps_torrent(self):
-        """连续超时达到上限时保留种子，并按旧版口径通知人工处理。"""
-        store = {"torrents": {"h1": {"hash": "h1", "title": "测试种子"}}}
+        """连续超时达到上限时保留种子，并通知人工处理。"""
+        store = {"torrents": {"h1": {"hash": "h1", "title": "测试种子", "description": "测试内容"}}}
         notify = MagicMock()
 
         c = TorrentCleanup(

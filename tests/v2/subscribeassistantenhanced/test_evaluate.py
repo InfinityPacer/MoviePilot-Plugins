@@ -85,6 +85,8 @@ class TestEvaluatePipeline:
         assert sig.completed is False
         assert sig.stable is False
         assert "F:unstable" in sig.signals
+        assert sig.reason == "目标总集数最近 7 天发生变化"
+        assert "total_episode" not in sig.reason
 
     def test_e_ended_releases(self):
         """E：status=Ended → 高置信度放行。"""

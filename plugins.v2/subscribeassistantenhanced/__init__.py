@@ -71,7 +71,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.2.8"
+    plugin_version = "0.2.9"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -602,7 +602,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}优先级达标且缺集已补齐，判定洗版完成")
                     priority.mark_complete(subscribe)
             else:
-                detail(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}媒体识别失败，本轮跳过")
+                detail(
+                    f"洗版巡检：{format_subscribe(subscribe)} {mode_label}媒体识别失败，本轮跳过；"
+                    f"订阅ID：{subscribe.id}，TMDB：{subscribe.tmdbid or '未设置'}，"
+                    f"媒体类型：{subscribe.type or '未设置'}，季号：{subscribe.season if subscribe.season is not None else '未设置'}；"
+                    f"建议检查订阅名称、年份、TMDB ID、媒体类型和季号"
+                )
 
     @staticmethod
     def _best_version_mode_label(subscribe) -> str:
@@ -1471,7 +1476,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @staticmethod
     def _get_subscribe_image(subscribe):
-        """按旧版优先级返回订阅背景图或海报的 w500 地址。"""
+        """优先返回订阅背景图，其次返回海报的 w500 地址。"""
         if subscribe.backdrop:
             return subscribe.backdrop.replace("original", "w500")
         if subscribe.poster:
