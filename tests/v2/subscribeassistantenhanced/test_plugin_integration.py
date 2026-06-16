@@ -272,7 +272,7 @@ def test_best_version_check_keeps_subscription_with_recent_activity():
     plugin.init_plugin({"best_version_type": "all", "best_version_remaining_days": 3})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
     plugin._task_manager.read = MagicMock(side_effect=lambda key: {
         "torrents": {"hash": {"subscribe_id": 5, "time": now - 86400}},
         "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
@@ -327,11 +327,27 @@ def test_common_check_service_registered():
 
 def test_run_meta_check_reevaluates_pending_subscriptions():
     sub = _sub(id=7, state="P", name="X")
+    data_store = {
+        "subscribes": {
+            "7": {
+                "state": "P",
+                "source": "pending_judge",
+                "pending_sources": {"pending_judge": {"reason": "集数不足"}},
+            }
+        },
+        "blocks": {},
+    }
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._modules["pending_state"]._read = plugin._task_manager.read
+    plugin._modules["pending_state"]._update = plugin._task_manager.update
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
     judge = plugin._modules["pending_judge"]
     judge.check_exit = MagicMock(return_value=True)
     plugin.run_meta_check()
@@ -557,6 +573,57 @@ def test_run_meta_check_does_not_resume_manual_pause_without_plugin_record():
     pause_manager.clear_pause_record.assert_not_called()
 
 
+def test_run_meta_check_keeps_manual_s_even_with_pending_record():
+    """手工 S 优先级最高；即使残留待定记录存在，元数据巡检也不能恢复或重置为 P。"""
+    sub = _sub(id=3, state="S", name="X", best_version=0, type="电影", season=0)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    data_store = {
+        "subscribes": {
+            "3": {
+                "state": "P",
+                "source": "pending_judge",
+                "pending_sources": {"pending_judge": {"reason": "集数不足"}},
+            }
+        }
+    }
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._modules["pending_state"]._read = plugin._task_manager.read
+    plugin._modules["pending_state"]._update = plugin._task_manager.update
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=SimpleNamespace(value="电影"),
+        release_date="2026-01-01",
+    ))
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(return_value=None)
+    pause_manager.resume = MagicMock()
+    pause_manager.pause = MagicMock()
+    pause_manager.clear_pause_record = MagicMock()
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+    judge = plugin._modules["pending_judge"]
+    judge.check_exit = MagicMock()
+    judge.mark_pending = MagicMock()
+
+    plugin.run_meta_check()
+
+    plugin._subscribe_oper.update.assert_not_called()
+    pause_manager.resume.assert_not_called()
+    pause_manager.pause.assert_not_called()
+    pause_manager.clear_pause_record.assert_not_called()
+    judge.check_exit.assert_not_called()
+    judge.mark_pending.assert_not_called()
+
+
 def test_run_meta_check_queries_paused_airing_subscriptions_for_resume():
     """元数据巡检必须扫描 S 态上映/播出暂停订阅，否则条件解除后无法自动恢复。"""
     plugin = SubscribeAssistantEnhanced()
@@ -663,40 +730,91 @@ def test_run_meta_check_marks_pending_when_should_enter_pending():
 
 
 def test_run_meta_check_check_exit_called_for_p_state_sub():
-    """P 状态订阅在巡检中仍调用 check_exit，避免被暂停分支覆盖。"""
+    """P 状态订阅在巡检中仍先调用 check_exit。"""
     sub = _sub(id=7, state="P", name="X", best_version=0)
+    data_store = {
+        "subscribes": {
+            "7": {
+                "state": "P",
+                "source": "pending_judge",
+                "pending_sources": {"pending_judge": {"reason": "集数不足"}},
+            }
+        },
+        "blocks": {},
+    }
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._modules["pending_state"]._read = plugin._task_manager.read
+    plugin._modules["pending_state"]._update = plugin._task_manager.update
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
 
     judge = plugin._modules["pending_judge"]
     judge.check_exit = MagicMock(return_value=False)
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+    plugin._evaluate_fn = MagicMock(return_value=None)
 
     plugin.run_meta_check()
 
     judge.check_exit.assert_called_once()
 
 
-def test_run_meta_check_p_state_skips_pre_air_pause():
-    """P 状态由待定域负责退出，默认上映前暂停不能覆盖成 S。"""
+def test_run_meta_check_p_state_allows_pre_air_pause_to_override_pending():
+    """插件暂停优先级高于待定，P 状态命中上映暂停时应覆盖为 S。"""
+    from subscribeassistantenhanced.engine.types import PauseRecord
+
     sub = _sub(id=7, state="P", name="X", best_version=0)
+    data_store = {
+        "subscribes": {
+            "7": {
+                "state": "P",
+                "source": "pending_judge",
+                "pending_sources": {"pending_judge": {"reason": "集数不足"}},
+            }
+        }
+    }
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True, "notify": False})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._modules["pending_state"]._read = plugin._task_manager.read
+    plugin._modules["pending_state"]._update = plugin._task_manager.update
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, title_year="X (2026)"))
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
 
     judge = plugin._modules["pending_judge"]
     judge.check_exit = MagicMock(return_value=False)
     pause_manager = plugin._modules["pause_manager"]
-    pause_manager.pause = MagicMock()
+    pause_manager._read = plugin._task_manager.read
+    pause_manager._update = plugin._task_manager.update
+    pause_manager._subscribe_oper = plugin._subscribe_oper
+    pause_manager._notify = None
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(
+        return_value=PauseRecord(reason="pre_air", since=0.0, detail="未上映")
+    )
 
     plugin.run_meta_check()
 
     judge.check_exit.assert_called_once()
-    pause_manager.pause.assert_not_called()
+    updates = [call.args[1]["state"] for call in plugin._subscribe_oper.update.call_args_list]
+    assert updates == ["S"]
+    task = data_store["subscribes"]["7"]
+    assert task["state"] == "S"
+    assert task["pending_sources"] == {}
+    assert task["pause_reason"] == "pre_air"
 
 
 def test_run_all_checks_skips_verify_when_disabled():
@@ -809,11 +927,24 @@ def test_onlyonce_registers_one_shot_and_resets_flag():
     plugin.update_config.assert_called()
 
 
-def test_reset_task_restores_owned_pending_before_clearing_data(monkeypatch):
-    """重置插件数据前必须恢复由增强版持有的待定订阅。"""
-    sub = _sub(id=7, state="P")
+def test_reset_task_restores_plugin_owned_p_and_s_before_clearing_data(monkeypatch):
+    """插件内重置数据前必须恢复增强版持有的 P/S 状态。"""
+    pending_sub = _sub(id=7, state="P")
+    paused_sub = _sub(id=8, state="S")
+    manual_paused_sub = _sub(id=9, state="S")
+    auto_user_paused_sub = _sub(id=10, state="S")
     subscribe_oper = MagicMock()
-    subscribe_oper.list.return_value = [sub]
+
+    def list_subscribes(*_args, **kwargs):
+        state = kwargs.get("state", "")
+        result = []
+        if "P" in state:
+            result.append(pending_sub)
+        if "S" in state:
+            result.extend([paused_sub, manual_paused_sub, auto_user_paused_sub])
+        return result
+
+    subscribe_oper.list.side_effect = list_subscribes
     monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
 
     data_store = {
@@ -822,7 +953,17 @@ def test_reset_task_restores_owned_pending_before_clearing_data(monkeypatch):
                 "state": "P",
                 "source": "pending_judge",
                 "pending_sources": {"pending_judge": {"reason": "集数不足"}},
-            }
+            },
+            "8": {
+                "pause_reason": "airing_gap",
+                "pause_since": 1.0,
+                "pause_detail": "下一集 2026-06-21",
+            },
+            "10": {
+                "pause_reason": "auto_user",
+                "pause_since": 1.0,
+                "pause_detail": "用户 A 的订阅自动暂停",
+            },
         }
     }
     plugin = SubscribeAssistantEnhanced()
@@ -832,9 +973,8 @@ def test_reset_task_restores_owned_pending_before_clearing_data(monkeypatch):
 
     plugin.init_plugin({"reset_task": True})
 
-    subscribe_oper.update.assert_called_once()
-    assert subscribe_oper.update.call_args.args[0] == 7
-    assert subscribe_oper.update.call_args.args[1]["state"] == "R"
+    updates = {call.args[0]: call.args[1]["state"] for call in subscribe_oper.update.call_args_list}
+    assert updates == {7: "R", 8: "R"}
     cleared = {c.args[0] for c in plugin.save_data.call_args_list}
     assert {"subscribes", "torrents", "blocks", "releases", "snapshots", "deletes", "volatility"} <= cleared
     plugin.update_config.assert_called()
@@ -871,8 +1011,8 @@ def test_pending_state_reconcile_restores_owned_p_without_sources():
     assert data_store["subscribes"]["7"]["state"] == "R"
 
 
-def test_pending_state_reconcile_keeps_unowned_and_guarded_p():
-    """无增强版归属或仍有完成守卫记录的 P 状态不得被自愈覆盖。"""
+def test_pending_state_reconcile_restores_unowned_p_and_keeps_guarded_p():
+    """无插件记录的 P 默认由增强版接管自愈；仍有完成守卫记录的 P 不恢复。"""
     unowned = _sub(id=7, state="P")
     guarded = _sub(id=8, state="P")
     data_store = {
@@ -897,7 +1037,98 @@ def test_pending_state_reconcile_keeps_unowned_and_guarded_p():
 
     plugin.run_pending_state_reconcile()
 
-    plugin._subscribe_oper.update.assert_not_called()
+    plugin._subscribe_oper.update.assert_called_once()
+    assert plugin._subscribe_oper.update.call_args.args[0] == 7
+    assert plugin._subscribe_oper.update.call_args.args[1]["state"] == "R"
+    assert "7" in data_store["subscribes"]
+    assert data_store["subscribes"]["7"]["state"] == "R"
+    assert data_store["subscribes"]["8"]["state"] == "P"
+
+
+def test_external_plugin_data_reset_restores_p_but_keeps_s_untouched():
+    """主程序直接清空插件数据后，P 可自愈；S 因无归属证据按手工暂停保留。"""
+    pending = _sub(id=7, state="P")
+    paused = _sub(id=8, state="S")
+    data_store = {"subscribes": {}, "blocks": {}}
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.side_effect = lambda **kwargs: [pending] if kwargs.get("state") == "P" else [paused]
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+
+    plugin.run_pending_state_reconcile()
+    plugin.run_meta_check()
+
+    plugin._subscribe_oper.update.assert_called_once()
+    assert plugin._subscribe_oper.update.call_args.args[0] == 7
+    assert plugin._subscribe_oper.update.call_args.args[1]["state"] == "R"
+
+
+def test_run_meta_check_restores_unowned_p_before_pre_air_pause():
+    """主程序清空插件数据后，即使元数据巡检先跑，也必须先自愈无记录 P。"""
+    pending = _sub(id=7, state="P", type="电影", season=0)
+    data_store = {"subscribes": {}, "blocks": {}}
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [pending]
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo(type=SimpleNamespace(value="电影")))
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+    plugin._modules["pending_state"]._read = plugin._task_manager.read
+    plugin._modules["pending_state"]._update = plugin._task_manager.update
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=PauseRecord(reason="pre_air", since=0.0, detail="未上映"))
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.pause = MagicMock()
+
+    plugin.run_meta_check()
+
+    plugin._subscribe_oper.update.assert_called_once()
+    assert plugin._subscribe_oper.update.call_args.args[0] == 7
+    assert plugin._subscribe_oper.update.call_args.args[1]["state"] == "R"
+    pause_manager.pause.assert_not_called()
+    plugin._recognize_mediainfo.assert_not_called()
+
+
+def test_run_meta_check_restores_unowned_p_when_pending_disabled():
+    """无记录 P 自愈是状态一致性修复，不受自动待定开关影响。"""
+    pending = _sub(id=7, state="P", type="电影", season=0)
+    data_store = {"subscribes": {}, "blocks": {}}
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [pending]
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo(type=SimpleNamespace(value="电影")))
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+    plugin._modules["pending_state"]._read = plugin._task_manager.read
+    plugin._modules["pending_state"]._update = plugin._task_manager.update
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=PauseRecord(reason="pre_air", since=0.0, detail="未上映"))
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.pause = MagicMock()
+
+    plugin.run_meta_check()
+
+    plugin._subscribe_oper.update.assert_called_once()
+    assert plugin._subscribe_oper.update.call_args.args[1]["state"] == "R"
+    pause_manager.pause.assert_not_called()
+    plugin._recognize_mediainfo.assert_not_called()
 
 
 def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(monkeypatch):
