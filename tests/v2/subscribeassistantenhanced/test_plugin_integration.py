@@ -1012,7 +1012,7 @@ def test_pending_state_reconcile_restores_owned_p_without_sources():
 
 
 def test_pending_state_reconcile_restores_unowned_p_and_keeps_guarded_p():
-    """无插件记录的 P 默认由增强版接管自愈；仍有完成守卫记录的 P 不恢复。"""
+    """无插件记录的 P 默认由增强版接管恢复；仍有完成守卫记录的 P 不恢复。"""
     unowned = _sub(id=7, state="P")
     guarded = _sub(id=8, state="P")
     data_store = {
@@ -1046,7 +1046,7 @@ def test_pending_state_reconcile_restores_unowned_p_and_keeps_guarded_p():
 
 
 def test_external_plugin_data_reset_restores_p_but_keeps_s_untouched():
-    """主程序直接清空插件数据后，P 可自愈；S 因无归属证据按手工暂停保留。"""
+    """主程序直接清空插件数据后，P 可自动恢复；S 因无归属证据按手工暂停保留。"""
     pending = _sub(id=7, state="P")
     paused = _sub(id=8, state="S")
     data_store = {"subscribes": {}, "blocks": {}}
@@ -1069,7 +1069,7 @@ def test_external_plugin_data_reset_restores_p_but_keeps_s_untouched():
 
 
 def test_run_meta_check_restores_unowned_p_before_pre_air_pause():
-    """主程序清空插件数据后，即使元数据巡检先跑，也必须先自愈无记录 P。"""
+    """主程序清空插件数据后，即使元数据巡检先跑，也必须先恢复无记录 P。"""
     pending = _sub(id=7, state="P", type="电影", season=0)
     data_store = {"subscribes": {}, "blocks": {}}
     plugin = SubscribeAssistantEnhanced()
@@ -1101,7 +1101,7 @@ def test_run_meta_check_restores_unowned_p_before_pre_air_pause():
 
 
 def test_run_meta_check_restores_unowned_p_when_pending_disabled():
-    """无记录 P 自愈是状态一致性修复，不受自动待定开关影响。"""
+    """无记录 P 恢复是状态一致性修复，不受自动待定开关影响。"""
     pending = _sub(id=7, state="P", type="电影", season=0)
     data_store = {"subscribes": {}, "blocks": {}}
     plugin = SubscribeAssistantEnhanced()
