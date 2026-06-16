@@ -71,7 +71,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.3.0"
+    plugin_version = "0.3.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -467,16 +467,27 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     def _reset_task_data(self):
         """先恢复增强版持有的订阅状态，再清空全部插件任务数据。"""
+        recovered_pending = []
+        recovered_paused = []
         pending_state = self._modules.get("pending_state")
         if pending_state and self._subscribe_oper:
             for subscribe in (self._subscribe_oper.list(state="P") or []):
-                pending_state.clear_all_owned(subscribe, reason="插件任务重置")
+                if pending_state.clear_all_owned(subscribe, reason="插件任务重置"):
+                    recovered_pending.append(format_subscribe(subscribe))
         pause_manager = self._modules.get("pause_manager")
         if pause_manager and self._subscribe_oper:
             for subscribe in (self._subscribe_oper.list(state="S") or []):
                 record = pause_manager.get_pause_record(subscribe)
                 if record and record.reason in ("pre_air", "airing_gap"):
-                    pause_manager.resume(subscribe, notify=False)
+                    if pause_manager.resume(subscribe, notify=False):
+                        recovered_paused.append(format_subscribe(subscribe))
+        recovered_count = len(recovered_pending) + len(recovered_paused)
+        if recovered_count:
+            summary = self._format_reset_recovery_summary(recovered_pending, recovered_paused)
+            logger.info(f"重置任务：数据清空前已恢复 {recovered_count} 个订阅状态；{summary}")
+            self._notify_subscribe("订阅助手数据重置前已恢复订阅状态", text=summary)
+        else:
+            logger.info("重置任务：数据清空前未发现需要恢复的订阅状态")
         for key in [
             "subscribes",
             "torrents",
@@ -489,6 +500,16 @@ class SubscribeAssistantEnhanced(_PluginBase):
         ]:
             self.save_data(key, {})
         logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、洗版清理记录）")
+
+    @staticmethod
+    def _format_reset_recovery_summary(recovered_pending: List[str], recovered_paused: List[str]) -> str:
+        """生成插件任务数据重置前的订阅状态恢复汇总。"""
+        lines = []
+        if recovered_pending:
+            lines.append(f"已将 {len(recovered_pending)} 个待定订阅恢复为启用：" + "、".join(recovered_pending))
+        if recovered_paused:
+            lines.append(f"已将 {len(recovered_paused)} 个自动暂停订阅恢复为启用：" + "、".join(recovered_paused))
+        return "\n".join(lines)
 
     def _run_backfill_now(self):
         """对现有洗版订阅执行一次按集回填，并推送扫描结果汇总。"""
@@ -663,7 +684,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 sid = str(subscribe.id)
                 has_active_download = bool(download_monitor and download_monitor.has_active_downloads(subscribe.id))
                 if not has_active_download and not pending_state.has_active(subscribe.id) and sid not in blocks:
-                    if pending_state.reconcile_orphaned(subscribe, reason="无有效待定来源，状态自愈"):
+                    if pending_state.reconcile_orphaned(subscribe, reason="无有效待定来源，状态恢复"):
                         continue
 
             mediainfo = self._recognize_mediainfo(subscribe)
@@ -807,7 +828,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 continue
             pending_state.reconcile_orphaned(
                 subscribe,
-                reason="无有效待定来源，状态自愈",
+                reason="无有效待定来源，状态恢复",
             )
 
     def run_common_check(self):
@@ -1123,6 +1144,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """插件命令 → /subscribe_toggle 切换订阅状态。"""
         if self._event_proxy:
             self._event_proxy.on_plugin_action(event)
+
+    @eventmanager.register(ChainEventType.PluginDataReset)
+    def on_plugin_data_reset(self, event):
+        """插件数据重置前 → 恢复增强版持有的订阅状态。"""
+        event_data = event.event_data
+        if not event_data or event_data.plugin_id != self.__class__.__name__ or not event_data.reset_data:
+            return
+        self._reset_task_data()
 
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:

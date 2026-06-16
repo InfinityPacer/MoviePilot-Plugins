@@ -7,9 +7,14 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from app.core.event import eventmanager
+from app.core.event import Event
 from app.plugins import _PluginBase
+from app.schemas.event import PluginDataResetEventData
+from app.schemas.types import ChainEventType
 
+import subscribeassistantenhanced as plugin_module
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
+from subscribeassistantenhanced.shared.config import PluginConfig
 from subscribeassistantenhanced.shared.subscribe import subscribe_from_source
 
 # 12 个事件处理器必须定义在插件类上（主程序按 __qualname__ 首段解析运行实例分发）
@@ -18,6 +23,7 @@ _EVENT_HANDLERS = (
     "on_subscribe_deleted", "on_subscribe_modified", "on_subscribe_complete",
     "on_download_added", "on_transfer_complete", "on_resource_selection",
     "on_resource_download", "on_transfer_intercept", "on_plugin_action",
+    "on_plugin_data_reset",
 )
 
 
@@ -97,9 +103,94 @@ class TestEventRegistration:
         """装饰器在导入期把 handler 注册进 eventmanager（按 module.Class.method 标识）。"""
         identifiers = {h["handler_identifier"] for h in eventmanager.visualize_handlers()}
         for name in ("on_subscribe_added", "on_episodes_refresh", "on_resource_download",
-                     "on_transfer_intercept", "on_plugin_action"):
+                     "on_transfer_intercept", "on_plugin_action", "on_plugin_data_reset"):
             assert any(f"SubscribeAssistantEnhanced.{name}" in ident for ident in identifiers), \
                 f"事件处理器 {name} 未注册到 eventmanager"
+
+    def test_plugin_data_reset_event_runs_pre_clear_recovery(self, monkeypatch):
+        """主程序清空插件数据前会调用现有任务重置逻辑恢复订阅状态。"""
+        plugin = SubscribeAssistantEnhanced()
+        reset_task_data = MagicMock()
+        monkeypatch.setattr(plugin, "_reset_task_data", reset_task_data)
+        plugin._event_proxy = MagicMock()
+        event = Event(
+            ChainEventType.PluginDataReset,
+            PluginDataResetEventData(plugin_id="SubscribeAssistantEnhanced", reset_data=True),
+        )
+
+        plugin.on_plugin_data_reset(event)
+
+        reset_task_data.assert_called_once_with()
+        plugin._event_proxy.assert_not_called()
+
+    def test_plugin_data_reset_event_ignores_other_plugins(self, monkeypatch):
+        """只处理自身插件数据重置事件，避免其他插件重置时误清本插件任务。"""
+        plugin = SubscribeAssistantEnhanced()
+        reset_task_data = MagicMock()
+        monkeypatch.setattr(plugin, "_reset_task_data", reset_task_data)
+        event = Event(
+            ChainEventType.PluginDataReset,
+            PluginDataResetEventData(plugin_id="OtherPlugin", reset_data=True),
+        )
+
+        plugin.on_plugin_data_reset(event)
+
+        reset_task_data.assert_not_called()
+
+    def test_plugin_data_reset_event_notifies_recovery_summary_when_notify_enabled(self, monkeypatch):
+        """重置前恢复了待定/暂停状态时，按通知开关推送汇总。"""
+        pending_sub = SimpleNamespace(id=1, name="待定剧", season=1, state="P")
+        paused_sub = SimpleNamespace(id=2, name="暂停剧", season=2, state="S")
+        plugin = SubscribeAssistantEnhanced()
+        plugin._config = PluginConfig({"notify": True})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.side_effect = [[pending_sub], [paused_sub]]
+        pending_state = MagicMock()
+        pending_state.clear_all_owned.return_value = True
+        pause_manager = MagicMock()
+        pause_manager.get_pause_record.return_value = SimpleNamespace(reason="pre_air")
+        pause_manager.resume.return_value = True
+        plugin._modules = {"pending_state": pending_state, "pause_manager": pause_manager}
+        plugin._notify_subscribe = MagicMock()
+        saved = {}
+        monkeypatch.setattr(plugin, "save_data", lambda key, value: saved.__setitem__(key, value))
+
+        plugin.on_plugin_data_reset(Event(
+            ChainEventType.PluginDataReset,
+            PluginDataResetEventData(plugin_id="SubscribeAssistantEnhanced", reset_data=True),
+        ))
+
+        pending_state.clear_all_owned.assert_called_once_with(pending_sub, reason="插件任务重置")
+        pause_manager.resume.assert_called_once_with(paused_sub, notify=False)
+        plugin._notify_subscribe.assert_called_once()
+        kwargs = plugin._notify_subscribe.call_args.kwargs
+        assert plugin._notify_subscribe.call_args.args[0] == "订阅助手数据重置前已恢复订阅状态"
+        assert "已将 1 个待定订阅恢复为启用：待定剧 S1" in kwargs["text"]
+        assert "已将 1 个自动暂停订阅恢复为启用：暂停剧 S2" in kwargs["text"]
+        assert set(saved) == {
+            "subscribes", "torrents", "blocks", "releases", "snapshots",
+            "deletes", "volatility", "best_version_clear_histories",
+        }
+
+    def test_plugin_data_reset_event_logs_without_notify_when_nothing_recovered(self, monkeypatch):
+        """重置前没有恢复任何状态时只记录日志，不发送通知。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin._config = PluginConfig({"notify": True})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.side_effect = [[], []]
+        plugin._modules = {"pending_state": MagicMock(), "pause_manager": MagicMock()}
+        plugin._notify_subscribe = MagicMock()
+        logger_info = MagicMock()
+        monkeypatch.setattr(plugin_module.logger, "info", logger_info)
+        monkeypatch.setattr(plugin, "save_data", lambda key, value: None)
+
+        plugin.on_plugin_data_reset(Event(
+            ChainEventType.PluginDataReset,
+            PluginDataResetEventData(plugin_id="SubscribeAssistantEnhanced", reset_data=True),
+        ))
+
+        plugin._notify_subscribe.assert_not_called()
+        assert any("未发现需要恢复的订阅状态" in call.args[0] for call in logger_info.call_args_list)
 
 
 class TestScheduler:
