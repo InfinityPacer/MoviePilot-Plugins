@@ -511,9 +511,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
         )
         self._notify_subscribe(
-            "【订阅助手】洗版订阅按集优先级回填",
-            f"扫描 {results['scanned']} 个订阅，成功回填 {results['updated']} 个，"
-            f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集",
+            "洗版订阅按集优先级回填",
+            action=(
+                f"扫描 {results['scanned']} 个订阅，成功回填 {results['updated']} 个，"
+                f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
+            ),
         )
 
     def run_download_timeout_check(self):
@@ -989,19 +991,28 @@ class SubscribeAssistantEnhanced(_PluginBase):
             )
             subscribe_id = subscribe.id
             if action == "pause":
-                logger.info(f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) 上映后超期且无下载，暂停订阅")
+                logger.info(
+                    f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
+                    "原因=上映后超期且无下载，处理=暂停订阅"
+                )
                 pause_manager.pause(subscribe, PauseRecord(
                     reason="no_download",
                     since=time.time(),
                     detail="上映后超期且无下载",
                 ))
             elif action == "complete":
-                logger.info(f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) 上映后超期且无下载，写入完成历史并删除订阅")
+                logger.info(
+                    f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
+                    "原因=上映后超期且无下载，处理=写入完成历史并删除订阅"
+                )
                 payload = subscribe.to_dict()
                 self._subscribe_oper.add_history(**payload)
                 self._subscribe_oper.delete(subscribe_id)
             elif action == "delete":
-                logger.info(f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) 上映后超期且无下载，删除订阅")
+                logger.info(
+                    f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
+                    "原因=上映后超期且无下载，处理=删除订阅"
+                )
                 self._subscribe_oper.delete(subscribe_id)
             else:
                 continue
@@ -1432,14 +1443,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         action_name = {"pause": "暂停", "complete": "完成", "delete": "删除"}.get(action, action)
         days = self._config.tv_no_download_days if subscribe.type == "电视剧" else self._config.movie_no_download_days
         title = f"{self._format_subscribe_desc(subscribe, mediainfo)} 近 {days} 天未有下载记录，已标记{action_name}"
-        text_parts = []
-        if mediainfo.vote_average:
-            text_parts.append(f"评分：{mediainfo.vote_average}")
-        if subscribe.username:
-            text_parts.append(f"来自用户：{subscribe.username}")
         self._notify_subscribe(
             title,
-            "，".join(text_parts) if text_parts else None,
+            score=mediainfo.vote_average,
+            user=subscribe.username,
+            reason="上映后超期且无下载",
             image=mediainfo.get_message_image(),
             link="#/subscribe/tv?tab=mysub" if subscribe.type == "电视剧" else "#/subscribe/movie?tab=mysub",
         )
@@ -1449,30 +1457,64 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """发送订阅状态变更通知，沿用状态类消息的标题和正文结构。"""
         mediainfo = mediainfo or self._recognize_mediainfo(subscribe)
         title = f"{self._format_subscribe_desc(subscribe, mediainfo)} {title_suffix}"
-        text_parts = []
-        if mediainfo and mediainfo.vote_average:
-            text_parts.append(f"评分：{mediainfo.vote_average}")
-        if subscribe.username:
-            text_parts.append(f"来自用户：{subscribe.username}")
-        if detail:
-            text_parts.append(detail)
         media_type = mediainfo.type.value if mediainfo else subscribe.type
         self._notify_subscribe(
             title,
-            "，".join(text_parts) if text_parts else None,
+            score=mediainfo.vote_average if mediainfo else None,
+            user=subscribe.username,
+            reason=detail,
             image=mediainfo.get_message_image() if mediainfo else None,
             link="#/subscribe/tv?tab=mysub" if media_type == "电视剧" else "#/subscribe/movie?tab=mysub",
         )
 
-    def _notify_subscribe(self, title, text=None, image=None, link=None):
-        """按通知开关发送订阅类通知（洗版清理等场景）。"""
+    def _notify_subscribe(self, title, text=None, image=None, link=None,
+                          score=None, user=None, reason=None, action=None,
+                          follow_up=None, next_step=None, diagnostic: bool = False):
+        """按通知开关发送订阅卡片，并统一正文字段顺序。
+
+        状态结果使用单行字段，诊断明细使用多行字段；没有值的字段不输出。
+        """
         if not self._config or not self._config.notify:
             return
         from app.schemas import NotificationType
         from app.core.config import settings
         if link and link.startswith("#"):
             link = settings.MP_DOMAIN(link)
+        text = self._format_notification_text(
+            text=text,
+            score=score,
+            user=user,
+            reason=reason,
+            action=action,
+            follow_up=follow_up if follow_up is not None else next_step,
+            diagnostic=diagnostic,
+        )
+        image = image or self.plugin_icon
         self.post_message(mtype=NotificationType.Subscribe, title=title, text=text, image=image, link=link)
+
+    @staticmethod
+    def _format_notification_text(text=None, score=None, user=None, reason=None,
+                                  action=None, follow_up=None, diagnostic: bool = False):
+        """按评分、用户、原因、处理、后续顺序生成通知正文。"""
+        fields = [
+            ("评分", score),
+            ("用户", user),
+            ("原因", reason),
+            ("处理", action),
+            ("后续", follow_up),
+        ]
+        parts = []
+        if text not in (None, ""):
+            parts.append(str(text))
+        parts.extend([
+            f"{label}：{str(value).replace(chr(10), '；')}"
+            for label, value in fields
+            if value not in (None, "")
+        ])
+        if not parts:
+            return text
+        separator = "\n" if diagnostic else "，"
+        return separator.join(parts)
 
     @staticmethod
     def _get_subscribe_image(subscribe):

@@ -130,22 +130,30 @@ class BestVersionOrchestrator:
         sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
             mode_label = "电影洗版" if is_movie else "全集洗版"
-            logger.info(f"洗版编排：{format_subscribe_desc(subscribe)} 已创建{mode_label}订阅（id={sid}）")
+            logger.info(
+                f"洗版编排：{format_subscribe_desc(subscribe)} "
+                f"原因=订阅完成，处理=已创建{mode_label}订阅（id={sid}）"
+            )
             if self._send_subscribe_added:
                 self._send_subscribe_added(sid, mediainfo, username=self._plugin_name)
             if self._notify:
-                text = f"评分：{mediainfo.vote_average}，来自用户：{self._plugin_name}"
                 self._notify(
                     f"{format_subscribe_desc(subscribe)} 已添加{mode_label}订阅",
-                    text,
+                    score=mediainfo.vote_average,
+                    user=self._plugin_name,
                     image=mediainfo.get_message_image(),
                     link="#/subscribe/movie?tab=mysub" if is_movie else "#/subscribe/tv?tab=mysub",
                 )
         elif self._notify:
-            logger.error(f"洗版编排：{format_subscribe_desc(subscribe)} 添加洗版订阅失败：{err_msg}")
+            logger.error(
+                f"洗版编排：{format_subscribe_desc(subscribe)} "
+                f"原因=添加洗版订阅失败，处理=请检查订阅创建错误，错误={err_msg}"
+            )
             self._notify(
-                f"{format_subscribe_desc(subscribe)} 添加洗版订阅失败！",
-                err_msg,
+                f"{format_subscribe_desc(subscribe)} 添加洗版订阅失败",
+                reason=err_msg,
+                follow_up="请检查订阅创建错误",
+                diagnostic=True,
                 image=mediainfo.get_message_image(),
             )
         return sid
@@ -257,16 +265,21 @@ class BestVersionOrchestrator:
         actual_desc = StringUtils.format_ep(actual_episodes) if actual_episodes else "未知"
         source_desc = source or "未知来源"
         logger.warning(
-            f"洗版清理：{format_subscribe_desc(subscribe)} 当前全集资源未覆盖订阅目标范围，"
-            f"跳过旧整理记录清理；目标集数={target_desc}，资源集数={actual_desc}，"
-            f"来源={source_desc}，种子={torrent_title}"
+            f"洗版清理：{format_subscribe_desc(subscribe)} "
+            f"原因=全集资源未覆盖订阅目标范围（目标集数={target_desc}，资源集数={actual_desc}，"
+            f"来源={source_desc}，种子={torrent_title}），处理=已跳过历史清理，后续=请人工核对资源覆盖范围"
         )
         if self._notify:
             image = self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
             self._notify(
                 f"{format_subscribe_desc(subscribe)} 洗版资源未覆盖目标范围，已跳过历史清理",
-                f"目标集数：{target_desc}\n资源集数：{actual_desc}\n"
-                f"来源：{source_desc}\n种子：{torrent_title}",
+                text=(
+                    f"目标集数：{target_desc}\n"
+                    f"资源集数：{actual_desc}\n"
+                    f"种子：{torrent_title}"
+                ),
+                follow_up="请人工核对资源覆盖范围",
+                diagnostic=True,
                 image=image,
             )
 
@@ -404,8 +417,8 @@ class BestVersionOrchestrator:
 
         if self._notify:
             self._notify(
-                f"{format_subscribe_desc(subscribe)} 即将开始{mode_label}下载",
-                f"{mode_label}已删除 {len(histories)} 条整理记录对应的源文件",
+                f"{format_subscribe_desc(subscribe)} "
+                f"即将开始{mode_label}下载，已删除 {len(histories)} 条整理记录对应的源文件",
                 image=subscribe_image,
             )
 
@@ -488,8 +501,8 @@ class BestVersionOrchestrator:
         )
         if self._notify:
             self._notify(
-                f"{(task or {}).get('subscribe_desc', '洗版订阅')} 即将开始{mode_label}整理",
-                f"{mode_label}已删除 {len(histories)} 条整理记录对应的媒体库文件",
+                f"{(task or {}).get('subscribe_desc', '洗版订阅')} "
+                f"即将开始{mode_label}整理，已删除 {len(histories)} 条整理记录对应的媒体库文件",
                 image=(task or {}).get("subscribe_image"),
             )
         return True

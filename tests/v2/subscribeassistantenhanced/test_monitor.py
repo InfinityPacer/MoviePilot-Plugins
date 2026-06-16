@@ -3,9 +3,14 @@ import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.download.monitor import DownloadMonitor
+from subscribeassistantenhanced.download.monitor import DownloadMonitor, TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS
 from subscribeassistantenhanced.download.torrent import TorrentInfo
 from subscribeassistantenhanced.pending.state import PendingStateCoordinator
+
+
+def test_timeout_manual_review_ignore_hours_is_twenty_four():
+    """连续超时人工保护期与通知文案保持一致。"""
+    assert TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS == 24
 
 
 def _store_mgr(store=None):
@@ -358,6 +363,35 @@ class TestCheckTorrent:
 
         assert result == "ignored"
         assert store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]["fail_count"] == 3
+
+    def test_timeout_after_ignore_expired_reenters_manual_review(self):
+        """连续超时保护期过后仍低进度时重新进入人工处理，不直接删除当前种子。"""
+        now = time.time()
+        store = {
+            "torrents": {"h1": {
+                "baseline_progress": 0.5, "baseline_at": now - 7200,
+                "subscribe_id": 1, "episodes": [1],
+            }},
+            "subscribes": {"1": {"timeout_states": {
+                "tv:unknown:1": {
+                    "fail_count": 3,
+                    "last_torrent_hash": "h1",
+                    "ignore_until": now - 1,
+                    "window_start": now - 60,
+                },
+            }}},
+        }
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, retry_limit=3, subscribe_oper=oper)
+
+        result = mon.check_torrent(_info(hash="h1", progress=0.5), subscribe_id=1)
+
+        assert result == "manual_review"
+        state = store["subscribes"]["1"]["timeout_states"]["tv:unknown:1"]
+        assert state["fail_count"] == 4
+        assert state["ignore_until"] > now
 
     def test_timeout_window_expired_resets_scope_count(self):
         """连续低进度统计窗口过期后，旧计数清零并从本次重新开始。"""

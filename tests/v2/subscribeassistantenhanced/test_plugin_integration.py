@@ -918,12 +918,66 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
 
     priority_manager.backfill_existing.assert_called_once_with(sub, [3])
     plugin.post_message.assert_called_once()
-    assert plugin.post_message.call_args.kwargs["title"] == "【订阅助手】洗版订阅按集优先级回填"
+    assert plugin.post_message.call_args.kwargs["title"] == "洗版订阅按集优先级回填"
     assert "扫描 1 个订阅" in plugin.post_message.call_args.kwargs["text"]
     assert "成功回填 1 个" in plugin.post_message.call_args.kwargs["text"]
     assert "累计补写 1 集" in plugin.post_message.call_args.kwargs["text"]
     plugin.update_config.assert_called_once()
     assert plugin.update_config.call_args.args[0]["backfill_best_version_now"] is False
+
+
+def test_status_notification_uses_ordered_single_line_fields(monkeypatch):
+    """状态类订阅通知按评分、用户、原因顺序输出单行正文，并带订阅卡片图片。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"notify": True})
+    plugin.post_message = MagicMock()
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+
+    plugin._send_subscribe_status_notification(
+        _sub(username="tester"),
+        "上映满足订阅暂停，已标记暂停",
+        detail="暂未到订阅窗口",
+    )
+
+    kwargs = plugin.post_message.call_args.kwargs
+    assert kwargs["title"] == "测试 (2026) S1 上映满足订阅暂停，已标记暂停"
+    assert kwargs["text"] == "评分：8.0，用户：tester，原因：暂未到订阅窗口"
+    assert kwargs["image"] == "poster.jpg"
+
+
+def test_no_download_notification_does_not_repeat_title_action():
+    """无下载通知标题已包含处理结果，正文只保留判断依据。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"notify": True, "tv_no_download_days": 30})
+    plugin.post_message = MagicMock()
+
+    plugin._send_no_download_notification(_sub(username="tester"), _mediainfo(), "pause")
+
+    kwargs = plugin.post_message.call_args.kwargs
+    assert kwargs["title"] == "测试 (2026) S1 近 30 天未有下载记录，已标记暂停"
+    assert kwargs["text"] == "评分：8.0，用户：tester，原因：上映后超期且无下载"
+    assert "处理：" not in kwargs["text"]
+
+
+def test_diagnostic_notification_uses_ordered_multiline_fields():
+    """诊断类订阅通知按统一字段顺序输出多行正文，缺失字段不生成空行。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"notify": True})
+    plugin.post_message = MagicMock()
+
+    plugin._notify_subscribe(
+        "测试剧 S1 下载连续超时，请手动处理",
+        text="低进度删除 3/3 次",
+        follow_up="请手动判断",
+        diagnostic=True,
+    )
+
+    kwargs = plugin.post_message.call_args.kwargs
+    assert kwargs["text"] == (
+        "低进度删除 3/3 次\n"
+        "后续：请手动判断"
+    )
+    assert kwargs["image"] == plugin.plugin_icon
 
 
 def test_backfill_best_version_now_skips_full_best_version_before_detection(monkeypatch):

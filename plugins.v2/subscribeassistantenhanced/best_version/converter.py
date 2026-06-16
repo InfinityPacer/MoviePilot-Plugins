@@ -47,7 +47,7 @@ class BestVersionConverter:
                 self._clear_tasks(sid)
         except Exception as err:
             self._remove_history_snapshot(subscribe_dict)
-            logger.error(f"{subscribe_desc} 删除分集洗版订阅失败，停止转全集处理: {err}")
+            logger.error(f"{subscribe_desc} 原因=删除分集洗版订阅失败，处理=停止转全集处理，错误={err}")
             self._notify_failure(subscribe_desc, str(err), mediainfo=mediainfo)
             return False
 
@@ -57,13 +57,16 @@ class BestVersionConverter:
             new_sid, err_msg = None, str(err)
 
         if new_sid:
-            logger.info(f"{subscribe_desc} 已从分集洗版成功转为全集洗版订阅 (ID: {new_sid})")
+            logger.info(f"{subscribe_desc} 原因=分集洗版集数已符合目标集数，处理=已转为全集洗版订阅 (ID: {new_sid})")
             self._send_subscribe_added(new_sid, mediainfo)
             self._notify_success(subscribe_desc, mediainfo)
             return True
 
         restored = self._restore(subscribe_dict, mediainfo) if self._restore else False
-        logger.error(f"{subscribe_desc} 转为全集洗版订阅失败，错误信息: {err_msg}，分集订阅重建状态: {restored}")
+        logger.error(
+            f"{subscribe_desc} 原因=转为全集洗版订阅失败，处理=尝试重建分集订阅，"
+            f"错误信息={err_msg}，分集订阅重建状态={restored}"
+        )
         restore_text = "分集洗版订阅已尝试重建" if restored else "分集洗版订阅重建失败，请手动检查"
         self._notify_failure(subscribe_desc, f"{err_msg}\n{restore_text}", mediainfo=mediainfo)
         return False
@@ -101,13 +104,10 @@ class BestVersionConverter:
         """发送转全集成功通知。"""
         if not self._notify:
             return
-        text_parts = []
-        if mediainfo.vote_average:
-            text_parts.append(f"评分：{mediainfo.vote_average}")
-        text_parts.append(f"来自用户：{self._plugin_name}")
         self._notify(
-            f"{subscribe_desc} 已从分集洗版转为全集洗版订阅",
-            "，".join(text_parts),
+            f"{subscribe_desc} 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅",
+            score=mediainfo.vote_average,
+            user=self._plugin_name,
             image=mediainfo.get_message_image(),
             link="#/subscribe/tv?tab=mysub",
         )
@@ -117,8 +117,10 @@ class BestVersionConverter:
         if not self._notify:
             return
         self._notify(
-            f"{subscribe_desc} 转为全集洗版订阅失败！",
-            text,
+            f"{subscribe_desc} 转为全集洗版订阅失败",
+            text=text,
+            follow_up="请检查订阅状态",
+            diagnostic=True,
             image=mediainfo.get_message_image() if mediainfo else None,
         )
 

@@ -126,8 +126,10 @@ class CompletionVerifier:
 
         if self._notify:
             name = config.get("name", f"TMDB {tmdbid}")
+            season = config.get("season", season)
+            season_text = f" S{season}" if season is not None else ""
             self._notify(
-                f"检测到 {name} 新增集数（{old_total}→{current_total}），已自动重建订阅"
+                f"{name}{season_text} 检测到新增集数（{old_total}→{current_total}），已自动重建订阅",
             )
         return True
 

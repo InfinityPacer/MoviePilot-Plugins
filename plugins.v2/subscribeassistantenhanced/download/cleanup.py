@@ -101,20 +101,28 @@ class TorrentCleanup:
         if not self._notify:
             return
         torrent_task = self._read_torrent_task(torrent_hash) or {}
-        msg_parts = []
+        detail_parts = []
         if torrent_task.get("title"):
-            msg_parts.append(f"标题：{torrent_task.get('title')}")
+            detail_parts.append(f"标题：{torrent_task.get('title')}")
         if torrent_task.get("description"):
-            msg_parts.append(f"内容：{torrent_task.get('description')}")
-        msg_parts.extend([
-            f"原因：{reason_detail}",
-            f"处理：已保留当前种子，{ignore_hours} 小时内不再自动删除，请手动判断",
-        ])
+            detail_parts.append(f"内容：{torrent_task.get('description')}")
+        action = f"已保留当前种子，{ignore_hours} 小时内不再自动删除"
+        detail(f"种子删除处理：{format_subscribe(subscribe)} 原因={reason_detail}，处理={action}，后续=请手动判断")
         self._notify(
-            f"{format_subscribe(subscribe)} 下载连续超时，请手动处理",
-            "\n".join(msg_parts),
+            f"{format_subscribe(subscribe)} {self._manual_review_title_reason(reason_detail)}，{action}",
+            "\n".join(detail_parts) if detail_parts else None,
             image=self._subscribe_image(subscribe),
+            follow_up="请手动判断",
+            diagnostic=True,
         )
+
+    @staticmethod
+    def _manual_review_title_reason(reason_detail: str) -> str:
+        """将低进度诊断改写为通知标题语序，保留下载时长与进度判断信息。"""
+        prefix = "订阅种子，"
+        if reason_detail.startswith(prefix):
+            return f"{prefix}下载连续超时，{reason_detail[len(prefix):]}"
+        return f"下载连续超时，{reason_detail}"
 
     def _read_torrent_task(self, torrent_hash: str) -> Optional[dict]:
         """删除前读取种子任务，供删除指纹归档与按集基线回滚。"""
@@ -181,18 +189,25 @@ class TorrentCleanup:
             "manual": "订阅种子手动删除",
             "download_timeout": "超时无进度",
         }.get(reason, reason)
-        msg_parts = []
+        detail_parts = []
         if torrent_task:
             if torrent_task.get("title"):
-                msg_parts.append(f"标题：{torrent_task.get('title')}")
+                detail_parts.append(f"标题：{torrent_task.get('title')}")
             if torrent_task.get("description"):
-                msg_parts.append(f"内容：{torrent_task.get('description')}")
+                detail_parts.append(f"内容：{torrent_task.get('description')}")
+        follow_up = None
         if search_delay_seconds is not None:
-            msg_parts.append(f"补全：将在 {search_delay_seconds / 60:.2f} 分钟 后触发搜索")
+            follow_up = f"将在 {search_delay_seconds / 60:.2f} 分钟后触发搜索补全"
+        detail(
+            f"种子删除处理：{format_subscribe(subscribe)} 原因={reason_detail or reason_text}，"
+            f"处理=已删除，后续={follow_up or '无'}"
+        )
         self._notify(
             f"{format_subscribe(subscribe)} {reason_detail or reason_text}，已删除",
-            "\n".join(msg_parts) if msg_parts else None,
+            "\n".join(detail_parts) if detail_parts else None,
             image=self._subscribe_image(subscribe),
+            follow_up=follow_up,
+            diagnostic=True,
         )
 
     def _subscribe_image(self, subscribe):
