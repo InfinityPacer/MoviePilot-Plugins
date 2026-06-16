@@ -420,6 +420,7 @@ class EventProxy:
                 enclosure=getattr(torrent_info, "enclosure", None),
                 page_url=getattr(torrent_info, "page_url", None),
                 title=getattr(torrent_info, "title", None),
+                description=getattr(torrent_info, "description", None),
             )
 
         orchestrator = self.get("orchestrator")
@@ -473,6 +474,7 @@ class EventProxy:
                 enclosure=getattr(torrent_info, "enclosure", None),
                 page_url=getattr(torrent_info, "page_url", None),
                 title=getattr(torrent_info, "title", None),
+                description=getattr(torrent_info, "description", None),
             )
 
     def on_transfer_complete(self, event):

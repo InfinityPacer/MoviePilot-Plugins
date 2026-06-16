@@ -121,6 +121,16 @@ class TestMarkDownloadPending:
         assert pending["hash-real"]["started_at"] == 200.0
         assert store["torrents"]["hash-real"]["subscribe_id"] == 1
 
+    def test_download_added_preserves_torrent_description(self):
+        """DownloadAdded 保存种子描述，供后续监控和删种日志展示资源详情。"""
+        read, update, store = _store_mgr()
+        mon = DownloadMonitor(read, update)
+
+        mon.on_download(7, "h1", title="测试剧 S01E01", description="首集 1080p")
+
+        assert store["torrents"]["h1"]["title"] == "测试剧 S01E01"
+        assert store["torrents"]["h1"]["description"] == "首集 1080p"
+
 
 class TestOnDownload:
     """DownloadAdded 登记种子监控条目。"""
@@ -500,6 +510,45 @@ class TestManualDeleteListen:
         assert store["torrents"] == {}
         assert "download_pending" not in store["subscribes"]["6"]
         assert store["subscribes"]["6"]["state"] == "R"
+
+    def test_completed_torrent_log_includes_subscribe_episode_title_and_removed_count(self, monkeypatch):
+        """完成任务日志应带订阅、集数、种子标题内容，并在汇总中展示本地移除数量。"""
+        info_messages = []
+        detail_messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.logger.info", info_messages.append)
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", detail_messages.append)
+        read, update, store = _store_mgr({
+            "torrents": {
+                "h1": {
+                    "hash": "h1",
+                    "subscribe_id": 6,
+                    "downloader": "qb",
+                    "episodes": [1, 2],
+                    "title": "测试剧 S01E01-E02",
+                    "description": "两集资源",
+                }
+            },
+            "subscribes": {"6": {"download_pending": {"h1": {"hash": "h1"}}}},
+        })
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=6, name="测试剧", season=1, state="P")
+        mon = DownloadMonitor(
+            read, update,
+            subscribe_oper=oper,
+            fetch_fn=lambda dl, h: _info(hash=h, completed=True),
+        )
+
+        mon.run_timeout_check(MagicMock())
+
+        assert any(
+            "测试剧 S1(id=6)" in message
+            and "关联集数=1,2" in message
+            and "测试剧 S01E01-E02 - 两集资源 (h1)" in message
+            and "已完成" in message
+            and "将从订阅下载任务中移除" in message
+            for message in info_messages
+        )
+        assert any("从订阅下载任务移除 1 个" in message for message in detail_messages)
 
     def test_missing_torrent_with_reachable_downloader_triggers_manual_delete(self):
         """下载器可达且种子确实不存在（present=False）达阈值 → 按 manual 进入 cleanup。"""
