@@ -45,23 +45,23 @@ class EventProxy:
     def get(self, name):
         return self._modules.get(name)
 
-    def _format_subscribe_label(self, subscribe_id):
-        """按订阅 ID 生成日志标签；查库成功时带名称/季号/ID，失败时保留 ID 兜底。"""
+    def _format_subscribe_label(self, subscribe_id, subscribe_info=None):
+        """按订阅 ID 生成日志标签；事件快照或查库成功时带名称、季号和 ID。"""
         if subscribe_id is None:
             return "未知订阅"
+        if isinstance(subscribe_info, dict) and subscribe_info:
+            return format_subscribe_label(SimpleNamespace(**subscribe_info), subscribe_id)
         subscribe_oper = self.get("subscribe_oper")
         subscribe = subscribe_oper.get(subscribe_id) if subscribe_oper else None
         return format_subscribe_label(subscribe, subscribe_id)
 
     @staticmethod
     def _format_episodes_refresh_label(data: SubscribeEpisodesRefreshEventData) -> str | None:
-        """格式化集数刷新事件来源；创建场景无订阅 ID 时用媒体信息兜底。"""
-        subscribe_id = data.subscribe_id
-        if subscribe_id is not None:
-            return None
+        """格式化集数刷新事件来源；订阅不可查或创建场景用媒体信息兜底。"""
+        subscribe_id = getattr(data, "subscribe_id", None)
         parts = []
-        mediainfo = data.mediainfo
-        tmdbid = data.tmdbid
+        mediainfo = getattr(data, "mediainfo", None)
+        tmdbid = getattr(data, "tmdbid", None)
         if isinstance(mediainfo, MediaInfo):
             if mediainfo.title_year:
                 parts.append(mediainfo.title_year)
@@ -75,14 +75,17 @@ class EventProxy:
                 parts.append(label)
             if tmdbid is None:
                 tmdbid = mediainfo.get("tmdb_id")
-        season = data.season
+        season = getattr(data, "season", None)
         if season is not None:
             parts.append(f"S{season}")
         markers = []
+        if subscribe_id:
+            markers.append(f"id={subscribe_id}")
         if tmdbid:
             markers.append(f"tmdbid={tmdbid}")
-        if data.scene:
-            markers.append(f"scene={data.scene}")
+        scene = getattr(data, "scene", None)
+        if scene:
+            markers.append(f"scene={scene}")
         if markers:
             marker_text = f"({', '.join(markers)})"
             if parts:
@@ -105,7 +108,14 @@ class EventProxy:
         data: SubscribeEpisodesRefreshEventData = _event_data(event)
         if data is None:
             return
-        label = self._format_episodes_refresh_label(data) or self._format_subscribe_label(data.subscribe_id)
+        label = None
+        if data.subscribe_id is not None:
+            label = self._format_subscribe_label(data.subscribe_id)
+            if label == f"订阅 {data.subscribe_id}":
+                label = self._format_episodes_refresh_label(data) or label
+        else:
+            label = self._format_episodes_refresh_label(data)
+        label = label or "未知订阅"
         detail(f"集数刷新事件：{label} 当前总集数 {data.current_total_episode}")
         volatility = self.get("volatility")
         if volatility:
@@ -213,9 +223,10 @@ class EventProxy:
         """SubscribeDeleted → 清理该订阅关联的全部任务数据（订阅任务 + 名下种子任务）。"""
         data = event.event_data
         subscribe_id = data.get("subscribe_id") if isinstance(data, dict) else None
+        subscribe_info = data.get("subscribe_info") if isinstance(data, dict) else None
         task_manager = self.get("task_manager")
         if subscribe_id and task_manager:
-            detail(f"订阅删除事件：清理 {self._format_subscribe_label(subscribe_id)} 关联任务数据")
+            detail(f"订阅删除事件：清理 {self._format_subscribe_label(subscribe_id, subscribe_info)} 关联任务数据")
             task_manager.clear_tasks(subscribe_id)
 
     def on_subscribe_modified(self, event):

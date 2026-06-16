@@ -79,6 +79,21 @@ class TestEventOrdering:
         assert data.updated is True
         assert data.total_episode == 8
 
+    def test_episodes_refresh_label_uses_media_when_subscribe_missing(self):
+        """集数刷新事件查不到订阅时，日志标签应回退到事件携带的媒体信息。"""
+        from app.schemas.event import SubscribeEpisodesRefreshEventData
+
+        data = SubscribeEpisodesRefreshEventData(
+            current_total_episode=15,
+            subscribe_id=32,
+            season=1,
+            tmdbid=325228,
+            mediainfo={"title": "镖人", "year": 2023},
+            scene="refresh",
+        )
+
+        assert EventProxy._format_episodes_refresh_label(data) == "镖人 (2023) S1(id=32, tmdbid=325228, scene=refresh)"
+
     def test_download_added_registers_monitor_without_resuming(self):
         """DownloadAdded → 仅经 source 解析订阅后登记监控数据，不在此处恢复暂停。"""
         sub = _sub(id=1, state="S")
@@ -319,6 +334,15 @@ class TestSubscribeLifecycle:
         proxy = EventProxy(task_manager=tm)
         proxy.on_subscribe_deleted(SimpleNamespace(event_data={"subscribe_id": 9}))
         tm.clear_tasks.assert_called_once_with(9)
+
+    def test_deleted_label_uses_event_subscribe_snapshot(self):
+        """删除事件发生后订阅可能已不可查，日志标签应使用事件携带的订阅快照。"""
+        proxy = EventProxy()
+        label = proxy._format_subscribe_label(
+            9,
+            {"id": 9, "name": "将夜", "season": 1},
+        )
+        assert label == "将夜 S1(id=9)"
 
     def test_deleted_without_id_noop(self):
         tm = MagicMock()
