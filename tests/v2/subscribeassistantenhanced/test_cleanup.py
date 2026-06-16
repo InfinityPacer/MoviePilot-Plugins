@@ -163,10 +163,14 @@ class TestHandleTorrentDeleted:
         search_fn.assert_called_once_with(sub)
         assert "h1" not in store.get("torrents", {})
         notify.assert_called_once()
-        title, text = notify.call_args.args[:2]
+        title = notify.call_args.args[0]
         assert "订阅种子，下载时长 2.00 小时" in title
         assert "（低进度删除 1/3 次），已删除" in title
-        assert "补全：将在 4.78 分钟 后触发搜索" in text
+        assert notify.call_args.args[1] == "标题：测试种子\n内容：测试内容"
+        assert "reason" not in notify.call_args.kwargs
+        assert "action" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["follow_up"] == "将在 4.78 分钟后触发搜索补全"
+        assert notify.call_args.kwargs["diagnostic"] is True
         assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_manual_review_notification_keeps_torrent(self):
@@ -189,9 +193,15 @@ class TestHandleTorrentDeleted:
         )
 
         assert "h1" in store["torrents"]
-        assert "下载连续超时，请手动处理" in notify.call_args.args[0]
-        assert "低进度删除 3/3 次" in notify.call_args.args[1]
-        assert "已保留当前种子，6 小时内不再自动删除" in notify.call_args.args[1]
+        assert notify.call_args.args[0] == (
+            "测试剧 S1 订阅种子，下载连续超时，下载时长 6.00 小时，超时窗口 2 小时内进度增长 0.00%，"
+            "低于 10%（低进度删除 3/3 次），已保留当前种子，6 小时内不再自动删除"
+        )
+        assert notify.call_args.args[1] == "标题：测试种子\n内容：测试内容"
+        assert "reason" not in notify.call_args.kwargs
+        assert "action" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["follow_up"] == "请手动判断"
+        assert notify.call_args.kwargs["diagnostic"] is True
         assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_manual_delete_skips_pause_but_keeps_fingerprint_and_search(self):

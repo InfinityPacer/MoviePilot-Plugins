@@ -95,7 +95,7 @@ class TestVerifyAll:
         store = {"snapshots": {"list": [{
             "tmdbid": 100, "season": 1, "episode_group_id": None,
             "total_at_completion": 12, "completed_at": time.time(),
-            "subscribe_config": {"name": "测试"},
+            "subscribe_config": {"name": "测试剧", "season": 1},
         }]}}
         rebuild = MagicMock(return_value=True)
         v = _verifier(store, tmdb_fn=lambda *a, **kw: [object()] * 15,
@@ -103,6 +103,10 @@ class TestVerifyAll:
         v.verify_all()
         rebuild.assert_called_once()
         assert len(store["snapshots"]["list"]) == 0
+        v._notify_mock.assert_called_once()
+        assert v._notify_mock.call_args.args[0] == "测试剧 S1 检测到新增集数（12→15），已自动重建订阅"
+        assert "action" not in v._notify_mock.call_args.kwargs
+        assert "reason" not in v._notify_mock.call_args.kwargs
 
     def test_rebuild_failure_keeps_snapshot_for_retry(self):
         """真实重建失败时必须保留快照，避免丢失后续补救机会。"""

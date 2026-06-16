@@ -146,8 +146,10 @@ class TestHistoryClear:
         assert events == [("/src/a.mkv", "hashA")]   # 携带旧 download_hash → 主程序删历史种子
         assert hist_deletes == ["1"]
         assert "100" in store["best_version_clear_histories"]   # 快照 key 为 str(tmdbid)
-        assert notifies[0][0].endswith("即将开始全集洗版下载")
-        assert "全集洗版" in notifies[0][1]
+        assert notifies[0][0].endswith("即将开始全集洗版下载，已删除 1 条整理记录对应的源文件")
+        assert notifies[0][1] is None
+        assert "reason" not in notifies[0][2]
+        assert "action" not in notifies[0][2]
         assert notifies[0][2]["image"] == "subscribe.jpg"
         assert store["best_version_clear_histories"]["100"]["subscribe_image"] == "subscribe.jpg"
 
@@ -233,10 +235,15 @@ class TestHistoryClear:
         assert events == []
         assert hist_deletes == []
         assert notify.call_args.args[0].endswith("洗版资源未覆盖目标范围，已跳过历史清理")
-        assert "目标集数：" in notify.call_args.args[1]
-        assert "资源集数：" in notify.call_args.args[1]
-        assert "来源：下载事件" in notify.call_args.args[1]
-        assert "种子：测试剧 S01E01-E02" in notify.call_args.args[1]
+        assert notify.call_args.kwargs["text"] == (
+            "目标集数：E01-E12\n"
+            "资源集数：E01-E02\n"
+            "种子：测试剧 S01E01-E02"
+        )
+        assert "reason" not in notify.call_args.kwargs
+        assert "action" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["follow_up"] == "请人工核对资源覆盖范围"
+        assert notify.call_args.kwargs["diagnostic"] is True
         assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_movie_clear_type_skips_tv_subscription(self):
@@ -411,8 +418,9 @@ class TestHistoryClear:
         orch.handle_history_clear(event)
         assert deletes == [{"path": "/dest/a.mkv"}]
         assert "100" not in store["best_version_clear_histories"]
-        assert notifies[0][0] == "X 即将开始全集洗版整理"
-        assert "全集洗版" in notifies[0][1]
+        assert notifies[0][0] == "X 即将开始全集洗版整理，已删除 1 条整理记录对应的媒体库文件"
+        assert "reason" not in notifies[0][2]
+        assert "action" not in notifies[0][2]
         assert notifies[0][2]["image"] == "subscribe.jpg"
 
     def test_transfer_intercept_without_snapshot_returns_false(self):
@@ -497,6 +505,7 @@ class TestStartBestVersion:
         assert send_event.call_args.args[0] == 5
         notify.assert_called_once()
         assert notify.call_args.args[0].endswith("已添加全集洗版订阅")
+        assert "reason" not in notify.call_args.kwargs
         _args, kwargs = oper.add.call_args
         assert kwargs["best_version"] == 1 and kwargs["season"] == 1
         assert kwargs["best_version_full"] == 1
@@ -521,8 +530,11 @@ class TestStartBestVersion:
 
         assert sid is None
         notify.assert_called_once()
-        assert notify.call_args.args[0].endswith("添加洗版订阅失败！")
-        assert notify.call_args.args[1] == "订阅已存在"
+        assert notify.call_args.args[0].endswith("添加洗版订阅失败")
+        assert notify.call_args.kwargs["reason"] == "订阅已存在"
+        assert "action" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["follow_up"] == "请检查订阅创建错误"
+        assert notify.call_args.kwargs["diagnostic"] is True
         assert notify.call_args.kwargs["image"] == "poster.jpg"
 
     def test_skips_when_already_best_version(self):

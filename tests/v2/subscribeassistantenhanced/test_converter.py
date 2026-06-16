@@ -69,7 +69,8 @@ class TestConvertToFull:
         send_event.assert_called_once()
         assert send_event.call_args.args[1]["subscribe_id"] == 9
         notify.assert_called_once()
-        assert notify.call_args.args[0] == "测试剧 S1 已从分集洗版转为全集洗版订阅"
+        assert notify.call_args.args[0] == "测试剧 S1 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅"
+        assert "reason" not in notify.call_args.kwargs
 
     def test_failure_keeps_original(self):
         """删除分集订阅失败时不得创建全集洗版，并通知失败。"""
@@ -88,7 +89,7 @@ class TestConvertToFull:
         oper.add.assert_not_called()
         oper.remove_history.assert_called_once()
         notify.assert_called_once()
-        assert notify.call_args.args[0] == "测试剧 S1 转为全集洗版订阅失败！"
+        assert notify.call_args.args[0] == "测试剧 S1 转为全集洗版订阅失败"
 
     def test_no_oper_returns_false(self):
         conv = BestVersionConverter(subscribe_oper=None)
@@ -103,7 +104,7 @@ class TestConvertToFull:
     def test_add_failure_restores_old_subscribe_and_notifies(self):
         """创建全集洗版失败时应尝试重建分集订阅并通知人工检查。"""
         oper = MagicMock()
-        oper.add.return_value = (None, "add failed")
+        oper.add.return_value = (None, "订阅创建失败")
         restore = MagicMock(return_value=True)
         notify = MagicMock()
         conv = BestVersionConverter(
@@ -120,4 +121,9 @@ class TestConvertToFull:
 
         restore.assert_called_once_with(sub.to_dict(), media)
         notify.assert_called_once()
-        assert "分集洗版订阅已尝试重建" in notify.call_args.args[1]
+        assert notify.call_args.args[0] == "测试剧 S1 转为全集洗版订阅失败"
+        assert notify.call_args.kwargs["text"] == "订阅创建失败\n分集洗版订阅已尝试重建"
+        assert "reason" not in notify.call_args.kwargs
+        assert "action" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["follow_up"] == "请检查订阅状态"
+        assert notify.call_args.kwargs["diagnostic"] is True

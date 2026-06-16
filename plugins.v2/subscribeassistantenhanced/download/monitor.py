@@ -9,7 +9,7 @@ from app.log import logger
 from .torrent import TorrentInfo
 from ..shared.log import detail
 
-TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS = 48
+TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS = 24
 
 
 class DownloadMonitor:
