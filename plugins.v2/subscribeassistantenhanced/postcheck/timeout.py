@@ -207,7 +207,7 @@ class PendingTimeoutManager:
     def _resolve_total(self, signal: CompletionSignal,
                        total_episode: Optional[int]) -> Optional[int]:
         """优先使用信号携带的 TMDB scope 总数，缺失时回退调用方传入值。"""
-        return getattr(signal, "scope_total", 0) or total_episode
+        return signal.scope_total or total_episode
 
     def _matches_token(self, token: dict, signal: CompletionSignal,
                        total_episode: Optional[int]) -> bool:

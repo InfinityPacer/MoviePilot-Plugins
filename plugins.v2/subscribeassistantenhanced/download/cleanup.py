@@ -137,14 +137,14 @@ class TorrentCleanup:
         media_type = resolve_subscribe_media_type(subscribe)
         payload = {}
         if media_type == MediaType.TV:
-            note = list(getattr(subscribe, "note", None) or [])
+            note = list(subscribe.note or [])
             episodes = torrent_task.get("episodes") or []
             episode_set = set(episodes if isinstance(episodes, list) else [episodes])
             kept_note = [episode for episode in note if episode not in episode_set]
             payload["note"] = kept_note
-            total_episode = getattr(subscribe, "total_episode", None)
+            total_episode = subscribe.total_episode
             if total_episode:
-                start_episode = (getattr(subscribe, "start_episode", None) or 1) - 1
+                start_episode = (subscribe.start_episode or 1) - 1
                 payload["lack_episode"] = total_episode - start_episode - len(kept_note)
             else:
                 payload["lack_episode"] = total_episode

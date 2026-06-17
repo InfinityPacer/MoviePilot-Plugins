@@ -160,10 +160,16 @@ def _format_snapshot_label(snap: dict) -> str:
 
 def _extract_config(subscribe) -> dict:
     """提取订阅配置用于重建。"""
-    config = {}
-    for field in ("name", "tmdbid", "season", "episode_group", "type",
-                  "save_path", "sites", "filter", "filter_groups", "best_version"):
-        val = getattr(subscribe, field, None)
-        if val is not None:
-            config[field] = val
-    return config
+    values = {
+        "name": subscribe.name,
+        "tmdbid": subscribe.tmdbid,
+        "season": subscribe.season,
+        "episode_group": subscribe.episode_group,
+        "type": subscribe.type,
+        "save_path": subscribe.save_path,
+        "sites": subscribe.sites,
+        "filter": subscribe.filter,
+        "filter_groups": subscribe.filter_groups,
+        "best_version": subscribe.best_version,
+    }
+    return {field: value for field, value in values.items() if value is not None}

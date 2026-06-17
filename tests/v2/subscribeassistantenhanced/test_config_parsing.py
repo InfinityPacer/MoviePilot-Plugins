@@ -26,14 +26,17 @@ def test_new_parity_config_defaults():
     assert "download_pause_max_days" not in cfg.declared_keys()
     assert "download_pause_expire_action" not in cfg.declared_keys()
     assert cfg.pause_enhanced_enabled is False
-    # 种子删除门禁
+    # 订阅清理与删种门禁
     assert cfg.manual_delete_listen is True
     assert cfg.tracker_response_listen is True
     assert cfg.auto_search_when_delete is True
     assert cfg.skip_deletion is True
+    assert cfg.subscription_cleanup_history_type == "no"
+    assert cfg.subscription_cleanup_history_scenes == []
     # 洗版
     assert cfg.best_version_type == "no"
-    assert cfg.best_version_clear_history_type == "no"
+    assert "best_version_clear_history_type" not in cfg.declared_keys()
+    assert not hasattr(cfg, "best_version_clear_history_type")
     assert cfg.best_version_remaining_days == 0
     assert cfg.best_version_episode_to_full is False
     assert cfg.best_version_backfill_enabled is False

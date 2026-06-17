@@ -40,6 +40,7 @@ from .pause.nodownload import NoDownloadPolicy
 from .best_version.priority import PriorityManager
 from .best_version.converter import BestVersionConverter
 from .best_version.orchestrator import BestVersionOrchestrator
+from .cleanup import SubscriptionCleanup
 from .download.monitor import DownloadMonitor
 from .download.cleanup import TorrentCleanup
 from .shared.deletes import DeletesStore
@@ -71,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.3.1"
+    plugin_version = "0.3.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -297,20 +298,24 @@ class SubscribeAssistantEnhanced(_PluginBase):
             priority_manager=priority_manager,
             evaluate_fn=evaluate_fn,
             subscribe_oper=self._subscribe_oper,
+            send_subscribe_added_fn=self._send_subscribe_added,
+            notify_fn=self._notify_subscribe,
+            related_downloads_fn=self._related_download_histories,
+            best_version_type=cfg.best_version_type,
+            plugin_name=self.plugin_name,
+        )
+        subscription_cleanup = SubscriptionCleanup(
             task_data_read=tm.read,
             task_data_update=tm.update,
             get_histories_fn=self._get_transfer_histories,
             delete_media_file_fn=self._delete_media_file,
             delete_history_fn=self._transferhistory_oper.delete,
             send_download_file_deleted_fn=self._send_download_file_deleted,
-            send_subscribe_added_fn=self._send_subscribe_added,
             notify_fn=self._notify_subscribe,
             get_subscribe_image_fn=self._get_subscribe_image,
             torrent_exists_fn=self._torrent_exists,
-            related_downloads_fn=self._related_download_histories,
-            best_version_type=cfg.best_version_type,
-            clear_history_type=cfg.best_version_clear_history_type,
-            plugin_name=self.plugin_name,
+            cleanup_history_type=cfg.subscription_cleanup_history_type,
+            cleanup_history_scenes=cfg.subscription_cleanup_history_scenes,
         )
 
         self._event_proxy = EventProxy(
@@ -339,6 +344,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             download_monitor=download_monitor,
             verifier=verifier,
             orchestrator=orchestrator,
+            subscription_cleanup=subscription_cleanup,
             converter=converter,
             best_version_episode_to_full=cfg.best_version_episode_to_full,
         )
@@ -361,6 +367,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "deletes_store": deletes_store,
             "guard": guard,
             "orchestrator": orchestrator,
+            "subscription_cleanup": subscription_cleanup,
         }
 
     def stop_service(self):
@@ -496,10 +503,10 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "snapshots",
             "deletes",
             "volatility",
-            "best_version_clear_histories",
+            "subscription_cleanup_histories",
         ]:
             self.save_data(key, {})
-        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、洗版清理记录）")
+        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、订阅清理记录）")
 
     @staticmethod
     def _format_reset_recovery_summary(recovered_pending: List[str], recovered_paused: List[str]) -> str:
@@ -793,7 +800,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if timeout_manager.check_release(
                 subscribe,
                 signal,
-                total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
+                total_episode=signal.scope_total or subscribe.total_episode,
             ):
                 logger.info(f"待定释放：{format_subscribe(subscribe)} 完成前检查长期未确认，解除该待定原因")
                 pending_state = self._modules.get("pending_state")
@@ -844,7 +851,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if self._config.download_monitor_enabled:
             tasks.append(("删除记录清理", self.run_deletes_cleanup))
         tasks.append(("完成快照清理", self.run_completion_snapshot_cleanup))
-        tasks.append(("洗版清理事务清理", self.run_best_version_history_cleanup))
+        tasks.append(("订阅清理事务清理", self.run_subscription_cleanup_expired))
 
         detail("通用巡检：开始")
         for task_name, task in tasks:
@@ -868,13 +875,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if removed:
                 logger.info(f"完成快照清理：已清理 {removed} 条过期快照")
 
-    def run_best_version_history_cleanup(self):
-        """清理超过 72 小时的全集洗版文件清理事务。"""
-        orchestrator = self._modules.get("orchestrator")
-        if orchestrator:
-            removed = orchestrator.cleanup_expired_clear_histories()
+    def run_subscription_cleanup_expired(self):
+        """清理超过 72 小时的订阅清理事务。"""
+        subscription_cleanup = self._modules.get("subscription_cleanup")
+        if subscription_cleanup:
+            removed = subscription_cleanup.cleanup_expired_clear_histories()
             if removed:
-                logger.info(f"洗版清理事务：已清理 {removed} 条超过 72 小时的记录")
+                logger.info(f"订阅清理事务：已清理 {removed} 条超过 72 小时的记录")
 
     def _last_download_date(self, subscribe) -> Optional[datetime.date]:
         """订阅最近一次真实下载日期（取自主程序下载历史），无则 None。"""
@@ -1129,13 +1136,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @eventmanager.register(ChainEventType.ResourceDownload, priority=9999)
     def on_resource_download(self, event):
-        """ResourceDownload → 无 hash 下载待定 + 洗版优先级基线 + 历史清理。"""
+        """ResourceDownload → 订阅清理 + 无 hash 下载待定 + 洗版优先级基线。"""
         if self._event_proxy:
             self._event_proxy.on_resource_download(event)
 
     @eventmanager.register(ChainEventType.TransferIntercept, priority=9999)
     def on_transfer_intercept(self, event):
-        """整理拦截 → 洗版媒体库历史清理。"""
+        """整理拦截 → 订阅清理目标媒体文件。"""
         if self._event_proxy:
             self._event_proxy.on_transfer_intercept(event)
 
@@ -1397,29 +1404,31 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return delay_seconds
         return None
 
-    def _get_transfer_histories(self, tmdbid, mtype, season=None):
-        """按 tmdbid/类型/季获取整理历史记录，供洗版清理定位旧文件。"""
+    def _get_transfer_histories(self, tmdbid, mtype, season=None, episode=None):
+        """按 tmdbid/类型/季/集获取整理历史记录，供订阅清理定位旧文件。"""
         if not self._transferhistory_oper:
             return []
+        if season is not None and episode is not None:
+            return self._transferhistory_oper.get_by(tmdbid=tmdbid, mtype=mtype, season=season, episode=episode) or []
         if season is not None:
             return self._transferhistory_oper.get_by(tmdbid=tmdbid, mtype=mtype, season=season) or []
         return self._transferhistory_oper.get_by(tmdbid=tmdbid, mtype=mtype) or []
 
     def _delete_media_file(self, fileitem_dict):
-        """删除媒体文件（洗版旧源文件或旧媒体库文件）；fileitem_dict 为整理记录的 src/dest_fileitem 序列化形态。
+        """删除媒体文件（旧源文件或旧媒体库文件）；fileitem_dict 为整理记录的 src/dest_fileitem 序列化形态。
 
-        删除不可逆，仅由洗版历史清理调用；清理范围由 best_version_clear_history_type 控制。
+        删除不可逆，仅由订阅清理调用；清理范围由订阅清理配置控制。
         """
         if not self._storage_chain or not fileitem_dict:
             return False
         from app import schemas
         path = fileitem_dict.get("path") if isinstance(fileitem_dict, dict) else None
-        logger.info(f"洗版清理：删除媒体文件 {truncate_log_value(path or fileitem_dict)}（不可逆）")
+        logger.info(f"订阅清理：删除媒体文件 {truncate_log_value(path or fileitem_dict)}（不可逆）")
         return self._storage_chain.delete_media_file(schemas.FileItem(**fileitem_dict))
 
     def _send_download_file_deleted(self, src, download_hash):
-        """发 DownloadFileDeleted 事件：主程序据此移除历史下载的旧种子（洗版"清理历史下载种子"经此达成）。"""
-        detail(f"洗版清理：发送 DownloadFileDeleted 事件，hash={download_hash}，通知主程序移除旧下载")
+        """发 DownloadFileDeleted 事件：主程序据此移除历史下载旧种子。"""
+        detail(f"订阅清理：发送 DownloadFileDeleted 事件，hash={download_hash}，通知主程序移除旧下载")
         eventmanager.send_event(EventType.DownloadFileDeleted, {"src": src, "hash": download_hash})
 
     def _torrent_exists(self, download_hash: str) -> Optional[bool]:
@@ -1437,11 +1446,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             try:
                 torrents, error = service.instance.get_torrents(ids=download_hash)
             except Exception as err:
-                logger.warning(f"洗版清理：查询下载器 {name} 的旧任务失败 hash={download_hash}，错误信息：{err}")
+                logger.warning(f"订阅清理：查询下载器 {name} 的旧任务失败 hash={download_hash}，错误信息：{err}")
                 query_failed = True
                 continue
             if error:
-                logger.warning(f"洗版清理：下载器 {name} 查询旧任务失败 hash={download_hash}")
+                logger.warning(f"订阅清理：下载器 {name} 查询旧任务失败 hash={download_hash}")
                 query_failed = True
                 continue
             if torrents:

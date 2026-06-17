@@ -96,7 +96,7 @@ class PendingJudge:
             if self._timeout.check_release(
                 subscribe,
                 signal,
-                total_episode=getattr(signal, "scope_total", 0) or subscribe.total_episode,
+                total_episode=signal.scope_total or subscribe.total_episode,
             ):
                 self._exit_pending(subscribe, "完成前观察结束")
                 return True

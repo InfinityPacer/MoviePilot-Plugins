@@ -1,64 +1,33 @@
-"""洗版全流程编排：订阅创建、完成判定与破坏性历史清理。"""
-import time
+"""洗版全流程编排：订阅创建与完成判定。"""
 from typing import Callable, Optional
 
-from app.core.metainfo import MetaInfo
 from app.log import logger
 from app.schemas.types import MediaType
-from app.utils.string import StringUtils
 
 from ..engine.types import CompletionSignal
-from ..shared.log import detail
 from ..shared.subscribe import format_subscribe_desc, resolve_subscribe_media_type
 from .priority import PriorityManager
 
-BEST_VERSION_CLEAR_HISTORY_TTL_SECONDS = 72 * 3600
-
 
 class BestVersionOrchestrator:
-    """洗版全流程编排器。
-
-    洗版清理涉及删除源文件与媒体库文件，均经注入回调执行，避免流程直接绑定下载器或文件系统实现。
-    """
+    """洗版全流程编排器，负责洗版订阅创建、完成判定和优先级范围判断。"""
 
     def __init__(self, priority_manager: PriorityManager,
                  evaluate_fn: Callable,
                  subscribe_oper=None,
-                 task_data_read: Optional[Callable] = None,
-                 task_data_update: Optional[Callable] = None,
-                 get_histories_fn: Optional[Callable] = None,
-                 delete_media_file_fn: Optional[Callable] = None,
-                 delete_history_fn: Optional[Callable] = None,
-                 send_download_file_deleted_fn: Optional[Callable] = None,
                  send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
-                 get_subscribe_image_fn: Optional[Callable] = None,
-                 season_of_fn: Optional[Callable] = None,
-                 torrent_exists_fn: Optional[Callable] = None,
-                 sleep_fn: Optional[Callable] = None,
                  related_downloads_fn: Optional[Callable] = None,
                  best_version_type: str = "no",
-                 clear_history_type: str = "no",
                  plugin_name: str = "订阅助手（增强版）"):
-        """注入洗版编排依赖、自动洗版范围与破坏性清理范围。"""
+        """注入洗版编排依赖与自动洗版范围。"""
         self._priority = priority_manager
         self._evaluate = evaluate_fn
         self._subscribe_oper = subscribe_oper
-        self._read = task_data_read
-        self._update = task_data_update
-        self._get_histories = get_histories_fn
-        self._delete_media_file = delete_media_file_fn
-        self._delete_history = delete_history_fn
-        self._send_dfd = send_download_file_deleted_fn
         self._send_subscribe_added = send_subscribe_added_fn
         self._notify = notify_fn
-        self._get_subscribe_image = get_subscribe_image_fn
-        self._season_of = season_of_fn
-        self._torrent_exists = torrent_exists_fn
-        self._sleep = sleep_fn or time.sleep
         self._related_downloads = related_downloads_fn
         self._best_version_type = best_version_type
-        self._clear_history_type = clear_history_type
         self._plugin_name = plugin_name
 
     def check_complete(self, subscribe, mediainfo,
@@ -158,355 +127,6 @@ class BestVersionOrchestrator:
             )
         return sid
 
-    def handle_resource_download_history_clear(self, subscribe, context=None, episodes=None) -> bool:
-        """清理旧整理记录并等待关联下载任务释放，允许继续下载时返回 True。
-
-        仅整季洗版执行；分集洗版逐集替换，不做整季清理。clear_history_type 按媒体类型门控，
-        源文件删除与历史下载种子移除均属于破坏性副作用。明确存在的旧 hash 最多等待
-        3 分钟，查询失败最多等待 1 分钟，达到上限后降级放行。
-        """
-        if not subscribe.best_version:
-            return True
-        media_type = resolve_subscribe_media_type(subscribe)
-        if not self._type_matches(media_type, self._clear_history_type):
-            return True
-        if not subscribe.best_version_full:
-            detail(f"洗版清理：{format_subscribe_desc(subscribe)} 是分集洗版，不清理整季旧文件")
-            return True
-        if media_type == MediaType.TV and context and getattr(context, "torrent_info", None):
-            actual_episodes, source = self._download_resource_episodes(context=context, episodes=episodes)
-            target_episodes = self._subscribe_target_episodes(subscribe)
-            if actual_episodes and target_episodes and not set(target_episodes).issubset(actual_episodes):
-                self._notify_history_clear_skipped(
-                    subscribe=subscribe,
-                    context=context,
-                    target_episodes=target_episodes,
-                    actual_episodes=actual_episodes,
-                    source=source,
-                )
-                return True
-        mode_label = self._mode_label(subscribe)
-        tmdbid = subscribe.tmdbid
-        if not tmdbid or not self._get_histories:
-            return True
-        season = self._history_season(subscribe)
-        if media_type == MediaType.TV and not season:
-            logger.warning(
-                f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}无法确定有效季号，"
-                "为避免扩大清理范围，跳过旧整理记录清理"
-            )
-            return True
-        histories = self._get_histories(tmdbid, subscribe.type, season) or []
-        if not histories:
-            logger.info(
-                f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}未找到匹配的整理记录，"
-                f"查询季号={season or '无'}，跳过清理"
-            )
-            return True
-        self.clear_transfer_src_histories(subscribe, histories)
-        old_hashes = {
-            self._field(history, "download_hash")
-            for history in histories
-            if self._field(history, "download_hash")
-        }
-        return self._wait_for_torrents_removed(subscribe=subscribe, download_hashes=old_hashes)
-
-    @staticmethod
-    def _subscribe_target_episodes(subscribe) -> list[int]:
-        """返回电视剧订阅明确声明的目标集数范围。"""
-        if not subscribe or not subscribe.total_episode:
-            return []
-        start_episode = subscribe.start_episode or 1
-        return list(range(start_episode, subscribe.total_episode + 1))
-
-    @staticmethod
-    def _normalize_episode_numbers(episodes) -> list[int]:
-        """规整事件或标题中的集数，忽略不能转换为正整数的值。"""
-        normalized = set()
-        for episode in episodes or []:
-            try:
-                number = int(episode)
-            except (TypeError, ValueError):
-                continue
-            if number > 0:
-                normalized.add(number)
-        return sorted(normalized)
-
-    def _download_resource_episodes(self, context=None, episodes=None) -> tuple[list[int], str]:
-        """按下载事件、上下文和资源标题顺序解析本次资源覆盖的集数。"""
-        event_episodes = self._normalize_episode_numbers(episodes)
-        if event_episodes:
-            return event_episodes, "下载事件"
-
-        selected_episodes = self._normalize_episode_numbers(
-            getattr(context, "selected_episodes", None)
-        )
-        if selected_episodes:
-            return selected_episodes, "下载上下文"
-
-        torrent_info = getattr(context, "torrent_info", None)
-        if not torrent_info:
-            return [], ""
-        meta = MetaInfo(
-            title=getattr(torrent_info, "title", "") or "",
-            subtitle=getattr(torrent_info, "description", "") or "",
-        )
-        title_episodes = self._normalize_episode_numbers(meta.episode_list)
-        if title_episodes:
-            return title_episodes, "资源标题"
-        return [], ""
-
-    def _notify_history_clear_skipped(self, subscribe, context, target_episodes: list[int],
-                                      actual_episodes: list[int], source: str):
-        """全集资源范围不足时保留旧文件，并发送可人工核对的保护通知。"""
-        torrent_info = getattr(context, "torrent_info", None)
-        torrent_title = getattr(torrent_info, "title", "") if torrent_info else ""
-        target_desc = StringUtils.format_ep(target_episodes) if target_episodes else "未知"
-        actual_desc = StringUtils.format_ep(actual_episodes) if actual_episodes else "未知"
-        source_desc = source or "未知来源"
-        logger.warning(
-            f"洗版清理：{format_subscribe_desc(subscribe)} "
-            f"原因=全集资源未覆盖订阅目标范围（目标集数={target_desc}，资源集数={actual_desc}，"
-            f"来源={source_desc}，种子={torrent_title}），处理=已跳过历史清理，后续=请人工核对资源覆盖范围"
-        )
-        if self._notify:
-            image = self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
-            self._notify(
-                f"{format_subscribe_desc(subscribe)} 洗版资源未覆盖目标范围，已跳过历史清理",
-                text=(
-                    f"目标集数：{target_desc}\n"
-                    f"资源集数：{actual_desc}\n"
-                    f"种子：{torrent_title}"
-                ),
-                follow_up="请人工核对资源覆盖范围",
-                diagnostic=True,
-                image=image,
-            )
-
-    def _wait_for_torrents_removed(self, subscribe, download_hashes: set[str]) -> bool:
-        """每 5 秒确认旧 hash：查询失败等 1 分钟，明确存在等 3 分钟，超限后放行。"""
-        if not download_hashes or not self._torrent_exists:
-            # 删除事件由主程序异步处理，即使无法确认 hash，也保留固定的首轮处理窗口。
-            self._sleep(5)
-            return True
-        pending_hashes = set(download_hashes)
-        exists_wait = {download_hash: 0 for download_hash in pending_hashes}
-        query_failure_wait = {download_hash: 0 for download_hash in pending_hashes}
-        for waited_seconds in range(5, 181, 5):
-            self._sleep(5)
-            next_pending_hashes = set()
-            for download_hash in pending_hashes:
-                # DownloadFileDeleted 会跨下载器删除旧任务，确认时也必须跨下载器查询。
-                exists = self._torrent_exists(download_hash)
-                if exists is None:
-                    query_failure_wait[download_hash] += 5
-                    if query_failure_wait[download_hash] >= 60:
-                        logger.warning(
-                            f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}"
-                            "累计 60 秒无法查询旧下载任务，"
-                            f"降级放行 hash={download_hash}"
-                        )
-                        continue
-                    next_pending_hashes.add(download_hash)
-                    continue
-                if exists:
-                    exists_wait[download_hash] += 5
-                    if exists_wait[download_hash] >= 180:
-                        logger.warning(
-                            f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}"
-                            "旧下载任务持续存在 180 秒，"
-                            f"降级放行 hash={download_hash}"
-                        )
-                        continue
-                    next_pending_hashes.add(download_hash)
-            pending_hashes = next_pending_hashes
-            if not pending_hashes:
-                logger.info(
-                    f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}旧下载任务确认完成，"
-                    f"等待 {waited_seconds} 秒后继续下载"
-                )
-                return True
-            detail(
-                f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}等待旧下载任务释放 "
-                f"({waited_seconds}/180 秒)，剩余 {len(pending_hashes)} 个"
-            )
-        logger.warning(
-            f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}"
-            "等待旧下载任务达到 180 秒总上限，"
-            f"降级放行剩余 {len(pending_hashes)} 个 hash"
-        )
-        return True
-
-    def _history_season(self, subscribe) -> Optional[str]:
-        """按主程序整理历史口径把订阅季号转换为 Sxx。"""
-        if self._season_of:
-            return self._season_of(subscribe)
-        season = subscribe.season
-        if season is None:
-            return None
-        try:
-            return f"S{int(season):02d}"
-        except (TypeError, ValueError):
-            logger.warning(
-                f"洗版清理：{format_subscribe_desc(subscribe)} {self._mode_label(subscribe)}季号无效，"
-                f"无法匹配整理记录：{season}"
-            )
-            return None
-
-    def clear_transfer_src_histories(self, subscribe, histories):
-        """删除源文件与整理历史，并保存 TransferIntercept 阶段消费的清理快照。
-
-        快照 key 统一为 str(tmdbid)，避免写入与读取类型不一致；旧媒体库目标文件必须等
-        主程序整理新文件前再删，因此由后续 TransferIntercept 消费。
-        """
-        tmdbid = str(subscribe.tmdbid or "")
-        if not tmdbid:
-            return
-        subscribe_image = self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
-
-        def updater(data: dict) -> dict:
-            data[tmdbid] = {
-                "subscribe_id": subscribe.id,
-                "subscribe_desc": format_subscribe_desc(subscribe),
-                "subscribe_image": subscribe_image,
-                "mode_label": self._mode_label(subscribe),
-                "histories": [self._history_to_dict(h) for h in histories],
-                "time": time.time(),
-            }
-            return data
-
-        if self._update:
-            self._update("best_version_clear_histories", updater)
-
-        mode_label = self._mode_label(subscribe)
-        logger.info(
-            f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}开始删除 "
-            f"{len(histories)} 条旧整理记录的源文件（不可逆）"
-        )
-        source_file_total = 0
-        source_file_deleted = 0
-        download_notice_total = 0
-        download_notice_sent = 0
-        history_delete_total = 0
-        history_deleted = 0
-        for history in histories:
-            src_fileitem = self._field(history, "src_fileitem")
-            if src_fileitem:
-                source_file_total += 1
-            if src_fileitem and self._delete_media_file:
-                self._delete_media_file(src_fileitem)
-                source_file_deleted += 1
-            if self._field(history, "src") or self._field(history, "download_hash"):
-                download_notice_total += 1
-            if self._send_dfd:
-                self._send_dfd(self._field(history, "src"), self._field(history, "download_hash"))
-                download_notice_sent += 1
-            history_id = self._field(history, "id")
-            if history_id is not None:
-                history_delete_total += 1
-            if history_id is not None and self._delete_history:
-                self._delete_history(history_id)
-                history_deleted += 1
-
-        logger.info(
-            f"洗版清理：{format_subscribe_desc(subscribe)} {mode_label}源文件清理完成，"
-            f"整理记录 {history_deleted}/{history_delete_total} 条，"
-            f"源文件 {source_file_deleted}/{len(histories)} 个，"
-            f"下载记录通知 {download_notice_sent}/{download_notice_total} 个"
-        )
-
-        if self._notify:
-            self._notify(
-                f"{format_subscribe_desc(subscribe)} "
-                f"即将开始{mode_label}下载，已删除 {len(histories)} 条整理记录对应的源文件",
-                image=subscribe_image,
-            )
-
-    def handle_history_clear(self, event) -> bool:
-        """TransferIntercept 阶段按清理快照删除旧媒体库目标文件，成功后移除快照。"""
-        data = event.event_data
-        if not data or data.cancel:
-            return False
-        mediainfo = data.mediainfo
-        tmdb_id = mediainfo.tmdb_id if mediainfo else None
-        if tmdb_id is None or not self._read:
-            return False
-        key = str(tmdb_id)
-        snapshots = self._read("best_version_clear_histories") or {}
-        task = snapshots.get(key)
-        if not task:
-            return False
-        if self._clear_history_task_expired(task):
-            detail(f"洗版整理拦截：TMDB {key} 的清理事务已超过 72 小时，丢弃且不删除媒体库文件")
-            return False
-        if self.clear_transfer_dest_histories(task):
-            self._remove_clear_history_task(key)
-            return True
-        return False
-
-    def cleanup_expired_clear_histories(self) -> int:
-        """清理超过 72 小时或缺少有效时间戳的洗版文件清理事务。"""
-        snapshots = self._read("best_version_clear_histories") if self._read else {}
-        expired_keys = [
-            str(key) for key, task in (snapshots or {}).items()
-            if self._clear_history_task_expired(task)
-        ]
-        if not expired_keys or not self._update:
-            return 0
-
-        def updater(data: dict) -> dict:
-            for key in expired_keys:
-                data.pop(key, None)
-            return data
-
-        self._update("best_version_clear_histories", updater)
-        return len(expired_keys)
-
-    @staticmethod
-    def _clear_history_task_expired(task: dict) -> bool:
-        """判断破坏性清理事务是否仍处于允许消费的 72 小时窗口。"""
-        created_at = (task or {}).get("time")
-        if not isinstance(created_at, (int, float)):
-            return True
-        return time.time() - created_at > BEST_VERSION_CLEAR_HISTORY_TTL_SECONDS
-
-    def _remove_clear_history_task(self, key: str):
-        """按 TMDBID 删除已消费或失效的洗版清理事务。"""
-        if not self._update:
-            return
-
-        def updater(data: dict) -> dict:
-            data.pop(key, None)
-            return data
-
-        self._update("best_version_clear_histories", updater)
-
-    def clear_transfer_dest_histories(self, task) -> bool:
-        """删除清理快照中的媒体库目标文件；空快照也视为已处理。"""
-        histories = (task or {}).get("histories") or []
-        mode_label = (task or {}).get("mode_label") or "全集洗版"
-        if histories:
-            detail(f"洗版整理拦截：{mode_label}删除 {len(histories)} 条旧整理记录对应的媒体库文件（不可逆）")
-        for history in histories:
-            dest_fileitem = history.get("dest_fileitem") if isinstance(history, dict) else None
-            if dest_fileitem and self._delete_media_file:
-                self._delete_media_file(dest_fileitem)
-        dest_file_total = sum(
-            1 for history in histories
-            if isinstance(history, dict) and history.get("dest_fileitem")
-        )
-        logger.info(
-            f"洗版整理拦截：{(task or {}).get('subscribe_desc', '洗版订阅')} "
-            f"{mode_label}媒体库文件清理完成，目标文件 {dest_file_total}/{len(histories)} 个"
-        )
-        if self._notify:
-            self._notify(
-                f"{(task or {}).get('subscribe_desc', '洗版订阅')} "
-                f"即将开始{mode_label}整理，已删除 {len(histories)} 条整理记录对应的媒体库文件",
-                image=(task or {}).get("subscribe_image"),
-            )
-        return True
-
     @staticmethod
     def _mode_label(subscribe) -> str:
         """按订阅实际洗版形态返回用户可见标签，避免把分集和全集清理混写成泛化洗版。"""
@@ -516,7 +136,7 @@ class BestVersionOrchestrator:
 
     @staticmethod
     def _type_matches(media_type: MediaType, type_setting) -> bool:
-        """判断媒体类型是否落在洗版或清理范围：no/all/movie/tv/tv_episode。"""
+        """判断媒体类型是否落在自动洗版范围：no/all/movie/tv/tv_episode。"""
         if media_type == MediaType.UNKNOWN:
             return False
         if type_setting == "no":
@@ -528,18 +148,3 @@ class BestVersionOrchestrator:
         if type_setting in ("tv", "tv_episode"):
             return media_type == MediaType.TV
         return False
-
-    @staticmethod
-    def _field(history, name):
-        """兼容 TransferHistory 对象与 dict 两种整理记录形态。"""
-        if isinstance(history, dict):
-            return history.get(name)
-        return getattr(history, name, None)
-
-    @staticmethod
-    def _history_to_dict(history) -> dict:
-        """把整理记录转换为可持久化到清理快照的 dict。"""
-        if isinstance(history, dict):
-            return history
-        to_dict = getattr(history, "to_dict", None)
-        return to_dict() if callable(to_dict) else dict(getattr(history, "__dict__", {}))

@@ -7,9 +7,9 @@
 - SubscribeDeleted → task_manager.cleanup
 - SubscribeModified → task_manager.reset_on_modify
 - SubscribeComplete → verifier.snapshot + best_version
-- TransferIntercept → best_version.history_clear
+- TransferIntercept → subscription_cleanup.history_clear
 - ResourceSelection → 洗版串行与删除指纹过滤（识别增强保持下线）
-- ResourceDownload → monitor.mark_pending
+- ResourceDownload → subscription_cleanup + monitor.mark_pending
 - DownloadAdded → monitor.on_download
 - TransferComplete → 清下载待定 + 移动模式清理 + 分集转全集补偿
 - PluginAction → toggle_subscribe_state
@@ -310,10 +310,10 @@ class EventProxy:
                 orchestrator.start_best_version(subscribe, mediainfo)
 
     def on_transfer_intercept(self, event):
-        """TransferIntercept → 洗版历史清理。"""
-        orchestrator = self.get("orchestrator")
-        if orchestrator and orchestrator.handle_history_clear(event):
-            detail("整理拦截事件：已完成历史记录清理")
+        """TransferIntercept → 订阅清理目标文件删除。"""
+        subscription_cleanup = self.get("subscription_cleanup")
+        if subscription_cleanup and subscription_cleanup.handle_history_clear(event):
+            detail("整理拦截事件：已完成订阅清理记录处理")
 
     def on_resource_selection(self, event):
         """ResourceSelection → 洗版下载串行控制 + 剔除近期删除资源防重选。
@@ -404,7 +404,7 @@ class EventProxy:
             page_url=getattr(torrent_info, "page_url", None))
 
     def on_resource_download(self, event):
-        """ResourceDownload → 下载待定 + 洗版历史清理 + 按种子记录优先级基线。
+        """ResourceDownload → 订阅清理 + 下载待定 + 按种子记录优先级基线。
 
         ResourceDownload 阶段尚无 hash，先写无 hash 待定以覆盖 DownloadAdded 前的完成检查空窗；
         洗版优先级基线按 enclosure 归属，便于删种后按集回滚并隔离并行洗版。
@@ -434,13 +434,12 @@ class EventProxy:
                 description=getattr(torrent_info, "description", None),
             )
 
-        orchestrator = self.get("orchestrator")
-        if orchestrator and subscribe.best_version:
+        subscription_cleanup = self.get("subscription_cleanup")
+        if subscription_cleanup:
             detail(
-                f"ResourceDownload：{format_subscribe(subscribe)} "
-                f"{self._best_version_mode_label(subscribe)}执行历史清理前置检查"
+                f"ResourceDownload：{format_subscribe(subscribe)} 执行订阅清理前置检查"
             )
-            orchestrator.handle_resource_download_history_clear(
+            subscription_cleanup.handle_resource_download_history_clear(
                 subscribe,
                 context=data.context,
                 episodes=data.episodes,
