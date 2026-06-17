@@ -149,12 +149,23 @@ class PluginConfigDefaultsTest:
     def test_best_version_backfill_default_disabled(self):
         assert self.cfg.best_version_backfill_enabled is False
 
+    def test_subscription_cleanup_defaults(self):
+        """订阅清理默认关闭，且默认不选任何触发场景。"""
+        assert self.cfg.subscription_cleanup_history_type == "no"
+        assert self.cfg.subscription_cleanup_history_scenes == []
+
     def test_removed_best_version_boolean_keys_are_not_declared(self):
         """洗版开关语义由枚举字段承载，旧布尔键不再进入默认 model。"""
         keys = set(self.cfg.declared_keys())
         assert "best_version_enabled" not in keys
         assert "auto_best_version_on_complete" not in keys
         assert "best_version_clear_history_enabled" not in keys
+
+    def test_old_best_version_clear_history_key_is_not_declared(self):
+        """清理配置归入订阅清理页签，旧洗版清理字段不再作为配置契约。"""
+        keys = set(self.cfg.declared_keys())
+        assert "best_version_clear_history_type" not in keys
+        assert not hasattr(self.cfg, "best_version_clear_history_type")
 
 
 class PluginConfigCoercionTest:
@@ -201,6 +212,25 @@ class PluginConfigCoercionTest:
 
     def test_invalid_completion_guard_mode_falls_back_to_balanced(self):
         assert PluginConfig({"completion_guard_mode": "bad"}).completion_guard_mode == "balanced"
+
+    def test_subscription_cleanup_type_accepts_declared_values(self):
+        for value in ("no", "all", "movie", "tv"):
+            cfg = PluginConfig({"subscription_cleanup_history_type": value})
+            assert cfg.subscription_cleanup_history_type == value
+
+    def test_subscription_cleanup_type_rejects_unknown_value(self):
+        assert PluginConfig({"subscription_cleanup_history_type": "bad"}).subscription_cleanup_history_type == "no"
+
+    def test_subscription_cleanup_scenes_parse_list_or_csv(self):
+        cfg = PluginConfig({
+            "subscription_cleanup_history_scenes": ["normal", "best_version_episode"]
+        })
+        assert cfg.subscription_cleanup_history_scenes == ["normal", "best_version_episode"]
+
+        cfg = PluginConfig({
+            "subscription_cleanup_history_scenes": "normal,best_version_full,bad"
+        })
+        assert cfg.subscription_cleanup_history_scenes == ["normal", "best_version_full"]
 
     def test_int_from_float_string_truncates(self):
         cfg = PluginConfig({"download_retry_limit": "3.9"})

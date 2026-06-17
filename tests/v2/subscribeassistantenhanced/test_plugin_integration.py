@@ -858,7 +858,7 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
-    plugin.run_best_version_history_cleanup = MagicMock()
+    plugin.run_subscription_cleanup_expired = MagicMock()
 
     plugin.run_common_check()
 
@@ -867,7 +867,7 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
-    plugin.run_best_version_history_cleanup.assert_called_once()
+    plugin.run_subscription_cleanup_expired.assert_called_once()
 
 
 def test_run_common_check_isolates_subtask_failures():
@@ -882,7 +882,7 @@ def test_run_common_check_isolates_subtask_failures():
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
-    plugin.run_best_version_history_cleanup = MagicMock()
+    plugin.run_subscription_cleanup_expired = MagicMock()
 
     plugin.run_common_check()
 
@@ -890,7 +890,7 @@ def test_run_common_check_isolates_subtask_failures():
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
-    plugin.run_best_version_history_cleanup.assert_called_once()
+    plugin.run_subscription_cleanup_expired.assert_called_once()
 
 
 def test_run_common_check_respects_domain_switches():
@@ -905,7 +905,7 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_no_download_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
-    plugin.run_best_version_history_cleanup = MagicMock()
+    plugin.run_subscription_cleanup_expired = MagicMock()
 
     plugin.run_common_check()
 
@@ -914,7 +914,7 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_no_download_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_not_called()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
-    plugin.run_best_version_history_cleanup.assert_called_once()
+    plugin.run_subscription_cleanup_expired.assert_called_once()
 
 
 def test_onlyonce_registers_one_shot_and_resets_flag():
@@ -1332,17 +1332,32 @@ def test_airing_checker_receives_pre_air_days():
     assert airing_checker._tv_air_days == 5
 
 
-def test_orchestrator_receives_type_filters():
-    """插件入口必须把洗版和清理媒体类型范围注入编排器。"""
+def test_best_version_and_cleanup_receive_type_filters():
+    """插件入口必须分别把洗版范围和订阅清理范围/场景注入对应模块。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
         "best_version_type": "tv",
-        "best_version_clear_history_type": "movie",
+        "subscription_cleanup_history_type": "movie",
+        "subscription_cleanup_history_scenes": ["normal", "best_version_episode"],
     })
     orchestrator = plugin._modules["orchestrator"]
+    subscription_cleanup = plugin._modules["subscription_cleanup"]
 
     assert orchestrator._best_version_type == "tv"
-    assert orchestrator._clear_history_type == "movie"
+    assert subscription_cleanup._cleanup_history_type == "movie"
+    assert subscription_cleanup._cleanup_history_scenes == ["normal", "best_version_episode"]
+
+
+def test_get_transfer_histories_passes_episode_when_provided():
+    """整理记录查询可按季集收窄，供订阅清理按集定位旧文件。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin._transferhistory_oper = MagicMock()
+    plugin._transferhistory_oper.get_by.return_value = []
+
+    plugin._get_transfer_histories(tmdbid=100, mtype="电视剧", season="S01", episode="E02")
+
+    plugin._transferhistory_oper.get_by.assert_called_once_with(
+        tmdbid=100, mtype="电视剧", season="S01", episode="E02")
 
 
 class TestPluginWiring:
@@ -1691,7 +1706,7 @@ class TestPeriodicJobs:
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: _mediainfo())
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
-        plugin._evaluate_fn = lambda s, m: object()
+        plugin._evaluate_fn = lambda s, m: CompletionSignal()
         timeout_manager = MagicMock()
         timeout_manager.check_release.return_value = True
         plugin._modules["timeout_manager"] = timeout_manager
@@ -1733,7 +1748,7 @@ class TestPeriodicJobs:
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: _mediainfo())
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
-        plugin._evaluate_fn = lambda s, m: object()
+        plugin._evaluate_fn = lambda s, m: CompletionSignal()
         timeout_manager = MagicMock()
         timeout_manager.check_release.return_value = True
         plugin._modules["timeout_manager"] = timeout_manager
@@ -1763,7 +1778,7 @@ class TestPeriodicJobs:
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: mediainfo)
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
-        plugin._evaluate_fn = lambda s, m: object()
+        plugin._evaluate_fn = lambda s, m: CompletionSignal()
         timeout_manager = MagicMock()
         timeout_manager.check_release.return_value = True
         plugin._modules["timeout_manager"] = timeout_manager

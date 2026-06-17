@@ -169,7 +169,7 @@ class TestEventRegistration:
         assert "已将 1 个自动暂停订阅恢复为启用：暂停剧 S2" in kwargs["text"]
         assert set(saved) == {
             "subscribes", "torrents", "blocks", "releases", "snapshots",
-            "deletes", "volatility", "best_version_clear_histories",
+            "deletes", "volatility", "subscription_cleanup_histories",
         }
 
     def test_plugin_data_reset_event_logs_without_notify_when_nothing_recovered(self, monkeypatch):

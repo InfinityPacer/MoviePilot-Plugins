@@ -111,7 +111,7 @@ class PluginConfig:
         """洗版检查周期：cron 表达式，由 CronTrigger 调度定时推进洗版订阅。"""
         return self.get_str("best_version_cron", "0 15 * * *")
 
-    # ---- 种子删除 ----
+    # ---- 订阅清理 ----
 
     @property
     def download_monitor_enabled(self) -> bool:
@@ -168,6 +168,19 @@ class PluginConfig:
     def delete_record_retention_hours(self) -> int:
         """删除指纹保留期（小时）：超过则定时清理，避免长期屏蔽同源资源。"""
         return self.get_int("delete_record_retention_hours", 24)
+
+    @property
+    def subscription_cleanup_history_type(self) -> str:
+        """订阅清理整理记录范围：no/all/movie/tv，命中后才允许执行破坏性清理事务。"""
+        val = self.get_str("subscription_cleanup_history_type", "no")
+        return val if val in ("no", "all", "movie", "tv") else "no"
+
+    @property
+    def subscription_cleanup_history_scenes(self) -> list:
+        """订阅清理整理记录场景：normal/best_version_episode/best_version_full。"""
+        scenes = self.get_list("subscription_cleanup_history_scenes")
+        allowed = {"normal", "best_version_episode", "best_version_full"}
+        return [scene for scene in scenes if scene in allowed]
 
     # ---- 订阅待定 ----
 
@@ -242,12 +255,6 @@ class PluginConfig:
         """洗版类型：no=关闭自动洗版；all/movie/tv/tv_episode=按范围自动创建并巡检洗版订阅。"""
         val = self.get_str("best_version_type", "no")
         return val if val in ("no", "all", "movie", "tv", "tv_episode") else "no"
-
-    @property
-    def best_version_clear_history_type(self) -> str:
-        """洗版前清理整理记录范围：no/all/movie/tv（破坏性，删源文件/媒体库文件）。"""
-        val = self.get_str("best_version_clear_history_type", "no")
-        return val if val in ("no", "all", "movie", "tv") else "no"
 
     @property
     def best_version_remaining_days(self) -> int:

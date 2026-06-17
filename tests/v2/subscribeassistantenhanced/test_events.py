@@ -798,20 +798,20 @@ class TestResourceSelectionDedup:
 
 
 class TestResourceDownloadHistoryClear:
-    """ResourceDownload 触发洗版旧整理记录清理。"""
+    """ResourceDownload 触发订阅清理。"""
 
-    def test_best_version_triggers_history_clear(self):
+    def test_best_version_triggers_subscription_cleanup(self):
         sub = _sub(id=1, best_version=1)
         oper = MagicMock()
         oper.get.return_value = sub
-        orch = MagicMock()
-        orch.handle_resource_download_history_clear.return_value = True
-        proxy = EventProxy(subscribe_oper=oper, orchestrator=orch)
+        cleanup = MagicMock()
+        cleanup.handle_resource_download_history_clear.return_value = True
+        proxy = EventProxy(subscribe_oper=oper, subscription_cleanup=cleanup)
         ctx = object()
         proxy.on_resource_download(SimpleNamespace(event_data=SimpleNamespace(
             origin='Subscribe|{"id": 1}', context=ctx, episodes=[1],
             downloader="下载", cancel=False)))
-        orch.handle_resource_download_history_clear.assert_called_once_with(
+        cleanup.handle_resource_download_history_clear.assert_called_once_with(
             sub, context=ctx, episodes=[1])
 
     def test_history_clear_degraded_result_does_not_cancel_download(self):
@@ -819,9 +819,9 @@ class TestResourceDownloadHistoryClear:
         sub = _sub(id=1, best_version=1)
         oper = MagicMock()
         oper.get.return_value = sub
-        orch = MagicMock()
-        orch.handle_resource_download_history_clear.return_value = False
-        proxy = EventProxy(subscribe_oper=oper, orchestrator=orch)
+        cleanup = MagicMock()
+        cleanup.handle_resource_download_history_clear.return_value = False
+        proxy = EventProxy(subscribe_oper=oper, subscription_cleanup=cleanup)
         data = SimpleNamespace(
             origin='Subscribe|{"id": 1}',
             context=SimpleNamespace(torrent_info=None),
@@ -836,12 +836,12 @@ class TestResourceDownloadHistoryClear:
 
         assert data.cancel is False
 
-    def test_non_best_version_skips_history_clear_but_marks_download_started(self):
-        """普通订阅 ResourceDownload 只写下载待定，不打洗版清理链路。"""
+    def test_non_best_version_runs_subscription_cleanup_and_marks_download_started(self):
+        """普通订阅 ResourceDownload 也进入订阅清理模块，是否清理由模块配置判定。"""
         sub = _sub(id=1, best_version=0)
         oper = MagicMock()
         oper.get.return_value = sub
-        orch = MagicMock()
+        cleanup = MagicMock()
         monitor = MagicMock()
         torrent_info = SimpleNamespace(
             enclosure="https://example/torrent",
@@ -850,12 +850,13 @@ class TestResourceDownloadHistoryClear:
             description="首集资源",
         )
         ctx = SimpleNamespace(torrent_info=torrent_info)
-        proxy = EventProxy(subscribe_oper=oper, orchestrator=orch, download_monitor=monitor)
+        proxy = EventProxy(subscribe_oper=oper, subscription_cleanup=cleanup, download_monitor=monitor)
 
         proxy.on_resource_download(SimpleNamespace(event_data=SimpleNamespace(
             origin='Subscribe|{"id": 1}', context=ctx, episodes=[1], downloader="qb", cancel=False)))
 
-        orch.handle_resource_download_history_clear.assert_not_called()
+        cleanup.handle_resource_download_history_clear.assert_called_once_with(
+            sub, context=ctx, episodes=[1])
         monitor.mark_download_started.assert_called_once_with(
             sub,
             episodes=[1],
@@ -867,11 +868,11 @@ class TestResourceDownloadHistoryClear:
         )
 
     def test_cancelled_event_skipped(self):
-        orch = MagicMock()
-        proxy = EventProxy(subscribe_oper=MagicMock(), orchestrator=orch)
+        cleanup = MagicMock()
+        proxy = EventProxy(subscribe_oper=MagicMock(), subscription_cleanup=cleanup)
         proxy.on_resource_download(SimpleNamespace(event_data=SimpleNamespace(
             origin='Subscribe|{"id": 1}', cancel=True)))
-        orch.handle_resource_download_history_clear.assert_not_called()
+        cleanup.handle_resource_download_history_clear.assert_not_called()
 
     def test_captures_priority_baseline_by_enclosure(self):
         """洗版订阅 → 按种子 enclosure 记录优先级基线（贡献档位=pri_order）。"""

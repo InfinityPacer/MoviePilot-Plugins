@@ -163,9 +163,12 @@ def test_form_has_top_switches_periods_and_five_tabs():
     # 关键新参数可编辑
     for key in ("best_version_type", "no_download_actions", "movie_air_pause_days",
                 "best_version_episode_to_full", "best_version_remaining_days",
-                "manual_delete_listen"):
+                "manual_delete_listen", "subscription_cleanup_history_type",
+                "subscription_cleanup_history_scenes"):
         assert f'"{key}"' in flat
     assert '"pending_default_total_episodes"' not in flat
+    assert '"best_version_clear_history_type"' not in flat
+    assert "best_version_clear_history_type" not in model
     # 多选控件
     assert '"multiple": true' in flat or '"multiple":true' in flat
 
@@ -190,7 +193,7 @@ def test_periods_use_dropdown_and_cron():
 
 
 def test_auto_check_interval_lives_in_public_period_row_only():
-    """通用巡检周期属于公共周期，不混在「种子删除」业务页里。"""
+    """通用巡检周期属于公共周期，不混在「订阅清理」业务页里。"""
     import json
     conf, _model = build_form()
     period_models = [col["content"][0]["props"]["model"] for col in conf[2]["content"]]
@@ -235,20 +238,56 @@ def test_best_version_tab_uses_type_without_extra_flow_switch():
     flat = json.dumps(best_tab, ensure_ascii=False)
 
     assert '"best_version_type"' in flat
-    assert '"best_version_clear_history_type"' in flat
+    assert '"best_version_clear_history_type"' not in flat
+    assert "best_version_clear_history_type" not in model
     for key in ("best_version_enabled", "auto_best_version_on_complete",
                 "best_version_clear_history_enabled"):
         assert key not in model
         assert f'"{key}"' not in flat
 
 
+def test_subscription_cleanup_tab_replaces_seed_delete_title():
+    """旧入口统一调整为订阅清理，不再暴露种子删除页签命名。"""
+    import json
+    conf, _model = build_form()
+    flat = json.dumps(conf, ensure_ascii=False)
+
+    assert '"订阅清理"' in flat
+    assert '"种子删除"' not in flat
+
+
+def test_subscription_cleanup_fields_live_in_cleanup_tab():
+    """订阅清理页签承载清理整理记录范围/场景，洗版页签不再承载清理配置。"""
+    import json
+    conf, model = build_form()
+    cleanup_tab = conf[4]["content"][0]["content"]
+    wash_tab = conf[4]["content"][3]["content"]
+    cleanup_history_cols = cleanup_tab[2]["content"]
+    cleanup_flat = json.dumps(cleanup_tab, ensure_ascii=False)
+    wash_flat = json.dumps(wash_tab, ensure_ascii=False)
+
+    assert model["subscription_cleanup_history_type"] == "no"
+    assert model["subscription_cleanup_history_scenes"] == []
+    assert '"subscription_cleanup_history_type"' in cleanup_flat
+    assert '"subscription_cleanup_history_scenes"' in cleanup_flat
+    assert '"best_version_clear_history_type"' not in cleanup_flat
+    assert '"best_version_clear_history_type"' not in wash_flat
+    assert LABELS["subscription_cleanup_history_type"] == "清理整理记录范围"
+    assert LABELS["subscription_cleanup_history_scenes"] == "清理整理记录场景"
+    assert [col["content"][0]["props"]["model"] for col in cleanup_history_cols] == [
+        "subscription_cleanup_history_type",
+        "subscription_cleanup_history_scenes",
+    ]
+    assert [col["props"]["md"] for col in cleanup_history_cols] == [4, 8]
+
+
 def test_tracker_keywords_in_dialog_as_textarea():
     """Tracker 关键字置于「打开Tracker配置窗口」开关弹出的 VDialog 内，为多行 VTextarea。"""
     import json
     conf, _model = build_form()
-    # 「种子删除」页（conf[4] = VWindow，第 1 个 VWindowItem）含一个绑定 open_tracker_dialog 的 VDialog
-    seed_tab = conf[4]["content"][0]["content"]
-    dialog = next(el for el in seed_tab if el["component"] == "VDialog")
+    # 「订阅清理」页（conf[4] = VWindow，第 1 个 VWindowItem）含一个绑定 open_tracker_dialog 的 VDialog。
+    cleanup_tab = conf[4]["content"][0]["content"]
+    dialog = next(el for el in cleanup_tab if el["component"] == "VDialog")
     assert dialog["props"]["model"] == "open_tracker_dialog"
     flat_dialog = json.dumps(dialog, ensure_ascii=False)
     assert '"VTextarea"' in flat_dialog

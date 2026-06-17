@@ -5,10 +5,11 @@ import time
 from typing import Callable, Optional
 
 from app.log import logger
+from app.schemas.types import MediaType
 
 from .torrent import TorrentInfo
 from ..shared.log import detail, format_log_title_desc
-from ..shared.subscribe import format_subscribe_label
+from ..shared.subscribe import format_subscribe_label, resolve_subscribe_media_type
 
 TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS = 24
 
@@ -639,13 +640,13 @@ class DownloadMonitor:
     def _timeout_scope_key(self, subscribe_id: int, torrent_task: dict) -> str:
         """生成连续低进度统计范围；剧集按季和集数，其他订阅按 movie 兜底。"""
         subscribe = self._resolve_subscribe(subscribe_id)
-        media_type = getattr(getattr(subscribe, "type", None), "value", getattr(subscribe, "type", None))
-        if media_type == "电视剧":
+        media_type = resolve_subscribe_media_type(subscribe)
+        if media_type == MediaType.TV:
             episodes = torrent_task.get("episodes") or []
             if not isinstance(episodes, list):
                 episodes = [episodes]
             episode_key = ",".join(sorted(str(ep) for ep in episodes if ep is not None)) or "unknown"
-            season = getattr(subscribe, "season", None) if subscribe else None
+            season = subscribe.season if subscribe else None
             return f"tv:{season if season is not None else 'unknown'}:{episode_key}"
         return "movie"
 
