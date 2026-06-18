@@ -9,6 +9,7 @@ from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.engine.local import check_l_signal
 from subscribeassistantenhanced.engine.scope import build_scope
 from subscribeassistantenhanced.engine.types import CompletionSignal
+from subscribeassistantenhanced.shared.subscribe import pending_subscription_episodes
 
 
 def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
@@ -39,6 +40,7 @@ def _event(subscribe=None, mediainfo=None):
             status="Returning Series", next_episode_to_air=None,
             last_episode_to_air=None, seasons=[],
         )),
+        meta=SimpleNamespace(type=MediaType.TV, begin_season=1, season=1),
         cancel=False, reason="", source="",
     )
     return SimpleNamespace(event_data=data)
@@ -57,6 +59,10 @@ def _guard(signal=None, has_active=False, mode="strict"):
     g.mark_pending_fn = MagicMock()
     g.timeout_manager = MagicMock()
     g.timeout_manager.consume_release.return_value = False
+    g.resolve_missing_fn = MagicMock(side_effect=lambda subscribe, **_kwargs: (
+        not pending_subscription_episodes(subscribe),
+        {},
+    ))
     return g
 
 
@@ -258,6 +264,66 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is False
         g.mark_pending_fn.assert_not_called()
         g.timeout_manager.record_block.assert_not_called()
+
+    def test_l_signal_uses_main_missing_resolver_for_existing_library_plus_new_downloads(self):
+        """L 信号应复用主程序缺集合并口径，避免只看 note 漏掉订阅前已在库集。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 21)]
+        subscribe = _sub()
+        subscribe.total_episode = 20
+        subscribe.note = list(range(11, 21))
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_called_once_with(
+            subscribe=subscribe,
+            meta=ev.event_data.meta,
+            mediainfo=ev.event_data.mediainfo,
+            best_version_accept_downloaded=False,
+        )
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_episode_best_version_stable_completion_still_only_blocks_f(self):
+        """分集洗版稳定时完成守卫只挡 F，不用低置信 L 反向取消完成。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="strict")
+        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
+        subscribe = _sub(best_version=1, best_version_full=0)
+        subscribe.total_episode = 2
+        subscribe.note = [1, 2]
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_not_called()
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_full_best_version_l_signal_does_not_accept_any_downloaded_version(self):
+        """全集洗版仍按整季洗版处理，不能使用任意版本已下载即满足的 L 口径。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2), _ep(3)]
+        subscribe = _sub(best_version=1, best_version_full=1)
+        subscribe.total_episode = 3
+        subscribe.note = [1, 2, 3]
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_not_called()
 
     def test_local_coverage_does_not_complete_when_scope_has_future_episode(self):
         """聚合下一集缺失但 SeasonScope 已有未来集时，L 信号不得提前完成订阅。"""

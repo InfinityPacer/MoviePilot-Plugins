@@ -3,6 +3,8 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.schemas.types import MediaType
+
 from subscribeassistantenhanced.engine.evaluate import evaluate
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 from subscribeassistantenhanced.engine.types import CompletionSignal, SeasonScope
@@ -192,11 +194,21 @@ class TestBestVersionFlow:
         guard.mark_pending_fn = MagicMock()
         guard.verifier = MagicMock()
         guard.timeout_manager = MagicMock()
+        guard.timeout_manager.consume_release.return_value = False
+        guard.tmdb_episodes_fn = MagicMock(return_value=[
+            SimpleNamespace(episode_number=1, season_number=1, air_date="2026-01-01", episode_type="standard"),
+            SimpleNamespace(episode_number=2, season_number=1, air_date="2026-01-01", episode_type="standard"),
+        ])
         guard.pending_download_enabled = True
-        ev = SimpleNamespace(event_data=SimpleNamespace(subscribe=_sub(best_version=1), mediainfo=_mi(),
+        guard.mode = "strict"
+        guard.resolve_missing_fn = MagicMock(return_value=(True, {}))
+        ev = SimpleNamespace(event_data=SimpleNamespace(subscribe=_sub(best_version=1, note=[1, 2], total_episode=2), mediainfo=_mi(),
+                             meta=SimpleNamespace(type=MediaType.TV, begin_season=1, season=1),
                              cancel=False, reason="", source=""))
         guard.handle(ev)
         assert ev.event_data.cancel is False
+        guard.resolve_missing_fn.assert_not_called()
+        guard.mark_pending_fn.assert_not_called()
 
     def test_payload_preserves_episode_group(self):
         orch = BestVersionOrchestrator(
@@ -251,6 +263,7 @@ class TestDownloadPending:
         guard.timeout_manager = MagicMock()
         guard.pending_download_enabled = True
         ev = SimpleNamespace(event_data=SimpleNamespace(subscribe=_sub(), mediainfo=_mi(),
+                             meta=SimpleNamespace(type=MediaType.TV, begin_season=1, season=1),
                              cancel=False, reason="", source=""))
         guard.handle(ev)
         assert ev.event_data.cancel is True
@@ -266,6 +279,7 @@ class TestDownloadPending:
         guard.timeout_manager = MagicMock()
         guard.pending_download_enabled = True
         ev = SimpleNamespace(event_data=SimpleNamespace(subscribe=_sub(), mediainfo=_mi(),
+                             meta=SimpleNamespace(type=MediaType.TV, begin_season=1, season=1),
                              cancel=False, reason="", source=""))
         guard.handle(ev)
         guard.mark_pending_fn.assert_not_called()
