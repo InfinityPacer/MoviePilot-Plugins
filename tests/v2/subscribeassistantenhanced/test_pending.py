@@ -100,6 +100,40 @@ class TestShouldEnterPending:
         assert should is True
         assert reason == "目标总集数近期变化"
 
+    def test_mid_airing_total_shrink_does_not_enter_pending_from_volatility(self):
+        """播出中段 total 校准只记录风险，不触发 pending_judge 待定。"""
+        j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
+        sig = CompletionSignal(stable=False, scope_total=33)
+        episodes = [_ep(i, air_date="2026-06-01") for i in range(1, 18)]
+        episodes.extend(_ep(i, air_date="2026-06-23") for i in range(18, 34))
+
+        should, reason = j.should_enter_pending(
+            _sub(total_episode=33),
+            _mi(),
+            episodes,
+            signal=sig,
+        )
+
+        assert should is False
+        assert reason == ""
+
+    def test_near_completion_volatility_still_enters_pending(self):
+        """接近完结时 total 近期变化仍进入 pending_judge 待定。"""
+        j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
+        sig = CompletionSignal(stable=False, scope_total=33)
+        episodes = [_ep(i, air_date="2026-06-01") for i in range(1, 33)]
+        episodes.append(_ep(33, air_date=date.today().isoformat()))
+
+        should, reason = j.should_enter_pending(
+            _sub(total_episode=33),
+            _mi(),
+            episodes,
+            signal=sig,
+        )
+
+        assert should is True
+        assert reason == "目标总集数近期变化"
+
     def test_no_air_date_triggers_pending(self):
         """无 air_date → 待定。"""
         j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 0}))

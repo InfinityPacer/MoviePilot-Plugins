@@ -5,6 +5,7 @@ from typing import Callable, Optional
 from app.log import logger
 from app.schemas.types import MediaType
 
+from ..engine.proximity import assess_completion_proximity
 from ..engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from ..shared.config import PluginConfig
 from ..shared.log import detail
@@ -56,7 +57,14 @@ class PendingJudge:
             return True, f"集数不足（{ep_count} ≤ {pending_episodes}）"
 
         if self._config.pending_use_volatility and signal and not signal.stable:
-            return True, "目标总集数近期变化"
+            proximity = assess_completion_proximity(
+                episodes=episodes,
+                total=signal.scope_total or subscribe.total_episode or len(episodes or []),
+                missing_episodes=None,
+            )
+            if proximity.near_completion:
+                return True, "目标总集数近期变化"
+            detail(f"待定判定：{format_subscribe(subscribe)} 总集数近期变化但未接近完结，不进入待定")
 
         if episodes and not any(ep.air_date for ep in episodes):
             return True, "本季无任何 air_date 信息"
