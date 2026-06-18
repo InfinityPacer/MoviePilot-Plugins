@@ -569,21 +569,29 @@ class EventProxy:
         subscribe_oper = self.get("subscribe_oper")
         converter = self.get("converter")
         detect_missing = self.get("detect_missing_episodes_fn")
+        resolve_missing = self.get("resolve_missing_fn")
         recognize = self.get("recognize_mediainfo_fn")
-        if not (subscribe_oper and converter and detect_missing and recognize):
+        if not (subscribe_oper and converter and recognize):
             return
         subscribe = subscribe_oper.get(subscribe_id)
         if not subscribe or not subscribe.best_version or subscribe.best_version_full:
             return
-        if (subscribe.lack_episode or 0) > 0:
-            return
-        no_exists = detect_missing(subscribe)
-        if no_exists:
-            return
         mediainfo = recognize(subscribe)
         if not mediainfo:
             return
-        detail(f"TransferComplete：{format_subscribe(subscribe)} 目标集已全部在库，立即转为全集洗版")
+        if resolve_missing:
+            satisfied, _ = resolve_missing(
+                subscribe=subscribe,
+                mediainfo=mediainfo,
+                best_version_accept_downloaded=True,
+            )
+        else:
+            if not detect_missing or (subscribe.lack_episode or 0) > 0:
+                return
+            satisfied = not detect_missing(subscribe)
+        if not satisfied:
+            return
+        detail(f"TransferComplete：{format_subscribe(subscribe)} 分集洗版目标满足，立即转为全集洗版")
         converter.convert_to_full(subscribe, mediainfo)
 
     @staticmethod
