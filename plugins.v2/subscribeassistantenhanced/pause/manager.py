@@ -1,4 +1,5 @@
 """域 ④：暂停管理——优先级覆盖 + 用户名自动暂停 + 双向恢复。"""
+import re
 import time
 from typing import Callable, Optional
 
@@ -160,13 +161,33 @@ class PauseManager:
         """发送暂停恢复状态通知。"""
         if not self._notify:
             return
+        reason_key = record.reason if record else ""
         reason = {
             "pre_air": "上映",
             "airing_gap": "播出",
             "auto_user": "用户规则",
-        }.get(record.reason if record else "", "暂停")
+        }.get(reason_key, "暂停")
+        detail = self._resume_detail(reason_key, record)
         self._notify(
             subscribe,
             f"{reason}不再满足订阅暂停，已标记订阅中",
-            detail=record.detail if record else None,
+            detail=detail,
         )
+
+    @staticmethod
+    def _resume_detail(reason_key: str, record: Optional[PauseRecord]) -> str:
+        """生成恢复通知正文，保留原暂停窗口上下文但改写为当前状态。"""
+        pause_detail = record.detail if record else ""
+        if reason_key == "pre_air":
+            pause_detail = re.sub(r"^(?:电影|电视剧)\s+", "", pause_detail)
+            if pause_detail and "暂未到订阅窗口" in pause_detail:
+                return pause_detail.replace("暂未到订阅窗口", "已进入订阅窗口")
+            return "已进入订阅窗口"
+        if reason_key == "airing_gap":
+            match = re.search(r"(下一集\s+\d{4}-\d{2}-\d{2})", pause_detail)
+            if match:
+                return f"{match.group(1)}，已进入播出窗口"
+            return "已进入播出窗口"
+        if reason_key == "auto_user":
+            return "用户规则暂停已解除"
+        return "暂停条件已解除"
