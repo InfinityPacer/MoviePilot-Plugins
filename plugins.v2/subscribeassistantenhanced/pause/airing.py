@@ -48,7 +48,7 @@ class AiringPauseChecker:
                 return PauseRecord(
                     reason="pre_air",
                     since=0.0,
-                    detail=f"电影 {release_date} 上映，暂未到订阅窗口",
+                    detail=f"{release_date} 上映，暂未到订阅窗口",
                 )
             return None
 
@@ -73,7 +73,7 @@ class AiringPauseChecker:
             return PauseRecord(
                 reason="pre_air",
                 since=0.0,
-                detail=f"电视剧 {air_date} 开播，暂未到订阅窗口",
+                detail=f"{air_date} 开播，暂未到订阅窗口",
             )
         return None
 

@@ -114,8 +114,9 @@ class PendingJudge:
             source=self._read_subscribe_task(subscribe).get("source", "pending_judge"),
             reason=reason,
         )
-        self._notify_status(subscribe, "不再满足上映待定，已标记订阅中", detail=reason)
-        if not restored:
+        if restored:
+            self._notify_status(subscribe, "不再满足上映待定，已标记订阅中", detail=reason)
+        else:
             self._update_subscribe_task(subscribe, {
                 "exit_reason": reason,
                 "exit_at": time.time(),

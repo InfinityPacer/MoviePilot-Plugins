@@ -251,13 +251,14 @@ class TestExitPending:
         store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
         j = _judge(store=store, notify=notify)
 
-        j._exit_pending(_sub(), "待定条件不再满足")
+        j._exit_pending(_sub(state="P"), "待定条件不再满足")
 
         notify.assert_called_once()
         assert "不再满足上映待定，已标记订阅中" in notify.call_args.args[1]
 
     def test_exit_keeps_p_when_download_pending_active(self):
         """业务待定退出时若下载待定仍活跃，则订阅保持 P。"""
+        notify = MagicMock()
         store = {"subscribes": {"1": {
             "state": "P",
             "source": "pending_judge",
@@ -266,7 +267,7 @@ class TestExitPending:
                 "download_pending": {"reason": "下载中"},
             },
         }}}
-        j = _judge(store=store)
+        j = _judge(store=store, notify=notify)
 
         j._exit_pending(_sub(state="P"), "待定条件不再满足")
 
@@ -277,3 +278,4 @@ class TestExitPending:
             call_args.args[1]["state"] == "R"
             for call_args in j._subscribe_oper.update.call_args_list
         )
+        notify.assert_not_called()
