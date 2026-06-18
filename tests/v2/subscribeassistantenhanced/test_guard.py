@@ -376,6 +376,23 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once()
 
+    def test_balanced_high_risk_l_signal_enters_observation(self):
+        """平衡模式下高风险目标范围的 L 信号仍进入完成前观察。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 41)]
+        subscribe = _sub()
+        subscribe.total_episode = 40
+        subscribe.note = list(range(1, 41))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
+
     def test_loose_two_episode_l_signal_releases(self):
         """宽松模式立即接受短样本 L 信号。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
@@ -461,7 +478,7 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is True
 
     def test_completion_check_reads_and_writes_event_data(self):
-        """CompletionGuard 必须读写 event.event_data，并补齐 source（原实现漏写）。"""
+        """CompletionGuard 必须读写 event.event_data，并在否决完成时补齐 source。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无完结信号")
         g = _guard(signal=sig)
         ev = _event()
