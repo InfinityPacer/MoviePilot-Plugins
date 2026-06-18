@@ -92,7 +92,7 @@ class TestShouldEnterPending:
         assert should is False
 
     def test_f_unstable_triggers_pending(self):
-        """F 不稳定 → 待定。"""
+        """F 不稳定且接近完结 → 待定。"""
         j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
         mi = _mi()
         sig = CompletionSignal(stable=False)
@@ -104,8 +104,10 @@ class TestShouldEnterPending:
         """播出中段 total 校准只记录风险，不触发 pending_judge 待定。"""
         j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
         sig = CompletionSignal(stable=False, scope_total=33)
-        episodes = [_ep(i, air_date="2026-06-01") for i in range(1, 18)]
-        episodes.extend(_ep(i, air_date="2026-06-23") for i in range(18, 34))
+        aired_date = (date.today() - timedelta(days=16)).isoformat()
+        future_date = (date.today() + timedelta(days=4)).isoformat()
+        episodes = [_ep(i, air_date=aired_date) for i in range(1, 18)]
+        episodes.extend(_ep(i, air_date=future_date) for i in range(18, 34))
 
         should, reason = j.should_enter_pending(
             _sub(total_episode=33),
