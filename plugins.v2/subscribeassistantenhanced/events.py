@@ -58,10 +58,10 @@ class EventProxy:
     @staticmethod
     def _format_episodes_refresh_label(data: SubscribeEpisodesRefreshEventData) -> str | None:
         """格式化集数刷新事件来源；订阅不可查或创建场景用媒体信息兜底。"""
-        subscribe_id = getattr(data, "subscribe_id", None)
+        subscribe_id = data.subscribe_id
         parts = []
-        mediainfo = getattr(data, "mediainfo", None)
-        tmdbid = getattr(data, "tmdbid", None)
+        mediainfo = data.mediainfo
+        tmdbid = data.tmdbid
         if isinstance(mediainfo, MediaInfo):
             if mediainfo.title_year:
                 parts.append(mediainfo.title_year)
@@ -75,7 +75,7 @@ class EventProxy:
                 parts.append(label)
             if tmdbid is None:
                 tmdbid = mediainfo.get("tmdb_id")
-        season = getattr(data, "season", None)
+        season = data.season
         if season is not None:
             parts.append(f"S{season}")
         markers = []
@@ -83,7 +83,7 @@ class EventProxy:
             markers.append(f"id={subscribe_id}")
         if tmdbid:
             markers.append(f"tmdbid={tmdbid}")
-        scene = getattr(data, "scene", None)
+        scene = data.scene
         if scene:
             markers.append(f"scene={scene}")
         if markers:

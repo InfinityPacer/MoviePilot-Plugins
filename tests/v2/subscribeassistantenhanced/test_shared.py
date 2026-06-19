@@ -7,9 +7,10 @@ from subscribeassistantenhanced.shared.subscribe import (
     format_subscribe, format_subscribe_desc, format_subscribe_label, match_subscribe,
     pending_subscription_episodes,
 )
+from subscribeassistantenhanced.shared.update import update_subscribe
 from subscribeassistantenhanced.shared.media import (
     parse_date, is_same_season, get_tv_season_info,
-    get_tv_season_episode_count, get_tv_season_air_date,
+    get_tv_season_air_date,
     count_aired_episodes, last_aired_episode, all_aired,
 )
 
@@ -133,6 +134,13 @@ class TestMatchSubscribe:
         assert match_subscribe(sub, task) is False
 
 
+class TestUpdateSubscribe:
+
+    def test_missing_oper_skips_update(self):
+        """订阅写库依赖缺失时跳过，避免事件补偿链路报错。"""
+        assert update_subscribe(None, 1, {"state": "R"}) is None
+
+
 # ---------- media.py 补充 ----------
 
 class TestParseDate:
@@ -185,49 +193,6 @@ class TestGetTvSeasonInfo:
     def test_none_season_info(self):
         mi = SimpleNamespace(season_info=None)
         assert get_tv_season_info(mi, 1) is None
-
-
-class TestGetTvSeasonEpisodeCount:
-
-    def test_found(self):
-        mi = SimpleNamespace(seasons={}, season_info=[{"season_number": 1, "episode_count": 24}])
-        assert get_tv_season_episode_count(mi, 1) == 24
-
-    def test_prefers_mediainfo_seasons_over_summary_episode_count(self):
-        mi = SimpleNamespace(
-            seasons={1: list(range(1, 41))},
-            season_info=[{"season_number": 1, "episode_count": 6}],
-        )
-        assert get_tv_season_episode_count(mi, 1) == 40
-
-    def test_uses_episode_group_order_and_episode_list(self):
-        mi = SimpleNamespace(
-            seasons={},
-            season_info=[{
-                "order": 2,
-                "episode_count": 6,
-                "episodes": [{"episode_number": i} for i in range(1, 11)],
-            }],
-        )
-        assert get_tv_season_episode_count(mi, 2, episode_group="eg-1") == 10
-
-    def test_empty_mediainfo_season_does_not_fallback_to_summary_count(self):
-        mi = SimpleNamespace(
-            seasons={1: []},
-            season_info=[{"season_number": 1, "episode_count": 6}],
-        )
-        assert get_tv_season_episode_count(mi, 1) == 0
-
-    def test_empty_episode_list_does_not_fallback_to_summary_count(self):
-        mi = SimpleNamespace(
-            seasons={},
-            season_info=[{"season_number": 1, "episode_count": 6, "episodes": []}],
-        )
-        assert get_tv_season_episode_count(mi, 1) == 0
-
-    def test_not_found(self):
-        mi = SimpleNamespace(seasons={}, season_info=[])
-        assert get_tv_season_episode_count(mi, 1) == 0
 
 
 class TestGetTvSeasonAirDate:

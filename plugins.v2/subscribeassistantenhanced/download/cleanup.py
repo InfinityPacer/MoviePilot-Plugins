@@ -70,10 +70,9 @@ class TorrentCleanup:
         # 3. 洗版按 enclosure 归属回滚，隔离并行洗版；旧数据无归属时退回整体基线。
         if subscribe.best_version:
             enclosure = (torrent_task or {}).get("enclosure")
-            rollback_torrent = getattr(self._priority, "rollback_torrent", None)
-            if enclosure and callable(rollback_torrent):
+            if enclosure:
                 detail(f"种子删除处理：{format_subscribe(subscribe)} 恢复本次洗版下载对应集数的优先级")
-                rollback_torrent(subscribe, enclosure)
+                self._priority.rollback_torrent(subscribe, enclosure)
             else:
                 detail(f"种子删除处理：{format_subscribe(subscribe)} 无法确认对应集数，恢复整体洗版优先级")
                 self._priority.rollback(subscribe, baseline=None)

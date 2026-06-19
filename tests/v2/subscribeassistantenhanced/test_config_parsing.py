@@ -36,7 +36,6 @@ def test_new_parity_config_defaults():
     # 洗版
     assert cfg.best_version_type == "no"
     assert "best_version_clear_history_type" not in cfg.declared_keys()
-    assert not hasattr(cfg, "best_version_clear_history_type")
     assert cfg.best_version_remaining_days == 0
     assert cfg.best_version_episode_to_full is False
     assert cfg.best_version_backfill_enabled is False

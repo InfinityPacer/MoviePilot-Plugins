@@ -142,6 +142,9 @@ class ProtocolStubTest:
             def rollback(self, subscribe, baseline):
                 pass
 
+            def rollback_torrent(self, subscribe, torrent_id):
+                pass
+
             def can_backfill(self, subscribe):
                 return False
 

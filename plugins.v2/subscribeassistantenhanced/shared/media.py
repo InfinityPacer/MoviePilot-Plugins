@@ -160,23 +160,6 @@ def get_tv_season_info(mediainfo, season: int) -> Optional[dict]:
     return None
 
 
-def get_tv_season_episode_count(mediainfo, season: int,
-                                 episode_group: Optional[str] = None) -> int:
-    """获取指定季的集数，优先使用主程序统一维护的 mediainfo.seasons。"""
-    seasons = mediainfo.seasons or {}
-    if season in seasons:
-        season_episodes = seasons.get(season) or []
-        return len(season_episodes)
-
-    info = get_tv_season_info(mediainfo, season)
-    if not info:
-        return 0
-    if "episodes" in info and info.get("episodes") is not None:
-        episodes = info.get("episodes") or []
-        return len(episodes)
-    return info.get("episode_count", 0) or 0
-
-
 def get_tv_season_air_date(mediainfo, season: int) -> Optional[str]:
     """获取指定季的开播日期。"""
     info = get_tv_season_info(mediainfo, season)

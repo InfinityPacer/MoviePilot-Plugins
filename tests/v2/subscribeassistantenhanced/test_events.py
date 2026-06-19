@@ -41,6 +41,8 @@ class TestEventOrdering:
 
     def test_episodes_refresh_f_before_pending_observer(self):
         """EpisodesRefresh 中 F 记录在待定观察之前。"""
+        from app.schemas.event import SubscribeEpisodesRefreshEventData
+
         call_order = []
         volatility = MagicMock()
         volatility.record.side_effect = lambda **kw: call_order.append("f_record")
@@ -48,7 +50,7 @@ class TestEventOrdering:
         pending_refresh.handle_refresh.side_effect = lambda ev: call_order.append("pending_refresh")
 
         proxy = EventProxy(volatility=volatility, pending_refresh=pending_refresh)
-        event = SimpleNamespace(event_data=SimpleNamespace(current_total_episode=12, subscribe_id=1))
+        event = SimpleNamespace(event_data=SubscribeEpisodesRefreshEventData(current_total_episode=12, subscribe_id=1))
         proxy.on_episodes_refresh(event)
 
         assert call_order == ["f_record", "pending_refresh"]
@@ -85,6 +87,21 @@ class TestEventOrdering:
             season=1,
             tmdbid=325228,
             mediainfo={"title": "镖人", "year": 2023},
+            scene="refresh",
+        )
+
+        assert EventProxy._format_episodes_refresh_label(data) == "镖人 (2023) S1(id=32, tmdbid=325228, scene=refresh)"
+
+    def test_episodes_refresh_label_uses_mediainfo_contract(self):
+        """集数刷新标签支持主程序 MediaInfo 对象。"""
+        from app.core.context import MediaInfo
+        from app.schemas.event import SubscribeEpisodesRefreshEventData
+
+        data = SubscribeEpisodesRefreshEventData(
+            current_total_episode=15,
+            subscribe_id=32,
+            season=1,
+            mediainfo=MediaInfo(title="镖人", year="2023", tmdb_id=325228),
             scene="refresh",
         )
 
@@ -352,8 +369,10 @@ class TestDomainGating:
         assert event.cancel is False
 
     def test_no_volatility_no_error(self):
+        from app.schemas.event import SubscribeEpisodesRefreshEventData
+
         proxy = EventProxy()
-        event = SimpleNamespace(event_data=SimpleNamespace(current_total_episode=12, subscribe_id=1))
+        event = SimpleNamespace(event_data=SubscribeEpisodesRefreshEventData(current_total_episode=12, subscribe_id=1))
         proxy.on_episodes_refresh(event)
 
     def test_no_monitor_no_error(self):
