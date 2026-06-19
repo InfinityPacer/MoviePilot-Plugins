@@ -142,6 +142,10 @@ class CompletionGuard:
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""
+        if "L:target_satisfied" in signal.signals and (
+            signal.scope_total < 3 or signal.scope_high_risk
+        ):
+            return False
         if self.mode == "loose":
             return True
         if self.mode == "balanced":

@@ -393,8 +393,8 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once()
 
-    def test_loose_two_episode_l_signal_releases(self):
-        """宽松模式立即接受短样本 L 信号。"""
+    def test_loose_two_episode_l_signal_enters_observation(self):
+        """宽松模式也不直接接受短样本 L 信号。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
         g = _guard(signal=sig, mode="loose")
         g.detect_missing_episodes_fn.return_value = []
@@ -405,9 +405,9 @@ class TestCompletionGuard:
 
         g.handle(ev)
 
-        assert ev.event_data.cancel is False
-        g.mark_pending_fn.assert_not_called()
-        g.timeout_manager.record_block.assert_not_called()
+        assert ev.event_data.cancel is True
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
 
     def test_not_completed_local_targets_missing_still_blocks(self):
         """仍缺目标集时继续否决完成，避免只因主程序事件触发就放行。"""
