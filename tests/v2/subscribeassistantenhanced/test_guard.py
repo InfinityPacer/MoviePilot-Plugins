@@ -1,6 +1,6 @@
 """guard.py 完成守卫单测。"""
 from types import SimpleNamespace
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
@@ -207,7 +207,7 @@ class TestCompletionGuard:
             completed=True,
             confidence="low",
             signals=["I:all_aired"],
-            reason="目标范围内所有集已播且无同季下一集",
+            reason="目标范围内所有集已播且无后续集反证",
         )
         g = _guard(signal=sig)
         g.timeout_manager.consume_release.return_value = False
@@ -216,7 +216,7 @@ class TestCompletionGuard:
         g.handle(ev)
 
         assert ev.event_data.cancel is True
-        assert ev.event_data.reason == "目标范围内所有集已播且无同季下一集"
+        assert ev.event_data.reason == "目标范围内所有集已播且无后续集反证"
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once_with(
             ev.event_data.subscribe,
@@ -230,7 +230,7 @@ class TestCompletionGuard:
             completed=True,
             confidence="low",
             signals=["I:all_aired"],
-            reason="目标范围内所有集已播且无同季下一集",
+            reason="目标范围内所有集已播且无后续集反证",
         )
         g = _guard(signal=sig)
         g.timeout_manager.consume_release.return_value = True
@@ -394,9 +394,10 @@ class TestCompletionGuard:
         """聚合下一集缺失但 SeasonScope 已有未来集时，L 信号不得提前完成订阅。"""
         g = _guard(mode="balanced")
         g.detect_missing_episodes_fn.return_value = []
+        future_air_date = (date.today() + timedelta(days=30)).isoformat()
         g.tmdb_episodes_fn.return_value = [
             *[_ep(i, air_date="2026-01-01") for i in range(1, 88)],
-            _ep(88, air_date="2026-06-21"),
+            _ep(88, air_date=future_air_date),
         ]
         subscribe = _sub()
         subscribe.total_episode = 87
@@ -407,6 +408,65 @@ class TestCompletionGuard:
         signal = g._local_signal(subscribe, mediainfo)
 
         assert signal is None
+        g.resolve_missing_fn.assert_not_called()
+
+    def test_local_signal_blocks_scope_future_even_without_aggregate(self):
+        """聚合下一集缺失时，L 信号仍由 SeasonScope 后续集阻断。"""
+        g = _guard(mode="balanced")
+        future_air_date = (date.today() + timedelta(days=30)).isoformat()
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=future_air_date),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 1
+        subscribe.note = [1]
+        mediainfo = _event(subscribe=subscribe).event_data.mediainfo
+        mediainfo.tmdb_info.next_episode_to_air = None
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        signal = g._local_signal(subscribe, mediainfo)
+
+        assert signal is None
+        g.resolve_missing_fn.assert_not_called()
+
+    def test_local_signal_ignores_aggregate_future_when_scope_has_no_future(self):
+        """SeasonScope 无后续集反证时，聚合下一集不再阻断 L 放行。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i, air_date="2026-01-01") for i in range(1, 4)]
+        subscribe = _sub()
+        subscribe.total_episode = 3
+        subscribe.note = [1, 2, 3]
+        ev = _event(subscribe=subscribe)
+        ev.event_data.mediainfo.tmdb_info.next_episode_to_air = SimpleNamespace(
+            season_number=1, episode_number=4, air_date="2026-02-01",
+        )
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.mark_pending_fn.assert_not_called()
+
+    def test_local_signal_blocks_unknown_air_tail(self):
+        """SeasonScope 后续集缺 air_date 时，L 信号不得确认目标满足。"""
+        g = _guard(mode="balanced")
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=None),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 1
+        subscribe.note = [1]
+        mediainfo = _event(subscribe=subscribe).event_data.mediainfo
+        mediainfo.tmdb_info.next_episode_to_air = None
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        signal = g._local_signal(subscribe, mediainfo)
+
+        assert signal is None
+        g.resolve_missing_fn.assert_not_called()
 
     def test_strict_local_targets_covered_enters_observation(self):
         """严格模式把 L 作为低置信信号进入观察。"""

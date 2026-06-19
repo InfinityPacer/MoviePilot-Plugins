@@ -118,8 +118,8 @@ class TestEvaluatePipeline:
         assert sig.confidence == "high"
         assert "E:finale" in sig.signals
 
-    def test_finale_with_future_next_episode_still_keeps_volatility_block(self):
-        """同季未来下一集存在时，finale 不能压过 F。"""
+    def test_finale_ignores_aggregate_future_next_episode_when_scope_has_no_future(self):
+        """可信 finale 只看 SeasonScope，聚合下一集不再压过 F。"""
         eps = [_ep(i, air_date="2026-06-01") for i in range(1, 33)]
         eps.append(_ep(33, ep_type="finale", air_date="2026-06-17"))
         next_ep = SimpleNamespace(
@@ -135,9 +135,65 @@ class TestEvaluatePipeline:
             as_of=date(2026, 6, 17),
         )
 
+        assert sig.completed is True
+        assert sig.confidence == "high"
+        assert "E:finale" in sig.signals
+
+    def test_finale_scope_future_blocks_completion_even_when_stable(self):
+        """稳定状态下，scope 内未来排期反证也应压过可信 finale。"""
+        eps = [
+            _ep(1, air_date="2026-02-01"),
+            _ep(2, ep_type="finale", air_date="2026-01-08"),
+        ]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(),
+            as_of=date(2026, 1, 9),
+        )
+
         assert sig.completed is False
-        assert sig.stable is False
-        assert "F:unstable" in sig.signals
+
+    def test_ended_status_still_completes_with_scope_future_episode(self):
+        """Ended/Canceled 由 H 兜底，scope 后续集不压过剧级完成。"""
+        eps = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date="2026-02-01"),
+        ]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(),
+            as_of=date(2026, 1, 9),
+        )
+
+        assert sig.completed is True
+        assert "E:ended" in sig.signals
+
+    def test_canceled_status_still_completes_with_scope_unknown_tail(self):
+        """Canceled 由 H 兜底，scope 未知排期尾集不压过剧级完成。"""
+        eps = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=None),
+        ]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(status="Canceled"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(),
+            as_of=date(2026, 1, 9),
+        )
+
+        assert sig.completed is True
+        assert "E:canceled" in sig.signals
 
     def test_e_ended_releases(self):
         """E：status=Ended → 高置信度放行。"""
@@ -200,8 +256,8 @@ class TestEvaluatePipeline:
         assert sig.completed is True
         assert sig.confidence == "low"
 
-    def test_i_all_aired_same_day_next_releases(self):
-        """next_episode_to_air 在当天时按已播处理，避免最后一集延迟完结。"""
+    def test_i_all_aired_ignores_same_day_aggregate_next(self):
+        """完结守卫忽略聚合下一集，当天已播集由 SeasonScope 判断。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 12)]
         eps.append(_ep(12, air_date="2026-06-13"))
         next_ep = SimpleNamespace(
@@ -237,8 +293,8 @@ class TestEvaluatePipeline:
         assert sig.confidence == "low"
         assert sig.signals == ["I:all_aired"]
 
-    def test_high_risk_next_ep_dict_blocks_cadence_release(self):
-        """高风险 scope 中，dict 形态的同季 next_episode 会阻止 G 辅助释放。"""
+    def test_high_risk_ignores_aggregate_next_ep_dict_for_cadence_release(self):
+        """高风险 scope 的 G 辅助释放只看 SeasonScope 后续集。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 50)]
         mediainfo = SimpleNamespace(tmdb_id=100, tmdb_info={
             "status": "Returning Series",
@@ -249,6 +305,21 @@ class TestEvaluatePipeline:
 
         sig = evaluate(
             subscribe=_sub(), mediainfo=mediainfo,
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(), as_of=date(2026, 6, 1),
+        )
+
+        assert sig.completed is False
+        assert sig.cadence_expired is True
+
+    def test_high_risk_scope_unknown_tail_blocks_cadence_release(self):
+        """高风险 scope 内后续集缺 air_date 时，G 辅助释放继续保持观察。"""
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 50)]
+        eps.append(_ep(50, air_date=None))
+
+        sig = evaluate(
+            subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
             config=_cfg(), as_of=date(2026, 6, 1),

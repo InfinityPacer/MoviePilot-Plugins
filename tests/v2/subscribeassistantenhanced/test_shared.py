@@ -12,6 +12,7 @@ from subscribeassistantenhanced.shared.media import (
     parse_date, is_same_season, get_tv_season_info,
     get_tv_season_air_date,
     count_aired_episodes, last_aired_episode, all_aired,
+    resolve_airing_next_episode,
 )
 
 
@@ -246,3 +247,56 @@ class TestMediaHelpers:
     def test_all_aired_no_date(self):
         eps = [SimpleNamespace(air_date=None)]
         assert all_aired(eps, as_of=date(2026, 6, 1)) is False
+
+
+class TestResolveAiringNextEpisode:
+
+    def test_valid_aggregate_candidate_is_kept(self):
+        """聚合下一集匹配首待下载集和未来日期时，播出暂停可继续使用该候选。"""
+        subscribe = SimpleNamespace(
+            season=1, start_episode=1, total_episode=3,
+            note=[1], episode_priority={}, lack_episode=2,
+        )
+        aggregate = SimpleNamespace(season_number=1, episode_number=2, air_date="2026-06-21")
+        episodes = [
+            SimpleNamespace(season_number=1, episode_number=2, air_date="2026-06-21"),
+            SimpleNamespace(season_number=1, episode_number=3, air_date="2026-06-28"),
+        ]
+
+        result = resolve_airing_next_episode(
+            subscribe, aggregate, episodes, as_of=date(2026, 6, 14)
+        )
+
+        assert result is aggregate
+
+    def test_stale_aggregate_falls_back_to_episode_list(self):
+        """聚合字段停留在已播集时，播出暂停回退到分集表中的首待下载集。"""
+        subscribe = SimpleNamespace(
+            season=1, start_episode=1, total_episode=3,
+            note=[1], episode_priority={}, lack_episode=2,
+        )
+        aggregate = SimpleNamespace(season_number=1, episode_number=1, air_date="2026-06-14")
+        episodes = [
+            SimpleNamespace(season_number=1, episode_number=2, air_date="2026-06-21"),
+            SimpleNamespace(season_number=1, episode_number=3, air_date="2026-06-28"),
+        ]
+
+        result = resolve_airing_next_episode(
+            subscribe, aggregate, episodes, as_of=date(2026, 6, 14)
+        )
+
+        assert result is episodes[0]
+
+    def test_invalid_aggregate_without_inventory_fallback_returns_none(self):
+        """聚合下一集缺少播出日期且无分集表候选时，不进入播出暂停。"""
+        subscribe = SimpleNamespace(
+            season=1, start_episode=1, total_episode=3,
+            note=[1], episode_priority={}, lack_episode=2,
+        )
+        aggregate = SimpleNamespace(season_number=1, episode_number=2, air_date=None)
+
+        result = resolve_airing_next_episode(
+            subscribe, aggregate, [], as_of=date(2026, 6, 14)
+        )
+
+        assert result is None
