@@ -2,7 +2,7 @@
 
 12 个事件处理器：
 - SubscribeCompletionCheck → guard
-- SubscribeEpisodesRefresh → volatility.record (先) + pending.refresh (后)
+- SubscribeEpisodesRefresh → volatility.record (先) + pending observer (后)
 - SubscribeAdded → best_version + priority.backfill + pause.auto_pause_user
 - SubscribeDeleted → task_manager.cleanup
 - SubscribeModified → task_manager.reset_on_modify
@@ -101,7 +101,7 @@ class EventProxy:
             guard.handle(event)
 
     def on_episodes_refresh(self, event):
-        """EpisodesRefresh → F record (先) + pending refresh (后)。
+        """EpisodesRefresh → F record (先) + pending observer (后)。
 
         链式事件：业务字段在 event.event_data（主程序只回读该数据类），wrapper 上没有这些字段。
         """

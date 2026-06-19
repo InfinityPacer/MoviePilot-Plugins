@@ -133,7 +133,7 @@ class PluginConfigDefaultsTest:
         assert self.cfg.pending_use_volatility is True
 
     def test_internal_pending_default_total_is_not_declared(self):
-        """待定缺总集数时直接按已播集覆盖，不再暴露虚拟总集数配置。"""
+        """待定缺总集数时不再暴露虚拟总集数配置。"""
         keys = set(self.cfg.declared_keys())
         assert "pending_default_total_episodes" not in keys
         assert not hasattr(self.cfg, "pending_default_total_episodes")

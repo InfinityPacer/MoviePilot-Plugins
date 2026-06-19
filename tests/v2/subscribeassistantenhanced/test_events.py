@@ -39,8 +39,8 @@ def _mi(**kwargs):
 class TestEventOrdering:
     """事件处理顺序验证。"""
 
-    def test_episodes_refresh_f_before_pending(self):
-        """EpisodesRefresh 中 F 记录在 pending 覆盖之前。"""
+    def test_episodes_refresh_f_before_pending_observer(self):
+        """EpisodesRefresh 中 F 记录在待定观察之前。"""
         call_order = []
         volatility = MagicMock()
         volatility.record.side_effect = lambda **kw: call_order.append("f_record")
@@ -53,7 +53,7 @@ class TestEventOrdering:
 
         assert call_order == ["f_record", "pending_refresh"]
 
-    def test_episodes_refresh_uses_event_data_for_f_and_pending(self):
+    def test_episodes_refresh_uses_event_data_for_f_and_pending_observer(self):
         """EpisodesRefresh 必须从 event.event_data 读写，主程序只读取该数据类。"""
         from app.schemas.event import SubscribeEpisodesRefreshEventData
         call_order = []
@@ -62,10 +62,6 @@ class TestEventOrdering:
 
         def pending_handle(data):
             call_order.append(("pending", data.subscribe_id))
-            data.updated = True
-            data.total_episode = 8
-            data.source = "subscribeassistantenhanced"
-            data.reason = "待定中，锁定为已播出集数 8"
 
         pending_refresh = MagicMock()
         pending_refresh.handle_refresh.side_effect = pending_handle
@@ -76,8 +72,8 @@ class TestEventOrdering:
 
         assert call_order[0] == ("f", {"total": 12, "subscribe_id": 1})
         assert call_order[1] == ("pending", 1)
-        assert data.updated is True
-        assert data.total_episode == 8
+        assert data.updated is False
+        assert data.total_episode is None
 
     def test_episodes_refresh_label_uses_media_when_subscribe_missing(self):
         """集数刷新事件查不到订阅时，日志标签应回退到事件携带的媒体信息。"""

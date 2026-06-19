@@ -29,6 +29,7 @@ class TestHistoryClear:
         """构造可观测清理副作用的订阅清理编排器。"""
         store = store if store is not None else {}
         cleanup_history_scenes = ["best_version_full"] if cleanup_history_scenes is None else cleanup_history_scenes
+        sleep_fn = sleep_fn or (lambda _seconds: None)
         deletes, events, notifies, hist_deletes = [], [], [], []
         orch = SubscriptionCleanup(
             task_data_read=lambda k: store.get(k, {}),

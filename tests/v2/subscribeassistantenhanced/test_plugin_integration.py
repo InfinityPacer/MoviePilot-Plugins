@@ -1349,10 +1349,28 @@ def test_auto_search_off_disables_search_fn():
 
 
 def test_pending_refresh_does_not_depend_on_default_total_config():
-    """待定缺总集数时由 PendingRefresh 直接按已播集覆盖，不依赖配置注入。"""
+    """待定集数刷新不依赖虚拟默认总集数，也不覆盖主程序 total。"""
+    from app.schemas.event import SubscribeEpisodesRefreshEventData
+
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({})
-    assert not hasattr(plugin._modules["pending_refresh"], "_default_total")
+    pending_refresh = plugin._modules["pending_refresh"]
+    event_data = SubscribeEpisodesRefreshEventData(
+        current_total_episode=0,
+        subscribe_id=1,
+        season=1,
+        mediainfo=SimpleNamespace(season_info=[], tmdb_info={}),
+    )
+    event_data.source = "main"
+    event_data.reason = "keep"
+
+    pending_refresh.handle_refresh(event_data)
+
+    assert not hasattr(pending_refresh, "_default_total")
+    assert event_data.updated is False
+    assert event_data.total_episode is None
+    assert event_data.source == "main"
+    assert event_data.reason == "keep"
 
 
 def test_airing_checker_receives_pre_air_days():
