@@ -88,6 +88,57 @@ class TestEvaluatePipeline:
         assert sig.reason == "目标总集数最近 7 天发生变化"
         assert "total_episode" not in sig.reason
 
+    def test_f_unstable_carries_recent_change_direction(self):
+        """F 信号携带窗口内最近变化方向，供守卫识别 total 缩小风险。"""
+        eps = [_ep(1)]
+        sig = evaluate(
+            subscribe=_sub(), mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(), as_of=date(2026, 6, 1),
+        )
+
+        assert sig.volatility_direction == "up"
+
+    def test_finale_at_scope_end_can_confirm_completion_despite_recent_total_change(self):
+        """可信末集 finale 可以在总集数刚变化时确认完成。"""
+        eps = [_ep(i, air_date="2026-06-01") for i in range(1, 33)]
+        eps.append(_ep(33, ep_type="finale", air_date="2026-06-17"))
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 6, 17),
+        )
+
+        assert sig.completed is True
+        assert sig.confidence == "high"
+        assert "E:finale" in sig.signals
+
+    def test_finale_with_future_next_episode_still_keeps_volatility_block(self):
+        """同季未来下一集存在时，finale 不能压过 F。"""
+        eps = [_ep(i, air_date="2026-06-01") for i in range(1, 33)]
+        eps.append(_ep(33, ep_type="finale", air_date="2026-06-17"))
+        next_ep = SimpleNamespace(
+            season_number=1, episode_number=34, air_date="2026-06-24",
+        )
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(next_ep=next_ep),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 6, 17),
+        )
+
+        assert sig.completed is False
+        assert sig.stable is False
+        assert "F:unstable" in sig.signals
+
     def test_e_ended_releases(self):
         """E：status=Ended → 高置信度放行。"""
         eps = [_ep(1)]

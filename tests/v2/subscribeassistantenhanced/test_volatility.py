@@ -2,7 +2,10 @@
 import time
 from types import SimpleNamespace
 
-from subscribeassistantenhanced.engine.volatility import VolatilityTracker
+from subscribeassistantenhanced.engine.volatility import (
+    MAX_SAMPLE_HISTORY_SIZE,
+    VolatilityTracker,
+)
 
 
 class TestVolatilityTracker:
@@ -68,12 +71,82 @@ class TestVolatilityTracker:
         }
         assert self.tracker.is_stable(subscribe_id=1) is False
 
-    def test_ring_buffer_max_20(self):
-        """超过 20 条丢弃最旧。"""
+    def test_sample_history_is_capped_for_diagnostics(self):
+        """诊断采样保留数量有上限，但不代表稳定判断窗口。"""
         for i in range(25):
             self.tracker.record(total=12, subscribe_id=1)
-        buf = self.store.get("volatility", {}).get("1", [])
-        assert len(buf) <= 20
+        entry = self.store.get("volatility", {}).get("1", {})
+        assert len(entry["records"]) <= MAX_SAMPLE_HISTORY_SIZE
+
+    def test_recent_total_change_survives_many_same_total_samples(self):
+        """窗口内 total 变化不能被后续高频相同采样提前冲掉。"""
+        self.tracker.record(total=36, subscribe_id=1)
+        self.tracker.record(total=33, subscribe_id=1)
+        for _ in range(25):
+            self.tracker.record(total=33, subscribe_id=1)
+
+        entry = self.store["volatility"]["1"]
+        assert len(entry["records"]) <= MAX_SAMPLE_HISTORY_SIZE
+        assert entry["last_total_changed_at"] is not None
+        assert entry["unstable_until"] is not None
+        assert self.tracker.is_stable(subscribe_id=1) is False
+        assert self.tracker.recent_change_direction(subscribe_id=1) == "down"
+
+    def test_recent_change_direction_reports_increase(self):
+        """窗口内最近 total 增大时记录 up，供完成守卫区分普通补集与缩小风险。"""
+        self.tracker.record(total=10, subscribe_id=1)
+        self.tracker.record(total=12, subscribe_id=1)
+
+        assert self.tracker.recent_change_direction(subscribe_id=1) == "up"
+
+    def test_legacy_recent_total_change_survives_after_next_sample(self):
+        """旧 list 形态记录升级后也要保留窗口内变化状态。"""
+        now = time.time()
+        self.store["volatility"] = {
+            "1": [
+                {"total": 36, "ts": now - 3600},
+                {"total": 33, "ts": now - 1800},
+            ]
+        }
+
+        for _ in range(25):
+            self.tracker.record(total=33, subscribe_id=1)
+
+        assert self.tracker.is_stable(subscribe_id=1) is False
+
+    def test_legacy_recent_total_change_survives_subscribe_object_migration(self):
+        """带订阅对象写入旧 list 记录时，也要迁移并保留窗口内变化状态。"""
+        now = time.time()
+        subscribe = SimpleNamespace(id=41, tmdbid=100, season=1, episode_group=None)
+        self.store["volatility"] = {
+            "41": [
+                {"total": 36, "ts": now - 3600},
+                {"total": 33, "ts": now - 1800},
+            ]
+        }
+
+        for _ in range(25):
+            self.tracker.record(total=33, subscribe=subscribe)
+
+        entry = self.store["volatility"]["41"]
+        assert entry["identity"]["tmdbid"] == 100
+        assert entry["last_total_changed_at"] is not None
+        assert entry["unstable_until"] is not None
+        assert self.tracker.is_stable(subscribe=subscribe) is False
+
+    def test_legacy_recent_total_change_can_be_read_with_subscribe_object(self):
+        """只读旧 list 记录时，订阅对象路径不能把旧窗口直接删除。"""
+        now = time.time()
+        subscribe = SimpleNamespace(id=41, tmdbid=100, season=1, episode_group=None)
+        self.store["volatility"] = {
+            "41": [
+                {"total": 36, "ts": now - 3600},
+                {"total": 33, "ts": now - 1800},
+            ]
+        }
+
+        assert self.tracker.is_stable(subscribe=subscribe) is False
+        assert "41" in self.store["volatility"]
 
     def test_multiple_subscribes_independent(self):
         """不同订阅的 buffer 独立。"""

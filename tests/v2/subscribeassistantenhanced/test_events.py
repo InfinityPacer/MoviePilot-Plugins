@@ -237,6 +237,45 @@ class TestEventOrdering:
 
         converter.convert_to_full.assert_called_once_with(sub, media)
 
+    def test_transfer_complete_uses_target_satisfied_resolver_for_episode_best_version(self):
+        """分集洗版转全集按主程序目标满足口径判断，允许任意已下载版本满足目标集。"""
+        sub = _sub(
+            id=1,
+            best_version=1,
+            best_version_full=0,
+            lack_episode=1,
+            total_episode=3,
+            note=[1],
+            episode_priority={"2": 80, "3": 99},
+        )
+        media = SimpleNamespace(tmdb_id=100)
+        tm = MagicMock()
+        tm.read.return_value = {"abc": {"subscribe_id": 1}}
+        oper = MagicMock()
+        oper.get.return_value = sub
+        converter = MagicMock()
+        resolver = MagicMock(return_value=(True, {}))
+        proxy = EventProxy(
+            task_manager=tm,
+            subscribe_oper=oper,
+            download_monitor=MagicMock(),
+            converter=converter,
+            best_version_episode_to_full=True,
+            resolve_missing_fn=resolver,
+            recognize_mediainfo_fn=MagicMock(return_value=media),
+        )
+
+        proxy.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc", "transferinfo": None,
+        }))
+
+        resolver.assert_called_once_with(
+            subscribe=sub,
+            mediainfo=media,
+            best_version_accept_downloaded=True,
+        )
+        converter.convert_to_full.assert_called_once_with(sub, media)
+
     def test_transfer_complete_keeps_episode_best_version_when_target_missing(self):
         """分集洗版整理完成但目标集未齐全时，不提前转全集。"""
         sub = _sub(
@@ -257,6 +296,7 @@ class TestEventOrdering:
             download_monitor=MagicMock(),
             converter=converter,
             best_version_episode_to_full=True,
+            resolve_missing_fn=MagicMock(return_value=(False, {})),
             detect_missing_episodes_fn=MagicMock(return_value=[2]),
             recognize_mediainfo_fn=MagicMock(return_value=SimpleNamespace(tmdb_id=100)),
         )
@@ -282,6 +322,7 @@ class TestEventOrdering:
             download_monitor=MagicMock(),
             converter=converter,
             best_version_episode_to_full=True,
+            resolve_missing_fn=MagicMock(return_value=(False, {})),
             detect_missing_episodes_fn=detect_missing,
             recognize_mediainfo_fn=MagicMock(return_value=SimpleNamespace(tmdb_id=100)),
         )

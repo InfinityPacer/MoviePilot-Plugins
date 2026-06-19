@@ -1,6 +1,6 @@
 """端到端集成：插件入口装配 + 事件委托 + 扩展点 smoke（证明集成层真正接通）。"""
 import time
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -26,6 +26,7 @@ def _sub(**kwargs):
         total_episode=12,
         start_episode=1,
         lack_episode=0,
+        manual_total_episode=False,
         note=[],
         episode_priority={},
         current_priority=0,
@@ -50,6 +51,7 @@ def _mediainfo(**kwargs):
         title_year="测试 (2026)",
         vote_average=8.0,
         season_info=[],
+        seasons={},
         first_air_date=None,
         release_date=None,
         type=SimpleNamespace(value="电视剧"),
@@ -65,6 +67,18 @@ def test_converter_is_wired():
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({})
     assert plugin._modules.get("converter") is not None
+
+
+def test_target_satisfied_resolver_is_wired_to_guard_and_events():
+    """完成守卫和事件代理必须共用插件级主程序目标满足查询。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+
+    guard = plugin._modules["guard"]
+    assert guard.resolve_missing_fn.__self__ is plugin
+    assert guard.resolve_missing_fn.__func__ is plugin._resolve_subscribe_missing.__func__
+    assert plugin._event_proxy._modules["resolve_missing_fn"].__self__ is plugin
+    assert plugin._event_proxy._modules["resolve_missing_fn"].__func__ is plugin._resolve_subscribe_missing.__func__
 
 
 def test_tmdb_episodes_queries_special_season_zero():
@@ -89,8 +103,8 @@ def test_episode_to_full_converts_when_current_episodes_covered():
     plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
-    plugin._detect_missing_episodes = MagicMock(return_value=[])
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    plugin._resolve_subscribe_missing = MagicMock(return_value=(True, {}))
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
@@ -99,22 +113,45 @@ def test_episode_to_full_converts_when_current_episodes_covered():
     conv.convert_to_full.assert_called_once_with(sub, plugin._recognize_mediainfo.return_value)
 
 
-def test_episode_to_full_converts_when_download_chain_reports_all_exists(monkeypatch):
-    """主程序明确返回全部在库时，分集洗版仍可升级为全集洗版。"""
-    sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
+def test_episode_to_full_uses_target_satisfied_resolver_for_any_downloaded_version():
+    """分集洗版巡检按主程序目标满足口径转全集，不要求当前 priority 全部为 100。"""
+    sub = _sub(
+        id=5,
+        name="X",
+        best_version=1,
+        best_version_full=0,
+        lack_episode=1,
+        total_episode=3,
+        note=[1],
+        episode_priority={"2": 80, "3": 99},
+    )
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+    plugin._resolve_subscribe_missing = MagicMock(return_value=(True, {}))
+    conv = plugin._modules["converter"]
+    conv.convert_to_full = MagicMock(return_value=True)
 
-    class FakeDownloadChain:
-        """避免访问真实媒体库，只模拟主程序全部存在的返回值。"""
+    plugin.run_best_version_check()
 
-        def get_no_exists_info(self, meta, mediainfo, totals=None):
-            return True, {}
+    plugin._resolve_subscribe_missing.assert_called_once_with(
+        sub,
+        plugin._recognize_mediainfo.return_value,
+        best_version_accept_downloaded=True,
+    )
+    conv.convert_to_full.assert_called_once_with(sub, plugin._recognize_mediainfo.return_value)
 
-    monkeypatch.setattr("app.chain.download.DownloadChain", FakeDownloadChain)
+
+def test_episode_to_full_converts_when_main_resolver_reports_target_satisfied():
+    """主程序目标满足查询确认分集目标已下载时，分集洗版升级为全集洗版。"""
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=0, note=list(range(1, 13)))
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
@@ -129,8 +166,8 @@ def test_episode_to_full_skipped_when_missing_episodes():
     plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
-    plugin._detect_missing_episodes = MagicMock(return_value=[3])
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    plugin._resolve_subscribe_missing = MagicMock(return_value=(False, {100: {1: [3]}}))
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
@@ -184,7 +221,7 @@ def test_episode_to_full_skips_when_missing_info_uses_relative_episode_numbers(m
     plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
 
     class RelativeNoExistsInfo:
         """模拟主程序按季内相对集号返回缺集范围。"""
@@ -251,7 +288,7 @@ def test_best_version_check_does_not_expire_when_remaining_days_unlimited():
     plugin.init_plugin({"best_version_type": "all", "best_version_remaining_days": 0})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
     plugin._task_manager.read = MagicMock(return_value={
         "hash": {"subscribe_id": 5, "time": now - 10 * 86400},
     })
@@ -1438,13 +1475,13 @@ class TestEventDelegation:
         plugin._subscribe_oper = oper
         plugin._event_proxy._modules["subscribe_oper"] = oper
         plugin._task_manager.update("torrents", lambda _data: {"abc": {"subscribe_id": 7}})
-        plugin._detect_missing_episodes = MagicMock(return_value=[])
         mediainfo = _mediainfo()
         plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._resolve_subscribe_missing = MagicMock(return_value=(True, {}))
         converter = plugin._modules["converter"]
         converter.convert_to_full = MagicMock(return_value=True)
         # init_plugin 时注入的是绑定方法；替换 mock 后需同步给事件代理，验证入口 wiring 与事件链路。
-        plugin._event_proxy._modules["detect_missing_episodes_fn"] = plugin._detect_missing_episodes
+        plugin._event_proxy._modules["resolve_missing_fn"] = plugin._resolve_subscribe_missing
         plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
 
         plugin.on_transfer_complete(SimpleNamespace(event_data={
@@ -1456,6 +1493,8 @@ class TestEventDelegation:
 
     def test_transfer_complete_event_pauses_after_lack_is_refreshed(self):
         """整理完成事件应读取入库后的订阅状态，并在短窗口下立即进入播出暂停。"""
+        next_air = date.today() + timedelta(days=2)
+        later_dates = [next_air + timedelta(days=7 * offset) for offset in range(1, 5)]
         sub = _sub(
             id=7,
             state="R",
@@ -1472,18 +1511,18 @@ class TestEventDelegation:
         plugin._event_proxy._modules["subscribe_oper"] = oper
         plugin._task_manager.update("torrents", lambda _data: {"abc": {"subscribe_id": 7}})
         mediainfo = _mediainfo(next_episode_to_air=SimpleNamespace(
-            air_date="2026-06-15",
+            air_date=(date.today() - timedelta(days=1)).isoformat(),
             episode_number=87,
             season_number=1,
         ), type=MediaType.TV)
         plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
         plugin._tmdb_episodes = MagicMock(return_value=[
-            SimpleNamespace(air_date="2026-06-15", episode_number=87, season_number=1),
-            SimpleNamespace(air_date="2026-06-21", episode_number=88, season_number=1),
-            SimpleNamespace(air_date="2026-06-28", episode_number=89, season_number=1),
-            SimpleNamespace(air_date="2026-07-05", episode_number=90, season_number=1),
-            SimpleNamespace(air_date="2026-07-12", episode_number=91, season_number=1),
-            SimpleNamespace(air_date="2026-07-19", episode_number=92, season_number=1),
+            SimpleNamespace(air_date=(date.today() - timedelta(days=1)).isoformat(), episode_number=87, season_number=1),
+            SimpleNamespace(air_date=next_air.isoformat(), episode_number=88, season_number=1),
+            SimpleNamespace(air_date=later_dates[0].isoformat(), episode_number=89, season_number=1),
+            SimpleNamespace(air_date=later_dates[1].isoformat(), episode_number=90, season_number=1),
+            SimpleNamespace(air_date=later_dates[2].isoformat(), episode_number=91, season_number=1),
+            SimpleNamespace(air_date=later_dates[3].isoformat(), episode_number=92, season_number=1),
         ])
         plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
         plugin._event_proxy._modules["tmdb_episodes_fn"] = plugin._tmdb_episodes
@@ -1499,7 +1538,7 @@ class TestEventDelegation:
         pause_manager.pause.assert_called_once()
         record = pause_manager.pause.call_args.args[1]
         assert record.reason == "airing_gap"
-        assert "2026-06-21" in record.detail
+        assert next_air.isoformat() in record.detail
 
     def test_stop_service_clears_state(self):
         plugin = SubscribeAssistantEnhanced()
@@ -1518,7 +1557,8 @@ class TestPeriodicJobs:
         best_sub = _sub(id=1, name="X", best_version=1)
         plugin._subscribe_oper = MagicMock()
         plugin._subscribe_oper.list.return_value = [best_sub]
-        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda sub: object())
+        monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda sub: _mediainfo())
+        plugin._resolve_subscribe_missing = MagicMock(return_value=(False, []))
         orch = MagicMock()
         orch.check_complete.return_value = True
         priority = MagicMock()
@@ -1535,7 +1575,7 @@ class TestPeriodicJobs:
         plugin._subscribe_oper = MagicMock()
         plugin._subscribe_oper.list.return_value = [sub]
         plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
-        plugin._detect_missing_episodes = MagicMock(return_value=[3])
+        plugin._resolve_subscribe_missing = MagicMock(return_value=(False, [3]))
         orchestrator = plugin._modules["orchestrator"]
         orchestrator.check_complete = MagicMock(return_value=False)
 
@@ -1559,8 +1599,8 @@ class TestPeriodicJobs:
         plugin.init_plugin({"best_version_type": "all"})
         plugin._subscribe_oper = MagicMock()
         plugin._subscribe_oper.list.return_value = [sub]
-        plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
-        plugin._detect_missing_episodes = MagicMock(return_value=[3])
+        plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+        plugin._resolve_subscribe_missing = MagicMock(return_value=(False, [3]))
         priority = plugin._modules["priority_manager"]
         priority.mark_complete = MagicMock()
 

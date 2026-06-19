@@ -92,11 +92,47 @@ class TestShouldEnterPending:
         assert should is False
 
     def test_f_unstable_triggers_pending(self):
-        """F 不稳定 → 待定。"""
+        """F 不稳定且接近完结 → 待定。"""
         j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
         mi = _mi()
         sig = CompletionSignal(stable=False)
         should, reason = j.should_enter_pending(_sub(), mi, [_ep(1), _ep(2), _ep(3)], signal=sig)
+        assert should is True
+        assert reason == "目标总集数近期变化"
+
+    def test_mid_airing_total_shrink_does_not_enter_pending_from_volatility(self):
+        """播出中段 total 校准只记录风险，不触发 pending_judge 待定。"""
+        j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
+        sig = CompletionSignal(stable=False, scope_total=33)
+        aired_date = (date.today() - timedelta(days=16)).isoformat()
+        future_date = (date.today() + timedelta(days=4)).isoformat()
+        episodes = [_ep(i, air_date=aired_date) for i in range(1, 18)]
+        episodes.extend(_ep(i, air_date=future_date) for i in range(18, 34))
+
+        should, reason = j.should_enter_pending(
+            _sub(total_episode=33),
+            _mi(),
+            episodes,
+            signal=sig,
+        )
+
+        assert should is False
+        assert reason == ""
+
+    def test_near_completion_volatility_still_enters_pending(self):
+        """接近完结时 total 近期变化仍进入 pending_judge 待定。"""
+        j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
+        sig = CompletionSignal(stable=False, scope_total=33)
+        episodes = [_ep(i, air_date="2026-06-01") for i in range(1, 33)]
+        episodes.append(_ep(33, air_date=date.today().isoformat()))
+
+        should, reason = j.should_enter_pending(
+            _sub(total_episode=33),
+            _mi(),
+            episodes,
+            signal=sig,
+        )
+
         assert should is True
         assert reason == "目标总集数近期变化"
 
@@ -137,6 +173,26 @@ class TestCheckExit:
 
         assert result is True
         tmdb_fn.assert_called_once_with(100, 1, episode_group="eg-1")
+
+    def test_pending_judge_exits_when_unstable_but_not_near_completion(self):
+        """pending_judge P 退出时，播出中段 total 波动不应独占整个观察窗口。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=False, stable=False, scope_total=33)
+        j = _judge(
+            evaluate_result=sig,
+            store=store,
+            config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}),
+        )
+        aired_date = (date.today() - timedelta(days=16)).isoformat()
+        future_date = (date.today() + timedelta(days=4)).isoformat()
+        episodes = [_ep(i, air_date=aired_date) for i in range(1, 18)]
+        episodes.extend(_ep(i, air_date=future_date) for i in range(18, 34))
+        tmdb_fn = MagicMock(return_value=episodes)
+
+        result = j.check_exit(_sub(state="P", total_episode=33), _mi(), tmdb_fn)
+
+        assert result is True
+        tmdb_fn.assert_called_once_with(100, 1, episode_group=None)
 
     def test_guard_veto_stays_until_signal_confirms(self):
         """guard_veto P：信号未确认 → 保持 P。"""

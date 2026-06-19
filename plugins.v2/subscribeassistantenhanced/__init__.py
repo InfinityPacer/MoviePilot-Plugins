@@ -18,7 +18,7 @@ from app.plugins import _PluginBase
 from app.log import logger
 from app.core.event import eventmanager
 from app.core.metainfo import MetaInfo
-from app.schemas.types import EventType, ChainEventType
+from app.schemas.types import EventType, ChainEventType, MediaType
 from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
 from app.chain.tmdb import TmdbChain
@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.3.2"
+    plugin_version = "0.3.3"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -292,6 +292,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             tmdb_episodes_fn=self._tmdb_episodes,
             mode=cfg.completion_guard_mode,
             pending_download_enabled=cfg.pending_download_enabled,
+            resolve_missing_fn=self._resolve_subscribe_missing,
         )
 
         orchestrator = BestVersionOrchestrator(
@@ -339,6 +340,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             is_tv_fn=self._is_tv_media,
             detect_existing_episodes_fn=self._detect_existing_episodes,
             detect_missing_episodes_fn=self._detect_missing_episodes,
+            resolve_missing_fn=self._resolve_subscribe_missing,
             recognize_mediainfo_fn=self._recognize_mediainfo,
             priority_manager=priority_manager,
             download_monitor=download_monitor,
@@ -624,14 +626,18 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     priority.mark_complete(subscribe)
                     continue
                 # 洗版完成必须同时满足 priority 达标、F 稳定与 SeasonScope 目标集全覆盖。
-                no_exists = self._detect_missing_episodes(subscribe)
+                satisfied, no_exists = self._resolve_subscribe_missing(
+                    subscribe,
+                    mediainfo,
+                    best_version_accept_downloaded=bool(not subscribe.best_version_full),
+                )
                 if (
                     self._config.best_version_episode_to_full
                     and converter
                     and not subscribe.best_version_full
-                    and not no_exists
+                    and satisfied
                 ):
-                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} 分集洗版目标集已全部在库，转为全集洗版")
+                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} 分集洗版目标满足，转为全集洗版")
                     converter.convert_to_full(subscribe, mediainfo)
                     continue
                 if orchestrator.check_complete(subscribe, mediainfo, no_exists):
@@ -1265,6 +1271,26 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """返回订阅目标范围内媒体库仍缺失的集。"""
         _, missing = self._detect_episode_coverage(subscribe)
         return missing
+
+    def _resolve_subscribe_missing(self, subscribe, mediainfo, meta=None,
+                                   best_version_accept_downloaded: bool = False):
+        """按主程序订阅目标口径查询剩余缺集，不触发订阅完成写库。"""
+        if meta is None:
+            meta = MetaInfo(subscribe.name or "")
+            meta.year = subscribe.year
+            meta.begin_season = subscribe.season or None
+            media_type = resolve_subscribe_media_type(subscribe)
+            if media_type not in (MediaType.MOVIE, MediaType.TV):
+                logger.warning(f"目标缺集查询失败：{format_subscribe(subscribe)}，订阅媒体类型无效：{subscribe.type}")
+                return False, {}
+            meta.type = media_type
+        subscribe_chain = self._subscribe_chain or SubscribeChain()
+        return subscribe_chain.resolve_subscribe_missing(
+            subscribe=subscribe,
+            meta=meta,
+            mediainfo=mediainfo,
+            best_version_accept_downloaded=best_version_accept_downloaded,
+        )
 
     def _detect_episode_coverage(self, subscribe) -> Tuple[list, list]:
         """复用主程序缺集探测并返回 (已存在集, 缺失集)；探测失败按目标集全部缺失处理。"""

@@ -1,6 +1,7 @@
 """域 ②：完成守卫——CompletionCheck 事件处理。"""
 from typing import Callable
 
+from app.chain.subscribe import SubscribeChain
 from app.log import logger
 from app.schemas.event import SubscribeCompletionCheckEventData
 from app.schemas.types import MediaType
@@ -23,7 +24,8 @@ class CompletionGuard:
                  timeout_manager: PendingTimeoutManagerProtocol,
                  tmdb_episodes_fn: Callable = None,
                  mode: str = "balanced",
-                 pending_download_enabled: bool = True):
+                 pending_download_enabled: bool = True,
+                 resolve_missing_fn: Callable = None):
         """保存完成守卫依赖与下载中待定开关。"""
         self.evaluate_fn = evaluate_fn
         self.has_active_downloads_fn = has_active_downloads_fn
@@ -32,6 +34,7 @@ class CompletionGuard:
         self.tmdb_episodes_fn = tmdb_episodes_fn
         self.mode = mode
         self.pending_download_enabled = pending_download_enabled
+        self.resolve_missing_fn = resolve_missing_fn
 
     def handle(self, event):
         """CompletionCheck 链式事件处理入口：主程序只读取 event.event_data 上的输出字段。
@@ -64,9 +67,17 @@ class CompletionGuard:
                 data.cancel = True
                 data.source = "subscribeassistantenhanced"
                 data.reason = signal.reason
+                return
             return
 
         if not signal.stable:
+            local_signal = self._local_signal(subscribe, data.mediainfo, data.meta)
+            if local_signal is not None and self._allow_unstable_local_completion(local_signal, signal):
+                detail(
+                    f"完成守卫：{format_subscribe(subscribe)} F 不稳定但命中可信 L 目标满足信号，"
+                    f"按 {self.mode} 模式放行"
+                )
+                return
             logger.info(f"完成守卫：{format_subscribe(subscribe)} 信号不稳定（{signal.reason}），否决完成并进入待定（P）")
             data.cancel = True
             data.source = "subscribeassistantenhanced"
@@ -88,11 +99,11 @@ class CompletionGuard:
             )
             return
 
-        local_signal = self._local_signal(subscribe, data.mediainfo)
+        local_signal = self._local_signal(subscribe, data.mediainfo, data.meta)
         if local_signal is not None:
             if self._allow_low_confidence(local_signal):
                 detail(
-                    f"完成守卫：{format_subscribe(subscribe)} 命中 L 本地覆盖信号，"
+                    f"完成守卫：{format_subscribe(subscribe)} 命中 L 目标满足信号，"
                     f"按 {self.mode} 模式放行"
                 )
                 return
@@ -101,8 +112,8 @@ class CompletionGuard:
 
         self._block_completion(data, subscribe, signal)
 
-    def _local_signal(self, subscribe, mediainfo):
-        """计算 L 信号；明确存在未来集时不允许本地覆盖绕过排期。"""
+    def _local_signal(self, subscribe, mediainfo, meta=None):
+        """计算 L 信号；明确存在未来集时不允许目标满足口径绕过排期。"""
         if not self.tmdb_episodes_fn:
             return None
         tmdb_info = mediainfo.tmdb_info if mediainfo else None
@@ -111,15 +122,51 @@ class CompletionGuard:
         scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
         if has_future_episodes(scope.episodes):
             return None
+        if meta is not None:
+            resolve_missing = self.resolve_missing_fn
+            if resolve_missing is None:
+                resolve_missing = SubscribeChain().resolve_subscribe_missing
+            satisfied, _ = resolve_missing(
+                subscribe=subscribe,
+                meta=meta,
+                mediainfo=mediainfo,
+                best_version_accept_downloaded=bool(
+                    subscribe.best_version and not subscribe.best_version_full
+                ),
+            )
+            if not satisfied:
+                return None
+            return CompletionSignal(
+                completed=True,
+                confidence="low",
+                stable=True,
+                signals=["L:target_satisfied"],
+                reason="订阅目标范围已无待下载集",
+                scope_total=scope.total or subscribe.total_episode,
+                scope_high_risk=scope.high_risk,
+            )
         return check_l_signal(subscribe, scope)
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""
+        if "L:target_satisfied" in signal.signals and (
+            signal.scope_total < 3 or signal.scope_high_risk
+        ):
+            return False
         if self.mode == "loose":
             return True
         if self.mode == "balanced":
             return signal.scope_total >= 3 and not signal.scope_high_risk
         return False
+
+    def _allow_unstable_local_completion(self, local_signal: CompletionSignal,
+                                         unstable_signal: CompletionSignal) -> bool:
+        """F 不稳定时只允许可信 L 绕过普通波动，不绕过 total 缩小风险。"""
+        if "L:target_satisfied" not in local_signal.signals:
+            return False
+        if unstable_signal.volatility_direction == "down":
+            return False
+        return self._allow_low_confidence(local_signal)
 
     def _observe_low_confidence(self, data, subscribe, signal: CompletionSignal):
         """低置信信号未获策略直接放行时，消费令牌或进入完成前观察。"""

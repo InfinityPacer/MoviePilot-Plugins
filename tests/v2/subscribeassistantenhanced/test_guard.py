@@ -9,6 +9,7 @@ from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.engine.local import check_l_signal
 from subscribeassistantenhanced.engine.scope import build_scope
 from subscribeassistantenhanced.engine.types import CompletionSignal
+from subscribeassistantenhanced.shared.subscribe import pending_subscription_episodes
 
 
 def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
@@ -39,6 +40,7 @@ def _event(subscribe=None, mediainfo=None):
             status="Returning Series", next_episode_to_air=None,
             last_episode_to_air=None, seasons=[],
         )),
+        meta=SimpleNamespace(type=MediaType.TV, begin_season=1, season=1),
         cancel=False, reason="", source="",
     )
     return SimpleNamespace(event_data=data)
@@ -57,6 +59,10 @@ def _guard(signal=None, has_active=False, mode="strict"):
     g.mark_pending_fn = MagicMock()
     g.timeout_manager = MagicMock()
     g.timeout_manager.consume_release.return_value = False
+    g.resolve_missing_fn = MagicMock(side_effect=lambda subscribe, **_kwargs: (
+        not pending_subscription_episodes(subscribe),
+        {},
+    ))
     return g
 
 
@@ -112,6 +118,71 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_called_once()
         call_args = g.mark_pending_fn.call_args
         assert call_args[1].get("source") == "guard_veto" or call_args[0][1] == "guard_veto"
+
+    def test_unstable_signal_allows_trusted_l_target_satisfied(self):
+        """F 不稳定时，可信 L 可作为受控例外放行普通订阅完成。"""
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_called_once_with(
+            subscribe=subscribe,
+            meta=ev.event_data.meta,
+            mediainfo=ev.event_data.mediainfo,
+            best_version_accept_downloaded=False,
+        )
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_unstable_signal_still_blocks_short_l_target_satisfied(self):
+        """F 不稳定时，一至两集低可信 L 仍不能直接完成。"""
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="loose")
+        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
+        subscribe = _sub()
+        subscribe.total_episode = 2
+        subscribe.note = [1, 2]
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "变动"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_unstable_total_shrink_blocks_l_target_satisfied(self):
+        """近期 total 缩小时，可信 L 也不能绕过 F 的低估风险。"""
+        sig = CompletionSignal(
+            completed=False,
+            stable=False,
+            signals=["F:unstable"],
+            reason="变动",
+            volatility_direction="down",
+        )
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "变动"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_not_called()
 
     def test_high_confidence_releases(self):
         """高置信度直接放行，快照统一由 SubscribeComplete 记录。"""
@@ -259,6 +330,66 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_not_called()
         g.timeout_manager.record_block.assert_not_called()
 
+    def test_l_signal_uses_main_missing_resolver_for_existing_library_plus_new_downloads(self):
+        """L 信号应复用主程序缺集合并口径，避免只看 note 漏掉订阅前已在库集。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 21)]
+        subscribe = _sub()
+        subscribe.total_episode = 20
+        subscribe.note = list(range(11, 21))
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_called_once_with(
+            subscribe=subscribe,
+            meta=ev.event_data.meta,
+            mediainfo=ev.event_data.mediainfo,
+            best_version_accept_downloaded=False,
+        )
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_episode_best_version_stable_completion_still_only_blocks_f(self):
+        """分集洗版稳定时完成守卫只挡 F，不用低置信 L 反向取消完成。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="strict")
+        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
+        subscribe = _sub(best_version=1, best_version_full=0)
+        subscribe.total_episode = 2
+        subscribe.note = [1, 2]
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_not_called()
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_full_best_version_l_signal_does_not_accept_any_downloaded_version(self):
+        """全集洗版仍按整季洗版处理，不能使用任意版本已下载即满足的 L 口径。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2), _ep(3)]
+        subscribe = _sub(best_version=1, best_version_full=1)
+        subscribe.total_episode = 3
+        subscribe.note = [1, 2, 3]
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_not_called()
+
     def test_local_coverage_does_not_complete_when_scope_has_future_episode(self):
         """聚合下一集缺失但 SeasonScope 已有未来集时，L 信号不得提前完成订阅。"""
         g = _guard(mode="balanced")
@@ -310,8 +441,25 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once()
 
-    def test_loose_two_episode_l_signal_releases(self):
-        """宽松模式立即接受短样本 L 信号。"""
+    def test_balanced_high_risk_l_signal_enters_observation(self):
+        """平衡模式下高风险目标范围的 L 信号仍进入完成前观察。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 41)]
+        subscribe = _sub()
+        subscribe.total_episode = 40
+        subscribe.note = list(range(1, 41))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
+
+    def test_loose_two_episode_l_signal_enters_observation(self):
+        """宽松模式也不直接接受短样本 L 信号。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
         g = _guard(signal=sig, mode="loose")
         g.detect_missing_episodes_fn.return_value = []
@@ -322,9 +470,9 @@ class TestCompletionGuard:
 
         g.handle(ev)
 
-        assert ev.event_data.cancel is False
-        g.mark_pending_fn.assert_not_called()
-        g.timeout_manager.record_block.assert_not_called()
+        assert ev.event_data.cancel is True
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
 
     def test_not_completed_local_targets_missing_still_blocks(self):
         """仍缺目标集时继续否决完成，避免只因主程序事件触发就放行。"""
@@ -395,7 +543,7 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is True
 
     def test_completion_check_reads_and_writes_event_data(self):
-        """CompletionGuard 必须读写 event.event_data，并补齐 source（原实现漏写）。"""
+        """CompletionGuard 必须读写 event.event_data，并在否决完成时补齐 source。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无完结信号")
         g = _guard(signal=sig)
         ev = _event()
