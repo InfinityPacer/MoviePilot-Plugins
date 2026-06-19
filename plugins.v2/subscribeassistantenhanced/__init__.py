@@ -196,12 +196,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             format_desc_fn=lambda subscribe, mediainfo: self._format_subscribe_desc(subscribe, mediainfo),
             plugin_name=self.plugin_name,
         )
-        pending_refresh = PendingRefresh(
-            tm.read,
-            tm.update,
-            subscribe_get_fn=self._subscribe_oper.get,
-            tmdb_episodes_fn=self._tmdb_episodes,
-        )
+        pending_refresh = PendingRefresh()
         pending_state = PendingStateCoordinator(
             tm.read,
             tm.update,

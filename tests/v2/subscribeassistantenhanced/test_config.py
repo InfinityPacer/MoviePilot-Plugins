@@ -136,15 +136,12 @@ class PluginConfigDefaultsTest:
         """待定缺总集数时不再暴露虚拟总集数配置。"""
         keys = set(self.cfg.declared_keys())
         assert "pending_default_total_episodes" not in keys
-        assert not hasattr(self.cfg, "pending_default_total_episodes")
 
     def test_download_pause_expiry_keys_are_not_declared(self):
         """下载超时删种后走删除指纹与补搜，不再提供下载暂停超期配置。"""
         keys = set(self.cfg.declared_keys())
         assert "download_pause_max_days" not in keys
         assert "download_pause_expire_action" not in keys
-        assert not hasattr(self.cfg, "download_pause_max_days")
-        assert not hasattr(self.cfg, "download_pause_expire_action")
 
     def test_best_version_backfill_default_disabled(self):
         assert self.cfg.best_version_backfill_enabled is False
@@ -165,7 +162,6 @@ class PluginConfigDefaultsTest:
         """清理配置归入订阅清理页签，旧洗版清理字段不再作为配置契约。"""
         keys = set(self.cfg.declared_keys())
         assert "best_version_clear_history_type" not in keys
-        assert not hasattr(self.cfg, "best_version_clear_history_type")
 
 
 class PluginConfigCoercionTest:

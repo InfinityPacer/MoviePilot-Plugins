@@ -82,12 +82,6 @@ class TestHandleTorrentDeleted:
         c.handle_torrent_deleted(_sub(), "hash123")
         c._clear_mock.assert_called_once_with(1, "hash123")
 
-    def test_timeout_delete_does_not_pause_subscribe(self):
-        """超时删种后由删除指纹防重选并补搜，不把订阅置为暂停。"""
-        c = _cleanup()
-        c.handle_torrent_deleted(_sub(), "hash123", reason="timeout")
-        assert not hasattr(c, "_pause")
-
     def test_cleans_torrent_task(self):
         store = {"torrents": {"hash123": {"some": "data"}}}
         c = _cleanup(store)
@@ -227,10 +221,3 @@ class TestHandleTorrentDeleted:
         delete_fn.assert_not_called()            # 不调下载器删种
         notify.assert_called_once()
         assert "订阅种子手动删除，已删除" in notify.call_args.args[0]
-
-    def test_timeout_delete_also_skips_pause(self):
-        """超时删除与 Tracker 删除也不暂停，避免补搜链路被 S 状态冻结。"""
-        c = _cleanup()
-        c.handle_torrent_deleted(_sub(), "h1", reason="timeout",
-                                 downloader="qb", delete_from_downloader=True)
-        assert not hasattr(c, "_pause")

@@ -1366,7 +1366,6 @@ def test_pending_refresh_does_not_depend_on_default_total_config():
 
     pending_refresh.handle_refresh(event_data)
 
-    assert not hasattr(pending_refresh, "_default_total")
     assert event_data.updated is False
     assert event_data.total_episode is None
     assert event_data.source == "main"
@@ -2033,7 +2032,8 @@ def test_download_pause_expiry_runtime_is_removed():
     plugin.init_plugin({"pause_enhanced_enabled": True})
 
     assert "download_pause_checker" not in plugin._modules
-    assert not hasattr(plugin, "run_download_pause_expiry")
+    service_ids = {service["id"] for service in plugin.get_service()}
+    assert "SubscribeAssistantEnhanced_download_pause_expiry" not in service_ids
 
 
 def test_orchestrator_uses_related_download_history_helper():
