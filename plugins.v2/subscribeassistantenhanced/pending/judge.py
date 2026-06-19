@@ -84,8 +84,6 @@ class PendingJudge:
             if signal.completed:
                 self._exit_pending(subscribe, "信号确认完结")
                 return True
-            if not signal.stable:
-                return False
             episodes = tmdb_episodes_fn(
                 subscribe.tmdbid,
                 subscribe.season,

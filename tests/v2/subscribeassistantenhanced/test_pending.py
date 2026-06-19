@@ -174,6 +174,26 @@ class TestCheckExit:
         assert result is True
         tmdb_fn.assert_called_once_with(100, 1, episode_group="eg-1")
 
+    def test_pending_judge_exits_when_unstable_but_not_near_completion(self):
+        """pending_judge P 退出时，播出中段 total 波动不应独占整个观察窗口。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=False, stable=False, scope_total=33)
+        j = _judge(
+            evaluate_result=sig,
+            store=store,
+            config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}),
+        )
+        aired_date = (date.today() - timedelta(days=16)).isoformat()
+        future_date = (date.today() + timedelta(days=4)).isoformat()
+        episodes = [_ep(i, air_date=aired_date) for i in range(1, 18)]
+        episodes.extend(_ep(i, air_date=future_date) for i in range(18, 34))
+        tmdb_fn = MagicMock(return_value=episodes)
+
+        result = j.check_exit(_sub(state="P", total_episode=33), _mi(), tmdb_fn)
+
+        assert result is True
+        tmdb_fn.assert_called_once_with(100, 1, episode_group=None)
+
     def test_guard_veto_stays_until_signal_confirms(self):
         """guard_veto P：信号未确认 → 保持 P。"""
         store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}

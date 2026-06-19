@@ -90,6 +90,14 @@ class TestVolatilityTracker:
         assert entry["last_total_changed_at"] is not None
         assert entry["unstable_until"] is not None
         assert self.tracker.is_stable(subscribe_id=1) is False
+        assert self.tracker.recent_change_direction(subscribe_id=1) == "down"
+
+    def test_recent_change_direction_reports_increase(self):
+        """窗口内最近 total 增大时记录 up，供完成守卫区分普通补集与缩小风险。"""
+        self.tracker.record(total=10, subscribe_id=1)
+        self.tracker.record(total=12, subscribe_id=1)
+
+        assert self.tracker.recent_change_direction(subscribe_id=1) == "up"
 
     def test_legacy_recent_total_change_survives_after_next_sample(self):
         """旧 list 形态记录升级后也要保留窗口内变化状态。"""

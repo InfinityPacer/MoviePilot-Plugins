@@ -71,6 +71,13 @@ class CompletionGuard:
             return
 
         if not signal.stable:
+            local_signal = self._local_signal(subscribe, data.mediainfo, data.meta)
+            if local_signal is not None and self._allow_unstable_local_completion(local_signal, signal):
+                detail(
+                    f"完成守卫：{format_subscribe(subscribe)} F 不稳定但命中可信 L 目标满足信号，"
+                    f"按 {self.mode} 模式放行"
+                )
+                return
             logger.info(f"完成守卫：{format_subscribe(subscribe)} 信号不稳定（{signal.reason}），否决完成并进入待定（P）")
             data.cancel = True
             data.source = "subscribeassistantenhanced"
@@ -151,6 +158,15 @@ class CompletionGuard:
         if self.mode == "balanced":
             return signal.scope_total >= 3 and not signal.scope_high_risk
         return False
+
+    def _allow_unstable_local_completion(self, local_signal: CompletionSignal,
+                                         unstable_signal: CompletionSignal) -> bool:
+        """F 不稳定时只允许可信 L 绕过普通波动，不绕过 total 缩小风险。"""
+        if "L:target_satisfied" not in local_signal.signals:
+            return False
+        if unstable_signal.volatility_direction == "down":
+            return False
+        return self._allow_low_confidence(local_signal)
 
     def _observe_low_confidence(self, data, subscribe, signal: CompletionSignal):
         """低置信信号未获策略直接放行时，消费令牌或进入完成前观察。"""

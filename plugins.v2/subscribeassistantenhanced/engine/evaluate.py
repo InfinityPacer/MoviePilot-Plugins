@@ -54,6 +54,7 @@ def evaluate(subscribe, mediainfo,
                 completed=False, stable=False,
                 signals=["F:unstable"],
                 reason=unstable_reason,
+                volatility_direction=volatility_tracker.recent_change_direction(subscribe=subscribe),
             ), scope)
 
     # 4. 剧级完结（E）：剧级状态或 finale 可提供强完结信号。

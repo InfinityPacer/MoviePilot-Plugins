@@ -119,6 +119,71 @@ class TestCompletionGuard:
         call_args = g.mark_pending_fn.call_args
         assert call_args[1].get("source") == "guard_veto" or call_args[0][1] == "guard_veto"
 
+    def test_unstable_signal_allows_trusted_l_target_satisfied(self):
+        """F 不稳定时，可信 L 可作为受控例外放行普通订阅完成。"""
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_called_once_with(
+            subscribe=subscribe,
+            meta=ev.event_data.meta,
+            mediainfo=ev.event_data.mediainfo,
+            best_version_accept_downloaded=False,
+        )
+        g.mark_pending_fn.assert_not_called()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_unstable_signal_still_blocks_short_l_target_satisfied(self):
+        """F 不稳定时，一至两集低可信 L 仍不能直接完成。"""
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="loose")
+        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
+        subscribe = _sub()
+        subscribe.total_episode = 2
+        subscribe.note = [1, 2]
+        ev = _event(subscribe=subscribe)
+
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "变动"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_not_called()
+
+    def test_unstable_total_shrink_blocks_l_target_satisfied(self):
+        """近期 total 缩小时，可信 L 也不能绕过 F 的低估风险。"""
+        sig = CompletionSignal(
+            completed=False,
+            stable=False,
+            signals=["F:unstable"],
+            reason="变动",
+            volatility_direction="down",
+        )
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "变动"
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_not_called()
+
     def test_high_confidence_releases(self):
         """高置信度直接放行，快照统一由 SubscribeComplete 记录。"""
         sig = CompletionSignal(completed=True, confidence="high", signals=["E:ended"])
