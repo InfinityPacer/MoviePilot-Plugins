@@ -43,6 +43,23 @@ def test_unknown_missing_count_does_not_imply_near_completion():
     assert result.remaining_count is None
 
 
+def test_partial_air_dates_do_not_make_mid_airing_scope_near_completion():
+    """后续目标集缺少 air_date 时，不能把最后一个有日期的中段集当成末集。"""
+    episodes = [_ep(i, air_date="2026-06-01") for i in range(1, 18)]
+    episodes.extend(_ep(i, air_date=None) for i in range(18, 34))
+
+    result = assess_completion_proximity(
+        episodes=episodes,
+        total=33,
+        missing_episodes=None,
+        as_of=date(2026, 6, 2),
+        completion_check=False,
+    )
+
+    assert result.near_completion is False
+    assert "last_air_date" not in result.reasons
+
+
 def test_finale_day_is_near_completion():
     """末集播出日属于接近完结。"""
     episodes = [_ep(i, air_date="2026-06-01") for i in range(1, 33)]

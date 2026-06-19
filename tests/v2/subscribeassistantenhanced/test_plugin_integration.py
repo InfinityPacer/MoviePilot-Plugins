@@ -1,6 +1,6 @@
 """端到端集成：插件入口装配 + 事件委托 + 扩展点 smoke（证明集成层真正接通）。"""
 import time
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -1493,6 +1493,8 @@ class TestEventDelegation:
 
     def test_transfer_complete_event_pauses_after_lack_is_refreshed(self):
         """整理完成事件应读取入库后的订阅状态，并在短窗口下立即进入播出暂停。"""
+        next_air = date.today() + timedelta(days=2)
+        later_dates = [next_air + timedelta(days=7 * offset) for offset in range(1, 5)]
         sub = _sub(
             id=7,
             state="R",
@@ -1509,18 +1511,18 @@ class TestEventDelegation:
         plugin._event_proxy._modules["subscribe_oper"] = oper
         plugin._task_manager.update("torrents", lambda _data: {"abc": {"subscribe_id": 7}})
         mediainfo = _mediainfo(next_episode_to_air=SimpleNamespace(
-            air_date="2026-06-15",
+            air_date=(date.today() - timedelta(days=1)).isoformat(),
             episode_number=87,
             season_number=1,
         ), type=MediaType.TV)
         plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
         plugin._tmdb_episodes = MagicMock(return_value=[
-            SimpleNamespace(air_date="2026-06-15", episode_number=87, season_number=1),
-            SimpleNamespace(air_date="2026-06-21", episode_number=88, season_number=1),
-            SimpleNamespace(air_date="2026-06-28", episode_number=89, season_number=1),
-            SimpleNamespace(air_date="2026-07-05", episode_number=90, season_number=1),
-            SimpleNamespace(air_date="2026-07-12", episode_number=91, season_number=1),
-            SimpleNamespace(air_date="2026-07-19", episode_number=92, season_number=1),
+            SimpleNamespace(air_date=(date.today() - timedelta(days=1)).isoformat(), episode_number=87, season_number=1),
+            SimpleNamespace(air_date=next_air.isoformat(), episode_number=88, season_number=1),
+            SimpleNamespace(air_date=later_dates[0].isoformat(), episode_number=89, season_number=1),
+            SimpleNamespace(air_date=later_dates[1].isoformat(), episode_number=90, season_number=1),
+            SimpleNamespace(air_date=later_dates[2].isoformat(), episode_number=91, season_number=1),
+            SimpleNamespace(air_date=later_dates[3].isoformat(), episode_number=92, season_number=1),
         ])
         plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
         plugin._event_proxy._modules["tmdb_episodes_fn"] = plugin._tmdb_episodes
@@ -1536,7 +1538,7 @@ class TestEventDelegation:
         pause_manager.pause.assert_called_once()
         record = pause_manager.pause.call_args.args[1]
         assert record.reason == "airing_gap"
-        assert "2026-06-21" in record.detail
+        assert next_air.isoformat() in record.detail
 
     def test_stop_service_clears_state(self):
         plugin = SubscribeAssistantEnhanced()

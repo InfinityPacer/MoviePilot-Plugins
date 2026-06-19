@@ -34,6 +34,7 @@ def assess_completion_proximity(
         )
         if parsed is not None
     ]
+    last_scope_air_date = _last_scope_air_date(episode_list)
     aired_count = sum(1 for air_date in air_dates if air_date <= today)
     aired_ratio = (aired_count / total_count) if total_count else 0.0
     remaining_count = None if missing_episodes is None else len(missing_episodes)
@@ -41,7 +42,7 @@ def assess_completion_proximity(
     reasons = []
     if total_count >= 3 and aired_ratio >= 0.8:
         reasons.append("aired_ratio")
-    if air_dates and today >= max(air_dates) - timedelta(days=3):
+    if last_scope_air_date and today >= last_scope_air_date - timedelta(days=3):
         reasons.append("last_air_date")
     if remaining_count is not None and total_count >= 3 and remaining_count <= 2:
         reasons.append("few_remaining")
@@ -54,3 +55,10 @@ def assess_completion_proximity(
         remaining_count=remaining_count,
         reasons=reasons,
     )
+
+
+def _last_scope_air_date(episodes: list) -> Optional[date]:
+    """返回目标范围最后一集的播出日期；未知日期不推断为已接近完结。"""
+    if not episodes:
+        return None
+    return parse_date(episode_field(episodes[-1], "air_date"))
