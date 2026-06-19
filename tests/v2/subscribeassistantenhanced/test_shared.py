@@ -158,6 +158,9 @@ class TestIsSameSeason:
     def test_no_match(self):
         assert is_same_season({"season_number": 2}, 1) is False
 
+    def test_episode_group_order_match(self):
+        assert is_same_season({"order": 2}, 2) is True
+
 
 class TestGetTvSeasonInfo:
 
@@ -165,6 +168,11 @@ class TestGetTvSeasonInfo:
         mi = SimpleNamespace(season_info=[{"season_number": 1, "episode_count": 12}])
         info = get_tv_season_info(mi, 1)
         assert info["episode_count"] == 12
+
+    def test_episode_group_order_found(self):
+        mi = SimpleNamespace(season_info=[{"order": 2, "episode_count": 10}])
+        info = get_tv_season_info(mi, 2)
+        assert info["episode_count"] == 10
 
     def test_not_found(self):
         mi = SimpleNamespace(season_info=[{"season_number": 2}])
@@ -182,11 +190,43 @@ class TestGetTvSeasonInfo:
 class TestGetTvSeasonEpisodeCount:
 
     def test_found(self):
-        mi = SimpleNamespace(season_info=[{"season_number": 1, "episode_count": 24}])
+        mi = SimpleNamespace(seasons={}, season_info=[{"season_number": 1, "episode_count": 24}])
         assert get_tv_season_episode_count(mi, 1) == 24
 
+    def test_prefers_mediainfo_seasons_over_summary_episode_count(self):
+        mi = SimpleNamespace(
+            seasons={1: list(range(1, 41))},
+            season_info=[{"season_number": 1, "episode_count": 6}],
+        )
+        assert get_tv_season_episode_count(mi, 1) == 40
+
+    def test_uses_episode_group_order_and_episode_list(self):
+        mi = SimpleNamespace(
+            seasons={},
+            season_info=[{
+                "order": 2,
+                "episode_count": 6,
+                "episodes": [{"episode_number": i} for i in range(1, 11)],
+            }],
+        )
+        assert get_tv_season_episode_count(mi, 2, episode_group="eg-1") == 10
+
+    def test_empty_mediainfo_season_does_not_fallback_to_summary_count(self):
+        mi = SimpleNamespace(
+            seasons={1: []},
+            season_info=[{"season_number": 1, "episode_count": 6}],
+        )
+        assert get_tv_season_episode_count(mi, 1) == 0
+
+    def test_empty_episode_list_does_not_fallback_to_summary_count(self):
+        mi = SimpleNamespace(
+            seasons={},
+            season_info=[{"season_number": 1, "episode_count": 6, "episodes": []}],
+        )
+        assert get_tv_season_episode_count(mi, 1) == 0
+
     def test_not_found(self):
-        mi = SimpleNamespace(season_info=[])
+        mi = SimpleNamespace(seasons={}, season_info=[])
         assert get_tv_season_episode_count(mi, 1) == 0
 
 

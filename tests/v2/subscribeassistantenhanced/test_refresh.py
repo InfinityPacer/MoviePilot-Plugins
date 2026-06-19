@@ -1,4 +1,4 @@
-"""pending/refresh.py EpisodesRefresh 覆盖单测。"""
+"""pending/refresh.py EpisodesRefresh 观察单测。"""
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -13,8 +13,8 @@ def _event(subscribe_id=1, current_total=12, season=1, mediainfo=None):
         mediainfo=mediainfo or SimpleNamespace(season_info=[], tmdb_info={}),
         total_episode=None,
         updated=False,
-        source="",
-        reason="",
+        source="main",
+        reason="keep",
     )
 
 
@@ -27,15 +27,6 @@ def _refresh(store=None):
         store[key] = result
         return result
 
-    def test_scope_builder(_subscribe, mediainfo, _tmdb_episodes):
-        """从测试媒体对象构造最小 scope，生产代码仍统一使用 build_scope。"""
-        episodes = []
-        for info in mediainfo.season_info:
-            if info["season_number"] == 1:
-                episodes = info["episodes"]
-                break
-        return SimpleNamespace(episodes=episodes)
-
     r = PendingRefresh(
         task_data_read=lambda key: store.get(key, {}),
         task_data_update=update_fn,
@@ -43,7 +34,6 @@ def _refresh(store=None):
             id=subscribe_id, tmdbid=100, season=1, episode_group=None
         ),
         tmdb_episodes_fn=lambda *_args, **_kwargs: [],
-        scope_builder_fn=test_scope_builder,
     )
     r._store = store
     return r
@@ -62,26 +52,33 @@ def _ep(num, air_date="2026-01-01"):
 
 class TestPendingRefresh:
 
-    def test_pending_overrides_total(self):
-        """P 状态时覆盖 total 为已播出集数。"""
+    def test_pending_does_not_override_total(self):
+        """P 状态只保护生命周期，不覆盖主程序计算出的 total。"""
         store = {"subscribes": {"1": {"state": "P"}}}
         r = _refresh(store)
         mi = _mi_with_eps([_ep(1), _ep(2), _ep(3)])
         ev = _event(current_total=12, mediainfo=mi)
-        r.handle_refresh(ev)
-        assert ev.updated is True
-        assert ev.total_episode == 3
 
-    def test_pending_uses_aired_count_when_tmdb_total_missing(self):
-        """TMDB 总集数缺失时直接按已播集数覆盖，不依赖虚拟默认总集数配置。"""
+        r.handle_refresh(ev)
+
+        assert ev.updated is False
+        assert ev.total_episode is None
+        assert ev.source == "main"
+        assert ev.reason == "keep"
+        assert "max_effective_total" not in store["subscribes"]["1"]
+
+    def test_pending_does_not_inject_total_when_tmdb_total_missing(self):
+        """TMDB 总集数缺失时，P 状态也不注入虚拟 total。"""
         store = {"subscribes": {"1": {"state": "P"}}}
         mi = _mi_with_eps([_ep(i) for i in range(1, 6)])
 
         event = _event(current_total=0, mediainfo=mi)
         _refresh(store).handle_refresh(event)
 
-        assert event.updated is True
-        assert event.total_episode == 5
+        assert event.updated is False
+        assert event.total_episode is None
+        assert event.source == "main"
+        assert event.reason == "keep"
 
     def test_not_pending_no_override(self):
         """R 状态时不覆盖。"""
@@ -100,24 +97,31 @@ class TestPendingRefresh:
         r.handle_refresh(ev)
         assert ev.updated is False
 
-    def test_max_effective_total_monotonic(self):
-        """max_effective_total 单调递增。"""
+    def test_existing_max_effective_total_is_ignored(self):
+        """历史 max_effective_total 只作为旧数据残留，不再影响刷新事件。"""
         store = {"subscribes": {"1": {"state": "P", "max_effective_total": 5}}}
         r = _refresh(store)
-        mi = _mi_with_eps([_ep(1), _ep(2), _ep(3)])  # aired=3 < max=5
+        mi = _mi_with_eps([_ep(1), _ep(2), _ep(3)])
         ev = _event(current_total=12, mediainfo=mi)
-        r.handle_refresh(ev)
-        assert ev.total_episode == 5  # 使用 max(5, 3)=5
 
-    def test_aired_count_increases_max(self):
-        """新集播出递增 max。"""
+        r.handle_refresh(ev)
+
+        assert ev.updated is False
+        assert ev.total_episode is None
+        assert store["subscribes"]["1"]["max_effective_total"] == 5
+
+    def test_aired_count_does_not_update_max_effective_total(self):
+        """已播集数增长不再写入待定搜索范围。"""
         store = {"subscribes": {"1": {"state": "P", "max_effective_total": 3}}}
         r = _refresh(store)
-        mi = _mi_with_eps([_ep(1), _ep(2), _ep(3), _ep(4), _ep(5)])  # aired=5 > max=3
+        mi = _mi_with_eps([_ep(1), _ep(2), _ep(3), _ep(4), _ep(5)])
         ev = _event(current_total=12, mediainfo=mi)
+
         r.handle_refresh(ev)
-        assert ev.total_episode == 5
-        assert store["subscribes"]["1"]["max_effective_total"] == 5
+
+        assert ev.updated is False
+        assert ev.total_episode is None
+        assert store["subscribes"]["1"]["max_effective_total"] == 3
 
     def test_aired_equals_total_no_override(self):
         """已播数 >= total 时不覆盖。"""
@@ -136,8 +140,8 @@ class TestPendingRefresh:
         r.handle_refresh(ev)
         assert ev.updated is False
 
-    def test_episode_group_uses_unified_scope(self):
-        """P 刷新必须按订阅 episode_group 查询集列表，而不是读取主季 season_info。"""
+    def test_episode_group_does_not_override_total_or_query_scope(self):
+        """P 刷新不再查询剧集组并覆盖 total。"""
         store = {"subscribes": {"1": {"state": "P"}}}
         subscribe = SimpleNamespace(
             id=1,
@@ -164,5 +168,8 @@ class TestPendingRefresh:
 
         refresh.handle_refresh(event)
 
-        assert event.total_episode == 3
-        tmdb_episodes.assert_called_once_with(100, 1, episode_group="eg-1")
+        assert event.updated is False
+        assert event.total_episode is None
+        assert event.source == "main"
+        assert event.reason == "keep"
+        tmdb_episodes.assert_not_called()

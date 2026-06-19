@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.3.3"
+    plugin_version = "0.3.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1094,7 +1094,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @eventmanager.register(ChainEventType.SubscribeEpisodesRefresh)
     def on_episodes_refresh(self, event):
-        """订阅集数刷新 → 变更速率记录 + 待定集数覆盖。"""
+        """订阅集数刷新 → 变更速率记录 + 待定状态观察。"""
         if self._event_proxy:
             self._event_proxy.on_episodes_refresh(event)
 
