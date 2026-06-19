@@ -73,10 +73,32 @@ class TestDetectHighRisk:
         scope = SeasonScope(episodes=eps, total=3)
         assert detect_high_risk(scope, make_mediainfo()) is True
 
+    def test_mid_season_dict_episode_high_risk(self, make_mediainfo):
+        """dict 分集进入 SeasonScope 时，高风险检测仍能读取 mid_season。"""
+        eps = [
+            {"episode_number": 1, "air_date": "2026-01-01", "episode_type": "standard"},
+            {"episode_number": 2, "air_date": "2026-01-08", "episode_type": "mid_season"},
+            {"episode_number": 3, "air_date": "2026-01-15", "episode_type": "standard"},
+        ]
+        scope = SeasonScope(episodes=eps, total=3)
+
+        assert detect_high_risk(scope, make_mediainfo()) is True
+
     def test_single_finale_in_middle_high_risk(self, make_mediainfo):
         """条件 2：唯一 finale 不在末集，代表范围后续仍有内容。"""
         eps = [_ep(1), _ep(2, ep_type="finale"), _ep(3)]
         scope = SeasonScope(episodes=eps, total=3)
+        assert detect_high_risk(scope, make_mediainfo()) is True
+
+    def test_single_finale_dict_episode_in_middle_high_risk(self, make_mediainfo):
+        """dict 分集进入 SeasonScope 时，高风险检测仍能读取中段 finale。"""
+        eps = [
+            {"episode_number": 1, "air_date": "2026-01-01", "episode_type": "standard"},
+            {"episode_number": 2, "air_date": "2026-01-08", "episode_type": "finale"},
+            {"episode_number": 3, "air_date": "2026-01-15", "episode_type": "standard"},
+        ]
+        scope = SeasonScope(episodes=eps, total=3)
+
         assert detect_high_risk(scope, make_mediainfo()) is True
 
     def test_multiple_finales_not_high_risk_by_itself(self, make_mediainfo):

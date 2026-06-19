@@ -8,7 +8,7 @@ from app.schemas.types import MediaType
 
 from .engine.scope import build_scope
 from .engine.local import check_l_signal
-from .engine.signals import has_future_episodes, has_future_next_episode
+from .engine.signals import has_scope_future_episode
 from .engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from .shared.log import detail
 from .shared.subscribe import format_subscribe, resolve_subscribe_media_type
@@ -116,11 +116,8 @@ class CompletionGuard:
         """计算 L 信号；明确存在未来集时不允许目标满足口径绕过排期。"""
         if not self.tmdb_episodes_fn:
             return None
-        tmdb_info = mediainfo.tmdb_info if mediainfo else None
-        if has_future_next_episode(tmdb_info, subscribe.season):
-            return None
         scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
-        if has_future_episodes(scope.episodes):
+        if has_scope_future_episode(scope):
             return None
         if meta is not None:
             resolve_missing = self.resolve_missing_fn

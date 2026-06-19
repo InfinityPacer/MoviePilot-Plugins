@@ -6,7 +6,7 @@ from .types import CompletionSignal, SeasonScope
 from .scope import build_scope
 from .signals import (
     check_m_signal, check_e_signal, check_i_signal,
-    has_future_next_episode,
+    all_scope_episodes_aired, has_scope_future_episode,
 )
 from .cadence import check_cadence_expired
 from .volatility import VolatilityTracker
@@ -39,7 +39,7 @@ def evaluate(subscribe, mediainfo,
     # 3. 集数稳定性（F）：total_episode 仍在变化时拒绝提前完结。
     if config.volatility_enabled and subscribe_id is not None:
         if not volatility_tracker.is_stable(subscribe=subscribe):
-            if _finale_overrides_volatility(e_sig, mediainfo, scope, today):
+            if _finale_overrides_volatility(e_sig, scope, today):
                 detail(
                     f"信号引擎[剧级完结（E）]：{subscribe_label} 可信 finale 确认完结，"
                     f"跳过集数近期变化观察，原因：{e_sig.reason}"
@@ -80,12 +80,10 @@ def evaluate(subscribe, mediainfo,
     # 6. 播出节奏（G）：只辅助待定释放，不单独确认完结。
     cadence_expired = False
     if scope.high_risk:
-        from ..shared.media import all_aired as _all_aired
-        tmdb_info = mediainfo.tmdb_info
-        has_next = has_future_next_episode(
-            tmdb_info, scope.season, as_of=today
-        )
-        if _all_aired(scope.episodes, as_of=today) and not has_next:
+        if (
+            all_scope_episodes_aired(scope, as_of=today)
+            and not has_scope_future_episode(scope, as_of=today)
+        ):
             cadence_expired = True
     elif config.cadence_enabled:
         cadence_expired = check_cadence_expired(
@@ -118,12 +116,12 @@ def _confidence_label(confidence: str) -> str:
     }.get(confidence, confidence)
 
 
-def _finale_overrides_volatility(e_sig: Optional[CompletionSignal], mediainfo,
+def _finale_overrides_volatility(e_sig: Optional[CompletionSignal],
                                  scope: SeasonScope, today: date) -> bool:
-    """可信 finale 且没有同季未来下一集时，可解除 F 的完成前观察。"""
+    """可信 finale 且目标范围内没有后续集反证时，可解除 F 的完成前观察。"""
     if e_sig is None or e_sig.confidence != "high" or "E:finale" not in e_sig.signals:
         return False
-    return not has_future_next_episode(mediainfo.tmdb_info, scope.season, as_of=today)
+    return not has_scope_future_episode(scope, as_of=today)
 
 
 def _attach_scope_total(signal: CompletionSignal, scope) -> CompletionSignal:

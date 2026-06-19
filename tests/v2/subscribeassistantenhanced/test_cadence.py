@@ -35,6 +35,18 @@ class TestCheckCadenceExpired:
         assert check_cadence_expired(eps, multiplier=2.5, min_window_days=7,
                                       min_episodes=3, as_of=as_of) is True
 
+    def test_dict_episodes_weekly_past_window(self):
+        """dict 分集进入 G 信号时，播出节奏仍能读取 air_date。"""
+        base = date(2026, 1, 1)
+        eps = [
+            {"episode_number": i, "air_date": (base + timedelta(weeks=i-1)).isoformat()}
+            for i in range(1, 13)
+        ]
+        as_of = date(2026, 5, 1)
+
+        assert check_cadence_expired(eps, multiplier=2.5, min_window_days=7,
+                                      min_episodes=3, as_of=as_of) is True
+
     def test_daily_min_window_7_days(self):
         """日播剧（间隔 1 天），窗口下限 7 天。"""
         base = date(2026, 1, 1)

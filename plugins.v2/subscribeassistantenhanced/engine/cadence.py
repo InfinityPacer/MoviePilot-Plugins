@@ -3,7 +3,7 @@ import statistics
 from datetime import date, timedelta
 from typing import Optional
 
-from ..shared.media import parse_date
+from ..shared.media import episode_field, parse_date
 
 
 def check_cadence_expired(episodes: list, multiplier: float = 2.5,
@@ -14,7 +14,7 @@ def check_cadence_expired(episodes: list, multiplier: float = 2.5,
 
     aired = []
     for ep in episodes:
-        d = parse_date(ep.air_date)
+        d = parse_date(episode_field(ep, "air_date"))
         if d and d <= today:
             aired.append(d)
 

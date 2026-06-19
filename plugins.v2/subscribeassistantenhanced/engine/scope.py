@@ -38,10 +38,10 @@ def detect_high_risk(scope: SeasonScope, mediainfo) -> bool:
         return True
 
     for ep in scope.episodes[:-1]:
-        if ep.episode_type == "mid_season":
+        if _field(ep, "episode_type") == "mid_season":
             return True
 
-    finale_episodes = [ep for ep in scope.episodes if ep.episode_type == "finale"]
+    finale_episodes = [ep for ep in scope.episodes if _field(ep, "episode_type") == "finale"]
     if len(finale_episodes) == 1 and finale_episodes[0] is not scope.episodes[-1]:
         return True
 

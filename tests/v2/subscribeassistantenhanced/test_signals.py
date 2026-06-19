@@ -4,7 +4,8 @@ from datetime import date, timedelta
 
 from subscribeassistantenhanced.engine.signals import (
     check_m_signal, check_e_signal, check_i_signal,
-    has_scope_finale, last_aired_episode,
+    has_scope_finale, has_scope_future_episode, last_aired_episode,
+    scope_future_episode,
 )
 from subscribeassistantenhanced.engine.types import SeasonScope
 
@@ -67,6 +68,19 @@ class TestMSignal:
         eps[-1] = _ep(72, ep_type="mid_season")
         scope = SeasonScope(episodes=eps)
         sig = check_m_signal(scope, as_of=date(2026, 6, 1))
+        assert sig is not None
+        assert "M:mid_season" in sig.signals
+
+    def test_mid_season_from_dict_episode_vetoes(self):
+        """dict 分集进入 SeasonScope 时，M 信号仍能读取 episode_type。"""
+        eps = [
+            {"episode_number": 1, "air_date": "2026-01-01", "episode_type": "standard"},
+            {"episode_number": 2, "air_date": "2026-01-08", "episode_type": "mid_season"},
+        ]
+        scope = SeasonScope(episodes=eps)
+
+        sig = check_m_signal(scope, as_of=date(2026, 2, 1))
+
         assert sig is not None
         assert "M:mid_season" in sig.signals
 
@@ -155,6 +169,32 @@ class TestESignal:
         assert sig is not None
         assert sig.completed is True
 
+    def test_scope_finale_from_dict_episode_releases(self):
+        """dict 分集进入 SeasonScope 时，E 信号仍能读取 finale 和 air_date。"""
+        eps = [
+            {"episode_number": 1, "air_date": "2026-01-01", "episode_type": "standard"},
+            {"episode_number": 2, "air_date": "2026-01-08", "episode_type": "finale"},
+        ]
+        scope = SeasonScope(episodes=eps)
+
+        sig = check_e_signal(_mi(), scope, as_of=date(2026, 1, 9))
+
+        assert sig is not None
+        assert "E:finale" in sig.signals
+
+    def test_finale_with_later_unknown_air_episode_is_not_high_confidence(self):
+        """scope 末集后还有未知排期集时，finale 不能高置信完成。"""
+        eps = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, ep_type="finale", air_date="2026-01-08"),
+            _ep(3, air_date=None),
+        ]
+        scope = SeasonScope(season=1, episodes=eps)
+
+        sig = check_e_signal(_mi(), scope, as_of=date(2026, 1, 9))
+
+        assert sig is None
+
 
 # ---------- I：季级信号 ----------
 
@@ -184,6 +224,22 @@ class TestISignal:
         assert sig.completed is True
         assert "I:next_season" in sig.signals
 
+    def test_next_season_blocked_by_scope_future_episode(self):
+        """I-1 有后续季时，目标范围内未来集仍应压过 I 信号。"""
+        mi = _mi(seasons=[SimpleNamespace(season_number=1), SimpleNamespace(season_number=2)])
+        scope = SeasonScope(
+            season=1,
+            episodes=[
+                _ep(1, air_date="2026-01-01"),
+                _ep(2, air_date="2026-02-01"),
+            ],
+        )
+
+        sig = check_i_signal(mi, scope, cooldown_days=14, high_risk=False,
+                             as_of=date(2026, 1, 15))
+
+        assert sig is None
+
     def test_no_next_season_with_recent_ep(self):
         """无下一季 + 最近才播出的集 → I-1 不满足，I-3 可能满足。"""
         recent = (date(2026, 6, 1) - timedelta(days=3)).isoformat()
@@ -203,6 +259,23 @@ class TestISignal:
         assert sig is not None
         assert "I:last_ep_beyond" in sig.signals
 
+    def test_last_ep_beyond_blocked_by_scope_unknown_tail(self):
+        """I-2 有跨季 last_episode 时，目标范围内未知排期后续集仍应压过 I 信号。"""
+        last = SimpleNamespace(season_number=2, episode_number=1, air_date="2026-06-01")
+        mi = _mi(last_ep=last, seasons=[SimpleNamespace(season_number=1)])
+        scope = SeasonScope(
+            season=1,
+            episodes=[
+                _ep(1, air_date="2026-01-01"),
+                _ep(2, air_date=None),
+            ],
+        )
+
+        sig = check_i_signal(mi, scope, cooldown_days=14, high_risk=False,
+                             as_of=date(2026, 2, 1))
+
+        assert sig is None
+
     def test_cooldown_not_fire_with_future_episodes(self):
         """scope 有未来集时 I-4 不触发。"""
         old_date = (date(2026, 6, 1) - timedelta(days=20)).isoformat()
@@ -214,7 +287,7 @@ class TestISignal:
         assert sig is None
 
     def test_all_aired_no_next_ep(self):
-        """I-3：所有集已播 + 无同季 next_episode → 放行。"""
+        """I-3：所有集已播且无后续集反证时放行。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
         mi = _mi()
         scope = SeasonScope(season=1, episodes=eps)
@@ -224,15 +297,31 @@ class TestISignal:
         assert sig.completed is True
         assert "I:all_aired" in sig.signals
 
-    def test_has_next_ep_same_season_blocks(self):
-        """明确晚于当前日期的同季 next_episode → I-3 不满足。"""
+    def test_all_aired_from_dict_episodes_releases(self):
+        """dict 分集进入 SeasonScope 时，I-3 仍能判断全部已播。"""
+        eps = [
+            {"episode_number": 1, "air_date": "2026-01-01", "episode_type": "standard"},
+            {"episode_number": 2, "air_date": "2026-01-08", "episode_type": "standard"},
+        ]
+        mi = _mi()
+        scope = SeasonScope(season=1, episodes=eps)
+
+        sig = check_i_signal(mi, scope, cooldown_days=14, high_risk=False,
+                             as_of=date(2026, 2, 1))
+
+        assert sig is not None
+        assert "I:all_aired" in sig.signals
+
+    def test_aggregate_next_ep_same_season_does_not_block_scope_completion(self):
+        """完结守卫不使用 next_episode_to_air 作为未来集反证。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
         next_ep = SimpleNamespace(season_number=1, episode_number=13, air_date="2026-06-13")
         mi = _mi(next_ep=next_ep)
         scope = SeasonScope(season=1, episodes=eps)
         sig = check_i_signal(mi, scope, cooldown_days=14, high_risk=False,
                              as_of=date(2026, 6, 1))
-        assert sig is None
+        assert sig is not None
+        assert "I:all_aired" in sig.signals
 
     def test_same_day_next_ep_same_season_allows(self):
         """当天播出的 next_episode 已进入可播日期，不应继续阻止完结。"""
@@ -252,8 +341,8 @@ class TestISignal:
         assert sig is not None
         assert sig.signals == ["I:all_aired"]
 
-    def test_next_ep_without_air_date_blocks(self):
-        """下一集缺少播出日期时保守视为未来集。"""
+    def test_aggregate_next_ep_without_air_date_does_not_block_scope_completion(self):
+        """聚合下一集缺少播出日期时，不参与完结守卫裁决。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
         next_ep = SimpleNamespace(
             season_number=1, episode_number=13, air_date=None
@@ -266,10 +355,11 @@ class TestISignal:
             as_of=date(2026, 6, 13),
         )
 
-        assert sig is None
+        assert sig is not None
+        assert "I:all_aired" in sig.signals
 
-    def test_next_ep_same_season_blocks_from_dict(self):
-        """TMDB 原始信息为 dict 时，同季 next_episode 不应被吞掉。"""
+    def test_aggregate_next_ep_same_season_from_dict_does_not_block_scope_completion(self):
+        """TMDB 原始 dict 的聚合下一集也不参与完结守卫裁决。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
         mediainfo = SimpleNamespace(tmdb_info={
             "seasons": [{"season_number": 1}],
@@ -281,7 +371,8 @@ class TestISignal:
         sig = check_i_signal(mediainfo, scope, cooldown_days=14, high_risk=False,
                              as_of=date(2026, 6, 1))
 
-        assert sig is None
+        assert sig is not None
+        assert "I:all_aired" in sig.signals
 
     def test_next_ep_different_season_allows(self):
         """next_episode 属于不同季 → I-3 可满足。"""
@@ -303,15 +394,58 @@ class TestISignal:
         assert sig is None
 
     def test_cooldown_releases_no_future_eps(self):
-        """I-4：最后集播出超冷却期 + scope 内有无 air_date 的集（I-3 不满足） → 放行。"""
+        """I-4：最后集播出超冷却期 + 无后续集反证 → 放行。"""
         old_date = (date(2026, 6, 1) - timedelta(days=20)).isoformat()
-        eps = [_ep(1, air_date=old_date), _ep(2, air_date=None)]  # E2 无 air_date → I-3 不满足
+        eps = [_ep(1, air_date=None), _ep(2, air_date=old_date)]
         mi = _mi()
         scope = SeasonScope(season=1, episodes=eps)
         sig = check_i_signal(mi, scope, cooldown_days=14, high_risk=False,
                              as_of=date(2026, 6, 1))
         assert sig is not None
         assert "I:cooldown" in sig.signals
+
+    def test_cooldown_from_dict_episodes_releases(self):
+        """dict 分集进入 SeasonScope 时，I-4 仍能读取最后已播日期。"""
+        old_date = (date(2026, 6, 1) - timedelta(days=20)).isoformat()
+        eps = [
+            {"episode_number": 1, "air_date": None, "episode_type": "standard"},
+            {"episode_number": 2, "air_date": old_date, "episode_type": "standard"},
+        ]
+        mi = _mi()
+        scope = SeasonScope(season=1, episodes=eps)
+
+        sig = check_i_signal(mi, scope, cooldown_days=14, high_risk=False,
+                             as_of=date(2026, 6, 1))
+
+        assert sig is not None
+        assert "I:cooldown" in sig.signals
+
+    def test_i_all_aired_blocked_by_later_unknown_air_episode(self):
+        """后续集已存在但缺 air_date 时，I 信号不能确认完结。"""
+        eps = [_ep(1, air_date="2026-01-01"), _ep(2, air_date=None)]
+        mi = _mi()
+        scope = SeasonScope(season=1, episodes=eps)
+
+        sig = check_i_signal(
+            mi, scope, cooldown_days=14, high_risk=False,
+            as_of=date(2026, 2, 1),
+        )
+
+        assert sig is None
+
+    def test_i_cooldown_blocked_by_later_unknown_air_episode(self):
+        """冷却期已过但后续集缺 air_date 时，I-4 不能确认完结。"""
+        old_date = (date(2026, 2, 1) - timedelta(days=20)).isoformat()
+        eps = [_ep(1, air_date=old_date), _ep(2, air_date=None)]
+        mi = _mi()
+        scope = SeasonScope(season=1, episodes=eps)
+
+        sig = check_i_signal(
+            mi, scope, cooldown_days=14, high_risk=False,
+            as_of=date(2026, 2, 1),
+        )
+
+        assert sig is None
 
     def test_high_risk_blocks_i4(self):
         """高风险绝对季 I-4 也不放行。"""
@@ -370,3 +504,63 @@ class TestLastAiredEpisode:
         eps = [_ep(1, air_date="2027-01-01")]
         result = last_aired_episode(eps, as_of=date(2026, 6, 1))
         assert result is None
+
+
+class TestScopeFutureEpisode:
+
+    def test_returns_later_unknown_air_tail(self):
+        """后续集缺少 air_date 时，scope helper 仍应判定为未完结反证。"""
+        eps = [_ep(1, air_date="2026-01-01"), _ep(2, air_date=None)]
+        scope = SeasonScope(episodes=eps)
+
+        result = scope_future_episode(scope, as_of=date(2026, 2, 1))
+
+        assert result is eps[1]
+        assert has_scope_future_episode(scope, as_of=date(2026, 2, 1)) is True
+
+    def test_ignores_unknown_air_before_last_aired(self):
+        """缺排期集号不晚于最后已播集时，不能单独证明范围仍未完结。"""
+        eps = [_ep(1, air_date=None), _ep(2, air_date="2026-01-08")]
+        scope = SeasonScope(episodes=eps)
+
+        assert scope_future_episode(scope, as_of=date(2026, 2, 1)) is None
+
+    def test_uses_future_date_without_episode_number(self):
+        """集号不可比较但 air_date 晚于当天时，未来日期本身就是未完结反证。"""
+        ep = _ep(None, air_date="2026-02-01")
+        scope = SeasonScope(episodes=[ep])
+
+        assert scope_future_episode(scope, as_of=date(2026, 1, 31)) is ep
+
+    def test_treats_today_as_aired(self):
+        """air_date 等于今天按已播处理，不算未来集。"""
+        eps = [_ep(1, air_date="2026-02-01")]
+        scope = SeasonScope(episodes=eps)
+
+        assert has_scope_future_episode(scope, as_of=date(2026, 2, 1)) is False
+
+    def test_supports_dict_episodes(self):
+        """scope helper 兼容 TMDB 原始 dict 分集对象。"""
+        eps = [
+            {"episode_number": 1, "air_date": "2026-01-01"},
+            {"episode_number": 2, "air_date": None},
+        ]
+        scope = SeasonScope(episodes=eps)
+
+        result = scope_future_episode(scope, as_of=date(2026, 2, 1))
+
+        assert result is eps[1]
+
+    def test_unparseable_last_aired_number_does_not_make_unknown_tail_future(self):
+        """最后已播集号不可比较时，unknown-air 集不能仅凭集号证明后续。"""
+        eps = [_ep("x", air_date="2026-01-01"), _ep(2, air_date=None)]
+        scope = SeasonScope(episodes=eps)
+
+        assert scope_future_episode(scope, as_of=date(2026, 2, 1)) is None
+
+    def test_unknown_air_episode_without_aired_baseline_is_not_future(self):
+        """没有已播基准时，缺排期集不能单独证明范围仍有后续。"""
+        eps = [_ep(1, air_date=None)]
+        scope = SeasonScope(episodes=eps)
+
+        assert scope_future_episode(scope, as_of=date(2026, 2, 1)) is None
