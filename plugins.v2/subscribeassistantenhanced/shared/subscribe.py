@@ -139,5 +139,7 @@ def subscribe_from_source(origin, subscribe_oper) -> Tuple[Optional[dict], Optio
     except (ValueError, TypeError):
         return None, None
     subscribe_id = subscribe_dict.get("id")
-    subscribe = subscribe_oper.get(subscribe_id) if subscribe_oper and subscribe_id else None
+    if not subscribe_id:
+        return None, None
+    subscribe = subscribe_oper.get(subscribe_id) if subscribe_oper else None
     return subscribe_dict, subscribe

@@ -31,6 +31,15 @@ def _sub(state="R"):
 class TestPendingStateCoordinator:
     """多来源待定仲裁：任一来源仍活跃时订阅保持 P。"""
 
+    def test_mark_active_rejects_missing_subscribe_or_source(self):
+        """待定来源缺少订阅或来源名时，不应污染任务状态。"""
+        read, update, store = _store_mgr()
+        coordinator = PendingStateCoordinator(read, update)
+
+        assert coordinator.mark_active(None, source="download_pending") is False
+        assert coordinator.mark_active(_sub(), source="") is False
+        assert store == {}
+
     def test_clear_one_source_keeps_p_when_another_source_active(self):
         read, update, store = _store_mgr()
         oper = MagicMock()
@@ -66,6 +75,15 @@ class TestPendingStateCoordinator:
             call_args.args[0] == 1 and call_args.args[1]["state"] == "R"
             for call_args in oper.update.call_args_list
         )
+
+    def test_clear_active_rejects_missing_subscribe_or_source(self):
+        """解除待定来源缺少订阅或来源名时，不应改写任务状态。"""
+        read, update, store = _store_mgr()
+        coordinator = PendingStateCoordinator(read, update)
+
+        assert coordinator.clear_active(None, source="download_pending") is False
+        assert coordinator.clear_active(_sub(state="P"), source="") is False
+        assert store == {}
 
     def test_has_active_reads_pending_sources(self):
         read, update, _ = _store_mgr({
@@ -130,3 +148,46 @@ class TestPendingStateCoordinator:
         assert task["pause_reason"] == "pre_air"
         assert oper.update.call_args.args[1]["state"] == "S"
         assert not any(call.args[1].get("state") == "R" for call in oper.update.call_args_list)
+
+    def test_active_sources_normalizes_legacy_single_source_task(self):
+        """旧版单 source 待定记录应归一化为 pending_sources 字典。"""
+        read, update, _ = _store_mgr({
+            "subscribes": {
+                "1": {
+                    "state": "P",
+                    "source": "legacy",
+                    "reason": "旧数据",
+                    "since": 10.0,
+                }
+            }
+        })
+        coordinator = PendingStateCoordinator(read, update)
+
+        assert coordinator.active_sources(1) == {
+            "legacy": {
+                "reason": "旧数据",
+                "since": 10.0,
+                "updated_at": 10.0,
+            }
+        }
+
+    def test_clear_custom_source_reports_unknown_primary_source(self):
+        """未知待定来源应保留来源名，便于日志定位非内置业务域。"""
+        read, update, store = _store_mgr({
+            "subscribes": {
+                "1": {
+                    "state": "P",
+                    "pending_sources": {
+                        "custom_source": {"reason": "自定义", "since": 1.0},
+                        "download_pending": {"reason": "下载中", "since": 2.0},
+                    },
+                }
+            }
+        })
+        coordinator = PendingStateCoordinator(read, update)
+
+        assert coordinator.clear_active(_sub(state="P"), "download_pending") is False
+
+        task = store["subscribes"]["1"]
+        assert task["source"] == "custom_source"
+        assert task["reason"] == "自定义"

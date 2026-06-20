@@ -109,6 +109,25 @@ class TestRollback:
 class TestTorrentBaselineRollback:
     """按种子隔离的优先级基线与归属回滚（分级洗版不串号）。"""
 
+    def test_empty_torrent_id_skips_baseline_and_rollback(self):
+        """缺少种子 ID 时不能写入或清理按种子基线。"""
+        store = {}
+        mgr = _mgr(store)
+
+        mgr.capture_torrent_baseline(_sub(), "", episodes=[1], contributed_priority=80)
+        mgr.rollback_torrent(_sub(ep_priority={"1": 80}), "")
+
+        assert store == {}
+        mgr._oper.update.assert_not_called()
+
+    def test_missing_torrent_baseline_no_op(self):
+        """找不到种子基线时不应回滚当前洗版优先级。"""
+        mgr = _mgr({"subscribes": {"1": {"priority_baselines": {}}}})
+
+        mgr.rollback_torrent(_sub(ep_priority={"1": 80}), "missing")
+
+        mgr._oper.update.assert_not_called()
+
     def test_rollback_preserves_other_torrents_episodes(self):
         """种子 A(ep1) 回滚不影响种子 B(ep2) 已升级的集。"""
         mgr = _mgr({})
@@ -201,6 +220,13 @@ class TestIsComplete:
         mgr = _mgr()
         assert mgr.is_complete(_sub(ep_priority={"1": 100, "2": 100})) is True
 
+    def test_invalid_target_range_not_complete(self):
+        """目标集范围不可解析时不能按已有 priority 键误判洗版完成。"""
+        mgr = _mgr()
+        sub = _sub(ep_priority={"1": 100}, start_episode="bad", total_episode=2)
+
+        assert mgr.is_complete(sub) is False
+
     def test_missing_target_episodes_not_complete(self):
         """目标范围未全部达标时不能只因已有 priority 都是 100 就判洗版完成。"""
         mgr = _mgr()
@@ -235,3 +261,14 @@ class TestMarkComplete:
 
         call_payload = mgr._oper.update.call_args[0][1]
         assert call_payload["episode_priority"] == {"1": 100, "2": 100, "3": 100}
+
+    def test_mark_complete_without_target_range_updates_existing_priorities(self):
+        """目标范围不可用时仍应把已有分集优先级统一标记为完成。"""
+        mgr = _mgr()
+        sub = _sub(ep_priority={"1": 50, "2": 80}, start_episode="bad", total_episode=2)
+
+        mgr.mark_complete(sub)
+
+        call_payload = mgr._oper.update.call_args[0][1]
+        assert call_payload["episode_priority"] == {"1": 100, "2": 100}
+        assert call_payload["current_priority"] == 100

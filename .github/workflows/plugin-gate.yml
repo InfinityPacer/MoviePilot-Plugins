@@ -15,6 +15,108 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Check plugin versions
         run: python .github/scripts/check_plugin_versions.py package.json package.v2.json
+
+      - name: Check new plugin tests
+        run: |
+          git fetch origin main:refs/remotes/origin/main --depth=1
+          python scripts/check_new_plugin_tests.py --base-ref origin/main
+
+  plugin-coverage-gate:
+    name: Plugin coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin repository
+        uses: actions/checkout@v6
+        with:
+          path: MoviePilot-Plugins
+          fetch-depth: 0
+
+      - name: Determine whether coverage gate is required
+        id: coverage-scope
+        working-directory: MoviePilot-Plugins
+        run: |
+          set -euo pipefail
+          git fetch origin main:refs/remotes/origin/main --depth=1
+          python - <<'PY' > /tmp/plugin_coverage_scope.txt
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("plugin_quality.json").read_text(encoding="utf-8"))
+          paths = {
+              "scripts/plugin_coverage.py",
+              "plugin_quality.json",
+              ".coveragerc",
+              ".github/workflows/plugin-gate.yml",
+              "pytest.ini",
+              "tests/ci/test_plugin_coverage_gate.py",
+              "tests/conftest.py",
+              "tests/_bootstrap.py",
+              "tests/run.py",
+          }
+          for item in config.get("coverage", []):
+              generation = item["generation"]
+              base = "plugins.v2" if generation == "v2" else "plugins"
+              plugin = item["plugin"]
+              paths.add(f"{base}/{plugin}/")
+              paths.add(f"tests/{generation}/{plugin}/")
+          for path in sorted(paths):
+              print(path)
+          PY
+          mapfile -t coverage_scope < /tmp/plugin_coverage_scope.txt
+          changed_files="$(git diff --name-only origin/main...HEAD)"
+          printf '%s\n' "$changed_files"
+          run=false
+          while IFS= read -r changed_file; do
+            for scope in "${coverage_scope[@]}"; do
+              if [[ "$scope" == */ ]]; then
+                if [[ "$changed_file" == "$scope"* ]]; then
+                  run=true
+                fi
+              elif [[ "$changed_file" == "$scope" ]]; then
+                run=true
+              fi
+            done
+          done <<< "$changed_files"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout MoviePilot backend
+        if: steps.coverage-scope.outputs.run == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: jxxghp/MoviePilot
+          ref: v2
+          path: MoviePilot
+
+      - name: Set up Python
+        if: steps.coverage-scope.outputs.run == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: MoviePilot/requirements.in
+
+      - name: Install backend test dependencies
+        if: steps.coverage-scope.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r MoviePilot/requirements.in coverage==7.14.1
+
+      - name: Run plugin coverage gate
+        if: steps.coverage-scope.outputs.run == 'true'
+        env:
+          MOVIEPILOT_BACKEND_PATH: ${{ github.workspace }}/MoviePilot
+          PLUGIN_COVERAGE_BASE_REF: origin/main
+        working-directory: MoviePilot-Plugins
+        run: python scripts/plugin_coverage.py
+
+      - name: Upload plugin coverage reports
+        if: always() && steps.coverage-scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: plugin-coverage-reports
+          path: MoviePilot-Plugins/coverage-reports/

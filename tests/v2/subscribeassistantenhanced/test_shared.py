@@ -1,18 +1,22 @@
 """shared/ 工具函数单测——log.py + subscribe.py + media.py 补充覆盖。"""
 from datetime import date
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from subscribeassistantenhanced.shared.log import truncate_log_value, format_log_title_desc
 from subscribeassistantenhanced.shared.subscribe import (
     format_subscribe, format_subscribe_desc, format_subscribe_label, match_subscribe,
-    pending_subscription_episodes,
+    identity_matches, pending_subscription_episodes, resolve_subscribe_media_type,
+    subscribe_from_source, subscribe_identity,
 )
 from subscribeassistantenhanced.shared.update import update_subscribe
 from subscribeassistantenhanced.shared.media import (
     parse_date, is_same_season, get_tv_season_info,
     get_tv_season_air_date,
     count_aired_episodes, last_aired_episode, all_aired,
-    resolve_airing_next_episode,
+    episode_candidates_after, resolve_airing_next_episode,
+    resolve_inventory_next_episodes, target_episode_range,
+    unknown_tail_episode_count,
 )
 
 
@@ -98,6 +102,17 @@ class TestPendingSubscriptionEpisodes:
 
         assert pending_subscription_episodes(subscribe) == [6]
 
+    def test_invalid_priority_values_are_ignored(self):
+        """非法优先级不应让未下载集被误判为已存在版本。"""
+        subscribe = SimpleNamespace(
+            start_episode=1,
+            total_episode=3,
+            note=["x"],
+            episode_priority={"1": "bad", "2": None, "3": -1},
+        )
+
+        assert pending_subscription_episodes(subscribe) == [1, 2, 3]
+
 
 class TestFormatSubscribeLabel:
 
@@ -110,6 +125,12 @@ class TestFormatSubscribeLabel:
 
     def test_missing_subscribe_fallback(self):
         assert format_subscribe_label() == "未知订阅"
+
+    def test_broken_subscribe_falls_back_to_id(self):
+        """订阅对象字段不完整时仍应保留 ID，避免日志标签直接异常。"""
+        sub = SimpleNamespace(id=8)
+
+        assert format_subscribe_label(sub) == "订阅 8"
 
 
 class TestMatchSubscribe:
@@ -133,6 +154,43 @@ class TestMatchSubscribe:
         sub = SimpleNamespace(id=1, name="测试", tmdbid=100, season=1, episode_group="eg-1")
         task = {"id": 1, "name": "测试", "tmdbid": 100, "season": 1}
         assert match_subscribe(sub, task) is False
+
+
+class TestSubscribeIdentity:
+
+    def test_resolve_media_type_accepts_enum_string_and_invalid(self):
+        """媒体类型解析应兼容枚举、字符串和异常值。"""
+        assert resolve_subscribe_media_type(SimpleNamespace(type="电视剧")).value == "电视剧"
+        assert resolve_subscribe_media_type(SimpleNamespace(type="bad")).value == "未知"
+        assert resolve_subscribe_media_type(None).value == "未知"
+
+    def test_identity_matches_current_subscribe(self):
+        """持久化身份必须完整匹配当前订阅，避免 ID 复用串状态。"""
+        subscribe = SimpleNamespace(id=1, tmdbid=100, season=1, episode_group="eg-1")
+        identity = subscribe_identity(subscribe)
+
+        assert identity_matches(identity, subscribe) is True
+        assert identity_matches({**identity, "episode_group": "eg-2"}, subscribe) is False
+        assert identity_matches({}, subscribe) is False
+
+    def test_subscribe_from_source_parses_valid_origin(self):
+        """Subscribe|json 来源应解析快照并读取当前订阅。"""
+        subscribe = SimpleNamespace(id=1)
+        oper = MagicMock()
+        oper.get.return_value = subscribe
+
+        data, current = subscribe_from_source('Subscribe|{"id": 1, "name": "测试"}', oper)
+
+        assert data == {"id": 1, "name": "测试"}
+        assert current is subscribe
+
+    def test_subscribe_from_source_rejects_invalid_origin(self):
+        """非订阅来源、坏 JSON 或缺少订阅 ID 时按空结果处理。"""
+        oper = MagicMock()
+
+        assert subscribe_from_source("Manual|{}", oper) == (None, None)
+        assert subscribe_from_source("Subscribe|{bad", oper) == (None, None)
+        assert subscribe_from_source("Subscribe|{}", oper) == (None, None)
 
 
 class TestUpdateSubscribe:
@@ -209,6 +267,12 @@ class TestGetTvSeasonAirDate:
 
 class TestMediaHelpers:
 
+    def test_target_episode_range_rejects_invalid_range(self):
+        """订阅目标范围无效时不应推导出待下载集。"""
+        subscribe = SimpleNamespace(start_episode=5, total_episode=3)
+
+        assert target_episode_range(subscribe) == []
+
     def test_count_aired(self):
         eps = [
             SimpleNamespace(air_date="2026-01-01"),
@@ -247,6 +311,43 @@ class TestMediaHelpers:
     def test_all_aired_no_date(self):
         eps = [SimpleNamespace(air_date=None)]
         assert all_aired(eps, as_of=date(2026, 6, 1)) is False
+
+    def test_unknown_tail_counts_only_current_season_known_episodes(self):
+        """尾部未知集数只参考当前季已知集，避免跨季集数影响暂停判断。"""
+        subscribe = SimpleNamespace(season=1, start_episode=1, total_episode=5)
+        episodes = [
+            SimpleNamespace(season_number=2, episode_number=99, air_date="2026-01-01"),
+            SimpleNamespace(season_number=1, episode_number=3, air_date="2026-01-01"),
+        ]
+
+        assert unknown_tail_episode_count(subscribe, episodes) == 2
+
+    def test_episode_candidates_after_skips_other_season_and_outside_target(self):
+        """未来候选必须同时属于当前季和订阅目标范围。"""
+        subscribe = SimpleNamespace(season=1, start_episode=2, total_episode=3)
+        episodes = [
+            SimpleNamespace(season_number=2, episode_number=2, air_date="2026-07-01"),
+            SimpleNamespace(season_number=1, episode_number=1, air_date="2026-07-01"),
+            SimpleNamespace(season_number=1, episode_number=2, air_date="2026-07-01"),
+        ]
+
+        assert episode_candidates_after(subscribe, episodes, date(2026, 6, 1)) == [episodes[2]]
+
+    def test_inventory_next_episodes_rejects_missing_invalid_or_negative_lack_count(self):
+        """媒体库实缺数量不可用时，不应把未来集候选误判为可暂停依据。"""
+        episodes = [SimpleNamespace(season_number=1, episode_number=2, air_date="2026-07-01")]
+
+        for lack_episode in (None, "bad", -1):
+            subscribe = SimpleNamespace(
+                season=1,
+                start_episode=1,
+                total_episode=2,
+                lack_episode=lack_episode,
+                note=[1],
+                episode_priority={},
+            )
+
+            assert resolve_inventory_next_episodes(subscribe, episodes, as_of=date(2026, 6, 1)) == []
 
 
 class TestResolveAiringNextEpisode:
