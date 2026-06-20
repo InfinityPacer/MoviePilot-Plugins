@@ -127,3 +127,71 @@ class TestConvertToFull:
         assert "action" not in notify.call_args.kwargs
         assert notify.call_args.kwargs["follow_up"] == "请检查订阅状态"
         assert notify.call_args.kwargs["diagnostic"] is True
+
+    def test_add_exception_reports_restore_failure(self):
+        """全集订阅创建抛错且恢复失败时，通知应明确要求人工检查。"""
+        oper = MagicMock()
+        oper.add.side_effect = RuntimeError("boom")
+        restore = MagicMock(return_value=False)
+        notify = MagicMock()
+        conv = BestVersionConverter(
+            subscribe_oper=oper,
+            restore_fn=restore,
+            notify_fn=notify,
+        )
+        sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
+        media = _mediainfo()
+
+        assert conv.convert_to_full(sub, media) is False
+
+        restore.assert_called_once_with(sub.to_dict(), media)
+        assert notify.call_args.kwargs["text"] == "boom\n分集洗版订阅重建失败，请手动检查"
+
+    def test_default_description_and_optional_callbacks(self):
+        """未注入格式化、事件和通知回调时仍应完成转换并使用默认订阅描述。"""
+        oper = MagicMock()
+        oper.add.return_value = (8, "")
+        conv = BestVersionConverter(subscribe_oper=oper)
+        sub = _SubscribeSnapshot(id=1, name="测试剧", season=2)
+
+        assert conv.convert_to_full(sub, _mediainfo()) is True
+
+        payload = oper.add.call_args.kwargs
+        assert payload["best_version_full"] == 1
+        assert payload["username"] == "订阅助手（增强版）"
+
+    def test_remove_history_snapshot_uses_database_fallback(self):
+        """旧订阅删除失败时，没有 remove_history 也应按身份从数据库清理刚写入的历史。"""
+        history = object()
+        query = MagicMock()
+        query.filter.return_value = query
+        query.order_by.return_value.first.return_value = history
+        db = MagicMock()
+        db.query.return_value = query
+        oper = MagicMock()
+        del oper.remove_history
+        oper._db = db
+        conv = BestVersionConverter(subscribe_oper=oper)
+
+        conv._remove_history_snapshot({"tmdbid": 100, "season": 1, "name": "测试剧"})
+
+        db.delete.assert_called_once_with(history)
+        db.commit.assert_called_once()
+
+    def test_remove_history_snapshot_without_identity_uses_name(self):
+        """没有 tmdb/douban 身份时按名称回退清理，覆盖旧数据兼容路径。"""
+        history = object()
+        query = MagicMock()
+        query.filter.return_value = query
+        query.order_by.return_value.first.return_value = history
+        db = MagicMock()
+        db.query.return_value = query
+        oper = MagicMock()
+        del oper.remove_history
+        oper._db = db
+        conv = BestVersionConverter(subscribe_oper=oper)
+
+        conv._remove_history_snapshot({"name": "测试剧", "season": 1})
+
+        db.delete.assert_called_once_with(history)
+        db.commit.assert_called_once()

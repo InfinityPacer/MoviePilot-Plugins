@@ -10,7 +10,7 @@ from app.core.event import eventmanager
 from app.core.event import Event
 from app.plugins import _PluginBase
 from app.schemas.event import PluginDataResetEventData
-from app.schemas.types import ChainEventType
+from app.schemas.types import ChainEventType, EventType
 
 import subscribeassistantenhanced as plugin_module
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
@@ -88,6 +88,72 @@ class TestPluginEntry:
 
         assert plugin._torrent_exists("abc") is None
 
+    def test_detect_existing_episodes_returns_existing_side_of_coverage_tuple(self):
+        """媒体库已有集检测只暴露主程序缺集探测返回的已存在集。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin._detect_episode_coverage = MagicMock(return_value=([1, 2], [3]))
+
+        assert plugin._detect_existing_episodes(SimpleNamespace(id=1)) == [1, 2]
+
+    def test_downloader_torrent_present_distinguishes_absent_and_unknown(self):
+        """手动删种监听需要区分确删、仍存在和下载器不可判定。"""
+        plugin = SubscribeAssistantEnhanced()
+        service = SimpleNamespace(instance=MagicMock())
+        plugin._downloader_helper = MagicMock()
+        plugin._downloader_helper.get_service.return_value = service
+        service.instance.get_torrents.return_value = ([], False)
+
+        assert plugin._downloader_torrent_present("qb", "hash") is False
+
+        service.instance.get_torrents.return_value = ([{"hash": "hash"}], False)
+        assert plugin._downloader_torrent_present("qb", "hash") is True
+
+        service.instance.get_torrents.return_value = ([], True)
+        assert plugin._downloader_torrent_present("qb", "hash") is None
+
+    def test_fetch_downloader_torrent_maps_download_item(self):
+        """下载器返回种子时应转换为统一 TorrentInfo，供超时巡检判断进度。"""
+        plugin = SubscribeAssistantEnhanced()
+        service = SimpleNamespace(type="qbittorrent", instance=MagicMock())
+        service.instance.get_torrents.return_value = ([{"hash": "abc", "progress": 1.0}], False)
+        plugin._downloader_helper = MagicMock()
+        plugin._downloader_helper.get_service.return_value = service
+
+        info = plugin._fetch_downloader_torrent("qb", "abc")
+
+        assert info.hash == "abc"
+        assert info.completed is True
+
+    def test_delete_downloader_torrent_delegates_delete_with_files(self):
+        """删除巡检确认需要删种时，应要求下载器同时删除源文件。"""
+        plugin = SubscribeAssistantEnhanced()
+        service = SimpleNamespace(instance=MagicMock())
+        plugin._downloader_helper = MagicMock()
+        plugin._downloader_helper.get_service.return_value = service
+
+        plugin._delete_downloader_torrent("qb", "abc")
+
+        service.instance.delete_torrents.assert_called_once_with(delete_file=True, ids="abc")
+
+    def test_delete_media_file_uses_storage_chain_fileitem(self):
+        """订阅清理删除旧媒体文件时经 storage_chain 统一执行。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin._storage_chain = MagicMock()
+        plugin._storage_chain.delete_media_file.return_value = True
+
+        assert plugin._delete_media_file({"path": "/media/old.mkv", "type": "file"}) is True
+        assert plugin._storage_chain.delete_media_file.call_args.args[0].path == "/media/old.mkv"
+
+    def test_get_subscribe_image_prefers_backdrop_then_poster(self):
+        """订阅通知图片优先背景图，缺失时回退海报图。"""
+        assert SubscribeAssistantEnhanced._get_subscribe_image(
+            SimpleNamespace(backdrop="https://img/original/back.jpg", poster="https://img/original/poster.jpg")
+        ) == "https://img/w500/back.jpg"
+        assert SubscribeAssistantEnhanced._get_subscribe_image(
+            SimpleNamespace(backdrop="", poster="https://img/original/poster.jpg")
+        ) == "https://img/w500/poster.jpg"
+        assert SubscribeAssistantEnhanced._get_subscribe_image(SimpleNamespace(backdrop="", poster="")) == ""
+
 
 class TestEventRegistration:
     """事件注册机制：handler 必须在插件类上、且被装饰器注册进 eventmanager。"""
@@ -106,6 +172,24 @@ class TestEventRegistration:
                      "on_transfer_intercept", "on_plugin_action", "on_plugin_data_reset"):
             assert any(f"SubscribeAssistantEnhanced.{name}" in ident for ident in identifiers), \
                 f"事件处理器 {name} 未注册到 eventmanager"
+
+    def test_plugin_class_event_handlers_delegate_to_event_proxy(self):
+        """插件类事件入口必须转发到 EventProxy，保持主程序分发与业务逻辑解耦。"""
+        handlers = (
+            "on_completion_check", "on_episodes_refresh", "on_subscribe_added",
+            "on_subscribe_modified", "on_subscribe_complete", "on_download_added",
+            "on_resource_selection", "on_resource_download", "on_transfer_intercept",
+            "on_plugin_action",
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin._event_proxy = MagicMock()
+        event = object()
+
+        for name in handlers:
+            getattr(plugin, name)(event)
+
+        for name in handlers:
+            getattr(plugin._event_proxy, name).assert_called_once_with(event)
 
     def test_plugin_data_reset_event_runs_pre_clear_recovery(self, monkeypatch):
         """主程序清空插件数据前会调用现有任务重置逻辑恢复订阅状态。"""
@@ -258,6 +342,61 @@ class TestScheduler:
         service = next(item for item in plugin.get_service()
                        if item["id"].endswith("_verify"))
         assert service["kwargs"] == {"hours": 6}
+
+    def test_run_download_timeout_check_delegates_to_monitor_with_cleanup(self):
+        """下载任务定时入口应把清理服务传给监控模块。"""
+        plugin = SubscribeAssistantEnhanced()
+        monitor = MagicMock()
+        cleanup = MagicMock()
+        plugin._modules = {"download_monitor": monitor, "torrent_cleanup": cleanup}
+
+        plugin.run_download_timeout_check()
+
+        monitor.run_timeout_check.assert_called_once_with(cleanup)
+
+    def test_run_completion_verify_delegates_to_verifier(self):
+        """完成后验证定时入口应触发 verifier 全量巡检。"""
+        plugin = SubscribeAssistantEnhanced()
+        verifier = MagicMock()
+        plugin._modules = {"verifier": verifier}
+
+        plugin.run_completion_verify()
+
+        verifier.verify_all.assert_called_once_with()
+
+    def test_run_cleanup_wrappers_delegate_to_owned_modules(self):
+        """各类清理定时入口只调用对应模块，清理策略由模块内部维护。"""
+        plugin = SubscribeAssistantEnhanced()
+        verifier = MagicMock()
+        subscription_cleanup = MagicMock()
+        deletes_store = MagicMock()
+        verifier.cleanup_expired.return_value = 2
+        subscription_cleanup.cleanup_expired_clear_histories.return_value = 3
+        deletes_store.cleanup_expired.return_value = 4
+        plugin._config = SimpleNamespace(delete_record_retention_hours=72)
+        plugin._modules = {
+            "verifier": verifier,
+            "subscription_cleanup": subscription_cleanup,
+            "deletes_store": deletes_store,
+        }
+
+        plugin.run_completion_snapshot_cleanup()
+        plugin.run_subscription_cleanup_expired()
+        plugin.run_deletes_cleanup()
+
+        verifier.cleanup_expired.assert_called_once_with()
+        subscription_cleanup.cleanup_expired_clear_histories.assert_called_once_with()
+        deletes_store.cleanup_expired.assert_called_once_with(72)
+
+    def test_send_download_file_deleted_emits_event(self, monkeypatch):
+        """订阅清理删除旧下载时必须通知主程序移除下载历史。"""
+        send_event = MagicMock()
+        monkeypatch.setattr(plugin_module.eventmanager, "send_event", send_event)
+        plugin = SubscribeAssistantEnhanced()
+
+        plugin._send_download_file_deleted("src", "hash")
+
+        send_event.assert_called_once_with(EventType.DownloadFileDeleted, {"src": "src", "hash": "hash"})
 
 
 class TestSubscribeFromSource:

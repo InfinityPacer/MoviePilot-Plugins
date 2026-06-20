@@ -1,0 +1,23 @@
+[run]
+branch = True
+parallel = False
+relative_files = True
+omit =
+    tests/*
+    .github/*
+    */__pycache__/*
+    plugins*/**/node_modules/*
+    plugins*/**/dist/*
+
+[report]
+precision = 2
+show_missing = True
+skip_empty = True
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+    raise NotImplementedError
+
+[json]
+output = coverage.json

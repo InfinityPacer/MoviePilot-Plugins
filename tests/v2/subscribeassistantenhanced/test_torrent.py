@@ -4,6 +4,25 @@ from types import SimpleNamespace
 from subscribeassistantenhanced.download.torrent import TorrentAdapter, TorrentInfo
 
 
+class TestTorrentInfoHelpers:
+    """TorrentInfo 统一属性：下载器适配层和巡检逻辑共用。"""
+
+    def test_tag_completion_and_progress_helpers(self):
+        info = TorrentInfo(
+            hash="abc",
+            title="测试",
+            progress=0.25,
+            downloaded=25,
+            target_size=100,
+            completed=False,
+            tags=["订阅", "洗版"],
+        )
+
+        assert TorrentAdapter.get_tags(info) == ["订阅", "洗版"]
+        assert TorrentAdapter.is_completed(info) == (False, 0.0)
+        assert TorrentAdapter.progress_percent(info) == 25.0
+
+
 class TestFromQB:
 
     def test_basic_mapping(self):

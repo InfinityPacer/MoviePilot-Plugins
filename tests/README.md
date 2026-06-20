@@ -39,6 +39,50 @@ autouse 网络守卫等引导逻辑统一在主程序 `app/testing`（`bootstrap
 
 先本地 `python tests/run.py` 跑**全量并确认通过**，再 push / 提 PR。
 
+## 覆盖率门禁
+
+插件覆盖率按插件独立统计，不使用全仓聚合覆盖率。全仓插件数量多、历史插件维护等级不同，
+把所有 `plugins/` 与 `plugins.v2/` 一次性纳入 coverage 会让未接入测试的历史插件以 0%
+拉低整体指标，也无法反映当前变更风险。
+
+`plugin_quality.json` 声明需要强制覆盖率门禁的 A 档插件。当前默认锁定：
+
+- `v2/subscribeassistant`
+- `v2/subscribeassistantenhanced`
+
+门禁阈值：
+
+- 行覆盖率：不低于 90%
+- 方法覆盖率：不低于 95%
+- 新增/变更可执行行覆盖率：不低于 95%
+
+本地快速检查（只检查总行覆盖率和方法覆盖率，不计算新增/变更行）：
+
+```bash
+env -u CONFIG_DIR MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot \
+  <workspace>/.venv-test/bin/python scripts/plugin_coverage.py
+```
+
+如果只检查单个插件：
+
+```bash
+env -u CONFIG_DIR MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot \
+  <workspace>/.venv-test/bin/python scripts/plugin_coverage.py --generation v2 --plugin subscribeassistantenhanced
+```
+
+CI 等价检查（包含新增/变更可执行行覆盖率）：
+
+```bash
+git fetch origin main:refs/remotes/origin/main
+env -u CONFIG_DIR MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot \
+  <workspace>/.venv-test/bin/python scripts/plugin_coverage.py --base-ref origin/main
+```
+
+新增行覆盖率基于 `--base-ref` 或环境变量 `PLUGIN_COVERAGE_BASE_REF` 计算；未传基准时只执行
+总行覆盖率和方法覆盖率，新增行按 0/0 视为通过。新增行只统计 coverage 识别到的可执行语句，
+注释、空行、纯声明不会影响新增行覆盖率。本地 `origin/main...HEAD` 只包含已提交 diff；
+尚未提交的工作区改动不会进入新增/变更行覆盖率统计。
+
 ## 新增用例
 
 1. 放到对应代际的插件独立目录：`tests/<v1|v2>/<plugin_id>/`，例如
