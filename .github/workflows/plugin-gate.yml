@@ -104,7 +104,7 @@ jobs:
         if: steps.coverage-scope.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install -r MoviePilot/requirements.in pytest==8.4.2 coverage==7.14.1
+          pip install -r MoviePilot/requirements.in coverage==7.14.1
 
       - name: Run plugin coverage gate
         if: steps.coverage-scope.outputs.run == 'true'
