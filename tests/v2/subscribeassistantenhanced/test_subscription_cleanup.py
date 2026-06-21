@@ -526,6 +526,54 @@ class TestHistoryClear:
         assert deletes == [{"path": "/dest/e2.mkv"}]
         assert set(store["subscription_cleanup_histories"]) == {"task-e1"}
 
+    def test_transfer_intercept_special_season_zero_requires_matching_season(self):
+        """S00 清理事务必须只被 S00 整理事件消费，不能混入主季。"""
+        store = {"subscription_cleanup_histories": {"task-s0": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S00",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [{"dest_fileitem": {"path": "/dest/s0e1.mkv"}}],
+            "time": time.time(),
+        }}}
+        orch, _store, deletes, _events, _histories = self._orch_clear(store)
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1, season=1)) is False
+        assert deletes == []
+        assert "task-s0" in store["subscription_cleanup_histories"]
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1, season=0)) is True
+        assert deletes == [{"path": "/dest/s0e1.mkv"}]
+        assert store["subscription_cleanup_histories"] == {}
+
+    def test_transfer_intercept_prefers_meta_special_season_zero(self):
+        """整理事件 meta 明确为 S0 时，不得被 mediainfo 的默认主季覆盖。"""
+        store = {"subscription_cleanup_histories": {"task-s0": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S00",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [{"dest_fileitem": {"path": "/dest/s0e1.mkv"}}],
+            "time": time.time(),
+        }}}
+        orch, _store, deletes, _events, _histories = self._orch_clear(store)
+        event = SimpleNamespace(event_data=SimpleNamespace(
+            cancel=False,
+            mediainfo=SimpleNamespace(tmdb_id=100, type=MediaType.TV, season=1),
+            meta=SimpleNamespace(begin_season=0),
+            fileitem=SimpleNamespace(path="/src/测试剧 S00E01.mkv"),
+            target_path="/dest/测试剧 S00E01.mkv",
+        ))
+
+        assert orch.handle_history_clear(event) is True
+
+        assert deletes == [{"path": "/dest/s0e1.mkv"}]
+        assert store["subscription_cleanup_histories"] == {}
+
     def test_transfer_intercept_tv_task_requires_matching_season(self):
         """电视剧清理事务有季号时，整理事件缺少季号不得降级消费。"""
         store = {"subscription_cleanup_histories": {"task-e1": {

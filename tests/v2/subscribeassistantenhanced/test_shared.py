@@ -72,6 +72,10 @@ class TestFormatSubscribe:
         sub = SimpleNamespace(name="测试剧", season=2)
         assert format_subscribe(sub) == "测试剧 S2"
 
+    def test_with_special_season_zero(self):
+        sub = SimpleNamespace(name="测试剧", season=0)
+        assert format_subscribe(sub) == "测试剧 S0"
+
     def test_without_season(self):
         sub = SimpleNamespace(name="测试剧", season=None)
         assert format_subscribe(sub) == "测试剧"
@@ -322,6 +326,16 @@ class TestMediaHelpers:
 
         assert unknown_tail_episode_count(subscribe, episodes) == 2
 
+    def test_unknown_tail_keeps_special_season_zero_boundary(self):
+        """特别季 S0 必须与主季分开计算未知尾集。"""
+        subscribe = SimpleNamespace(season=0, start_episode=1, total_episode=5)
+        episodes = [
+            SimpleNamespace(season_number=1, episode_number=99, air_date="2026-01-01"),
+            SimpleNamespace(season_number=0, episode_number=3, air_date="2026-01-01"),
+        ]
+
+        assert unknown_tail_episode_count(subscribe, episodes) == 2
+
     def test_episode_candidates_after_skips_other_season_and_outside_target(self):
         """未来候选必须同时属于当前季和订阅目标范围。"""
         subscribe = SimpleNamespace(season=1, start_episode=2, total_episode=3)
@@ -332,6 +346,16 @@ class TestMediaHelpers:
         ]
 
         assert episode_candidates_after(subscribe, episodes, date(2026, 6, 1)) == [episodes[2]]
+
+    def test_episode_candidates_after_keeps_special_season_zero_boundary(self):
+        """特别季 S0 的未来候选不能混入主季分集。"""
+        subscribe = SimpleNamespace(season=0, start_episode=2, total_episode=3)
+        episodes = [
+            SimpleNamespace(season_number=1, episode_number=2, air_date="2026-07-01"),
+            SimpleNamespace(season_number=0, episode_number=2, air_date="2026-07-01"),
+        ]
+
+        assert episode_candidates_after(subscribe, episodes, date(2026, 6, 1)) == [episodes[1]]
 
     def test_inventory_next_episodes_rejects_missing_invalid_or_negative_lack_count(self):
         """媒体库实缺数量不可用时，不应把未来集候选误判为可暂停依据。"""
@@ -369,6 +393,24 @@ class TestResolveAiringNextEpisode:
         )
 
         assert result is aggregate
+
+    def test_special_season_zero_rejects_other_season_aggregate(self):
+        """S0 订阅的聚合下一集必须仍属于 S0，否则回退到当前季分集表。"""
+        subscribe = SimpleNamespace(
+            season=0, start_episode=1, total_episode=3,
+            note=[1], episode_priority={}, lack_episode=2,
+        )
+        aggregate = SimpleNamespace(season_number=1, episode_number=2, air_date="2026-06-21")
+        episodes = [
+            SimpleNamespace(season_number=0, episode_number=2, air_date="2026-06-21"),
+            SimpleNamespace(season_number=0, episode_number=3, air_date="2026-06-28"),
+        ]
+
+        result = resolve_airing_next_episode(
+            subscribe, aggregate, episodes, as_of=date(2026, 6, 14)
+        )
+
+        assert result is episodes[0]
 
     def test_stale_aggregate_falls_back_to_episode_list(self):
         """聚合字段停留在已播集时，播出暂停回退到分集表中的首待下载集。"""

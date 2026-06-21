@@ -44,7 +44,7 @@ from .cleanup import SubscriptionCleanup
 from .download.monitor import DownloadMonitor
 from .download.cleanup import TorrentCleanup
 from .shared.deletes import DeletesStore
-from .shared.subscribe import format_subscribe_label, resolve_subscribe_media_type
+from .shared.subscribe import build_subscribe_meta, format_subscribe_label, resolve_subscribe_media_type
 from .postcheck.verifier import CompletionVerifier, _format_snapshot_label
 from .postcheck.timeout import PendingTimeoutManager
 from .events import EventProxy
@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.3.5"
+    plugin_version = "0.3.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1237,16 +1237,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     def _recognize_mediainfo(self, subscribe):
         """从订阅识别 MediaInfo，供定时巡检评估完结/释放；识别失败返回 None。"""
-        from app.core.metainfo import MetaInfo
-        from app.schemas.types import MediaType
-        meta = MetaInfo(subscribe.name or "")
-        meta.year = subscribe.year
-        meta.begin_season = subscribe.season or None
-        media_type = resolve_subscribe_media_type(subscribe)
-        if media_type not in (MediaType.MOVIE, MediaType.TV):
-            logger.warning(f"媒体识别失败：{format_subscribe(subscribe)}，订阅媒体类型无效：{subscribe.type}")
+        meta = build_subscribe_meta(subscribe, failure_context="媒体识别失败")
+        if meta is None:
             return None
-        meta.type = media_type
         try:
             return self.chain.recognize_media(
                 meta=meta, mtype=meta.type,
@@ -1271,16 +1264,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
                                    best_version_accept_downloaded: bool = False):
         """按主程序订阅目标口径查询剩余缺集，不触发订阅完成写库。"""
         if meta is None:
-            meta = MetaInfo(subscribe.name or "")
-            meta.year = subscribe.year
-            meta.begin_season = subscribe.season or None
-            media_type = resolve_subscribe_media_type(subscribe)
-            if media_type not in (MediaType.MOVIE, MediaType.TV):
-                logger.warning(f"目标缺集查询失败：{format_subscribe(subscribe)}，订阅媒体类型无效：{subscribe.type}")
+            meta = build_subscribe_meta(subscribe, failure_context="目标缺集查询失败")
+            if meta is None:
                 return False, {}
-            meta.type = media_type
-        subscribe_chain = self._subscribe_chain or SubscribeChain()
-        return subscribe_chain.resolve_subscribe_missing(
+        if self._subscribe_chain is None:
+            logger.warning(f"目标缺集查询失败：{format_subscribe(subscribe)}，主程序订阅链未初始化")
+            return False, {}
+        return self._subscribe_chain.resolve_subscribe_missing(
             subscribe=subscribe,
             meta=meta,
             mediainfo=mediainfo,
@@ -1296,14 +1286,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return [], []
         try:
             from app.chain.download import DownloadChain
-            from app.core.metainfo import MetaInfo
             mediainfo = self._recognize_mediainfo(subscribe)
             if not mediainfo:
                 return [], sorted(target)
-            season = subscribe.season or 0
-            meta = MetaInfo(subscribe.name or "")
-            meta.begin_season = season or None
-            totals = {season: total} if season and total else {}
+            season = subscribe.season if subscribe.season is not None else 0
+            meta = build_subscribe_meta(subscribe, failure_context="媒体库缺集探测失败")
+            if meta is None:
+                return [], sorted(target)
+            totals = {season: total} if subscribe.season is not None and total else {}
             exist_flag, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo, totals=totals)
             if exist_flag:
                 return sorted(target), []

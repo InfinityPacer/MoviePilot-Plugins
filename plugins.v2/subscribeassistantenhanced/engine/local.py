@@ -1,17 +1,32 @@
 """L：订阅目标覆盖信号。"""
 from typing import Optional
 
-from ..shared.subscribe import pending_subscription_episodes
+from ..shared.subscribe import build_subscribe_meta
 from .types import CompletionSignal, SeasonScope
 
 
-def check_l_signal(subscribe, scope: SeasonScope) -> Optional[CompletionSignal]:
-    """订阅目标范围均已记入 note 时生成低置信 L 信号。"""
+def check_l_signal(subscribe, scope: SeasonScope, mediainfo, meta=None,
+                   resolve_missing_fn=None) -> Optional[CompletionSignal]:
+    """按主程序订阅目标缺集口径生成低置信 L 信号。"""
     start_episode = subscribe.start_episode or 1
     total_episode = subscribe.total_episode or 0
     if total_episode < start_episode:
         return None
-    if pending_subscription_episodes(subscribe):
+    if resolve_missing_fn is None:
+        return None
+    if meta is None:
+        meta = build_subscribe_meta(subscribe, failure_context="L 信号缺集查询失败")
+        if meta is None:
+            return None
+    satisfied, _ = resolve_missing_fn(
+        subscribe=subscribe,
+        meta=meta,
+        mediainfo=mediainfo,
+        best_version_accept_downloaded=bool(
+            subscribe.best_version and not subscribe.best_version_full
+        ),
+    )
+    if not satisfied:
         return None
     return CompletionSignal(
         completed=True,
