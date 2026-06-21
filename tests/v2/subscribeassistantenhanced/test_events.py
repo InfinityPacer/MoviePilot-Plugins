@@ -1,4 +1,5 @@
 """events.py 事件薄代理单测——顺序和域分发。"""
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
@@ -156,9 +157,10 @@ class TestEventOrdering:
         pause = MagicMock()
         airing = MagicMock()
         airing.check_pre_air.return_value = None
-        record = PauseRecord(reason="airing_gap", detail="下一集 2026-06-21，距今 7 天")
+        next_air_date = (date.today() + timedelta(days=7)).isoformat()
+        record = PauseRecord(reason="airing_gap", detail=f"下一集 {next_air_date}，距今 7 天")
         airing.check.return_value = record
-        episodes = [SimpleNamespace(air_date="2026-06-21", episode_number=88)]
+        episodes = [SimpleNamespace(air_date=next_air_date, episode_number=88)]
         mediainfo = _mi(next_episode_to_air=None)
         tmdb_episodes = MagicMock(return_value=episodes)
         proxy = EventProxy(

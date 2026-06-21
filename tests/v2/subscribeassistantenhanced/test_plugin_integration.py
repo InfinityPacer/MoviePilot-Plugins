@@ -1,8 +1,13 @@
 """端到端集成：插件入口装配 + 事件委托 + 扩展点 smoke（证明集成层真正接通）。"""
 import time
+import json
 from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from pathlib import Path
+
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 from app.schemas.types import MediaType
 
@@ -63,6 +68,14 @@ def _mediainfo(**kwargs):
     return media
 
 
+def test_release_metadata_requires_main_program_after_2_13_13():
+    """插件依赖主程序新增缺集 MetaInfo 构造入口，版本门禁必须排除 v2.13.13。"""
+    package = json.loads(Path("package.v2.json").read_text(encoding="utf-8"))
+    specifier = SpecifierSet(package["SubscribeAssistantEnhanced"]["system_version"])
+
+    assert Version("2.13.13") not in specifier
+
+
 def test_converter_is_wired():
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({})
@@ -95,6 +108,74 @@ def test_tmdb_episodes_queries_special_season_zero():
         season=0,
         episode_group=None,
     )
+
+
+def test_resolve_subscribe_missing_preserves_special_season_zero():
+    """插件级主程序缺集查询 wrapper 构造 MetaInfo 时必须保留特别季 S0。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    subscribe_chain = MagicMock()
+    subscribe_chain.resolve_subscribe_missing.return_value = (True, {})
+    plugin._subscribe_chain = subscribe_chain
+    sub = _sub(season=0)
+    mediainfo = _mediainfo()
+
+    result = plugin._resolve_subscribe_missing(sub, mediainfo)
+
+    assert result == (True, {})
+    _, kwargs = subscribe_chain.resolve_subscribe_missing.call_args
+    assert kwargs["meta"].begin_season == 0
+
+
+def test_resolve_subscribe_missing_without_subscribe_chain_fails_closed(monkeypatch):
+    """插件未持有主程序订阅链时缺集查询失败关闭，不临时创建不受控链实例。"""
+    warnings = []
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    plugin._subscribe_chain = None
+    subscribe_chain_cls = MagicMock()
+    monkeypatch.setattr("subscribeassistantenhanced.SubscribeChain", subscribe_chain_cls)
+    monkeypatch.setattr("subscribeassistantenhanced.logger.warning", warnings.append)
+
+    result = plugin._resolve_subscribe_missing(_sub(), _mediainfo())
+
+    assert result == (False, {})
+    subscribe_chain_cls.assert_not_called()
+    assert any("目标缺集查询失败" in message and "主程序订阅链未初始化" in message for message in warnings)
+
+
+def test_recognize_mediainfo_preserves_special_season_zero():
+    """订阅识别 MetaInfo 必须保留 S0，避免识别链按默认季处理特别季。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    plugin.chain = MagicMock()
+    plugin.chain.recognize_media.return_value = _mediainfo()
+    sub = _sub(season=0)
+
+    plugin._recognize_mediainfo(sub)
+
+    _, kwargs = plugin.chain.recognize_media.call_args
+    assert kwargs["meta"].begin_season == 0
+
+
+def test_detect_episode_coverage_preserves_special_season_zero(monkeypatch):
+    """媒体库缺集探测必须把 S0 作为明确目标季传给主程序 DownloadChain。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    download_chain = MagicMock()
+    download_chain.get_no_exists_info.return_value = (True, {})
+    download_chain_cls = MagicMock(return_value=download_chain)
+    monkeypatch.setattr("app.chain.download.DownloadChain", download_chain_cls)
+    sub = _sub(season=0)
+
+    existing, missing = plugin._detect_episode_coverage(sub)
+
+    assert existing == list(range(1, 13))
+    assert missing == []
+    _, kwargs = download_chain.get_no_exists_info.call_args
+    assert kwargs["meta"].begin_season == 0
+    assert kwargs["totals"] == {0: 12}
 
 
 def test_episode_to_full_converts_when_current_episodes_covered():
@@ -433,11 +514,12 @@ def test_run_meta_check_passes_scope_to_airing_checker():
         first_air_date=None,
     )
     plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    next_air_date = (date.today() + timedelta(days=7)).isoformat()
     episodes = [
         SimpleNamespace(
             episode_number=88,
             season_number=1,
-            air_date="2026-06-21",
+            air_date=next_air_date,
             episode_type="standard",
         )
     ]
@@ -563,8 +645,9 @@ def test_run_meta_check_keeps_airing_gap_when_current_check_is_inconclusive():
     plugin._tmdb_episodes = MagicMock(return_value=[])
 
     pause_manager = plugin._modules["pause_manager"]
+    next_air_date = (date.today() + timedelta(days=7)).isoformat()
     pause_manager.get_pause_record = MagicMock(
-        return_value=PauseRecord(reason="airing_gap", since=0.0, detail="下一集 2026-06-21，距今 7 天"))
+        return_value=PauseRecord(reason="airing_gap", since=0.0, detail=f"下一集 {next_air_date}，距今 7 天"))
     pause_manager.resume = MagicMock()
     pause_manager.pause = MagicMock()
     pause_manager.clear_pause_record = MagicMock()

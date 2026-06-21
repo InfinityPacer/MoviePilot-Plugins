@@ -78,7 +78,7 @@ class SubscriptionCleanup:
         if not tmdbid or self._get_histories is None:
             return True
         season = self._history_season(subscribe) if media_type == MediaType.TV else None
-        if media_type == MediaType.TV and not season:
+        if media_type == MediaType.TV and season is None:
             logger.warning(
                 f"订阅清理：{format_subscribe_desc(subscribe)} {mode_label}无法确定有效季号，"
                 "为避免扩大清理范围，跳过旧整理记录清理"
@@ -416,8 +416,8 @@ class SubscriptionCleanup:
             task_type = task.get("type")
             if event_media_type and task_type and task_type != event_media_type.value:
                 continue
-            if task_type == MediaType.TV.value and task.get("season"):
-                if not event_season or task.get("season") != event_season:
+            if task_type == MediaType.TV.value and task.get("season") is not None:
+                if event_season is None or task.get("season") != event_season:
                     continue
             task_episodes = set(self._normalize_episode_numbers(task.get("target_episodes")))
             if task_episodes:
@@ -481,7 +481,8 @@ class SubscriptionCleanup:
             return None
         mediainfo = getattr(event_data, "mediainfo", None)
         meta = getattr(event_data, "meta", None)
-        season = getattr(meta, "begin_season", None) or getattr(mediainfo, "season", None)
+        meta_season = getattr(meta, "begin_season", None)
+        season = meta_season if meta_season is not None else getattr(mediainfo, "season", None)
         if season is None:
             return None
         try:

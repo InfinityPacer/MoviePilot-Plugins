@@ -1,7 +1,6 @@
 """域 ②：完成守卫——CompletionCheck 事件处理。"""
 from typing import Callable
 
-from app.chain.subscribe import SubscribeChain
 from app.log import logger
 from app.schemas.event import SubscribeCompletionCheckEventData
 from app.schemas.types import MediaType
@@ -119,30 +118,13 @@ class CompletionGuard:
         scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
         if has_scope_future_episode(scope):
             return None
-        if meta is not None:
-            resolve_missing = self.resolve_missing_fn
-            if resolve_missing is None:
-                resolve_missing = SubscribeChain().resolve_subscribe_missing
-            satisfied, _ = resolve_missing(
-                subscribe=subscribe,
-                meta=meta,
-                mediainfo=mediainfo,
-                best_version_accept_downloaded=bool(
-                    subscribe.best_version and not subscribe.best_version_full
-                ),
-            )
-            if not satisfied:
-                return None
-            return CompletionSignal(
-                completed=True,
-                confidence="low",
-                stable=True,
-                signals=["L:target_satisfied"],
-                reason="订阅目标范围已无待下载集",
-                scope_total=scope.total or subscribe.total_episode,
-                scope_high_risk=scope.high_risk,
-            )
-        return check_l_signal(subscribe, scope)
+        return check_l_signal(
+            subscribe,
+            scope,
+            mediainfo=mediainfo,
+            meta=meta,
+            resolve_missing_fn=self.resolve_missing_fn,
+        )
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""

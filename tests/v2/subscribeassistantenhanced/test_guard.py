@@ -26,6 +26,7 @@ def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
 def _sub(sid=1, stype="电视剧", best_version=0, best_version_full=0, state="R"):
     return SimpleNamespace(
         id=sid, name="测试剧", tmdbid=100, season=1,
+        year=None,
         episode_group=None, type=stype, state=state,
         best_version=best_version, best_version_full=best_version_full, total_episode=12, lack_episode=0,
         start_episode=1, note=[], episode_priority={},
@@ -260,45 +261,74 @@ class TestCompletionGuard:
         g.timeout_manager.record_block.assert_called_once()
 
     def test_l_signal_reports_target_satisfied(self):
-        """L 信号按 note 确认当前目标范围已无待下载集，不要求 finale。"""
+        """L 信号按主程序缺集查询确认当前目标范围已无待下载集，不要求 finale。"""
         subscribe = _sub()
-        subscribe.note = list(range(1, 13))
-        mediainfo = _event().event_data.mediainfo
+        ev = _event(subscribe=subscribe)
+        mediainfo = ev.event_data.mediainfo
         episodes = [_ep(i) for i in range(1, 13)]
         scope = build_scope(subscribe, mediainfo, lambda *_args, **_kwargs: episodes)
+        resolve_missing = MagicMock(return_value=(True, {}))
 
-        signal = check_l_signal(subscribe, scope)
+        signal = check_l_signal(
+            subscribe,
+            scope,
+            mediainfo=mediainfo,
+            meta=ev.event_data.meta,
+            resolve_missing_fn=resolve_missing,
+        )
 
         assert signal.completed is True
         assert signal.confidence == "low"
         assert signal.signals == ["L:target_satisfied"]
         assert signal.scope_total == 12
-
-    def test_l_signal_uses_note_when_downloaded_episode_was_deleted(self):
-        """普通订阅已下载集由 note 认定覆盖，不因媒体库文件后来删除而重新变成待下载。"""
-        subscribe = _sub()
-        subscribe.note = list(range(1, 13))
-        scope = build_scope(
-            subscribe,
-            _event().event_data.mediainfo,
-            lambda *_args, **_kwargs: [_ep(i) for i in range(1, 13)],
+        resolve_missing.assert_called_once_with(
+            subscribe=subscribe,
+            meta=ev.event_data.meta,
+            mediainfo=mediainfo,
+            best_version_accept_downloaded=False,
         )
 
-        signal = check_l_signal(subscribe, scope)
+    def test_l_signal_not_emitted_when_missing_resolver_reports_gap(self):
+        """主程序缺集查询仍有剩余目标时不生成 L 信号。"""
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+        scope = build_scope(
+            subscribe,
+            ev.event_data.mediainfo,
+            lambda *_args, **_kwargs: [_ep(i) for i in range(1, 13)],
+        )
+        resolve_missing = MagicMock(return_value=(False, {100: {1: SimpleNamespace(episodes=[12])}}))
 
-        assert signal is not None
-        assert signal.completed is True
+        signal = check_l_signal(
+            subscribe,
+            scope,
+            mediainfo=ev.event_data.mediainfo,
+            meta=ev.event_data.meta,
+            resolve_missing_fn=resolve_missing,
+        )
+
+        assert signal is None
+        resolve_missing.assert_called_once()
 
     def test_l_signal_uses_subscribe_total_when_scope_is_temporarily_empty(self):
         """TMDB 集列表暂不可用时，L 使用订阅目标总数参与模式判断。"""
         subscribe = _sub()
         subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
         scope = build_scope(
-            subscribe, _event().event_data.mediainfo,
+            subscribe, ev.event_data.mediainfo,
             lambda *_args, **_kwargs: [],
         )
+        resolve_missing = MagicMock(return_value=(True, {}))
 
-        signal = check_l_signal(subscribe, scope)
+        signal = check_l_signal(
+            subscribe,
+            scope,
+            mediainfo=ev.event_data.mediainfo,
+            meta=ev.event_data.meta,
+            resolve_missing_fn=resolve_missing,
+        )
 
         assert signal.scope_total == 12
 
@@ -306,13 +336,22 @@ class TestCompletionGuard:
         """订阅总集数未知时不能把空目标范围误判为已经全部下载。"""
         subscribe = _sub()
         subscribe.total_episode = 0
+        ev = _event(subscribe=subscribe)
         scope = build_scope(
             subscribe,
-            _event().event_data.mediainfo,
+            ev.event_data.mediainfo,
             lambda *_args, **_kwargs: [],
         )
+        resolve_missing = MagicMock(return_value=(True, {}))
 
-        assert check_l_signal(subscribe, scope) is None
+        assert check_l_signal(
+            subscribe,
+            scope,
+            mediainfo=ev.event_data.mediainfo,
+            meta=ev.event_data.meta,
+            resolve_missing_fn=resolve_missing,
+        ) is None
+        resolve_missing.assert_not_called()
 
     def test_balanced_local_targets_covered_allows_completion(self):
         """平衡模式下三集及以上的 L 信号直接放行。"""
@@ -353,6 +392,78 @@ class TestCompletionGuard:
         )
         g.mark_pending_fn.assert_not_called()
         g.timeout_manager.record_block.assert_not_called()
+
+    def test_l_signal_uses_missing_resolver_when_meta_is_absent(self):
+        """CompletionCheck 未携带 meta 时仍应走主程序目标缺集口径。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+        ev.event_data.meta = None
+        g.resolve_missing_fn = MagicMock(return_value=(False, {100: {1: SimpleNamespace(episodes=[12])}}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "无信号"
+        g.resolve_missing_fn.assert_called_once()
+        _, kwargs = g.resolve_missing_fn.call_args
+        assert kwargs["subscribe"] is subscribe
+        assert kwargs["meta"].begin_season == 1
+        assert kwargs["mediainfo"] is ev.event_data.mediainfo
+        assert kwargs["best_version_accept_downloaded"] is False
+        g.mark_pending_fn.assert_called_once()
+        g.timeout_manager.record_block.assert_called_once()
+
+    def test_check_l_signal_without_resolver_fails_closed(self):
+        """L 信号缺少主程序缺集查询入口时不自行创建订阅链。"""
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+        scope = build_scope(
+            subscribe,
+            ev.event_data.mediainfo,
+            lambda *_args, **_kwargs: [_ep(i) for i in range(1, 13)],
+        )
+
+        with patch("subscribeassistantenhanced.engine.local.SubscribeChain", create=True) as chain_cls:
+            chain_cls.return_value.resolve_subscribe_missing.return_value = (True, {})
+            signal = check_l_signal(
+                subscribe,
+                scope,
+                mediainfo=ev.event_data.mediainfo,
+                meta=None,
+            )
+
+        assert signal is None
+        chain_cls.assert_not_called()
+
+    def test_check_l_signal_preserves_special_season_when_building_meta(self):
+        """特别季 S0 是合法订阅目标，构造主程序 MetaInfo 时不能按未指定季处理。"""
+        subscribe = _sub()
+        subscribe.season = 0
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+        scope = build_scope(
+            subscribe,
+            ev.event_data.mediainfo,
+            lambda *_args, **_kwargs: [_ep(i, season=0) for i in range(1, 13)],
+        )
+        resolve_missing = MagicMock(return_value=(True, {}))
+
+        signal = check_l_signal(
+            subscribe,
+            scope,
+            mediainfo=ev.event_data.mediainfo,
+            meta=None,
+            resolve_missing_fn=resolve_missing,
+        )
+
+        assert signal is not None
+        _, kwargs = resolve_missing.call_args
+        assert kwargs["meta"].begin_season == 0
 
     def test_episode_best_version_stable_completion_still_only_blocks_f(self):
         """分集洗版稳定时完成守卫只挡 F，不用低置信 L 反向取消完成。"""

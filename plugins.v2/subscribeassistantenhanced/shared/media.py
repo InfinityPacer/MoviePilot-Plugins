@@ -22,6 +22,11 @@ def episode_field(episode, name: str, default=None):
     return getattr(episode, name, default)
 
 
+def _same_optional_season(season_number, subscribe_season) -> bool:
+    """按显式季号比较分集归属；S0 是合法季号，不能按空值处理。"""
+    return season_number is None or subscribe_season is None or season_number == subscribe_season
+
+
 def target_episode_range(subscribe) -> list[int]:
     """返回订阅目标集范围，按主程序 start_episode/total_episode 契约解释。"""
     start_episode = subscribe.start_episode or 1
@@ -51,7 +56,7 @@ def resolve_airing_next_episode(subscribe, aggregate_episode, episodes: list,
             return False
         season_number = episode_field(episode, "season_number")
         subscribe_season = subscribe.season
-        if season_number is not None and subscribe_season and season_number != subscribe_season:
+        if not _same_optional_season(season_number, subscribe_season):
             return False
         air_date = parse_date(episode_field(episode, "air_date"))
         if air_date is None or air_date <= today:
@@ -94,7 +99,7 @@ def unknown_tail_episode_count(subscribe, episodes: list) -> int:
     known_numbers = []
     for episode in (episodes or []):
         season_number = episode_field(episode, "season_number")
-        if season_number is not None and subscribe.season and season_number != subscribe.season:
+        if not _same_optional_season(season_number, subscribe.season):
             continue
         episode_number = episode_field(episode, "episode_number")
         if episode_number is not None:
@@ -111,7 +116,7 @@ def episode_candidates_after(subscribe, episodes: list, cutoff: date) -> list:
     candidates = []
     for episode in (episodes or []):
         season_number = episode_field(episode, "season_number")
-        if season_number is not None and subscribe.season and season_number != subscribe.season:
+        if not _same_optional_season(season_number, subscribe.season):
             continue
         episode_number = episode_field(episode, "episode_number")
         if episode_number is None or (target_episodes and episode_number not in target_episodes):

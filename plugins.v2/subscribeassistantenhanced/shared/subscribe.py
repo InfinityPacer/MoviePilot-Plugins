@@ -2,6 +2,8 @@
 import json
 from typing import List, Optional, Tuple
 
+from app.chain.subscribe import build_subscribe_meta as build_main_subscribe_meta
+from app.log import logger
 from app.schemas.types import MediaType
 
 
@@ -23,11 +25,20 @@ def resolve_subscribe_media_type(subscribe) -> MediaType:
         return MediaType.UNKNOWN
 
 
+def build_subscribe_meta(subscribe, failure_context: str):
+    """按主程序订阅 MetaInfo 构造口径补齐缺集查询输入。"""
+    media_type = resolve_subscribe_media_type(subscribe)
+    if media_type not in (MediaType.MOVIE, MediaType.TV):
+        logger.warning(f"{failure_context}：{format_subscribe(subscribe)}，订阅媒体类型无效：{subscribe.type}")
+        return None
+    return build_main_subscribe_meta(subscribe)
+
+
 def format_subscribe(subscribe) -> str:
     """格式化订阅为可读字符串。"""
     name = subscribe.name
     season = subscribe.season
-    return f"{name} S{season}" if season else name
+    return f"{name} S{season}" if season is not None else name
 
 
 def format_subscribe_label(subscribe=None, subscribe_id=None) -> str:
