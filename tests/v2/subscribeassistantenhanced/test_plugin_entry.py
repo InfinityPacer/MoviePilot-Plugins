@@ -108,6 +108,19 @@ class TestPluginEntry:
 
         assert plugin._detect_backfill_episodes(subscribe) == [1, 2, 3, 4]
 
+    def test_detect_backfill_episodes_ignores_candidates_when_total_is_invalid(self):
+        """总集数异常时不回填，避免 note 或媒体库探测结果越过订阅目标边界。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin._detect_existing_episodes = MagicMock(return_value=[1, 2])
+        subscribe = SimpleNamespace(
+            id=1,
+            start_episode=1,
+            total_episode="unknown",
+            note=[1, "2"],
+        )
+
+        assert plugin._detect_backfill_episodes(subscribe) == []
+
     def test_downloader_torrent_present_distinguishes_absent_and_unknown(self):
         """手动删种监听需要区分确删、仍存在和下载器不可判定。"""
         plugin = SubscribeAssistantEnhanced()
