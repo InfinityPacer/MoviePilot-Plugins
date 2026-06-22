@@ -130,14 +130,15 @@ class PendingJudge:
 
     def mark_pending(self, subscribe, source: str = "pending_judge",
                      reason: str = ""):
-        """登记待定来源并同步订阅 P 状态。"""
+        """登记待定来源，并在订阅真实进入待定（P）时发送状态通知。"""
         sid = subscribe.id
         detail(
             f"待定进入：{format_subscribe(subscribe)} 标记为待定（P），"
             f"来源={source}，原因：{reason}"
         )
-        self._state.mark_active(subscribe, source=source, reason=reason)
-        self._notify_status(subscribe, "满足上映待定，已标记待定", detail=reason)
+        changed = self._state.mark_active(subscribe, source=source, reason=reason)
+        if changed:
+            self._notify_status(subscribe, "满足上映待定，已标记待定", detail=reason)
 
     def _read_subscribe_task(self, subscribe) -> dict:
         """读取订阅的任务数据。"""

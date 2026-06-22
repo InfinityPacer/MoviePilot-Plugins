@@ -291,6 +291,21 @@ class TestMarkPending:
         notify.assert_called_once()
         assert "满足上映待定，已标记待定" in notify.call_args.args[1]
 
+    def test_mark_pending_notifies_only_on_state_transition(self):
+        """重复命中同一待定来源时，只刷新任务归属，不重复发送进入待定通知。"""
+        notify = MagicMock()
+        store = {}
+        j = _judge(store=store, notify=notify)
+
+        j.mark_pending(_sub(state="R"), source="pending_judge", reason="集数不足")
+        j.mark_pending(_sub(state="P"), source="pending_judge", reason="上映窗口期内")
+
+        notify.assert_called_once()
+        task = store["subscribes"]["1"]
+        assert task["state"] == "P"
+        assert task["source"] == "pending_judge"
+        assert task["pending_sources"]["pending_judge"]["reason"] == "上映窗口期内"
+
 
 class TestExitPending:
 
