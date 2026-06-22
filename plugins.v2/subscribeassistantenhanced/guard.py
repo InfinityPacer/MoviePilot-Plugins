@@ -82,6 +82,11 @@ class CompletionGuard:
             data.source = "subscribeassistantenhanced"
             data.reason = signal.reason
             self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
+            self.timeout_manager.record_block(
+                subscribe,
+                signal=signal,
+                total_episode=signal.scope_total or subscribe.total_episode,
+            )
             return
 
         if "M:mid_season" in signal.signals:

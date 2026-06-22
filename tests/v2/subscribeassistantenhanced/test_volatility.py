@@ -122,6 +122,59 @@ class TestVolatilityTracker:
 
         assert self.tracker.recent_change_detail(subscribe_id=1) == "10 -> 12"
 
+    def test_recent_change_detail_without_subscribe_id_returns_none(self):
+        """缺少订阅 ID 时不能从共享记录里猜测变化明细。"""
+        assert self.tracker.recent_change_detail(subscribe_id=None) is None
+
+    def test_recent_change_detail_rejects_reused_subscribe_identity(self):
+        """订阅 ID 被新媒体复用时，旧媒体的变化明细不能继续展示。"""
+        now = time.time()
+        old = SimpleNamespace(id=41, tmdbid=100, season=1, episode_group=None)
+        new = SimpleNamespace(id=41, tmdbid=200, season=1, episode_group=None)
+        self.tracker.record(total=10, subscribe=old)
+        self.tracker.record(total=12, subscribe=old)
+        self.store["volatility"]["41"]["last_total_changed_at"] = now
+
+        assert self.tracker.recent_change_detail(subscribe=new) is None
+
+    def test_recent_change_detail_reads_legacy_list_records(self):
+        """旧 list 记录仍可展示窗口内最近 total 变化明细。"""
+        now = time.time()
+        self.store["volatility"] = {
+            "1": [
+                {"total": 9, "ts": now - 8 * 86400},
+                {"total": 10, "ts": now - 3600},
+                {"total": 12, "ts": now - 1800},
+            ]
+        }
+
+        assert self.tracker.recent_change_detail(subscribe_id=1) == "10 -> 12"
+
+    def test_recent_change_detail_falls_back_to_records_when_state_expired(self):
+        """状态字段过期时，仍从窗口内采样回退读取最近变化明细。"""
+        now = time.time()
+        self.store["volatility"] = {
+            "1": {
+                "records": [
+                    {"total": 10, "ts": now - 3600},
+                    {"total": 12, "ts": now - 1800},
+                ],
+                "last_total": 12,
+                "last_total_changed_at": now - 8 * 86400,
+                "last_total_before_change": 8,
+                "last_total_after_change": 9,
+                "last_total_change_direction": "up",
+            }
+        }
+
+        assert self.tracker.recent_change_detail(subscribe_id=1) == "10 -> 12"
+
+    def test_recent_change_detail_ignores_invalid_entry(self):
+        """损坏的变化记录不能生成用户可见的集数明细。"""
+        self.store["volatility"] = {"1": "invalid"}
+
+        assert self.tracker.recent_change_detail(subscribe_id=1) is None
+
     def test_legacy_recent_total_change_survives_after_next_sample(self):
         """旧 list 形态记录升级后也要保留窗口内变化状态。"""
         now = time.time()

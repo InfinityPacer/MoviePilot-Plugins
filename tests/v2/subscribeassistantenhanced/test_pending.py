@@ -92,7 +92,7 @@ class TestShouldEnterPending:
         assert should is False
 
     def test_pending_days_reason_uses_air_date_distance(self):
-        """上映待定原因应展示开播日期和相对当前的真实天数。"""
+        """剧集待定原因应展示开播日期和相对当前的真实天数。"""
         j = _judge(config=PluginConfig({"auto_tv_pending_days": 7}))
         mi = _mi(season_info=[{"season_number": 1, "air_date": (date.today() + timedelta(days=3)).isoformat()}])
 
@@ -308,15 +308,36 @@ class TestMarkPending:
         assert task["state"] == "P"
         assert task["source"] == "guard_veto"
 
-    def test_mark_pending_sends_status_notification(self):
-        """进入待定应发送状态通知。"""
+    def test_mark_pending_sends_pending_judge_status_notification(self):
+        """剧集待定进入 P 时发送剧集待定通知。"""
         notify = MagicMock()
         j = _judge(notify=notify)
 
         j.mark_pending(_sub(), source="pending_judge", reason="集数不足")
 
         notify.assert_called_once()
-        assert "满足上映待定，已标记待定" in notify.call_args.args[1]
+        assert "满足剧集待定条件，已标记待定" in notify.call_args.args[1]
+        assert notify.call_args.kwargs["detail"] == "集数不足"
+
+    def test_mark_pending_sends_guard_veto_status_notification(self):
+        """完成守卫进入 P 时发送完成前检查通知，并保留集数变化明细。"""
+        notify = MagicMock()
+        j = _judge(notify=notify)
+
+        j.mark_pending(_sub(), source="guard_veto", reason="目标总集数近期变化（12 -> 13）")
+
+        notify.assert_called_once()
+        assert "完成前检查未通过，已标记待定" in notify.call_args.args[1]
+        assert notify.call_args.kwargs["detail"] == "目标总集数近期变化（12 -> 13）"
+
+    def test_mark_pending_download_pending_stays_silent(self):
+        """下载待定是短窗口内部状态，不发送用户通知。"""
+        notify = MagicMock()
+        j = _judge(notify=notify)
+
+        j.mark_pending(_sub(), source="download_pending", reason="下载器已创建任务，等待整理入库")
+
+        notify.assert_not_called()
 
     def test_mark_pending_notifies_only_on_state_transition(self):
         """重复命中同一待定来源时，只刷新任务归属，不重复发送进入待定通知。"""
@@ -343,8 +364,39 @@ class TestExitPending:
         j._timeout.clear_block.assert_called_once_with(1)
         assert store["subscribes"]["1"]["state"] == "R"
 
+    def test_exit_pending_judge_keeps_guard_veto_block_when_guard_source_remains(self):
+        store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "pending_judge",
+            "pending_sources": {
+                "pending_judge": {"reason": "集数不足"},
+                "guard_veto": {"reason": "未完结"},
+            },
+        }}}
+        j = _judge(store=store)
+
+        j._exit_pending(_sub(state="P"), "待定条件不再满足")
+
+        j._timeout.clear_block.assert_not_called()
+        task = store["subscribes"]["1"]
+        assert task["state"] == "P"
+        assert task["source"] == "guard_veto"
+
+    def test_exit_guard_veto_clears_guard_veto_block(self):
+        store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "guard_veto",
+            "pending_sources": {"guard_veto": {"reason": "未完结"}},
+        }}}
+        j = _judge(store=store)
+
+        j._exit_pending(_sub(state="P"), "完成前观察结束")
+
+        j._timeout.clear_block.assert_called_once_with(1)
+        assert store["subscribes"]["1"]["state"] == "R"
+
     def test_exit_sends_status_notification(self):
-        """退出待定应发送状态通知。"""
+        """pending_judge 退出待定应发送剧集待定解除通知。"""
         notify = MagicMock()
         store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
         j = _judge(store=store, notify=notify)
@@ -352,7 +404,22 @@ class TestExitPending:
         j._exit_pending(_sub(state="P"), "待定条件不再满足")
 
         notify.assert_called_once()
-        assert "不再满足上映待定，已标记订阅中" in notify.call_args.args[1]
+        assert "剧集待定条件解除，已恢复订阅" in notify.call_args.args[1]
+
+    def test_exit_guard_veto_sends_observation_end_notification(self):
+        """guard_veto 退出待定应发送完成前观察结束通知。"""
+        notify = MagicMock()
+        store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "guard_veto",
+            "pending_sources": {"guard_veto": {"reason": "未完结"}},
+        }}}
+        j = _judge(store=store, notify=notify)
+
+        j._exit_pending(_sub(state="P"), "完成前观察结束")
+
+        notify.assert_called_once()
+        assert "完成前观察结束，已恢复订阅" in notify.call_args.args[1]
 
     def test_exit_keeps_p_when_download_pending_active(self):
         """业务待定退出时若下载待定仍活跃，则订阅保持 P。"""

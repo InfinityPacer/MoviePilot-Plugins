@@ -205,7 +205,7 @@ class PluginConfig:
 
     @property
     def pending_use_volatility(self) -> bool:
-        return self.get_bool("pending_use_volatility", True)
+        return self.get_bool("pending_use_volatility", False)
 
     # ---- 订阅暂停 ----
 
@@ -324,10 +324,6 @@ class PluginConfig:
     def verify_retention_days(self) -> int:
         """完成快照保留天数；用户配置覆盖默认的 180 天。"""
         return self.get_int("verify_retention_days", 180)
-
-    @property
-    def timeout_release_enabled(self) -> bool:
-        return self.get_bool("timeout_release_enabled", True)
 
     @property
     def timeout_release_days(self) -> int:

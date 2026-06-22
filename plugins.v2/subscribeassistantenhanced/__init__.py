@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.4.0"
+    plugin_version = "0.4.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -700,11 +700,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if not mediainfo:
                 continue
 
-            if (
-                cfg.pending_enhanced_enabled
-                and pending_judge
-                and subscribe.state == "P"
-            ):
+            if pending_judge and subscribe.state == "P":
                 # P 状态先尝试由待定域退出；若仍未退出，后续上映/播出暂停可按 S 高优先级覆盖 P。
                 if pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes):
                     continue
@@ -808,17 +804,20 @@ class SubscribeAssistantEnhanced(_PluginBase):
             ):
                 logger.info(f"待定释放：{format_subscribe(subscribe)} 完成前检查长期未确认，解除该待定原因")
                 pending_state = self._modules.get("pending_state")
+                restored = False
                 if pending_state:
-                    pending_state.clear_active(subscribe, source="guard_veto", reason="守门超时释放")
+                    restored = pending_state.clear_active(subscribe, source="guard_veto", reason="守门超时释放")
                 else:
                     update_subscribe(self._subscribe_oper, int(sid), {"state": "R"})
+                    restored = True
                 timeout_manager.clear_block(int(sid))
-                self._send_subscribe_status_notification(
-                    subscribe,
-                    "不再满足上映待定，已标记订阅中",
-                    mediainfo=mediainfo,
-                    detail="守门超时释放",
-                )
+                if restored:
+                    self._send_subscribe_status_notification(
+                        subscribe,
+                        "完成前观察结束，已恢复订阅",
+                        mediainfo=mediainfo,
+                        detail="守门超时释放",
+                    )
 
     def run_pending_state_reconcile(self):
         """修复增强版任务仍声明 P、但所有待定来源均已丢失的状态残留。
@@ -847,9 +846,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
         每个子任务独立捕获异常，避免单个检查失败阻断同轮其他检查。
         """
-        tasks = []
-        if self._config.timeout_release_enabled:
-            tasks.append(("待定释放", self.run_pending_release))
+        tasks = [("待定释放", self.run_pending_release)]
         tasks.append(("待定状态一致性检查", self.run_pending_state_reconcile))
         tasks.append(("无下载处理", self.run_no_download_check))
         if self._config.download_monitor_enabled:

@@ -49,7 +49,7 @@ class CompletionVerifierProtocol(Protocol):
 
 @runtime_checkable
 class PendingTimeoutManagerProtocol(Protocol):
-    """待定超时释放的协议接口，供守门/待定判定依赖而不耦合具体实现。"""
+    """完成前观察释放的协议接口，供守门/待定判定依赖而不耦合具体实现。"""
     def record_block(self, subscribe_id: int,
                      signal: Optional[CompletionSignal] = None,
                      total_episode: Optional[int] = None) -> None: ...

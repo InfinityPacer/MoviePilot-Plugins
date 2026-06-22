@@ -390,13 +390,16 @@ class TestEvaluatePipeline:
         assert sig.confidence == "high"
         assert sig.stable is True
 
-    def test_volatility_disabled_skips_f(self):
-        """volatility_enabled=False → F 不检查。"""
+    def test_volatility_disabled_skips_f_even_when_pending_volatility_requested(self):
+        """volatility_enabled=False → 即便待定参考 F，信号层也不生成 F。"""
         eps = [_ep(1)]
         sig = evaluate(
             subscribe=_sub(), mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
-            config=_cfg(volatility_enabled=False), as_of=date(2026, 6, 1),
+            config=_cfg(volatility_enabled=False, pending_use_volatility=True),
+            as_of=date(2026, 6, 1),
         )
-        assert sig.completed is True  # F disabled, E releases
+        assert "F:unstable" not in sig.signals
+        assert sig.completed is True
+        assert sig.confidence == "high"

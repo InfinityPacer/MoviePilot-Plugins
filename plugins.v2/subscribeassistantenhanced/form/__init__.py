@@ -68,8 +68,7 @@ LABELS = {
     "verify_enabled": "自动纠错",
     "verify_interval_hours": "自动纠错间隔（小时）",
     "verify_retention_days": "快照保留（天）",
-    "timeout_release_enabled": "待定超时释放",
-    "timeout_release_days": "待定超时释放（天）",
+    "timeout_release_days": "完成前观察天数",
     "timeout_cadence_acceleration": "按节奏加速释放",
 }
 
@@ -105,7 +104,7 @@ HINTS = {
     "pending_download_enabled": "存在进行中下载时自动标记待定，避免提前完成订阅",
     "auto_tv_pending_days": "当前日期小于上映日期加N天，则视为待定，为0时不处理",
     "auto_tv_pending_episodes": "剧集数小于等于设置的集数，则视为待定，为0时不处理",
-    "pending_use_volatility": "待定判定参考剧集更新的变更速率信号",
+    "pending_use_volatility": "接近完结且总集数变化时提前待定",
     # 订阅暂停
     "pause_enhanced_enabled": "自动标记订阅为暂停状态，避免无意义的请求",
     "auto_pause_users": "名单内用户新增订阅时将自动暂停，多个用户用逗号分隔，为空时不启用",
@@ -133,9 +132,8 @@ HINTS = {
     "verify_enabled": "完成后检查集数，增加时自动重建订阅",
     "verify_interval_hours": "完成后重新检查集数的间隔",
     "verify_retention_days": "完成快照按设置天数保留并自动清理，默认180天",
-    "timeout_release_enabled": "完成守卫待定（P）超期后释放，信号不稳定时重新计时",
-    "timeout_release_days": "完成守卫待定（P）允许保留的最长天数",
-    "timeout_cadence_acceleration": "等待期结束时将待定期限缩短一半",
+    "timeout_release_days": "完成前观察允许保留的最长天数",
+    "timeout_cadence_acceleration": "等待期结束时缩短观察期限",
 }
 
 TOP_SWITCHES = ["enabled", "notify", "reset_task", "onlyonce"]
@@ -172,7 +170,7 @@ TABS = [
     ]),
     ("完结信号", [
         ["completion_guard_mode", "volatility_enabled", "cadence_enabled"],
-        ["verify_enabled", "timeout_release_enabled", "timeout_cadence_acceleration"],
+        ["verify_enabled", "timeout_cadence_acceleration"],
         ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
         ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
         ["verify_retention_days", "timeout_release_days"],
