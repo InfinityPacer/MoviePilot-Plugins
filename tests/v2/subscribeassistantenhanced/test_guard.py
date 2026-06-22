@@ -119,6 +119,11 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_called_once()
         call_args = g.mark_pending_fn.call_args
         assert call_args[1].get("source") == "guard_veto" or call_args[0][1] == "guard_veto"
+        g.timeout_manager.record_block.assert_called_once_with(
+            ev.event_data.subscribe,
+            signal=sig,
+            total_episode=12,
+        )
 
     def test_unstable_signal_allows_trusted_l_target_satisfied(self):
         """F 不稳定时，可信 L 可作为受控例外放行普通订阅完成。"""
@@ -160,7 +165,11 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is True
         assert ev.event_data.reason == "变动"
         g.mark_pending_fn.assert_called_once()
-        g.timeout_manager.record_block.assert_not_called()
+        g.timeout_manager.record_block.assert_called_once_with(
+            subscribe,
+            signal=sig,
+            total_episode=2,
+        )
 
     def test_unstable_total_shrink_blocks_l_target_satisfied(self):
         """近期 total 缩小时，可信 L 也不能绕过 F 的低估风险。"""
@@ -183,7 +192,11 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is True
         assert ev.event_data.reason == "变动"
         g.mark_pending_fn.assert_called_once()
-        g.timeout_manager.record_block.assert_not_called()
+        g.timeout_manager.record_block.assert_called_once_with(
+            subscribe,
+            signal=sig,
+            total_episode=12,
+        )
 
     def test_high_confidence_releases(self):
         """高置信度直接放行，快照统一由 SubscribeComplete 记录。"""

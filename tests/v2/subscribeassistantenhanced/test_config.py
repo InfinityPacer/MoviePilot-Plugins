@@ -25,8 +25,10 @@ class PluginConfigDefaultsTest:
     def test_verify_enabled_default_false(self):
         assert self.cfg.verify_enabled is False
 
-    def test_timeout_release_enabled_default_true(self):
-        assert self.cfg.timeout_release_enabled is True
+    def test_completion_observation_declares_single_days_key(self):
+        keys = set(self.cfg.declared_keys())
+        assert {key for key in keys if key.startswith("timeout_release")} == {"timeout_release_days"}
+        assert {key for key in PluginConfig.defaults() if key.startswith("timeout_release")} == {"timeout_release_days"}
 
     # --- signal engine ---
 
@@ -130,7 +132,7 @@ class PluginConfigDefaultsTest:
         assert self.cfg.auto_tv_pending_episodes == 1
 
     def test_pending_use_volatility_default(self):
-        assert self.cfg.pending_use_volatility is True
+        assert self.cfg.pending_use_volatility is False
 
     def test_internal_pending_default_total_is_not_declared(self):
         """待定缺总集数时不再暴露虚拟总集数配置。"""

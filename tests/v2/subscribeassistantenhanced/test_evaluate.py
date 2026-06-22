@@ -85,7 +85,7 @@ class TestEvaluatePipeline:
         assert sig.completed is False
         assert sig.stable is False
         assert "F:unstable" in sig.signals
-        assert sig.reason == "目标总集数最近 7 天发生变化"
+        assert sig.reason == "目标总集数最近 7 天发生变化（10 -> 15）"
         assert "total_episode" not in sig.reason
 
     def test_f_unstable_carries_recent_change_direction(self):
@@ -99,6 +99,18 @@ class TestEvaluatePipeline:
         )
 
         assert sig.volatility_direction == "up"
+
+    def test_f_unstable_carries_recent_total_change_detail(self):
+        """F 信号携带窗口内最近 total 变化明细，供状态通知展示。"""
+        eps = [_ep(1)]
+        sig = evaluate(
+            subscribe=_sub(), mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(), as_of=date(2026, 6, 1),
+        )
+
+        assert sig.volatility_detail == "10 -> 15"
 
     def test_finale_at_scope_end_can_confirm_completion_despite_recent_total_change(self):
         """可信末集 finale 可以在总集数刚变化时确认完成。"""
@@ -378,13 +390,16 @@ class TestEvaluatePipeline:
         assert sig.confidence == "high"
         assert sig.stable is True
 
-    def test_volatility_disabled_skips_f(self):
-        """volatility_enabled=False → F 不检查。"""
+    def test_volatility_disabled_skips_f_even_when_pending_volatility_requested(self):
+        """volatility_enabled=False → 即便待定参考 F，信号层也不生成 F。"""
         eps = [_ep(1)]
         sig = evaluate(
             subscribe=_sub(), mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
-            config=_cfg(volatility_enabled=False), as_of=date(2026, 6, 1),
+            config=_cfg(volatility_enabled=False, pending_use_volatility=True),
+            as_of=date(2026, 6, 1),
         )
-        assert sig.completed is True  # F disabled, E releases
+        assert "F:unstable" not in sig.signals
+        assert sig.completed is True
+        assert sig.confidence == "high"

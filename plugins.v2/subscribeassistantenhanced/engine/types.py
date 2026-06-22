@@ -15,6 +15,7 @@ class CompletionSignal:
     scope_total: int = 0              # 本轮 SeasonScope 的 TMDB 目标总集数，用于观察期增集判断
     scope_high_risk: bool = False      # 当前目标范围是否属于 absolute-season 等高风险范围
     volatility_direction: Optional[str] = None  # F 信号窗口内最近一次 total 变化方向：up/down
+    volatility_detail: Optional[str] = None  # F 信号窗口内最近一次 total 变化明细：旧集数 -> 新集数
 
 
 @dataclass
@@ -48,7 +49,7 @@ class CompletionVerifierProtocol(Protocol):
 
 @runtime_checkable
 class PendingTimeoutManagerProtocol(Protocol):
-    """待定超时释放的协议接口，供守门/待定判定依赖而不耦合具体实现。"""
+    """完成前观察释放的协议接口，供守门/待定判定依赖而不耦合具体实现。"""
     def record_block(self, subscribe_id: int,
                      signal: Optional[CompletionSignal] = None,
                      total_episode: Optional[int] = None) -> None: ...

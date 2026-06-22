@@ -20,6 +20,7 @@ class CompletionSignalTest:
         assert sig.cadence_expired is False
         assert sig.signals == []
         assert sig.reason == ""
+        assert sig.volatility_detail is None
 
     def test_custom_construction(self):
         sig = CompletionSignal(
@@ -29,6 +30,7 @@ class CompletionSignalTest:
             cadence_expired=True,
             signals=["finale_aired"],
             reason="finale detected",
+            volatility_detail="10 -> 12",
         )
         assert sig.completed is True
         assert sig.confidence == "high"
@@ -36,6 +38,7 @@ class CompletionSignalTest:
         assert sig.cadence_expired is True
         assert sig.signals == ["finale_aired"]
         assert sig.reason == "finale detected"
+        assert sig.volatility_detail == "10 -> 12"
 
     def test_signals_list_independence(self):
         """不同实例的 signals 列表互不影响。"""

@@ -312,7 +312,6 @@ class TestScheduler:
             "enabled": True,
             "download_monitor_enabled": True,
             "best_version_type": "all",
-            "timeout_release_enabled": True,
         })
         services = plugin.get_service()
         ids = {s["id"] for s in services}
@@ -328,7 +327,6 @@ class TestScheduler:
         plugin.init_plugin({
             "enabled": True,
             "download_monitor_enabled": True,
-            "timeout_release_enabled": True,
             "verify_enabled": True,
             "pause_enhanced_enabled": True,
             "best_version_type": "tv",
@@ -341,7 +339,6 @@ class TestScheduler:
         assert "通用巡检" in names
         assert "自动纠错" in names
         assert "完成后自验证" not in names
-        assert "待定超时释放" not in names
         assert "无下载处理" not in names
         assert "删除记录清理" not in names
         assert all(not name.startswith("订阅助手-") for name in names)
@@ -352,7 +349,6 @@ class TestScheduler:
         plugin.init_plugin({
             "enabled": True,
             "download_monitor_enabled": False,
-            "timeout_release_enabled": False,
             "verify_enabled": False,
             "pause_enhanced_enabled": False,
         })

@@ -300,7 +300,7 @@ def test_completion_signal_hints_explain_behavior_and_scope():
         "completion_guard_mode", "volatility_enabled", "volatility_window_days",
         "cadence_enabled", "cadence_multiplier", "cadence_min_window_days",
         "cadence_min_episodes", "season_cooldown_days", "verify_enabled",
-        "verify_interval_hours", "verify_retention_days", "timeout_release_enabled",
+        "verify_interval_hours", "verify_retention_days",
         "timeout_release_days", "timeout_cadence_acceleration",
     )
     for key in keys:
@@ -313,7 +313,7 @@ def test_completion_signal_hints_explain_behavior_and_scope():
     assert "总集数" in HINTS["volatility_enabled"]
     assert "不会直接判定完结" in HINTS["cadence_enabled"]
     assert "增加" in HINTS["verify_enabled"]
-    assert "重新计时" in HINTS["timeout_release_enabled"]
+    assert "完成前观察" in HINTS["timeout_release_days"]
 
 
 def test_common_check_interval_uses_reduced_options():
@@ -337,7 +337,7 @@ def test_completion_labels_use_concise_names_without_enable_prefix():
     assert LABELS["cadence_enabled"] == "播出节奏信号"
     assert LABELS["verify_enabled"] == "自动纠错"
     assert LABELS["verify_interval_hours"] == "自动纠错间隔（小时）"
-    assert LABELS["timeout_release_enabled"] == "待定超时释放"
+    assert LABELS["timeout_release_days"] == "完成前观察天数"
 
 
 def test_completion_tab_uses_original_flat_grid():
@@ -352,7 +352,7 @@ def test_completion_tab_uses_original_flat_grid():
         for row in completion_rows
     ] == [
         ["completion_guard_mode", "volatility_enabled", "cadence_enabled"],
-        ["verify_enabled", "timeout_release_enabled", "timeout_cadence_acceleration"],
+        ["verify_enabled", "timeout_cadence_acceleration"],
         ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
         ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
         ["verify_retention_days", "timeout_release_days"],
@@ -361,9 +361,10 @@ def test_completion_tab_uses_original_flat_grid():
 
 def test_completion_flat_grid_keeps_persistent_hints():
     """平铺布局继续保留全部字段说明。"""
-    conf, _model = build_form()
+    conf, model = build_form()
     completion_items = conf[4]["content"][4]["content"]
     controls = _controls_with_model(completion_items)
+    assert {key for key in model if key.startswith("timeout_release")} == {"timeout_release_days"}
     assert {control["props"]["model"] for control in controls} == {
         "completion_guard_mode",
         "volatility_enabled",
@@ -373,7 +374,6 @@ def test_completion_flat_grid_keeps_persistent_hints():
         "cadence_min_window_days",
         "cadence_min_episodes",
         "season_cooldown_days",
-        "timeout_release_enabled",
         "timeout_cadence_acceleration",
         "timeout_release_days",
         "verify_enabled",

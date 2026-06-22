@@ -125,31 +125,31 @@ class PendingTimeoutManager:
         label = self._format_subscribe_label(subscribe_id)
 
         if not signal.stable:
-            detail(f"待定超时：{label} 信号不稳定，重置超时计时（数据变动期不计入超时额度）")
+            detail(f"完成前观察：{label} 信号不稳定，重置观察计时（数据变动期不计入观察额度）")
             self._reset_timer(sid)
             return False
 
         block_total = block.get("total_episode")
         if block_total and total_episode and total_episode > block_total:
-            detail(f"待定超时：{label} 观察期间总集数增长 {block_total}→{total_episode}，释放本轮观察并等待重新判定")
+            detail(f"完成前观察：{label} 观察期间总集数增长 {block_total}→{total_episode}，释放本轮观察并等待重新判定")
             return True
 
         block_signals = block.get("signals") or []
         if block.get("confidence") == "low" and block_signals and block_signals != list(signal.signals):
-            detail(f"待定超时：{label} 观察信号已变化，释放本轮观察并等待重新判定")
+            detail(f"完成前观察：{label} 观察信号已变化，释放本轮观察并等待重新判定")
             self._clear_release(sid)
             return True
 
         if signal.completed and signal.confidence == "low":
             if not self._matches_low_confidence_observation(block, signal, total_episode):
-                detail(f"待定超时：{label} 开始低置信完成前观察")
+                detail(f"完成前观察：{label} 开始低置信完成前观察")
                 self._replace_observation(sid, signal, total_episode)
                 self._clear_release(sid)
                 return False
 
         effective_timeout = self._timeout_seconds
         if self._cadence_acceleration and signal.cadence_expired:
-            detail(f"待定超时：{label} 节奏已到期，超时阈值减半加速释放")
+            detail(f"完成前观察：{label} 节奏已到期，观察阈值减半加速释放")
             effective_timeout = self._timeout_seconds / 2
 
         elapsed = time.time() - block.get("blocked_at", time.time())

@@ -13,6 +13,16 @@ from ..shared.media import date_context, get_tv_season_air_date, parse_date
 from ..shared.subscribe import format_subscribe, resolve_subscribe_media_type
 from .state import PendingStateCoordinator
 
+ENTER_TITLES = {
+    "pending_judge": "满足剧集待定条件，已标记待定",
+    "guard_veto": "完成前检查未通过，已标记待定",
+}
+
+EXIT_TITLES = {
+    "pending_judge": "剧集待定条件解除，已恢复订阅",
+    "guard_veto": "完成前观察结束，已恢复订阅",
+}
+
 
 class PendingJudge:
     """待定判定器，区分 pending_judge 与 guard_veto 来源。"""
@@ -64,7 +74,8 @@ class PendingJudge:
                 missing_episodes=None,
             )
             if proximity.near_completion:
-                return True, "目标总集数近期变化"
+                detail_text = f"（{signal.volatility_detail}）" if signal.volatility_detail else ""
+                return True, f"目标总集数近期变化{detail_text}"
             detail(f"待定判定：{format_subscribe(subscribe)} 总集数近期变化但未接近完结，不进入待定")
 
         if episodes and not any(ep.air_date for ep in episodes):
@@ -115,14 +126,19 @@ class PendingJudge:
         """退出当前待定来源，并由 PendingStateCoordinator 仲裁是否恢复启用（R）。"""
         sid = subscribe.id
         logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（P），原因：{reason}")
-        self._timeout.clear_block(sid)
+        task = self._read_subscribe_task(subscribe)
+        source = task.get("source", "pending_judge")
+        if source == "guard_veto":
+            self._timeout.clear_block(sid)
         restored = self._state.clear_active(
             subscribe,
-            source=self._read_subscribe_task(subscribe).get("source", "pending_judge"),
+            source=source,
             reason=reason,
         )
         if restored:
-            self._notify_status(subscribe, "不再满足上映待定，已标记订阅中", detail=reason)
+            title = EXIT_TITLES.get(source)
+            if title:
+                self._notify_status(subscribe, title, detail=reason)
         else:
             self._update_subscribe_task(subscribe, {
                 "exit_reason": reason,
@@ -138,8 +154,9 @@ class PendingJudge:
             f"来源={source}，原因：{reason}"
         )
         changed = self._state.mark_active(subscribe, source=source, reason=reason)
-        if changed:
-            self._notify_status(subscribe, "满足上映待定，已标记待定", detail=reason)
+        title = ENTER_TITLES.get(source)
+        if changed and title:
+            self._notify_status(subscribe, title, detail=reason)
 
     def _read_subscribe_task(self, subscribe) -> dict:
         """读取订阅的任务数据。"""
