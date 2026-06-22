@@ -1305,11 +1305,16 @@ def test_no_download_notification_does_not_repeat_title_action():
     plugin.init_plugin({"notify": True, "tv_no_download_days": 30})
     plugin.post_message = MagicMock()
 
-    plugin._send_no_download_notification(_sub(username="tester"), _mediainfo(), "pause")
+    plugin._send_no_download_notification(
+        _sub(username="tester"),
+        _mediainfo(season_info=[{"season_number": 1, "air_date": "2026-01-01"}], first_air_date="2026-01-01"),
+        "pause",
+        reason="开播日期：2026-01-01，无下载截止日：2026-01-31，已超过 10 天",
+    )
 
     kwargs = plugin.post_message.call_args.kwargs
     assert kwargs["title"] == "测试 (2026) S1 近 30 天未有下载记录，已标记暂停"
-    assert kwargs["text"] == "评分：8.0，用户：tester，原因：上映后超期且无下载"
+    assert kwargs["text"] == "评分：8.0，用户：tester，原因：开播日期：2026-01-01，无下载截止日：2026-01-31，已超过 10 天"
     assert "处理：" not in kwargs["text"]
 
 
@@ -2284,6 +2289,40 @@ class TestNoDownloadCheck:
         plugin._modules["pause_manager"].pause.assert_called_once()
         plugin._task_manager.clear_tasks.assert_called_once_with(19)
 
+    def test_overdue_tv_pause_action_preserves_no_download_pause_detail(self):
+        """无下载暂停清理旧任务后仍应持久保存暂停原因详情。"""
+        subscribe = _sub(id=22, state="R", name="测试", type="电视剧", season=1)
+        mediainfo = _mediainfo(
+            season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
+            first_air_date="2025-01-01",
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "tv_no_download_days": 180,
+            "no_download_actions": ["pause_tv"],
+        })
+        plugin.save_data("subscribes", {
+            "22": {
+                "state": "P",
+                "source": "download_pending",
+                "torrent_tasks": [{"hash": "old-hash"}],
+            },
+        })
+        plugin.save_data("torrents", {"old-hash": {"subscribe_id": 22}})
+        plugin._subscribe_oper = MagicMock()
+        plugin._modules["pause_manager"]._subscribe_oper = plugin._subscribe_oper
+        plugin._subscribe_oper.list.return_value = [subscribe]
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._last_download_date = MagicMock(return_value=None)
+
+        plugin.run_no_download_check()
+
+        task = plugin.get_data("subscribes")["22"]
+        assert task["pause_reason"] == "no_download"
+        assert "开播日期：2025-01-01" in task["pause_detail"]
+        assert "无下载截止日：" in task["pause_detail"]
+        assert plugin.get_data("torrents") == {}
+
     def test_overdue_tv_pause_action_sends_status_notification(self):
         """无下载暂停应发送订阅状态通知。"""
         subscribe = _sub(id=20, state="R", name="测试", type="电视剧", season=1)
@@ -2312,6 +2351,8 @@ class TestNoDownloadCheck:
         plugin.post_message.assert_called_once()
         assert "近" in plugin.post_message.call_args.kwargs["title"]
         assert "已标记暂停" in plugin.post_message.call_args.kwargs["title"]
+        assert "开播日期：2025-01-01" in plugin.post_message.call_args.kwargs["text"]
+        assert "无下载截止日：" in plugin.post_message.call_args.kwargs["text"]
 
     def test_overdue_movie_complete_notification_has_no_season_none(self):
         """电影无下载状态通知不应拼出 SNone。"""
@@ -2339,3 +2380,5 @@ class TestNoDownloadCheck:
         plugin.post_message.assert_called_once()
         assert "SNone" not in plugin.post_message.call_args.kwargs["title"]
         assert "已标记完成" in plugin.post_message.call_args.kwargs["title"]
+        assert "上映日期：2025-01-01" in plugin.post_message.call_args.kwargs["text"]
+        assert "无下载截止日：" in plugin.post_message.call_args.kwargs["text"]

@@ -9,6 +9,7 @@ from ..engine.types import CompletionSignal, PauseRecord
 from ..shared.media import (
     episode_candidates_after,
     episode_field,
+    date_context,
     first_scope_episode_air_date,
     get_tv_season_air_date,
     parse_date,
@@ -50,7 +51,7 @@ class AiringPauseChecker:
                 return PauseRecord(
                     reason="pre_air",
                     since=0.0,
-                    detail=f"{release_date} 上映，暂未到订阅窗口",
+                    detail=f"{date_context('上映日期', release_date, as_of=today)}，暂未到订阅窗口",
                 )
             return None
 
@@ -72,7 +73,7 @@ class AiringPauseChecker:
             return PauseRecord(
                 reason="pre_air",
                 since=0.0,
-                detail=f"{air_date} 开播，暂未到订阅窗口",
+                detail=f"{date_context('开播日期', air_date, as_of=today)}，暂未到订阅窗口",
             )
         return None
 
@@ -101,7 +102,7 @@ class AiringPauseChecker:
                     return PauseRecord(
                         reason="airing_gap",
                         since=0.0,
-                        detail=f"下一集 {next_air_date}，距今 {days_until} 天",
+                        detail=f"{date_context('下一集日期', air, as_of=today)}",
                     )
                 return None
 

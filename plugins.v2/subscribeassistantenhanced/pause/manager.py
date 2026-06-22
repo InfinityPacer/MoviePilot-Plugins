@@ -180,11 +180,14 @@ class PauseManager:
         pause_detail = record.detail if record else ""
         if reason_key == "pre_air":
             pause_detail = re.sub(r"^(?:电影|电视剧)\s+", "", pause_detail)
+            pause_detail = re.sub(r"，距今\s+\d+\s+天", "", pause_detail)
+            pause_detail = re.sub(r"，已过\s+\d+\s+天", "", pause_detail)
+            pause_detail = pause_detail.replace("，今天", "")
             if pause_detail and "暂未到订阅窗口" in pause_detail:
                 return pause_detail.replace("暂未到订阅窗口", "已进入订阅窗口")
             return "已进入订阅窗口"
         if reason_key == "airing_gap":
-            match = re.search(r"(下一集\s+\d{4}-\d{2}-\d{2})", pause_detail)
+            match = re.search(r"(下一集(?:日期：|\s+)\d{4}-\d{2}-\d{2})", pause_detail)
             if match:
                 return f"{match.group(1)}，已进入播出窗口"
             return "已进入播出窗口"

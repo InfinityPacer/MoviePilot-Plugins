@@ -77,7 +77,7 @@ class TestAiringPause:
 
         assert result is not None
         assert result.reason == "pre_air"
-        assert result.detail == "2026-01-31 上映，暂未到订阅窗口"
+        assert result.detail == "上映日期：2026-01-31，距今 30 天，暂未到订阅窗口"
 
     def test_pre_air_within_window_returns_none(self):
         """电影进入上映前订阅窗口后不暂停。"""
@@ -118,7 +118,7 @@ class TestAiringPause:
 
         assert result is not None
         assert result.reason == "pre_air"
-        assert result.detail == "2026-02-01 开播，暂未到订阅窗口"
+        assert result.detail == "开播日期：2026-02-01，距今 31 天，暂未到订阅窗口"
 
     def test_pre_air_tv_falls_back_to_first_scope_episode_air_date(self):
         """剧集季日期和首播日期缺失时，使用当前分集范围 E01 日期判断开播窗口。"""
@@ -142,7 +142,7 @@ class TestAiringPause:
 
         assert result is not None
         assert result.reason == "pre_air"
-        assert result.detail == "2026-02-01 开播，暂未到订阅窗口"
+        assert result.detail == "开播日期：2026-02-01，距今 31 天，暂未到订阅窗口"
 
     def test_pre_air_tv_episode_group_fallback_ignores_original_season_number(self):
         """剧集组分集已由调用方按组缩窄，E01 fallback 不再按原始 season_number 过滤。"""
@@ -165,7 +165,7 @@ class TestAiringPause:
         )
 
         assert result is not None
-        assert result.detail == "2026-02-01 开播，暂未到订阅窗口"
+        assert result.detail == "开播日期：2026-02-01，距今 31 天，暂未到订阅窗口"
 
     def test_pre_air_tv_missing_all_air_dates_does_not_pause(self):
         """剧集季日期、首播日期和 E01 日期都缺失时不做未知日期暂停。"""
@@ -242,7 +242,7 @@ class TestAiringPause:
                                as_of=date(2026, 6, 1))
         assert result is not None
         assert result.reason == "airing_gap"
-        assert result.detail == "下一集 2026-07-01，距今 30 天"
+        assert result.detail == "下一集日期：2026-07-01，距今 30 天"
 
     def test_next_episode_dict_far_away_pauses(self):
         """下一集为 TMDB dict 形态时，仍按 air_date 判断播出间隔。"""
@@ -287,7 +287,7 @@ class TestAiringPause:
 
         assert result is not None
         assert result.reason == "airing_gap"
-        assert "2026-06-21" in result.detail
+        assert result.detail == "下一集日期：2026-06-21，距今 7 天"
 
     def test_future_scope_episode_does_not_pause_when_it_is_not_first_missing(self):
         """未来排期不是订阅首缺集时不暂停，避免冻结仍有早期缺集可搜索的订阅。"""
@@ -624,6 +624,21 @@ class TestNoDownloadPolicy:
 
         assert result == "complete"
 
+    def test_overdue_movie_detail_includes_release_and_deadline_context(self):
+        """电影无下载命中原因展示上映日期、无下载截止日和超期天数。"""
+        policy = NoDownloadPolicy(movie_days=30, actions=["complete_movie"])
+        mediainfo = SimpleNamespace(release_date="2025-01-01")
+
+        decision = policy.evaluate_detail(
+            _sub(media_type="电影"),
+            mediainfo,
+            last_download_date=None,
+            as_of=date(2025, 2, 10),
+        )
+
+        assert decision.action == "complete"
+        assert decision.reason == "上映日期：2025-01-01，已过 40 天，无下载截止日：2025-01-31，已超过 10 天"
+
     def test_recent_download_pushes_out_deadline(self):
         """最近下载日期晚于上映日期时，以最近下载日期重新计算期限。"""
         policy = NoDownloadPolicy(movie_days=365, actions=["complete_movie"])
@@ -801,14 +816,14 @@ class TestPauseManager:
         notify = MagicMock()
         mgr = self._make_manager(notify=notify)
         sub = _sub()
-        mgr.pause(sub, PauseRecord(reason="pre_air", detail="2026-06-25 开播，暂未到订阅窗口"))
+        mgr.pause(sub, PauseRecord(reason="pre_air", detail="开播日期：2026-06-25，距今 20 天，暂未到订阅窗口"))
         notify.reset_mock()
 
         assert mgr.resume(sub) is True
 
         notify.assert_called_once()
         assert "不再满足订阅暂停，已标记订阅中" in notify.call_args.args[1]
-        assert notify.call_args.kwargs["detail"] == "2026-06-25 开播，已进入订阅窗口"
+        assert notify.call_args.kwargs["detail"] == "开播日期：2026-06-25，已进入订阅窗口"
 
     def test_resume_notification_strips_legacy_media_type_prefix(self):
         """恢复旧暂停记录时不重复输出媒体类型前缀。"""
@@ -828,14 +843,14 @@ class TestPauseManager:
         notify = MagicMock()
         mgr = self._make_manager(notify=notify)
         sub = _sub()
-        mgr.pause(sub, PauseRecord(reason="airing_gap", detail="下一集 2026-07-01，距今 30 天"))
+        mgr.pause(sub, PauseRecord(reason="airing_gap", detail="下一集日期：2026-07-01，距今 30 天"))
         notify.reset_mock()
 
         assert mgr.resume(sub) is True
 
         notify.assert_called_once()
         assert "不再满足订阅暂停，已标记订阅中" in notify.call_args.args[1]
-        assert notify.call_args.kwargs["detail"] == "下一集 2026-07-01，已进入播出窗口"
+        assert notify.call_args.kwargs["detail"] == "下一集日期：2026-07-01，已进入播出窗口"
 
     def test_auto_pause_for_user_sends_status_notification(self):
         """用户名自动暂停应发送状态通知。"""

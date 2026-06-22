@@ -5,6 +5,22 @@ from typing import Optional
 from .subscribe import pending_subscription_episodes
 
 
+def relative_day_text(target_date: date, as_of: Optional[date] = None) -> str:
+    """把日期转成面向用户的相对天数描述。"""
+    today = as_of or date.today()
+    days = (target_date - today).days
+    if days > 0:
+        return f"距今 {days} 天"
+    if days < 0:
+        return f"已过 {-days} 天"
+    return "今天"
+
+
+def date_context(label: str, target_date: date, as_of: Optional[date] = None) -> str:
+    """生成带日期和相对天数的通知上下文。"""
+    return f"{label}：{target_date.isoformat()}，{relative_day_text(target_date, as_of=as_of)}"
+
+
 def parse_date(date_str: Optional[str], fmt: str = "%Y-%m-%d") -> Optional[date]:
     """解析日期字符串，失败返回 None。"""
     if not date_str:
