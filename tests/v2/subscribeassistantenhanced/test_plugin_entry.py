@@ -95,6 +95,19 @@ class TestPluginEntry:
 
         assert plugin._detect_existing_episodes(SimpleNamespace(id=1)) == [1, 2]
 
+    def test_detect_backfill_episodes_includes_note_below_current_start(self):
+        """洗版回填候选合并 note 与媒体库已有集，保留 start_episode 前的历史下载记录。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin._detect_existing_episodes = MagicMock(return_value=[2, 3, 4])
+        subscribe = SimpleNamespace(
+            id=1,
+            start_episode=2,
+            total_episode=4,
+            note=[1, "2", 3, 4, 5, 0, -1, "x"],
+        )
+
+        assert plugin._detect_backfill_episodes(subscribe) == [1, 2, 3, 4]
+
     def test_downloader_torrent_present_distinguishes_absent_and_unknown(self):
         """手动删种监听需要区分确删、仍存在和下载器不可判定。"""
         plugin = SubscribeAssistantEnhanced()

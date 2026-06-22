@@ -68,12 +68,14 @@ def _mediainfo(**kwargs):
     return media
 
 
-def test_release_metadata_requires_main_program_after_2_13_13():
-    """插件依赖主程序新增缺集 MetaInfo 构造入口，版本门禁必须排除 v2.13.13。"""
+def test_release_metadata_allows_main_program_2_13_13_or_newer():
+    """插件版本门禁使用 >= 语义，兼容 MoviePilot v2.13.13 及以上版本。"""
     package = json.loads(Path("package.v2.json").read_text(encoding="utf-8"))
     specifier = SpecifierSet(package["SubscribeAssistantEnhanced"]["system_version"])
 
-    assert Version("2.13.13") not in specifier
+    assert package["SubscribeAssistantEnhanced"]["system_version"].startswith(">=")
+    assert Version("2.13.12") not in specifier
+    assert Version("2.13.13") in specifier
 
 
 def test_converter_is_wired():
@@ -482,7 +484,7 @@ def test_run_meta_check_calls_pause_when_pre_air_condition_holds():
     plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=MediaType.MOVIE))
 
     # 让 airing_checker.check_pre_air 返回一条暂停记录；airing_checker 存在于 _modules
     airing = plugin._modules["airing_checker"]
@@ -530,6 +532,7 @@ def test_run_meta_check_passes_scope_to_airing_checker():
 
     plugin.run_meta_check()
 
+    airing.check_pre_air.assert_called_once_with(sub, mediainfo, episodes=episodes)
     airing.check.assert_called_once_with(
         sub,
         mediainfo,
@@ -911,7 +914,7 @@ def test_run_meta_check_p_state_allows_pre_air_pause_to_override_pending():
     plugin._modules["pending_state"]._update = plugin._task_manager.update
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, title_year="X (2026)"))
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, title_year="X (2026)", type=MediaType.MOVIE))
     plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
 
     judge = plugin._modules["pending_judge"]
@@ -1253,7 +1256,7 @@ def test_run_meta_check_restores_unowned_p_when_pending_disabled():
 
 def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(monkeypatch):
     """立即回填会扫描存量洗版订阅，并在执行后关闭一次性标志。"""
-    sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=0, start_episode=2, note=[1, 2, 3])
     subscribe_oper = MagicMock()
     subscribe_oper.list.return_value = [sub]
     priority_manager = MagicMock()
@@ -1263,16 +1266,16 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
     plugin.post_message = MagicMock()
-    plugin._detect_existing_episodes = MagicMock(return_value=[3])
+    plugin._detect_existing_episodes = MagicMock(return_value=[2, 3])
 
     plugin.init_plugin({"backfill_best_version_now": True})
 
-    priority_manager.backfill_existing.assert_called_once_with(sub, [3])
+    priority_manager.backfill_existing.assert_called_once_with(sub, [1, 2, 3])
     plugin.post_message.assert_called_once()
     assert plugin.post_message.call_args.kwargs["title"] == "洗版订阅按集优先级回填"
     assert "扫描 1 个订阅" in plugin.post_message.call_args.kwargs["text"]
     assert "成功回填 1 个" in plugin.post_message.call_args.kwargs["text"]
-    assert "累计补写 1 集" in plugin.post_message.call_args.kwargs["text"]
+    assert "累计补写 3 集" in plugin.post_message.call_args.kwargs["text"]
     plugin.update_config.assert_called_once()
     assert plugin.update_config.call_args.args[0]["backfill_best_version_now"] is False
 

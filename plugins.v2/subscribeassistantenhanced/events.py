@@ -163,12 +163,12 @@ class EventProxy:
             and priority
             and priority.can_backfill(subscribe)
         ):
-            detect = self.get("detect_existing_episodes_fn")
+            detect = self.get("detect_backfill_episodes_fn") or self.get("detect_existing_episodes_fn")
             if detect:
-                existing = detect(subscribe)
-                if existing:
-                    logger.info(f"订阅新增：{format_subscribe(subscribe)} 分集洗版订阅回填在库集 {existing}")
-                    priority.backfill_existing(subscribe, existing)
+                episodes = detect(subscribe)
+                if episodes:
+                    logger.info(f"订阅新增：{format_subscribe(subscribe)} 分集洗版订阅回填已下载集 {episodes}")
+                    priority.backfill_existing(subscribe, episodes)
 
         # 全集洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
         if subscribe.best_version and subscribe.best_version_full:
@@ -181,25 +181,28 @@ class EventProxy:
             detail(f"订阅新增：{format_subscribe(subscribe)} 媒体信息缺失，跳过播出暂停/待定")
             return
 
-        # 上映前暂停同时适用于电影和电视剧，必须先于电视剧专属流程判定
+        is_tv = self.get("is_tv_fn")
+        is_tv_media = True if is_tv is None else bool(is_tv(mediainfo))
+        tmdb_episodes_fn = self.get("tmdb_episodes_fn")
+        episodes = []
+        if is_tv_media and tmdb_episodes_fn:
+            episodes = tmdb_episodes_fn(
+                subscribe.tmdbid,
+                subscribe.season,
+                episode_group=subscribe.episode_group,
+            )
+
+        # 上映前暂停同时适用于电影和电视剧，必须先于电视剧专属流程判定。
         airing = self.get("airing_checker")
         if airing and pause_manager:
-            record = airing.check_pre_air(subscribe, mediainfo)
+            record = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
             if record:
                 logger.info(f"订阅新增：{format_subscribe(subscribe)} 满足上映前暂停条件，置为禁用")
                 pause_manager.pause(subscribe, record)
                 return
 
-        is_tv = self.get("is_tv_fn")
-        if is_tv and not is_tv(mediainfo):
+        if is_tv is not None and not is_tv_media:
             return
-
-        tmdb_episodes_fn = self.get("tmdb_episodes_fn")
-        episodes = tmdb_episodes_fn(
-            subscribe.tmdbid,
-            subscribe.season,
-            episode_group=subscribe.episode_group,
-        ) if tmdb_episodes_fn else []
 
         # TV 待定优先于播出暂停：满足待定条件即进入待定并跳过播出暂停。
         pending_judge = self.get("pending_judge")
@@ -264,12 +267,12 @@ class EventProxy:
                 and not old_info.get("best_version")
                 and self.get("backfill_enabled")):
             priority = self.get("priority_manager")
-            detect = self.get("detect_existing_episodes_fn")
+            detect = self.get("detect_backfill_episodes_fn") or self.get("detect_existing_episodes_fn")
             if priority and detect and priority.can_backfill(subscribe):
-                existing = detect(subscribe)
-                if existing:
-                    logger.info(f"订阅修改：{format_subscribe(subscribe)} 普通转洗版，回填在库集 {existing}")
-                    priority.backfill_existing(subscribe, existing)
+                episodes = detect(subscribe)
+                if episodes:
+                    logger.info(f"订阅修改：{format_subscribe(subscribe)} 普通转洗版，回填已下载集 {episodes}")
+                    priority.backfill_existing(subscribe, episodes)
 
     def on_subscribe_complete(self, event):
         """SubscribeComplete → 清理任务数据 + H 快照 + 自动洗版创建。
