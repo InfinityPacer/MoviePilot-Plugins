@@ -173,6 +173,24 @@ def get_tv_season_air_date(mediainfo, season: int) -> Optional[str]:
     return None
 
 
+def first_scope_episode_air_date(subscribe, episodes: list) -> Optional[date]:
+    """返回当前季分集表 E01 的播出日期；分集表由调用方按剧集组范围取得。"""
+    candidates = []
+    for episode in episodes or []:
+        if not subscribe.episode_group:
+            season_number = episode_field(episode, "season_number")
+            if not _same_optional_season(season_number, subscribe.season):
+                continue
+        if episode_field(episode, "episode_number") != 1:
+            continue
+        air = parse_date(episode_field(episode, "air_date"))
+        if air:
+            candidates.append(air)
+    if not candidates:
+        return None
+    return min(candidates)
+
+
 def count_aired_episodes(episodes: list, as_of: Optional[date] = None) -> int:
     """统计目标范围内已播出的集数。"""
     today = as_of or date.today()

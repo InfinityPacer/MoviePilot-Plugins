@@ -19,6 +19,7 @@ def _sub(sid=1, state="R", username="", media_type="电视剧"):
         username=username,
         tmdbid=100,
         season=1,
+        episode_group=None,
         type=media_type,
         name="测试剧",
         start_episode=1,
@@ -118,6 +119,72 @@ class TestAiringPause:
         assert result is not None
         assert result.reason == "pre_air"
         assert result.detail == "2026-02-01 开播，暂未到订阅窗口"
+
+    def test_pre_air_tv_falls_back_to_first_scope_episode_air_date(self):
+        """剧集季日期和首播日期缺失时，使用当前分集范围 E01 日期判断开播窗口。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evaluate_fn=MagicMock(),
+            movie_air_days=0,
+            tv_air_days=5,
+        )
+        mediainfo = SimpleNamespace(season_info=[], first_air_date=None)
+
+        result = checker.check_pre_air(
+            _sub(),
+            mediainfo,
+            as_of=date(2026, 1, 1),
+            episodes=[
+                _ep("2026-02-02", episode_number=2),
+                _ep("2026-02-01", episode_number=1),
+            ],
+        )
+
+        assert result is not None
+        assert result.reason == "pre_air"
+        assert result.detail == "2026-02-01 开播，暂未到订阅窗口"
+
+    def test_pre_air_tv_episode_group_fallback_ignores_original_season_number(self):
+        """剧集组分集已由调用方按组缩窄，E01 fallback 不再按原始 season_number 过滤。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evaluate_fn=MagicMock(),
+            movie_air_days=0,
+            tv_air_days=5,
+        )
+        subscribe = _sub()
+        subscribe.season = 2
+        subscribe.episode_group = "eg-1"
+        mediainfo = SimpleNamespace(season_info=[], first_air_date=None)
+
+        result = checker.check_pre_air(
+            subscribe,
+            mediainfo,
+            as_of=date(2026, 1, 1),
+            episodes=[_ep("2026-02-01", episode_number=1, season_number=1)],
+        )
+
+        assert result is not None
+        assert result.detail == "2026-02-01 开播，暂未到订阅窗口"
+
+    def test_pre_air_tv_missing_all_air_dates_does_not_pause(self):
+        """剧集季日期、首播日期和 E01 日期都缺失时不做未知日期暂停。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evaluate_fn=MagicMock(),
+            movie_air_days=0,
+            tv_air_days=5,
+        )
+        mediainfo = SimpleNamespace(season_info=[], first_air_date=None)
+
+        result = checker.check_pre_air(
+            _sub(),
+            mediainfo,
+            as_of=date(2026, 1, 1),
+            episodes=[_ep(None, episode_number=1)],
+        )
+
+        assert result is None
 
     def test_pre_air_unknown_media_type_returns_none(self):
         """未知媒体类型不走电影或剧集上映前暂停，避免脏数据被误暂停。"""

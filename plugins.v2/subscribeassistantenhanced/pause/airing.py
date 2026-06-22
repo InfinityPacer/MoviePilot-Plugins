@@ -9,6 +9,7 @@ from ..engine.types import CompletionSignal, PauseRecord
 from ..shared.media import (
     episode_candidates_after,
     episode_field,
+    first_scope_episode_air_date,
     get_tv_season_air_date,
     parse_date,
     resolve_airing_next_episode,
@@ -28,7 +29,8 @@ class AiringPauseChecker:
         self._tv_air_days = tv_air_days
 
     def check_pre_air(self, subscribe, mediainfo,
-                      as_of: Optional[date] = None) -> Optional[PauseRecord]:
+                      as_of: Optional[date] = None,
+                      episodes: Optional[list] = None) -> Optional[PauseRecord]:
         """检查电影上映或电视剧开播前是否应暂停。"""
         today = as_of or date.today()
         media_type = resolve_subscribe_media_type(subscribe)
@@ -63,12 +65,9 @@ class AiringPauseChecker:
         ) or mediainfo.first_air_date
         air_date = parse_date(air_date)
         if air_date is None:
-            # 开播日期无法解析时默认暂停，避免在不明窗口期下载
-            return PauseRecord(
-                reason="pre_air",
-                since=0.0,
-                detail="开播日期未知，暂停等待",
-            )
+            air_date = first_scope_episode_air_date(subscribe, episodes or [])
+        if air_date is None:
+            return None
         if today < air_date - timedelta(days=self._tv_air_days):
             return PauseRecord(
                 reason="pre_air",

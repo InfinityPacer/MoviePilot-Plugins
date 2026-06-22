@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.3.6"
+    plugin_version = "0.3.7"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -334,6 +334,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mediainfo_from_dict=self._mediainfo_from_dict,
             is_tv_fn=self._is_tv_media,
             detect_existing_episodes_fn=self._detect_existing_episodes,
+            detect_backfill_episodes_fn=self._detect_backfill_episodes,
             detect_missing_episodes_fn=self._detect_missing_episodes,
             resolve_missing_fn=self._resolve_subscribe_missing,
             recognize_mediainfo_fn=self._recognize_mediainfo,
@@ -526,7 +527,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if not priority.can_backfill(subscribe):
                 results["skipped"] += 1
                 continue
-            existing = self._detect_existing_episodes(subscribe)
+            existing = self._detect_backfill_episodes(subscribe)
             filled_episodes = [
                 episode for episode in existing
                 if str(episode) not in (subscribe.episode_priority or {})
@@ -534,7 +535,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if existing and priority.backfill_existing(subscribe, existing):
                 results["updated"] += 1
                 results["filled_episodes"] += len(filled_episodes)
-                detail(f"洗版回填：{format_subscribe(subscribe)} 回填在库集 {filled_episodes}")
+                detail(f"洗版回填：{format_subscribe(subscribe)} 回填已下载集 {filled_episodes}")
             else:
                 results["skipped"] += 1
         logger.info(
@@ -713,13 +714,15 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
             # 上映/播出暂停复核（双向）：上映前（电影/剧集）+ 播出间隔（仅剧集）
             if check_airing_pause and cfg.pause_enhanced_enabled and airing and pause_manager:
-                record_now = airing.check_pre_air(subscribe, mediainfo)
-                if not record_now and self._is_tv_media(mediainfo):
+                episodes = []
+                if self._is_tv_media(mediainfo):
                     episodes = self._tmdb_episodes(
                         subscribe.tmdbid,
                         subscribe.season,
                         episode_group=subscribe.episode_group,
                     )
+                record_now = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
+                if not record_now and self._is_tv_media(mediainfo):
                     record_now = airing.check(
                         subscribe, mediainfo,
                         next_episode=mediainfo.next_episode_to_air,
@@ -1254,6 +1257,27 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """返回订阅目标范围内媒体库已经存在的集。"""
         existing, _ = self._detect_episode_coverage(subscribe)
         return existing
+
+    def _detect_backfill_episodes(self, subscribe) -> list:
+        """返回洗版回填候选：媒体库已有集与订阅 note 中的已下载集并集。"""
+        total_episode = subscribe.total_episode or 0
+        try:
+            total_episode = int(total_episode)
+        except (TypeError, ValueError):
+            total_episode = 0
+        candidates = {
+            episode
+            for episode in self._detect_existing_episodes(subscribe)
+            if isinstance(episode, int) and 1 <= episode <= total_episode
+        }
+        for episode in subscribe.note or []:
+            try:
+                episode_number = int(episode)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= episode_number <= total_episode:
+                candidates.add(episode_number)
+        return sorted(candidates)
 
     def _detect_missing_episodes(self, subscribe) -> list:
         """返回订阅目标范围内媒体库仍缺失的集。"""

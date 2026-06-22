@@ -448,6 +448,29 @@ class TestSubscribeLifecycle:
         }))
         priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3])
 
+    def test_modified_convert_to_best_version_uses_backfill_candidates(self):
+        """普通转洗版回填使用 note + 媒体库候选，不只看当前媒体库范围。"""
+        sub = _sub(id=9, best_version=1, start_episode=2, note=[1, 2, 3, 4])
+        oper = MagicMock()
+        oper.get.return_value = sub
+        priority = MagicMock()
+        priority.can_backfill.return_value = True
+        detect_backfill = MagicMock(return_value=[1, 2, 3, 4])
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            priority_manager=priority,
+            detect_backfill_episodes_fn=detect_backfill,
+        )
+
+        proxy.on_subscribe_modified(SimpleNamespace(event_data={
+            "subscribe_id": 9,
+            "subscribe_info": {"best_version": 1},
+            "old_subscribe_info": {"best_version": 0},
+        }))
+
+        detect_backfill.assert_called_once_with(sub)
+        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3, 4])
+
     def test_modified_convert_directly_to_full_skips_backfill(self):
         """普通订阅直接转全集洗版时不探测媒体库，也不回填按集优先级。"""
         sub = _sub(id=9, best_version=1, best_version_full=1)
@@ -516,6 +539,26 @@ class TestSubscribeLifecycle:
         detect_existing.assert_not_called()
         priority.backfill_existing.assert_not_called()
 
+    def test_added_backfill_uses_backfill_candidates(self):
+        """新增洗版订阅回填使用 note + 媒体库候选，覆盖 start_episode 前已下载集。"""
+        sub = _sub(id=7, best_version=1, best_version_full=0, start_episode=2, note=[1, 2, 3, 4])
+        oper = MagicMock()
+        oper.get.return_value = sub
+        priority = MagicMock()
+        priority.can_backfill.return_value = True
+        detect_backfill = MagicMock(return_value=[1, 2, 3, 4])
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            priority_manager=priority,
+            detect_backfill_episodes_fn=detect_backfill,
+            backfill_enabled=True,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7}))
+
+        detect_backfill.assert_called_once_with(sub)
+        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3, 4])
+
     def _added_proxy(self, sub, pending_result, airing_record):
         oper = MagicMock()
         oper.get.return_value = sub
@@ -566,6 +609,32 @@ class TestSubscribeLifecycle:
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
 
         tmdb_episodes.assert_called_once_with(100, 1, episode_group="eg-1")
+
+    def test_added_without_is_tv_fn_keeps_legacy_tv_scope_lookup(self):
+        """直接构造 EventProxy 未注入媒体类型判断时，仍按旧 TV 流程查询分集。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, episode_group="eg-1")
+        oper = MagicMock()
+        oper.get.return_value = sub
+        tmdb_episodes = MagicMock(return_value=[])
+        pending = MagicMock()
+        pending.should_enter_pending.return_value = (False, "")
+        airing = MagicMock()
+        airing.check_pre_air.return_value = None
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            pending_judge=pending,
+            airing_checker=airing,
+            pause_manager=MagicMock(),
+            mediainfo_from_dict=lambda _data: _mi(),
+            tmdb_episodes_fn=tmdb_episodes,
+            evaluate_fn=lambda _subscribe, _mediainfo: None,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        tmdb_episodes.assert_called_once_with(100, 1, episode_group="eg-1")
+        assert airing.check_pre_air.call_args.args[0] is sub
+        assert airing.check_pre_air.call_args.kwargs["episodes"] == []
 
     def test_added_new_subscription_does_not_airing_pause_when_not_pending(self):
         """新增订阅仍为 N 态时不做播出暂停，需等首轮搜索后进入 R 态。"""
