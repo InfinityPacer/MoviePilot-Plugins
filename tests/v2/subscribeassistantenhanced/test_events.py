@@ -636,6 +636,32 @@ class TestSubscribeLifecycle:
         assert airing.check_pre_air.call_args.args[0] is sub
         assert airing.check_pre_air.call_args.kwargs["episodes"] == []
 
+    def test_added_non_tv_skips_tv_scope_lookup_and_pending_flow(self):
+        """明确识别为非剧集时只做上映前暂停，不查询 TV 分集或进入待定流程。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, type="电影")
+        oper = MagicMock()
+        oper.get.return_value = sub
+        tmdb_episodes = MagicMock()
+        pending = MagicMock()
+        airing = MagicMock()
+        airing.check_pre_air.return_value = None
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            pending_judge=pending,
+            airing_checker=airing,
+            pause_manager=MagicMock(),
+            mediainfo_from_dict=lambda _data: _mi(type="movie"),
+            is_tv_fn=lambda _mi: False,
+            tmdb_episodes_fn=tmdb_episodes,
+            evaluate_fn=lambda _subscribe, _mediainfo: None,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        tmdb_episodes.assert_not_called()
+        airing.check_pre_air.assert_called_once_with(sub, _mi(type="movie"), episodes=[])
+        pending.should_enter_pending.assert_not_called()
+
     def test_added_new_subscription_does_not_airing_pause_when_not_pending(self):
         """新增订阅仍为 N 态时不做播出暂停，需等首轮搜索后进入 R 态。"""
         sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="N")
