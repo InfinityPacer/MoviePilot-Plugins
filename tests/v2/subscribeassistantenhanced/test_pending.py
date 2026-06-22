@@ -91,6 +91,18 @@ class TestShouldEnterPending:
         should, _ = j.should_enter_pending(_sub(), mi, eps)
         assert should is False
 
+    def test_pending_days_reason_uses_air_date_distance(self):
+        """上映待定原因应展示开播日期和相对当前的真实天数。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_days": 7}))
+        mi = _mi(season_info=[{"season_number": 1, "air_date": (date.today() + timedelta(days=3)).isoformat()}])
+
+        should, reason = j.should_enter_pending(_sub(), mi, [_ep(1)])
+
+        assert should is True
+        assert "开播日期：" in reason
+        assert "距今 3 天" in reason
+        assert "开播待定窗口" in reason
+
     def test_f_unstable_triggers_pending(self):
         """F 不稳定且接近完结 → 待定。"""
         j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))

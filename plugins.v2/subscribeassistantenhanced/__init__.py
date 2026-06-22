@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.3.8"
+    plugin_version = "0.3.9"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -1032,26 +1032,29 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mediainfo = self._recognize_mediainfo(subscribe)
             if not mediainfo:
                 continue
-            action = policy.evaluate(
+            decision = policy.evaluate_detail(
                 subscribe,
                 mediainfo,
                 self._last_download_date(subscribe),
             )
+            action = decision.action if decision else None
             subscribe_id = subscribe.id
             if action == "pause":
                 logger.info(
                     f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
-                    "原因=上映后超期且无下载，处理=暂停订阅"
+                    f"原因={decision.reason}，处理=暂停订阅"
                 )
+                # 暂停记录与下载/待定任务共用 subscribes key，先清旧任务再写入新的暂停归属。
+                self._task_manager.clear_tasks(subscribe_id)
                 pause_manager.pause(subscribe, PauseRecord(
                     reason="no_download",
                     since=time.time(),
-                    detail="上映后超期且无下载",
+                    detail=decision.reason,
                 ))
             elif action == "complete":
                 logger.info(
                     f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
-                    "原因=上映后超期且无下载，处理=写入完成历史并删除订阅"
+                    f"原因={decision.reason}，处理=写入完成历史并删除订阅"
                 )
                 payload = subscribe.to_dict()
                 self._subscribe_oper.add_history(**payload)
@@ -1059,13 +1062,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
             elif action == "delete":
                 logger.info(
                     f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
-                    "原因=上映后超期且无下载，处理=删除订阅"
+                    f"原因={decision.reason}，处理=删除订阅"
                 )
                 self._subscribe_oper.delete(subscribe_id)
             else:
                 continue
-            self._task_manager.clear_tasks(subscribe_id)
-            self._send_no_download_notification(subscribe, mediainfo, action)
+            if action != "pause":
+                self._task_manager.clear_tasks(subscribe_id)
+            self._send_no_download_notification(subscribe, mediainfo, action, reason=decision.reason)
 
     def run_deletes_cleanup(self):
         """删除指纹老化清理：移除超过保留期的近期删除资源，避免长期误挡同源资源。"""
@@ -1527,7 +1531,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             logger.error(f"重建分集洗版订阅时发生异常: {err}")
         return False
 
-    def _send_no_download_notification(self, subscribe, mediainfo, action: str):
+    def _send_no_download_notification(self, subscribe, mediainfo, action: str,
+                                       reason: Optional[str] = None):
         """发送无下载处理状态通知。"""
         action_name = {"pause": "暂停", "complete": "完成", "delete": "删除"}.get(action, action)
         days = self._config.tv_no_download_days if subscribe.type == "电视剧" else self._config.movie_no_download_days
@@ -1536,7 +1541,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             title,
             score=mediainfo.vote_average,
             user=subscribe.username,
-            reason="上映后超期且无下载",
+            reason=reason or "上映后超期且无下载",
             image=mediainfo.get_message_image(),
             link="#/subscribe/tv?tab=mysub" if subscribe.type == "电视剧" else "#/subscribe/movie?tab=mysub",
         )
