@@ -45,7 +45,10 @@ def evaluate(subscribe, mediainfo,
                     f"跳过集数近期变化观察，原因：{e_sig.reason}"
                 )
                 return _attach_scope_total(e_sig, scope)
+            volatility_detail = volatility_tracker.recent_change_detail(subscribe=subscribe)
             unstable_reason = f"目标总集数最近 {config.volatility_window_days} 天发生变化"
+            if volatility_detail:
+                unstable_reason = f"{unstable_reason}（{volatility_detail}）"
             detail(
                 f"信号引擎[集数稳定性（F）]：{subscribe_label} 否决完结，"
                 f"原因：{unstable_reason}"
@@ -55,6 +58,7 @@ def evaluate(subscribe, mediainfo,
                 signals=["F:unstable"],
                 reason=unstable_reason,
                 volatility_direction=volatility_tracker.recent_change_direction(subscribe=subscribe),
+                volatility_detail=volatility_detail,
             ), scope)
 
     # 4. 剧级完结（E）：剧级状态或 finale 可提供强完结信号。

@@ -55,6 +55,7 @@ class VolatilityTracker:
                 entry["last_total_changed_at"] = now
                 entry["unstable_until"] = now + self._window_seconds
                 entry["last_total_before_change"] = last_total
+                entry["last_total_after_change"] = total
                 entry["last_total_change_direction"] = "down" if total < last_total else "up"
             entry["last_total"] = total
             buf.append({"total": total, "ts": now})
@@ -129,6 +130,21 @@ class VolatilityTracker:
         direction = _recent_change_direction(entry, self._window_seconds)
         return direction
 
+    def recent_change_detail(self, subscribe_id: Optional[int] = None,
+                             subscribe=None) -> Optional[str]:
+        """返回窗口内最近一次 total 变化明细，格式为“旧集数 -> 新集数”。"""
+        if subscribe is not None:
+            subscribe_id = subscribe.id
+        if subscribe_id is None:
+            return None
+        sid = str(subscribe_id)
+        entry = self._task.read(VOLATILITY_KEY).get(sid)
+        if subscribe is not None and isinstance(entry, dict):
+            identity = entry.get("identity")
+            if identity is not None and not identity_matches(identity, subscribe):
+                return None
+        return _recent_change_detail(entry, self._window_seconds)
+
 
 def _drop_key(data: dict, sid: str) -> dict:
     """删除失配订阅 ID 的旧记录。"""
@@ -145,6 +161,7 @@ def _new_entry(subscribe, records: Optional[list] = None) -> dict:
         "last_total_changed_at": None,
         "unstable_until": None,
         "last_total_before_change": None,
+        "last_total_after_change": None,
         "last_total_change_direction": None,
     }
 
@@ -159,14 +176,20 @@ def _ensure_change_state(entry: dict, window_seconds: int):
     entry["last_total"] = records[-1].get("total")
     last_changed_at = None
     previous_total = records[0].get("total")
+    before_change = None
+    after_change = None
     for record in records[1:]:
         current_total = record.get("total")
         if current_total != previous_total:
             last_changed_at = record.get("ts")
+            before_change = previous_total
+            after_change = current_total
         previous_total = current_total
     if last_changed_at is not None:
         entry["last_total_changed_at"] = last_changed_at
         entry["unstable_until"] = last_changed_at + window_seconds
+        entry["last_total_before_change"] = before_change
+        entry["last_total_after_change"] = after_change
         entry["last_total_change_direction"] = _recent_change_direction(records, window_seconds)
 
 
@@ -194,3 +217,32 @@ def _recent_change_direction(entry, window_seconds: int) -> Optional[str]:
             direction = "down" if current_total < previous_total else "up"
         previous_total = current_total
     return direction
+
+
+def _recent_change_detail(entry, window_seconds: int) -> Optional[str]:
+    """从持久化 entry 或旧采样列表读取窗口内最近一次 total 变化明细。"""
+    now = time.time()
+    if isinstance(entry, dict):
+        changed_at = entry.get("last_total_changed_at")
+        before = entry.get("last_total_before_change")
+        after = entry.get("last_total_after_change")
+        if after is None:
+            after = entry.get("last_total")
+        if changed_at and before is not None and after is not None and changed_at + window_seconds >= now:
+            return f"{before} -> {after}"
+        records = entry.get("records") or []
+    elif isinstance(entry, list):
+        records = entry
+    else:
+        return None
+    cutoff = now - window_seconds
+    previous_total = None
+    detail = None
+    for record in records:
+        if record.get("ts", 0) < cutoff:
+            continue
+        current_total = record.get("total")
+        if previous_total is not None and current_total != previous_total:
+            detail = f"{previous_total} -> {current_total}"
+        previous_total = current_total
+    return detail

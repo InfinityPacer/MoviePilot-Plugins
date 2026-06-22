@@ -64,7 +64,8 @@ class PendingJudge:
                 missing_episodes=None,
             )
             if proximity.near_completion:
-                return True, "目标总集数近期变化"
+                detail_text = f"（{signal.volatility_detail}）" if signal.volatility_detail else ""
+                return True, f"目标总集数近期变化{detail_text}"
             detail(f"待定判定：{format_subscribe(subscribe)} 总集数近期变化但未接近完结，不进入待定")
 
         if episodes and not any(ep.air_date for ep in episodes):

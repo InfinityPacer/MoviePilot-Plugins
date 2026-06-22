@@ -99,6 +99,29 @@ class TestVolatilityTracker:
 
         assert self.tracker.recent_change_direction(subscribe_id=1) == "up"
 
+    def test_recent_change_detail_reports_old_and_new_total(self):
+        """窗口内最近 total 变化明细应保留旧值和新值，供通知原因展示。"""
+        self.tracker.record(total=10, subscribe_id=1)
+        self.tracker.record(total=12, subscribe_id=1)
+
+        assert self.tracker.recent_change_detail(subscribe_id=1) == "10 -> 12"
+
+    def test_recent_change_detail_reads_existing_entry_without_after_field(self):
+        """已持久化的 entry 没有 after 字段时，用 last_total 还原新值。"""
+        now = time.time()
+        self.store["volatility"] = {
+            "1": {
+                "records": [{"total": 10, "ts": now - 10}, {"total": 12, "ts": now - 5}],
+                "last_total": 12,
+                "last_total_changed_at": now - 5,
+                "unstable_until": now + 86400,
+                "last_total_before_change": 10,
+                "last_total_change_direction": "up",
+            }
+        }
+
+        assert self.tracker.recent_change_detail(subscribe_id=1) == "10 -> 12"
+
     def test_legacy_recent_total_change_survives_after_next_sample(self):
         """旧 list 形态记录升级后也要保留窗口内变化状态。"""
         now = time.time()

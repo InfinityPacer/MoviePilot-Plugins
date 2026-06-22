@@ -112,6 +112,21 @@ class TestShouldEnterPending:
         assert should is True
         assert reason == "目标总集数近期变化"
 
+    def test_f_unstable_pending_reason_carries_total_change_detail(self):
+        """总集数波动触发待定时，原因应携带旧集数到新集数的变化明细。"""
+        j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
+        sig = CompletionSignal(stable=False, volatility_detail="10 -> 15")
+
+        should, reason = j.should_enter_pending(
+            _sub(),
+            _mi(),
+            [_ep(1), _ep(2), _ep(3)],
+            signal=sig,
+        )
+
+        assert should is True
+        assert reason == "目标总集数近期变化（10 -> 15）"
+
     def test_mid_airing_total_shrink_does_not_enter_pending_from_volatility(self):
         """播出中段 total 校准只记录风险，不触发 pending_judge 待定。"""
         j = _judge(config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}))
