@@ -585,6 +585,41 @@ class TestSubscribeLifecycle:
         pending.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
         airing.check.assert_not_called()
 
+    def test_added_tv_unknown_air_date_pauses_before_pending(self):
+        """电视剧完全缺少开播排期时先暂停，不被集数不足待定接管。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        pause = MagicMock()
+        pending = MagicMock()
+        pending.should_enter_pending.return_value = (True, "集数不足")
+        airing = AiringPauseChecker(
+            pause_days=14,
+            evaluate_fn=MagicMock(return_value=CompletionSignal()),
+            tv_air_days=5,
+        )
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            pause_manager=pause,
+            pending_judge=pending,
+            airing_checker=airing,
+            mediainfo_from_dict=lambda _data: _mi(season_info=[], first_air_date=None),
+            is_tv_fn=lambda _mi: True,
+            tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: [
+                SimpleNamespace(air_date=None, episode_number=1)
+            ],
+            evaluate_fn=lambda _subscribe, _mediainfo: None,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        pause.pause.assert_called_once()
+        record = pause.pause.call_args.args[1]
+        assert record.reason == "pre_air"
+        assert record.detail == "开播日期未知"
+        pending.should_enter_pending.assert_not_called()
+        pending.mark_pending.assert_not_called()
+
     def test_added_uses_episode_group_scope(self):
         """新增订阅评估待定时必须按订阅 episode_group 查询集列表。"""
         sub = _sub(id=7, best_version=0, tmdbid=100, season=1, episode_group="eg-1")

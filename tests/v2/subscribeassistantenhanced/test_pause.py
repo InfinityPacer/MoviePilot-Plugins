@@ -167,8 +167,8 @@ class TestAiringPause:
         assert result is not None
         assert result.detail == "开播日期：2026-02-01，距今 31 天，暂未到订阅窗口"
 
-    def test_pre_air_tv_missing_all_air_dates_does_not_pause(self):
-        """剧集季日期、首播日期和 E01 日期都缺失时不做未知日期暂停。"""
+    def test_pre_air_tv_missing_all_air_dates_pauses_on_unknown_schedule(self):
+        """剧集季日期、首播日期和 E01 日期都缺失时按开播日期未知暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
             evaluate_fn=MagicMock(),
@@ -184,7 +184,9 @@ class TestAiringPause:
             episodes=[_ep(None, episode_number=1)],
         )
 
-        assert result is None
+        assert result is not None
+        assert result.reason == "pre_air"
+        assert result.detail == "开播日期未知"
 
     def test_pre_air_unknown_media_type_returns_none(self):
         """未知媒体类型不走电影或剧集上映前暂停，避免脏数据被误暂停。"""
