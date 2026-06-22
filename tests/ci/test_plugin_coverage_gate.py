@@ -164,6 +164,8 @@ def test_pr_workflow_runs_plugin_coverage_gate() -> None:
     assert "MOVIEPILOT_BACKEND_PATH" in workflow
     assert "Determine whether coverage gate is required" in workflow
     assert "steps.coverage-scope.outputs.run == 'true'" in workflow
+    assert "MoviePilot/requirements-dev.in" in workflow
+    assert "coverage==" not in workflow
     assert "actions/upload-artifact" in workflow
 
 

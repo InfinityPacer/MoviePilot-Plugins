@@ -98,13 +98,13 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: MoviePilot/requirements.in
+          cache-dependency-path: MoviePilot/requirements-dev.in
 
       - name: Install backend test dependencies
         if: steps.coverage-scope.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install -r MoviePilot/requirements.in coverage==7.14.1
+          pip install -r MoviePilot/requirements-dev.in
 
       - name: Run plugin coverage gate
         if: steps.coverage-scope.outputs.run == 'true'

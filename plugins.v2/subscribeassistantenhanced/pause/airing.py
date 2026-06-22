@@ -68,7 +68,12 @@ class AiringPauseChecker:
         if air_date is None:
             air_date = first_scope_episode_air_date(subscribe, episodes or [])
         if air_date is None:
-            return None
+            # 电视剧没有任何可用排期时保持暂停，避免未知开播窗口被集数待定提前接管。
+            return PauseRecord(
+                reason="pre_air",
+                since=0.0,
+                detail="开播日期未知",
+            )
         if today < air_date - timedelta(days=self._tv_air_days):
             return PauseRecord(
                 reason="pre_air",
