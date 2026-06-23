@@ -1,6 +1,6 @@
 # PR-Agent 使用说明
 
-本仓库通过 GitHub Actions 运行开源 PR-Agent，用于在 PR 评论中手动生成 PR 说明和进行 AI Review。
+本仓库通过 GitHub Actions 运行开源 PR-Agent，用于对 fork PR 自动生成 PR 说明和进行 AI Review。
 
 ## Secrets
 
@@ -15,11 +15,11 @@
 
 `.github/workflows/pr-agent.yml` 监听：
 
+- `pull_request_target`：fork PR 打开、重新打开、标记 ready、请求 review、推送新 commit 时自动运行。
 - `issue_comment`：允许身份在 PR 评论里写允许的命令时手动运行。
 
-默认不监听 `pull_request`，因此 PR 打开、重新打开、标记 ready、请求 review、推送新 commit
-时都不会自动运行 PR-Agent。允许身份可以在 PR 评论中使用允许的命令触发受控审查。允许身份包括
-`OWNER`、`MEMBER`、`COLLABORATOR`、`CONTRIBUTOR` 和 `FIRST_TIME_CONTRIBUTOR`。
+默认只自动处理 fork PR；同仓 PR 不自动运行，允许身份可以在 PR 评论中使用允许的命令触发受控审查。
+允许身份包括 `OWNER`、`MEMBER`、`COLLABORATOR`、`CONTRIBUTOR` 和 `FIRST_TIME_CONTRIBUTOR`。
 
 ## Workflow 权限
 
@@ -31,12 +31,12 @@ workflow 设置了最小可用权限：
 
 没有开启 `contents: write`。当前配置不让 PR-Agent 往仓库推代码或提交 changelog，因此不需要内容写权限。
 
-默认可手动执行：
+fork PR 默认自动执行：
 
 - `/review`：检查 PR 风险、潜在 bug、安全问题、测试缺口和可维护性问题。
 - `/describe`：生成或更新 PR 描述、变更摘要和文件说明。
 
-同样允许手动执行：
+同样允许手动触发：
 
 - `/improve`：给出代码改进建议。这个工具更容易产生噪音和额外成本，建议先用评论命令手动触发。
 - `/ask ...`：围绕当前 PR 提问，例如确认某类风险、测试缺口或实现意图。
@@ -102,13 +102,13 @@ PR-Agent 配置集中在 `.github/workflows/pr-agent.yml` 的 `env` 中维护。
 PR-Agent Action 会读取 `OPENAI_KEY`，因此依赖的 Docker 镜像在 workflow 中固定版本号和 digest，
 不使用浮动的 `latest` 或仅依赖可变 tag。
 
-当前只使用 `issue_comment`，不使用 `pull_request` 或 `pull_request_target`。`issue_comment` 属于
-base repo 事件，因此评论命令只允许指定身份触发。若以后要支持 fork PR 自动审查，需要重新评估
-`pull_request_target` 的安全模型，不能 checkout 或执行来自 fork 的代码。
+当前使用 `pull_request_target` 支持 fork PR 自动审查，但 workflow 不 checkout 或执行来自 fork
+的代码，只运行固定 digest 的 PR-Agent 容器并通过 GitHub API 读取 PR diff。`issue_comment` 属于
+base repo 事件，因此评论命令只允许指定身份触发。
 
 API Key 建议使用低额度、可轮换的专用 key。`OPENAI_API_BASE` 本身通常不是敏感信息，但继续按 secret 管理可以避免暴露服务商信息。
 
-## 调整手动命令行为
+## 调整自动行为
 
 PR-Agent 行为在 workflow 的 `env` 中控制：
 
@@ -118,9 +118,10 @@ config.fallback_models: '["gpt-5.4"]'
 config.reasoning_effort: "xhigh"
 config.ai_timeout: "900"
 config.response_language: "zh-CN"
-github_action_config.auto_review: "false"
-github_action_config.auto_describe: "false"
+github_action_config.auto_review: "true"
+github_action_config.auto_describe: "true"
 github_action_config.auto_improve: "false"
+github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
 pr_description.generate_ai_title: "false"
 pr_description.publish_labels: "false"
 pr_description.enable_pr_diagram: "false"
@@ -128,6 +129,5 @@ pr_reviewer.enable_review_labels_effort: "false"
 pr_reviewer.enable_review_labels_security: "true"
 ```
 
-`auto_review`、`auto_describe` 和 `auto_improve` 只控制 PR 事件触发时是否执行对应工具。当前
-workflow 不监听 PR 事件，因此这些开关保持关闭；评论命令由评论正文决定，不依赖这些开关。若以后
-需要 PR 打开或更新时自动运行，需要重新添加 `pull_request` 触发器，并重新评估 secret、权限和成本边界。
+`auto_review`、`auto_describe` 和 `auto_improve` 控制 PR 事件触发时是否执行对应工具。当前同仓 PR
+不自动运行；如需审查同仓 PR，可由允许身份在 PR 评论中手动发送 `/review` 或 `/describe`。
