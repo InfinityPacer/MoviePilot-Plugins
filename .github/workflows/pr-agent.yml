@@ -69,11 +69,14 @@ jobs:
           # 仓库设置中添加的 Secret。OpenAI 兼容服务通常需要填写以 "/v1" 结尾的 API 根地址。
           OPENAI.API_BASE: ${{ secrets.OPENAI_API_BASE }}
 
-          # 模型与推理强度。
+          # 模型、输出语言和大 diff 处理策略。
           config.model: "gpt-5.5"
           config.fallback_models: '["gpt-5.4"]'
-          config.reasoning_effort: "high"
+          config.reasoning_effort: "xhigh"
           config.response_language: "zh-CN"
+          config.large_patch_policy: "clip"
+          config.ignore_pr_title: '["^\\[Auto\\]", "^Auto"]'
+          config.ignore_pr_labels: '["skip pr-agent"]'
 
           # pull_request 事件默认自动执行 /review 和 /describe；/improve 保持手动触发。
           github_action_config.auto_review: "true"
@@ -86,9 +89,34 @@ jobs:
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
 
-          # Review effort 标签容易造成噪音；安全标签保留，用于标记明确安全风险。
+          # /describe 行为控制；与自动触发配置放在同一层，避免使用默认图表和标签策略。
+          pr_description.generate_ai_title: "false"
+          pr_description.publish_labels: "false"
+          pr_description.enable_pr_diagram: "false"
+          pr_description.collapsible_file_list: "adaptive"
+          pr_description.add_original_user_description: "true"
+
+          # /review 输出策略，聚焦维护者需要处理的风险和缺口。
+          pr_reviewer.extra_instructions: |
+            请用中文输出。
+            优先指出 P0/P1 风险，避免纠结纯格式问题。
+            重点检查安全、权限、状态一致性、异步/缓存、副作用和测试缺口。
+          pr_reviewer.num_max_findings: "5"
+          pr_reviewer.persistent_comment: "true"
+          pr_reviewer.publish_output_no_suggestions: "true"
+          pr_reviewer.require_tests_review: "true"
+          pr_reviewer.require_security_review: "true"
+          pr_reviewer.require_estimate_effort_to_review: "true"
+          pr_reviewer.require_can_be_split_review: "true"
+          pr_reviewer.require_todo_scan: "false"
           pr_reviewer.enable_review_labels_effort: "false"
           pr_reviewer.enable_review_labels_security: "true"
+
+          # /improve 和 /ask 的手动命令策略。
+          pr_code_suggestions.focus_only_on_problems: "true"
+          pr_code_suggestions.suggestions_score_threshold: "7"
+          pr_code_suggestions.commitable_code_suggestions: "false"
+          pr_questions.use_conversation_history: "true"
 
           # 可选成本和噪音控制：
           # github_action_config.auto_improve: "true"
