@@ -68,7 +68,7 @@ jobs:
           # 模型与推理强度。
           config.model: "gpt-5.5"
           config.fallback_models: '["gpt-5.4"]'
-          config.reasoning_effort: "xhigh"
+          config.reasoning_effort: "high"
           config.response_language: "zh-CN"
 
           # pull_request 事件默认自动执行 /review 和 /describe；/improve 保持手动触发。

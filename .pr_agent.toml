@@ -6,7 +6,7 @@
 # 默认主模型、降级模型和推理强度。
 model = "gpt-5.5"
 fallback_models = ["gpt-5.4"]
-reasoning_effort = "xhigh"
+reasoning_effort = "high"
 
 # 让 Review、PR 描述和问答默认使用中文输出。
 response_language = "zh-CN"
