@@ -53,6 +53,7 @@ jobs:
         )
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Run PR-Agent
         id: pragent
@@ -73,6 +74,7 @@ jobs:
           config.model: "gpt-5.5"
           config.fallback_models: '["gpt-5.4"]'
           config.reasoning_effort: "xhigh"
+          config.ai_timeout: "900"
           config.response_language: "zh-CN"
           config.large_patch_policy: "clip"
           config.ignore_pr_title: '["^\\[Auto\\]", "^Auto"]'
