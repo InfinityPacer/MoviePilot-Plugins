@@ -65,6 +65,12 @@ jobs:
           # 仓库设置中添加的 Secret。OpenAI 兼容服务通常需要填写以 "/v1" 结尾的 API 根地址。
           OPENAI.API_BASE: ${{ secrets.OPENAI_API_BASE }}
 
+          # 模型与推理强度。
+          config.model: "gpt-5.5"
+          config.fallback_models: '["gpt-5.4"]'
+          config.reasoning_effort: "xhigh"
+          config.response_language: "zh-CN"
+
           # pull_request 事件默认自动执行 /review 和 /describe；/improve 保持手动触发。
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
@@ -75,6 +81,10 @@ jobs:
 
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
+
+          # Review effort 标签容易造成噪音；安全标签保留，用于标记明确安全风险。
+          pr_reviewer.enable_review_labels_effort: "false"
+          pr_reviewer.enable_review_labels_security: "true"
 
           # 可选成本和噪音控制：
           # github_action_config.auto_improve: "true"

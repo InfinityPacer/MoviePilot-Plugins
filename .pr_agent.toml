@@ -3,6 +3,11 @@
 # https://github.com/qodo-ai/pr-agent/blob/main/pr_agent/settings/configuration.toml
 
 [config]
+# 默认主模型、降级模型和推理强度。
+model = "gpt-5.5"
+fallback_models = ["gpt-5.4"]
+reasoning_effort = "xhigh"
+
 # 让 Review、PR 描述和问答默认使用中文输出。
 response_language = "zh-CN"
 
@@ -41,9 +46,9 @@ require_can_be_split_review = true
 # 默认不把 TODO 扫描结果作为 Review 问题。
 require_todo_scan = false
 
-# 允许 PR-Agent 在有权限时添加安全和工作量标签。
+# 保留安全标签；关闭工作量标签，避免出现 Review effort 这类噪音标签。
 enable_review_labels_security = true
-enable_review_labels_effort = true
+enable_review_labels_effort = false
 
 [pr_description]
 # /describe 会更新 PR 标题和正文；默认保留人工标题。
