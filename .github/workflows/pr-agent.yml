@@ -1,6 +1,15 @@
 name: PR Agent
 
 on:
+  pull_request_target:
+    # PR-Agent 通过 base repo 上下文读取 PR diff 并发布 Review，不 checkout 或执行 PR 分支代码。
+    # pull_request_target 允许 fork PR 使用仓库 secrets，因此 workflow 只运行固定 digest 的 PR-Agent 容器。
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - review_requested
+      - synchronize
   issue_comment:
     # 手动命令如 "/review"、"/describe"、"/improve" 和 "/ask ..." 只在 PR 评论中有意义。
     # issue_comment 同时覆盖普通 issue，因此 job 里还会再判断是否属于 PR。
@@ -18,21 +27,30 @@ permissions:
 
 jobs:
   pr-agent:
-    name: PR-Agent manual command
-    # 仅允许指定身份在 PR 下用评论命令触发，避免任意评论消耗模型配额。
+    name: PR-Agent review and describe
+    # 仅 fork PR 自动处理；同仓 PR 可按需用评论命令触发，避免维护分支默认消耗模型配额。
     if: >-
       github.event.sender.type != 'Bot' &&
-      github.event.issue.pull_request != null &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR"]'), github.event.comment.author_association) &&
       (
-        github.event.comment.body == '/review' ||
-        startsWith(github.event.comment.body, '/review ') ||
-        github.event.comment.body == '/describe' ||
-        startsWith(github.event.comment.body, '/describe ') ||
-        github.event.comment.body == '/improve' ||
-        startsWith(github.event.comment.body, '/improve ') ||
-        github.event.comment.body == '/ask' ||
-        startsWith(github.event.comment.body, '/ask ')
+        (
+          github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        ) ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request != null &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR"]'), github.event.comment.author_association) &&
+          (
+            github.event.comment.body == '/review' ||
+            startsWith(github.event.comment.body, '/review ') ||
+            github.event.comment.body == '/describe' ||
+            startsWith(github.event.comment.body, '/describe ') ||
+            github.event.comment.body == '/improve' ||
+            startsWith(github.event.comment.body, '/improve ') ||
+            github.event.comment.body == '/ask' ||
+            startsWith(github.event.comment.body, '/ask ')
+          )
+        )
       )
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -62,10 +80,13 @@ jobs:
           config.ignore_pr_title: '["^\\[Auto\\]", "^Auto"]'
           config.ignore_pr_labels: '["skip pr-agent"]'
 
-          # 自动 PR 事件工具保持关闭；评论命令由评论正文决定，不依赖这些开关。
-          github_action_config.auto_review: "false"
-          github_action_config.auto_describe: "false"
+          # pull_request_target 事件默认自动执行 /review 和 /describe；/improve 保持手动触发。
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false"
+
+          # 允许触发自动工具的 PR 动作。包含 synchronize，便于新 commit 推送后刷新结果。
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
 
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
