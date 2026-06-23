@@ -28,15 +28,18 @@ permissions:
 jobs:
   pr-agent:
     name: PR-Agent review and describe
-    # 自动 PR 事件直接处理；评论触发只允许可信成员在 PR 下使用明确命令，避免任意评论消耗模型配额。
+    # 同仓 PR 可自动处理；fork PR 由允许身份在 PR 下用评论命令触发，避免任意评论消耗模型配额。
     if: >-
       github.event.sender.type != 'Bot' &&
       (
-        github.event_name == 'pull_request' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        ) ||
         (
           github.event_name == 'issue_comment' &&
           github.event.issue.pull_request != null &&
-          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR"]'), github.event.comment.author_association) &&
           (
             github.event.comment.body == '/review' ||
             startsWith(github.event.comment.body, '/review ') ||
@@ -53,7 +56,8 @@ jobs:
     steps:
       - name: Run PR-Agent
         id: pragent
-        uses: docker://pragent/pr-agent:0.34.2-github_action
+        # 使用版本号加 digest 固定容器构建，避免 tag 被重推后改变运行内容。
+        uses: docker://pragent/pr-agent:0.37.0-github_action@sha256:4ec7bac814050a1bc8c96ab2fab6b7b0f65df0049a5ec43f3fee1a0b551c28ca
         env:
           # PR-Agent 使用该 token 读取 PR 元数据并发布评论。
           GITHUB_TOKEN: ${{ github.token }}
