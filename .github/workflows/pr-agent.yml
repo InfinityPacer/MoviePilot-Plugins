@@ -1,0 +1,82 @@
+name: PR Agent
+
+on:
+  pull_request:
+    # PR-Agent 读取 PR diff，并写入 Review 评论或更新 PR 描述。
+    # synchronize 用于在 PR 推送新 commit 后刷新审查结果。
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - review_requested
+      - synchronize
+  issue_comment:
+    # 手动命令如 "/review"、"/describe"、"/improve" 和 "/ask ..." 只在 PR 评论中有意义。
+    # issue_comment 同时覆盖普通 issue，因此 job 里还会再判断是否属于 PR。
+    types:
+      - created
+      - edited
+
+permissions:
+  # 读取仓库内容和 PR diff。
+  contents: read
+  # 更新 PR 描述、发布 PR Review 或修改 PR 相关元数据。
+  pull-requests: write
+  # PR 评论在 GitHub API 中属于 issue comments，手动命令和总结评论需要该权限。
+  issues: write
+
+jobs:
+  pr-agent:
+    name: PR-Agent review and describe
+    # 自动 PR 事件直接处理；评论触发只允许可信成员在 PR 下使用明确命令，避免任意评论消耗模型配额。
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      (
+        github.event_name == 'pull_request' ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request != null &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+          (
+            github.event.comment.body == '/review' ||
+            startsWith(github.event.comment.body, '/review ') ||
+            github.event.comment.body == '/describe' ||
+            startsWith(github.event.comment.body, '/describe ') ||
+            github.event.comment.body == '/improve' ||
+            startsWith(github.event.comment.body, '/improve ') ||
+            github.event.comment.body == '/ask' ||
+            startsWith(github.event.comment.body, '/ask ')
+          )
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run PR-Agent
+        id: pragent
+        uses: docker://pragent/pr-agent:0.34.2-github_action
+        env:
+          # PR-Agent 使用该 token 读取 PR 元数据并发布评论。
+          GITHUB_TOKEN: ${{ github.token }}
+
+          # 仓库设置中添加的 Secret：Settings -> Secrets and variables -> Actions。
+          # 该 key 只传给 PR-Agent 运行时，不写入仓库。
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+
+          # 仓库设置中添加的 Secret。OpenAI 兼容服务通常需要填写以 "/v1" 结尾的 API 根地址。
+          OPENAI.API_BASE: ${{ secrets.OPENAI_API_BASE }}
+
+          # pull_request 事件默认自动执行 /review 和 /describe；/improve 保持手动触发。
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "true"
+          github_action_config.auto_improve: "false"
+
+          # 允许触发自动工具的 PR 动作。包含 synchronize，便于新 commit 推送后刷新结果。
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
+
+          # 保留 action outputs，便于后续 workflow 编排或排查。
+          github_action_config.enable_output: "true"
+
+          # 可选成本和噪音控制：
+          # github_action_config.auto_improve: "true"
+          # config.verbosity_level: "1"
+          # pr_reviewer.num_max_findings: "3"

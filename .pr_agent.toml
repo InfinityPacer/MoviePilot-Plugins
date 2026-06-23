@@ -1,0 +1,83 @@
+# 仓库级 PR-Agent 覆盖配置。
+# 完整默认配置见：
+# https://github.com/qodo-ai/pr-agent/blob/main/pr_agent/settings/configuration.toml
+
+[config]
+# 让 Review、PR 描述和问答默认使用中文输出。
+response_language = "zh-CN"
+
+# 大 PR 截断分析，不直接跳过整个 Review。
+large_patch_policy = "clip"
+
+# 跳过自动生成 PR 或显式标记忽略的 PR。
+ignore_pr_title = ["^\\[Auto\\]", "^Auto"]
+ignore_pr_labels = ["skip pr-agent"]
+
+[pr_reviewer]
+# /review 的审查要求，聚焦维护者真正需要处理的风险。
+extra_instructions = """\
+请用中文输出。
+优先指出 P0/P1 风险，避免纠结纯格式问题。
+重点检查安全、权限、状态一致性、异步/缓存、副作用和测试缺口。
+"""
+
+# 控制输出噪音，同时保留多个可操作问题。
+num_max_findings = 5
+
+# 重复运行时更新同一条持久评论，避免每次新增一条总结。
+persistent_comment = true
+
+# 没有明显问题时也发布明确结果，便于确认工具已运行。
+publish_output_no_suggestions = true
+
+# 要求 Review 包含测试审查和安全审查部分。
+require_tests_review = true
+require_security_review = true
+
+# 要求评估审查工作量，并判断 PR 是否适合拆分。
+require_estimate_effort_to_review = true
+require_can_be_split_review = true
+
+# 默认不把 TODO 扫描结果作为 Review 问题。
+require_todo_scan = false
+
+# 允许 PR-Agent 在有权限时添加安全和工作量标签。
+enable_review_labels_security = true
+enable_review_labels_effort = true
+
+[pr_description]
+# /describe 会更新 PR 标题和正文；默认保留人工标题。
+generate_ai_title = false
+
+# 避免 /describe 自动反复改动标签。
+publish_labels = false
+
+# 默认不生成图表；插件 PR 通常用文字摘要更易读。
+enable_pr_diagram = false
+
+# 文件列表过长时再折叠。
+collapsible_file_list = "adaptive"
+
+# 更新 PR 描述时保留作者原始描述。
+add_original_user_description = true
+
+[pr_code_suggestions]
+# workflow 默认不自动运行 /improve；手动触发时仅输出较可操作的建议。
+focus_only_on_problems = true
+suggestions_score_threshold = 7
+commitable_code_suggestions = false
+
+[pr_questions]
+# 允许 /ask 使用已有 PR 对话上下文回答追问。
+use_conversation_history = true
+
+# 后续可按需启用的工具配置：
+# [pr_update_changelog]
+# push_changelog_changes = false
+#
+# [pr_add_docs]
+# docs_style = "Sphinx"
+#
+# [pr_test]
+# testing_framework = "pytest"
+# num_tests = 3
