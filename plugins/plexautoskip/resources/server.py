@@ -5,7 +5,7 @@ from app.plugins.plexautoskip.resources.log import getLogger
 from app.plugins.plexautoskip.resources.settings import Settings
 from typing import Tuple, Dict
 from ssl import CERT_NONE
-from pkg_resources import parse_version
+from packaging.version import parse as parse_version
 import requests
 import logging
 

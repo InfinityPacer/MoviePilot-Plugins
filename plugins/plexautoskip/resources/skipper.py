@@ -8,7 +8,7 @@ from threading import Thread
 from typing import Dict, List
 from xml.etree.ElementTree import ParseError
 
-from pkg_resources import parse_version
+from packaging.version import parse as parse_version
 from plexapi.base import PlexSession
 from plexapi.client import PlexClient
 from plexapi.exceptions import BadRequest, NotFound
