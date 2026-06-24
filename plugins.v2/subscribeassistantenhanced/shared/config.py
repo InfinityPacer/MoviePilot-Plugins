@@ -8,12 +8,12 @@ torrent banned"""
 # 自动删种默认跳过 H&R 标签，避免误删需要长期做种的任务。
 DEFAULT_DELETE_EXCLUDE_TAGS = "H&R"
 
-
 class PluginConfig:
     """所有配置项属性化访问，类型安全，缺失 key 走默认值。"""
 
     def __init__(self, raw: dict):
         self._raw = raw or {}
+        self._recognition_guard_config_warnings: set[str] = set()
 
     def get_bool(self, key: str, default: bool = False) -> bool:
         """布尔值解析：支持 bool / 字符串 true/false/on/off/yes/no/1/0。"""
@@ -66,6 +66,14 @@ class PluginConfig:
         if isinstance(val, str):
             return [v.strip() for v in val.split(",") if v.strip()]
         return list(default or [])
+
+    def _get_recognition_enum(self, key: str, default: str, allowed: set[str], warning_code: str) -> str:
+        """识别增强枚举配置解析；非法值回退安全默认并保留稳定告警码。"""
+        value = self.get_str(key, default).strip().lower()
+        if value in allowed:
+            return value
+        self._recognition_guard_config_warnings.add(warning_code)
+        return default
 
     # ---- 全局开关与运行 ----
 
@@ -181,6 +189,23 @@ class PluginConfig:
         scenes = self.get_list("subscription_cleanup_history_scenes")
         allowed = {"normal", "best_version_episode", "best_version_full"}
         return [scene for scene in scenes if scene in allowed]
+
+    # ---- 识别增强 ----
+
+    @property
+    def recognition_guard_mode(self) -> str:
+        """识别增强模式：候选准入的风险偏好，历史配置缺字段时保持关闭。"""
+        return self._get_recognition_enum(
+            "recognition_guard_mode",
+            "off",
+            {"off", "audit", "loose", "balanced", "strict"},
+            "invalid_mode",
+        )
+
+    @property
+    def recognition_guard_config_warnings(self) -> set[str]:
+        """识别增强配置解析告警码快照，供日志和测试读取，不作为可保存配置。"""
+        return set(self._recognition_guard_config_warnings)
 
     # ---- 订阅待定 ----
 
@@ -335,7 +360,9 @@ class PluginConfig:
 
     def declared_keys(self) -> list:
         """返回所有配置键（与各 @property 同名）。供表单 model 覆盖校验，避免表单与配置漂移。"""
-        return [name for name, value in vars(type(self)).items() if isinstance(value, property)]
+        excluded = {"recognition_guard_config_warnings"}
+        return [name for name, value in vars(type(self)).items()
+                if isinstance(value, property) and name not in excluded]
 
     @classmethod
     def defaults(cls) -> dict:
