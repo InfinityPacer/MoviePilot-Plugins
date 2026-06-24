@@ -8,7 +8,7 @@
 - SubscribeModified → task_manager.reset_on_modify
 - SubscribeComplete → verifier.snapshot + best_version
 - TransferIntercept → subscription_cleanup.history_clear
-- ResourceSelection → 洗版串行与删除指纹过滤（识别增强保持下线）
+- ResourceSelection → 洗版串行 + 识别增强 + 删除指纹过滤
 - ResourceDownload → subscription_cleanup + monitor.mark_pending
 - DownloadAdded → monitor.on_download
 - TransferComplete → 清下载待定 + 移动模式清理 + 分集转全集补偿
@@ -319,7 +319,7 @@ class EventProxy:
             detail("整理拦截事件：已完成订阅清理记录处理")
 
     def on_resource_selection(self, event):
-        """ResourceSelection → 洗版下载串行控制 + 剔除近期删除资源防重选。
+        """ResourceSelection → 洗版下载串行控制 + 识别增强 + 剔除近期删除资源防重选。
 
         全集洗版存在下载待定时不再选择其他资源；分集洗版只挡住覆盖待定集的候选，
         待定集未知时保守全挡，避免同集多版本并发下载产生覆盖竞态。
@@ -337,21 +337,52 @@ class EventProxy:
         kept = base
         changed = False
 
+        serial_input_count = len(kept)
         serial = self._filter_pending_serial(data, kept)
         if serial is not None and len(serial) != len(kept):
             kept, changed = serial, True
+        stage_counts = [{"stage": "wash_serial", "input": serial_input_count, "output": len(kept)}]
 
+        recognition_guard = self.get("recognition_guard")
+        recognition_ran = False
+        if recognition_guard:
+            subscribe_oper = self.get("subscribe_oper")
+            _, subscribe = subscribe_from_source(data.origin, subscribe_oper)
+            if subscribe:
+                guarded = recognition_guard.filter(
+                    kept,
+                    subscribe=subscribe,
+                    event_data=data,
+                    selection_original_count=len(contexts),
+                    stage_counts=stage_counts,
+                )
+                recognition_ran = True
+                if guarded is not None:
+                    if guarded != kept:
+                        kept, changed = guarded, True
+                    else:
+                        kept = guarded
+
+        delete_input_count = len(kept)
         if self.get("skip_deletion"):
             deletes_store = self.get("deletes_store")
             if deletes_store:
                 deduped = [ctx for ctx in kept if not self._is_deleted_resource(ctx, deletes_store)]
                 if len(deduped) != len(kept):
                     kept, changed = deduped, True
+        stage_counts.append({"stage": "delete_fingerprint", "input": delete_input_count, "output": len(kept)})
+        if recognition_ran:
+            recognition_guard.finalize_batch(final_count=len(kept), stage_counts=stage_counts)
+            notify_fn = self.get("notify_fn")
+            payload = recognition_guard.notification_payload(subscribe) if notify_fn else None
+            if payload:
+                title, text = payload
+                notify_fn(title, text=text, diagnostic=True)
 
         if changed:
             detail(
                 f"ResourceSelection：候选从 {len(base)} 个减少到 {len(kept)} 个"
-                "（洗版下载串行控制 + 删除指纹防重）"
+                "（洗版下载串行控制 + 识别增强 + 删除指纹防重）"
             )
             data.updated = True
             data.updated_contexts = kept
@@ -389,8 +420,7 @@ class EventProxy:
             return []  # 待定集无法确定时保守全挡，避免同集多版本绕过串行造成覆盖竞态。
         kept = []
         for ctx in contexts:
-            ctx_eps = set(self._normalize_episodes(
-                getattr(ctx, "episodes", None) or getattr(getattr(ctx, "torrent_info", None), "episode_list", None)))
+            ctx_eps = set(self._context_episodes(ctx))
             if ctx_eps and (ctx_eps & pending_eps):
                 continue
             kept.append(ctx)
@@ -654,6 +684,31 @@ class EventProxy:
             except (TypeError, ValueError):
                 continue
         return result
+
+    @classmethod
+    def _context_episodes(cls, context):
+        """从 ResourceSelection 候选读取集数，兼容主程序 Context 与轻量测试替身。"""
+        direct = cls._normalize_episodes(getattr(context, "episodes", None))
+        if direct:
+            return direct
+        torrent = getattr(context, "torrent_info", None)
+        torrent_eps = cls._normalize_episodes(getattr(torrent, "episode_list", None))
+        if torrent_eps:
+            return torrent_eps
+        meta = getattr(context, "meta_info", None)
+        meta_eps = cls._normalize_episodes(getattr(meta, "episode_list", None))
+        if meta_eps:
+            return meta_eps
+        begin = getattr(meta, "begin_episode", None)
+        end = getattr(meta, "end_episode", None)
+        try:
+            begin = int(begin) if begin is not None else None
+            end = int(end) if end is not None else begin
+        except (TypeError, ValueError):
+            return []
+        if begin is not None and end is not None and end >= begin:
+            return list(range(begin, end + 1))
+        return []
 
     @staticmethod
     def _subscribe_target_episodes(subscribe):

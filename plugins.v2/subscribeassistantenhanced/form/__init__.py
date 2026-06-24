@@ -1,4 +1,4 @@
-"""配置表单（vuetify 模式）：顶部开关行 + 周期行 + 5 个 Tab 分页 + 底部提示。
+"""配置表单（vuetify 模式）：顶部开关行 + 周期行 + 6 个 Tab 分页 + 底部提示。
 
 设计：表单字段名 == PluginConfig 配置键，model 默认值由 PluginConfig.defaults() 派生，避免保存配置与运行时键漂移。
 conf 结构：[switch_row, period_row, VTabs, VWindow, *footer]，VTabs/VWindow 共用 model "_tab" 联动当前页；
@@ -35,6 +35,8 @@ LABELS = {
     "auto_check_interval_minutes": "通用巡检周期（分钟）",
     "subscription_cleanup_history_type": "清理整理记录范围",
     "subscription_cleanup_history_scenes": "清理整理记录场景",
+    # 识别增强
+    "recognition_guard_mode": "识别增强模式",
     # 订阅待定
     "pending_enhanced_enabled": "自动待定剧集订阅",
     "pending_download_enabled": "自动待定下载中订阅",
@@ -99,6 +101,8 @@ HINTS = {
     "open_tracker_dialog": "自定义Tracker配置以实现更精准的种子匹配",
     "subscription_cleanup_history_type": "订阅下载前清理旧整理记录、源文件和入库前目标文件的媒体类型范围（破坏性）",
     "subscription_cleanup_history_scenes": "选择普通订阅、分集洗版或全集洗版下载时触发订阅清理",
+    # 识别增强
+    "recognition_guard_mode": "在自动下载前复核订阅候选是否像当前订阅目标；历史配置缺字段时保持关闭",
     # 订阅待定
     "pending_enhanced_enabled": "自动标记订阅剧集为待定状态，避免提前完成订阅",
     "pending_download_enabled": "存在进行中下载时自动标记待定，避免提前完成订阅",
@@ -175,6 +179,9 @@ TABS = [
         ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
         ["verify_retention_days", "timeout_release_days"],
     ]),
+    ("识别增强", [
+        ["recognition_guard_mode"],
+    ]),
 ]
 
 # 下载检查需要分钟级响应，保留 5 分钟起步的高频选项。
@@ -224,6 +231,13 @@ SELECT_ITEMS = {
         {"title": "全部", "value": "all"},
         {"title": "电影", "value": "movie"},
         {"title": "剧集", "value": "tv"},
+    ],
+    "recognition_guard_mode": [
+        {"title": "关闭", "value": "off"},
+        {"title": "审计", "value": "audit"},
+        {"title": "宽松", "value": "loose"},
+        {"title": "平衡", "value": "balanced"},
+        {"title": "严格", "value": "strict"},
     ],
 }
 
@@ -348,7 +362,7 @@ def _footer() -> list:
 
 
 def build_form():
-    """聚合表单：顶部开关行 + 周期行 + 5 个 Tab + 底部提示；model 为全部配置键默认值。"""
+    """聚合表单：顶部开关行 + 周期行 + 6 个 Tab + 底部提示；model 为全部配置键默认值。"""
     defaults = PluginConfig.defaults()
     beta_alert = alert_row(
         "warning",

@@ -49,11 +49,11 @@ class TestBuildForm:
         for key in PluginConfig({}).declared_keys():
             assert key in model, f"表单 model 缺少配置键 {key}"
 
-    def test_five_tabs(self):
-        """配置表单使用 5 个 Tab；顶部 BETA 提示不改变 Tab 数量。"""
+    def test_six_tabs(self):
+        """配置表单使用 6 个 Tab；顶部 BETA 提示不改变 Tab 数量。"""
         conf, _model = build_form()
         assert conf[3]["component"] == "VTabs"
-        assert len(conf[3]["content"]) == 5
+        assert len(conf[3]["content"]) == 6
 
     def test_beta_alert_precedes_form_controls(self):
         """BETA 风险提示固定显示在开关、周期和分页配置之前。"""
@@ -145,8 +145,8 @@ def test_tabs_renders_vtabs_and_vwindow():
     assert out[1]["content"][0]["component"] == "VWindowItem"
 
 
-def test_form_has_top_switches_periods_and_five_tabs():
-    """配置布局：顶部开关行 + 公共周期行 + 5 个 Tab；关键新参数可编辑；多选控件存在。"""
+def test_form_has_top_switches_periods_and_six_tabs():
+    """配置布局：顶部开关行 + 公共周期行 + 6 个 Tab；关键新参数可编辑；多选控件存在。"""
     import json
     conf, model = build_form()
     flat = json.dumps(conf, ensure_ascii=False)
@@ -157,8 +157,8 @@ def test_form_has_top_switches_periods_and_five_tabs():
     for key in ("download_check_interval_minutes", "meta_check_interval_hours",
                 "auto_check_interval_minutes", "best_version_cron"):
         assert f'"{key}"' in flat
-    # 5 个 Tab + VTabs/VWindow 绑定
-    assert flat.count('"VTab"') == 5
+    # 6 个 Tab + VTabs/VWindow 绑定
+    assert flat.count('"VTab"') == 6
     assert '"_tab"' in flat
     # 关键新参数可编辑
     for key in ("best_version_type", "no_download_actions", "movie_air_pause_days",
@@ -171,6 +171,47 @@ def test_form_has_top_switches_periods_and_five_tabs():
     assert "best_version_clear_history_type" not in model
     # 多选控件
     assert '"multiple": true' in flat or '"multiple":true' in flat
+
+
+def test_recognition_guard_tab_and_controls_are_rendered():
+    import json
+    conf, model = build_form()
+    flat = json.dumps(conf, ensure_ascii=False)
+
+    assert flat.count('"VTab"') == 6
+    assert "识别增强" in flat
+    assert "recognition_guard_mode" in model
+    assert '"recognition_guard_mode"' in flat
+    for key in (
+        "recognition_guard_notify",
+        "recognition_guard_notify_interval",
+        "recognition_guard_tmdb_recheck_mode",
+        "recognition_guard_missing_year_policy",
+        "recognition_guard_target_mode",
+        "recognition_guard_cache_maxsize",
+        "recognition_guard_keyword_config",
+        "recognition_guard_enabled",
+        "recognition_guard_active",
+    ):
+        assert key not in model
+        assert f'"{key}"' not in flat
+
+
+def test_recognition_guard_mode_select_values():
+    conf, _model = build_form()
+    window = next(node for node in conf if node.get("component") == "VWindow")
+    fields = _controls_with_model(window)
+    control = next(field for field in fields
+                   if field["props"].get("model") == "recognition_guard_mode")
+
+    assert control["component"] == "VSelect"
+    assert control["props"]["items"] == [
+        {"title": "关闭", "value": "off"},
+        {"title": "审计", "value": "audit"},
+        {"title": "宽松", "value": "loose"},
+        {"title": "平衡", "value": "balanced"},
+        {"title": "严格", "value": "strict"},
+    ]
 
 
 def test_form_model_covers_all_keys_after_restructure():
