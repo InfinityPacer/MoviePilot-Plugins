@@ -34,6 +34,12 @@ class TestPluginEntry:
         """增强版必须是 _PluginBase 子类，否则数据层/生命周期全部失效。"""
         assert issubclass(SubscribeAssistantEnhanced, _PluginBase)
 
+    def test_name_alias_matches_plugin_name_for_event_error_logging(self):
+        """主程序事件错误处理读取 name 时，应得到插件展示名。"""
+        plugin = SubscribeAssistantEnhanced()
+
+        assert plugin.name == plugin.plugin_name
+
     def test_data_layer_roundtrip(self):
         """get_data/save_data 由 _PluginBase 真实落盘，不再是返回 {} 的占位。"""
         plugin = SubscribeAssistantEnhanced()

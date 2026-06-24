@@ -175,6 +175,46 @@ class TestVolatilityTracker:
 
         assert self.tracker.recent_change_detail(subscribe_id=1) is None
 
+    def test_record_recovers_malformed_records_field(self):
+        """持久化 records 字段损坏时，后续写入应重建采样列表。"""
+        self.store["volatility"] = {"1": {"records": {"total": 10, "ts": time.time()}}}
+
+        self.tracker.record(total=12, subscribe_id=1)
+
+        entry = self.store["volatility"]["1"]
+        assert len(entry["records"]) == 1
+        assert entry["records"][0]["total"] == 12
+        assert isinstance(entry["records"][0]["ts"], float)
+        assert entry["last_total"] == 12
+
+    def test_record_preserves_last_total_when_records_field_is_malformed(self):
+        """已有 last_total 仍应参与损坏记录恢复后的变化判断。"""
+        self.store["volatility"] = {
+            "1": {
+                "records": {"bad": "shape"},
+                "last_total": 10,
+            }
+        }
+
+        self.tracker.record(total=12, subscribe_id=1)
+
+        entry = self.store["volatility"]["1"]
+        assert entry["last_total_change_direction"] == "up"
+        assert entry["last_total_before_change"] == 10
+        assert entry["last_total_after_change"] == 12
+
+    def test_is_stable_ignores_malformed_records_field(self):
+        """只读路径遇到损坏 records 字段时不能影响订阅刷新。"""
+        self.store["volatility"] = {"1": {"records": {"bad": "shape"}}}
+
+        assert self.tracker.is_stable(subscribe_id=1) is True
+
+    def test_recent_change_detail_ignores_malformed_records_field(self):
+        """明细读取遇到损坏 records 字段时不能抛错。"""
+        self.store["volatility"] = {"1": {"records": {"bad": "shape"}}}
+
+        assert self.tracker.recent_change_detail(subscribe_id=1) is None
+
     def test_legacy_recent_total_change_survives_after_next_sample(self):
         """旧 list 形态记录升级后也要保留窗口内变化状态。"""
         now = time.time()
