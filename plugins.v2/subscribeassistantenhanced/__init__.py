@@ -72,7 +72,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.4.1"
+    plugin_version = "0.4.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -83,6 +83,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
     plugin_order = 5
     # 可使用的用户级别
     auth_level = 1
+
+    @property
+    def name(self) -> str:
+        """错误处理读取的插件展示名。"""
+        return self.plugin_name
 
     def __init__(self):
         """初始化插件运行期依赖与一次性任务状态。"""

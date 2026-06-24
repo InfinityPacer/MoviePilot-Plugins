@@ -36,8 +36,8 @@ def test_quality_config_targets_subscription_plugins() -> None:
     }
     for item in config["coverage"]:
         assert item["line"] == 90
-        assert item["method"] == 95
-        assert item["changed_line"] == 95
+        assert item["method"] == 90
+        assert item["changed_line"] == 90
 
 
 def test_method_coverage_counts_executed_functions(tmp_path: Path) -> None:

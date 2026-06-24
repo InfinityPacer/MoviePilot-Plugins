@@ -40,13 +40,13 @@ class VolatilityTracker:
                         entry = _new_entry(subscribe)
                 else:
                     entry = _new_entry(subscribe)
-                buf = entry.get("records", [])
             else:
                 if isinstance(entry, list):
                     entry = {"records": entry}
                 elif not isinstance(entry, dict):
                     entry = {"records": []}
-                buf = entry.get("records", [])
+            buf = _records_from_entry(entry)
+            entry["records"] = buf
             _ensure_change_state(entry, self._window_seconds)
             last_total = entry.get("last_total")
             if last_total is None and buf:
@@ -78,7 +78,7 @@ class VolatilityTracker:
         entry = data.get(sid)
         if subscribe is not None:
             if isinstance(entry, list):
-                buf = entry
+                buf = _records_from_entry(entry)
             elif isinstance(entry, dict):
                 identity = entry.get("identity")
                 if identity is not None and not identity_matches(identity, subscribe):
@@ -87,7 +87,7 @@ class VolatilityTracker:
                         lambda current: _drop_key(current, sid),
                     )
                     return True
-                buf = entry.get("records", [])
+                buf = _records_from_entry(entry)
             else:
                 self._task.update(
                     VOLATILITY_KEY,
@@ -96,9 +96,9 @@ class VolatilityTracker:
                 return True
         else:
             if isinstance(entry, list):
-                buf = entry
+                buf = _records_from_entry(entry)
             elif isinstance(entry, dict):
-                buf = entry.get("records", [])
+                buf = _records_from_entry(entry)
             else:
                 buf = []
         if isinstance(entry, dict):
@@ -156,7 +156,7 @@ def _new_entry(subscribe, records: Optional[list] = None) -> dict:
     """创建带订阅身份的 volatility 记录。"""
     return {
         "identity": subscribe_identity(subscribe),
-        "records": records or [],
+        "records": _records_from_entry(records),
         "last_total": None,
         "last_total_changed_at": None,
         "unstable_until": None,
@@ -166,11 +166,25 @@ def _new_entry(subscribe, records: Optional[list] = None) -> dict:
     }
 
 
+def _records_from_entry(entry) -> list[dict]:
+    """读取可用采样列表；损坏采样按空列表处理，避免阻断订阅刷新。"""
+    if isinstance(entry, dict):
+        records = entry.get("records") or []
+    elif isinstance(entry, list):
+        records = entry
+    else:
+        return []
+    if not isinstance(records, list):
+        return []
+    return [record for record in records if isinstance(record, dict)]
+
+
 def _ensure_change_state(entry: dict, window_seconds: int):
     """从历史采样补齐变化窗口状态，兼容旧 list 记录升级后的首次写入。"""
     if entry.get("last_total") is not None:
         return
-    records = entry.get("records") or []
+    records = _records_from_entry(entry)
+    entry["records"] = records
     if not records:
         return
     entry["last_total"] = records[-1].get("total")
@@ -201,9 +215,9 @@ def _recent_change_direction(entry, window_seconds: int) -> Optional[str]:
         direction = entry.get("last_total_change_direction")
         if changed_at and direction and changed_at + window_seconds >= now:
             return direction
-        records = entry.get("records") or []
+        records = _records_from_entry(entry)
     elif isinstance(entry, list):
-        records = entry
+        records = _records_from_entry(entry)
     else:
         return None
     cutoff = now - window_seconds
@@ -230,9 +244,9 @@ def _recent_change_detail(entry, window_seconds: int) -> Optional[str]:
             after = entry.get("last_total")
         if changed_at and before is not None and after is not None and changed_at + window_seconds >= now:
             return f"{before} -> {after}"
-        records = entry.get("records") or []
+        records = _records_from_entry(entry)
     elif isinstance(entry, list):
-        records = entry
+        records = _records_from_entry(entry)
     else:
         return None
     cutoff = now - window_seconds
