@@ -61,7 +61,7 @@ class SubscriptionCleanup:
         if not self._cleanup_enabled_for(subscribe, media_type):
             return True
         scene = self._cleanup_scene(subscribe)
-        mode_label = self._cleanup_scene_label(scene)
+        mode_label = self._cleanup_scene_label(scene, media_type)
         if scene == "best_version_full" and media_type == MediaType.TV and context and getattr(context, "torrent_info", None):
             actual_episodes, source = self._download_resource_episodes(context=context, episodes=episodes)
             target_episodes = self._subscribe_target_episodes(subscribe)
@@ -327,7 +327,7 @@ class SubscriptionCleanup:
                 "season": season,
                 "scene": scene,
                 "target_episodes": target_episodes,
-                "mode_label": self._cleanup_scene_label(scene),
+                "mode_label": self._cleanup_scene_label(scene, media_type),
                 "histories": [self._history_to_dict(h) for h in histories],
                 "time": time.time(),
             }
@@ -336,7 +336,7 @@ class SubscriptionCleanup:
         if self._update:
             self._update(SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY, updater)
 
-        mode_label = self._cleanup_scene_label(scene)
+        mode_label = self._cleanup_scene_label(scene, media_type)
         logger.info(
             f"订阅清理：{format_subscribe_desc(subscribe)} {mode_label}开始删除 "
             f"{len(histories)} 条旧整理记录的源文件（不可逆）"
@@ -578,23 +578,26 @@ class SubscriptionCleanup:
     @staticmethod
     def _mode_label(subscribe) -> str:
         """按订阅清理场景返回用户可见标签。"""
-        if not subscribe.best_version:
-            return "普通订阅"
-        return "全集洗版" if subscribe.best_version_full else "分集洗版"
+        media_type = resolve_subscribe_media_type(subscribe)
+        return SubscriptionCleanup._cleanup_scene_label(
+            SubscriptionCleanup._cleanup_scene(subscribe),
+            media_type,
+        )
 
     @staticmethod
     def _cleanup_scene(subscribe) -> str:
         """按订阅下载形态归类订阅清理场景。"""
         if subscribe.best_version:
-            return "best_version_full" if subscribe.best_version_full else "best_version_episode"
+            return "best_version_full" if subscribe.best_version_full else "best_version"
         return "normal"
 
     @staticmethod
-    def _cleanup_scene_label(scene: str) -> str:
+    def _cleanup_scene_label(scene: str, media_type: Optional[MediaType] = None) -> str:
         """返回订阅清理场景的用户可见名称。"""
+        if scene in ("best_version", "best_version_episode"):
+            return "电影洗版" if media_type == MediaType.MOVIE else "分集洗版"
         return {
             "normal": "普通订阅",
-            "best_version_episode": "分集洗版",
             "best_version_full": "全集洗版",
         }.get(scene, "订阅")
 

@@ -183,7 +183,7 @@ class TestHistoryClear:
         h = self._history("1", {"path": "/src/e3.mkv"}, None, "/src/e3.mkv", "hashA", episodes="E03")
         orch, _store, deletes, events, hist_deletes = self._orch_clear(
             cleanup_history_type="tv",
-            cleanup_history_scenes=["best_version_episode"],
+            cleanup_history_scenes=["best_version"],
         )
         orch._get_histories = MagicMock(return_value=[h])
 
@@ -196,6 +196,29 @@ class TestHistoryClear:
         assert deletes == [{"path": "/src/e3.mkv"}]
         assert events == [("/src/e3.mkv", "hashA")]
         assert hist_deletes == ["1"]
+
+    def test_movie_best_version_uses_movie_label_when_cleanup_notifies(self):
+        """电影洗版订阅命中订阅清理场景时，通知展示电影洗版而不是分集洗版。"""
+        h = self._history("1", {"path": "/src/movie.mkv"}, None, "/src/movie.mkv", "hashA", episodes="")
+        notifies = []
+        orch, store, deletes, events, hist_deletes = self._orch_clear(
+            cleanup_history_type="movie",
+            cleanup_history_scenes=["best_version"],
+        )
+        orch._notify = lambda title, text=None, **kwargs: notifies.append((title, text, kwargs))
+        orch._get_histories = MagicMock(return_value=[h])
+
+        result = orch.handle_resource_download_history_clear(
+            _sub(name="测试电影", type="电影", season=None, best_version=1, best_version_full=0),
+        )
+
+        assert result is True
+        assert deletes == [{"path": "/src/movie.mkv"}]
+        assert events == [("/src/movie.mkv", "hashA")]
+        assert hist_deletes == ["1"]
+        task = next(iter(store["subscription_cleanup_histories"].values()))
+        assert task["mode_label"] == "电影洗版"
+        assert notifies[0][0].endswith("即将开始电影洗版下载，已删除 1 条整理记录对应的源文件")
 
     def test_tv_history_clear_filters_to_target_episode(self):
         """剧集订阅清理只删除与本次目标集相交的整理记录。"""

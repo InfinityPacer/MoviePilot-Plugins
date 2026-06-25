@@ -177,10 +177,16 @@ class PluginConfig:
 
     @property
     def subscription_cleanup_history_scenes(self) -> list:
-        """订阅清理整理记录场景：normal/best_version_episode/best_version_full。"""
+        """订阅清理整理记录场景：normal/best_version/best_version_full。"""
         scenes = self.get_list("subscription_cleanup_history_scenes")
-        allowed = {"normal", "best_version_episode", "best_version_full"}
-        return [scene for scene in scenes if scene in allowed]
+        allowed = {"normal", "best_version", "best_version_full"}
+        upgraded = [self._upgrade_subscription_cleanup_scene(scene) for scene in scenes]
+        return [scene for scene in upgraded if scene in allowed]
+
+    @staticmethod
+    def _upgrade_subscription_cleanup_scene(scene) -> str:
+        """把旧清理场景值归一到当前配置契约。"""
+        return "best_version" if scene == "best_version_episode" else str(scene or "")
 
     # ---- 订阅待定 ----
 
