@@ -221,14 +221,20 @@ class PluginConfigCoercionTest:
 
     def test_subscription_cleanup_scenes_parse_list_or_csv(self):
         cfg = PluginConfig({
-            "subscription_cleanup_history_scenes": ["normal", "best_version_episode"]
+            "subscription_cleanup_history_scenes": ["normal", "best_version"]
         })
-        assert cfg.subscription_cleanup_history_scenes == ["normal", "best_version_episode"]
+        assert cfg.subscription_cleanup_history_scenes == ["normal", "best_version"]
 
         cfg = PluginConfig({
             "subscription_cleanup_history_scenes": "normal,best_version_full,bad"
         })
         assert cfg.subscription_cleanup_history_scenes == ["normal", "best_version_full"]
+
+    def test_subscription_cleanup_scenes_upgrade_legacy_episode_value(self):
+        cfg = PluginConfig({
+            "subscription_cleanup_history_scenes": ["best_version_episode", "best_version_full"]
+        })
+        assert cfg.subscription_cleanup_history_scenes == ["best_version", "best_version_full"]
 
     def test_int_from_float_string_truncates(self):
         cfg = PluginConfig({"download_retry_limit": "3.9"})

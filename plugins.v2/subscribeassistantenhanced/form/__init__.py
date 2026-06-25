@@ -231,7 +231,7 @@ SELECT_ITEMS = {
 MULTI_ITEMS = {
     "subscription_cleanup_history_scenes": [
         {"title": "普通订阅", "value": "normal"},
-        {"title": "分集洗版", "value": "best_version_episode"},
+        {"title": "分集洗版", "value": "best_version"},
         {"title": "全集洗版", "value": "best_version_full"},
     ],
     "no_download_actions": [

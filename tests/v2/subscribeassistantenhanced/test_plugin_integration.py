@@ -1567,14 +1567,14 @@ def test_best_version_and_cleanup_receive_type_filters():
     plugin.init_plugin({
         "best_version_type": "tv",
         "subscription_cleanup_history_type": "movie",
-        "subscription_cleanup_history_scenes": ["normal", "best_version_episode"],
+        "subscription_cleanup_history_scenes": ["normal", "best_version"],
     })
     orchestrator = plugin._modules["orchestrator"]
     subscription_cleanup = plugin._modules["subscription_cleanup"]
 
     assert orchestrator._best_version_type == "tv"
     assert subscription_cleanup._cleanup_history_type == "movie"
-    assert subscription_cleanup._cleanup_history_scenes == ["normal", "best_version_episode"]
+    assert subscription_cleanup._cleanup_history_scenes == ["normal", "best_version"]
 
 
 def test_get_transfer_histories_passes_episode_when_provided():

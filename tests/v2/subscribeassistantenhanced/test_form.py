@@ -1,7 +1,7 @@
 """form 配置表单单测：聚合契约 + model 键覆盖（不漂移）+ 控件类型。"""
 import re
 
-from subscribeassistantenhanced.form import HINTS, LABELS, build_form
+from subscribeassistantenhanced.form import HINTS, LABELS, MULTI_ITEMS, build_form
 from subscribeassistantenhanced.form.components import field_for
 from subscribeassistantenhanced.shared.config import PluginConfig
 
@@ -274,6 +274,10 @@ def test_subscription_cleanup_fields_live_in_cleanup_tab():
     assert '"best_version_clear_history_type"' not in wash_flat
     assert LABELS["subscription_cleanup_history_type"] == "清理整理记录范围"
     assert LABELS["subscription_cleanup_history_scenes"] == "清理整理记录场景"
+    assert {"title": "分集洗版", "value": "best_version"} in MULTI_ITEMS["subscription_cleanup_history_scenes"]
+    assert {"title": "分集洗版", "value": "best_version_episode"} not in MULTI_ITEMS[
+        "subscription_cleanup_history_scenes"
+    ]
     assert [col["content"][0]["props"]["model"] for col in cleanup_history_cols] == [
         "subscription_cleanup_history_type",
         "subscription_cleanup_history_scenes",
