@@ -54,6 +54,67 @@ class TestPluginEntry:
         pm = plugin._modules["priority_manager"]
         assert pm._subscribe_oper is not None
 
+    def test_init_plugin_registers_recognition_guard_when_mode_is_balanced(self):
+        """识别增强模式为 balanced 时接入 ResourceSelection 事件链。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "recognition_guard_mode": "balanced",
+            "recognition_guard_notify": "detail",
+            "recognition_guard_notify_interval": 7200,
+            "recognition_guard_tmdb_recheck_mode": "all",
+            "recognition_guard_cache_maxsize": 2048,
+            "recognition_guard_custom_config": "actions:\n  missing_year: block\n",
+        })
+
+        guard = plugin._modules["recognition_guard"]
+        assert guard is not None
+        assert plugin._event_proxy.get("recognition_guard") is guard
+        assert guard.settings.mode == "balanced"
+        assert guard.settings.notify_mode == "detail"
+        assert guard.settings.notify_interval == 7200
+        assert guard.settings.tmdb_recheck_mode == "all"
+        assert guard.settings.cache_maxsize == 2048
+        assert "missing_year: block" in guard.settings.custom_config
+
+    def test_init_plugin_does_not_register_recognition_guard_when_off(self):
+        """识别增强关闭时保留模块快照，但不参与事件链过滤。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"recognition_guard_mode": "off"})
+
+        assert plugin._modules["recognition_guard"] is not None
+        assert plugin._event_proxy.get("recognition_guard") is None
+
+    def test_recognition_external_failure_logs_are_sanitized(self, monkeypatch):
+        """识别增强外部识别异常日志不得泄漏令牌或本地路径。"""
+        messages = []
+        plugin = SubscribeAssistantEnhanced()
+        plugin.chain = SimpleNamespace(
+            recognize_media=MagicMock(side_effect=RuntimeError(
+                "request failed token=SECRET /Users/chengyu/媒体库/测试剧.mkv"
+            ))
+        )
+        monkeypatch.setattr(plugin_module.logger, "warning", messages.append)
+
+        assert plugin._recognize_by_meta_for_recognition(SimpleNamespace(type=None)) is None
+
+        joined = "\n".join(messages)
+        assert "SECRET" not in joined
+        assert "/Users/" not in joined
+        assert "媒体库" not in joined
+        assert "[redacted" in joined
+
+    def test_invalid_recognition_mode_warning_is_visible_in_startup_summary(self, monkeypatch):
+        """非法识别增强模式回退关闭时，启动摘要保留稳定告警码。"""
+        messages = []
+        monkeypatch.setattr(plugin_module.logger, "info", messages.append)
+
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"recognition_guard_mode": "bad"})
+
+        joined = "\n".join(messages)
+        assert "识别增强=off" in joined
+        assert "识别增强告警=invalid_mode" in joined
+
     def test_torrent_exists_returns_true_when_any_downloader_contains_hash(self):
         """跨下载器查询任一命中 hash 时返回 True。"""
         plugin = SubscribeAssistantEnhanced()

@@ -8,12 +8,84 @@ torrent banned"""
 # 自动删种默认跳过 H&R 标签，避免误删需要长期做种的任务。
 DEFAULT_DELETE_EXCLUDE_TAGS = "H&R"
 
+DEFAULT_RECOGNITION_GUARD_CUSTOM_CONFIG = """####### 配置说明 BEGIN #######
+# 1. 本配置只控制识别增强的策略覆盖和关键词，不控制通知、二次识别触发或缓存大小。
+# 2. 未配置或保持注释的项目均继承 recognition_guard_mode 当前模板。
+# 3. actions 的值可选：inherit / observe / soft_block / block：
+#    - inherit：继承当前 recognition_guard_mode 模板，不单独覆盖。
+#    - observe：只记录审计和可选通知，不移除候选，下载选择不受影响。
+#    - soft_block：先从候选池移除；如果整轮候选被清空，且 empty_pool 策略允许，该候选可降级为 observe 恢复。
+#    - block：从候选池移除，集合级保护也不得恢复；用于用户明确不想下载的风险。
+# 4. allow 只能抵消非 hard veto 风险；不能覆盖显式 ID 错配、明确类型/形态互串、目标范围完全不覆盖等 hard veto。
+# 5. block 是普通黑名单风险，动作由 mode 或 actions.user_block 决定；hard_block 才是一律强拦截。
+# 6. 正则使用 Python re 语法；非法正则会跳过对应条目并记录配置告警，不影响其他规则。
+# 7. keywords 下的内置证据词分组如果取消注释配置，表示替换该分组；未配置的分组继续使用内置默认。
+####### 配置说明 END #######
+
+actions:
+  # 候选缺少年份。多站点用户可改为 block，少站点用户建议 inherit 或 observe。
+  # missing_year: block
+
+  # 候选全集范围明显大于目标窗口，例如目标缺 E08-E19，候选是全 60 集。
+  # target_range_oversized: block
+
+  # 命中 keywords.block 时的动作。
+  # user_block: soft_block
+
+  # 二次识别结果与订阅目标不一致。
+  # secondary_identity_conflict: block
+
+empty_pool:
+  # 整轮候选被识别增强清空时的恢复策略：recover_soft_block / never_recover。
+  # policy: recover_soft_block
+
+  # 即使动作是 soft_block，也不允许因整轮候选清空而恢复的原因码。
+  # non_recoverable_codes:
+  #   - target_range_oversized
+  #   - missing_year
+
+keywords:
+  # 白名单：只抵消非 hard veto 风险。
+  # allow:
+  #   - 官方合集
+
+  # 普通黑名单：动作由 mode 或 actions.user_block 决定。
+  # block:
+  #   - 低可信风险词
+
+  # 强黑名单：所有启用模式下 hard veto；audit 只记录 would block。
+  # hard_block:
+  #   - 强制错误词
+
+  # 以下是内置证据词分组；如需覆盖某一组，取消注释并完整写出该组。
+  # live_action:
+  #   - 真人版
+  #   - 电视剧版
+  #   - 实拍版
+  #   - 真人剧
+  # animation:
+  #   - 动画
+  #   - 动漫
+  #   - 国漫
+  #   - 番剧
+  # movie:
+  #   - 电影版
+  #   - 剧场版
+  #   - 劇場版
+  #   - '\\bMovie\\b'
+  # tv:
+  #   - '\\bS\\d{1,3}(?:E\\d{1,4})?\\b'
+  #   - '第\\s*\\d+\\s*[集季]'
+  #   - '全\\s*\\d+\\s*集'
+"""
+
 
 class PluginConfig:
     """所有配置项属性化访问，类型安全，缺失 key 走默认值。"""
 
     def __init__(self, raw: dict):
         self._raw = raw or {}
+        self._recognition_guard_config_warnings: set[str] = set()
 
     def get_bool(self, key: str, default: bool = False) -> bool:
         """布尔值解析：支持 bool / 字符串 true/false/on/off/yes/no/1/0。"""
@@ -66,6 +138,35 @@ class PluginConfig:
         if isinstance(val, str):
             return [v.strip() for v in val.split(",") if v.strip()]
         return list(default or [])
+
+    def _get_recognition_enum(self, key: str, default: str, allowed: set[str], warning_code: str) -> str:
+        """识别增强枚举配置解析；非法值回退安全默认并保留稳定告警码。"""
+        value = self.get_str(key, default).strip().lower()
+        if value in allowed:
+            return value
+        self._recognition_guard_config_warnings.add(warning_code)
+        return default
+
+    def _get_recognition_min_int(self, key: str, default: int, minimum: int, warning_code: str) -> int:
+        """识别增强正整数解析；非法、浮点或低于下限时使用运行时默认值并记录告警。"""
+        val = self._raw.get(key)
+        if val is None:
+            return default
+        if isinstance(val, bool):
+            self._recognition_guard_config_warnings.add(warning_code)
+            return default
+        try:
+            text = str(val).strip()
+            if not text or any(char in text for char in (".", "e", "E")):
+                raise ValueError
+            parsed = int(text)
+        except (ValueError, TypeError):
+            self._recognition_guard_config_warnings.add(warning_code)
+            return default
+        if parsed < minimum:
+            self._recognition_guard_config_warnings.add(warning_code)
+            return default
+        return parsed
 
     # ---- 全局开关与运行 ----
 
@@ -187,6 +288,68 @@ class PluginConfig:
     def _upgrade_subscription_cleanup_scene(scene) -> str:
         """把旧清理场景值归一到当前配置契约。"""
         return "best_version" if scene == "best_version_episode" else str(scene or "")
+
+    # ---- 识别增强 ----
+
+    @property
+    def recognition_guard_mode(self) -> str:
+        """识别增强模式：候选准入的风险偏好，历史配置缺字段时保持关闭。"""
+        return self._get_recognition_enum(
+            "recognition_guard_mode",
+            "off",
+            {"off", "audit", "loose", "balanced", "strict"},
+            "invalid_mode",
+        )
+
+    @property
+    def recognition_guard_notify(self) -> str:
+        """识别增强通知模式：只影响消息推送，不影响本地审计日志。"""
+        return self._get_recognition_enum(
+            "recognition_guard_notify",
+            "off",
+            {"off", "summary", "detail", "all"},
+            "invalid_recognition_notify",
+        )
+
+    @property
+    def recognition_guard_notify_interval(self) -> int:
+        """识别增强通知限频秒数，同订阅同动作同原因命中时只抑制通知。"""
+        return self._get_recognition_min_int(
+            "recognition_guard_notify_interval",
+            3600,
+            60,
+            "invalid_notify_interval",
+        )
+
+    @property
+    def recognition_guard_tmdb_recheck_mode(self) -> str:
+        """二次识别触发范围：audit 按 balanced 口径计算。"""
+        return self._get_recognition_enum(
+            "recognition_guard_tmdb_recheck_mode",
+            "balanced_strict",
+            {"off", "all", "strict", "balanced_strict"},
+            "invalid_tmdb_recheck_mode",
+        )
+
+    @property
+    def recognition_guard_cache_maxsize(self) -> int:
+        """二次识别缓存上限，避免同一候选重复识别。"""
+        return self._get_recognition_min_int(
+            "recognition_guard_cache_maxsize",
+            100000,
+            100,
+            "invalid_cache_maxsize",
+        )
+
+    @property
+    def recognition_guard_custom_config(self) -> str:
+        """识别增强 YAML 自定义策略；空文本表示无自定义覆盖。"""
+        return self.get_str("recognition_guard_custom_config", DEFAULT_RECOGNITION_GUARD_CUSTOM_CONFIG)
+
+    @property
+    def recognition_guard_config_warnings(self) -> set[str]:
+        """识别增强配置解析告警码快照，供日志和测试读取，不作为可保存配置。"""
+        return set(self._recognition_guard_config_warnings)
 
     # ---- 订阅待定 ----
 
@@ -341,7 +504,9 @@ class PluginConfig:
 
     def declared_keys(self) -> list:
         """返回所有配置键（与各 @property 同名）。供表单 model 覆盖校验，避免表单与配置漂移。"""
-        return [name for name, value in vars(type(self)).items() if isinstance(value, property)]
+        excluded = {"recognition_guard_config_warnings"}
+        return [name for name, value in vars(type(self)).items()
+                if isinstance(value, property) and name not in excluded]
 
     @classmethod
     def defaults(cls) -> dict:

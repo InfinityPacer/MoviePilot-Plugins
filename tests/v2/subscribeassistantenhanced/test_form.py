@@ -10,7 +10,8 @@ def _controls_with_model(node):
     """递归提取带 model 的表单控件，不依赖具体 Vuetify 嵌套层级。"""
     controls = []
     if isinstance(node, dict):
-        if node.get("props", {}).get("model"):
+        props = node.get("props", {})
+        if props.get("model") or props.get("modelvalue"):
             controls.append(node)
         for child in node.get("content", []):
             controls.extend(_controls_with_model(child))
@@ -49,11 +50,11 @@ class TestBuildForm:
         for key in PluginConfig({}).declared_keys():
             assert key in model, f"表单 model 缺少配置键 {key}"
 
-    def test_five_tabs(self):
-        """配置表单使用 5 个 Tab；顶部 BETA 提示不改变 Tab 数量。"""
+    def test_six_tabs(self):
+        """配置表单使用 6 个 Tab；顶部 BETA 提示不改变 Tab 数量。"""
         conf, _model = build_form()
         assert conf[3]["component"] == "VTabs"
-        assert len(conf[3]["content"]) == 5
+        assert len(conf[3]["content"]) == 6
 
     def test_beta_alert_precedes_form_controls(self):
         """BETA 风险提示固定显示在开关、周期和分页配置之前。"""
@@ -145,8 +146,8 @@ def test_tabs_renders_vtabs_and_vwindow():
     assert out[1]["content"][0]["component"] == "VWindowItem"
 
 
-def test_form_has_top_switches_periods_and_five_tabs():
-    """配置布局：顶部开关行 + 公共周期行 + 5 个 Tab；关键新参数可编辑；多选控件存在。"""
+def test_form_has_top_switches_periods_and_six_tabs():
+    """配置布局：顶部开关行 + 公共周期行 + 6 个 Tab；关键新参数可编辑；多选控件存在。"""
     import json
     conf, model = build_form()
     flat = json.dumps(conf, ensure_ascii=False)
@@ -157,8 +158,8 @@ def test_form_has_top_switches_periods_and_five_tabs():
     for key in ("download_check_interval_minutes", "meta_check_interval_hours",
                 "auto_check_interval_minutes", "best_version_cron"):
         assert f'"{key}"' in flat
-    # 5 个 Tab + VTabs/VWindow 绑定
-    assert flat.count('"VTab"') == 5
+    # 6 个 Tab + VTabs/VWindow 绑定
+    assert flat.count('"VTab"') == 6
     assert '"_tab"' in flat
     # 关键新参数可编辑
     for key in ("best_version_type", "no_download_actions", "movie_air_pause_days",
@@ -171,6 +172,87 @@ def test_form_has_top_switches_periods_and_five_tabs():
     assert "best_version_clear_history_type" not in model
     # 多选控件
     assert '"multiple": true' in flat or '"multiple":true' in flat
+
+
+def test_recognition_guard_tab_and_controls_are_rendered():
+    import json
+    conf, model = build_form()
+    flat = json.dumps(conf, ensure_ascii=False)
+
+    assert flat.count('"VTab"') == 6
+    assert "识别增强" in flat
+    for key in (
+        "recognition_guard_mode",
+        "recognition_guard_notify",
+        "recognition_guard_notify_interval",
+        "recognition_guard_tmdb_recheck_mode",
+        "recognition_guard_cache_maxsize",
+        "recognition_guard_custom_config",
+    ):
+        assert key in model
+        assert f'"{key}"' in flat
+    for key in (
+        "recognition_guard_missing_year_policy",
+        "recognition_guard_target_mode",
+        "recognition_guard_keyword_config",
+        "recognition_guard_enabled",
+        "recognition_guard_active",
+    ):
+        assert key not in model
+        assert f'"{key}"' not in flat
+
+
+def test_recognition_guard_custom_config_uses_yaml_ace_editor():
+    conf, _model = build_form()
+    window = next(node for node in conf if node.get("component") == "VWindow")
+    fields = _controls_with_model(window)
+    control = next(field for field in fields
+                   if field["props"].get("modelvalue") == "recognition_guard_custom_config")
+
+    assert control["component"] == "VAceEditor"
+    assert control["props"]["modelvalue"] == "recognition_guard_custom_config"
+    assert control["props"]["lang"] == "yaml"
+    assert control["props"]["theme"] == "monokai"
+    assert control["props"]["style"] == "height: 30rem"
+
+
+def test_recognition_guard_mode_select_values():
+    conf, _model = build_form()
+    window = next(node for node in conf if node.get("component") == "VWindow")
+    fields = _controls_with_model(window)
+    control = next(field for field in fields
+                   if field["props"].get("model") == "recognition_guard_mode")
+
+    assert control["component"] == "VSelect"
+    assert control["props"]["items"] == [
+        {"title": "关闭", "value": "off"},
+        {"title": "审计", "value": "audit"},
+        {"title": "宽松", "value": "loose"},
+        {"title": "平衡", "value": "balanced"},
+        {"title": "严格", "value": "strict"},
+    ]
+
+
+def test_recognition_guard_notify_and_recheck_select_values():
+    conf, _model = build_form()
+    window = next(node for node in conf if node.get("component") == "VWindow")
+    fields = _controls_with_model(window)
+    controls = {field["props"].get("model"): field for field in fields if field["props"].get("model")}
+
+    assert controls["recognition_guard_notify"]["component"] == "VSelect"
+    assert controls["recognition_guard_notify"]["props"]["items"] == [
+        {"title": "关闭", "value": "off"},
+        {"title": "摘要", "value": "summary"},
+        {"title": "明细", "value": "detail"},
+        {"title": "全部", "value": "all"},
+    ]
+    assert controls["recognition_guard_tmdb_recheck_mode"]["component"] == "VSelect"
+    assert controls["recognition_guard_tmdb_recheck_mode"]["props"]["items"] == [
+        {"title": "关闭", "value": "off"},
+        {"title": "全部", "value": "all"},
+        {"title": "严格", "value": "strict"},
+        {"title": "平衡和严格", "value": "balanced_strict"},
+    ]
 
 
 def test_form_model_covers_all_keys_after_restructure():
@@ -244,6 +326,19 @@ def test_best_version_tab_uses_type_without_extra_flow_switch():
                 "best_version_clear_history_enabled"):
         assert key not in model
         assert f'"{key}"' not in flat
+
+
+def test_best_version_type_and_remaining_days_use_half_width_columns():
+    """订阅洗版首行只有洗版类型和洗版时限，桌面宽度各占 6 列。"""
+    conf, _model = build_form()
+    best_tab = conf[4]["content"][3]["content"]
+    first_row_cols = best_tab[0]["content"]
+
+    assert [col["content"][0]["props"]["model"] for col in first_row_cols] == [
+        "best_version_type",
+        "best_version_remaining_days",
+    ]
+    assert [col["props"]["md"] for col in first_row_cols] == [6, 6]
 
 
 def test_subscription_cleanup_tab_replaces_seed_delete_title():

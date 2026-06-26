@@ -1,7 +1,7 @@
-"""订阅助手（增强版）——完整订阅生命周期管理。
+"""订阅助手（增强版）——完整订阅生命周期管理入口。
 
-7 个业务域：完结信号引擎、完成守卫、待定判定、暂停管理、洗版编排、下载管理、完成后验证。
-（识别增强为有意下线能力，不纳入增强版。）
+插件入口负责配置解析、事件注册、定时任务和各业务域模块组装；具体业务规则由独立领域模块承载。
+ResourceSelection 链式事件在这里接入候选准入、洗版串行和删除指纹过滤，保持入口只做编排。
 """
 import datetime
 import json
@@ -43,6 +43,8 @@ from .best_version.orchestrator import BestVersionOrchestrator
 from .cleanup import SubscriptionCleanup
 from .download.monitor import DownloadMonitor
 from .download.cleanup import TorrentCleanup
+from .recognition import RecognitionGuard, RecognitionRuntime, RecognitionSettings
+from .recognition.audit import redact_sensitive_text
 from .shared.deletes import DeletesStore
 from .shared.subscribe import build_subscribe_meta, format_subscribe_label, resolve_subscribe_media_type
 from .postcheck.verifier import CompletionVerifier, _format_snapshot_label
@@ -51,7 +53,12 @@ from .events import EventProxy
 from .shared.media import parse_date
 from .engine.signals import last_aired_episode
 from .shared.task import TaskDataManager
-from .shared.config import DEFAULT_DELETE_EXCLUDE_TAGS, DEFAULT_TRACKER_RESPONSE, PluginConfig
+from .shared.config import (
+    DEFAULT_DELETE_EXCLUDE_TAGS,
+    DEFAULT_RECOGNITION_GUARD_CUSTOM_CONFIG,
+    DEFAULT_TRACKER_RESPONSE,
+    PluginConfig,
+)
 from .shared.log import detail, truncate_log_value
 from .shared.subscribe import format_subscribe
 from .shared.update import update_subscribe
@@ -72,7 +79,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.4.3"
+    plugin_version = "0.4.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -148,12 +155,21 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
         # 启动摘要：一眼看清各业务域开关，排查"某能力为何不生效"先看这条
         cfg = self._config
+        recognition_mode = cfg.recognition_guard_mode
+        recognition_notify = cfg.recognition_guard_notify
+        recognition_interval = cfg.recognition_guard_notify_interval
+        recognition_recheck = cfg.recognition_guard_tmdb_recheck_mode
+        recognition_cache_size = cfg.recognition_guard_cache_maxsize
+        recognition_warnings = ",".join(sorted(cfg.recognition_guard_config_warnings)) or "none"
         logger.info(
             "初始化完成："
             f"总开关={cfg.enabled} 完成守卫模式={cfg.completion_guard_mode} "
             f"待定增强={cfg.pending_enhanced_enabled} 暂停优化={cfg.pause_enhanced_enabled} "
             f"洗版类型={cfg.best_version_type} 下载管理={cfg.download_monitor_enabled} "
-            f"完成验证={cfg.verify_enabled} 通知={cfg.notify}"
+            f"完成验证={cfg.verify_enabled} 识别增强={recognition_mode} "
+            f"识别增强通知={recognition_notify} 二次识别={recognition_recheck} "
+            f"识别增强通知限频={recognition_interval} 识别增强缓存={recognition_cache_size} "
+            f"识别增强告警={recognition_warnings} 通知={cfg.notify}"
         )
 
     @staticmethod
@@ -161,12 +177,35 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """规范化需要持久安全默认值的配置，避免旧空值覆盖表单默认 model。"""
         raw = dict(config or {})
         changed = False
+        forbidden_recognition_keys = {
+            "recognition_guard_enabled",
+            "recognition_guard_active",
+            "recognition_guard_keyword_config",
+            "recognition_guard_target_mode",
+            "recognition_guard_missing_year_policy",
+        }
+        for key in forbidden_recognition_keys:
+            if key in raw:
+                raw.pop(key, None)
+                changed = True
         default_text_fields = {
             "delete_exclude_tags": DEFAULT_DELETE_EXCLUDE_TAGS,
             "default_tracker_response": DEFAULT_TRACKER_RESPONSE,
         }
         for key, default in default_text_fields.items():
             if key in raw and not str(raw.get(key) or "").strip():
+                raw[key] = default
+                changed = True
+        recognition_defaults = {
+            "recognition_guard_mode": "off",
+            "recognition_guard_notify": "off",
+            "recognition_guard_notify_interval": 3600,
+            "recognition_guard_tmdb_recheck_mode": "balanced_strict",
+            "recognition_guard_cache_maxsize": 100000,
+            "recognition_guard_custom_config": DEFAULT_RECOGNITION_GUARD_CUSTOM_CONFIG,
+        }
+        for key, default in recognition_defaults.items():
+            if key not in raw:
                 raw[key] = default
                 changed = True
         return raw, changed
@@ -294,6 +333,22 @@ class SubscribeAssistantEnhanced(_PluginBase):
             pending_download_enabled=cfg.pending_download_enabled,
             resolve_missing_fn=self._resolve_subscribe_missing,
         )
+        recognition_guard = RecognitionGuard(
+            settings=RecognitionSettings(
+                mode=cfg.recognition_guard_mode,
+                notify_mode=cfg.recognition_guard_notify,
+                notify_interval=cfg.recognition_guard_notify_interval,
+                tmdb_recheck_mode=cfg.recognition_guard_tmdb_recheck_mode,
+                cache_maxsize=cfg.recognition_guard_cache_maxsize,
+                custom_config=cfg.recognition_guard_custom_config,
+            ),
+            runtime=RecognitionRuntime(
+                target_mediainfo_resolver=self._recognize_mediainfo,
+                tmdb_episodes_fn=self._tmdb_episodes,
+                secondary_recognizer=self._recognize_by_meta_for_recognition,
+                logger_fn=detail,
+            ),
+        )
 
         orchestrator = BestVersionOrchestrator(
             priority_manager=priority_manager,
@@ -323,11 +378,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
             task_manager=tm,
             subscribe_oper=self._subscribe_oper,
             post_message=self.post_message,
+            notify_fn=self._notify_subscribe,
             deletes_store=deletes_store if cfg.download_monitor_enabled else None,
             skip_deletion=cfg.skip_deletion,
             backfill_enabled=cfg.best_version_backfill_enabled,
             pending_download_enabled=cfg.pending_download_enabled,
             guard=guard if cfg.completion_guard_mode != "off" else None,
+            recognition_guard=recognition_guard if cfg.recognition_guard_mode != "off" else None,
             volatility=volatility if cfg.volatility_enabled else None,
             pending_refresh=pending_refresh if cfg.pending_enhanced_enabled else None,
             pause_manager=pause_manager if cfg.pause_enhanced_enabled else None,
@@ -369,6 +426,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "torrent_cleanup": torrent_cleanup,
             "deletes_store": deletes_store,
             "guard": guard,
+            "recognition_guard": recognition_guard,
             "orchestrator": orchestrator,
             "subscription_cleanup": subscription_cleanup,
         }
@@ -1140,7 +1198,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @eventmanager.register(ChainEventType.ResourceSelection)
     def on_resource_selection(self, event):
-        """ResourceSelection → 洗版待定按集串行 + 删除指纹防重过滤。"""
+        """ResourceSelection → 洗版待定按集串行 + 识别增强候选准入 + 删除指纹防重过滤。"""
         if self._event_proxy:
             self._event_proxy.on_resource_selection(event)
 
@@ -1192,7 +1250,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         }]
 
     def _api_summary(self) -> Dict[str, Any]:
-        """概览数据：6 项功能启用状态 + 待定订阅与监控种子计数。"""
+        """概览数据：各业务域启用状态 + 待定订阅与监控种子计数。"""
         cfg = self._config or PluginConfig({})
         subscribes = self.get_data("subscribes") or {}
         torrents = self.get_data("torrents") or {}
@@ -1206,13 +1264,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 "自动洗版": cfg.best_version_type != "no",
                 "下载管理": cfg.download_monitor_enabled,
                 "完成后验证": cfg.verify_enabled,
+                "识别增强": cfg.recognition_guard_mode,
             },
             "pending_count": pending,
             "monitored_torrents": len(torrents),
         }
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """返回完整配置表单（Vuetify schema 按 5 个功能 Tab 展示）与默认数据。"""
+        """返回完整配置表单（Vuetify schema 按 6 个功能 Tab 展示）与默认数据。"""
         from .form import build_form
         return build_form()
 
@@ -1256,7 +1315,17 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 episode_group=subscribe.episode_group,
                 cache=False)
         except Exception as err:
-            logger.warning(f"媒体识别失败：{format_subscribe(subscribe)}，错误：{err}")
+            logger.warning(f"媒体识别失败：{format_subscribe(subscribe)}，错误：{redact_sensitive_text(err)}")
+            return None
+
+    def _recognize_by_meta_for_recognition(self, meta_info):
+        """识别增强二次识别入口；外部识别失败按无补充证据处理。"""
+        if not meta_info:
+            return None
+        try:
+            return self.chain.recognize_media(meta=meta_info, mtype=getattr(meta_info, "type", None), cache=False)
+        except Exception as err:
+            logger.warning(f"识别增强二次识别失败：{redact_sensitive_text(err)}")
             return None
 
     def _detect_existing_episodes(self, subscribe) -> list:
