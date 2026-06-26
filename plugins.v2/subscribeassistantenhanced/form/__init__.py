@@ -62,7 +62,8 @@ LABELS = {
     "best_version_episode_to_full": "分集转全集",
     "best_version_backfill_enabled": "回填已存在集",
     "backfill_best_version_now": "立即扫描存量并回填",
-    "best_version_remaining_days": "洗版时限（天）",
+    "best_version_movie_remaining_days": "电影洗版时限（天）",
+    "best_version_tv_remaining_days": "剧集洗版时限（天）",
     # 完结信号
     "completion_guard_mode": "完结守卫模式",
     "volatility_enabled": "变更速率信号",
@@ -133,7 +134,8 @@ HINTS = {
     "best_version_episode_to_full": "订阅目标集数满足时，从分集洗版切换为全集洗版",
     "best_version_backfill_enabled": "新建或转分集洗版时将媒体库已有集标为顶档并跳过",
     "backfill_best_version_now": "保存后对存量分集洗版订阅执行一次回填，执行后自动复位",
-    "best_version_remaining_days": "达到指定天数后自动终止洗版，有下载则按最新时间计算，为0时不限",
+    "best_version_movie_remaining_days": "电影洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
+    "best_version_tv_remaining_days": "剧集洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
     # 完结信号
     "completion_guard_mode": "选择完成前复核强度，默认使用平衡策略",
     "volatility_enabled": "总集数近期变化时视为不稳定",
@@ -179,7 +181,7 @@ TABS = [
         ["movie_no_download_days", "tv_no_download_days", "no_download_actions"],
     ]),
     ("订阅洗版", [
-        [("best_version_type", 6), ("best_version_remaining_days", 6)],
+        ["best_version_type", "best_version_movie_remaining_days", "best_version_tv_remaining_days"],
         ["best_version_episode_to_full", "best_version_backfill_enabled", "backfill_best_version_now"],
     ]),
     ("完结信号", [

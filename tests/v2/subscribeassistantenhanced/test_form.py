@@ -163,10 +163,12 @@ def test_form_has_top_switches_periods_and_six_tabs():
     assert '"_tab"' in flat
     # 关键新参数可编辑
     for key in ("best_version_type", "no_download_actions", "movie_air_pause_days",
-                "best_version_episode_to_full", "best_version_remaining_days",
+                "best_version_episode_to_full", "best_version_movie_remaining_days",
+                "best_version_tv_remaining_days",
                 "manual_delete_listen", "subscription_cleanup_history_type",
                 "subscription_cleanup_history_scenes"):
         assert f'"{key}"' in flat
+    assert '"best_version_remaining_days"' not in flat
     assert '"pending_default_total_episodes"' not in flat
     assert '"best_version_clear_history_type"' not in flat
     assert "best_version_clear_history_type" not in model
@@ -328,17 +330,28 @@ def test_best_version_tab_uses_type_without_extra_flow_switch():
         assert f'"{key}"' not in flat
 
 
-def test_best_version_type_and_remaining_days_use_half_width_columns():
-    """订阅洗版首行只有洗版类型和洗版时限，桌面宽度各占 6 列。"""
+def test_best_version_type_and_remaining_days_use_third_width_columns():
+    """订阅洗版首行展示洗版类型、电影洗版时限和剧集洗版时限。"""
     conf, _model = build_form()
     best_tab = conf[4]["content"][3]["content"]
     first_row_cols = best_tab[0]["content"]
 
     assert [col["content"][0]["props"]["model"] for col in first_row_cols] == [
         "best_version_type",
-        "best_version_remaining_days",
+        "best_version_movie_remaining_days",
+        "best_version_tv_remaining_days",
     ]
-    assert [col["props"]["md"] for col in first_row_cols] == [6, 6]
+    assert [col["props"]["md"] for col in first_row_cols] == [4, 4, 4]
+
+
+def test_best_version_remaining_days_labels_are_split_by_media_type():
+    """电影和剧集洗版时限使用独立配置项，旧统一字段不再暴露。"""
+    assert "best_version_remaining_days" not in LABELS
+    assert "best_version_remaining_days" not in HINTS
+    assert LABELS["best_version_movie_remaining_days"] == "电影洗版时限（天）"
+    assert LABELS["best_version_tv_remaining_days"] == "剧集洗版时限（天）"
+    assert "电影洗版订阅" in HINTS["best_version_movie_remaining_days"]
+    assert "剧集洗版订阅达到指定天数后自动终止" in HINTS["best_version_tv_remaining_days"]
 
 
 def test_subscription_cleanup_tab_replaces_seed_delete_title():

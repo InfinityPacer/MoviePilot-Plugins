@@ -639,14 +639,20 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._task_manager.update("subscribes", set_anchor)
         return now
 
+    def _best_version_timeout_days(self, subscribe) -> int:
+        """按媒体类型读取洗版时限。"""
+        if resolve_subscribe_media_type(subscribe) == MediaType.MOVIE:
+            return self._config.best_version_movie_remaining_days
+        return self._config.best_version_tv_remaining_days
+
     def _best_version_overdue(self, subscribe, now=None) -> bool:
-        """洗版是否超时限：从最近活动时间起算超过 best_version_remaining_days 天。
+        """洗版是否超时限：从最近活动时间起算超过对应媒体类型洗版时限。
 
         活动时间取该订阅在 torrents 任务数据中的最新记录时间；
         无下载记录则按首次观察锚点（缺失则置当前时间）。
         remaining_days=0 表示不限，永不超时。
         """
-        days = self._config.best_version_remaining_days
+        days = self._best_version_timeout_days(subscribe)
         if not days:
             return False
         now = now or time.time()

@@ -333,10 +333,36 @@ def test_best_version_check_marks_overdue_subscription_complete():
     now = time.time()
     sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({"best_version_type": "all", "best_version_remaining_days": 3})
+    plugin.init_plugin({"best_version_type": "all", "best_version_tv_remaining_days": 3})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+    plugin._task_manager.read = MagicMock(side_effect=lambda key: {
+        "torrents": {"hash": {"subscribe_id": 5, "time": now - 10 * 86400}},
+        "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
+    }.get(key, {}))
+    priority = plugin._modules["priority_manager"]
+    priority.mark_complete = MagicMock()
+    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
+
+    plugin.run_best_version_check()
+
+    priority.mark_complete.assert_called_once_with(sub)
+
+
+def test_best_version_check_uses_movie_remaining_days_for_movie():
+    """电影洗版使用电影洗版时限，不受剧集洗版时限影响。"""
+    now = time.time()
+    sub = _sub(id=5, name="X", type=MediaType.MOVIE, season=None, best_version=1, best_version_full=0)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({
+        "best_version_type": "all",
+        "best_version_movie_remaining_days": 3,
+        "best_version_tv_remaining_days": 30,
+    })
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
     plugin._task_manager.read = MagicMock(side_effect=lambda key: {
         "torrents": {"hash": {"subscribe_id": 5, "time": now - 10 * 86400}},
         "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
@@ -368,7 +394,7 @@ def test_best_version_check_does_not_expire_when_remaining_days_unlimited():
     now = time.time()
     sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({"best_version_type": "all", "best_version_remaining_days": 0})
+    plugin.init_plugin({"best_version_type": "all", "best_version_tv_remaining_days": 0})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
@@ -389,7 +415,7 @@ def test_best_version_check_keeps_subscription_with_recent_activity():
     now = time.time()
     sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({"best_version_type": "all", "best_version_remaining_days": 3})
+    plugin.init_plugin({"best_version_type": "all", "best_version_tv_remaining_days": 3})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
