@@ -28,7 +28,7 @@ class TestHistoryClear:
                     torrent_exists_fn=None, sleep_fn=None):
         """构造可观测清理副作用的订阅清理编排器。"""
         store = store if store is not None else {}
-        cleanup_history_scenes = ["best_version_full"] if cleanup_history_scenes is None else cleanup_history_scenes
+        cleanup_history_scenes = ["best_version"] if cleanup_history_scenes is None else cleanup_history_scenes
         sleep_fn = sleep_fn or (lambda _seconds: None)
         deletes, events, notifies, hist_deletes = [], [], [], []
         orch = SubscriptionCleanup(
@@ -79,7 +79,7 @@ class TestHistoryClear:
         task = next(iter(store["subscription_cleanup_histories"].values()))
         assert task["tmdbid"] == 100
         assert task["target_episodes"] == [1]
-        assert notifies[0][0].endswith("即将开始全集洗版下载，已删除 1 条整理记录对应的源文件")
+        assert notifies[0][0].endswith("即将开始洗版下载，已删除 1 条整理记录对应的源文件")
         assert notifies[0][1] == "清理路径：\n/src/a.mkv"
         assert "reason" not in notifies[0][2]
         assert "action" not in notifies[0][2]
@@ -118,7 +118,7 @@ class TestHistoryClear:
 
         assert orch.clear_transfer_dest_histories({
             "subscribe_desc": "测试剧",
-            "mode_label": "全集洗版",
+            "mode_label": "洗版",
             "histories": histories,
         }) is True
 
@@ -159,7 +159,7 @@ class TestHistoryClear:
         """普通订阅未命中订阅清理场景时，不读取也不删除整理记录。"""
         orch, _store, deletes, events, hist_deletes = self._orch_clear(
             cleanup_history_type="tv",
-            cleanup_history_scenes=["best_version_full"],
+            cleanup_history_scenes=["best_version"],
         )
         orch._get_histories = MagicMock(return_value=[object()])
 
@@ -183,7 +183,7 @@ class TestHistoryClear:
         h = self._history("1", {"path": "/src/e3.mkv"}, None, "/src/e3.mkv", "hashA", episodes="E03")
         orch, _store, deletes, events, hist_deletes = self._orch_clear(
             cleanup_history_type="tv",
-            cleanup_history_scenes=["best_version"],
+            cleanup_history_scenes=["best_version_episode"],
         )
         orch._get_histories = MagicMock(return_value=[h])
 
@@ -197,8 +197,8 @@ class TestHistoryClear:
         assert events == [("/src/e3.mkv", "hashA")]
         assert hist_deletes == ["1"]
 
-    def test_movie_best_version_uses_movie_label_when_cleanup_notifies(self):
-        """电影洗版订阅命中订阅清理场景时，通知展示电影洗版而不是分集洗版。"""
+    def test_movie_best_version_uses_wash_label_when_cleanup_notifies(self):
+        """电影洗版订阅命中订阅清理场景时，通知展示洗版而不是分集洗版。"""
         h = self._history("1", {"path": "/src/movie.mkv"}, None, "/src/movie.mkv", "hashA", episodes="")
         notifies = []
         orch, store, deletes, events, hist_deletes = self._orch_clear(
@@ -217,8 +217,27 @@ class TestHistoryClear:
         assert events == [("/src/movie.mkv", "hashA")]
         assert hist_deletes == ["1"]
         task = next(iter(store["subscription_cleanup_histories"].values()))
-        assert task["mode_label"] == "电影洗版"
-        assert notifies[0][0].endswith("即将开始电影洗版下载，已删除 1 条整理记录对应的源文件")
+        assert task["mode_label"] == "洗版"
+        assert notifies[0][0].endswith("即将开始洗版下载，已删除 1 条整理记录对应的源文件")
+
+    def test_movie_best_version_ignores_full_flag_when_labeling_cleanup_scene(self):
+        """电影洗版即使存在 best_version_full 脏值，也不应显示为分集洗版。"""
+        sub = _sub(name="测试电影", type="电影", season=None, best_version=1, best_version_full=1)
+
+        assert SubscriptionCleanup._mode_label(sub) == "洗版"
+        assert SubscriptionCleanup._cleanup_scene(sub) == "best_version"
+
+    def test_cleanup_scene_separates_true_wash_and_episode_best_version(self):
+        """洗版订阅和分集洗版使用不同清理场景值。"""
+        assert SubscriptionCleanup._cleanup_scene(
+            _sub(type="电影", season=None, best_version=1, best_version_full=0)
+        ) == "best_version"
+        assert SubscriptionCleanup._cleanup_scene(
+            _sub(type="电视剧", best_version=1, best_version_full=1)
+        ) == "best_version"
+        assert SubscriptionCleanup._cleanup_scene(
+            _sub(type="电视剧", best_version=1, best_version_full=0)
+        ) == "best_version_episode"
 
     def test_tv_history_clear_filters_to_target_episode(self):
         """剧集订阅清理只删除与本次目标集相交的整理记录。"""
@@ -310,7 +329,7 @@ class TestHistoryClear:
         assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_movie_clear_type_skips_tv_subscription(self):
-        """电影清理范围不应读取电视剧洗版历史。"""
+        """电影清理范围不应读取剧集洗版历史。"""
         orch, _store, _deletes, _events, _hist_deletes = self._orch_clear(cleanup_history_type="movie")
         orch._get_histories = MagicMock(return_value=[object()])
         sub = _sub()
@@ -320,7 +339,7 @@ class TestHistoryClear:
         orch._get_histories.assert_not_called()
 
     def test_tv_clear_type_processes_tv_subscription(self):
-        """电视剧清理按主程序整理历史使用的 Sxx 季号查询。"""
+        """剧集清理按主程序整理历史使用的 Sxx 季号查询。"""
         orch, _store, _deletes, _events, _hist_deletes = self._orch_clear(cleanup_history_type="tv")
         orch._get_histories = MagicMock(return_value=[])
         sub = _sub()
@@ -330,7 +349,7 @@ class TestHistoryClear:
         orch._get_histories.assert_called_once_with(100, "电视剧", "S01")
 
     def test_tv_history_clear_skips_when_season_is_missing(self):
-        """电视剧缺少季号时不得退化为查询并清理同一 TMDB 的全部季。"""
+        """剧集缺少季号时不得退化为查询并清理同一 TMDB 的全部季。"""
         orch, _store, _deletes, _events, _hist_deletes = self._orch_clear(cleanup_history_type="tv")
         orch._get_histories = MagicMock()
 
@@ -340,7 +359,7 @@ class TestHistoryClear:
         orch._get_histories.assert_not_called()
 
     def test_tv_history_clear_skips_when_season_is_invalid(self):
-        """电视剧季号无法格式化时不得退化为查询并清理全部季。"""
+        """剧集季号无法格式化时不得退化为查询并清理全部季。"""
         orch, _store, _deletes, _events, _hist_deletes = self._orch_clear(cleanup_history_type="tv")
         orch._get_histories = MagicMock()
 
@@ -598,7 +617,7 @@ class TestHistoryClear:
         assert store["subscription_cleanup_histories"] == {}
 
     def test_transfer_intercept_tv_task_requires_matching_season(self):
-        """电视剧清理事务有季号时，整理事件缺少季号不得降级消费。"""
+        """剧集清理事务有季号时，整理事件缺少季号不得降级消费。"""
         store = {"subscription_cleanup_histories": {"task-e1": {
             "tmdbid": 100,
             "type": "电视剧",
@@ -628,10 +647,10 @@ class TestHistoryClear:
             "tmdbid": 100,
             "type": "电视剧",
             "season": "S01",
-            "scene": "best_version_full",
+            "scene": "best_version",
             "target_episodes": [1],
             "subscribe_desc": "X",
-            "mode_label": "全集洗版",
+            "mode_label": "洗版",
             "subscribe_image": "subscribe.jpg",
             "histories": [{"dest_fileitem": {"path": "/dest/a.mkv"}}],
             "time": time.time(),
@@ -642,7 +661,7 @@ class TestHistoryClear:
         orch.handle_history_clear(event)
         assert deletes == [{"path": "/dest/a.mkv"}]
         assert "task-1" not in store["subscription_cleanup_histories"]
-        assert notifies[0][0] == "X 即将开始全集洗版整理，已删除 1 条整理记录对应的媒体库文件"
+        assert notifies[0][0] == "X 即将开始洗版整理，已删除 1 条整理记录对应的媒体库文件"
         assert notifies[0][1] == "清理路径：\n/dest/a.mkv"
         assert "reason" not in notifies[0][2]
         assert "action" not in notifies[0][2]
@@ -661,7 +680,7 @@ class TestHistoryClear:
         store = {"subscription_cleanup_histories": {"task-1": {
             "tmdbid": 100, "type": "电视剧", "season": "S01",
             "target_episodes": [1],
-            "subscribe_desc": "X", "mode_label": "全集洗版", "histories": [], "time": time.time(),
+            "subscribe_desc": "X", "mode_label": "洗版", "histories": [], "time": time.time(),
         }}}
         orch, _store, _deletes, _events, _hist = self._orch_clear(store)
         event = self._transfer_event(episode=1)

@@ -382,8 +382,17 @@ def test_subscription_cleanup_fields_live_in_cleanup_tab():
     assert '"best_version_clear_history_type"' not in wash_flat
     assert LABELS["subscription_cleanup_history_type"] == "清理整理记录范围"
     assert LABELS["subscription_cleanup_history_scenes"] == "清理整理记录场景"
-    assert {"title": "分集洗版", "value": "best_version"} in MULTI_ITEMS["subscription_cleanup_history_scenes"]
-    assert {"title": "分集洗版", "value": "best_version_episode"} not in MULTI_ITEMS[
+    assert {"title": "洗版订阅", "value": "best_version"} in MULTI_ITEMS["subscription_cleanup_history_scenes"]
+    assert {"title": "分集洗版", "value": "best_version_episode"} in MULTI_ITEMS[
+        "subscription_cleanup_history_scenes"
+    ]
+    assert {"title": "分集洗版", "value": "best_version"} not in MULTI_ITEMS[
+        "subscription_cleanup_history_scenes"
+    ]
+    assert {"title": "洗版", "value": "best_version_full"} not in MULTI_ITEMS[
+        "subscription_cleanup_history_scenes"
+    ]
+    assert {"title": "全集洗版", "value": "best_version_full"} not in MULTI_ITEMS[
         "subscription_cleanup_history_scenes"
     ]
     assert [col["content"][0]["props"]["model"] for col in cleanup_history_cols] == [

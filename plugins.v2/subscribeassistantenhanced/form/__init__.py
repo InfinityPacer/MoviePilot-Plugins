@@ -106,7 +106,7 @@ HINTS = {
     "default_tracker_response": "每一行一个关键字，忽略大小写，支持正则表达式匹配",
     "open_tracker_dialog": "自定义Tracker配置以实现更精准的种子匹配",
     "subscription_cleanup_history_type": "订阅下载前清理旧整理记录、源文件和入库前目标文件的媒体类型范围（破坏性）",
-    "subscription_cleanup_history_scenes": "选择普通订阅、分集洗版或全集洗版下载时触发订阅清理",
+    "subscription_cleanup_history_scenes": "选择普通订阅、洗版订阅或分集洗版下载时触发订阅清理",
     # 识别增强
     "recognition_guard_mode": "在自动下载前复核订阅候选是否像当前订阅目标",
     "recognition_guard_notify": "控制识别增强消息推送，不影响审计日志",
@@ -271,8 +271,8 @@ SELECT_ITEMS = {
 MULTI_ITEMS = {
     "subscription_cleanup_history_scenes": [
         {"title": "普通订阅", "value": "normal"},
-        {"title": "分集洗版", "value": "best_version"},
-        {"title": "全集洗版", "value": "best_version_full"},
+        {"title": "洗版订阅", "value": "best_version"},
+        {"title": "分集洗版", "value": "best_version_episode"},
     ],
     "no_download_actions": [
         {"title": "暂停电影订阅", "value": "pause_movie"},

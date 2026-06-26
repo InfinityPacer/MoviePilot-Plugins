@@ -9,7 +9,12 @@ from app.schemas.types import MediaType
 from app.utils.string import StringUtils
 
 from ..shared.log import detail
-from ..shared.subscribe import format_subscribe_desc, resolve_subscribe_media_type
+from ..shared.subscribe import (
+    format_subscribe_desc,
+    is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
+    resolve_subscribe_media_type,
+)
 
 SUBSCRIPTION_CLEANUP_TTL_SECONDS = 72 * 3600
 SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY = "subscription_cleanup_histories"
@@ -62,7 +67,7 @@ class SubscriptionCleanup:
             return True
         scene = self._cleanup_scene(subscribe)
         mode_label = self._cleanup_scene_label(scene, media_type)
-        if scene == "best_version_full" and media_type == MediaType.TV and context and getattr(context, "torrent_info", None):
+        if scene == "best_version" and media_type == MediaType.TV and context and getattr(context, "torrent_info", None):
             actual_episodes, source = self._download_resource_episodes(context=context, episodes=episodes)
             target_episodes = self._subscribe_target_episodes(subscribe)
             if actual_episodes and target_episodes and not set(target_episodes).issubset(actual_episodes):
@@ -118,15 +123,15 @@ class SubscriptionCleanup:
         return self._wait_for_torrents_removed(subscribe=subscribe, download_hashes=old_hashes)
 
     def _clear_target_episodes(self, subscribe, context=None, episodes=None, scene: str = "") -> list[int]:
-        """返回订阅清理目标集范围；全集洗版用订阅范围，其余场景用本次资源范围。"""
-        if scene == "best_version_full":
+        """返回订阅清理目标集范围；洗版用订阅范围，其余场景用本次资源范围。"""
+        if scene == "best_version":
             return self._subscribe_target_episodes(subscribe)
         target_episodes, _source = self._download_resource_episodes(context=context, episodes=episodes)
         return target_episodes
 
     @staticmethod
     def _subscribe_target_episodes(subscribe) -> list[int]:
-        """返回电视剧订阅明确声明的目标集数范围。"""
+        """返回剧集订阅明确声明的目标集数范围。"""
         if not subscribe or not subscribe.total_episode:
             return []
         start_episode = subscribe.start_episode or 1
@@ -587,18 +592,21 @@ class SubscriptionCleanup:
     @staticmethod
     def _cleanup_scene(subscribe) -> str:
         """按订阅下载形态归类订阅清理场景。"""
-        if subscribe.best_version:
-            return "best_version_full" if subscribe.best_version_full else "best_version"
+        if is_full_best_version_subscribe(subscribe):
+            return "best_version"
+        if is_tv_episode_best_version_subscribe(subscribe):
+            return "best_version_episode"
         return "normal"
 
     @staticmethod
     def _cleanup_scene_label(scene: str, media_type: Optional[MediaType] = None) -> str:
         """返回订阅清理场景的用户可见名称。"""
-        if scene in ("best_version", "best_version_episode"):
-            return "电影洗版" if media_type == MediaType.MOVIE else "分集洗版"
+        if scene == "best_version":
+            return "洗版"
+        if scene == "best_version_episode":
+            return "分集洗版"
         return {
             "normal": "普通订阅",
-            "best_version_full": "全集洗版",
         }.get(scene, "订阅")
 
     def _cleanup_enabled_for(self, subscribe, media_type: MediaType) -> bool:
