@@ -241,6 +241,18 @@ def test_build_target_for_normal_movie_has_single_movie_scope():
     assert target.range_confidence == "high"
 
 
+def test_build_target_for_movie_best_version_keeps_movie_scope():
+    target = build_target(
+        _sub(name="测试电影", type="电影", season=None, best_version=1, best_version_full=0),
+        tmdb_episodes_fn=MagicMock(return_value=[SimpleNamespace(episode_number=1)]),
+    )
+
+    assert target.media_type == "电影"
+    assert target.target_episodes == []
+    assert target.range_source == "movie"
+    assert target.range_confidence == "high"
+
+
 def test_build_target_for_episode_best_version_keeps_full_target_window():
     target = build_target(_sub(best_version=1, best_version_full=0, total_episode=12,
                                episode_priority={"1": 100}))

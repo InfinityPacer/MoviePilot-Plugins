@@ -46,7 +46,13 @@ from .download.cleanup import TorrentCleanup
 from .recognition import RecognitionGuard, RecognitionRuntime, RecognitionSettings
 from .recognition.audit import redact_sensitive_text
 from .shared.deletes import DeletesStore
-from .shared.subscribe import build_subscribe_meta, format_subscribe_label, resolve_subscribe_media_type
+from .shared.subscribe import (
+    build_subscribe_meta,
+    format_subscribe_label,
+    is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
+    resolve_subscribe_media_type,
+)
 from .postcheck.verifier import CompletionVerifier, _format_snapshot_label
 from .postcheck.timeout import PendingTimeoutManager
 from .events import EventProxy
@@ -686,26 +692,31 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mode_label = self._best_version_mode_label(subscribe)
             mediainfo = self._recognize_mediainfo(subscribe)
             if mediainfo:
-                if self._best_version_overdue(subscribe):
+                if is_full_best_version_subscribe(subscribe) and self._best_version_overdue(subscribe):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}超过洗版时限，标记洗版完成并停止洗版")
                     priority.mark_complete(subscribe)
+                    self._notify_subscribe(
+                        f"{format_subscribe(subscribe)} {mode_label}超过时限"
+                        f"（{self._best_version_timeout_days(subscribe)}天），已标记洗版优先级为完成",
+                        image=mediainfo.get_message_image(),
+                    )
                     continue
                 # 洗版完成必须同时满足 priority 达标、F 稳定与 SeasonScope 目标集全覆盖。
                 satisfied, no_exists = self._resolve_subscribe_missing(
                     subscribe,
                     mediainfo,
-                    best_version_accept_downloaded=bool(not subscribe.best_version_full),
+                    best_version_accept_downloaded=is_tv_episode_best_version_subscribe(subscribe),
                 )
                 if (
                     self._config.best_version_episode_to_full
                     and converter
-                    and not subscribe.best_version_full
+                    and is_tv_episode_best_version_subscribe(subscribe)
                     and satisfied
                 ):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} 分集洗版目标满足，转为全集洗版")
                     converter.convert_to_full(subscribe, mediainfo)
                     continue
-                if orchestrator.check_complete(subscribe, mediainfo, no_exists):
+                if is_full_best_version_subscribe(subscribe) and orchestrator.check_complete(subscribe, mediainfo, no_exists):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}优先级达标且缺集已补齐，判定洗版完成")
                     priority.mark_complete(subscribe)
             else:
@@ -718,8 +729,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @staticmethod
     def _best_version_mode_label(subscribe) -> str:
-        """按订阅实际洗版形态返回日志标签，避免分集和全集洗版输出混淆。"""
-        return "全集洗版" if subscribe.best_version_full else "分集洗版"
+        """按订阅实际洗版形态返回日志和通知标签。"""
+        if is_full_best_version_subscribe(subscribe):
+            return "洗版"
+        if is_tv_episode_best_version_subscribe(subscribe):
+            return "分集洗版"
+        return ""
 
     def run_meta_check(self):
         """元数据检查巡检：对活动订阅周期性复核上映前/播出暂停（双向）与待定（进入/退出）。
@@ -729,7 +744,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
           不被上映检查自动恢复、也不重复处理；用户重新启用（state!=S）则清掉插件标记。
         - 上映/播出类暂停（pre_air / airing_gap）双向：条件成立时暂停，条件解除且当前为 S 时自动恢复。
         暂停复核优先于待定：满足暂停条件时先写状态并跳过本轮待定；
-        全集洗版因不按集搜索而跳过。
+        洗版因不按集搜索而跳过。
         """
         if not self._subscribe_oper:
             return
@@ -742,7 +757,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         blocks = self.get_data("blocks") or {}
         detail("元数据巡检：开始")
         for subscribe in (self._subscribe_oper.list(state="N,R,P,S") or []):
-            if subscribe.best_version and subscribe.best_version_full:
+            if is_full_best_version_subscribe(subscribe):
                 continue
 
             # 标记暂停必须在媒体识别前处理，避免被上映检查误恢复。
@@ -1305,7 +1320,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @staticmethod
     def _is_tv_media(mediainfo) -> bool:
-        """媒体是否为电视剧（电影无季/集，不做播出暂停与待定）。"""
+        """媒体是否为剧集（电影无季/集，不做播出暂停与待定）。"""
         from app.schemas.types import MediaType
         return mediainfo.type == MediaType.TV
 

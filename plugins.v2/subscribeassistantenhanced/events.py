@@ -22,7 +22,13 @@ from app.schemas.event import SubscribeEpisodesRefreshEventData
 
 from .engine.signals import last_aired_episode
 from .shared.log import detail
-from .shared.subscribe import format_subscribe, format_subscribe_label, subscribe_from_source
+from .shared.subscribe import (
+    format_subscribe,
+    format_subscribe_label,
+    is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
+    subscribe_from_source,
+)
 from .shared.update import update_subscribe
 
 
@@ -135,10 +141,10 @@ class EventProxy:
             pending_refresh.handle_refresh(data)
 
     def on_subscribe_added(self, event):
-        """SubscribeAdded → 用户名自动暂停 + 上映前暂停 + 电视剧待定 / 播出暂停。
+        """SubscribeAdded → 用户名自动暂停 + 上映前暂停 + 剧集待定 / 播出暂停。
 
-        全集洗版不做按集播出暂停/待定；其他订阅先检查上映窗口，
-        电视剧再按 TMDB 集数和播出间隔判定。
+        洗版不做按集播出暂停/待定；其他订阅先检查上映窗口，
+        剧集再按 TMDB 集数和播出间隔判定。
         """
         data = event.event_data
         if not isinstance(data, dict):
@@ -170,9 +176,9 @@ class EventProxy:
                     logger.info(f"订阅新增：{format_subscribe(subscribe)} 分集洗版订阅回填已下载集 {episodes}")
                     priority.backfill_existing(subscribe, episodes)
 
-        # 全集洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
-        if subscribe.best_version and subscribe.best_version_full:
-            detail(f"订阅新增：{format_subscribe(subscribe)} 为全集洗版，跳过按集播出暂停/待定")
+        # 洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
+        if is_full_best_version_subscribe(subscribe):
+            detail(f"订阅新增：{format_subscribe(subscribe)} 为洗版，跳过按集播出暂停/待定")
             return
 
         mediainfo_from_dict = self.get("mediainfo_from_dict")
@@ -192,7 +198,7 @@ class EventProxy:
                 episode_group=subscribe.episode_group,
             )
 
-        # 上映前暂停同时适用于电影和电视剧，必须先于电视剧专属流程判定。
+        # 上映前暂停同时适用于电影和剧集，必须先于剧集专属流程判定。
         airing = self.get("airing_checker")
         if airing and pause_manager:
             record = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
@@ -321,7 +327,7 @@ class EventProxy:
     def on_resource_selection(self, event):
         """ResourceSelection → 洗版下载串行控制 + 识别增强 + 剔除近期删除资源防重选。
 
-        全集洗版存在下载待定时不再选择其他资源；分集洗版只挡住覆盖待定集的候选，
+        洗版存在下载待定时不再选择其他资源；分集洗版只挡住覆盖待定集的候选，
         待定集未知时保守全挡，避免同集多版本并发下载产生覆盖竞态。
         """
         data = _event_data(event)
@@ -391,7 +397,7 @@ class EventProxy:
     def _filter_pending_serial(self, data, contexts):
         """洗版订阅有下载待定时，根据洗版模式过滤后续候选。
 
-        全集洗版整体串行，分集洗版按集串行；非洗版、无待定或无任务管理器时返回 None。
+        洗版整体串行，分集洗版按集串行；非洗版、无待定或无任务管理器时返回 None。
         """
         task_manager = self.get("task_manager")
         if not self.get("pending_download_enabled"):
@@ -406,7 +412,7 @@ class EventProxy:
         pending = (task_manager.read("subscribes") or {}).get(str(sid), {}).get("download_pending", {})
         if not pending:
             return None
-        if subscribe.best_version_full:
+        if is_full_best_version_subscribe(subscribe):
             return []
         torrents = task_manager.read("torrents") or {}
         pending_eps, unknown = set(), False
@@ -567,7 +573,7 @@ class EventProxy:
         if not (subscribe_oper and recognize and is_tv and tmdb_episodes_fn):
             return
         subscribe = subscribe_oper.get(subscribe_id)
-        if not subscribe or subscribe.state != "R" or (subscribe.best_version and subscribe.best_version_full):
+        if not subscribe or subscribe.state != "R" or is_full_best_version_subscribe(subscribe):
             return
         mediainfo = recognize(subscribe)
         if not mediainfo or not is_tv(mediainfo):
@@ -607,7 +613,7 @@ class EventProxy:
         if not (subscribe_oper and converter and recognize):
             return
         subscribe = subscribe_oper.get(subscribe_id)
-        if not subscribe or not subscribe.best_version or subscribe.best_version_full:
+        if not subscribe or not is_tv_episode_best_version_subscribe(subscribe):
             return
         mediainfo = recognize(subscribe)
         if not mediainfo:
@@ -629,10 +635,12 @@ class EventProxy:
 
     @staticmethod
     def _best_version_mode_label(subscribe) -> str:
-        """按订阅实际洗版形态返回日志标签，避免分集和全集洗版输出混淆。"""
-        if not subscribe.best_version:
-            return ""
-        return "全集洗版" if subscribe.best_version_full else "分集洗版"
+        """按订阅实际洗版形态返回日志标签。"""
+        if is_full_best_version_subscribe(subscribe):
+            return "洗版"
+        if is_tv_episode_best_version_subscribe(subscribe):
+            return "分集洗版"
+        return ""
 
     def on_plugin_action(self, event):
         """PluginAction → /subscribe_toggle 切换订阅启用(R)/禁用(S)状态。

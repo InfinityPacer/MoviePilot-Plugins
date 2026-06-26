@@ -217,9 +217,15 @@ class TestEventOrdering:
         assert EventProxy._best_version_mode_label(_sub(best_version=0)) == ""
 
     def test_best_version_mode_label_distinguishes_episode_and_full(self):
-        """洗版订阅按 best_version_full 区分分集和全集。"""
+        """真正洗版和分集洗版使用不同标签。"""
         assert EventProxy._best_version_mode_label(_sub(best_version=1, best_version_full=0)) == "分集洗版"
-        assert EventProxy._best_version_mode_label(_sub(best_version=1, best_version_full=1)) == "全集洗版"
+        assert EventProxy._best_version_mode_label(_sub(best_version=1, best_version_full=1)) == "洗版"
+
+    def test_movie_best_version_mode_label_uses_wash_label(self):
+        """电影洗版使用真正洗版标签，不应被 best_version_full=0 误标成分集洗版。"""
+        assert EventProxy._best_version_mode_label(
+            _sub(type="电影", best_version=1, best_version_full=0)
+        ) == "洗版"
 
     def test_transfer_complete_converts_ready_episode_best_version_to_full(self):
         """分集洗版整理完成且目标集齐全时，当前订阅立即转全集洗版。"""
@@ -578,7 +584,7 @@ class TestSubscribeLifecycle:
         return proxy, pause, pending, airing
 
     def test_added_tv_pending_enters_pending(self):
-        """电视剧待定命中 → mark_pending，不再播出暂停。"""
+        """剧集待定命中 → mark_pending，不再播出暂停。"""
         sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
         proxy, pause, pending, airing = self._added_proxy(sub, (True, "集数不足"), None)
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -586,7 +592,7 @@ class TestSubscribeLifecycle:
         airing.check.assert_not_called()
 
     def test_added_tv_unknown_air_date_pauses_before_pending(self):
-        """电视剧完全缺少开播排期时先暂停，不被集数不足待定接管。"""
+        """剧集完全缺少开播排期时先暂停，不被集数不足待定接管。"""
         sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
         oper = MagicMock()
         oper.get.return_value = sub

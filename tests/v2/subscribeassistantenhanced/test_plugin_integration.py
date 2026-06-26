@@ -328,15 +328,74 @@ def test_episode_to_full_skips_when_missing_info_uses_relative_episode_numbers(m
     conv.convert_to_full.assert_not_called()
 
 
+def test_episode_to_full_skips_movie_best_version_when_target_satisfied():
+    """电影洗版即使目标满足也不能进入剧集分集转全集路径。"""
+    sub = _sub(
+        id=33,
+        name="测试电影",
+        type=MediaType.MOVIE,
+        season=None,
+        best_version=1,
+        best_version_full=0,
+    )
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    plugin._resolve_subscribe_missing = MagicMock(return_value=(True, []))
+    plugin._best_version_overdue = MagicMock(return_value=False)
+    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
+    conv = plugin._modules["converter"]
+    conv.convert_to_full = MagicMock(return_value=True)
+
+    plugin.run_best_version_check()
+
+    conv.convert_to_full.assert_not_called()
+
+
 def test_best_version_check_marks_overdue_subscription_complete():
     """洗版订阅最近活动超过时限时终止洗版。"""
     now = time.time()
     sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
+    mediainfo = _mediainfo()
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"best_version_type": "all", "best_version_tv_remaining_days": 3})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
-    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    plugin._task_manager.read = MagicMock(side_effect=lambda key: {
+        "torrents": {"hash": {"subscribe_id": 5, "time": now - 10 * 86400}},
+        "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
+    }.get(key, {}))
+    priority = plugin._modules["priority_manager"]
+    priority.mark_complete = MagicMock()
+    plugin._notify_subscribe = MagicMock()
+    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
+
+    plugin.run_best_version_check()
+
+    priority.mark_complete.assert_called_once_with(sub)
+    plugin._notify_subscribe.assert_called_once_with(
+        "X S1 洗版超过时限（3天），已标记洗版优先级为完成",
+        image="poster.jpg",
+    )
+
+
+def test_best_version_check_uses_movie_remaining_days_for_movie():
+    """电影洗版使用电影洗版时限，不受剧集洗版时限影响。"""
+    now = time.time()
+    sub = _sub(id=5, name="X", type=MediaType.MOVIE, season=None, best_version=1, best_version_full=0)
+    mediainfo = _mediainfo()
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({
+        "best_version_type": "all",
+        "best_version_movie_remaining_days": 3,
+        "best_version_tv_remaining_days": 30,
+    })
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
     plugin._task_manager.read = MagicMock(side_effect=lambda key: {
         "torrents": {"hash": {"subscribe_id": 5, "time": now - 10 * 86400}},
         "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
@@ -350,16 +409,12 @@ def test_best_version_check_marks_overdue_subscription_complete():
     priority.mark_complete.assert_called_once_with(sub)
 
 
-def test_best_version_check_uses_movie_remaining_days_for_movie():
-    """电影洗版使用电影洗版时限，不受剧集洗版时限影响。"""
+def test_best_version_check_does_not_expire_tv_episode_best_version():
+    """剧集分集洗版按普通分集订阅处理，不适用洗版时限终止。"""
     now = time.time()
-    sub = _sub(id=5, name="X", type=MediaType.MOVIE, season=None, best_version=1, best_version_full=0)
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
     plugin = SubscribeAssistantEnhanced()
-    plugin.init_plugin({
-        "best_version_type": "all",
-        "best_version_movie_remaining_days": 3,
-        "best_version_tv_remaining_days": 30,
-    })
+    plugin.init_plugin({"best_version_type": "all", "best_version_tv_remaining_days": 3})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
@@ -373,7 +428,14 @@ def test_best_version_check_uses_movie_remaining_days_for_movie():
 
     plugin.run_best_version_check()
 
-    priority.mark_complete.assert_called_once_with(sub)
+    priority.mark_complete.assert_not_called()
+
+
+def test_best_version_mode_label_uses_wash_label_for_movie_best_version():
+    """电影洗版使用真正洗版标签，不应误标成分集洗版。"""
+    assert SubscribeAssistantEnhanced._best_version_mode_label(
+        _sub(type=MediaType.MOVIE, best_version=1, best_version_full=0)
+    ) == "洗版"
 
 
 def test_best_version_check_skips_when_type_closed():
@@ -1574,7 +1636,7 @@ def test_pending_refresh_does_not_depend_on_default_total_config():
 
 
 def test_airing_checker_receives_pre_air_days():
-    """插件入口必须把电影和电视剧上映前暂停天数注入播出判定器。"""
+    """插件入口必须把电影和剧集上映前暂停天数注入播出判定器。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
         "pause_enhanced_enabled": True,
@@ -1772,7 +1834,7 @@ class TestPeriodicJobs:
     def test_best_version_check_marks_complete(self, monkeypatch):
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({"best_version_type": "all"})
-        best_sub = _sub(id=1, name="X", best_version=1)
+        best_sub = _sub(id=1, name="X", best_version=1, best_version_full=1)
         plugin._subscribe_oper = MagicMock()
         plugin._subscribe_oper.list.return_value = [best_sub]
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda sub: _mediainfo())
@@ -1787,7 +1849,7 @@ class TestPeriodicJobs:
 
     def test_best_version_check_passes_missing_episodes(self):
         """洗版完成巡检必须把媒体库缺集传给 orchestrator.check_complete。"""
-        sub = _sub(id=9, name="测试", best_version=1)
+        sub = _sub(id=9, name="测试", best_version=1, best_version_full=1)
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({"best_version_type": "all"})
         plugin._subscribe_oper = MagicMock()
@@ -1801,6 +1863,25 @@ class TestPeriodicJobs:
 
         orchestrator.check_complete.assert_called_once()
         assert orchestrator.check_complete.call_args.args[2] == [3]
+
+    def test_best_version_check_skips_complete_check_for_tv_episode_best_version(self):
+        """剧集分集洗版不进入电影/全集洗版的完成判定。"""
+        sub = _sub(id=9, name="测试", best_version=1, best_version_full=0)
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"best_version_type": "all"})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [sub]
+        plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+        plugin._resolve_subscribe_missing = MagicMock(return_value=(False, []))
+        priority = plugin._modules["priority_manager"]
+        priority.mark_complete = MagicMock()
+        orchestrator = plugin._modules["orchestrator"]
+        orchestrator.check_complete = MagicMock(return_value=True)
+
+        plugin.run_best_version_check()
+
+        orchestrator.check_complete.assert_not_called()
+        priority.mark_complete.assert_not_called()
 
     def test_best_version_check_keeps_episode_subscription_when_target_not_complete(self):
         """分集洗版目标范围未全达标时，即使已有优先级都是 100 也不能判定洗版完成。"""
@@ -2287,7 +2368,7 @@ class TestNoDownloadCheck:
         plugin.chain.recognize_media.assert_not_called()
 
     def test_last_download_date_queries_tv_history_and_returns_latest_date(self):
-        """电视剧按媒体信息和季查询下载历史，并返回最近下载日期。"""
+        """剧集按媒体信息和季查询下载历史，并返回最近下载日期。"""
         subscribe = _sub(type="电视剧", name="测试", year="2025", season=1, tmdbid=100)
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})

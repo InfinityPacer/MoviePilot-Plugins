@@ -2,10 +2,13 @@
 from typing import Callable, Optional
 
 from app.chain.subscribe import SubscribeChain
-from app.schemas.types import MediaType
 
 from ..shared.log import detail
-from ..shared.subscribe import format_subscribe_label, resolve_subscribe_media_type
+from ..shared.subscribe import (
+    format_subscribe_label,
+    is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
+)
 from ..shared.update import update_subscribe
 
 
@@ -133,10 +136,8 @@ class PriorityManager:
 
     @staticmethod
     def can_backfill(subscribe) -> bool:
-        """判断订阅是否允许按媒体库已有集回填；仅电视剧分集洗版适用。"""
-        if not subscribe or not subscribe.best_version or subscribe.best_version_full:
-            return False
-        return resolve_subscribe_media_type(subscribe) == MediaType.TV
+        """判断订阅是否允许按媒体库已有集回填；仅剧集分集洗版适用。"""
+        return is_tv_episode_best_version_subscribe(subscribe)
 
     def backfill_existing(self, subscribe, existing_episodes: list) -> bool:
         """为分集洗版补齐尚无记录的在库集优先级，产生写入时返回 True。"""
@@ -181,8 +182,8 @@ class PriorityManager:
                 ep_priority[key] = 100
 
         payload = {"episode_priority": ep_priority, "current_priority": 100}
-        mode = "全集" if subscribe.best_version_full else "分集"
-        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 标记{mode}洗版完成（priority=100）")
+        mode_label = self._mode_label(subscribe)
+        detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 标记{mode_label}完成（priority=100）")
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
@@ -203,3 +204,12 @@ class PriorityManager:
     def _format_subscribe_label(subscribe) -> str:
         """生成洗版优先级日志标签；字段不足时由公共格式化器回退到 ID。"""
         return format_subscribe_label(subscribe)
+
+    @staticmethod
+    def _mode_label(subscribe) -> str:
+        """按订阅实际洗版形态返回优先级日志标签。"""
+        if is_full_best_version_subscribe(subscribe):
+            return "洗版"
+        if is_tv_episode_best_version_subscribe(subscribe):
+            return "分集洗版"
+        return "洗版"

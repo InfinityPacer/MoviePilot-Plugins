@@ -96,9 +96,15 @@ class TestModeLabel:
         assert BestVersionOrchestrator._mode_label(_sub(best_version=0)) == ""
 
     def test_episode_and_full_best_version_labels(self):
-        """分集 / 全集洗版按 best_version_full 区分。"""
+        """真正洗版和分集洗版使用不同标签。"""
         assert BestVersionOrchestrator._mode_label(_sub(best_version=1, best_version_full=0)) == "分集洗版"
-        assert BestVersionOrchestrator._mode_label(_sub(best_version=1, best_version_full=1)) == "全集洗版"
+        assert BestVersionOrchestrator._mode_label(_sub(best_version=1, best_version_full=1)) == "洗版"
+
+    def test_movie_best_version_uses_wash_label(self):
+        """电影洗版使用真正洗版标签，不使用剧集分集洗版标签。"""
+        assert BestVersionOrchestrator._mode_label(
+            _sub(type=MediaType.MOVIE, best_version=1, best_version_full=0)
+        ) == "洗版"
 
 
 class TestStartBestVersion:
@@ -133,7 +139,7 @@ class TestStartBestVersion:
         send_event.assert_called_once()
         assert send_event.call_args.args[0] == 5
         notify.assert_called_once()
-        assert notify.call_args.args[0].endswith("已添加全集洗版订阅")
+        assert notify.call_args.args[0].endswith("已添加洗版订阅")
         assert "reason" not in notify.call_args.kwargs
         _args, kwargs = oper.add.call_args
         assert kwargs["best_version"] == 1 and kwargs["season"] == 1
@@ -177,7 +183,7 @@ class TestStartBestVersion:
         oper.add.assert_not_called()
 
     def test_tv_type_skips_movie_subscription(self):
-        """电视剧洗版范围不应为电影订阅创建洗版。"""
+        """剧集洗版范围不应为电影订阅创建洗版。"""
         oper = MagicMock()
         sub = _sub(best_version=0, type="电影")
 
