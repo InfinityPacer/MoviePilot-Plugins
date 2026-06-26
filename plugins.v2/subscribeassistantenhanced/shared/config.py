@@ -426,9 +426,14 @@ class PluginConfig:
         return val if val in ("no", "all", "movie", "tv", "tv_episode") else "no"
 
     @property
-    def best_version_remaining_days(self) -> int:
-        """洗版时限（天）：达到天数后自动终止洗版，有下载则按最新时间计；0=不限。"""
-        return self.get_int("best_version_remaining_days", 0)
+    def best_version_movie_remaining_days(self) -> int:
+        """电影洗版时限：达到天数后自动终止，有下载则按最新时间计；0=不限。"""
+        return self.get_int("best_version_movie_remaining_days", 0)
+
+    @property
+    def best_version_tv_remaining_days(self) -> int:
+        """剧集全集洗版时限：达到天数后自动终止，有下载则按最新时间计；0=不限。"""
+        return self.get_int("best_version_tv_remaining_days", 0)
 
     @property
     def best_version_episode_to_full(self) -> bool:
