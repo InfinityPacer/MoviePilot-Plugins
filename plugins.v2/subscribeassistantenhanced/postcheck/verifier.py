@@ -6,7 +6,7 @@ from app.log import logger
 
 from ..engine.types import SeasonScope
 from ..shared.log import detail
-from ..shared.subscribe import format_subscribe, format_subscribe_label
+from ..shared.subscribe import format_subscribe, format_subscribe_label, is_full_best_version_subscribe
 
 
 class CompletionVerifier:
@@ -104,6 +104,8 @@ class CompletionVerifier:
         tmdbid = snap["tmdbid"]
         season = snap["season"]
         episode_group_id = snap.get("episode_group_id")
+        config = dict(snap.get("subscribe_config", {}))
+        removed_full_best_version = False
 
         existing = self._subscribe_oper.list()
         for sub in (existing or []):
@@ -112,13 +114,14 @@ class CompletionVerifier:
                 and sub.season == season
                 and sub.episode_group == episode_group_id
             ):
-                if sub.best_version:
+                if is_full_best_version_subscribe(sub):
                     logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
+                    _merge_missing_config_from_subscribe(config, sub)
                     self._subscribe_oper.delete(sub.id)
+                    removed_full_best_version = True
                 else:
                     return True
 
-        config = dict(snap.get("subscribe_config", {}))
         old_total = snap.get("total_at_completion", 0)
         config["start_episode"] = old_total + 1
         if not self._rebuild_subscribe or not self._rebuild_subscribe(snap, config):
@@ -128,8 +131,9 @@ class CompletionVerifier:
             name = config.get("name", f"TMDB {tmdbid}")
             season = config.get("season", season)
             season_text = f" S{season}" if season is not None else ""
+            action_text = "已移除旧洗版订阅并重建订阅" if removed_full_best_version else "已自动重建订阅"
             self._notify(
-                f"{name}{season_text} 检测到新增集数（{old_total}→{current_total}），已自动重建订阅",
+                f"{name}{season_text} 检测到新增集数（{old_total}→{current_total}），{action_text}",
             )
         return True
 
@@ -171,5 +175,30 @@ def _extract_config(subscribe) -> dict:
         "filter": subscribe.filter,
         "filter_groups": subscribe.filter_groups,
         "best_version": subscribe.best_version,
+        "best_version_full": subscribe.best_version_full,
     }
     return {field: value for field, value in values.items() if value is not None}
+
+
+def _merge_missing_config_from_subscribe(config: dict, subscribe) -> None:
+    """删除旧订阅前补齐快照缺失配置，避免旧快照重建时丢失订阅模式。"""
+    mode_values = {
+        "type": subscribe.type,
+        "best_version": subscribe.best_version,
+        "best_version_full": subscribe.best_version_full,
+    }
+    for field, value in mode_values.items():
+        if value is not None:
+            config[field] = value
+
+    optional_values = {
+        "save_path": subscribe.save_path,
+        "sites": subscribe.sites,
+        "filter": subscribe.filter,
+        "filter_groups": subscribe.filter_groups,
+    }
+    for field, value in optional_values.items():
+        if field in config:
+            continue
+        if value is not None:
+            config[field] = value
