@@ -50,3 +50,20 @@ def test_new_parity_config_defaults():
 def test_no_download_actions_parses_list_or_csv():
     assert PluginConfig({"no_download_actions": ["pause_tv", "complete_movie"]}).no_download_actions == ["pause_tv", "complete_movie"]
     assert PluginConfig({"no_download_actions": "pause_tv,complete_movie"}).no_download_actions == ["pause_tv", "complete_movie"]
+
+
+def test_subscription_cleanup_history_scenes_use_current_contract_only():
+    cfg = PluginConfig({
+        "subscription_cleanup_history_scenes": [
+            "normal",
+            "best_version",
+            "best_version_episode",
+            "best_version_full",
+        ],
+    })
+
+    assert cfg.subscription_cleanup_history_scenes == [
+        "normal",
+        "best_version",
+        "best_version_episode",
+    ]
