@@ -317,7 +317,9 @@ class TestHVerifier:
         tm, store = _store()
         oper = MagicMock()
         bv = SimpleNamespace(
-            id=99, tmdbid=100, season=1, episode_group=None, best_version=1
+            id=99, tmdbid=100, season=1, episode_group=None,
+            type="电视剧", best_version=1, best_version_full=1,
+            name="测试剧", save_path=None, sites=None, filter=None, filter_groups=[],
         )
         oper.list.return_value = [bv]
         verifier = CompletionVerifier(

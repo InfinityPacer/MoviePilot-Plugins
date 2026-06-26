@@ -2023,6 +2023,128 @@ class TestPeriodicJobs:
         plugin._send_subscribe_added.assert_called_once()
         assert plugin._send_subscribe_added.call_args.args[0] == 88
 
+    def test_completion_verify_keeps_existing_episode_best_version_subscription(self):
+        """同身份分集洗版订阅已存在时，完成快照应失效而不是删除重建。"""
+        snap = {
+            "tmdbid": 100,
+            "season": 1,
+            "episode_group_id": None,
+            "total_at_completion": 12,
+            "subscribe_config": {"name": "测试", "season": 1, "best_version": 1, "best_version_full": 1},
+        }
+        data_store = {"snapshots": {"list": [snap]}}
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin._modules["verifier"]._read = lambda key: data_store.get(key, {})
+        plugin._modules["verifier"]._update = (
+            lambda key, fn: data_store.__setitem__(key, fn(data_store.get(key, {})))
+        )
+        plugin._modules["verifier"]._tmdb_fn = MagicMock(return_value=[object()] * 13)
+        plugin._modules["verifier"]._subscribe_oper = MagicMock()
+        plugin._modules["verifier"]._subscribe_oper.list.return_value = [
+            _sub(id=7, tmdbid=100, season=1, best_version=1, best_version_full=0)
+        ]
+        plugin._modules["verifier"]._rebuild_subscribe = MagicMock(return_value=True)
+
+        plugin.run_completion_verify()
+
+        plugin._modules["verifier"]._subscribe_oper.delete.assert_not_called()
+        plugin._modules["verifier"]._rebuild_subscribe.assert_not_called()
+        assert data_store["snapshots"]["list"] == []
+
+    def test_completion_verify_keeps_existing_normal_subscription(self):
+        """同身份普通订阅已存在时，完成快照应失效而不是重复重建。"""
+        snap = {
+            "tmdbid": 100,
+            "season": 1,
+            "episode_group_id": None,
+            "total_at_completion": 12,
+            "subscribe_config": {"name": "测试", "season": 1, "best_version": 0},
+        }
+        data_store = {"snapshots": {"list": [snap]}}
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin._modules["verifier"]._read = lambda key: data_store.get(key, {})
+        plugin._modules["verifier"]._update = (
+            lambda key, fn: data_store.__setitem__(key, fn(data_store.get(key, {})))
+        )
+        plugin._modules["verifier"]._tmdb_fn = MagicMock(return_value=[object()] * 13)
+        plugin._modules["verifier"]._subscribe_oper = MagicMock()
+        plugin._modules["verifier"]._subscribe_oper.list.return_value = [
+            _sub(id=7, tmdbid=100, season=1, best_version=0, best_version_full=0)
+        ]
+        plugin._modules["verifier"]._rebuild_subscribe = MagicMock(return_value=True)
+
+        plugin.run_completion_verify()
+
+        plugin._modules["verifier"]._subscribe_oper.delete.assert_not_called()
+        plugin._modules["verifier"]._rebuild_subscribe.assert_not_called()
+        assert data_store["snapshots"]["list"] == []
+
+    def test_completion_verify_replaces_existing_full_best_version_subscription(self):
+        """同身份真正洗版订阅已存在时，完成快照可删除旧订阅并按新增集重建。"""
+        snap = {
+            "tmdbid": 100,
+            "season": 1,
+            "episode_group_id": None,
+            "total_at_completion": 12,
+            "subscribe_config": {"name": "测试", "season": 1, "best_version": 1},
+        }
+        data_store = {"snapshots": {"list": [snap]}}
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin._modules["verifier"]._read = lambda key: data_store.get(key, {})
+        plugin._modules["verifier"]._update = (
+            lambda key, fn: data_store.__setitem__(key, fn(data_store.get(key, {})))
+        )
+        plugin._modules["verifier"]._tmdb_fn = MagicMock(return_value=[object()] * 13)
+        plugin._modules["verifier"]._subscribe_oper = MagicMock()
+        plugin._modules["verifier"]._subscribe_oper.list.return_value = [
+            _sub(id=7, tmdbid=100, season=1, best_version=1, best_version_full=1)
+        ]
+        plugin._modules["verifier"]._rebuild_subscribe = MagicMock(return_value=True)
+        plugin._modules["verifier"]._notify = MagicMock()
+
+        plugin.run_completion_verify()
+
+        plugin._modules["verifier"]._subscribe_oper.delete.assert_called_once_with(7)
+        plugin._modules["verifier"]._rebuild_subscribe.assert_called_once()
+        assert plugin._modules["verifier"]._rebuild_subscribe.call_args.args[1]["start_episode"] == 13
+        assert plugin._modules["verifier"]._rebuild_subscribe.call_args.args[1]["best_version_full"] == 1
+        assert plugin._modules["verifier"]._notify.call_args.args[0].endswith("已移除旧洗版订阅并重建订阅")
+        assert data_store["snapshots"]["list"] == []
+
+    def test_completion_verify_replaces_existing_movie_best_version_subscription(self):
+        """电影洗版订阅已存在时，完成快照可删除旧订阅并按新增目标重建。"""
+        snap = {
+            "tmdbid": 100,
+            "season": None,
+            "episode_group_id": None,
+            "total_at_completion": 1,
+            "subscribe_config": {"name": "测试电影", "type": "电影", "best_version": 1},
+        }
+        data_store = {"snapshots": {"list": [snap]}}
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin._modules["verifier"]._read = lambda key: data_store.get(key, {})
+        plugin._modules["verifier"]._update = (
+            lambda key, fn: data_store.__setitem__(key, fn(data_store.get(key, {})))
+        )
+        plugin._modules["verifier"]._tmdb_fn = MagicMock(return_value=[object()] * 2)
+        plugin._modules["verifier"]._subscribe_oper = MagicMock()
+        plugin._modules["verifier"]._subscribe_oper.list.return_value = [
+            _sub(id=8, tmdbid=100, season=None, type=MediaType.MOVIE, best_version=1, best_version_full=0)
+        ]
+        plugin._modules["verifier"]._rebuild_subscribe = MagicMock(return_value=True)
+        plugin._modules["verifier"]._notify = MagicMock()
+
+        plugin.run_completion_verify()
+
+        plugin._modules["verifier"]._subscribe_oper.delete.assert_called_once_with(8)
+        plugin._modules["verifier"]._rebuild_subscribe.assert_called_once()
+        assert plugin._modules["verifier"]._notify.call_args.args[0].endswith("已移除旧洗版订阅并重建订阅")
+        assert data_store["snapshots"]["list"] == []
+
     def test_pending_release_releases_when_timed_out(self, monkeypatch):
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})

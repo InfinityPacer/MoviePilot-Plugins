@@ -7,10 +7,10 @@ from subscribeassistantenhanced.postcheck.verifier import CompletionVerifier
 from subscribeassistantenhanced.engine.types import SeasonScope
 
 
-def _sub(tmdbid=100, season=1, episode_group=None, total=12, best_version=0):
+def _sub(tmdbid=100, season=1, episode_group=None, total=12, best_version=0, best_version_full=0):
     return SimpleNamespace(
         id=1, tmdbid=tmdbid, season=season, episode_group=episode_group,
-        total_episode=total, best_version=best_version,
+        total_episode=total, best_version=best_version, best_version_full=best_version_full,
         name="测试剧", type="电视剧", save_path="/media",
         sites="site1", filter="rule1", filter_groups=["group1"],
     )
@@ -42,13 +42,15 @@ class TestSnapshot:
         store = {}
         v = _verifier(store)
         scope = SeasonScope(tmdbid=100, season=1, source="main_season")
-        v.snapshot(_sub(), None, scope)
+        v.snapshot(_sub(best_version=1, best_version_full=1), None, scope)
         snaps = store.get("snapshots", {}).get("list", [])
         assert len(snaps) == 1
         assert snaps[0]["tmdbid"] == 100
         assert snaps[0]["total_at_completion"] == 12
         assert snaps[0]["subscribe_config"]["filter"] == "rule1"
         assert snaps[0]["subscribe_config"]["filter_groups"] == ["group1"]
+        assert snaps[0]["subscribe_config"]["best_version"] == 1
+        assert snaps[0]["subscribe_config"]["best_version_full"] == 1
 
     def test_dedup_by_key(self):
         """同 (tmdbid, season, episode_group_id) 幂等去重。"""
@@ -187,7 +189,9 @@ class TestVerifyAll:
             "subscribe_config": {"name": "测试"},
         }]}}
         existing_bv = SimpleNamespace(
-            id=99, tmdbid=100, season=1, episode_group=None, best_version=1
+            id=99, tmdbid=100, season=1, episode_group=None,
+            type="电视剧", best_version=1, best_version_full=1,
+            name="测试剧", save_path=None, sites=None, filter=None, filter_groups=[],
         )
         rebuild = MagicMock(return_value=True)
         v = _verifier(store, tmdb_fn=lambda *a, **kw: [object()] * 15,
@@ -196,6 +200,7 @@ class TestVerifyAll:
         v.verify_all()
         v._oper.delete.assert_called_once_with(99)
         rebuild.assert_called_once()
+        assert v._notify_mock.call_args.args[0] == "测试 S1 检测到新增集数（12→15），已移除旧洗版订阅并重建订阅"
 
     def test_rebuild_does_not_touch_different_episode_group(self):
         """同 TMDB 同季但不同剧集组不是同一目标范围。"""
@@ -206,7 +211,8 @@ class TestVerifyAll:
         }]}}
         other_group = SimpleNamespace(
             id=99, tmdbid=100, season=1,
-            episode_group="eg-old", best_version=1,
+            episode_group="eg-old", type="电视剧", best_version=1, best_version_full=1,
+            save_path=None, sites=None, filter=None, filter_groups=[],
         )
         rebuild = MagicMock(return_value=True)
         v = _verifier(
