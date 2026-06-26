@@ -1,11 +1,11 @@
-"""配置表单（vuetify 模式）：顶部开关行 + 周期行 + 5 个 Tab 分页 + 底部提示。
+"""配置表单（vuetify 模式）：顶部开关行 + 周期行 + 6 个 Tab 分页 + 底部提示。
 
 设计：表单字段名 == PluginConfig 配置键，model 默认值由 PluginConfig.defaults() 派生，避免保存配置与运行时键漂移。
 conf 结构：[switch_row, period_row, VTabs, VWindow, *footer]，VTabs/VWindow 共用 model "_tab" 联动当前页；
 每个字段挂常驻 hint（LABELS/HINTS 双表维护），Tab 内按行列布局排列，底部三条 VAlert 给出指引与风险提示。
 """
 from ..shared.config import PluginConfig
-from .components import (alert_row, cron_field, field_for, multi_select_field,
+from .components import (ace_editor_field, alert_row, cron_field, field_for, multi_select_field,
                          select_field, switch_col, tabs, textarea_field)
 
 # 各配置键的中文显示名（与 README 配置项名保持一致）
@@ -35,6 +35,13 @@ LABELS = {
     "auto_check_interval_minutes": "通用巡检周期（分钟）",
     "subscription_cleanup_history_type": "清理整理记录范围",
     "subscription_cleanup_history_scenes": "清理整理记录场景",
+    # 识别增强
+    "recognition_guard_mode": "识别增强模式",
+    "recognition_guard_notify": "识别增强通知",
+    "recognition_guard_notify_interval": "识别增强通知限频（秒）",
+    "recognition_guard_tmdb_recheck_mode": "识别增强二次识别",
+    "recognition_guard_cache_maxsize": "识别增强缓存大小",
+    "recognition_guard_custom_config": "识别增强自定义策略",
     # 订阅待定
     "pending_enhanced_enabled": "自动待定剧集订阅",
     "pending_download_enabled": "自动待定下载中订阅",
@@ -99,6 +106,13 @@ HINTS = {
     "open_tracker_dialog": "自定义Tracker配置以实现更精准的种子匹配",
     "subscription_cleanup_history_type": "订阅下载前清理旧整理记录、源文件和入库前目标文件的媒体类型范围（破坏性）",
     "subscription_cleanup_history_scenes": "选择普通订阅、分集洗版或全集洗版下载时触发订阅清理",
+    # 识别增强
+    "recognition_guard_mode": "在自动下载前复核订阅候选是否像当前订阅目标",
+    "recognition_guard_notify": "控制识别增强消息推送，不影响审计日志",
+    "recognition_guard_notify_interval": "同订阅同动作同原因的通知限频秒数",
+    "recognition_guard_tmdb_recheck_mode": "控制二次识别触发范围",
+    "recognition_guard_cache_maxsize": "缓存二次识别结果，避免重复识别",
+    "recognition_guard_custom_config": "YAML 策略覆盖；清空表示无自定义覆盖",
     # 订阅待定
     "pending_enhanced_enabled": "自动标记订阅剧集为待定状态，避免提前完成订阅",
     "pending_download_enabled": "存在进行中下载时自动标记待定，避免提前完成订阅",
@@ -165,7 +179,7 @@ TABS = [
         ["movie_no_download_days", "tv_no_download_days", "no_download_actions"],
     ]),
     ("订阅洗版", [
-        ["best_version_type", "best_version_remaining_days"],
+        [("best_version_type", 6), ("best_version_remaining_days", 6)],
         ["best_version_episode_to_full", "best_version_backfill_enabled", "backfill_best_version_now"],
     ]),
     ("完结信号", [
@@ -174,6 +188,11 @@ TABS = [
         ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
         ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
         ["verify_retention_days", "timeout_release_days"],
+    ]),
+    ("识别增强", [
+        ["recognition_guard_mode", "recognition_guard_notify", "recognition_guard_notify_interval"],
+        ["recognition_guard_tmdb_recheck_mode", "recognition_guard_cache_maxsize"],
+        [("recognition_guard_custom_config", 12)],
     ]),
 ]
 
@@ -225,6 +244,25 @@ SELECT_ITEMS = {
         {"title": "电影", "value": "movie"},
         {"title": "剧集", "value": "tv"},
     ],
+    "recognition_guard_mode": [
+        {"title": "关闭", "value": "off"},
+        {"title": "审计", "value": "audit"},
+        {"title": "宽松", "value": "loose"},
+        {"title": "平衡", "value": "balanced"},
+        {"title": "严格", "value": "strict"},
+    ],
+    "recognition_guard_notify": [
+        {"title": "关闭", "value": "off"},
+        {"title": "摘要", "value": "summary"},
+        {"title": "明细", "value": "detail"},
+        {"title": "全部", "value": "all"},
+    ],
+    "recognition_guard_tmdb_recheck_mode": [
+        {"title": "关闭", "value": "off"},
+        {"title": "全部", "value": "all"},
+        {"title": "严格", "value": "strict"},
+        {"title": "平衡和严格", "value": "balanced_strict"},
+    ],
 }
 
 # 多选枚举字段（chips 展示）
@@ -268,6 +306,8 @@ def _field(key: str, defaults: dict, md: int = FIELD_MD) -> dict:
         return multi_select_field(key, label, MULTI_ITEMS[key], hint, md)
     if key in SELECT_ITEMS:
         return select_field(key, label, SELECT_ITEMS[key], hint, md)
+    if key == "recognition_guard_custom_config":
+        return ace_editor_field(key, label, hint, md)
     return field_for(key, label, defaults.get(key), hint, md)
 
 
@@ -348,7 +388,7 @@ def _footer() -> list:
 
 
 def build_form():
-    """聚合表单：顶部开关行 + 周期行 + 5 个 Tab + 底部提示；model 为全部配置键默认值。"""
+    """聚合表单：顶部开关行 + 周期行 + 6 个 Tab + 底部提示；model 为全部配置键默认值。"""
     defaults = PluginConfig.defaults()
     beta_alert = alert_row(
         "warning",

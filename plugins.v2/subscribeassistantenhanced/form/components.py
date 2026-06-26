@@ -77,6 +77,22 @@ def textarea_field(model: str, label: str, hint: str = "", md: int = 12, rows: i
     }
 
 
+def ace_editor_field(model: str, label: str, hint: str = "", md: int = 12) -> dict:
+    """YAML 编辑器控件，用于缩进敏感的策略配置。"""
+    props = {
+        "modelvalue": model,
+        "label": label,
+        "lang": "yaml",
+        "theme": "monokai",
+        "style": "height: 30rem",
+    }
+    return {
+        "component": "VCol",
+        "props": {"cols": 12, "md": md},
+        "content": [{"component": "VAceEditor", "props": _with_hint(props, hint)}],
+    }
+
+
 def field_for(model: str, label: str, default: Any, hint: str = "", md: int = 6) -> dict:
     """按默认值类型选择控件：bool→开关、str→文本、其余（int/float）→数值。
 
