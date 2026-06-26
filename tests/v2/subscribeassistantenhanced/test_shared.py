@@ -7,7 +7,8 @@ from subscribeassistantenhanced.shared.log import truncate_log_value, format_log
 from subscribeassistantenhanced.shared.subscribe import (
     format_subscribe, format_subscribe_desc, format_subscribe_label, match_subscribe,
     identity_matches, pending_subscription_episodes, resolve_subscribe_media_type,
-    subscribe_from_source, subscribe_identity,
+    subscribe_from_source, subscribe_identity, is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
 )
 from subscribeassistantenhanced.shared.update import update_subscribe
 from subscribeassistantenhanced.shared.media import (
@@ -116,6 +117,48 @@ class TestPendingSubscriptionEpisodes:
         )
 
         assert pending_subscription_episodes(subscribe) == [1, 2, 3]
+
+
+class TestBestVersionSubscribeSemantics:
+    """洗版订阅形态判断区分电影、剧集全集和剧集分集。"""
+
+    def _sub(self, **kwargs):
+        defaults = {
+            "type": "电视剧",
+            "best_version": 0,
+            "best_version_full": 0,
+        }
+        defaults.update(kwargs)
+        return SimpleNamespace(**defaults)
+
+    def test_movie_best_version_is_full_best_version_subscribe(self):
+        """电影 best_version 是真正的洗版订阅，不依赖 best_version_full。"""
+        subscribe = self._sub(type="电影", best_version=1, best_version_full=0)
+
+        assert is_full_best_version_subscribe(subscribe) is True
+        assert is_tv_episode_best_version_subscribe(subscribe) is False
+
+    def test_tv_full_best_version_is_full_best_version_subscribe(self):
+        """剧集 best_version + best_version_full 是全集洗版订阅。"""
+        subscribe = self._sub(type="电视剧", best_version=1, best_version_full=1)
+
+        assert is_full_best_version_subscribe(subscribe) is True
+        assert is_tv_episode_best_version_subscribe(subscribe) is False
+
+    def test_tv_episode_best_version_is_not_full_best_version_subscribe(self):
+        """剧集 best_version 且非 best_version_full 是分集洗版订阅。"""
+        subscribe = self._sub(type="电视剧", best_version=1, best_version_full=0)
+
+        assert is_full_best_version_subscribe(subscribe) is False
+        assert is_tv_episode_best_version_subscribe(subscribe) is True
+
+    def test_normal_subscriptions_are_not_best_version_subscribe(self):
+        """普通订阅不属于任何洗版订阅形态。"""
+        for media_type in ("电影", "电视剧"):
+            subscribe = self._sub(type=media_type, best_version=0, best_version_full=0)
+
+            assert is_full_best_version_subscribe(subscribe) is False
+            assert is_tv_episode_best_version_subscribe(subscribe) is False
 
 
 class TestFormatSubscribeLabel:

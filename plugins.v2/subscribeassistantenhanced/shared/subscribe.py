@@ -25,6 +25,23 @@ def resolve_subscribe_media_type(subscribe) -> MediaType:
         return MediaType.UNKNOWN
 
 
+def is_full_best_version_subscribe(subscribe) -> bool:
+    """判断是否为真正洗版订阅：电影 best_version，或 best_version_full 的剧集 best_version。"""
+    if not subscribe or not subscribe.best_version:
+        return False
+    media_type = resolve_subscribe_media_type(subscribe)
+    if media_type == MediaType.MOVIE:
+        return True
+    return media_type == MediaType.TV and bool(subscribe.best_version_full)
+
+
+def is_tv_episode_best_version_subscribe(subscribe) -> bool:
+    """判断是否为剧集分集洗版订阅。"""
+    if not subscribe or not subscribe.best_version:
+        return False
+    return resolve_subscribe_media_type(subscribe) == MediaType.TV and not bool(subscribe.best_version_full)
+
+
 def build_subscribe_meta(subscribe, failure_context: str):
     """按主程序订阅 MetaInfo 构造口径补齐缺集查询输入。"""
     media_type = resolve_subscribe_media_type(subscribe)
