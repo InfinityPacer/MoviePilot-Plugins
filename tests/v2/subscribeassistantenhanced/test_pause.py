@@ -98,7 +98,7 @@ class TestAiringPause:
         assert result is None
 
     def test_pre_air_pauses_tv_before_air(self):
-        """电视剧距离目标季开播窗口较远时暂停。"""
+        """剧集距离目标季开播窗口较远时暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
             evaluate_fn=MagicMock(),
@@ -832,7 +832,7 @@ class TestPauseManager:
         notify = MagicMock()
         mgr = self._make_manager(notify=notify)
         sub = _sub()
-        mgr.pause(sub, PauseRecord(reason="pre_air", detail="电视剧 2026-06-25 开播，暂未到订阅窗口"))
+        mgr.pause(sub, PauseRecord(reason="pre_air", detail="剧集 2026-06-25 开播，暂未到订阅窗口"))
         notify.reset_mock()
 
         assert mgr.resume(sub) is True

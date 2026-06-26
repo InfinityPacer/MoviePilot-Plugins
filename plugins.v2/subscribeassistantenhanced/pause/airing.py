@@ -32,7 +32,7 @@ class AiringPauseChecker:
     def check_pre_air(self, subscribe, mediainfo,
                       as_of: Optional[date] = None,
                       episodes: Optional[list] = None) -> Optional[PauseRecord]:
-        """检查电影上映或电视剧开播前是否应暂停。"""
+        """检查电影上映或剧集开播前是否应暂停。"""
         today = as_of or date.today()
         media_type = resolve_subscribe_media_type(subscribe)
 
@@ -68,7 +68,7 @@ class AiringPauseChecker:
         if air_date is None:
             air_date = first_scope_episode_air_date(subscribe, episodes or [])
         if air_date is None:
-            # 电视剧没有任何可用排期时保持暂停，避免未知开播窗口被集数待定提前接管。
+            # 剧集没有任何可用排期时保持暂停，避免未知开播窗口被集数待定提前接管。
             return PauseRecord(
                 reason="pre_air",
                 since=0.0,

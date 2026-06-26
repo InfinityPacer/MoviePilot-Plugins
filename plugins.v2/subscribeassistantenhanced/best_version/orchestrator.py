@@ -5,7 +5,12 @@ from app.log import logger
 from app.schemas.types import MediaType
 
 from ..engine.types import CompletionSignal
-from ..shared.subscribe import format_subscribe_desc, resolve_subscribe_media_type
+from ..shared.subscribe import (
+    format_subscribe_desc,
+    is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
+    resolve_subscribe_media_type,
+)
 from .priority import PriorityManager
 
 
@@ -92,13 +97,13 @@ class BestVersionOrchestrator:
             "filter": subscribe.filter,
             "filter_groups": subscribe.filter_groups,
         }
-        # 普通剧集订阅完成后直接进入全集洗版，才能在新资源下载前执行整季旧版本清理。
+        # 普通剧集订阅完成后直接进入洗版，才能在新资源下载前执行整季旧版本清理。
         if not is_movie:
             payload["best_version_full"] = 1
         payload = {key: value for key, value in payload.items() if value is not None}
         sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
-            mode_label = "电影洗版" if is_movie else "全集洗版"
+            mode_label = "洗版"
             logger.info(
                 f"洗版编排：{format_subscribe_desc(subscribe)} "
                 f"原因=订阅完成，处理=已创建{mode_label}订阅（id={sid}）"
@@ -129,10 +134,12 @@ class BestVersionOrchestrator:
 
     @staticmethod
     def _mode_label(subscribe) -> str:
-        """按订阅实际洗版形态返回用户可见标签，避免把分集和全集清理混写成泛化洗版。"""
-        if not subscribe.best_version:
-            return ""
-        return "全集洗版" if subscribe.best_version_full else "分集洗版"
+        """按订阅实际洗版形态返回用户可见标签。"""
+        if is_full_best_version_subscribe(subscribe):
+            return "洗版"
+        if is_tv_episode_best_version_subscribe(subscribe):
+            return "分集洗版"
+        return ""
 
     @staticmethod
     def _type_matches(media_type: MediaType, type_setting) -> bool:

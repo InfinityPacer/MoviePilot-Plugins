@@ -171,7 +171,7 @@ class TestBackfillExisting:
         assert call_payload["episode_priority"]["3"] == 100
 
     def test_can_backfill_only_episode_best_version_tv(self):
-        """回填仅适用于电视剧分集洗版。"""
+        """回填仅适用于剧集分集洗版。"""
         mgr = _mgr()
 
         assert mgr.can_backfill(_sub()) is True

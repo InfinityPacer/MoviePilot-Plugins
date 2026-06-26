@@ -179,7 +179,7 @@ class PauseManager:
         """生成恢复通知正文，保留原暂停窗口上下文但改写为当前状态。"""
         pause_detail = record.detail if record else ""
         if reason_key == "pre_air":
-            pause_detail = re.sub(r"^(?:电影|电视剧)\s+", "", pause_detail)
+            pause_detail = re.sub(r"^(?:电影|电视剧|剧集)\s+", "", pause_detail)
             pause_detail = re.sub(r"，距今\s+\d+\s+天", "", pause_detail)
             pause_detail = re.sub(r"，已过\s+\d+\s+天", "", pause_detail)
             pause_detail = pause_detail.replace("，今天", "")

@@ -10,7 +10,12 @@ from .engine.local import check_l_signal
 from .engine.signals import has_scope_future_episode
 from .engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from .shared.log import detail
-from .shared.subscribe import format_subscribe, resolve_subscribe_media_type
+from .shared.subscribe import (
+    format_subscribe,
+    is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
+    resolve_subscribe_media_type,
+)
 
 
 class CompletionGuard:
@@ -61,7 +66,7 @@ class CompletionGuard:
 
         if subscribe.best_version:
             if not signal.stable:
-                mode_label = "全集洗版" if subscribe.best_version_full else "分集洗版"
+                mode_label = self._best_version_mode_label(subscribe)
                 logger.info(f"完成守卫：{format_subscribe(subscribe)} {mode_label}信号不稳定（{signal.reason}），否决完成")
                 data.cancel = True
                 data.source = "subscribeassistantenhanced"
@@ -130,6 +135,15 @@ class CompletionGuard:
             meta=meta,
             resolve_missing_fn=self.resolve_missing_fn,
         )
+
+    @staticmethod
+    def _best_version_mode_label(subscribe) -> str:
+        """按订阅实际洗版形态返回完成守卫日志标签。"""
+        if is_full_best_version_subscribe(subscribe):
+            return "洗版"
+        if is_tv_episode_best_version_subscribe(subscribe):
+            return "分集洗版"
+        return "洗版"
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""

@@ -64,7 +64,7 @@ def _judge(config=None, evaluate_result=None, store=None, notify=None):
 class TestShouldEnterPending:
 
     def test_movie_skips_tv_episode_pending_rules(self):
-        """电影没有剧集列表时不得命中电视剧的集数不足待定规则。"""
+        """电影没有剧集列表时不得命中剧集的集数不足待定规则。"""
         j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 3}))
         should, reason = j.should_enter_pending(
             _sub(season=0, media_type="电影"),

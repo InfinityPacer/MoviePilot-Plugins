@@ -1,7 +1,7 @@
 """L：订阅目标覆盖信号。"""
 from typing import Optional
 
-from ..shared.subscribe import build_subscribe_meta
+from ..shared.subscribe import build_subscribe_meta, is_tv_episode_best_version_subscribe
 from .types import CompletionSignal, SeasonScope
 
 
@@ -22,9 +22,7 @@ def check_l_signal(subscribe, scope: SeasonScope, mediainfo, meta=None,
         subscribe=subscribe,
         meta=meta,
         mediainfo=mediainfo,
-        best_version_accept_downloaded=bool(
-            subscribe.best_version and not subscribe.best_version_full
-        ),
+        best_version_accept_downloaded=is_tv_episode_best_version_subscribe(subscribe),
     )
     if not satisfied:
         return None

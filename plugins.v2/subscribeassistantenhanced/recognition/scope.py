@@ -5,7 +5,11 @@ from app.schemas.types import MediaType
 
 from .audit import candidate_fingerprint
 from .types import CandidateResource, RecognitionTarget
-from ..shared.subscribe import resolve_subscribe_media_type
+from ..shared.subscribe import (
+    is_full_best_version_subscribe,
+    is_tv_episode_best_version_subscribe,
+    resolve_subscribe_media_type,
+)
 
 
 def _episode_number(episode) -> int | None:
@@ -103,8 +107,8 @@ def build_target(subscribe, mediainfo=None, tmdb_episodes_fn=None) -> Recognitio
     source = "movie" if media_type == MediaType.MOVIE else "subscribe_range"
     episodes = [] if media_type == MediaType.MOVIE else _subscribe_range(subscribe)
     confidence = "high" if media_type == MediaType.MOVIE or episodes else "unknown"
-    if media_type == MediaType.TV and subscribe.best_version:
-        if subscribe.best_version_full:
+    if media_type == MediaType.TV:
+        if is_full_best_version_subscribe(subscribe):
             episodes = []
             source = "scope_unavailable"
             confidence = "unknown"
@@ -122,7 +126,7 @@ def build_target(subscribe, mediainfo=None, tmdb_episodes_fn=None) -> Recognitio
                     episodes = parsed
                     source = "episode_group" if subscribe.episode_group else "full_best_version"
                     confidence = "high"
-        elif not subscribe.best_version_full:
+        elif is_tv_episode_best_version_subscribe(subscribe):
             source = "episode_best_version"
     aliases, alias_strengths = _target_aliases(subscribe, mediainfo)
     return RecognitionTarget(
