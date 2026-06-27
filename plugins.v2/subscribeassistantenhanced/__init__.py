@@ -85,7 +85,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.4.5"
+    plugin_version = "0.4.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -405,6 +405,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             detect_backfill_episodes_fn=self._detect_backfill_episodes,
             detect_missing_episodes_fn=self._detect_missing_episodes,
             resolve_missing_fn=self._resolve_subscribe_missing,
+            refresh_subscribe_progress_fn=self._refresh_subscribe_progress,
             recognize_mediainfo_fn=self._recognize_mediainfo,
             priority_manager=priority_manager,
             download_monitor=download_monitor,
@@ -605,6 +606,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 results["updated"] += 1
                 results["filled_episodes"] += len(filled_episodes)
                 detail(f"洗版回填：{format_subscribe(subscribe)} 回填已下载集 {filled_episodes}")
+                refreshed = self._subscribe_oper.get(subscribe.id) or subscribe
+                self._refresh_subscribe_progress(refreshed, scene="manual_backfill")
             else:
                 results["skipped"] += 1
         logger.info(
@@ -1195,7 +1198,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @eventmanager.register(EventType.SubscribeModified)
     def on_subscribe_modified(self, event):
-        """订阅修改 → 任务状态重置 + 普通转洗版回填。"""
+        """订阅修改 → 暂停状态清理、洗版回填和 reset 进度刷新。"""
         if self._event_proxy:
             self._event_proxy.on_subscribe_modified(event)
 
@@ -1396,6 +1399,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mediainfo=mediainfo,
             best_version_accept_downloaded=best_version_accept_downloaded,
         )
+
+    def _refresh_subscribe_progress(self, subscribe, scene: str = "plugin"):
+        """调用主程序订阅进度刷新入口；旧主程序缺少能力时不做插件侧兜底写入。"""
+        refresh = getattr(self._subscribe_chain, "refresh_subscribe_progress", None)
+        if not callable(refresh):
+            logger.warning("订阅进度刷新失败：当前主程序缺少 refresh_subscribe_progress，请升级到插件要求的 MoviePilot 版本")
+            return {"updated": False, "reason": "missing_refresh_subscribe_progress"}
+        return refresh(subscribe=subscribe, scene=scene)
 
     def _detect_episode_coverage(self, subscribe) -> Tuple[list, list]:
         """复用主程序缺集探测并返回 (已存在集, 缺失集)；探测失败按目标集全部缺失处理。"""

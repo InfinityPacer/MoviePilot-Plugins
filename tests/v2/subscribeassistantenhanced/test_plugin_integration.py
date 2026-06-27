@@ -68,14 +68,14 @@ def _mediainfo(**kwargs):
     return media
 
 
-def test_release_metadata_allows_main_program_2_13_13_or_newer():
-    """插件版本门禁使用 >= 语义，兼容 MoviePilot v2.13.13 及以上版本。"""
+def test_release_metadata_requires_main_program_with_progress_sync():
+    """插件版本门禁必须排除未包含订阅进度刷新入口的主程序版本。"""
     package = json.loads(Path("package.v2.json").read_text(encoding="utf-8"))
     specifier = SpecifierSet(package["SubscribeAssistantEnhanced"]["system_version"])
 
     assert package["SubscribeAssistantEnhanced"]["system_version"].startswith(">=")
-    assert Version("2.13.12") not in specifier
-    assert Version("2.13.13") in specifier
+    assert Version("2.13.15") not in specifier
+    assert Version("2.13.16") in specifier
 
 
 def test_converter_is_wired():
@@ -144,6 +144,19 @@ def test_resolve_subscribe_missing_without_subscribe_chain_fails_closed(monkeypa
     assert result == (False, {})
     subscribe_chain_cls.assert_not_called()
     assert any("目标缺集查询失败" in message and "主程序订阅链未初始化" in message for message in warnings)
+
+
+def test_refresh_subscribe_progress_missing_main_method_warns_without_local_write(monkeypatch):
+    """旧主程序缺少刷新入口时只告警，不由插件写 lack_episode 兜底。"""
+    warnings = []
+    plugin = SubscribeAssistantEnhanced()
+    plugin._subscribe_chain = SimpleNamespace()
+    monkeypatch.setattr("subscribeassistantenhanced.logger.warning", warnings.append)
+
+    result = plugin._refresh_subscribe_progress(_sub(id=7), scene="reset_backfill")
+
+    assert result == {"updated": False, "reason": "missing_refresh_subscribe_progress"}
+    assert any("refresh_subscribe_progress" in message for message in warnings)
 
 
 def test_recognize_mediainfo_preserves_special_season_zero():
@@ -1429,20 +1442,25 @@ def test_run_meta_check_restores_unowned_p_when_pending_disabled():
 def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(monkeypatch):
     """立即回填会扫描存量洗版订阅，并在执行后关闭一次性标志。"""
     sub = _sub(id=5, name="X", best_version=1, best_version_full=0, start_episode=2, note=[1, 2, 3])
+    refreshed = _sub(id=5, name="X", best_version=1, best_version_full=0, episode_priority={"1": 100})
     subscribe_oper = MagicMock()
     subscribe_oper.list.return_value = [sub]
+    subscribe_oper.get.return_value = refreshed
     priority_manager = MagicMock()
     priority_manager.can_backfill.return_value = True
+    priority_manager.backfill_existing.return_value = True
     monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
     monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
     plugin.post_message = MagicMock()
     plugin._detect_existing_episodes = MagicMock(return_value=[2, 3])
+    plugin._refresh_subscribe_progress = MagicMock()
 
     plugin.init_plugin({"backfill_best_version_now": True})
 
     priority_manager.backfill_existing.assert_called_once_with(sub, [1, 2, 3])
+    plugin._refresh_subscribe_progress.assert_called_once_with(refreshed, scene="manual_backfill")
     plugin.post_message.assert_called_once()
     assert plugin.post_message.call_args.kwargs["title"] == "洗版订阅按集优先级回填"
     assert "扫描 1 个订阅" in plugin.post_message.call_args.kwargs["text"]
@@ -1760,7 +1778,7 @@ class TestEventDelegation:
         plugin._resolve_subscribe_missing = MagicMock(return_value=(True, {}))
         converter = plugin._modules["converter"]
         converter.convert_to_full = MagicMock(return_value=True)
-        # init_plugin 时注入的是绑定方法；替换 mock 后需同步给事件代理，验证入口 wiring 与事件链路。
+        # init_plugin 时注入的是绑定方法；替换 mock 后需刷新给事件代理，验证入口 wiring 与事件链路。
         plugin._event_proxy._modules["resolve_missing_fn"] = plugin._resolve_subscribe_missing
         plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
 

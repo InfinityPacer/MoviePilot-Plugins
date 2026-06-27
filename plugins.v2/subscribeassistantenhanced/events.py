@@ -5,7 +5,7 @@
 - SubscribeEpisodesRefresh → volatility.record (先) + pending observer (后)
 - SubscribeAdded → best_version + priority.backfill + pause.auto_pause_user
 - SubscribeDeleted → task_manager.cleanup
-- SubscribeModified → task_manager.reset_on_modify
+- SubscribeModified → 状态暂停清理 + 普通转洗版回填 + reset 回填刷新
 - SubscribeComplete → verifier.snapshot + best_version
 - TransferIntercept → subscription_cleanup.history_clear
 - ResourceSelection → 洗版串行 + 识别增强 + 删除指纹过滤
@@ -47,9 +47,19 @@ class EventProxy:
         modules["backfill_enabled"] = backfill_enabled
         modules["pending_download_enabled"] = pending_download_enabled
         self._modules = modules
+        self._reset_backfill_inflight = set()
 
     def get(self, name):
         return self._modules.get(name)
+
+    def _refresh_backfilled_progress(self, subscribe_id, subscribe, scene: str):
+        """回填成功后重新读取订阅，并委托主程序刷新订阅进度。"""
+        refresh = self.get("refresh_subscribe_progress_fn")
+        if not refresh:
+            return
+        subscribe_oper = self.get("subscribe_oper")
+        refreshed = subscribe_oper.get(subscribe_id) if subscribe_oper else subscribe
+        refresh(refreshed, scene=scene)
 
     def _format_subscribe_label(self, subscribe_id, subscribe_info=None):
         """按订阅 ID 生成日志标签；事件快照或查库成功时带名称、季号和 ID。"""
@@ -174,7 +184,8 @@ class EventProxy:
                 episodes = detect(subscribe)
                 if episodes:
                     logger.info(f"订阅新增：{format_subscribe(subscribe)} 分集洗版订阅回填已下载集 {episodes}")
-                    priority.backfill_existing(subscribe, episodes)
+                    if priority.backfill_existing(subscribe, episodes):
+                        self._refresh_backfilled_progress(subscribe_id, subscribe, scene="add_backfill")
 
         # 洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
         if is_full_best_version_subscribe(subscribe):
@@ -278,7 +289,31 @@ class EventProxy:
                 episodes = detect(subscribe)
                 if episodes:
                     logger.info(f"订阅修改：{format_subscribe(subscribe)} 普通转洗版，回填已下载集 {episodes}")
-                    priority.backfill_existing(subscribe, episodes)
+                    if priority.backfill_existing(subscribe, episodes):
+                        self._refresh_backfilled_progress(subscribe_id, subscribe, scene="convert_backfill")
+        self._handle_reset_backfill(subscribe_id, subscribe, data)
+
+    def _handle_reset_backfill(self, subscribe_id, subscribe, data):
+        """只处理主程序 reset 场景：回填 reset 后仍在库的分集并刷新主程序进度。"""
+        if data.get("scene") != "reset":
+            return
+        key = str(subscribe_id)
+        if key in self._reset_backfill_inflight:
+            return
+        priority = self.get("priority_manager")
+        detect = self.get("detect_backfill_episodes_fn") or self.get("detect_existing_episodes_fn")
+        refresh = self.get("refresh_subscribe_progress_fn")
+        if not (self.get("backfill_enabled") and priority and detect and refresh and priority.can_backfill(subscribe)):
+            return
+        self._reset_backfill_inflight.add(key)
+        try:
+            # subscribe 来自 reset 事件发出后的查库对象；旧事件快照只用于判断场景，不参与回填检测。
+            episodes = detect(subscribe)
+            if not episodes or not priority.backfill_existing(subscribe, episodes):
+                return
+            self._refresh_backfilled_progress(subscribe_id, subscribe, scene="reset_backfill")
+        finally:
+            self._reset_backfill_inflight.discard(key)
 
     def on_subscribe_complete(self, event):
         """SubscribeComplete → 清理任务数据 + H 快照 + 自动洗版创建。
