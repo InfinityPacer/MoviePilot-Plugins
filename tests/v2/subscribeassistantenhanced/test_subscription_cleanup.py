@@ -60,6 +60,7 @@ class TestHistoryClear:
         return SimpleNamespace(event_data=SimpleNamespace(
             cancel=False,
             mediainfo=SimpleNamespace(tmdb_id=tmdb_id, type=MediaType.TV, season=season),
+            meta=SimpleNamespace(begin_season=season, episode_list=[episode]),
             fileitem=SimpleNamespace(path=f"/src/测试剧 S01E{episode:02d}.mkv"),
             target_path=f"/dest/测试剧 S01E{episode:02d}.mkv",
         ))
@@ -536,6 +537,344 @@ class TestHistoryClear:
         assert orch.handle_history_clear(self._transfer_event(episode=2)) is True
         assert deletes[-1] == {"path": "/dest/e2.mkv"}
         assert store["subscription_cleanup_histories"] == {}
+
+    def test_normal_subscription_multi_episode_snapshot_consumes_current_episode_only(self):
+        """普通订阅多集快照按本次文件级整理集数消费，未整理集保留在快照中。"""
+        store = {"subscription_cleanup_histories": {"task-e1-e2": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1, 2],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [
+                {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+                {"dest_fileitem": {"path": "/dest/e2.mkv"}, "episodes": "E02"},
+            ],
+            "time": time.time(),
+        }}}
+        orch, _store, deletes, _events, _histories = self._orch_clear(store)
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is True
+
+        assert deletes == [{"path": "/dest/e1.mkv"}]
+        task = store["subscription_cleanup_histories"]["task-e1-e2"]
+        assert task["target_episodes"] == [2]
+        assert task["histories"] == [
+            {"dest_fileitem": {"path": "/dest/e2.mkv"}, "episodes": "E02"},
+        ]
+
+    def test_normal_subscription_directory_intercept_without_meta_is_ignored(self):
+        """普通订阅目录级整理事件没有文件 meta 时不得用路径兜底消费快照。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [{"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"}],
+            "time": time.time(),
+        }}}
+        orch, _store, deletes, _events, _histories = self._orch_clear(store)
+        event = SimpleNamespace(event_data=SimpleNamespace(
+            cancel=False,
+            mediainfo=SimpleNamespace(tmdb_id=100, type=MediaType.TV, season=1),
+            fileitem=SimpleNamespace(path="/src/测试剧 S01E01-E02/"),
+            target_path="/dest/测试剧 S01E01-E02/",
+        ))
+
+        assert orch.handle_history_clear(event) is False
+
+        assert deletes == []
+        assert "task-e1" in store["subscription_cleanup_histories"]
+
+    def test_normal_subscription_claims_episode_before_deleting_dest(self):
+        """目标文件删除前必须先占用快照记录，避免并发整理重复消费同一集。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [{"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"}],
+            "time": time.time(),
+        }}}
+        event = self._transfer_event(episode=1)
+        deletes = []
+        reentered = False
+
+        def update(key, updater):
+            store[key] = updater(store.get(key, {}))
+            return store[key]
+
+        def delete_media_file(fileitem):
+            nonlocal reentered
+            deletes.append(fileitem)
+            if not reentered:
+                reentered = True
+                assert orch.handle_history_clear(event) is False
+
+        orch = SubscriptionCleanup(
+            task_data_read=lambda key: store.get(key, {}),
+            task_data_update=update,
+            delete_media_file_fn=delete_media_file,
+            notify_fn=lambda *_args, **_kwargs: None,
+        )
+
+        assert orch.handle_history_clear(event) is True
+
+        assert deletes == [{"path": "/dest/e1.mkv"}]
+        assert store["subscription_cleanup_histories"] == {}
+
+    def test_dest_delete_failure_keeps_snapshot_and_skips_notification(self):
+        """目标文件删除失败时不得消费快照或发送已处理通知。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [{"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"}],
+            "time": time.time(),
+        }}}
+        notifies = []
+        orch = SubscriptionCleanup(
+            task_data_read=lambda key: store.get(key, {}),
+            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
+            delete_media_file_fn=lambda _fileitem: False,
+            notify_fn=lambda title, text=None, **kwargs: notifies.append((title, text, kwargs)),
+        )
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is False
+
+        assert store["subscription_cleanup_histories"]["task-e1"]["histories"] == [
+            {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+        ]
+        assert notifies == []
+
+    def test_dest_delete_exception_keeps_snapshot_and_skips_notification(self):
+        """目标文件删除抛错时按失败处理，恢复快照且不发送已处理通知。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [{"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"}],
+            "time": time.time(),
+        }}}
+        notifies = []
+
+        def delete_media_file(_fileitem):
+            raise RuntimeError("delete failed")
+
+        orch = SubscriptionCleanup(
+            task_data_read=lambda key: store.get(key, {}),
+            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
+            delete_media_file_fn=delete_media_file,
+            notify_fn=lambda title, text=None, **kwargs: notifies.append((title, text, kwargs)),
+        )
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is False
+
+        assert store["subscription_cleanup_histories"]["task-e1"]["histories"] == [
+            {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+        ]
+        assert notifies == []
+
+    def test_history_clear_restores_claim_when_dest_clear_raises(self):
+        """目标文件清理过程出现未捕获异常时，已 claim 的快照必须恢复。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [{"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"}],
+            "time": time.time(),
+        }}}
+        orch, _store, _deletes, _events, _histories = self._orch_clear(store)
+
+        def clear_transfer_dest_histories(_task):
+            raise RuntimeError("unexpected")
+
+        orch.clear_transfer_dest_histories = clear_transfer_dest_histories
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is False
+
+        assert store["subscription_cleanup_histories"]["task-e1"]["histories"] == [
+            {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+        ]
+
+    def test_partial_dest_delete_failure_restores_only_failed_history(self):
+        """同一整理事件部分目标删除失败时，仅失败记录回到快照。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [
+                {"id": "ok", "dest_fileitem": {"path": "/dest/ok.mkv"}, "episodes": "E01"},
+                {"id": "fail", "dest_fileitem": {"path": "/dest/fail.mkv"}, "episodes": "E01"},
+            ],
+            "time": time.time(),
+        }}}
+
+        def delete_media_file(fileitem):
+            return fileitem.get("path") != "/dest/fail.mkv"
+
+        orch = SubscriptionCleanup(
+            task_data_read=lambda key: store.get(key, {}),
+            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
+            delete_media_file_fn=delete_media_file,
+            notify_fn=lambda *_args, **_kwargs: None,
+        )
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is False
+
+        task = store["subscription_cleanup_histories"]["task-e1"]
+        assert task["target_episodes"] == [1]
+        assert task["histories"] == [
+            {"id": "fail", "dest_fileitem": {"path": "/dest/fail.mkv"}, "episodes": "E01"},
+        ]
+
+    def test_failed_episode_restore_merges_with_remaining_snapshot(self):
+        """按集 claim 后若删除失败，应把失败集并回仍保留的其他集快照。"""
+        store = {"subscription_cleanup_histories": {"task-e1-e2": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1, 2],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [
+                {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+                {"dest_fileitem": {"path": "/dest/e2.mkv"}, "episodes": "E02"},
+            ],
+            "time": time.time(),
+        }}}
+        orch = SubscriptionCleanup(
+            task_data_read=lambda key: store.get(key, {}),
+            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
+            delete_media_file_fn=lambda _fileitem: False,
+            notify_fn=lambda *_args, **_kwargs: None,
+        )
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is False
+
+        task = store["subscription_cleanup_histories"]["task-e1-e2"]
+        assert task["target_episodes"] == [1, 2]
+        assert task["histories"] == [
+            {"dest_fileitem": {"path": "/dest/e2.mkv"}, "episodes": "E02"},
+            {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+        ]
+
+    def test_restore_failed_histories_keeps_multiple_no_id_files(self):
+        """无整理记录 id 时按文件路径区分记录，避免同集多文件恢复时被误去重。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "normal",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "普通订阅",
+            "histories": [
+                {"dest_fileitem": {"path": "/dest/cd1.mkv"}, "episodes": "E01"},
+                {"dest_fileitem": {"path": "/dest/cd2.mkv"}, "episodes": "E01"},
+            ],
+            "time": time.time(),
+        }}}
+        orch = SubscriptionCleanup(
+            task_data_read=lambda key: store.get(key, {}),
+            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
+            delete_media_file_fn=lambda _fileitem: False,
+            notify_fn=lambda *_args, **_kwargs: None,
+        )
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is False
+
+        task = store["subscription_cleanup_histories"]["task-e1"]
+        assert task["histories"] == [
+            {"dest_fileitem": {"path": "/dest/cd1.mkv"}, "episodes": "E01"},
+            {"dest_fileitem": {"path": "/dest/cd2.mkv"}, "episodes": "E01"},
+        ]
+
+    def test_clear_history_task_helpers_keep_guard_semantics(self):
+        """快照占用和恢复 helper 的空输入分支保持无副作用语义。"""
+        orch = SubscriptionCleanup()
+        orch._restore_clear_history_task({"_task_key": "task-e1"})
+
+        store = {}
+        orch = SubscriptionCleanup(
+            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
+        )
+
+        orch._restore_clear_history_task({"histories": []})
+        task = {"scene": "normal", "histories": [{"episodes": "E01"}]}
+        assert orch._consume_clear_history_task(task, [])[0] is task
+        assert orch._consume_clear_history_task(task, [])[1] is None
+        assert orch._consume_clear_history_task({"scene": "normal", "histories": [{"episodes": "E02"}]}, [1])[0]["histories"] == [
+            {"episodes": "E02"}
+        ]
+
+        assert store == {}
+
+    def test_history_identity_uses_id_or_serialized_paths(self):
+        """失败恢复去重优先使用整理记录 id，缺少 id 时使用源/目标路径和集数组合。"""
+        assert SubscriptionCleanup._history_identity({"id": "1", "episodes": "E01"}) == "id:1"
+        assert SubscriptionCleanup._history_identity({
+            "src_fileitem": {"path": "/src/e1.mkv"},
+            "dest_fileitem": {"path": "/dest/e1.mkv"},
+            "episodes": "E01",
+        }) == "/src/e1.mkv|/dest/e1.mkv|E01"
+        assert SubscriptionCleanup._history_identity(SimpleNamespace(id="2")) == "id:2"
+        assert SubscriptionCleanup._history_identity(SimpleNamespace(
+            src_fileitem={"path": "/src/e2.mkv"},
+            dest_fileitem={"path": "/dest/e2.mkv"},
+            episodes="E02",
+        )) == "/src/e2.mkv|/dest/e2.mkv|E02"
+
+    def test_episode_best_version_directory_intercept_without_meta_is_ignored(self):
+        """分集洗版目录级整理事件没有文件 meta 时不得用路径兜底消费快照。"""
+        store = {"subscription_cleanup_histories": {"task-e1": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "best_version_episode",
+            "target_episodes": [1],
+            "subscribe_desc": "X",
+            "mode_label": "分集洗版",
+            "histories": [{"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"}],
+            "time": time.time(),
+        }}}
+        orch, _store, deletes, _events, _histories = self._orch_clear(store)
+        event = SimpleNamespace(event_data=SimpleNamespace(
+            cancel=False,
+            mediainfo=SimpleNamespace(tmdb_id=100, type=MediaType.TV, season=1),
+            fileitem=SimpleNamespace(path="/src/测试剧 S01E01/"),
+            target_path="/dest/测试剧 S01E01/",
+        ))
+
+        assert orch.handle_history_clear(event) is False
+
+        assert deletes == []
+        assert "task-e1" in store["subscription_cleanup_histories"]
 
     def test_transfer_intercept_out_of_order_episode_consumes_matching_task(self):
         """整理事件乱序到达时不得把 S01E02 路径中的 S01 误当作 E01 消费。"""
