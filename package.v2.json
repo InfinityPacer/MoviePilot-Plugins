@@ -7,7 +7,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png",
         "author": "InfinityPacer",
         "level": 1,
-        "system_version": ">=2.13.13",
+        "system_version": ">=2.13.17",
         "history": {
             "v0.4.5": "修正分集洗版误按洗版完成的问题，优化完成快照增集重建逻辑。升级后请重新配置洗版时限和订阅清理场景。",
             "v0.4.4": "新增识别增强候选准入，支持审计模式、策略配置、二次识别复核和风险通知。",
