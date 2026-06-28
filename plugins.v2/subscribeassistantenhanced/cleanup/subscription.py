@@ -388,30 +388,106 @@ class SubscriptionCleanup:
             )
 
     def handle_history_clear(self, event) -> bool:
-        """TransferIntercept 阶段按清理快照删除旧媒体库目标文件，成功后移除快照。"""
+        """TransferIntercept 阶段按清理快照删除旧媒体库目标文件，成功后消费快照。"""
         data = event.event_data
         if not data or data.cancel:
             return False
         mediainfo = data.mediainfo
         tmdb_id = mediainfo.tmdb_id if mediainfo else None
-        if tmdb_id is None or not self._read:
+        if tmdb_id is None or not self._update:
             return False
         key = str(tmdb_id)
-        snapshots = self._read(SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY) or {}
-        task_key, task = self._match_clear_history_task(key, data, snapshots)
-        if not task:
+        clear_task = self._claim_clear_history_task(key, data)
+        if not clear_task:
             return False
-        if self._clear_history_task_expired(task):
-            detail(f"订阅整理拦截：TMDB {key} 的清理事务已超过 36 小时，丢弃且不删除媒体库文件")
-            return False
-        if self.clear_transfer_dest_histories(task):
-            self._remove_clear_history_task(task_key)
-            return True
+        try:
+            if self.clear_transfer_dest_histories(clear_task):
+                return True
+        except Exception as err:
+            logger.warning(
+                f"订阅整理拦截：{clear_task.get('subscribe_desc', '订阅')} "
+                f"{clear_task.get('mode_label', '订阅')}媒体库文件清理异常，已恢复清理事务：{err}"
+            )
+        failed_histories = clear_task.pop("_failed_histories", None)
+        if failed_histories is not None:
+            restore_task = dict(clear_task)
+            restore_task["histories"] = failed_histories
+            restore_episode_set = set()
+            for history in failed_histories:
+                restore_episode_set.update(self._history_episode_numbers(history))
+            task_episodes = set(self._normalize_episode_numbers(clear_task.get("target_episodes")))
+            if task_episodes:
+                restore_episode_set &= task_episodes
+            restore_task["target_episodes"] = sorted(restore_episode_set or task_episodes)
+        else:
+            restore_task = clear_task
+        self._restore_clear_history_task(restore_task)
         return False
 
-    def _match_clear_history_task(self, tmdb_key: str, event_data, snapshots: dict) -> tuple[Optional[str], Optional[dict]]:
+    def _claim_clear_history_task(self, tmdb_key: str, event_data) -> Optional[dict]:
+        """原子占用本次整理要清理的快照记录，避免并发 TransferIntercept 重复删除。"""
+        claimed = {}
+
+        def updater(data: dict) -> dict:
+            task_key, task, event_episodes = self._match_clear_history_task(tmdb_key, event_data, data)
+            if not task_key or not task:
+                return data
+            if self._clear_history_task_expired(task):
+                detail(f"订阅整理拦截：TMDB {tmdb_key} 的清理事务已超过 36 小时，丢弃且不删除媒体库文件")
+                return data
+            clear_task, remaining_task = self._consume_clear_history_task(task, event_episodes)
+            if not clear_task:
+                return data
+            clear_task["_task_key"] = task_key
+            claimed["task"] = clear_task
+            if remaining_task:
+                data[task_key] = remaining_task
+            else:
+                data.pop(task_key, None)
+            return data
+
+        self._update(SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY, updater)
+        return claimed.get("task")
+
+    def _restore_clear_history_task(self, task: dict):
+        """目标文件删除失败时恢复已占用的清理事务，允许后续整理事件重试。"""
+        if not self._update or not task:
+            return
+        task_key = task.get("_task_key")
+        if not task_key:
+            return
+
+        def updater(data: dict) -> dict:
+            restored_task = {
+                key: value for key, value in task.items()
+                if key != "_task_key"
+            }
+            current_task = data.get(task_key)
+            if not current_task:
+                data[task_key] = restored_task
+                return data
+
+            histories = list(current_task.get("histories") or [])
+            seen_history_keys = {self._history_identity(history) for history in histories}
+            for history in restored_task.get("histories") or []:
+                history_key = self._history_identity(history)
+                if history_key not in seen_history_keys:
+                    histories.append(history)
+                    seen_history_keys.add(history_key)
+            current_task["histories"] = histories
+            current_task["target_episodes"] = sorted(
+                set(self._normalize_episode_numbers(current_task.get("target_episodes")))
+                | set(self._normalize_episode_numbers(restored_task.get("target_episodes")))
+            )
+            data[task_key] = current_task
+            return data
+
+        self._update(SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY, updater)
+
+    def _match_clear_history_task(self, tmdb_key: str, event_data, snapshots: dict) -> tuple[Optional[str], Optional[dict], list[int]]:
         """按媒体身份和整理目标集匹配待消费清理事务，避免同 TMDB 不同集互相覆盖。"""
-        event_episodes = self._event_target_episodes(event_data)
+        meta_episodes = self._event_meta_episodes(event_data)
+        event_episodes = meta_episodes or self._event_target_episodes(event_data)
         event_media_type = self._event_media_type(event_data)
         event_season = self._event_season(event_data, event_media_type)
         for key, task in (snapshots or {}).items():
@@ -421,6 +497,9 @@ class SubscriptionCleanup:
             task_type = task.get("type")
             if event_media_type and task_type and task_type != event_media_type.value:
                 continue
+            task_scene = (task or {}).get("scene")
+            if task_scene in {"normal", "best_version_episode"} and task_type == MediaType.TV.value and not meta_episodes:
+                continue
             if task_type == MediaType.TV.value and task.get("season") is not None:
                 if event_season is None or task.get("season") != event_season:
                     continue
@@ -428,13 +507,48 @@ class SubscriptionCleanup:
             if task_episodes:
                 if not event_episodes or not (task_episodes & set(event_episodes)):
                     continue
-            return str(key), task
-        return None, None
+            return str(key), task, event_episodes
+        return None, None, []
+
+    def _consume_clear_history_task(self, task: dict, event_episodes: list[int]) -> tuple[dict, Optional[dict]]:
+        """按本次整理集数拆分待清理记录；普通订阅和分集洗版只消费当前集。"""
+        if (task or {}).get("scene") not in {"normal", "best_version_episode"}:
+            return task, None
+        event_episode_set = set(self._normalize_episode_numbers(event_episodes))
+        if not event_episode_set:
+            return task, None
+        histories = (task or {}).get("histories") or []
+        consumed_histories = []
+        remaining_histories = []
+        for history in histories:
+            if self._history_episode_numbers(history) & event_episode_set:
+                consumed_histories.append(history)
+            else:
+                remaining_histories.append(history)
+        if not consumed_histories:
+            return task, None
+        consumed_task = dict(task or {})
+        consumed_task["histories"] = consumed_histories
+        consumed_episodes = sorted(
+            set(self._normalize_episode_numbers((task or {}).get("target_episodes"))) & event_episode_set
+        )
+        consumed_task["target_episodes"] = consumed_episodes or sorted(event_episode_set)
+        if not remaining_histories:
+            return consumed_task, None
+        remaining_task = dict(task or {})
+        remaining_task["histories"] = remaining_histories
+        remaining_episode_set = set()
+        for history in remaining_histories:
+            remaining_episode_set.update(self._history_episode_numbers(history))
+        task_episodes = set(self._normalize_episode_numbers((task or {}).get("target_episodes")))
+        if task_episodes:
+            remaining_episode_set &= task_episodes
+        remaining_task["target_episodes"] = sorted(remaining_episode_set)
+        return consumed_task, remaining_task
 
     def _event_target_episodes(self, event_data) -> list[int]:
         """从整理拦截事件的 meta、源文件或目标路径解析本次整理集数。"""
-        meta = getattr(event_data, "meta", None)
-        episodes = self._normalize_episode_numbers(getattr(meta, "episode_list", None))
+        episodes = self._event_meta_episodes(event_data)
         if episodes:
             return episodes
         fileitem = getattr(event_data, "fileitem", None)
@@ -446,6 +560,11 @@ class SubscriptionCleanup:
             if value
         )
         return sorted(self._path_episode_numbers(path_text))
+
+    def _event_meta_episodes(self, event_data) -> list[int]:
+        """返回文件级整理事件 meta 明确给出的集数。"""
+        meta = getattr(event_data, "meta", None)
+        return self._normalize_episode_numbers(getattr(meta, "episode_list", None))
 
     @staticmethod
     def _path_episode_numbers(text: str) -> set[int]:
@@ -521,17 +640,6 @@ class SubscriptionCleanup:
             return True
         return time.time() - created_at > SUBSCRIPTION_CLEANUP_TTL_SECONDS
 
-    def _remove_clear_history_task(self, key: str):
-        """按事务键删除已消费或失效的订阅清理事务。"""
-        if not self._update:
-            return
-
-        def updater(data: dict) -> dict:
-            data.pop(key, None)
-            return data
-
-        self._update(SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY, updater)
-
     def clear_transfer_dest_histories(self, task) -> bool:
         """删除清理快照中的媒体库目标文件；空快照也视为已处理。"""
         histories = (task or {}).get("histories") or []
@@ -539,10 +647,19 @@ class SubscriptionCleanup:
         if histories:
             detail(f"订阅整理拦截：{mode_label}删除 {len(histories)} 条旧整理记录对应的媒体库文件（不可逆）")
         dest_paths = []
+        failed_dest_paths = []
+        failed_histories = []
         for history in histories:
             dest_fileitem = history.get("dest_fileitem") if isinstance(history, dict) else None
             if dest_fileitem and self._delete_media_file:
-                self._delete_media_file(dest_fileitem)
+                try:
+                    delete_state = self._delete_media_file(dest_fileitem)
+                except Exception as err:
+                    delete_state = False
+                    logger.warning(f"订阅整理拦截：媒体库文件删除异常 {self._fileitem_path(dest_fileitem) or dest_fileitem}：{err}")
+                if delete_state is False:
+                    failed_dest_paths.append(self._fileitem_path(dest_fileitem) or str(dest_fileitem))
+                    failed_histories.append(history)
             dest_path = self._fileitem_path(dest_fileitem) or (history.get("dest") if isinstance(history, dict) else None)
             if dest_path:
                 dest_paths.append(str(dest_path))
@@ -550,6 +667,14 @@ class SubscriptionCleanup:
             1 for history in histories
             if isinstance(history, dict) and history.get("dest_fileitem")
         )
+        if failed_dest_paths:
+            logger.warning(
+                f"订阅整理拦截：{(task or {}).get('subscribe_desc', '订阅')} "
+                f"{mode_label}媒体库文件清理失败，目标文件 {dest_file_total - len(failed_dest_paths)}/{len(histories)} 个，"
+                f"失败路径：{'; '.join(failed_dest_paths)}"
+            )
+            task["_failed_histories"] = failed_histories
+            return False
         logger.info(
             f"订阅整理拦截：{(task or {}).get('subscribe_desc', '订阅')} "
             f"{mode_label}媒体库文件清理完成，目标文件 {dest_file_total}/{len(histories)} 个"
@@ -579,6 +704,27 @@ class SubscriptionCleanup:
         if not clean_paths:
             return None
         return "清理路径：\n" + "\n".join(clean_paths)
+
+    @classmethod
+    def _history_identity(cls, history) -> str:
+        """生成整理记录快照内的去重键，用于失败恢复时避免重复写回。"""
+        if isinstance(history, dict):
+            history_id = history.get("id")
+            if history_id is not None:
+                return f"id:{history_id}"
+            src_path = history.get("src") or cls._fileitem_path(history.get("src_fileitem")) or ""
+            dest_path = history.get("dest") or cls._fileitem_path(history.get("dest_fileitem")) or ""
+            return f"{src_path}|{dest_path}|{history.get('episodes') or ''}"
+        history_id = cls._field(history, "id")
+        if history_id is not None:
+            return f"id:{history_id}"
+        src_path = cls._field(history, "src") or cls._fileitem_path(cls._field(history, "src_fileitem")) or ""
+        dest_path = cls._field(history, "dest") or cls._fileitem_path(cls._field(history, "dest_fileitem")) or ""
+        return (
+            f"{src_path}|"
+            f"{dest_path}|"
+            f"{cls._field(history, 'episodes') or ''}"
+        )
 
     @staticmethod
     def _mode_label(subscribe) -> str:
