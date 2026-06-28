@@ -961,12 +961,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 logger.info(f"完成快照清理：已清理 {removed} 条过期快照")
 
     def run_subscription_cleanup_expired(self):
-        """清理超过 72 小时的订阅清理事务。"""
+        """清理超过 36 小时的订阅清理事务。"""
         subscription_cleanup = self._modules.get("subscription_cleanup")
         if subscription_cleanup:
             removed = subscription_cleanup.cleanup_expired_clear_histories()
             if removed:
-                logger.info(f"订阅清理事务：已清理 {removed} 条超过 72 小时的记录")
+                logger.info(f"订阅清理事务：已清理 {removed} 条超过 36 小时的记录")
 
     def _last_download_date(self, subscribe) -> Optional[datetime.date]:
         """订阅最近一次真实下载日期（取自主程序下载历史），无则 None。"""

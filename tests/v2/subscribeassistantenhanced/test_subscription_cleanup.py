@@ -79,7 +79,7 @@ class TestHistoryClear:
         task = next(iter(store["subscription_cleanup_histories"].values()))
         assert task["tmdbid"] == 100
         assert task["target_episodes"] == [1]
-        assert notifies[0][0].endswith("即将开始洗版下载，已删除 1 条整理记录对应的源文件")
+        assert notifies[0][0].endswith("即将开始洗版下载，已处理 1 条整理记录对应的源文件")
         assert notifies[0][1] == "清理路径：\n/src/a.mkv"
         assert "reason" not in notifies[0][2]
         assert "action" not in notifies[0][2]
@@ -218,7 +218,7 @@ class TestHistoryClear:
         assert hist_deletes == ["1"]
         task = next(iter(store["subscription_cleanup_histories"].values()))
         assert task["mode_label"] == "洗版"
-        assert notifies[0][0].endswith("即将开始洗版下载，已删除 1 条整理记录对应的源文件")
+        assert notifies[0][0].endswith("即将开始洗版下载，已处理 1 条整理记录对应的源文件")
 
     def test_movie_best_version_ignores_full_flag_when_labeling_cleanup_scene(self):
         """电影洗版即使存在 best_version_full 脏值，也不应显示为分集洗版。"""
@@ -661,7 +661,7 @@ class TestHistoryClear:
         orch.handle_history_clear(event)
         assert deletes == [{"path": "/dest/a.mkv"}]
         assert "task-1" not in store["subscription_cleanup_histories"]
-        assert notifies[0][0] == "X 即将开始洗版整理，已删除 1 条整理记录对应的媒体库文件"
+        assert notifies[0][0] == "X 即将开始洗版整理，已处理 1 条整理记录对应的媒体库文件"
         assert notifies[0][1] == "清理路径：\n/dest/a.mkv"
         assert "reason" not in notifies[0][2]
         assert "action" not in notifies[0][2]
@@ -688,7 +688,7 @@ class TestHistoryClear:
         assert orch.handle_history_clear(event) is True
 
     def test_transfer_intercept_drops_expired_history_without_deleting_dest(self):
-        """超过 72 小时的清理事务失效，不得删除旧媒体库目标文件。"""
+        """超过 36 小时的清理事务失效，不得删除旧媒体库目标文件。"""
         store = {"subscription_cleanup_histories": {"task-1": {
             "tmdbid": 100,
             "type": "电视剧",
@@ -696,7 +696,7 @@ class TestHistoryClear:
             "target_episodes": [1],
             "subscribe_desc": "X",
             "histories": [{"dest_fileitem": {"path": "/dest/a.mkv"}}],
-            "time": time.time() - 73 * 3600,
+            "time": time.time() - 37 * 3600,
         }}}
         orch, _store, deletes, _events, _histories = self._orch_clear(store)
         event = self._transfer_event(episode=1)
@@ -707,11 +707,11 @@ class TestHistoryClear:
         assert "task-1" in store["subscription_cleanup_histories"]
 
     def test_cleanup_expired_clear_histories_keeps_recent_tasks(self):
-        """通用清理只移除超过 72 小时的订阅清理事务。"""
+        """通用清理只移除超过 36 小时的订阅清理事务。"""
         now = time.time()
         store = {"subscription_cleanup_histories": {
-            "expired": {"time": now - 73 * 3600},
-            "recent": {"time": now - 71 * 3600},
+            "expired": {"time": now - 37 * 3600},
+            "recent": {"time": now - 35 * 3600},
         }}
         orch, _store, _deletes, _events, _histories = self._orch_clear(store)
 

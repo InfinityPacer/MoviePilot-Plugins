@@ -16,7 +16,7 @@ from ..shared.subscribe import (
     resolve_subscribe_media_type,
 )
 
-SUBSCRIPTION_CLEANUP_TTL_SECONDS = 72 * 3600
+SUBSCRIPTION_CLEANUP_TTL_SECONDS = 36 * 3600
 SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY = "subscription_cleanup_histories"
 
 
@@ -382,7 +382,7 @@ class SubscriptionCleanup:
         if self._notify:
             self._notify(
                 f"{format_subscribe_desc(subscribe)} "
-                f"即将开始{mode_label}下载，已删除 {len(histories)} 条整理记录对应的源文件",
+                f"即将开始{mode_label}下载，已处理 {len(histories)} 条整理记录对应的源文件",
                 text=self._single_episode_cleanup_text(target_episodes, source_paths),
                 image=subscribe_image,
             )
@@ -402,7 +402,7 @@ class SubscriptionCleanup:
         if not task:
             return False
         if self._clear_history_task_expired(task):
-            detail(f"订阅整理拦截：TMDB {key} 的清理事务已超过 72 小时，丢弃且不删除媒体库文件")
+            detail(f"订阅整理拦截：TMDB {key} 的清理事务已超过 36 小时，丢弃且不删除媒体库文件")
             return False
         if self.clear_transfer_dest_histories(task):
             self._remove_clear_history_task(task_key)
@@ -496,7 +496,7 @@ class SubscriptionCleanup:
             return None
 
     def cleanup_expired_clear_histories(self) -> int:
-        """清理超过 72 小时或缺少有效时间戳的订阅清理事务。"""
+        """清理超过 36 小时或缺少有效时间戳的订阅清理事务。"""
         snapshots = self._read(SUBSCRIPTION_CLEANUP_SNAPSHOT_KEY) if self._read else {}
         expired_keys = [
             str(key) for key, task in (snapshots or {}).items()
@@ -515,7 +515,7 @@ class SubscriptionCleanup:
 
     @staticmethod
     def _clear_history_task_expired(task: dict) -> bool:
-        """判断破坏性清理事务是否仍处于允许消费的 72 小时窗口。"""
+        """判断破坏性清理事务是否仍处于允许消费的 36 小时窗口。"""
         created_at = (task or {}).get("time")
         if not isinstance(created_at, (int, float)):
             return True
@@ -557,7 +557,7 @@ class SubscriptionCleanup:
         if self._notify:
             self._notify(
                 f"{(task or {}).get('subscribe_desc', '订阅')} "
-                f"即将开始{mode_label}整理，已删除 {len(histories)} 条整理记录对应的媒体库文件",
+                f"即将开始{mode_label}整理，已处理 {len(histories)} 条整理记录对应的媒体库文件",
                 text=self._single_episode_cleanup_text((task or {}).get("target_episodes"), dest_paths),
                 image=(task or {}).get("subscribe_image"),
             )
