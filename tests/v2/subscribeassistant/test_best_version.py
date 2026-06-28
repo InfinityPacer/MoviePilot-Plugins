@@ -88,14 +88,6 @@ class RollbackPriorityTest:
 
     def setup_method(self):
         self.plugin = make_plugin()
-        # current_priority 标量重算委托新建的 SubscribeChain（其实例化会连 systemconfig 表），
-        # 按集回滚用例桩掉整个协作方，仅隔离验证回滚字典与归属守卫，不触碰真实库
-        self.chain_patcher = patch("subscribeassistant.SubscribeChain")
-        self.mock_chain_cls = self.chain_patcher.start()
-        self.mock_chain_cls.return_value.get_best_version_current_priority.return_value = 42
-
-    def teardown_method(self):
-        self.chain_patcher.stop()
 
     def _call(self, subscribe, baseline_task):
         update_data = {}
@@ -114,10 +106,7 @@ class RollbackPriorityTest:
         update_data = self._call(subscribe, baseline_task)
         assert update_data["episode_priority"]["1"] == 50
         assert update_data["episode_priority"]["2"] == 90
-        # 标量重算被桩，验证回滚后据回滚结果（仅含归属匹配集）刷新派生量 current_priority
-        assert update_data["current_priority"] == 42
-        self.mock_chain_cls.return_value.get_best_version_current_priority.assert_called_once_with(
-            subscribe, {"1": 50, "2": 90})
+        assert "current_priority" not in update_data
 
     def test_episode_rollback_removes_none_baseline(self):
         """旧档为 None 的集回滚后应删除键，使其可被重新洗回。"""

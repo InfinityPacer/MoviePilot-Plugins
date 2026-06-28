@@ -247,12 +247,17 @@ class TestMarkBestVersionSubscriptionComplete:
     def _call(self, subscribe):
         self.plugin._SubscribeAssistant__mark_best_version_subscription_complete(subscribe)
 
-    def test_tv_writes_episode_priority_and_lack(self):
-        self._call(make_subscribe(start_episode=1, total_episode=3))
-        payload = self.plugin.subscribe_oper.update.call_args[1]["payload"]
-        assert payload["current_priority"] == 100
-        assert payload["episode_priority"] == {"1": 100, "2": 100, "3": 100}
-        assert payload["lack_episode"] == 0
+    @patch("subscribeassistant.SubscribeChain")
+    def test_tv_uses_main_backfill_contract(self, mock_chain_cls):
+        sub = make_subscribe(start_episode=1, total_episode=3)
+        self._call(sub)
+        mock_chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
+            sub,
+            [1, 2, 3],
+            priority=100,
+            scene="plugin_complete",
+        )
+        self.plugin.subscribe_oper.update.assert_not_called()
 
     def test_movie_writes_current_priority_only(self):
         self._call(make_subscribe(type=MOVIE, total_episode=0))

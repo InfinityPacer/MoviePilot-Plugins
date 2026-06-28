@@ -310,7 +310,7 @@
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistant.png",
         "author": "InfinityPacer",
         "level": 1,
-        "system_version": ">=2.13.0",
+        "system_version": ">2.13.16",
         "history": {
             "v2.22": "修复洗版相关的一些细节问题",
             "v2.21": "洗版清理历史前校验资源覆盖范围，未覆盖订阅目标时跳过清理并通知",

@@ -201,6 +201,7 @@ class EventHandlersTest:
                 "old_subscribe_info": {"id": 1, "best_version": 0, "state": "R"},
             }))
         backfill.assert_called_once()
+        assert backfill.call_args.kwargs.get("scene") is None
 
     def test_subscribe_modified_keeps_reset_when_backfill_raises(self):
         plugin = make_plugin(_auto_best_backfill_priority=True)
@@ -215,6 +216,48 @@ class EventHandlersTest:
                 "old_subscribe_info": {"id": 1, "best_version": 0, "state": "R"},
             }))
         backfill.assert_called_once()
+        locked.assert_called_once()
+
+    def test_subscribe_modified_reset_backfills_with_reset_scene(self):
+        plugin = make_plugin(_auto_best_backfill_priority=True)
+        plugin.subscribe_oper.get.return_value = make_subscribe(best_version=1)
+        with patch.object(plugin, "_SubscribeAssistant__should_backfill_priority", return_value=True), \
+                patch.object(plugin, "_SubscribeAssistant__backfill_best_version_episode_priority") as backfill, \
+                patch.object(plugin, "_SubscribeAssistant__with_lock_and_update_subscribe_tasks") as locked:
+            plugin.handle_subscribe_modified_event(event({
+                "subscribe_id": 1,
+                "scene": "reset",
+                "fields": ["note", "lack_episode", "episode_priority", "state"],
+                "subscribe_info": {"id": 1, "username": "u", "best_version": 1, "state": "R", "note": []},
+                "old_subscribe_info": {
+                    "id": 1, "best_version": 1, "state": "R", "note": [1],
+                    "episode_priority": {"1": 100},
+                },
+            }))
+
+        backfill.assert_called_once_with(
+            subscribe=plugin.subscribe_oper.get.return_value,
+            scene="reset_backfill",
+        )
+        locked.assert_called_once()
+
+    def test_subscribe_modified_without_reset_scene_does_not_guess_reset(self):
+        plugin = make_plugin(_auto_best_backfill_priority=True)
+        plugin.subscribe_oper.get.return_value = make_subscribe(best_version=1)
+        with patch.object(plugin, "_SubscribeAssistant__should_backfill_priority", return_value=True), \
+                patch.object(plugin, "_SubscribeAssistant__backfill_best_version_episode_priority") as backfill, \
+                patch.object(plugin, "_SubscribeAssistant__with_lock_and_update_subscribe_tasks") as locked:
+            plugin.handle_subscribe_modified_event(event({
+                "subscribe_id": 1,
+                "fields": ["note", "lack_episode", "episode_priority", "state"],
+                "subscribe_info": {"id": 1, "username": "u", "best_version": 1, "state": "R", "note": []},
+                "old_subscribe_info": {
+                    "id": 1, "best_version": 1, "state": "R", "note": [1],
+                    "episode_priority": {"1": 100},
+                },
+            }))
+
+        backfill.assert_not_called()
         locked.assert_called_once()
 
     def test_subscribe_modified_resets_task_state_with_changed_keys(self):

@@ -2716,13 +2716,13 @@ block: []
             mediainfo = MediaInfo()
             mediainfo.from_dict(mediainfo_dict)
 
-            # 洗版订阅按集优先级回填：独立于自动待定/暂停开关执行，避免用户仅开启回填能力时被短路屏蔽；
+            # 洗版订阅下载事实回填：独立于自动待定/暂停开关执行，避免用户仅开启回填能力时被短路屏蔽；
             # 同时必须在"洗版订阅跳过处理"短路之前执行，否则下面的 return 会让新建洗版订阅永远走不到回填分支。
             if self._auto_best_backfill_priority and self.__should_backfill_priority(subscribe=subscribe):
                 try:
                     self.__backfill_best_version_episode_priority(subscribe=subscribe, mediainfo=mediainfo)
                 except Exception as e:
-                    logger.error(f"{self.__format_subscribe(subscribe)} 新建洗版订阅按集优先级回填异常：{e}")
+                    logger.error(f"{self.__format_subscribe(subscribe)} 新建洗版订阅下载事实回填异常：{e}")
 
             # 自动待定/暂停功能未开启
             if not (self._auto_tv_pending or self._auto_pause):
@@ -2759,6 +2759,8 @@ block: []
             subscribe_id = event.event_data.get("subscribe_id")
             subscribe_info = event.event_data.get("subscribe_info") or {}
             old_subscribe_info = event.event_data.get("old_subscribe_info") or {}
+            scene = event.event_data.get("scene")
+            fields = event.event_data.get("fields")
 
             logger.debug(f"接收到订阅更新事件，来自用户: {subscribe_info.get('username')}, 订阅 ID: {subscribe_id}")
 
@@ -2771,12 +2773,12 @@ block: []
             subscribe = self.subscribe_oper.get(subscribe_id)
 
             # 比对差异
-            different_keys = {
+            different_keys = set(fields) if isinstance(fields, list) else {
                 key for key in subscribe_info.keys() & old_subscribe_info.keys()
                 if subscribe_info[key] != old_subscribe_info[key]
             }
 
-            # 普通订阅转洗版订阅的边沿触发：执行按集优先级回填
+            # 普通订阅转洗版订阅的边沿触发：执行下载事实回填
             # 用"旧值假 + 新值真"严格判定，避免内部 update（如完成标记）反复触发本回填
             if (
                 self._auto_best_backfill_priority
@@ -2788,7 +2790,21 @@ block: []
                 try:
                     self.__backfill_best_version_episode_priority(subscribe=subscribe)
                 except Exception as e:
-                    logger.error(f"{self.__format_subscribe(subscribe)} 普通转洗版按集优先级回填异常：{e}")
+                    logger.error(f"{self.__format_subscribe(subscribe)} 普通转洗版下载事实回填异常：{e}")
+
+            reset_fields = {"note", "lack_episode", "current_priority", "episode_priority", "state"}
+            if (
+                    self._auto_best_backfill_priority
+                    and scene == "reset"
+                    and different_keys & reset_fields
+                    and self.__should_backfill_priority(subscribe=subscribe)):
+                try:
+                    self.__backfill_best_version_episode_priority(
+                        subscribe=subscribe,
+                        scene="reset_backfill",
+                    )
+                except Exception as e:
+                    logger.error(f"{self.__format_subscribe(subscribe)} 重置后下载事实回填异常：{e}")
 
             # 重置订阅状态
             self.__with_lock_and_update_subscribe_tasks(method=self.__reset_subscribe_task_state_when_updated,
@@ -4412,12 +4428,6 @@ block: []
             episodes_set = set(episodes)
             note = list(note - episodes_set)
             update_data["note"] = note
-            if subscribe.total_episode:
-                start_episode = subscribe.start_episode - 1 if subscribe.start_episode else 0
-                lack_episode = subscribe.total_episode - start_episode - len(note)
-                update_data["lack_episode"] = lack_episode
-            else:
-                update_data["lack_episode"] = subscribe.total_episode
         elif media_type == MediaType.MOVIE:
             update_data["note"] = []
 
@@ -4428,6 +4438,10 @@ block: []
                                                   update_data=update_data)
         if update_data:
             self.subscribe_oper.update(subscribe.id, update_data)
+            for key, value in update_data.items():
+                setattr(subscribe, key, value)
+            if media_type == MediaType.TV:
+                self.__refresh_subscribe_progress(subscribe=subscribe, scene="plugin_delete_rollback")
 
         random_minutes = random.uniform(3, 5)
         completion_time = f"{random_minutes:.2f} 分钟"
@@ -4468,7 +4482,7 @@ block: []
         """
         洗版种子被删除后回滚其对订阅优先级的抬高，使被删集可被重新洗回。
 
-        剧集洗版（含全集洗版）按集回滚 episode_priority 并重算 current_priority，电影回滚 current_priority 标量。
+        剧集洗版按集回滚 episode_priority，派生进度交给主程序刷新；电影回滚 current_priority 标量。
         无下载前快照时跳过，避免误删按集档位。
 
         :param subscribe: 订阅对象
@@ -4495,8 +4509,6 @@ block: []
                 changed = True
             if changed:
                 update_data["episode_priority"] = episode_priority
-                update_data["current_priority"] = SubscribeChain().get_best_version_current_priority(
-                    subscribe, episode_priority)
         elif "current_priority_baseline" in baseline_task:
             current = subscribe.current_priority or 0
             if contributed is None or current == contributed:
@@ -5919,31 +5931,39 @@ block: []
 
     def __mark_best_version_subscription_complete(self, subscribe: Subscribe):
         """
-        标记洗版订阅完成；剧集同时写入按集优先级，兼容主程序新的分集洗版完成判断。
+        标记洗版订阅完成；TV 交给主程序 backfill 合同写下载事实，电影写整体优先级。
         """
-        payload = {"current_priority": 100}
         if self.__resolve_subscribe_media_type(subscribe=subscribe) == MediaType.TV:
             target_episodes = self.__get_best_version_target_episodes(subscribe=subscribe)
             if target_episodes:
-                payload["episode_priority"] = {str(episode): 100 for episode in target_episodes}
-                payload["lack_episode"] = 0
-        self.subscribe_oper.update(sid=subscribe.id, payload=payload)
+                SubscribeChain().backfill_existing_episodes(
+                    subscribe,
+                    target_episodes,
+                    priority=100,
+                    scene="plugin_complete",
+                )
+            return
+        self.subscribe_oper.update(sid=subscribe.id, payload={"current_priority": 100})
 
-    # region 洗版订阅按集优先级回填
-    # 背景：主程序 SubscribeChain.__get_best_version_interested_episodes 在判定候选资源是否值得洗时，
-    # 当 episode_priority[ep] 为 None 时会放行任何命中规则组的资源（即使与库中现有版本同档），
-    # 导致"新建分集洗版订阅"或"普通订阅转洗版"后，媒体库中已存在的集会被同档资源重复下载。
-    # 这里通过媒体库探测，将已存在集直接写入 priority=100（已洗顶档），跳过主程序对这些集的洗版动作。
+    def __refresh_subscribe_progress(self, subscribe: Subscribe, scene: str) -> Dict[str, Any]:
+        """
+        使用主程序订阅进度入口刷新 TV 派生字段。
+        """
+        return SubscribeChain().refresh_subscribe_progress(subscribe, scene=scene)
+
+    # region 洗版订阅下载事实回填
+    # 插件只负责判断媒体库中哪些集可信存在；实际 note、episode_priority、lack_episode
+    # 与 current_priority 写入由主程序 backfill/progress 合同完成，保证普通订阅和分集洗版可互相转换。
 
     def __should_backfill_priority(self, subscribe: Optional[Subscribe]) -> bool:
         """
-        判断订阅是否需要执行按集优先级回填，集中所有前置条件以避免在多个调用点重复校验。
+        判断订阅是否需要执行下载事实回填，集中所有前置条件以避免在多个调用点重复校验。
 
         条件按短路顺序：
         - 订阅存在；
         - best_version=1（仅洗版订阅）；
         - 媒体类型为电视剧（电影不分集，不适用）；
-        - 非全集洗版（best_version_full=1 语义是"等整季资源"，按集回填会让 lack_episode=0 被误判完成）；
+        - 非全集洗版（best_version_full=1 语义是"等整季资源"，不能用媒体库散集回填完成）；
         - season 与 total_episode 必须有效，否则目标范围无法计算；
         - 必须至少有一个媒体标识（tmdbid / doubanid），否则无法识别媒体走媒体库探测。
         """
@@ -5981,12 +6001,12 @@ block: []
         if not mediainfo:
             mediainfo = self.__recognize_media(subscribe=subscribe)
         if not mediainfo:
-            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体识别失败，跳过按集优先级回填")
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体识别失败，跳过下载事实回填")
             return False, []
 
         mediakey = subscribe.tmdbid or subscribe.doubanid or mediainfo.tmdb_id or mediainfo.douban_id
         if not mediakey:
-            logger.warning(f"{self.__format_subscribe(subscribe)} 缺少媒体标识，跳过按集优先级回填")
+            logger.warning(f"{self.__format_subscribe(subscribe)} 缺少媒体标识，跳过下载事实回填")
             return False, []
 
         target_episodes = set(self.__get_best_version_target_episodes(subscribe=subscribe))
@@ -6002,7 +6022,7 @@ block: []
                 totals=totals,
             )
         except Exception as e:
-            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体库探测失败：{e}，按集优先级回填跳过")
+            logger.warning(f"{self.__format_subscribe(subscribe)} 媒体库探测失败：{e}，下载事实回填跳过")
             return False, []
 
         # exist_flag=True 表示整季都在库
@@ -6026,15 +6046,12 @@ block: []
             self,
             subscribe: Subscribe,
             mediainfo: Optional[MediaInfo] = None,
+            scene: str = "plugin_backfill",
     ) -> Tuple[bool, int]:
         """
-        对单个分集洗版订阅执行按集优先级回填，将媒体库已存在集补写为 priority=100。
+        对单个分集洗版订阅执行下载事实回填，将媒体库已存在集交给主程序落库。
 
-        - 仅补缺：episode_priority 中已有任意值的键不覆盖（包括非 100 的中间档），保留用户/主程序已写入的数据。
-        - 派生字段同步更新：current_priority、lack_episode、last_update，与主程序 update_subscribe_priority 风格一致；
-          若回填后整季在库，lack_episode 自然归零，主程序后续会按已完成处理，这是预期行为。
-
-        返回 (是否产生写入, 实际写入的集数)。
+        返回 (是否产生写入, 主程序接受的集数)。
         """
         if not self.__should_backfill_priority(subscribe=subscribe):
             return False, 0
@@ -6045,38 +6062,24 @@ block: []
         if not ok or not existing_episodes:
             return False, 0
 
-        # 仅补缺，不覆盖任何已有按集优先级
-        episode_priority = dict(subscribe.episode_priority or {}) if isinstance(subscribe.episode_priority, dict) else {}
-        updated = 0
-        for episode in existing_episodes:
-            key = str(episode)
-            if key in episode_priority:
-                continue
-            episode_priority[key] = 100
-            updated += 1
-
-        if not updated:
+        summary = SubscribeChain().backfill_existing_episodes(
+            subscribe,
+            existing_episodes,
+            priority=100,
+            scene=scene,
+        )
+        if not summary or not summary.get("updated"):
             return False, 0
-
-        # 派生字段对齐主程序 SubscribeChain.update_subscribe_priority 写入风格
-        # lack_episode 由主程序按媒体库实况维护，不在回填路径内写
-        subscribe_chain = SubscribeChain()
-        current_priority = subscribe_chain.get_best_version_current_priority(subscribe, episode_priority)
-        payload = {
-            "episode_priority": episode_priority,
-            "current_priority": current_priority,
-            "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        self.subscribe_oper.update(sid=subscribe.id, payload=payload)
+        updated = len(summary.get("accepted") or []) + len(summary.get("priority_updated") or [])
         logger.info(
-            f"{self.__format_subscribe(subscribe)} 按集优先级回填完成："
-            f"新增 {updated} 集为 priority=100，current_priority={current_priority}"
+            f"{self.__format_subscribe(subscribe)} 下载事实回填完成："
+            f"主程序接受 {updated} 集，scene={scene}"
         )
         return True, updated
 
     def __backfill_all_existing_best_version(self) -> Dict[str, Any]:
         """
-        一次性扫描所有 best_version=1 的存量订阅并执行按集优先级回填。
+        一次性扫描所有 best_version=1 的存量订阅并执行下载事实回填。
 
         用于覆盖"插件升级前/开关未启用前已经创建好的洗版订阅"——这类订阅不会被事件回调命中，
         必须通过本入口主动扫描补齐。
@@ -6085,7 +6088,7 @@ block: []
         try:
             subscribes = self.subscribe_oper.list() or []
         except Exception as e:
-            logger.error(f"批量回填洗版订阅按集优先级失败：读取订阅列表异常：{e}")
+            logger.error(f"批量回填洗版订阅下载事实失败：读取订阅列表异常：{e}")
             return results
 
         for subscribe in subscribes:
@@ -6095,7 +6098,7 @@ block: []
             try:
                 ok, filled = self.__backfill_best_version_episode_priority(subscribe=subscribe)
             except Exception as e:
-                logger.error(f"{self.__format_subscribe(subscribe)} 按集优先级回填异常：{e}")
+                logger.error(f"{self.__format_subscribe(subscribe)} 下载事实回填异常：{e}")
                 results["skipped"] += 1
                 continue
             if ok:
@@ -6105,7 +6108,7 @@ block: []
                 results["skipped"] += 1
 
         logger.info(
-            f"批量回填洗版订阅按集优先级完成："
+            f"批量回填洗版订阅下载事实完成："
             f"扫描 {results['scanned']} 个，写入 {results['updated']} 个，"
             f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
         )
@@ -6113,7 +6116,7 @@ block: []
             try:
                 self.post_message(
                     mtype=NotificationType.Subscribe,
-                    title="【订阅助手】洗版订阅按集优先级回填",
+                    title="【订阅助手】洗版订阅下载事实回填",
                     text=(
                         f"扫描 {results['scanned']} 个订阅，"
                         f"成功回填 {results['updated']} 个，跳过 {results['skipped']} 个，"
@@ -6121,7 +6124,7 @@ block: []
                     ),
                 )
             except Exception as e:
-                logger.warning(f"批量回填洗版订阅按集优先级通知发送失败：{e}")
+                logger.warning(f"批量回填洗版订阅下载事实通知发送失败：{e}")
         return results
 
     # endregion

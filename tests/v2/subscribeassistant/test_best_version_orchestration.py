@@ -564,23 +564,35 @@ class TestBackfillBestVersionEpisodePriority:
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__should_backfill_priority", return_value=True)
     def test_backfills_missing(self, mock_should, mock_detect, mock_chain_cls):
         mock_chain = MagicMock()
-        mock_chain.get_best_version_current_priority.return_value = 100
+        mock_chain.backfill_existing_episodes.return_value = {
+            "updated": True,
+            "accepted": [2, 3],
+            "priority_updated": [],
+        }
         mock_chain_cls.return_value = mock_chain
         plugin = make_plugin()
         sub = make_subscribe(type=TV, best_version=1, episode_priority={"1": 80})
         ok, count = plugin._SubscribeAssistant__backfill_best_version_episode_priority(sub)
         assert ok is True
         assert count == 2  # episodes 2,3 new
-        update_args = plugin.subscribe_oper.update.call_args
-        payload = update_args[1]["payload"] if "payload" in (update_args[1] or {}) else update_args[0][1]
-        assert payload["episode_priority"]["2"] == 100
-        assert payload["episode_priority"]["3"] == 100
-        assert payload["episode_priority"]["1"] == 80  # unchanged
+        mock_chain.backfill_existing_episodes.assert_called_once_with(
+            sub,
+            [1, 2, 3],
+            priority=100,
+            scene="plugin_backfill",
+        )
+        plugin.subscribe_oper.update.assert_not_called()
 
+    @patch("subscribeassistant.SubscribeChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__detect_existing_episodes_for_subscribe",
                   return_value=(True, [1, 2]))
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__should_backfill_priority", return_value=True)
-    def test_all_already_present(self, mock_should, mock_detect):
+    def test_all_already_present(self, mock_should, mock_detect, mock_chain_cls):
+        mock_chain_cls.return_value.backfill_existing_episodes.return_value = {
+            "updated": False,
+            "accepted": [],
+            "priority_updated": [],
+        }
         plugin = make_plugin()
         sub = make_subscribe(type=TV, best_version=1, episode_priority={"1": 80, "2": 100})
         ok, count = plugin._SubscribeAssistant__backfill_best_version_episode_priority(sub)
