@@ -1,6 +1,7 @@
 """种子删除后的统一善后编排。"""
 from typing import Callable, Optional
 
+from app.chain.subscribe import SubscribeChain
 from app.schemas.types import MediaType
 
 from ..engine.types import PriorityManagerProtocol
@@ -60,7 +61,7 @@ class TorrentCleanup:
             detail(f"种子删除处理：已记录种子 {torrent_hash}，避免后续被重新选中")
             self._deletes.save(torrent_task, reason=reason)
 
-        # 删种后需要把已记为完成的剧集重新标为缺失，补搜前先恢复订阅缺集状态。
+        # 删种后先恢复下载事实，再交给主程序按当前合同刷新订阅进度。
         self._restore_subscribe_missing_state(subscribe, torrent_task)
 
         # 2. 下载器主动删除场景真正删种；用户手动删除场景种子已不存在。
@@ -130,7 +131,7 @@ class TorrentCleanup:
         return (self._read("torrents") or {}).get(torrent_hash)
 
     def _restore_subscribe_missing_state(self, subscribe, torrent_task: Optional[dict]):
-        """删种善后恢复订阅缺集状态，确保后续补搜能覆盖被删集。"""
+        """删种善后恢复下载事实，确保后续补搜能覆盖被删集。"""
         if not self._subscribe_oper or not subscribe or not torrent_task:
             return
         media_type = resolve_subscribe_media_type(subscribe)
@@ -141,16 +142,14 @@ class TorrentCleanup:
             episode_set = set(episodes if isinstance(episodes, list) else [episodes])
             kept_note = [episode for episode in note if episode not in episode_set]
             payload["note"] = kept_note
-            total_episode = subscribe.total_episode
-            if total_episode:
-                start_episode = (subscribe.start_episode or 1) - 1
-                payload["lack_episode"] = total_episode - start_episode - len(kept_note)
-            else:
-                payload["lack_episode"] = total_episode
         elif media_type == MediaType.MOVIE:
             payload["note"] = []
         if payload:
             update_subscribe(self._subscribe_oper, subscribe.id, payload)
+            for key, value in payload.items():
+                setattr(subscribe, key, value)
+            if media_type == MediaType.TV:
+                SubscribeChain().refresh_subscribe_progress(subscribe, scene="plugin_delete_rollback")
 
     def _clean_torrent_task(self, torrent_hash: str):
         """清理种子任务数据。"""

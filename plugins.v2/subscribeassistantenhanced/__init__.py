@@ -586,7 +586,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return "\n".join(lines)
 
     def _run_backfill_now(self):
-        """对现有洗版订阅执行一次按集回填，并推送扫描结果汇总。"""
+        """对现有分集洗版订阅执行一次下载事实回填，并推送扫描结果汇总。"""
         results = {"scanned": 0, "updated": 0, "skipped": 0, "filled_episodes": 0}
         priority = self._modules["priority_manager"]
         for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
@@ -601,7 +601,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 episode for episode in existing
                 if str(episode) not in (subscribe.episode_priority or {})
             ]
-            if existing and priority.backfill_existing(subscribe, existing):
+            if existing and priority.backfill_existing(subscribe, existing, scene="plugin_backfill"):
                 results["updated"] += 1
                 results["filled_episodes"] += len(filled_episodes)
                 detail(f"洗版回填：{format_subscribe(subscribe)} 回填已下载集 {filled_episodes}")
@@ -612,7 +612,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
         )
         self._notify_subscribe(
-            "洗版订阅按集优先级回填",
+            "洗版订阅下载事实回填",
             action=(
                 f"扫描 {results['scanned']} 个订阅，成功回填 {results['updated']} 个，"
                 f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"

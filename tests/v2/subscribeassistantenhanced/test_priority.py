@@ -1,6 +1,6 @@
 """best_version/priority.py PriorityManager 单测。"""
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
 
@@ -55,28 +55,11 @@ class TestCaptureBaseline:
 
 class TestUpdateOnDownload:
 
-    def test_updates_episode_priority(self):
+    def test_tv_download_facts_are_owned_by_main_chain(self):
         mgr = _mgr()
         sub = _sub(ep_priority={"1": 0, "2": 0})
         mgr.update_on_download(sub, episodes=[1, 2], new_priority=80)
-        call_payload = mgr._oper.update.call_args[0][1]
-        assert call_payload["episode_priority"]["1"] == 80
-        assert call_payload["episode_priority"]["2"] == 80
-
-    def test_does_not_downgrade(self):
-        mgr = _mgr()
-        sub = _sub(ep_priority={"1": 100, "2": 50})
-        mgr.update_on_download(sub, episodes=[1, 2], new_priority=80)
-        call_payload = mgr._oper.update.call_args[0][1]
-        assert call_payload["episode_priority"]["1"] == 100
-        assert call_payload["episode_priority"]["2"] == 80
-
-    def test_updates_current_priority(self):
-        mgr = _mgr()
-        sub = _sub(ep_priority={"1": 0}, current_priority=0)
-        mgr.update_on_download(sub, episodes=[1], new_priority=80)
-        call_payload = mgr._oper.update.call_args[0][1]
-        assert call_payload["current_priority"] == 80
+        mgr._oper.update.assert_not_called()
 
     def test_empty_episodes_no_op(self):
         mgr = _mgr()
@@ -89,16 +72,27 @@ class TestRollback:
     def test_rollback_restores_baseline(self):
         mgr = _mgr()
         baseline = {"episode_priority": {"1": 30}, "current_priority": 30}
-        mgr.rollback(_sub(), baseline=baseline)
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.rollback(_sub(), baseline=baseline)
+        chain_cls.return_value.refresh_subscribe_progress.assert_called_once()
         call_payload = mgr._oper.update.call_args[0][1]
         assert call_payload["episode_priority"] == {"1": 30}
-        assert call_payload["current_priority"] == 30
+        assert "current_priority" not in call_payload
 
     def test_rollback_from_stored_baseline(self):
         store = {"subscribes": {"1": {"priority_baseline": {"episode_priority": {"1": 20}, "current_priority": 20}}}}
         mgr = _mgr(store)
-        mgr.rollback(_sub())
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.rollback(_sub())
+        chain_cls.return_value.refresh_subscribe_progress.assert_called_once()
         assert mgr._oper.update.called
+
+    def test_movie_rollback_restores_current_priority(self):
+        mgr = _mgr()
+        baseline = {"episode_priority": {}, "current_priority": 30}
+        mgr.rollback(_sub(media_type=MediaType.MOVIE), baseline=baseline)
+        call_payload = mgr._oper.update.call_args[0][1]
+        assert call_payload["current_priority"] == 30
 
     def test_rollback_no_baseline_no_op(self):
         mgr = _mgr()
@@ -136,19 +130,42 @@ class TestTorrentBaselineRollback:
         mgr.capture_torrent_baseline(_sub(ep_priority={"1": 80, "2": 0}), "B",
                                      episodes=[2], contributed_priority=90)
         current = _sub(ep_priority={"1": 80, "2": 90}, current_priority=90)
-        mgr.rollback_torrent(current, "A")
+        with patch(
+                "subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
+                create=True,
+        ) as refresh_progress:
+            mgr.rollback_torrent(current, "A")
+        refresh_progress.assert_called_once()
         payload = mgr._oper.update.call_args[0][1]
         assert payload["episode_priority"]["1"] == 0    # A 拥有 → 回滚
         assert payload["episode_priority"]["2"] == 90   # B 拥有 → 保留，不串改
+        assert "current_priority" not in payload
 
     def test_rollback_skips_episode_upgraded_by_other(self):
         """本种子贡献的集已被更高档位覆盖 → 跳过不回滚。"""
         mgr = _mgr({})
         mgr.capture_torrent_baseline(_sub(ep_priority={"1": 0}), "A",
                                      episodes=[1], contributed_priority=80)
-        mgr.rollback_torrent(_sub(ep_priority={"1": 95}), "A")
+        with patch(
+                "subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
+                create=True,
+        ) as refresh_progress:
+            mgr.rollback_torrent(_sub(ep_priority={"1": 95}), "A")
+        refresh_progress.assert_called_once()
         payload = mgr._oper.update.call_args[0][1]
         assert payload["episode_priority"]["1"] == 95
+
+    def test_movie_rollback_by_torrent_restores_current_priority(self):
+        """电影洗版仍以 current_priority 作为整体质量事实。"""
+        store = {}
+        mgr = _mgr(store)
+        sub = _sub(media_type=MediaType.MOVIE, current_priority=30)
+        mgr.capture_torrent_baseline(sub, "A", episodes=[], contributed_priority=80)
+
+        mgr.rollback_torrent(_sub(media_type=MediaType.MOVIE, current_priority=80), "A")
+
+        payload = mgr._oper.update.call_args[0][1]
+        assert payload["current_priority"] == 30
 
     def test_empty_episodes_uses_target_range(self):
         """整季包 episodes 为空 → 回退到目标集范围记录基线。"""
@@ -165,10 +182,15 @@ class TestBackfillExisting:
     def test_backfill_sets_100(self):
         mgr = _mgr()
         sub = _sub(ep_priority={"2": 0})
-        mgr.backfill_existing(sub, existing_episodes=[1, 3])
-        call_payload = mgr._oper.update.call_args[0][1]
-        assert call_payload["episode_priority"]["1"] == 100
-        assert call_payload["episode_priority"]["3"] == 100
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            chain_cls.return_value.backfill_existing_episodes.return_value = {"updated": True}
+            assert mgr.backfill_existing(sub, existing_episodes=[1, 3]) is True
+        chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
+            sub,
+            [1, 3],
+            priority=100,
+            scene="plugin_backfill",
+        )
 
     def test_can_backfill_only_episode_best_version_tv(self):
         """回填仅适用于剧集分集洗版。"""
@@ -184,34 +206,18 @@ class TestBackfillExisting:
         """全集洗版必须等待整季资源，不使用媒体库已有集回填优先级。"""
         mgr = _mgr()
 
-        mgr.backfill_existing(_sub(best_version_full=1), existing_episodes=[1, 2])
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.backfill_existing(_sub(best_version_full=1), existing_episodes=[1, 2])
 
         mgr._oper.update.assert_not_called()
-
-    def test_backfill_preserves_existing_priority(self):
-        """回填只补缺，不覆盖下载流程已写入的中间档位。"""
-        mgr = _mgr()
-        sub = _sub(ep_priority={"1": 80})
-
-        mgr.backfill_existing(sub, existing_episodes=[1, 2])
-
-        payload = mgr._oper.update.call_args.args[1]
-        assert payload["episode_priority"] == {"1": 80, "2": 100}
-
-    def test_backfill_updates_current_priority(self):
-        """回填后按主程序口径同步当前优先级。"""
-        mgr = _mgr()
-        sub = _sub(ep_priority={"1": 80}, current_priority=0)
-
-        mgr.backfill_existing(sub, existing_episodes=[2])
-
-        payload = mgr._oper.update.call_args.args[1]
-        assert payload["current_priority"] == 80
+        chain_cls.return_value.backfill_existing_episodes.assert_not_called()
 
     def test_backfill_empty_no_op(self):
         mgr = _mgr()
-        mgr.backfill_existing(_sub(), existing_episodes=[])
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.backfill_existing(_sub(), existing_episodes=[])
         mgr._oper.update.assert_not_called()
+        chain_cls.return_value.backfill_existing_episodes.assert_not_called()
 
 
 class TestIsComplete:
@@ -246,29 +252,47 @@ class TestMarkComplete:
     def test_mark_sets_all_100(self):
         mgr = _mgr()
         sub = _sub(ep_priority={"1": 50, "2": 80})
-        mgr.mark_complete(sub)
-        call_payload = mgr._oper.update.call_args[0][1]
-        assert call_payload["episode_priority"]["1"] == 100
-        assert call_payload["episode_priority"]["2"] == 100
-        assert call_payload["current_priority"] == 100
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.mark_complete(sub)
+        chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
+            sub,
+            [1, 2],
+            priority=100,
+            scene="plugin_complete",
+        )
+        mgr._oper.update.assert_not_called()
 
     def test_mark_complete_fills_target_range(self):
         """分集洗版完成标记应覆盖完整目标范围。"""
         mgr = _mgr()
         sub = _sub(ep_priority={"1": 100}, total_episode=3, best_version_full=0)
 
-        mgr.mark_complete(sub)
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.mark_complete(sub)
 
-        call_payload = mgr._oper.update.call_args[0][1]
-        assert call_payload["episode_priority"] == {"1": 100, "2": 100, "3": 100}
+        chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
+            sub,
+            [1, 2, 3],
+            priority=100,
+            scene="plugin_complete",
+        )
 
-    def test_mark_complete_without_target_range_updates_existing_priorities(self):
-        """目标范围不可用时仍应把已有分集优先级统一标记为完成。"""
+    def test_mark_complete_without_target_range_noops_for_tv(self):
+        """目标范围不可用时不按已有 priority 键猜测 TV 完成范围。"""
         mgr = _mgr()
         sub = _sub(ep_priority={"1": 50, "2": 80}, start_episode="bad", total_episode=2)
 
-        mgr.mark_complete(sub)
+        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.mark_complete(sub)
+
+        chain_cls.return_value.backfill_existing_episodes.assert_not_called()
+        mgr._oper.update.assert_not_called()
+
+    def test_movie_mark_complete_updates_current_priority(self):
+        """电影洗版没有按集事实，完成标记仍写整体优先级。"""
+        mgr = _mgr()
+
+        mgr.mark_complete(_sub(media_type=MediaType.MOVIE))
 
         call_payload = mgr._oper.update.call_args[0][1]
-        assert call_payload["episode_priority"] == {"1": 100, "2": 100}
         assert call_payload["current_priority"] == 100

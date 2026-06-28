@@ -47,6 +47,7 @@ class EventProxy:
         modules["backfill_enabled"] = backfill_enabled
         modules["pending_download_enabled"] = pending_download_enabled
         self._modules = modules
+        self._reset_backfilling_ids = set()
 
     def get(self, name):
         return self._modules.get(name)
@@ -174,7 +175,7 @@ class EventProxy:
                 episodes = detect(subscribe)
                 if episodes:
                     logger.info(f"订阅新增：{format_subscribe(subscribe)} 分集洗版订阅回填已下载集 {episodes}")
-                    priority.backfill_existing(subscribe, episodes)
+                    priority.backfill_existing(subscribe, episodes, scene="plugin_backfill")
 
         # 洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
         if is_full_best_version_subscribe(subscribe):
@@ -239,10 +240,10 @@ class EventProxy:
             task_manager.clear_tasks(subscribe_id)
 
     def on_subscribe_modified(self, event):
-        """SubscribeModified → 状态变更重置暂停跟踪 + 普通转洗版按集优先级回填。
+        """SubscribeModified → 状态变更重置暂停跟踪 + 分集洗版下载事实回填。
 
         state 变化时重置插件侧暂停记录；普通转洗版边沿（best_version 由假转真）
-        把媒体库已有集回填为 priority=100，避免已在库的集被重新洗版。
+        把媒体库已有集交给主程序 backfill 合同，避免已在库的集被重新洗版。
         """
         data = event.event_data
         if not isinstance(data, dict):
@@ -252,7 +253,8 @@ class EventProxy:
         old_info = data.get("old_subscribe_info") or {}
         if not subscribe_id:
             return
-        different_keys = {
+        fields = data.get("fields")
+        different_keys = set(fields) if isinstance(fields, list) else {
             key for key in subscribe_info.keys() & old_info.keys()
             if subscribe_info[key] != old_info[key]
         }
@@ -278,7 +280,25 @@ class EventProxy:
                 episodes = detect(subscribe)
                 if episodes:
                     logger.info(f"订阅修改：{format_subscribe(subscribe)} 普通转洗版，回填已下载集 {episodes}")
-                    priority.backfill_existing(subscribe, episodes)
+                    priority.backfill_existing(subscribe, episodes, scene="plugin_backfill")
+
+        reset_fields = {"note", "lack_episode", "current_priority", "episode_priority", "state"}
+        if (
+                data.get("scene") == "reset"
+                and different_keys & reset_fields
+                and subscribe_id not in self._reset_backfilling_ids
+                and self.get("backfill_enabled")):
+            priority = self.get("priority_manager")
+            detect = self.get("detect_backfill_episodes_fn") or self.get("detect_existing_episodes_fn")
+            if priority and detect and priority.can_backfill(subscribe):
+                episodes = detect(subscribe)
+                if episodes:
+                    logger.info(f"订阅重置：{format_subscribe(subscribe)} 分集洗版订阅回填已下载集 {episodes}")
+                    self._reset_backfilling_ids.add(subscribe_id)
+                    try:
+                        priority.backfill_existing(subscribe, episodes, scene="reset_backfill")
+                    finally:
+                        self._reset_backfilling_ids.discard(subscribe_id)
 
     def on_subscribe_complete(self, event):
         """SubscribeComplete → 清理任务数据 + H 快照 + 自动洗版创建。

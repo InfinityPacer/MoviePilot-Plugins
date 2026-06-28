@@ -452,7 +452,7 @@ class TestSubscribeLifecycle:
             "subscribe_info": {"best_version": 1},
             "old_subscribe_info": {"best_version": 0},
         }))
-        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3])
+        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3], scene="plugin_backfill")
 
     def test_modified_convert_to_best_version_uses_backfill_candidates(self):
         """普通转洗版回填使用 note + 媒体库候选，不只看当前媒体库范围。"""
@@ -475,7 +475,7 @@ class TestSubscribeLifecycle:
         }))
 
         detect_backfill.assert_called_once_with(sub)
-        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3, 4])
+        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3, 4], scene="plugin_backfill")
 
     def test_modified_convert_directly_to_full_skips_backfill(self):
         """普通订阅直接转全集洗版时不探测媒体库，也不回填按集优先级。"""
@@ -513,6 +513,80 @@ class TestSubscribeLifecycle:
             "subscribe_info": {"best_version": 1, "name": "X"},
             "old_subscribe_info": {"best_version": 1, "name": "Y"},
         }))
+        priority.backfill_existing.assert_not_called()
+
+    def test_modified_reset_backfills_episode_best_version(self):
+        """reset 场景只在明确 reset 事件下触发分集洗版回填。"""
+        sub = _sub(id=9, best_version=1, best_version_full=0)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        priority = MagicMock()
+        priority.can_backfill.return_value = True
+        detect = MagicMock(return_value=[1, 2])
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            priority_manager=priority,
+            detect_backfill_episodes_fn=detect,
+            backfill_enabled=True,
+        )
+
+        proxy.on_subscribe_modified(SimpleNamespace(event_data={
+            "subscribe_id": 9,
+            "scene": "reset",
+            "fields": ["note", "lack_episode", "episode_priority", "state"],
+            "subscribe_info": {"note": [], "lack_episode": 12, "episode_priority": {}, "state": "R"},
+            "old_subscribe_info": {"note": [1], "lack_episode": 11, "episode_priority": {"1": 100}, "state": "R"},
+        }))
+
+        detect.assert_called_once_with(sub)
+        priority.backfill_existing.assert_called_once_with(sub, [1, 2], scene="reset_backfill")
+
+    def test_modified_reset_without_scene_does_not_guess_by_fields(self):
+        """缺少 reset scene 的旧事件不按字段差异猜测 reset。"""
+        sub = _sub(id=9, best_version=1, best_version_full=0)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        priority = MagicMock()
+        priority.can_backfill.return_value = True
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            priority_manager=priority,
+            detect_backfill_episodes_fn=MagicMock(return_value=[1, 2]),
+            backfill_enabled=True,
+        )
+
+        proxy.on_subscribe_modified(SimpleNamespace(event_data={
+            "subscribe_id": 9,
+            "fields": ["note", "lack_episode", "episode_priority", "state"],
+            "subscribe_info": {"note": [], "lack_episode": 12, "episode_priority": {}, "state": "R"},
+            "old_subscribe_info": {"note": [1], "lack_episode": 11, "episode_priority": {"1": 100}, "state": "R"},
+        }))
+
+        priority.backfill_existing.assert_not_called()
+
+    def test_modified_reset_reentry_guard(self):
+        """reset 回填写库引发的同步事件不应递归触发回填。"""
+        sub = _sub(id=9, best_version=1, best_version_full=0)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        priority = MagicMock()
+        priority.can_backfill.return_value = True
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            priority_manager=priority,
+            detect_backfill_episodes_fn=MagicMock(return_value=[1, 2]),
+            backfill_enabled=True,
+        )
+        proxy._reset_backfilling_ids.add(9)
+
+        proxy.on_subscribe_modified(SimpleNamespace(event_data={
+            "subscribe_id": 9,
+            "scene": "reset",
+            "fields": ["note", "lack_episode", "episode_priority", "state"],
+            "subscribe_info": {"note": [], "lack_episode": 12, "episode_priority": {}, "state": "R"},
+            "old_subscribe_info": {"note": [1], "lack_episode": 11, "episode_priority": {"1": 100}, "state": "R"},
+        }))
+
         priority.backfill_existing.assert_not_called()
 
     def test_added_runs_user_auto_pause(self):
@@ -563,7 +637,7 @@ class TestSubscribeLifecycle:
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7}))
 
         detect_backfill.assert_called_once_with(sub)
-        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3, 4])
+        priority.backfill_existing.assert_called_once_with(sub, [1, 2, 3, 4], scene="plugin_backfill")
 
     def _added_proxy(self, sub, pending_result, airing_record):
         oper = MagicMock()
