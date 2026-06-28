@@ -151,7 +151,7 @@ class ProtocolStubTest:
             def can_backfill(self, subscribe):
                 return False
 
-            def backfill_existing(self, subscribe, existing_episodes):
+            def backfill_existing(self, subscribe, existing_episodes, scene="plugin_backfill"):
                 return False
 
             def is_complete(self, subscribe):
