@@ -2024,6 +2024,14 @@ block: []
             return f"{title_text}｜{desc_text}"
         return title_text or desc_text
 
+    def __format_backfill_scene(self, scene: str) -> str:
+        """
+        为主程序订阅下载事实回填来源补充插件名，保留 scene 前缀作为业务场景分类。
+        """
+        if scene.endswith(">") and "<" in scene:
+            return scene
+        return f"{scene}<{self.plugin_name}>"
+
     def __summarize_fileitem_for_log(self, fileitem: Any) -> str:
         """
         摘要展示文件项，长路径按中间截断保留文件名和前缀位置。
@@ -5940,7 +5948,7 @@ block: []
                     subscribe,
                     target_episodes,
                     priority=100,
-                    scene="plugin_complete",
+                    scene=self.__format_backfill_scene("plugin_complete"),
                 )
             return
         self.subscribe_oper.update(sid=subscribe.id, payload={"current_priority": 100})
@@ -6066,7 +6074,7 @@ block: []
             subscribe,
             existing_episodes,
             priority=100,
-            scene=scene,
+            scene=self.__format_backfill_scene(scene),
         )
         if not summary or not summary.get("updated"):
             return False, 0

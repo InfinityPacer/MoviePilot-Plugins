@@ -1442,7 +1442,9 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
 
     plugin.init_plugin({"backfill_best_version_now": True})
 
-    priority_manager.backfill_existing.assert_called_once_with(sub, [1, 2, 3], scene="plugin_backfill")
+    priority_manager.backfill_existing.assert_called_once_with(
+        sub, [1, 2, 3], scene="plugin_backfill<订阅助手（增强版）>"
+    )
     plugin.post_message.assert_called_once()
     assert plugin.post_message.call_args.kwargs["title"] == "洗版订阅下载事实回填"
     assert "扫描 1 个订阅" in plugin.post_message.call_args.kwargs["text"]

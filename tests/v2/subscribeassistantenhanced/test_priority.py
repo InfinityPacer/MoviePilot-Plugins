@@ -189,7 +189,7 @@ class TestBackfillExisting:
             sub,
             [1, 3],
             priority=100,
-            scene="plugin_backfill",
+            scene="plugin_backfill<订阅助手（增强版）>",
         )
 
     def test_can_backfill_only_episode_best_version_tv(self):
@@ -258,7 +258,7 @@ class TestMarkComplete:
             sub,
             [1, 2],
             priority=100,
-            scene="plugin_complete",
+            scene="plugin_complete<订阅助手（增强版）>",
         )
         mgr._oper.update.assert_not_called()
 
@@ -274,7 +274,7 @@ class TestMarkComplete:
             sub,
             [1, 2, 3],
             priority=100,
-            scene="plugin_complete",
+            scene="plugin_complete<订阅助手（增强版）>",
         )
 
     def test_mark_complete_without_target_range_noops_for_tv(self):

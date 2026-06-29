@@ -18,10 +18,17 @@ class PriorityManager:
     """订阅事实管理，实现 PriorityManagerProtocol。"""
 
     def __init__(self, task_data_read: Callable, task_data_update: Callable,
-                 subscribe_oper=None):
+                 subscribe_oper=None, plugin_name: str = "订阅助手（增强版）"):
         self._read = task_data_read
         self._update = task_data_update
         self._subscribe_oper = subscribe_oper
+        self._plugin_name = plugin_name
+
+    def _format_backfill_scene(self, scene: str) -> str:
+        """为主程序 backfill 场景补充插件名，便于按来源追踪写入。"""
+        if scene.endswith(">") and "<" in scene:
+            return scene
+        return f"{scene}<{self._plugin_name}>"
 
     def capture_baseline(self, subscribe, torrent_priority: int) -> dict:
         """下载前记录整体优先级基线，用于失败回滚。"""
@@ -148,7 +155,7 @@ class PriorityManager:
             subscribe,
             existing_episodes,
             priority=100,
-            scene=scene,
+            scene=self._format_backfill_scene(scene),
         )
         return bool(summary and summary.get("updated"))
 
@@ -178,7 +185,7 @@ class PriorityManager:
                 subscribe,
                 target_episodes,
                 priority=100,
-                scene="plugin_complete",
+                scene=self._format_backfill_scene("plugin_complete"),
             )
 
     @staticmethod

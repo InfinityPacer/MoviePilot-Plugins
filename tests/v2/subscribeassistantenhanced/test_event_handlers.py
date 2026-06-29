@@ -137,7 +137,9 @@ def test_subscribe_modified_backfills_existing_episodes_when_enabled():
         "old_subscribe_info": {"best_version": 0},
     }))
 
-    priority_manager.backfill_existing.assert_called_once_with(subscribe, [3], scene="plugin_backfill")
+    priority_manager.backfill_existing.assert_called_once_with(
+        subscribe, [3], scene="plugin_backfill<订阅助手（增强版）>"
+    )
 
 
 def test_subscribe_added_backfills_episode_best_version():
@@ -155,4 +157,6 @@ def test_subscribe_added_backfills_episode_best_version():
 
     proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {}}))
 
-    priority_manager.backfill_existing.assert_called_once_with(subscribe, [1, 2], scene="plugin_backfill")
+    priority_manager.backfill_existing.assert_called_once_with(
+        subscribe, [1, 2], scene="plugin_backfill<订阅助手（增强版）>"
+    )

@@ -579,7 +579,7 @@ class TestBackfillBestVersionEpisodePriority:
             sub,
             [1, 2, 3],
             priority=100,
-            scene="plugin_backfill",
+            scene="plugin_backfill<订阅助手>",
         )
         plugin.subscribe_oper.update.assert_not_called()
 

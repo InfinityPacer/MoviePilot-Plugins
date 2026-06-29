@@ -236,7 +236,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
             notify_fn=self._notify_subscribe,
             rebuild_subscribe_fn=self._rebuild_subscribe_from_snapshot,
         )
-        priority_manager = PriorityManager(tm.read, tm.update, subscribe_oper=self._subscribe_oper)
+        priority_manager = PriorityManager(
+            tm.read,
+            tm.update,
+            subscribe_oper=self._subscribe_oper,
+            plugin_name=self.plugin_name,
+        )
         converter = BestVersionConverter(
             subscribe_oper=self._subscribe_oper,
             clear_tasks_fn=self._task_manager.clear_tasks,
@@ -385,6 +390,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
             post_message=self.post_message,
             notify_fn=self._notify_subscribe,
+            plugin_name=self.plugin_name,
             deletes_store=deletes_store if cfg.download_monitor_enabled else None,
             skip_deletion=cfg.skip_deletion,
             backfill_enabled=cfg.best_version_backfill_enabled,
@@ -601,7 +607,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 episode for episode in existing
                 if str(episode) not in (subscribe.episode_priority or {})
             ]
-            if existing and priority.backfill_existing(subscribe, existing, scene="plugin_backfill"):
+            scene = f"plugin_backfill<{self.plugin_name}>"
+            if existing and priority.backfill_existing(subscribe, existing, scene=scene):
                 results["updated"] += 1
                 results["filled_episodes"] += len(filled_episodes)
                 detail(f"洗版回填：{format_subscribe(subscribe)} 回填已下载集 {filled_episodes}")

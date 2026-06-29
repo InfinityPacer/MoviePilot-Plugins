@@ -41,16 +41,23 @@ class EventProxy:
     """事件代理，持有各域模块引用，按 enabled 注册。"""
 
     def __init__(self, skip_deletion=True, backfill_enabled=True,
-                 pending_download_enabled=True, **modules):
+                 pending_download_enabled=True, plugin_name="订阅助手（增强版）", **modules):
         """保存事件处理依赖；删除指纹过滤和洗版回填默认开启以兼容直接构造场景。"""
         modules["skip_deletion"] = skip_deletion
         modules["backfill_enabled"] = backfill_enabled
         modules["pending_download_enabled"] = pending_download_enabled
+        modules["plugin_name"] = plugin_name
         self._modules = modules
         self._reset_backfilling_ids = set()
 
     def get(self, name):
         return self._modules.get(name)
+
+    def _format_backfill_scene(self, scene: str) -> str:
+        """为插件侧 backfill 调用补充插件名，向主程序保留可追踪来源。"""
+        if scene.endswith(">") and "<" in scene:
+            return scene
+        return f"{scene}<{self.get('plugin_name')}>"
 
     def _format_subscribe_label(self, subscribe_id, subscribe_info=None):
         """按订阅 ID 生成日志标签；事件快照或查库成功时带名称、季号和 ID。"""
@@ -175,7 +182,9 @@ class EventProxy:
                 episodes = detect(subscribe)
                 if episodes:
                     logger.info(f"订阅新增：{format_subscribe(subscribe)} 分集洗版订阅回填已下载集 {episodes}")
-                    priority.backfill_existing(subscribe, episodes, scene="plugin_backfill")
+                    priority.backfill_existing(
+                        subscribe, episodes, scene=self._format_backfill_scene("plugin_backfill")
+                    )
 
         # 洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
         if is_full_best_version_subscribe(subscribe):
@@ -280,7 +289,9 @@ class EventProxy:
                 episodes = detect(subscribe)
                 if episodes:
                     logger.info(f"订阅修改：{format_subscribe(subscribe)} 普通转洗版，回填已下载集 {episodes}")
-                    priority.backfill_existing(subscribe, episodes, scene="plugin_backfill")
+                    priority.backfill_existing(
+                        subscribe, episodes, scene=self._format_backfill_scene("plugin_backfill")
+                    )
 
         reset_fields = {"note", "lack_episode", "current_priority", "episode_priority", "state"}
         if (
@@ -296,7 +307,9 @@ class EventProxy:
                     logger.info(f"订阅重置：{format_subscribe(subscribe)} 分集洗版订阅回填已下载集 {episodes}")
                     self._reset_backfilling_ids.add(subscribe_id)
                     try:
-                        priority.backfill_existing(subscribe, episodes, scene="reset_backfill")
+                        priority.backfill_existing(
+                            subscribe, episodes, scene=self._format_backfill_scene("reset_backfill")
+                        )
                     finally:
                         self._reset_backfilling_ids.discard(subscribe_id)
 

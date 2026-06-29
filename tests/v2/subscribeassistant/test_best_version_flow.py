@@ -255,7 +255,7 @@ class TestMarkBestVersionSubscriptionComplete:
             sub,
             [1, 2, 3],
             priority=100,
-            scene="plugin_complete",
+            scene="plugin_complete<订阅助手>",
         )
         self.plugin.subscribe_oper.update.assert_not_called()
 
