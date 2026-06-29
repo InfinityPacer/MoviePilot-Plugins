@@ -599,6 +599,31 @@ class TestBackfillBestVersionEpisodePriority:
         assert ok is False
         assert count == 0
 
+    @patch("subscribeassistant.SubscribeChain")
+    @patch.object(SubscribeAssistant, "_SubscribeAssistant__detect_existing_episodes_for_subscribe",
+                  return_value=(True, [1]))
+    @patch.object(SubscribeAssistant, "_SubscribeAssistant__should_backfill_priority", return_value=True)
+    def test_preserves_formatted_scene(self, mock_should, mock_detect, mock_chain_cls):
+        mock_chain_cls.return_value.backfill_existing_episodes.return_value = {
+            "updated": True,
+            "accepted": [1],
+            "priority_updated": [],
+        }
+        plugin = make_plugin()
+        sub = make_subscribe(type=TV, best_version=1)
+        ok, count = plugin._SubscribeAssistant__backfill_best_version_episode_priority(
+            sub,
+            scene="reset_backfill<订阅助手>",
+        )
+        assert ok is True
+        assert count == 1
+        mock_chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
+            sub,
+            [1],
+            priority=100,
+            scene="reset_backfill<订阅助手>",
+        )
+
 
 # ===========================================================================
 # __backfill_all_existing_best_version
@@ -652,3 +677,13 @@ class TestBackfillAllExistingBestVersion:
         result = plugin._SubscribeAssistant__backfill_all_existing_best_version()
         assert result["skipped"] == 1
         assert result["updated"] == 0
+
+    @patch.object(SubscribeAssistant, "_SubscribeAssistant__backfill_best_version_episode_priority",
+                  return_value=(True, 1))
+    def test_notification_exception_does_not_fail_scan(self, mock_bf):
+        plugin = make_plugin(_notify=True)
+        plugin.post_message.side_effect = RuntimeError("notify")
+        plugin.subscribe_oper.list.return_value = [make_subscribe(id=1, best_version=1)]
+        result = plugin._SubscribeAssistant__backfill_all_existing_best_version()
+        assert result["updated"] == 1
+        plugin.post_message.assert_called_once()

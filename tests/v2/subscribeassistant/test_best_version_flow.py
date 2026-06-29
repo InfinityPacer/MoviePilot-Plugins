@@ -268,6 +268,30 @@ class TestMarkBestVersionSubscriptionComplete:
 
 
 # ===========================================================================
+# __refresh_subscribe_progress
+# ===========================================================================
+
+class TestRefreshSubscribeProgress:
+
+    def setup_method(self):
+        self.plugin = make_plugin()
+
+    @patch("subscribeassistant.SubscribeChain")
+    def test_delegates_to_main_chain(self, mock_chain_cls):
+        sub = make_subscribe()
+        mock_chain_cls.return_value.refresh_subscribe_progress.return_value = {"updated": True}
+        result = self.plugin._SubscribeAssistant__refresh_subscribe_progress(
+            subscribe=sub,
+            scene="plugin_delete_rollback",
+        )
+        assert result == {"updated": True}
+        mock_chain_cls.return_value.refresh_subscribe_progress.assert_called_once_with(
+            sub,
+            scene="plugin_delete_rollback",
+        )
+
+
+# ===========================================================================
 # __should_backfill_priority
 # ===========================================================================
 
