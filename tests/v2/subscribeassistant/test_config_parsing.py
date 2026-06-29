@@ -3,7 +3,12 @@ SubscribeAssistant P2 配置解析与杂项纯函数单测。
 
 用例只覆盖静态解析、关键字归一化、版本比较和默认 Tracker 文案，不初始化插件。
 """
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 from subscribeassistant import SubscribeAssistant
 
@@ -85,6 +90,12 @@ class ConfigParsingTest:
 
     def test_compare_versions_returns_minus_one_when_second_is_older(self):
         assert SubscribeAssistant._SubscribeAssistant__compare_versions("2.3", "2.2") == -1
+
+    def test_package_requires_main_subscribe_fact_contract(self):
+        package = json.loads(Path("package.v2.json").read_text(encoding="utf-8"))
+        specifier = SpecifierSet(package["SubscribeAssistant"]["system_version"])
+        assert Version("2.13.16") not in specifier
+        assert Version("2.13.17") in specifier
 
 
 class InitPluginConfigTest:

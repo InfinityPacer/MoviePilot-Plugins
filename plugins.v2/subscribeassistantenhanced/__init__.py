@@ -85,7 +85,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.4.5"
+    plugin_version = "0.4.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -236,7 +236,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
             notify_fn=self._notify_subscribe,
             rebuild_subscribe_fn=self._rebuild_subscribe_from_snapshot,
         )
-        priority_manager = PriorityManager(tm.read, tm.update, subscribe_oper=self._subscribe_oper)
+        priority_manager = PriorityManager(
+            tm.read,
+            tm.update,
+            subscribe_oper=self._subscribe_oper,
+            plugin_name=self.plugin_name,
+        )
         converter = BestVersionConverter(
             subscribe_oper=self._subscribe_oper,
             clear_tasks_fn=self._task_manager.clear_tasks,
@@ -385,6 +390,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
             post_message=self.post_message,
             notify_fn=self._notify_subscribe,
+            plugin_name=self.plugin_name,
             deletes_store=deletes_store if cfg.download_monitor_enabled else None,
             skip_deletion=cfg.skip_deletion,
             backfill_enabled=cfg.best_version_backfill_enabled,
@@ -586,7 +592,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return "\n".join(lines)
 
     def _run_backfill_now(self):
-        """对现有洗版订阅执行一次按集回填，并推送扫描结果汇总。"""
+        """对现有分集洗版订阅执行一次下载事实回填，并推送扫描结果汇总。"""
         results = {"scanned": 0, "updated": 0, "skipped": 0, "filled_episodes": 0}
         priority = self._modules["priority_manager"]
         for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
@@ -601,7 +607,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 episode for episode in existing
                 if str(episode) not in (subscribe.episode_priority or {})
             ]
-            if existing and priority.backfill_existing(subscribe, existing):
+            scene = f"plugin_backfill<{self.plugin_name}>"
+            if existing and priority.backfill_existing(subscribe, existing, scene=scene):
                 results["updated"] += 1
                 results["filled_episodes"] += len(filled_episodes)
                 detail(f"洗版回填：{format_subscribe(subscribe)} 回填已下载集 {filled_episodes}")
@@ -612,7 +619,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
         )
         self._notify_subscribe(
-            "洗版订阅按集优先级回填",
+            "洗版订阅下载事实回填",
             action=(
                 f"扫描 {results['scanned']} 个订阅，成功回填 {results['updated']} 个，"
                 f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"

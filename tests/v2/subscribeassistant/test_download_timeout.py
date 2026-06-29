@@ -537,17 +537,23 @@ class TestHandleTimeoutSeedDeletion:
             triggered_subscribe_ids=set(), reason="test")
         plugin.subscribe_oper.update.assert_not_called()
 
-    def test_tv_updates_note_and_lack(self):
+    def test_tv_updates_note_and_refreshes_progress(self):
         plugin = make_plugin()
         sub = make_subscribe(type=TV, note=[1, 2, 3], total_episode=12, start_episode=1)
         torrent_task = {"episodes": [2, 3], "title": "T", "description": "D"}
+        plugin._SubscribeAssistant__refresh_subscribe_progress = MagicMock()
         plugin._SubscribeAssistant__handle_timeout_seed_deletion(
             subscribe=sub, subscribe_task={}, torrent_task=torrent_task,
             triggered_subscribe_ids=set(), reason="超时")
         update_args = plugin.subscribe_oper.update.call_args
         payload = update_args[1] if update_args[1] else update_args[0][1]
         assert set(payload["note"]) == {1}
-        assert payload["lack_episode"] == 11  # 12 - 0 - 1 = 11
+        assert "lack_episode" not in payload
+        assert "current_priority" not in payload
+        plugin._SubscribeAssistant__refresh_subscribe_progress.assert_called_once_with(
+            subscribe=sub,
+            scene="plugin_delete_rollback",
+        )
 
     def test_movie_clears_note(self):
         plugin = make_plugin()
@@ -636,12 +642,8 @@ class TestRollbackBestVersionPriority:
         plugin._SubscribeAssistant__rollback_best_version_priority(sub, baseline, update)
         assert "current_priority" not in update
 
-    @patch("subscribeassistant.SubscribeChain")
-    def test_episode_rollback(self, mock_chain_cls):
+    def test_episode_rollback(self):
         plugin = make_plugin()
-        mock_chain = MagicMock()
-        mock_chain.get_best_version_current_priority.return_value = 60
-        mock_chain_cls.return_value = mock_chain
         sub = make_subscribe(type=TV, best_version=1, episode_priority={"1": 80, "2": 80, "3": 50})
         baseline = {
             "contributed_priority": 80,
@@ -653,6 +655,7 @@ class TestRollbackBestVersionPriority:
         assert ep["1"] == 50
         assert "2" not in ep  # old=0 -> popped
         assert ep.get("3") == 50  # untouched
+        assert "current_priority" not in update
 
 
 # ===========================================================================
