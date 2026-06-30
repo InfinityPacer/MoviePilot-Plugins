@@ -384,6 +384,10 @@ def _footer() -> list:
             {"component": "a",
              "props": {"href": "https://github.com/jxxghp/MoviePilot-Frontend/pull/477", "target": "_blank"},
              "content": [{"component": "u", "text": "#477"}]},
+            {"component": "span", "text": "、"},
+            {"component": "a",
+             "props": {"href": "https://github.com/jxxghp/MoviePilot/pull/6015", "target": "_blank"},
+             "content": [{"component": "u", "text": "#6015"}]},
         ]),
         alert_row("error", text="注意：本插件可能导致订阅数据异常、媒体文件丢失，相关风险请自行评估与承担"),
     ]

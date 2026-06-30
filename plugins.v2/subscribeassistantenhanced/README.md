@@ -59,7 +59,7 @@
 - **自动纠错**：所有订阅完成时都会保存总集数和订阅配置；开启自动纠错后周期性复查 TMDB，发现新增集数时按季和剧集组精确重建订阅并通知。
 
 ## 不在范围内
-- 仅支持 **TMDB 数据源**，不覆盖豆瓣 / Bangumi 等其它来源的订阅。
+- 仅支持 **TMDB 数据源**，不覆盖豆瓣 / Bangumi 等其它来源的订阅；订阅状态和生命周期语义可参考 [主程序订阅生命周期文档](https://github.com/jxxghp/MoviePilot/blob/v2/docs/subscribe-lifecycle.md) 以及 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)、[#477](https://github.com/jxxghp/MoviePilot-Frontend/pull/477)、[#6015](https://github.com/jxxghp/MoviePilot/pull/6015)。
 - 不替代 MoviePilot 主程序订阅识别、搜索召回和下载链路；识别增强只在订阅候选选择阶段做准入保护。
 - 不在下载发起后做识别增强硬拦截，已进入下载链路的资源仍由下载管理、订阅清理和主程序流程处理。
 
@@ -420,5 +420,5 @@
 
 ## 致谢 / 参考
 
-- 订阅待定、暂停、删种和洗版能力参考 MoviePilot 订阅生命周期中的常见运维场景。
-- 完结状态相关行为参考 MoviePilot 订阅状态链路与 TMDB 剧集数据。
+- 订阅待定、暂停、删种和洗版能力参考 MoviePilot [订阅生命周期与订阅模式](https://github.com/jxxghp/MoviePilot/blob/v2/docs/subscribe-lifecycle.md) 中的常见运维场景。
+- 完结状态相关行为参考 MoviePilot 订阅状态链路、TMDB 剧集数据以及 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)、[#477](https://github.com/jxxghp/MoviePilot-Frontend/pull/477)、[#6015](https://github.com/jxxghp/MoviePilot/pull/6015)。
