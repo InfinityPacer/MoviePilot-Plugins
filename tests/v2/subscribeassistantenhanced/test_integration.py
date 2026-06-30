@@ -109,7 +109,7 @@ class TestAbnormalCompletion:
 
     def test_volatile_total_blocks(self):
         eps = [_ep(1)]
-        sig = evaluate(_sub(), _mi(status="Ended"), _tmdb_fn(eps),
+        sig = evaluate(_sub(), _mi(), _tmdb_fn(eps),
                        _tracker(stable=False), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
         assert sig.stable is False

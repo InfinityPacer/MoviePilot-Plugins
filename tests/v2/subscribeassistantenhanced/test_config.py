@@ -36,7 +36,7 @@ class PluginConfigDefaultsTest:
         assert self.cfg.volatility_enabled is True
 
     def test_volatility_window_days_default(self):
-        assert self.cfg.volatility_window_days == 7
+        assert self.cfg.volatility_window_days == 2
 
     def test_cadence_enabled_default_true(self):
         assert self.cfg.cadence_enabled is True
@@ -194,7 +194,7 @@ class PluginConfigCoercionTest:
 
     def test_invalid_int_falls_back_to_default(self):
         cfg = PluginConfig({"volatility_window_days": "bad"})
-        assert cfg.volatility_window_days == 7
+        assert cfg.volatility_window_days == 2
 
     def test_invalid_float_falls_back_to_default(self):
         cfg = PluginConfig({"cadence_multiplier": "bad"})

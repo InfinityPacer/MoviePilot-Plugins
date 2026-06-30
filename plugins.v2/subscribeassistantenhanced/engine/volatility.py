@@ -2,6 +2,7 @@
 import time
 from typing import Optional
 
+from ..shared.config import DEFAULT_VOLATILITY_WINDOW_DAYS
 from ..shared.task import TaskDataManager
 from ..shared.subscribe import identity_matches, subscribe_identity
 
@@ -13,7 +14,8 @@ MAX_SAMPLE_HISTORY_SIZE = 20
 class VolatilityTracker:
     """记录 TMDB 原始 total_episode 值，检测数据稳定性。"""
 
-    def __init__(self, task_manager: TaskDataManager, window_days: int = 7):
+    def __init__(self, task_manager: TaskDataManager,
+                 window_days: int = DEFAULT_VOLATILITY_WINDOW_DAYS):
         self._task = task_manager
         self._window_seconds = window_days * 86400
 
@@ -48,6 +50,7 @@ class VolatilityTracker:
             buf = _records_from_entry(entry)
             entry["records"] = buf
             _ensure_change_state(entry, self._window_seconds)
+            _sync_unstable_until(entry, self._window_seconds)
             last_total = entry.get("last_total")
             if last_total is None and buf:
                 last_total = buf[-1].get("total")
@@ -102,7 +105,7 @@ class VolatilityTracker:
             else:
                 buf = []
         if isinstance(entry, dict):
-            unstable_until = entry.get("unstable_until")
+            unstable_until = _effective_unstable_until(entry, self._window_seconds)
             if unstable_until and unstable_until >= time.time():
                 return False
         if len(buf) <= 1:
@@ -179,6 +182,21 @@ def _records_from_entry(entry) -> list[dict]:
     return [record for record in records if isinstance(record, dict)]
 
 
+def _effective_unstable_until(entry: dict, window_seconds: int) -> Optional[float]:
+    """按当前配置窗口计算有效截止时间，避免旧配置写入的截止时间继续延长观察。"""
+    changed_at = entry.get("last_total_changed_at")
+    if changed_at:
+        return changed_at + window_seconds
+    return entry.get("unstable_until")
+
+
+def _sync_unstable_until(entry: dict, window_seconds: int):
+    """把持久化截止时间同步到当前窗口，配置缩短后下一次记录会自动截断。"""
+    unstable_until = _effective_unstable_until(entry, window_seconds)
+    if unstable_until is not None:
+        entry["unstable_until"] = unstable_until
+
+
 def _ensure_change_state(entry: dict, window_seconds: int):
     """从历史采样补齐变化窗口状态，兼容旧 list 记录升级后的首次写入。"""
     if entry.get("last_total") is not None:
@@ -213,7 +231,8 @@ def _recent_change_direction(entry, window_seconds: int) -> Optional[str]:
     if isinstance(entry, dict):
         changed_at = entry.get("last_total_changed_at")
         direction = entry.get("last_total_change_direction")
-        if changed_at and direction and changed_at + window_seconds >= now:
+        unstable_until = _effective_unstable_until(entry, window_seconds)
+        if direction and unstable_until is not None and unstable_until >= now:
             return direction
         records = _records_from_entry(entry)
     elif isinstance(entry, list):
@@ -237,12 +256,16 @@ def _recent_change_detail(entry, window_seconds: int) -> Optional[str]:
     """从持久化 entry 或旧采样列表读取窗口内最近一次 total 变化明细。"""
     now = time.time()
     if isinstance(entry, dict):
-        changed_at = entry.get("last_total_changed_at")
         before = entry.get("last_total_before_change")
         after = entry.get("last_total_after_change")
         if after is None:
             after = entry.get("last_total")
-        if changed_at and before is not None and after is not None and changed_at + window_seconds >= now:
+        if (
+            before is not None
+            and after is not None
+            and (unstable_until := _effective_unstable_until(entry, window_seconds)) is not None
+            and unstable_until >= now
+        ):
             return f"{before} -> {after}"
         records = _records_from_entry(entry)
     elif isinstance(entry, list):

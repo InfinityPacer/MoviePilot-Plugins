@@ -23,6 +23,16 @@ class TestVolatilityTracker:
         self.task_mgr = TaskDataManager(get_data_fn=get_fn, save_data_fn=save_fn)
         self.tracker = VolatilityTracker(self.task_mgr, window_days=7)
 
+    def test_default_window_is_two_days(self):
+        """无参构造也应使用插件默认的两天观察窗口。"""
+        tracker = VolatilityTracker(self.task_mgr)
+
+        tracker.record(total=10, subscribe_id=1)
+        tracker.record(total=12, subscribe_id=1)
+
+        entry = self.store["volatility"]["1"]
+        assert entry["unstable_until"] - entry["last_total_changed_at"] == 2 * 86400
+
     def test_first_record_is_stable(self):
         """首次记录不算变动。"""
         self.tracker.record(total=12, subscribe_id=1)
@@ -70,6 +80,32 @@ class TestVolatilityTracker:
             ]
         }
         assert self.tracker.is_stable(subscribe_id=1) is False
+
+    def test_current_window_shortening_overrides_persisted_unstable_until(self):
+        """缩短配置窗口后，旧 unstable_until 不能继续延长观察期。"""
+        now = time.time()
+        self.store["volatility"] = {
+            "1": {
+                "records": [
+                    {"total": 1, "ts": now - 3 * 86400},
+                    {"total": 12, "ts": now - 3 * 86400 + 1},
+                ],
+                "last_total": 12,
+                "last_total_changed_at": now - 3 * 86400 + 1,
+                "unstable_until": now + 4 * 86400,
+                "last_total_before_change": 1,
+                "last_total_after_change": 12,
+                "last_total_change_direction": "up",
+            }
+        }
+        tracker = VolatilityTracker(self.task_mgr, window_days=2)
+
+        assert tracker.is_stable(subscribe_id=1) is True
+        assert tracker.recent_change_detail(subscribe_id=1) is None
+        assert tracker.recent_change_direction(subscribe_id=1) is None
+        tracker.record(total=12, subscribe_id=1)
+        entry = self.store["volatility"]["1"]
+        assert entry["unstable_until"] == entry["last_total_changed_at"] + 2 * 86400
 
     def test_sample_history_is_capped_for_diagnostics(self):
         """诊断采样保留数量有上限，但不代表稳定判断窗口。"""
