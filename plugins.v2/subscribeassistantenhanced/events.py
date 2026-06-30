@@ -41,11 +41,13 @@ class EventProxy:
     """事件代理，持有各域模块引用，按 enabled 注册。"""
 
     def __init__(self, skip_deletion=True, backfill_enabled=True,
-                 pending_download_enabled=True, plugin_name="订阅助手（增强版）", **modules):
+                 pending_download_enabled=True, download_monitor_enabled=True,
+                 plugin_name="订阅助手（增强版）", **modules):
         """保存事件处理依赖；删除指纹过滤和洗版回填默认开启以兼容直接构造场景。"""
         modules["skip_deletion"] = skip_deletion
         modules["backfill_enabled"] = backfill_enabled
         modules["pending_download_enabled"] = pending_download_enabled
+        modules["download_monitor_enabled"] = download_monitor_enabled
         modules["plugin_name"] = plugin_name
         self._modules = modules
         self._reset_backfilling_ids = set()
@@ -545,7 +547,7 @@ class EventProxy:
         if not subscribe:
             return
         monitor = self.get("download_monitor")
-        if monitor:
+        if monitor and (self.get("pending_download_enabled") or self.get("download_monitor_enabled")):
             detail(f"DownloadAdded：{format_subscribe(subscribe)} 登记种子监控 hash={data.get('hash')}")
             torrent_info = getattr(data.get("context"), "torrent_info", None)
             monitor.on_download(

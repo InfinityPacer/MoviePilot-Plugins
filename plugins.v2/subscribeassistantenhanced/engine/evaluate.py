@@ -122,7 +122,7 @@ def _confidence_label(confidence: str) -> str:
 
 def _high_confidence_e_overrides_volatility(e_sig: Optional[CompletionSignal],
                                             scope: SeasonScope, today: date) -> bool:
-    """高置信 E 且目标范围内没有后续集反证时，可解除 F 的完成前观察。"""
+    """高置信 E 且未发现后续集时，可解除 F 的完成前观察。"""
     if e_sig is None or e_sig.confidence != "high":
         return False
     return not has_scope_future_episode(scope, as_of=today)

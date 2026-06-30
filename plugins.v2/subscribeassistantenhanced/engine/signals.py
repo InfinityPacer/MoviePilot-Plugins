@@ -122,15 +122,15 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
     if high_risk or scope.high_risk:
         return None
 
-    # I-3：SeasonScope 内所有集已播，且目标范围内没有后续集反证。
+    # I-3：SeasonScope 内所有集已播，且目标范围内没有后续集。
     if all_scope_episodes_aired(scope, as_of=today) and not has_scope_future:
         return CompletionSignal(
             completed=True, confidence="low",
             signals=["I:all_aired"],
-            reason="目标范围内所有集已播且无后续集反证",
+            reason="目标范围内所有集已播且未发现后续集",
         )
 
-    # I-4：SeasonScope 内无未来集，且最后已播集超过冷却期。
+    # I-4：SeasonScope 内无后续播出日期，且最后已播集超过冷却期。
     if not has_scope_future:
         last_aired = _scope_last_aired_episode(scope.episodes, as_of=today)
         if last_aired:
@@ -139,14 +139,14 @@ def check_i_signal(mediainfo, scope: SeasonScope, cooldown_days: int = 14,
                 return CompletionSignal(
                     completed=True, confidence="low",
                     signals=["I:cooldown"],
-                    reason=f"最后集播出超 {cooldown_days} 天，无后续集反证",
+                    reason=f"最后集播出超 {cooldown_days} 天，未发现后续集",
                 )
 
     return None
 
 
-def scope_future_episode(scope: SeasonScope, as_of: Optional[date] = None):
-    """返回当前 SeasonScope 内证明目标范围尚未播完的分集。"""
+def scope_future_episodes(scope: SeasonScope, as_of: Optional[date] = None) -> list:
+    """返回当前 SeasonScope 内证明目标范围尚未播完的分集列表。"""
     today = as_of or date.today()
     last_aired = _scope_last_aired_episode(scope.episodes, as_of=today)
     last_aired_number = _episode_number(last_aired) if last_aired else None
@@ -163,9 +163,7 @@ def scope_future_episode(scope: SeasonScope, as_of: Optional[date] = None):
             and number > last_aired_number
         ):
             candidates.append(episode)
-    if not candidates:
-        return None
-    return min(
+    return sorted(
         candidates,
         key=lambda episode: (
             _episode_air_date(episode) or date.max,
@@ -174,8 +172,16 @@ def scope_future_episode(scope: SeasonScope, as_of: Optional[date] = None):
     )
 
 
+def scope_future_episode(scope: SeasonScope, as_of: Optional[date] = None):
+    """返回当前 SeasonScope 内证明目标范围尚未播完的最早分集。"""
+    candidates = scope_future_episodes(scope, as_of=as_of)
+    if not candidates:
+        return None
+    return candidates[0]
+
+
 def has_scope_future_episode(scope: SeasonScope, as_of: Optional[date] = None) -> bool:
-    """判断当前 SeasonScope 是否存在后续集反证。"""
+    """判断当前 SeasonScope 是否存在后续集。"""
     return scope_future_episode(scope, as_of=as_of) is not None
 
 

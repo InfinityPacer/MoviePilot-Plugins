@@ -77,6 +77,18 @@ class TestCompletionGuard:
         assert ev.event_data.cancel is False
         g.evaluate_fn.assert_not_called()
 
+    def test_movie_active_download_blocks_before_media_return(self):
+        """电影订阅仍受下载中待定保护，避免下载任务尚未入库时提前完成。"""
+        g = _guard(has_active=True)
+        ev = _event(subscribe=_sub(stype="电影"))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert "下载" in ev.event_data.reason
+        g.evaluate_fn.assert_not_called()
+        g.mark_pending_fn.assert_not_called()
+
     def test_unknown_media_type_not_intercepted(self):
         """未知媒体类型不按剧集完成守卫处理，避免无效类型被写入待定。"""
         g = _guard()
@@ -148,8 +160,10 @@ class TestCompletionGuard:
         g.mark_pending_fn.assert_not_called()
         g.timeout_manager.record_block.assert_not_called()
 
-    def test_unstable_signal_still_blocks_short_l_target_satisfied(self):
+    def test_unstable_signal_still_blocks_short_l_target_satisfied(self, monkeypatch):
         """F 不稳定时，一至两集低可信 L 仍不能直接完成。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.guard.logger.info", messages.append)
         sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
         g = _guard(signal=sig, mode="loose")
         g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
@@ -164,6 +178,7 @@ class TestCompletionGuard:
 
         assert ev.event_data.cancel is True
         assert ev.event_data.reason == "变动"
+        assert any("L 兜底未放行" in message and "短样本" in message for message in messages)
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once_with(
             subscribe,
@@ -171,8 +186,10 @@ class TestCompletionGuard:
             total_episode=2,
         )
 
-    def test_unstable_total_shrink_blocks_l_target_satisfied(self):
+    def test_unstable_total_shrink_blocks_l_target_satisfied(self, monkeypatch):
         """近期 total 缩小时，可信 L 也不能绕过 F 的低估风险。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.guard.logger.info", messages.append)
         sig = CompletionSignal(
             completed=False,
             stable=False,
@@ -191,12 +208,110 @@ class TestCompletionGuard:
 
         assert ev.event_data.cancel is True
         assert ev.event_data.reason == "变动"
+        assert any("L 兜底未放行" in message and "F 缩小" in message for message in messages)
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once_with(
             subscribe,
             signal=sig,
             total_episode=12,
         )
+
+    def test_unstable_l_not_allowed_logs_missing_resolver_gap(self, monkeypatch):
+        """F 不稳定且主程序缺集口径仍未满足时，日志应直接说明 L 未放行原因。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.guard.logger.info", messages.append)
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 12))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(False, {100: {1: SimpleNamespace(episodes=[12])}}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert any("L 兜底未放行" in message and "主程序缺集口径未满足" in message for message in messages)
+
+    def test_unstable_l_can_cover_advance_access_future_inside_target_range(self):
+        """超前点播已覆盖订阅目标范围时，F 不稳定可由可信 L 放行。"""
+        future_air_date = (date.today() + timedelta(days=30)).isoformat()
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=future_air_date),
+            _ep(3, air_date=future_air_date),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 3
+        subscribe.note = [1, 2, 3]
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is False
+        g.resolve_missing_fn.assert_called_once()
+        g.mark_pending_fn.assert_not_called()
+
+    def test_unstable_l_not_allowed_logs_future_outside_target_range(self, monkeypatch):
+        """SeasonScope 存在目标范围外后续集时，F 不稳定日志应说明 L 被阻断。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.guard.logger.info", messages.append)
+        future_air_date = (date.today() + timedelta(days=30)).isoformat()
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=future_air_date),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 1
+        subscribe.note = [1]
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert any("L 兜底未放行" in message and "目标范围外的后续集" in message for message in messages)
+        g.resolve_missing_fn.assert_not_called()
+
+    def test_unstable_l_not_allowed_logs_strict_limit(self, monkeypatch):
+        """严格模式下可信 L 只能进入观察，不能覆盖 F 不稳定。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.guard.logger.info", messages.append)
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="strict")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 13))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert any("L 兜底未放行" in message and "strict" in message for message in messages)
+
+    def test_unstable_l_not_allowed_logs_high_risk(self, monkeypatch):
+        """高风险 SeasonScope 的 L 信号不能覆盖 F 不稳定。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.guard.logger.info", messages.append)
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 41)]
+        subscribe = _sub()
+        subscribe.total_episode = 40
+        subscribe.note = list(range(1, 41))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert any("L 兜底未放行" in message and "高风险" in message for message in messages)
 
     def test_high_confidence_releases(self):
         """高置信度直接放行，快照统一由 SubscribeComplete 记录。"""
@@ -221,7 +336,7 @@ class TestCompletionGuard:
             completed=True,
             confidence="low",
             signals=["I:all_aired"],
-            reason="目标范围内所有集已播且无后续集反证",
+            reason="目标范围内所有集已播且未发现后续集",
         )
         g = _guard(signal=sig)
         g.timeout_manager.consume_release.return_value = False
@@ -230,7 +345,7 @@ class TestCompletionGuard:
         g.handle(ev)
 
         assert ev.event_data.cancel is True
-        assert ev.event_data.reason == "目标范围内所有集已播且无后续集反证"
+        assert ev.event_data.reason == "目标范围内所有集已播且未发现后续集"
         g.mark_pending_fn.assert_called_once()
         g.timeout_manager.record_block.assert_called_once_with(
             ev.event_data.subscribe,
@@ -244,7 +359,7 @@ class TestCompletionGuard:
             completed=True,
             confidence="low",
             signals=["I:all_aired"],
-            reason="目标范围内所有集已播且无后续集反证",
+            reason="目标范围内所有集已播且未发现后续集",
         )
         g = _guard(signal=sig)
         g.timeout_manager.consume_release.return_value = True
@@ -478,44 +593,33 @@ class TestCompletionGuard:
         _, kwargs = resolve_missing.call_args
         assert kwargs["meta"].begin_season == 0
 
-    def test_episode_best_version_stable_completion_still_only_blocks_f(self):
-        """分集洗版稳定时完成守卫只挡 F，不用低置信 L 反向取消完成。"""
-        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
-        g = _guard(signal=sig, mode="strict")
-        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2)]
-        subscribe = _sub(best_version=1, best_version_full=0)
-        subscribe.total_episode = 2
-        subscribe.note = [1, 2]
+    def test_full_best_version_skips_completion_signal_after_pending_check(self):
+        """全集洗版不由完成守卫裁决，下载中保护通过后直接交还主程序洗版链路。"""
+        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
+        g = _guard(signal=sig, mode="balanced")
+        subscribe = _sub(best_version=1, best_version_full=1)
         ev = _event(subscribe=subscribe)
-
-        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
 
         g.handle(ev)
 
         assert ev.event_data.cancel is False
+        g.evaluate_fn.assert_not_called()
         g.resolve_missing_fn.assert_not_called()
         g.mark_pending_fn.assert_not_called()
-        g.timeout_manager.record_block.assert_not_called()
 
-    def test_full_best_version_l_signal_does_not_accept_any_downloaded_version(self):
-        """全集洗版仍按整季洗版处理，不能使用任意版本已下载即满足的 L 口径。"""
-        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
-        g = _guard(signal=sig, mode="balanced")
-        g.tmdb_episodes_fn.return_value = [_ep(1), _ep(2), _ep(3)]
-        subscribe = _sub(best_version=1, best_version_full=1)
-        subscribe.total_episode = 3
-        subscribe.note = [1, 2, 3]
-        ev = _event(subscribe=subscribe)
-
-        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+    def test_full_best_version_active_download_blocks_before_skip(self):
+        """全集洗版仍先检查下载中待定，避免资源已选中但尚未入库时结束订阅。"""
+        g = _guard(has_active=True)
+        ev = _event(subscribe=_sub(best_version=1, best_version_full=1))
 
         g.handle(ev)
 
-        assert ev.event_data.cancel is False
-        g.resolve_missing_fn.assert_not_called()
+        assert ev.event_data.cancel is True
+        assert "下载" in ev.event_data.reason
+        g.evaluate_fn.assert_not_called()
 
-    def test_local_coverage_does_not_complete_when_scope_has_future_episode(self):
-        """聚合下一集缺失但 SeasonScope 已有未来集时，L 信号不得提前完成订阅。"""
+    def test_local_coverage_does_not_complete_when_future_episode_outside_target_range(self):
+        """聚合下一集缺失但 SeasonScope 目标范围外已有后续播出日期时，L 信号不得提前完成订阅。"""
         g = _guard(mode="balanced")
         g.detect_missing_episodes_fn.return_value = []
         future_air_date = (date.today() + timedelta(days=30)).isoformat()
@@ -534,8 +638,8 @@ class TestCompletionGuard:
         assert signal is None
         g.resolve_missing_fn.assert_not_called()
 
-    def test_local_signal_blocks_scope_future_even_without_aggregate(self):
-        """聚合下一集缺失时，L 信号仍由 SeasonScope 后续集阻断。"""
+    def test_local_signal_blocks_scope_future_outside_target_even_without_aggregate(self):
+        """聚合下一集缺失时，L 信号仍由 SeasonScope 目标范围外后续集阻断。"""
         g = _guard(mode="balanced")
         future_air_date = (date.today() + timedelta(days=30)).isoformat()
         g.tmdb_episodes_fn.return_value = [
@@ -554,8 +658,71 @@ class TestCompletionGuard:
         assert signal is None
         g.resolve_missing_fn.assert_not_called()
 
+    def test_local_signal_allows_future_inside_completed_target_range(self):
+        """超前点播已覆盖当前订阅目标范围时，目标内后续播出日期不阻断 L 信号。"""
+        g = _guard(mode="balanced")
+        future_air_date = (date.today() + timedelta(days=30)).isoformat()
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=future_air_date),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 2
+        subscribe.note = [1, 2]
+        mediainfo = _event(subscribe=subscribe).event_data.mediainfo
+        mediainfo.tmdb_info.next_episode_to_air = None
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        signal = g._local_signal(subscribe, mediainfo)
+
+        assert signal is not None
+        assert signal.signals == ["L:target_satisfied"]
+        g.resolve_missing_fn.assert_called_once()
+
+    def test_local_signal_blocks_later_future_outside_target_range(self):
+        """最早后续播出日期在目标内时，目标外后续集仍应阻断 L 信号。"""
+        g = _guard(mode="balanced")
+        inside_future_date = (date.today() + timedelta(days=10)).isoformat()
+        outside_future_date = (date.today() + timedelta(days=30)).isoformat()
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=inside_future_date),
+            _ep(3, air_date=outside_future_date),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 2
+        subscribe.note = [1, 2]
+        mediainfo = _event(subscribe=subscribe).event_data.mediainfo
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        result = g._local_signal_result(subscribe, mediainfo)
+
+        assert result.signal is None
+        assert "E3" in result.blocked_reason
+        g.resolve_missing_fn.assert_not_called()
+
+    def test_unfinished_without_l_reports_main_missing_reason_to_user(self):
+        """无完成信号且主程序缺集口径未满足时，用户可见原因应包含具体 L 失败原因。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号确认当前目标范围已播完")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 13)]
+        subscribe = _sub()
+        subscribe.note = list(range(1, 12))
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(False, {100: {1: SimpleNamespace(episodes=[12])}}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "主程序缺集口径未满足，未命中 L"
+        g.mark_pending_fn.assert_called_once_with(
+            subscribe,
+            source="guard_veto",
+            reason=ev.event_data.reason,
+        )
+
     def test_local_signal_ignores_aggregate_future_when_scope_has_no_future(self):
-        """SeasonScope 无后续集反证时，聚合下一集不再阻断 L 放行。"""
+        """SeasonScope 无后续集时，聚合下一集不再阻断 L 放行。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
         g = _guard(signal=sig, mode="balanced")
         g.tmdb_episodes_fn.return_value = [_ep(i, air_date="2026-01-01") for i in range(1, 4)]
@@ -591,6 +758,58 @@ class TestCompletionGuard:
 
         assert signal is None
         g.resolve_missing_fn.assert_not_called()
+
+    def test_unfinished_without_l_reports_specific_future_reason_to_user(self):
+        """无完成信号且 L 被目标范围外后续集阻断时，用户可见原因应包含具体集号。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号确认当前目标范围已播完")
+        g = _guard(signal=sig, mode="balanced")
+        future_air_date = (date.today() + timedelta(days=30)).isoformat()
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=future_air_date),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 1
+        subscribe.note = [1]
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason.startswith("TMDB 已存在目标范围外的后续集")
+        assert "E2" in ev.event_data.reason
+        assert f"播出日期：{future_air_date}" in ev.event_data.reason
+        g.mark_pending_fn.assert_called_once_with(
+            subscribe,
+            source="guard_veto",
+            reason=ev.event_data.reason,
+        )
+
+    def test_unfinished_without_l_reports_unknown_tail_reason_to_user(self):
+        """无完成信号且 L 被目标范围外未知播出日期后续集阻断时，用户可见原因应说明日期未知。"""
+        sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号确认当前目标范围已播完")
+        g = _guard(signal=sig, mode="balanced")
+        g.tmdb_episodes_fn.return_value = [
+            _ep(1, air_date="2026-01-01"),
+            _ep(2, air_date=None),
+        ]
+        subscribe = _sub()
+        subscribe.total_episode = 1
+        subscribe.note = [1]
+        ev = _event(subscribe=subscribe)
+        g.resolve_missing_fn = MagicMock(return_value=(True, {}))
+
+        g.handle(ev)
+
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason.startswith("TMDB 已存在目标范围外的后续集")
+        assert "E2，播出日期：未知" in ev.event_data.reason
+        g.mark_pending_fn.assert_called_once_with(
+            subscribe,
+            source="guard_veto",
+            reason=ev.event_data.reason,
+        )
 
     def test_strict_local_targets_covered_enters_observation(self):
         """严格模式把 L 作为低置信信号进入观察。"""
@@ -701,22 +920,6 @@ class TestCompletionGuard:
 
         assert ev.event_data.cancel is True
         g.timeout_manager.record_block.assert_called_once()
-
-    def test_best_version_only_checks_f(self):
-        """洗版订阅只检查 F，不要求 E/I。"""
-        sig = CompletionSignal(completed=False, stable=True, signals=["none"])
-        g = _guard(signal=sig)
-        ev = _event(subscribe=_sub(best_version=1))
-        g.handle(ev)
-        assert ev.event_data.cancel is False  # stable=True → 洗版放行
-
-    def test_best_version_blocked_when_unstable(self):
-        """洗版订阅 F 不稳定 → 否决。"""
-        sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"])
-        g = _guard(signal=sig)
-        ev = _event(subscribe=_sub(best_version=1))
-        g.handle(ev)
-        assert ev.event_data.cancel is True
 
     def test_mid_season_blocks(self):
         """M 信号否决。"""

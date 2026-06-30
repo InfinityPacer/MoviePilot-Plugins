@@ -118,7 +118,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._transferhistory_oper: Optional[TransferHistoryOper] = None
         self._downloadhistory_oper: Optional[DownloadHistoryOper] = None
         self._downloader_helper: Optional[DownloaderHelper] = None
-        # 信号引擎评估闭包供待定释放与洗版完成检查复用。
+        # 信号引擎评估闭包供待定释放和守卫/暂停等策略复用。
         self._evaluate_fn: Optional[Callable] = None
 
     def init_plugin(self, config: dict = None):
@@ -288,7 +288,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             state_coordinator=pending_state,
             fetch_fn=self._fetch_downloader_torrent,
             present_fn=self._downloader_torrent_present,
-            manual_delete_enabled=cfg.manual_delete_listen,
+            manual_delete_enabled=cfg.download_monitor_enabled and cfg.manual_delete_listen,
             pending_download_enabled=cfg.pending_download_enabled,
         )
 
@@ -363,7 +363,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
         orchestrator = BestVersionOrchestrator(
             priority_manager=priority_manager,
-            evaluate_fn=evaluate_fn,
             subscribe_oper=self._subscribe_oper,
             send_subscribe_added_fn=self._send_subscribe_added,
             notify_fn=self._notify_subscribe,
@@ -395,6 +394,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             skip_deletion=cfg.skip_deletion,
             backfill_enabled=cfg.best_version_backfill_enabled,
             pending_download_enabled=cfg.pending_download_enabled,
+            download_monitor_enabled=cfg.download_monitor_enabled,
             guard=guard if cfg.completion_guard_mode != "off" else None,
             recognition_guard=recognition_guard if cfg.recognition_guard_mode != "off" else None,
             volatility=volatility if cfg.volatility_enabled else None,
@@ -461,7 +461,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
         插件总开关关闭时不注册任何任务。
         每个 job 的 func 指向插件类薄方法，委托对应域模块执行；模块周期方法未就绪时安全跳过。
-        周期 job 多用 interval 触发器；洗版完成检查用 cron 触发器（CronTrigger）；一次性全量巡检用 date 触发器延迟执行。
+        周期 job 多用 interval 触发器；洗版订阅检查用 cron 触发器（CronTrigger）；一次性全量巡检用 date 触发器延迟执行。
         """
         if not self._config:
             return []
@@ -491,7 +491,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "kwargs": {"hours": cfg.meta_check_interval_hours},
         })
         service_schedules[service_id] = f"{cfg.meta_check_interval_hours}h"
-        if cfg.download_monitor_enabled:
+        if cfg.pending_download_enabled or cfg.download_monitor_enabled:
             service_id = f"{name}_download"
             services.append({
                 "id": service_id,
@@ -629,7 +629,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
     def run_download_timeout_check(self):
         """下载任务检查：读取下载器状态，处理超时无进度、Tracker 删除关键字和手动删种。"""
         monitor = self._modules.get("download_monitor")
-        cleanup = self._modules.get("torrent_cleanup")
+        cleanup = self._modules.get("torrent_cleanup") if (
+            self._config and self._config.download_monitor_enabled
+        ) else None
         if monitor:
             detail("下载任务检查：开始")
             monitor.run_timeout_check(cleanup)
@@ -681,16 +683,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return (now - last) > days * 86400
 
     def run_best_version_check(self):
-        """洗版巡检：超时终止优先，全集转换优先于本轮完成判定。
-
-        完成判定复用媒体库缺集结果。
-        """
+        """洗版巡检：处理洗版超时终止，并兜底推进分集洗版转全集。"""
         if self._config and self._config.best_version_type == "no":
             return
-        orchestrator = self._modules.get("orchestrator")
         priority = self._modules.get("priority_manager")
         converter = self._modules.get("converter")
-        if not orchestrator or not priority or not self._subscribe_oper:
+        if not priority or not self._subscribe_oper:
             return
         detail("洗版巡检：开始")
         for subscribe in (self._subscribe_oper.list(state="N,R,P") or []):
@@ -708,24 +706,21 @@ class SubscribeAssistantEnhanced(_PluginBase):
                         image=mediainfo.get_message_image(),
                     )
                     continue
-                # 洗版完成必须同时满足 priority 达标、F 稳定与 SeasonScope 目标集全覆盖。
-                satisfied, no_exists = self._resolve_subscribe_missing(
-                    subscribe,
-                    mediainfo,
-                    best_version_accept_downloaded=is_tv_episode_best_version_subscribe(subscribe),
-                )
                 if (
                     self._config.best_version_episode_to_full
                     and converter
                     and is_tv_episode_best_version_subscribe(subscribe)
-                    and satisfied
                 ):
+                    satisfied, _no_exists = self._resolve_subscribe_missing(
+                        subscribe,
+                        mediainfo,
+                        best_version_accept_downloaded=True,
+                    )
+                    if not satisfied:
+                        continue
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} 分集洗版目标满足，转为全集洗版")
                     converter.convert_to_full(subscribe, mediainfo)
                     continue
-                if is_full_best_version_subscribe(subscribe) and orchestrator.check_complete(subscribe, mediainfo, no_exists):
-                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}优先级达标且缺集已补齐，判定洗版完成")
-                    priority.mark_complete(subscribe)
             else:
                 detail(
                     f"洗版巡检：{format_subscribe(subscribe)} {mode_label}媒体识别失败，本轮跳过；"

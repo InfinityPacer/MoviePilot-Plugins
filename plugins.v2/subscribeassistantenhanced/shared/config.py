@@ -218,6 +218,7 @@ class PluginConfig:
 
     @property
     def download_monitor_enabled(self) -> bool:
+        """下载超时自动删除：控制超时、Tracker 关键字和手动删种善后等破坏性下载管理。"""
         return self.get_bool("download_monitor_enabled", True)
 
     @property
@@ -242,14 +243,17 @@ class PluginConfig:
 
     @property
     def download_timeout_minutes(self) -> int:
+        """下载超时时间：同一下载任务观察窗口内进度不足时才进入超时判断。"""
         return self.get_int("download_timeout_minutes", 120)
 
     @property
     def download_progress_threshold(self) -> int:
+        """下载进度阈值：超时窗口内进度增长低于该百分比才视为停滞。"""
         return self.get_int("download_progress_threshold", 10)
 
     @property
     def download_retry_limit(self) -> int:
+        """下载连续超时重试次数：达到上限后保留任务并停止自动删种重试。"""
         return self.get_int("download_retry_limit", 3)
 
     @property
@@ -351,11 +355,12 @@ class PluginConfig:
 
     @property
     def pending_enhanced_enabled(self) -> bool:
+        """自动待定剧集订阅：按开播时间、已播集数和可选变化信号标记待定。"""
         return self.get_bool("pending_enhanced_enabled", True)
 
     @property
     def pending_download_enabled(self) -> bool:
-        """自动待定下载中订阅：存在进行中下载时否决完成（守门已实现，此开关控制是否启用）。"""
+        """自动待定下载中订阅：存在进行中下载时否决完成，避免入库前完成订阅。"""
         return self.get_bool("pending_download_enabled", True)
 
     @property
@@ -370,12 +375,14 @@ class PluginConfig:
 
     @property
     def pending_use_volatility(self) -> bool:
+        """待定参考变更速率：接近完结且总集数近期变化时参与待定判断。"""
         return self.get_bool("pending_use_volatility", False)
 
     # ---- 订阅暂停 ----
 
     @property
     def pause_enhanced_enabled(self) -> bool:
+        """自动暂停订阅：按播出距离、上映距离、无下载窗口和用户名单暂停订阅。"""
         return self.get_bool("pause_enhanced_enabled", False)
 
     @property
@@ -456,38 +463,47 @@ class PluginConfig:
 
     @property
     def volatility_enabled(self) -> bool:
+        """变更速率信号：总集数在观察窗口内变化时阻止直接完成。"""
         return self.get_bool("volatility_enabled", True)
 
     @property
     def volatility_window_days(self) -> int:
+        """变更速率窗口：统计总集数变化的天数，值越大越保守。"""
         return self.get_int("volatility_window_days", DEFAULT_VOLATILITY_WINDOW_DAYS)
 
     @property
     def cadence_enabled(self) -> bool:
+        """播出节奏信号：按已播间隔估算继续等待期，不单独判定完结。"""
         return self.get_bool("cadence_enabled", True)
 
     @property
     def cadence_multiplier(self) -> float:
+        """节奏窗口系数：放大已播间隔得到最低等待窗口。"""
         return self.get_float("cadence_multiplier", 2.5)
 
     @property
     def cadence_min_window_days(self) -> int:
+        """节奏窗口下限：节奏估算的等待窗口不得低于该天数。"""
         return self.get_int("cadence_min_window_days", 7)
 
     @property
     def cadence_min_episodes(self) -> int:
+        """节奏参与最少集数：已播集数达到该值后才计算播出节奏。"""
         return self.get_int("cadence_min_episodes", 3)
 
     @property
     def season_cooldown_days(self) -> int:
+        """季冷却期：末集播出后继续观察的天数。"""
         return self.get_int("season_cooldown_days", 14)
 
     @property
     def verify_enabled(self) -> bool:
+        """自动纠错：完成后定时复核集数，发现增加时重建订阅。"""
         return self.get_bool("verify_enabled", False)
 
     @property
     def verify_interval_hours(self) -> int:
+        """自动纠错间隔：完成快照复核的定时周期。"""
         return self.get_int("verify_interval_hours", 12)
 
     @property
@@ -497,10 +513,12 @@ class PluginConfig:
 
     @property
     def timeout_release_days(self) -> int:
+        """完成前观察天数：低置信或不稳定完成否决可保留的最长观察窗口。"""
         return self.get_int("timeout_release_days", 7)
 
     @property
     def timeout_cadence_acceleration(self) -> bool:
+        """按节奏加速释放：播出节奏等待期结束后缩短完成前观察窗口。"""
         return self.get_bool("timeout_cadence_acceleration", True)
 
     def declared_keys(self) -> list:

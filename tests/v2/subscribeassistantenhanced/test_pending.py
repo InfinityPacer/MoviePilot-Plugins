@@ -354,6 +354,20 @@ class TestMarkPending:
         assert task["source"] == "pending_judge"
         assert task["pending_sources"]["pending_judge"]["reason"] == "上映窗口期内"
 
+    def test_mark_pending_refresh_log_does_not_claim_state_entry(self, monkeypatch):
+        """已在 P 中的重复命中只记录刷新，不应再次写成进入待定。"""
+        messages = []
+        j = _judge()
+
+        monkeypatch.setattr("subscribeassistantenhanced.pending.judge.detail", messages.append)
+
+        j.mark_pending(_sub(state="P"), source="pending_judge", reason="目标总集数近期变化")
+
+        assert len(messages) == 1
+        assert "待定刷新" in messages[0]
+        assert "待定进入" not in messages[0]
+        assert "未触发状态切换" in messages[0]
+
 
 class TestExitPending:
 
@@ -444,3 +458,22 @@ class TestExitPending:
             for call_args in j._subscribe_oper.update.call_args_list
         )
         notify.assert_not_called()
+
+    def test_exit_keeps_p_log_does_not_claim_pending_exit(self, monkeypatch):
+        """仅解除一个待定来源时不应写成退出待定。"""
+        messages = []
+        store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "pending_judge",
+            "pending_sources": {
+                "pending_judge": {"reason": "集数不足"},
+                "download_pending": {"reason": "下载中"},
+            },
+        }}}
+        j = _judge(store=store)
+        monkeypatch.setattr("subscribeassistantenhanced.pending.judge.logger.info", messages.append)
+
+        j._exit_pending(_sub(state="P"), "待定条件不再满足")
+
+        assert not any("退出待定（P）" in message for message in messages)
+        assert any("仍保持待定" in message for message in messages)

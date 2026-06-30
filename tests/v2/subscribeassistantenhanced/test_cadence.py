@@ -65,7 +65,7 @@ class TestCheckCadenceExpired:
                                       min_episodes=3, as_of=as_of) is True
 
     def test_future_episodes_excluded(self):
-        """未来集不参与间隔计算。"""
+        """后续播出日期不参与间隔计算。"""
         eps = [_ep(1, "2026-01-01"), _ep(2, "2026-01-08"),
                _ep(3, "2026-01-15"), _ep(4, "2027-01-01")]
         as_of = date(2026, 1, 20)  # 最后已播=1/15，窗口=1/15+7*2.5=~2/2

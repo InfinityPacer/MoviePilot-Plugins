@@ -89,7 +89,7 @@ class TestEvaluatePipeline:
         assert "total_episode" not in sig.reason
 
     def test_ended_without_scope_future_confirms_completion_despite_recent_total_change(self):
-        """Ended 且目标范围无未来集反证时，可跳过旧 F 观察。"""
+        """Ended 且未发现后续集时，可跳过旧 F 观察。"""
         eps = [_ep(i, air_date="2026-06-28") for i in range(1, 13)]
 
         sig = evaluate(
@@ -106,7 +106,7 @@ class TestEvaluatePipeline:
         assert "E:ended" in sig.signals
 
     def test_canceled_without_scope_future_confirms_completion_despite_recent_total_change(self):
-        """Canceled 且目标范围无未来集反证时，也可跳过旧 F 观察。"""
+        """Canceled 且未发现后续集时，也可跳过旧 F 观察。"""
         eps = [_ep(i, air_date="2026-06-28") for i in range(1, 3)]
 
         sig = evaluate(
@@ -123,7 +123,7 @@ class TestEvaluatePipeline:
         assert "E:canceled" in sig.signals
 
     def test_ended_with_scope_future_still_uses_volatility_observation(self):
-        """Ended 若仍有目标范围未来集反证，不应绕过 F 观察。"""
+        """Ended 若仍有后续播出日期，不应绕过 F 观察。"""
         eps = [
             _ep(1, air_date="2026-06-28"),
             _ep(2, air_date="2026-07-01"),
@@ -143,7 +143,7 @@ class TestEvaluatePipeline:
         assert "F:unstable" in sig.signals
 
     def test_ended_with_scope_unknown_tail_still_uses_volatility_observation(self):
-        """Ended 若仍有目标范围未知排期尾集，也不应绕过 F 观察。"""
+        """Ended 若仍有播出日期未知的后续集，也不应绕过 F 观察。"""
         eps = [
             _ep(1, air_date="2026-06-28"),
             _ep(2, air_date=None),
@@ -163,7 +163,7 @@ class TestEvaluatePipeline:
         assert "F:unstable" in sig.signals
 
     def test_canceled_with_scope_unknown_tail_still_uses_volatility_observation(self):
-        """Canceled 若仍有目标范围未知排期尾集，也不应绕过 F 观察。"""
+        """Canceled 若仍有播出日期未知的后续集，也不应绕过 F 观察。"""
         eps = [
             _ep(1, air_date="2026-06-28"),
             _ep(2, air_date=None),
@@ -246,7 +246,7 @@ class TestEvaluatePipeline:
         assert "E:finale" in sig.signals
 
     def test_finale_scope_future_blocks_completion_even_when_stable(self):
-        """稳定状态下，scope 内未来排期反证也应压过可信 finale。"""
+        """稳定状态下，scope 内后续播出日期也应压过可信 finale。"""
         eps = [
             _ep(1, air_date="2026-02-01"),
             _ep(2, ep_type="finale", air_date="2026-01-08"),
@@ -283,7 +283,7 @@ class TestEvaluatePipeline:
         assert "E:ended" in sig.signals
 
     def test_canceled_status_still_completes_with_scope_unknown_tail(self):
-        """Canceled 由 H 兜底，scope 未知排期尾集不压过剧级完成。"""
+        """Canceled 由 H 兜底，scope 播出日期未知的后续集不压过剧级完成。"""
         eps = [
             _ep(1, air_date="2026-01-01"),
             _ep(2, air_date=None),

@@ -125,6 +125,44 @@ class TestEventOrdering:
         # 下载添加事件不触发暂停恢复；恢复仅由元数据巡检的上映双向判定负责。
         pause_mgr.resume.assert_not_called()
 
+    def test_download_added_skips_torrent_index_when_both_download_toggles_disabled(self):
+        """下载待定和下载管理都关闭时，不写无消费方的 torrents 索引。"""
+        sub = _sub(id=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        monitor = MagicMock()
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            download_monitor=monitor,
+            pending_download_enabled=False,
+            download_monitor_enabled=False,
+        )
+
+        proxy.on_download_added(SimpleNamespace(event_data={
+            "source": 'Subscribe|{"id": 1}', "hash": "h1", "episodes": [1], "downloader": "qb",
+        }))
+
+        monitor.on_download.assert_not_called()
+
+    def test_download_added_writes_torrent_index_for_pending_only(self):
+        """只开启下载待定时仍写 torrents，供下载任务检查释放 P 状态。"""
+        sub = _sub(id=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        monitor = MagicMock()
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            download_monitor=monitor,
+            pending_download_enabled=True,
+            download_monitor_enabled=False,
+        )
+
+        proxy.on_download_added(SimpleNamespace(event_data={
+            "source": 'Subscribe|{"id": 1}', "hash": "h1", "episodes": [1], "downloader": "qb",
+        }))
+
+        monitor.on_download.assert_called_once()
+
     def test_transfer_complete_clears_download_pending(self):
         """TransferComplete 经 torrents 反查订阅后清 download_pending。"""
         monitor = MagicMock()

@@ -215,6 +215,8 @@ class DownloadMonitor:
                     self._clean_local_torrent_task(task.get("subscribe_id"), torrent_hash)
                     removed_count += 1
                     continue
+                if cleanup is None:
+                    continue
                 action = self.check_torrent(info, task.get("subscribe_id"))
                 if action in ("timeout", "delete_tracker") and cleanup:
                     subscribe = self._resolve_subscribe(task.get("subscribe_id"))

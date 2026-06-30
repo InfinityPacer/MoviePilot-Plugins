@@ -125,7 +125,6 @@ class PendingJudge:
     def _exit_pending(self, subscribe, reason: str):
         """退出当前待定来源，并由 PendingStateCoordinator 仲裁是否恢复启用（R）。"""
         sid = subscribe.id
-        logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（P），原因：{reason}")
         task = self._read_subscribe_task(subscribe)
         source = task.get("source", "pending_judge")
         if source == "guard_veto":
@@ -136,10 +135,15 @@ class PendingJudge:
             reason=reason,
         )
         if restored:
+            logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（P），原因：{reason}")
             title = EXIT_TITLES.get(source)
             if title:
                 self._notify_status(subscribe, title, detail=reason)
         else:
+            logger.info(
+                f"待定退出：{format_subscribe(subscribe)} 已解除来源={source}，"
+                f"仍保持待定（P），原因：{reason}"
+            )
             self._update_subscribe_task(subscribe, {
                 "exit_reason": reason,
                 "exit_at": time.time(),
@@ -148,12 +152,17 @@ class PendingJudge:
     def mark_pending(self, subscribe, source: str = "pending_judge",
                      reason: str = ""):
         """登记待定来源，并在订阅真实进入待定（P）时发送状态通知。"""
-        sid = subscribe.id
-        detail(
-            f"待定进入：{format_subscribe(subscribe)} 标记为待定（P），"
-            f"来源={source}，原因：{reason}"
-        )
         changed = self._state.mark_active(subscribe, source=source, reason=reason)
+        if changed:
+            detail(
+                f"待定进入：{format_subscribe(subscribe)} 标记为待定（P），"
+                f"来源={source}，原因：{reason}"
+            )
+        else:
+            detail(
+                f"待定刷新：{format_subscribe(subscribe)} 待定来源仍满足，"
+                f"未触发状态切换，来源={source}，原因：{reason}"
+            )
         title = ENTER_TITLES.get(source)
         if changed and title:
             self._notify_status(subscribe, title, detail=reason)

@@ -380,7 +380,7 @@ class TestMediaHelpers:
         assert unknown_tail_episode_count(subscribe, episodes) == 2
 
     def test_episode_candidates_after_skips_other_season_and_outside_target(self):
-        """未来候选必须同时属于当前季和订阅目标范围。"""
+        """后续播出候选必须同时属于当前季和订阅目标范围。"""
         subscribe = SimpleNamespace(season=1, start_episode=2, total_episode=3)
         episodes = [
             SimpleNamespace(season_number=2, episode_number=2, air_date="2026-07-01"),
@@ -391,7 +391,7 @@ class TestMediaHelpers:
         assert episode_candidates_after(subscribe, episodes, date(2026, 6, 1)) == [episodes[2]]
 
     def test_episode_candidates_after_keeps_special_season_zero_boundary(self):
-        """特别季 S0 的未来候选不能混入主季分集。"""
+        """特别季 S0 的后续播出候选不能混入主季分集。"""
         subscribe = SimpleNamespace(season=0, start_episode=2, total_episode=3)
         episodes = [
             SimpleNamespace(season_number=1, episode_number=2, air_date="2026-07-01"),
@@ -401,7 +401,7 @@ class TestMediaHelpers:
         assert episode_candidates_after(subscribe, episodes, date(2026, 6, 1)) == [episodes[1]]
 
     def test_inventory_next_episodes_rejects_missing_invalid_or_negative_lack_count(self):
-        """媒体库实缺数量不可用时，不应把未来集候选误判为可暂停依据。"""
+        """媒体库实缺数量不可用时，不应把后续播出候选误判为可暂停依据。"""
         episodes = [SimpleNamespace(season_number=1, episode_number=2, air_date="2026-07-01")]
 
         for lack_episode in (None, "bad", -1):
@@ -420,7 +420,7 @@ class TestMediaHelpers:
 class TestResolveAiringNextEpisode:
 
     def test_valid_aggregate_candidate_is_kept(self):
-        """聚合下一集匹配首待下载集和未来日期时，播出暂停可继续使用该候选。"""
+        """聚合下一集匹配首待下载集和后续播出日期时，播出暂停可继续使用该候选。"""
         subscribe = SimpleNamespace(
             season=1, start_episode=1, total_episode=3,
             note=[1], episode_priority={}, lack_episode=2,
