@@ -253,7 +253,7 @@ class EventProxy:
     def on_subscribe_modified(self, event):
         """SubscribeModified → 状态变更重置暂停跟踪 + 分集洗版下载事实回填。
 
-        state 变化时重置插件侧暂停记录；普通转洗版边沿（best_version 由假转真）
+        state 变化时重置插件侧暂停记录；普通订阅首次切成洗版时，
         把媒体库已有集交给主程序 backfill 合同，避免已在库的集被重新洗版。
         """
         data = event.event_data
@@ -280,7 +280,7 @@ class EventProxy:
                 detail(f"订阅修改事件：{format_subscribe(subscribe)} 状态已变更，清理插件暂停记录")
                 pause_manager.clear_pause_record(subscribe)
 
-        # 仅在旧假新真的转洗版边沿回填，避免内部 update 反复触发
+        # 只在普通订阅首次切成洗版时回填；插件后续写进度字段也会触发修改事件，不能重复回填。
         if ("best_version" in different_keys
                 and subscribe_info.get("best_version")
                 and not old_info.get("best_version")
