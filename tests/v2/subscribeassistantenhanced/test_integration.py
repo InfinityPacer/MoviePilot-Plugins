@@ -186,7 +186,8 @@ class TestAbsoluteSeason:
 
 class TestBestVersionFlow:
 
-    def test_best_version_only_checks_f(self):
+    def test_episode_best_version_uses_normal_tv_completion_guard(self):
+        """分集洗版与普通剧集订阅共用完成守卫策略。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"])
         guard = CompletionGuard.__new__(CompletionGuard)
         guard.evaluate_fn = MagicMock(return_value=sig)
@@ -206,14 +207,14 @@ class TestBestVersionFlow:
                              meta=SimpleNamespace(type=MediaType.TV, begin_season=1, season=1),
                              cancel=False, reason="", source=""))
         guard.handle(ev)
-        assert ev.event_data.cancel is False
-        guard.resolve_missing_fn.assert_not_called()
-        guard.mark_pending_fn.assert_not_called()
+        assert ev.event_data.cancel is True
+        assert ev.event_data.reason == "订阅目标范围已无待下载集"
+        guard.resolve_missing_fn.assert_called_once()
+        guard.mark_pending_fn.assert_called_once()
 
     def test_payload_preserves_episode_group(self):
         orch = BestVersionOrchestrator(
             priority_manager=MagicMock(),
-            evaluate_fn=MagicMock(),
         )
         payload = orch.build_payload(_sub(episode_group="eg-1"))
         assert payload["episode_group"] == "eg-1"

@@ -1,10 +1,9 @@
-"""洗版全流程编排：订阅创建与完成判定。"""
+"""洗版全流程编排：按配置创建洗版订阅。"""
 from typing import Callable, Optional
 
 from app.log import logger
 from app.schemas.types import MediaType
 
-from ..engine.types import CompletionSignal
 from ..shared.subscribe import (
     format_subscribe_desc,
     is_full_best_version_subscribe,
@@ -15,10 +14,9 @@ from .priority import PriorityManager
 
 
 class BestVersionOrchestrator:
-    """洗版全流程编排器，负责洗版订阅创建、完成判定和优先级范围判断。"""
+    """洗版全流程编排器，负责按配置创建洗版订阅。"""
 
     def __init__(self, priority_manager: PriorityManager,
-                 evaluate_fn: Callable,
                  subscribe_oper=None,
                  send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
@@ -27,28 +25,12 @@ class BestVersionOrchestrator:
                  plugin_name: str = "订阅助手（增强版）"):
         """注入洗版编排依赖与自动洗版范围。"""
         self._priority = priority_manager
-        self._evaluate = evaluate_fn
         self._subscribe_oper = subscribe_oper
         self._send_subscribe_added = send_subscribe_added_fn
         self._notify = notify_fn
         self._related_downloads = related_downloads_fn
         self._best_version_type = best_version_type
         self._plugin_name = plugin_name
-
-    def check_complete(self, subscribe, mediainfo,
-                       no_exists_episodes: Optional[list] = None) -> bool:
-        """洗版完成判定：priority 达标 + F 稳定 + SeasonScope 目标集全覆盖。"""
-        if not self._priority.is_complete(subscribe):
-            return False
-
-        signal: CompletionSignal = self._evaluate(subscribe, mediainfo)
-        if not signal.stable:
-            return False
-
-        if no_exists_episodes:
-            return False
-
-        return True
 
     def build_payload(self, subscribe) -> dict:
         """构建洗版订阅 payload，保留 episode_group。"""

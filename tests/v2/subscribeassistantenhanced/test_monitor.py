@@ -511,6 +511,45 @@ class TestManualDeleteListen:
         assert "download_pending" not in store["subscribes"]["6"]
         assert store["subscribes"]["6"]["state"] == "R"
 
+    def test_pending_only_visible_torrent_does_not_write_timeout_state(self):
+        """只做下载待定释放时，实时存在的未完成任务不参与超时/Tracker 异常判定。"""
+        now = time.time()
+        read, update, store = _store_mgr({
+            "torrents": {
+                "h1": {
+                    "hash": "h1",
+                    "subscribe_id": 6,
+                    "downloader": "qb",
+                    "episodes": [1],
+                    "baseline_progress": 0.1,
+                    "baseline_at": now - 7200,
+                }
+            },
+            "subscribes": {
+                "6": {
+                    "download_pending": {"h1": {"hash": "h1"}},
+                    "timeout_states": {},
+                }
+            },
+        })
+        cleanup = MagicMock()
+        mon = DownloadMonitor(
+            read, update,
+            timeout_minutes=1,
+            retry_limit=1,
+            fetch_fn=lambda dl, h: _info(
+                hash=h,
+                progress=0.1,
+                completed=False,
+            ),
+        )
+
+        mon.run_timeout_check(None)
+
+        assert store["torrents"]["h1"]["hash"] == "h1"
+        assert store["subscribes"]["6"]["timeout_states"] == {}
+        cleanup.handle_torrent_deleted.assert_not_called()
+
     def test_completed_torrent_log_includes_subscribe_episode_title_and_removed_count(self, monkeypatch):
         """完成任务日志应带订阅、集数、种子标题内容，并在汇总中展示本地移除数量。"""
         info_messages = []

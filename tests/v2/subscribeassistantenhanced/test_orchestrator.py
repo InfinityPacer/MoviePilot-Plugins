@@ -6,7 +6,6 @@ from app.schemas.types import MediaType
 
 from subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
 from subscribeassistantenhanced.best_version.priority import PriorityManager
-from subscribeassistantenhanced.engine.types import CompletionSignal
 
 
 def _mediainfo():
@@ -31,49 +30,17 @@ def _sub(ep_priority=None, episode_group=None, **kwargs):
     return SimpleNamespace(**defaults)
 
 
-def _orch(priority_complete=True, signal_stable=True):
-    pm = MagicMock(spec=PriorityManager)
-    pm.is_complete.return_value = priority_complete
-    sig = CompletionSignal(stable=signal_stable)
-    evaluate_fn = MagicMock(return_value=sig)
-    return BestVersionOrchestrator(
-        priority_manager=pm,
-        evaluate_fn=evaluate_fn,
-    )
-
-
-class TestCheckComplete:
-
-    def test_all_conditions_met(self):
-        """priority 达标 + F 稳定 + 无缺失集 → 完成。"""
-        orch = _orch(priority_complete=True, signal_stable=True)
-        assert orch.check_complete(_sub(), None, no_exists_episodes=None) is True
-
-    def test_priority_not_complete(self):
-        orch = _orch(priority_complete=False, signal_stable=True)
-        assert orch.check_complete(_sub(), None) is False
-
-    def test_f_unstable(self):
-        orch = _orch(priority_complete=True, signal_stable=False)
-        assert orch.check_complete(_sub(), None) is False
-
-    def test_missing_episodes(self):
-        """有缺失集 → 不完成。"""
-        orch = _orch(priority_complete=True, signal_stable=True)
-        assert orch.check_complete(_sub(), None, no_exists_episodes=[5, 6]) is False
-
-
 class TestBuildPayload:
 
     def test_preserves_episode_group(self):
         """payload 保留 episode_group。"""
-        orch = _orch()
+        orch = BestVersionOrchestrator(priority_manager=MagicMock(spec=PriorityManager))
         payload = orch.build_payload(_sub(episode_group="eg-abc"))
         assert payload["episode_group"] == "eg-abc"
         assert payload["best_version"] == 1
 
     def test_includes_subscribe_fields(self):
-        orch = _orch()
+        orch = BestVersionOrchestrator(priority_manager=MagicMock(spec=PriorityManager))
         payload = orch.build_payload(_sub())
         assert "name" in payload
         assert "tmdbid" in payload
@@ -83,7 +50,7 @@ class TestBuildPayload:
         assert payload["filter_groups"] == ["group1"]
 
     def test_no_episode_group(self):
-        orch = _orch()
+        orch = BestVersionOrchestrator(priority_manager=MagicMock(spec=PriorityManager))
         payload = orch.build_payload(_sub(episode_group=None))
         assert "episode_group" not in payload or payload.get("episode_group") is None
 
@@ -113,7 +80,7 @@ class TestStartBestVersion:
     def _orch(self, oper, best_version_type="all", related_downloads_fn=None):
         """构造带自动洗版类型范围的编排器。"""
         return BestVersionOrchestrator(
-            priority_manager=MagicMock(spec=PriorityManager), evaluate_fn=MagicMock(),
+            priority_manager=MagicMock(spec=PriorityManager),
             subscribe_oper=oper, best_version_type=best_version_type,
             related_downloads_fn=related_downloads_fn)
 
@@ -125,7 +92,6 @@ class TestStartBestVersion:
         notify = MagicMock()
         orch = BestVersionOrchestrator(
             priority_manager=MagicMock(spec=PriorityManager),
-            evaluate_fn=MagicMock(),
             subscribe_oper=oper,
             best_version_type="all",
             send_subscribe_added_fn=send_event,
@@ -154,7 +120,6 @@ class TestStartBestVersion:
         notify = MagicMock()
         orch = BestVersionOrchestrator(
             priority_manager=MagicMock(spec=PriorityManager),
-            evaluate_fn=MagicMock(),
             subscribe_oper=oper,
             best_version_type="all",
             notify_fn=notify,

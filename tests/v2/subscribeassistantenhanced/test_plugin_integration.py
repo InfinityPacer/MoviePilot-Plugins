@@ -345,7 +345,6 @@ def test_episode_to_full_skips_movie_best_version_when_target_satisfied():
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
     plugin._resolve_subscribe_missing = MagicMock(return_value=(True, []))
     plugin._best_version_overdue = MagicMock(return_value=False)
-    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
@@ -371,7 +370,6 @@ def test_best_version_check_marks_overdue_subscription_complete():
     priority = plugin._modules["priority_manager"]
     priority.mark_complete = MagicMock()
     plugin._notify_subscribe = MagicMock()
-    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
 
     plugin.run_best_version_check()
 
@@ -402,7 +400,6 @@ def test_best_version_check_uses_movie_remaining_days_for_movie():
     }.get(key, {}))
     priority = plugin._modules["priority_manager"]
     priority.mark_complete = MagicMock()
-    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
 
     plugin.run_best_version_check()
 
@@ -424,10 +421,28 @@ def test_best_version_check_does_not_expire_tv_episode_best_version():
     }.get(key, {}))
     priority = plugin._modules["priority_manager"]
     priority.mark_complete = MagicMock()
-    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
 
     plugin.run_best_version_check()
 
+    priority.mark_complete.assert_not_called()
+
+
+def test_full_best_version_check_does_not_mark_complete_without_timeout():
+    """全集洗版不再由插件巡检按优先级达标主动完成，普通完成交还主程序洗版链路。"""
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_tv_remaining_days": 0})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    plugin._resolve_subscribe_missing = MagicMock(return_value=(True, []))
+    priority = plugin._modules["priority_manager"]
+    priority.mark_complete = MagicMock()
+    priority.is_complete = MagicMock(return_value=True)
+
+    plugin.run_best_version_check()
+
+    plugin._resolve_subscribe_missing.assert_not_called()
     priority.mark_complete.assert_not_called()
 
 
@@ -465,7 +480,6 @@ def test_best_version_check_does_not_expire_when_remaining_days_unlimited():
     })
     priority = plugin._modules["priority_manager"]
     priority.mark_complete = MagicMock()
-    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
 
     plugin.run_best_version_check()
 
@@ -487,7 +501,6 @@ def test_best_version_check_keeps_subscription_with_recent_activity():
     }.get(key, {}))
     priority = plugin._modules["priority_manager"]
     priority.mark_complete = MagicMock()
-    plugin._modules["orchestrator"].check_complete = MagicMock(return_value=False)
 
     plugin.run_best_version_check()
 
@@ -1582,6 +1595,19 @@ def test_manual_delete_listen_off_keeps_present_fn_for_invalid_cleanup():
     assert plugin2._modules["download_monitor"]._manual_delete_enabled is True
 
 
+def test_pending_only_disables_manual_delete_cleanup_branch():
+    """只开启下载待定时，下载任务检查只做本地释放，不走手动删种善后阈值。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({
+        "pending_download_enabled": True,
+        "download_monitor_enabled": False,
+        "manual_delete_listen": True,
+    })
+
+    assert plugin._modules["download_monitor"]._present_fn is not None
+    assert plugin._modules["download_monitor"]._manual_delete_enabled is False
+
+
 def test_tracker_listen_off_clears_keywords():
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
@@ -1831,43 +1857,26 @@ class TestEventDelegation:
 
 
 class TestPeriodicJobs:
-    """定时巡检：洗版完成标记 + 完成前观察释放（recognize/oper 以 mock 注入）。"""
+    """定时巡检：洗版巡检和完成前观察释放（recognize/oper 以 mock 注入）。"""
 
-    def test_best_version_check_marks_complete(self, monkeypatch):
+    def test_best_version_check_does_not_mark_full_best_version_complete(self, monkeypatch):
+        """全集洗版普通完成不再由插件巡检主动标记完成。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({"best_version_type": "all"})
         best_sub = _sub(id=1, name="X", best_version=1, best_version_full=1)
         plugin._subscribe_oper = MagicMock()
         plugin._subscribe_oper.list.return_value = [best_sub]
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda sub: _mediainfo())
-        plugin._resolve_subscribe_missing = MagicMock(return_value=(False, []))
-        orch = MagicMock()
-        orch.check_complete.return_value = True
+        plugin._resolve_subscribe_missing = MagicMock(return_value=(True, []))
         priority = MagicMock()
-        plugin._modules["orchestrator"] = orch
         plugin._modules["priority_manager"] = priority
-        plugin.run_best_version_check()
-        priority.mark_complete.assert_called_once_with(best_sub)
-
-    def test_best_version_check_passes_missing_episodes(self):
-        """洗版完成巡检必须把媒体库缺集传给 orchestrator.check_complete。"""
-        sub = _sub(id=9, name="测试", best_version=1, best_version_full=1)
-        plugin = SubscribeAssistantEnhanced()
-        plugin.init_plugin({"best_version_type": "all"})
-        plugin._subscribe_oper = MagicMock()
-        plugin._subscribe_oper.list.return_value = [sub]
-        plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100))
-        plugin._resolve_subscribe_missing = MagicMock(return_value=(False, [3]))
-        orchestrator = plugin._modules["orchestrator"]
-        orchestrator.check_complete = MagicMock(return_value=False)
 
         plugin.run_best_version_check()
 
-        orchestrator.check_complete.assert_called_once()
-        assert orchestrator.check_complete.call_args.args[2] == [3]
+        priority.mark_complete.assert_not_called()
 
     def test_best_version_check_skips_complete_check_for_tv_episode_best_version(self):
-        """剧集分集洗版不进入电影/全集洗版的完成判定。"""
+        """剧集分集洗版不进入电影/全集洗版的时限终止路径。"""
         sub = _sub(id=9, name="测试", best_version=1, best_version_full=0)
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({"best_version_type": "all"})
@@ -1877,12 +1886,9 @@ class TestPeriodicJobs:
         plugin._resolve_subscribe_missing = MagicMock(return_value=(False, []))
         priority = plugin._modules["priority_manager"]
         priority.mark_complete = MagicMock()
-        orchestrator = plugin._modules["orchestrator"]
-        orchestrator.check_complete = MagicMock(return_value=True)
 
         plugin.run_best_version_check()
 
-        orchestrator.check_complete.assert_not_called()
         priority.mark_complete.assert_not_called()
 
     def test_best_version_check_keeps_episode_subscription_when_target_not_complete(self):
@@ -2468,12 +2474,16 @@ def test_download_pending_works_when_timeout_delete_disabled():
     """下载待定只受 pending_download_enabled 控制，不随下载超时自动删除关闭。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
+        "enabled": True,
         "download_monitor_enabled": False,
         "pending_download_enabled": True,
     })
 
     assert plugin._event_proxy.get("download_monitor") is plugin._modules["download_monitor"]
     assert plugin._event_proxy.get("pending_download_enabled") is True
+    assert plugin._event_proxy.get("download_monitor_enabled") is False
+    service_ids = {service["id"] for service in plugin.get_service()}
+    assert "SubscribeAssistantEnhanced_download" in service_ids
 
 
 class TestNoDownloadCheck:

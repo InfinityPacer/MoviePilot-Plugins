@@ -416,6 +416,7 @@ class TestScheduler:
         plugin.init_plugin({
             "enabled": True,
             "download_monitor_enabled": False,
+            "pending_download_enabled": False,
             "verify_enabled": False,
             "pause_enhanced_enabled": False,
         })
@@ -423,6 +424,18 @@ class TestScheduler:
             "SubscribeAssistantEnhanced_meta_check",
             "SubscribeAssistantEnhanced_common_check",
         }
+
+    def test_pending_download_registers_download_check_service(self):
+        """只开启下载待定时也要注册下载任务检查，用于释放下载待定。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "enabled": True,
+            "download_monitor_enabled": False,
+            "pending_download_enabled": True,
+        })
+
+        service_ids = {service["id"] for service in plugin.get_service()}
+        assert "SubscribeAssistantEnhanced_download" in service_ids
 
     def test_verify_service_uses_configured_hour_interval(self):
         """完成后验证服务必须使用唯一公开的小时级周期配置。"""
@@ -437,11 +450,24 @@ class TestScheduler:
         plugin = SubscribeAssistantEnhanced()
         monitor = MagicMock()
         cleanup = MagicMock()
+        plugin._config = SimpleNamespace(download_monitor_enabled=True)
         plugin._modules = {"download_monitor": monitor, "torrent_cleanup": cleanup}
 
         plugin.run_download_timeout_check()
 
         monitor.run_timeout_check.assert_called_once_with(cleanup)
+
+    def test_run_download_timeout_check_pending_only_omits_cleanup(self):
+        """只开启下载待定时，下载任务检查不得拿到删种善后服务。"""
+        plugin = SubscribeAssistantEnhanced()
+        monitor = MagicMock()
+        cleanup = MagicMock()
+        plugin._config = SimpleNamespace(download_monitor_enabled=False)
+        plugin._modules = {"download_monitor": monitor, "torrent_cleanup": cleanup}
+
+        plugin.run_download_timeout_check()
+
+        monitor.run_timeout_check.assert_called_once_with(None)
 
     def test_run_completion_verify_delegates_to_verifier(self):
         """完成后验证定时入口应触发 verifier 全量巡检。"""
