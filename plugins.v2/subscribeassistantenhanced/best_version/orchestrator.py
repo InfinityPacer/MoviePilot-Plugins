@@ -61,6 +61,18 @@ class BestVersionOrchestrator:
         if not self._type_matches(media_type, self._best_version_type):
             return None
         is_movie = media_type == MediaType.MOVIE
+        if is_movie and self._movie_current_priority(subscribe) >= 100:
+            logger.info(
+                f"洗版编排：{format_subscribe_desc(subscribe)} "
+                f"普通订阅完成资源已达顶档，跳过自动创建洗版订阅"
+            )
+            if self._notify:
+                self._notify(
+                    f"{format_subscribe_desc(subscribe)} 已达顶档，跳过洗版订阅",
+                    image=mediainfo.get_message_image(),
+                    link="#/subscribe/movie?tab=mysub",
+                )
+            return None
         if self._best_version_type == "tv_episode" and not is_movie:
             downloads = self._related_downloads(subscribe) if self._related_downloads else []
             download_count = len(downloads or [])
@@ -82,6 +94,8 @@ class BestVersionOrchestrator:
         # 普通剧集订阅完成后直接进入洗版，才能在新资源下载前执行整季旧版本清理。
         if not is_movie:
             payload["best_version_full"] = 1
+        else:
+            payload["current_priority"] = self._movie_current_priority(subscribe)
         payload = {key: value for key, value in payload.items() if value is not None}
         sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
@@ -122,6 +136,14 @@ class BestVersionOrchestrator:
         if is_tv_episode_best_version_subscribe(subscribe):
             return "分集洗版"
         return ""
+
+    @staticmethod
+    def _movie_current_priority(subscribe) -> int:
+        """读取电影订阅当前质量优先级，空值按未建立质量基线处理。"""
+        try:
+            return int(subscribe.current_priority or 0)
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _type_matches(media_type: MediaType, type_setting) -> bool:
