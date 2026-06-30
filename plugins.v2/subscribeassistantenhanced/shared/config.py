@@ -8,7 +8,7 @@ torrent banned"""
 # 自动删种默认跳过 H&R 标签，避免误删需要长期做种的任务。
 DEFAULT_DELETE_EXCLUDE_TAGS = "H&R"
 
-DEFAULT_VOLATILITY_WINDOW_DAYS = 2
+DEFAULT_VOLATILITY_WINDOW_DAYS = 3
 
 DEFAULT_RECOGNITION_GUARD_CUSTOM_CONFIG = """####### 配置说明 BEGIN #######
 # 1. 本配置只控制识别增强的策略覆盖和关键词，不控制通知、二次识别触发或缓存大小。

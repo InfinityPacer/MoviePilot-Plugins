@@ -85,7 +85,7 @@ class TestEvaluatePipeline:
         assert sig.completed is False
         assert sig.stable is False
         assert "F:unstable" in sig.signals
-        assert sig.reason == "目标总集数最近 2 天发生变化（10 -> 15）"
+        assert sig.reason == "目标总集数最近 3 天发生变化（10 -> 15）"
         assert "total_episode" not in sig.reason
 
     def test_ended_without_scope_future_confirms_completion_despite_recent_total_change(self):

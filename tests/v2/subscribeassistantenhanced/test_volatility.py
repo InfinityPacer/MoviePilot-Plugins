@@ -23,15 +23,15 @@ class TestVolatilityTracker:
         self.task_mgr = TaskDataManager(get_data_fn=get_fn, save_data_fn=save_fn)
         self.tracker = VolatilityTracker(self.task_mgr, window_days=7)
 
-    def test_default_window_is_two_days(self):
-        """无参构造也应使用插件默认的两天观察窗口。"""
+    def test_default_window_is_three_days(self):
+        """无参构造也应使用插件默认的三天观察窗口。"""
         tracker = VolatilityTracker(self.task_mgr)
 
         tracker.record(total=10, subscribe_id=1)
         tracker.record(total=12, subscribe_id=1)
 
         entry = self.store["volatility"]["1"]
-        assert entry["unstable_until"] - entry["last_total_changed_at"] == 2 * 86400
+        assert entry["unstable_until"] - entry["last_total_changed_at"] == 3 * 86400
 
     def test_first_record_is_stable(self):
         """首次记录不算变动。"""
