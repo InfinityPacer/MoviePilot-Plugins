@@ -956,6 +956,33 @@ class TestSubscribeLifecycle:
         args, _kwargs = orch.start_best_version.call_args
         assert args[0] is sub
 
+    def test_complete_uses_event_snapshot_when_finished_subscribe_deleted(self):
+        """SubscribeComplete → 完成后订阅表已删除时，自动洗版应使用事件快照。"""
+        oper = MagicMock()
+        oper.get.return_value = None
+        orch = MagicMock()
+        proxy = EventProxy(
+            task_manager=MagicMock(), verifier=MagicMock(), subscribe_oper=oper,
+            orchestrator=orch, mediainfo_from_dict=lambda d: SimpleNamespace(payload=d))
+
+        proxy.on_subscribe_complete(SimpleNamespace(event_data={
+            "subscribe_id": 5,
+            "subscribe_info": {
+                "id": 5,
+                "name": "测试电影",
+                "type": "电影",
+                "tmdbid": 100,
+                "season": None,
+                "best_version": 0,
+                "current_priority": 90,
+            },
+            "mediainfo": {"y": 1},
+        }))
+
+        orch.start_best_version.assert_called_once()
+        args, _kwargs = orch.start_best_version.call_args
+        assert args[0].current_priority == 90
+
 
 class TestPluginActionToggle:
     """PluginAction /subscribe_toggle 切换订阅启用/禁用。"""

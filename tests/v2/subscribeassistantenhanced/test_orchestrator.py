@@ -170,6 +170,52 @@ class TestStartBestVersion:
         _args, kwargs = oper.add.call_args
         assert "best_version_full" not in kwargs
 
+    def test_movie_best_version_inherits_movie_current_priority(self):
+        """电影自动洗版应继承普通订阅本次完成资源的优先级。"""
+        oper = MagicMock()
+        oper.add.return_value = (6, "")
+        sub = _sub(best_version=0, type=MediaType.MOVIE, current_priority=95)
+
+        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, object())
+
+        assert sid == 6
+        _args, kwargs = oper.add.call_args
+        assert kwargs["current_priority"] == 95
+
+    def test_movie_best_version_invalid_current_priority_defaults_to_zero(self):
+        """电影完成快照里的异常优先级按未建立质量基线处理。"""
+        oper = MagicMock()
+        oper.add.return_value = (6, "")
+        sub = _sub(best_version=0, type=MediaType.MOVIE, current_priority="invalid")
+
+        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, object())
+
+        assert sid == 6
+        _args, kwargs = oper.add.call_args
+        assert kwargs["current_priority"] == 0
+
+    def test_movie_best_version_skips_when_movie_current_priority_is_top(self):
+        """电影普通订阅已达顶档时不应再创建洗版订阅，并推送提示。"""
+        oper = MagicMock()
+        notify = MagicMock()
+        orch = BestVersionOrchestrator(
+            priority_manager=MagicMock(spec=PriorityManager),
+            subscribe_oper=oper,
+            best_version_type="movie",
+            notify_fn=notify,
+        )
+        sub = _sub(best_version=0, type=MediaType.MOVIE, current_priority=100)
+
+        sid = orch.start_best_version(sub, mediainfo=_mediainfo())
+
+        assert sid is None
+        oper.add.assert_not_called()
+        notify.assert_called_once()
+        assert notify.call_args.args[0].endswith("已达顶档，跳过洗版订阅")
+        assert "reason" not in notify.call_args.kwargs
+        assert "follow_up" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["image"] == "poster.jpg"
+
     def test_unknown_media_type_skips_all_scope(self):
         """未知媒体类型不能被 all 范围误当成剧集创建洗版。"""
         oper = MagicMock()
