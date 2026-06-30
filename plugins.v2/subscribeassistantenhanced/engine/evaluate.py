@@ -33,15 +33,15 @@ def evaluate(subscribe, mediainfo,
         detail(f"信号引擎[元数据硬否决（M）]：{subscribe_label} 否决完结，原因：{m_sig.reason}")
         return _attach_scope_total(m_sig, scope)
 
-    # 2. 剧级完结（E）：先计算以支持可信 finale 压过近期 total 变化。
+    # 2. 剧级完结（E）：先计算以支持强完结事实压过近期 total 变化。
     e_sig = check_e_signal(mediainfo, scope, as_of=today)
 
     # 3. 集数稳定性（F）：total_episode 仍在变化时拒绝提前完结。
     if config.volatility_enabled and subscribe_id is not None:
         if not volatility_tracker.is_stable(subscribe=subscribe):
-            if _finale_overrides_volatility(e_sig, scope, today):
+            if _high_confidence_e_overrides_volatility(e_sig, scope, today):
                 detail(
-                    f"信号引擎[剧级完结（E）]：{subscribe_label} 可信 finale 确认完结，"
+                    f"信号引擎[剧级完结（E）]：{subscribe_label} 高置信完结信号确认完结，"
                     f"跳过集数近期变化观察，原因：{e_sig.reason}"
                 )
                 return _attach_scope_total(e_sig, scope)
@@ -120,10 +120,10 @@ def _confidence_label(confidence: str) -> str:
     }.get(confidence, confidence)
 
 
-def _finale_overrides_volatility(e_sig: Optional[CompletionSignal],
-                                 scope: SeasonScope, today: date) -> bool:
-    """可信 finale 且目标范围内没有后续集反证时，可解除 F 的完成前观察。"""
-    if e_sig is None or e_sig.confidence != "high" or "E:finale" not in e_sig.signals:
+def _high_confidence_e_overrides_volatility(e_sig: Optional[CompletionSignal],
+                                            scope: SeasonScope, today: date) -> bool:
+    """高置信 E 且目标范围内没有后续集反证时，可解除 F 的完成前观察。"""
+    if e_sig is None or e_sig.confidence != "high":
         return False
     return not has_scope_future_episode(scope, as_of=today)
 

@@ -77,7 +77,7 @@ class TestEvaluatePipeline:
         """F 不稳定优先于 E/I。"""
         eps = [_ep(1)]
         sig = evaluate(
-            subscribe=_sub(), mediainfo=_mi(status="Ended"),
+            subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
             config=_cfg(), as_of=date(2026, 6, 1),
@@ -85,14 +85,108 @@ class TestEvaluatePipeline:
         assert sig.completed is False
         assert sig.stable is False
         assert "F:unstable" in sig.signals
-        assert sig.reason == "目标总集数最近 7 天发生变化（10 -> 15）"
+        assert sig.reason == "目标总集数最近 2 天发生变化（10 -> 15）"
         assert "total_episode" not in sig.reason
+
+    def test_ended_without_scope_future_confirms_completion_despite_recent_total_change(self):
+        """Ended 且目标范围无未来集反证时，可跳过旧 F 观察。"""
+        eps = [_ep(i, air_date="2026-06-28") for i in range(1, 13)]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 6, 30),
+        )
+
+        assert sig.completed is True
+        assert sig.confidence == "high"
+        assert "E:ended" in sig.signals
+
+    def test_canceled_without_scope_future_confirms_completion_despite_recent_total_change(self):
+        """Canceled 且目标范围无未来集反证时，也可跳过旧 F 观察。"""
+        eps = [_ep(i, air_date="2026-06-28") for i in range(1, 3)]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(status="Canceled"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 6, 30),
+        )
+
+        assert sig.completed is True
+        assert sig.confidence == "high"
+        assert "E:canceled" in sig.signals
+
+    def test_ended_with_scope_future_still_uses_volatility_observation(self):
+        """Ended 若仍有目标范围未来集反证，不应绕过 F 观察。"""
+        eps = [
+            _ep(1, air_date="2026-06-28"),
+            _ep(2, air_date="2026-07-01"),
+        ]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 6, 30),
+        )
+
+        assert sig.completed is False
+        assert sig.stable is False
+        assert "F:unstable" in sig.signals
+
+    def test_ended_with_scope_unknown_tail_still_uses_volatility_observation(self):
+        """Ended 若仍有目标范围未知排期尾集，也不应绕过 F 观察。"""
+        eps = [
+            _ep(1, air_date="2026-06-28"),
+            _ep(2, air_date=None),
+        ]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 6, 30),
+        )
+
+        assert sig.completed is False
+        assert sig.stable is False
+        assert "F:unstable" in sig.signals
+
+    def test_canceled_with_scope_unknown_tail_still_uses_volatility_observation(self):
+        """Canceled 若仍有目标范围未知排期尾集，也不应绕过 F 观察。"""
+        eps = [
+            _ep(1, air_date="2026-06-28"),
+            _ep(2, air_date=None),
+        ]
+
+        sig = evaluate(
+            subscribe=_sub(),
+            mediainfo=_mi(status="Canceled"),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 6, 30),
+        )
+
+        assert sig.completed is False
+        assert sig.stable is False
+        assert "F:unstable" in sig.signals
 
     def test_f_unstable_carries_recent_change_direction(self):
         """F 信号携带窗口内最近变化方向，供守卫识别 total 缩小风险。"""
         eps = [_ep(1)]
         sig = evaluate(
-            subscribe=_sub(), mediainfo=_mi(status="Ended"),
+            subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
             config=_cfg(), as_of=date(2026, 6, 1),
@@ -104,7 +198,7 @@ class TestEvaluatePipeline:
         """F 信号携带窗口内最近 total 变化明细，供状态通知展示。"""
         eps = [_ep(1)]
         sig = evaluate(
-            subscribe=_sub(), mediainfo=_mi(status="Ended"),
+            subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
             config=_cfg(), as_of=date(2026, 6, 1),
