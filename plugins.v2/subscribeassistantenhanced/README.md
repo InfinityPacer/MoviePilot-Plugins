@@ -162,7 +162,7 @@
 | --- | --- | --- | --- | --- | --- |
 | [完结守卫模式](#cfg-completion_guard_mode) | `completion_guard_mode` | enum | `balanced` | 选择完成检查的复核强度 | 可选 `off` / `strict` / `balanced` / `loose` |
 | 变更速率信号 | `volatility_enabled` | bool | `true` | 记录并启用目标总集数变动信号（F） | 完结守卫默认消费；剧集待定还需开启「待定参考变更速率」才消费 |
-| 变更速率窗口（天） | `volatility_window_days` | int（天） | `2` | 统计集数变动的窗口 | 窗口内变动视为不稳定 |
+| 变更速率窗口（天） | `volatility_window_days` | int（天） | `3` | 统计集数变动的窗口 | 窗口内变动视为不稳定 |
 | 播出节奏信号 | `cadence_enabled` | bool | `true` | 用播出间隔辅助判断 | 绝对季等高风险目标范围会采用更保守的判断 |
 | 节奏窗口系数 | `cadence_multiplier` | float | `2.5` | 播出间隔放大倍数 | 数值越大越宽松 |
 | 节奏窗口下限（天） | `cadence_min_window_days` | int（天） | `7` | 节奏窗口最小天数 | 防止短间隔剧集过早释放 |
