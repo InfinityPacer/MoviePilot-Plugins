@@ -7,9 +7,10 @@ from app.schemas.types import MediaType
 
 from .engine.scope import build_scope
 from .engine.local import LocalSignalResult, check_l_signal_detail
-from .engine.signals import scope_future_episode
+from .engine.signals import scope_future_episodes
 from .engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from .shared.log import detail
+from .shared.media import episode_field, target_episode_range
 from .shared.subscribe import (
     format_subscribe,
     is_full_best_version_subscribe,
@@ -111,7 +112,8 @@ class CompletionGuard:
             )
             return
 
-        local_signal = self._local_signal(subscribe, data.mediainfo, data.meta)
+        local_result = self._local_signal_result(subscribe, data.mediainfo, data.meta)
+        local_signal = local_result.signal
         if local_signal is not None:
             if self._allow_low_confidence(local_signal):
                 detail(
@@ -122,10 +124,15 @@ class CompletionGuard:
             self._observe_low_confidence(data, subscribe, local_signal)
             return
 
-        self._block_completion(data, subscribe, signal)
+        self._block_completion(
+            data,
+            subscribe,
+            signal,
+            reason=self._completion_block_reason(signal, local_result),
+        )
 
     def _local_signal(self, subscribe, mediainfo, meta=None):
-        """计算 L 信号；明确存在未来集时不允许目标满足口径绕过排期。"""
+        """计算 L 信号；目标范围外后续集仍会阻断目标满足口径。"""
         return self._local_signal_result(subscribe, mediainfo, meta).signal
 
     def _local_signal_result(self, subscribe, mediainfo, meta=None) -> LocalSignalResult:
@@ -133,10 +140,10 @@ class CompletionGuard:
         if not self.tmdb_episodes_fn:
             return LocalSignalResult(blocked_reason="缺少 TMDB 分集数据入口，未命中 L")
         scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
-        future_episode = scope_future_episode(scope)
+        future_episode = self._first_blocking_future_episode(subscribe, scope)
         if future_episode:
             return LocalSignalResult(
-                blocked_reason=f"未来集/未知尾巴反证（{self._format_future_episode(future_episode)}）"
+                blocked_reason=self._format_future_blocked_reason(future_episode)
             )
         return check_l_signal_detail(
             subscribe,
@@ -157,16 +164,51 @@ class CompletionGuard:
 
     @staticmethod
     def _format_future_episode(episode) -> str:
-        """把后续集反证格式化为简短日志片段。"""
+        """把后续集排期格式化为简短日志片段。"""
         if isinstance(episode, dict):
             number = episode.get("episode_number")
             air_date = episode.get("air_date")
         else:
             number = getattr(episode, "episode_number", None)
             air_date = getattr(episode, "air_date", None)
-        if number is None:
-            return "未知集号"
-        return f"E{number} air_date={air_date or '未知'}"
+        episode_label = f"E{number}" if number is not None else "未知集号"
+        return f"{episode_label}，播出日期：{air_date or '未知'}"
+
+    @classmethod
+    def _format_future_blocked_reason(cls, episode) -> str:
+        """说明 TMDB 已存在当前订阅目标外的后续集。"""
+        return f"TMDB 已存在目标范围外的后续集（{cls._format_future_episode(episode)}）"
+
+    @staticmethod
+    def _future_episode_number(episode) -> int | None:
+        """解析 TMDB 分集集号；无法确认归属目标范围时按未知处理。"""
+        number = episode_field(episode, "episode_number", None)
+        try:
+            return int(number)
+        except (TypeError, ValueError):
+            return None
+
+    def _first_blocking_future_episode(self, subscribe, scope):
+        """返回当前订阅目标范围外的最早后续集。"""
+        target_episodes = set(target_episode_range(subscribe))
+        for episode in scope_future_episodes(scope):
+            number = self._future_episode_number(episode)
+            if number is None or not target_episodes or number not in target_episodes:
+                return episode
+        return None
+
+    @staticmethod
+    def _completion_block_reason(signal: CompletionSignal, local_result: LocalSignalResult) -> str:
+        """普通未完成否决优先使用 L 失败诊断，避免用户只看到泛化无信号。"""
+        if (
+            signal.signals == ["none"]
+            and signal.reason == "无信号确认当前目标范围已播完"
+            and local_result is not None
+            and local_result.blocked_reason
+            and local_result.blocked_reason != "未命中 L"
+        ):
+            return local_result.blocked_reason
+        return signal.reason
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""
@@ -225,14 +267,15 @@ class CompletionGuard:
             subscribe, signal=signal, total_episode=total_episode
         )
 
-    def _block_completion(self, data, subscribe, signal: CompletionSignal):
+    def _block_completion(self, data, subscribe, signal: CompletionSignal, reason: str = None):
         """记录普通完成否决并进入待定观察。"""
+        block_reason = reason or signal.reason
         logger.info(
-            f"完成守卫：{format_subscribe(subscribe)} 未完结（{signal.reason}），"
+            f"完成守卫：{format_subscribe(subscribe)} 未完结（{block_reason}），"
             "否决完成、进入待定（P）并开始超时计时"
         )
         data.cancel = True
         data.source = "subscribeassistantenhanced"
-        data.reason = signal.reason
-        self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
+        data.reason = block_reason
+        self.mark_pending_fn(subscribe, source="guard_veto", reason=block_reason)
         self.timeout_manager.record_block(subscribe)

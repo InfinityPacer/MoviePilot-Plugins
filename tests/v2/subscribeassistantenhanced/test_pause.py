@@ -292,7 +292,7 @@ class TestAiringPause:
         assert result.detail == "下一集日期：2026-06-21，距今 7 天"
 
     def test_future_scope_episode_does_not_pause_when_it_is_not_first_missing(self):
-        """未来排期不是订阅首缺集时不暂停，避免冻结仍有早期缺集可搜索的订阅。"""
+        """后续播出排期不是订阅首缺集时不暂停，避免冻结仍有早期缺集可搜索的订阅。"""
         evaluate = MagicMock(return_value=CompletionSignal())
         checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
         subscribe = _sub()
@@ -316,7 +316,7 @@ class TestAiringPause:
         assert result is None
 
     def test_inventory_caught_up_uses_future_episode_when_note_has_historical_gap(self):
-        """媒体库实缺只剩未来集时，note 历史空洞不应阻止播出暂停。"""
+        """媒体库实缺只剩未播集时，note 历史空洞不应阻止播出暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
         checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
         subscribe = _sub()
@@ -404,7 +404,7 @@ class TestAiringPause:
         assert "2026-06-21" in result.detail
 
     def test_inventory_fallback_requires_lack_to_match_future_count(self):
-        """媒体库实缺数量少于未来排期时不按库存口径暂停，避免陈旧缺集数量误判。"""
+        """媒体库实缺数量少于后续播出排期时不按库存口径暂停，避免陈旧缺集数量误判。"""
         evaluate = MagicMock(return_value=CompletionSignal())
         checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
         subscribe = _sub()
@@ -432,7 +432,7 @@ class TestAiringPause:
         assert result is None
 
     def test_inventory_fallback_counts_manual_total_tail_without_tmdb_schedule(self):
-        """手动总集数大于 TMDB 已知排期时，尾部未知集也属于实缺未来目标。"""
+        """手动总集数大于 TMDB 已知排期时，末尾未知集也属于实缺未播目标。"""
         evaluate = MagicMock(return_value=CompletionSignal())
         checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
         subscribe = _sub()

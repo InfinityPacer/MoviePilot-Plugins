@@ -102,7 +102,7 @@ def resolve_airing_next_episode(subscribe, aggregate_episode, episodes: list,
 
 
 def future_episode_candidates(subscribe, episodes: list, as_of: Optional[date] = None) -> list:
-    """返回当前季订阅目标范围内已知的未来集候选。"""
+    """返回当前季订阅目标范围内播出日期晚于当前日期的候选集。"""
     today = as_of or date.today()
     return episode_candidates_after(subscribe, episodes, today)
 
@@ -145,10 +145,10 @@ def episode_candidates_after(subscribe, episodes: list, cutoff: date) -> list:
 
 def resolve_inventory_next_episodes(subscribe, episodes: list,
                                     as_of: Optional[date] = None) -> list:
-    """按媒体库实缺数量判断追更已到当前已播最新时，返回未来集候选。
+    """按媒体库实缺数量判断追更已到当前已播最新时，返回后续播出候选集。
 
     ``note`` 只记录订阅链路下载历史，手动下载后整理入库不会补写；播出暂停需要判断
-    真实库存是否已经追到当前已播最新，因此以主程序维护的 ``lack_episode`` 与未来未播集数量对齐为准。
+    真实库存是否已经追到当前已播最新，因此以主程序维护的 ``lack_episode`` 与未播集数量对齐为准。
     """
     futures = future_episode_candidates(subscribe, episodes, as_of=as_of)
     if not futures:
