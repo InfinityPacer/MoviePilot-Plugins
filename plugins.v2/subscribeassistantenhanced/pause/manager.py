@@ -37,13 +37,20 @@ class PauseManager:
             new_prio = PRIORITY_ORDER.get(record.reason, 0)
             if new_prio < cur_prio:
                 detail(f"暂停管理：{format_subscribe(subscribe)} 新暂停原因 {record.reason} 优先级低于现有 {current.reason}，不覆盖")
-                return
+                return False
 
         if not record.since:
             record.since = time.time()
 
         sid = str(subscribe.id)
-        detail(f"暂停管理：{format_subscribe(subscribe)} 写暂停记录（原因={record.reason}，detail={record.detail}）并置订阅为禁用(S)")
+        is_refresh = current is not None and current.reason == record.reason
+        if is_refresh:
+            detail(
+                f"暂停刷新：{format_subscribe(subscribe)} 暂停原因仍满足，"
+                f"原因={record.reason}，detail={record.detail}"
+            )
+        else:
+            detail(f"暂停管理：{format_subscribe(subscribe)} 写暂停记录（原因={record.reason}，detail={record.detail}）并置订阅为禁用(S)")
         if self._pending_state:
             self._pending_state.clear_for_pause(subscribe, reason=f"暂停覆盖：{record.reason}")
 
@@ -57,17 +64,22 @@ class PauseManager:
 
         self._update("subscribes", updater)
 
-        if self._subscribe_oper:
+        if self._subscribe_oper and not is_refresh:
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "S"})
-        self._notify_pause(subscribe, record)
+        if not is_refresh:
+            self._notify_pause(subscribe, record)
+        return not is_refresh
 
     def resume(self, subscribe, notify: bool = True):
         """恢复订阅：清插件暂停记录并把订阅状态置回 R。
 
         是否调用 resume 的判定（标记暂停跳过、上映条件双向恢复）由上层巡检负责。
         """
-        detail(f"暂停管理：{format_subscribe(subscribe)} 清暂停记录并置订阅为启用(R)")
         record = self.get_pause_record(subscribe)
+        if not record:
+            detail(f"暂停管理：{format_subscribe(subscribe)} 无插件暂停记录，跳过恢复")
+            return False
+        detail(f"暂停管理：{format_subscribe(subscribe)} 清暂停记录并置订阅为启用(R)")
         sid = str(subscribe.id)
 
         def updater(data: dict) -> dict:

@@ -791,6 +791,24 @@ class TestPauseManager:
         notify.assert_called_once()
         assert "满足订阅暂停，已标记暂停" in notify.call_args.args[1]
 
+    def test_pause_refresh_does_not_duplicate_status_notification(self, monkeypatch):
+        """已暂停订阅重复命中同一暂停原因时只刷新记录，不重复通知状态切换。"""
+        notify = MagicMock()
+        messages = []
+        mgr = self._make_manager(notify=notify)
+        sub = _sub(state="S")
+        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.detail", messages.append)
+
+        assert mgr.pause(sub, PauseRecord(reason="airing_gap", detail="下一集日期：2026-07-01")) is True
+        notify.reset_mock()
+        messages.clear()
+
+        assert mgr.pause(sub, PauseRecord(reason="airing_gap", detail="下一集日期：2026-07-08")) is False
+
+        notify.assert_not_called()
+        assert any("暂停刷新" in message for message in messages)
+        assert not any("置订阅为禁用(S)" in message for message in messages)
+
     def test_no_download_pause_does_not_duplicate_notification(self):
         """无下载流程由巡检统一通知，PauseManager 不重复发送。"""
         notify = MagicMock()
@@ -812,6 +830,20 @@ class TestPauseManager:
 
         notify.assert_called_once()
         assert "不再满足订阅暂停，已标记订阅中" in notify.call_args.args[1]
+
+    def test_resume_without_pause_record_does_not_notify(self, monkeypatch):
+        """没有插件暂停记录时不应写成恢复订阅，也不发送恢复通知。"""
+        notify = MagicMock()
+        messages = []
+        mgr = self._make_manager(notify=notify)
+        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.detail", messages.append)
+
+        assert mgr.resume(_sub(state="S")) is False
+
+        notify.assert_not_called()
+        mgr._subscribe_oper.update.assert_not_called()
+        assert any("无插件暂停记录" in message for message in messages)
+        assert not any("置订阅为启用(R)" in message for message in messages)
 
     def test_resume_notification_does_not_reuse_stale_pause_detail(self):
         """恢复通知正文应描述当前恢复动作，不复用旧暂停窗口说明。"""
