@@ -335,7 +335,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ### 29. [订阅助手](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistant/README.md)
 
 - 实现多场景管理系统订阅与状态同步
-- 本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)
+- 本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)、[#6015](https://github.com/jxxghp/MoviePilot/pull/6015)
 
 ![](images/2024-12-28-01-21-45.png)
 ![](images/2024-12-28-01-21-56.png)
