@@ -132,7 +132,7 @@ HINTS = {
     # 订阅洗版
     "best_version_type": "选择需要自动洗版的类型，关闭时不自动创建和巡检洗版订阅",
     "best_version_episode_to_full": "订阅目标集数满足时，从分集洗版切换为全集洗版",
-    "best_version_backfill_enabled": "新建或转分集洗版时将媒体库已有集标为顶档并跳过",
+    "best_version_backfill_enabled": "新建或转分集洗版时回填媒体库已有集，避免重复下载",
     "backfill_best_version_now": "保存后对存量分集洗版订阅执行一次回填，执行后自动复位",
     "best_version_movie_remaining_days": "电影洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
     "best_version_tv_remaining_days": "剧集洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
