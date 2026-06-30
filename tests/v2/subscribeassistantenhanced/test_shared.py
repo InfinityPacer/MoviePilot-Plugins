@@ -10,7 +10,7 @@ from subscribeassistantenhanced.shared.subscribe import (
     subscribe_from_source, subscribe_identity, is_full_best_version_subscribe,
     is_tv_episode_best_version_subscribe,
 )
-from subscribeassistantenhanced.shared.update import update_subscribe
+from subscribeassistantenhanced.shared.update import subscribe_update_payload, update_subscribe
 from subscribeassistantenhanced.shared.media import (
     parse_date, is_same_season, get_tv_season_info,
     get_tv_season_air_date,
@@ -245,6 +245,16 @@ class TestUpdateSubscribe:
     def test_missing_oper_skips_update(self):
         """订阅写库依赖缺失时跳过，避免事件补偿链路报错。"""
         assert update_subscribe(None, 1, {"state": "R"}) is None
+
+    def test_update_payload_keeps_state_only_payload_minimal(self):
+        """订阅更新 payload 只表达调用方要求变更的字段。"""
+        assert subscribe_update_payload({"state": "R"}) == {"state": "R"}
+
+    def test_update_payload_preserves_explicit_last_update(self):
+        """显式更新时间属于调用方输入，不由共享写库 helper 删除。"""
+        payload = subscribe_update_payload({"state": "R", "last_update": "2026-06-01 12:00:00"})
+
+        assert payload == {"state": "R", "last_update": "2026-06-01 12:00:00"}
 
 
 # ---------- media.py 补充 ----------

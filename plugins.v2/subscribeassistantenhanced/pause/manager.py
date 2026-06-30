@@ -11,8 +11,8 @@ from ..shared.subscribe import format_subscribe
 from ..shared.update import update_subscribe
 
 # 暂停原因优先级：仅用于 pause() 时判定新原因能否覆盖旧原因。
-# pre_air / no_download / auto_user 等未列出原因隐式按 0 处理，不参与覆盖竞争。
-PRIORITY_ORDER = {"airing_gap": 1}
+# auto_user/no_download 属于标记暂停，不应被可自动恢复的上映/播出暂停接管。
+PRIORITY_ORDER = {"airing_gap": 1, "auto_user": 2, "no_download": 2}
 
 
 class PauseManager:

@@ -713,6 +713,147 @@ def test_run_meta_check_includes_episode_best_version_subscription():
     airing.check.assert_called_once()
 
 
+def test_run_meta_check_pauses_full_best_version_when_pre_air_condition_holds():
+    """全集洗版在元数据巡检中支持上映前暂停。"""
+    sub = _sub(id=3, state="R", name="X", best_version=1, best_version_full=1, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    mediainfo = SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    )
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    episodes = [SimpleNamespace(episode_number=1, air_date=None)]
+    plugin._tmdb_episodes = MagicMock(return_value=episodes)
+
+    record = PauseRecord(reason="pre_air", since=0.0, detail="未上映")
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.pause = MagicMock()
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=record)
+    airing.check = MagicMock(return_value=None)
+    judge = plugin._modules["pending_judge"]
+    judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+
+    plugin.run_meta_check()
+
+    airing.check_pre_air.assert_called_once_with(sub, mediainfo, episodes=episodes)
+    pause_manager.pause.assert_called_once_with(sub, record)
+    airing.check.assert_not_called()
+    judge.should_enter_pending.assert_not_called()
+
+
+def test_run_meta_check_full_best_version_without_pre_air_skips_pending_and_airing_gap():
+    """全集洗版未命中上映前暂停时，不进入待定和播出间隔暂停。"""
+    sub = _sub(id=3, state="R", name="X", best_version=1, best_version_full=1, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    mediainfo = SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date="2026-01-01",
+    )
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    episodes = [SimpleNamespace(episode_number=1, air_date="2026-01-01")]
+    plugin._tmdb_episodes = MagicMock(return_value=episodes)
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.pause = MagicMock()
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=PauseRecord(reason="airing_gap", since=0.0, detail="播出间隔"))
+    judge = plugin._modules["pending_judge"]
+    judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+
+    plugin.run_meta_check()
+
+    airing.check_pre_air.assert_called_once_with(sub, mediainfo, episodes=episodes)
+    airing.check.assert_not_called()
+    judge.should_enter_pending.assert_not_called()
+    pause_manager.pause.assert_not_called()
+
+
+def test_run_meta_check_resumes_full_best_version_pre_air_pause_when_condition_clears():
+    """全集洗版的上映前暂停记录解除后可自动恢复。"""
+    sub = _sub(id=3, state="S", name="X", best_version=1, best_version_full=1, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    mediainfo = SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date="2026-01-01",
+    )
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    episodes = [SimpleNamespace(episode_number=1, air_date="2026-01-01")]
+    plugin._tmdb_episodes = MagicMock(return_value=episodes)
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(
+        return_value=PauseRecord(reason="pre_air", since=0.0, detail="未上映")
+    )
+    pause_manager.resume = MagicMock()
+    pause_manager.pause = MagicMock()
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=PauseRecord(reason="airing_gap", since=0.0, detail="播出间隔"))
+    judge = plugin._modules["pending_judge"]
+    judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+
+    plugin.run_meta_check()
+
+    pause_manager.resume.assert_called_once_with(sub)
+    pause_manager.pause.assert_not_called()
+    airing.check.assert_not_called()
+    judge.should_enter_pending.assert_not_called()
+
+
+def test_run_meta_check_full_best_version_does_not_resume_airing_gap_record():
+    """全集洗版不复核播出间隔暂停记录。"""
+    sub = _sub(id=3, state="S", name="X", best_version=1, best_version_full=1, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    mediainfo = SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date="2026-01-01",
+    )
+    plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+    plugin._tmdb_episodes = MagicMock(return_value=[SimpleNamespace(episode_number=1, air_date="2026-01-01")])
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(
+        return_value=PauseRecord(reason="airing_gap", since=0.0, detail="播出间隔")
+    )
+    pause_manager.resume = MagicMock()
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+    airing.should_resume_airing_gap = MagicMock(return_value=True)
+
+    plugin.run_meta_check()
+
+    pause_manager.resume.assert_not_called()
+    airing.check.assert_not_called()
+    airing.should_resume_airing_gap.assert_not_called()
+
+
 def test_run_meta_check_skips_airing_pause_for_new_subscription():
     """N 状态订阅仍在首次搜索阶段，元数据巡检不应用播出暂停冻结搜索。"""
     from subscribeassistantenhanced.engine.types import PauseRecord
@@ -2183,7 +2324,7 @@ class TestPeriodicJobs:
         plugin._subscribe_oper.update.assert_called_once()
         payload = plugin._subscribe_oper.update.call_args.args[1]
         assert payload["state"] == "R"
-        assert payload["last_update"]
+        assert "last_update" not in payload
         timeout_manager.clear_block.assert_called_once_with(1)
 
     def test_pending_release_keeps_p_when_download_pending_active(self, monkeypatch):
@@ -2489,6 +2630,20 @@ def test_download_pending_works_when_timeout_delete_disabled():
 class TestNoDownloadCheck:
     """无下载处理巡检执行策略返回的订阅动作。"""
 
+    @staticmethod
+    def _plugin_with_overdue_subscribe(subscribe, mediainfo, action):
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "movie_no_download_days": 180,
+            "tv_no_download_days": 180,
+            "no_download_actions": [action],
+        })
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [subscribe]
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._last_download_date = MagicMock(return_value=None)
+        return plugin
+
     def test_recognize_mediainfo_skips_unknown_media_type(self):
         """未知订阅类型不默认当电影识别，避免脏数据进入错误媒体链路。"""
         subscribe = _sub(type=MediaType.UNKNOWN, name="测试", year="2025", season=1, tmdbid=100)
@@ -2627,6 +2782,80 @@ class TestNoDownloadCheck:
 
         plugin._modules["pause_manager"].pause.assert_called_once()
         plugin._task_manager.clear_tasks.assert_called_once_with(19)
+
+    def test_episode_best_version_tv_overdue_pause_action_pauses_subscribe(self):
+        """分集洗版剧集超期且无下载时仍按剧集无下载策略暂停订阅。"""
+        subscribe = _sub(
+            id=23,
+            state="R",
+            name="测试",
+            type="电视剧",
+            season=1,
+            best_version=1,
+            best_version_full=0,
+            date="2025-01-01 00:00:00",
+        )
+        mediainfo = _mediainfo(
+            season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
+            first_air_date="2025-01-01",
+        )
+        plugin = self._plugin_with_overdue_subscribe(subscribe, mediainfo, "pause_tv")
+        plugin._modules["pause_manager"].pause = MagicMock()
+
+        plugin.run_no_download_check()
+
+        plugin._recognize_mediainfo.assert_called_once_with(subscribe)
+        plugin._last_download_date.assert_called_once_with(subscribe)
+        plugin._modules["pause_manager"].pause.assert_called_once()
+
+    def test_full_best_version_tv_overdue_delete_action_deletes_subscribe(self):
+        """全集洗版剧集超期且无下载时仍按剧集无下载策略删除订阅。"""
+        subscribe = _sub(
+            id=24,
+            state="R",
+            name="测试",
+            type="电视剧",
+            season=1,
+            best_version=1,
+            best_version_full=1,
+            date="2025-01-01 00:00:00",
+        )
+        mediainfo = _mediainfo(
+            season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
+            first_air_date="2025-01-01",
+        )
+        plugin = self._plugin_with_overdue_subscribe(subscribe, mediainfo, "delete_tv")
+
+        plugin.run_no_download_check()
+
+        plugin._recognize_mediainfo.assert_called_once_with(subscribe)
+        plugin._last_download_date.assert_called_once_with(subscribe)
+        plugin._subscribe_oper.delete.assert_called_once_with(24)
+
+    def test_movie_best_version_overdue_complete_action_adds_history_and_deletes_subscribe(self):
+        """电影洗版超期且无下载时仍按电影无下载策略完成订阅。"""
+        subscribe = _sub(
+            id=25,
+            state="R",
+            name="测试电影",
+            type="电影",
+            season=None,
+            best_version=1,
+            best_version_full=0,
+            date="2025-01-01 00:00:00",
+        )
+        mediainfo = _mediainfo(
+            release_date="2025-01-01",
+            type=SimpleNamespace(value="电影"),
+        )
+        plugin = self._plugin_with_overdue_subscribe(subscribe, mediainfo, "complete_movie")
+
+        plugin.run_no_download_check()
+
+        plugin._recognize_mediainfo.assert_called_once_with(subscribe)
+        plugin._last_download_date.assert_called_once_with(subscribe)
+        plugin._subscribe_oper.add_history.assert_called_once_with(**subscribe.to_dict())
+        plugin._subscribe_oper.delete.assert_called_once_with(25)
 
     def test_overdue_tv_pause_action_preserves_no_download_pause_detail(self):
         """无下载暂停清理旧任务后仍应持久保存暂停原因详情。"""

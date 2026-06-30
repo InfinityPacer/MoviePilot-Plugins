@@ -884,13 +884,96 @@ class TestSubscribeLifecycle:
         pending.mark_pending.assert_not_called()
         pause.pause.assert_not_called()
 
-    def test_added_full_best_version_skips_pause_pending(self):
-        """全集洗版只跑用户名暂停，不做按集播出暂停或待定。"""
+    def test_added_full_best_version_pauses_when_pre_air_condition_holds(self):
+        """全集洗版新增订阅支持上映前暂停。"""
+        record = PauseRecord(reason="pre_air", detail="未上映")
         sub = _sub(id=7, best_version=1, best_version_full=1)
-        proxy, pause, pending, _airing = self._added_proxy(sub, (False, ""), None)
+        proxy, pause, pending, airing = self._added_proxy(sub, (True, "集数不足"), None)
+        airing.check_pre_air.return_value = record
+
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        airing.check_pre_air.assert_called_once()
+        pause.pause.assert_called_once_with(sub, record)
         pending.should_enter_pending.assert_not_called()
+        airing.check.assert_not_called()
+
+    def test_added_full_best_version_keeps_auto_user_marker_when_pre_air_also_matches(self):
+        """全集洗版同时命中用户名和上映前暂停时，保留不会自动恢复的用户名暂停。"""
+        from subscribeassistantenhanced.pause.manager import PauseManager
+
+        store = {}
+        sub = _sub(id=7, username="testuser", best_version=1, best_version_full=1)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        pause = PauseManager(
+            task_data_read=lambda key: store.get(key, {}),
+            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
+            subscribe_oper=oper,
+            auto_pause_users=["testuser"],
+        )
+        airing = MagicMock()
+        airing.check_pre_air.return_value = PauseRecord(reason="pre_air", detail="未上映")
+        pending = MagicMock()
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            pause_manager=pause,
+            pending_judge=pending,
+            airing_checker=airing,
+            mediainfo_from_dict=lambda _data: _mi(),
+            is_tv_fn=lambda _mi: True,
+            tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: [],
+            evaluate_fn=lambda _subscribe, _mediainfo: None,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        assert store["subscribes"]["7"]["pause_reason"] == "auto_user"
+        pending.should_enter_pending.assert_not_called()
+        airing.check.assert_not_called()
+
+    def test_added_full_best_version_without_pre_air_skips_pending_and_airing_gap(self):
+        """全集洗版未命中上映前暂停时，不进入待定和播出间隔暂停。"""
+        sub = _sub(id=7, best_version=1, best_version_full=1)
+        proxy, pause, pending, airing = self._added_proxy(sub, (True, "集数不足"), object())
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        airing.check_pre_air.assert_called_once()
+        pending.should_enter_pending.assert_not_called()
+        airing.check.assert_not_called()
+        pause.pause.assert_not_called()
         pause.check_auto_pause_for_user.assert_called_once_with(sub)
+
+    def test_added_movie_best_version_pauses_when_pre_air_condition_holds(self):
+        """电影洗版新增订阅有媒体信息时支持上映前暂停。"""
+        record = PauseRecord(reason="pre_air", detail="未上映")
+        sub = _sub(id=7, type="电影", season=None, best_version=1, best_version_full=0)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        pause = MagicMock()
+        pending = MagicMock()
+        airing = MagicMock()
+        airing.check_pre_air.return_value = record
+        tmdb_episodes = MagicMock(return_value=[])
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            pause_manager=pause,
+            pending_judge=pending,
+            airing_checker=airing,
+            mediainfo_from_dict=lambda _data: _mi(type="movie"),
+            is_tv_fn=lambda _mi: False,
+            tmdb_episodes_fn=tmdb_episodes,
+            evaluate_fn=lambda _subscribe, _mediainfo: None,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        tmdb_episodes.assert_not_called()
+        airing.check_pre_air.assert_called_once_with(sub, _mi(type="movie"), episodes=[])
+        pause.pause.assert_called_once_with(sub, record)
+        pending.should_enter_pending.assert_not_called()
+        airing.check.assert_not_called()
 
     def test_added_episode_best_version_uses_same_pending_flow(self):
         """分集洗版使用按集订阅的待定判定流程。"""
@@ -993,12 +1076,12 @@ class TestPluginActionToggle:
 
     @staticmethod
     def _assert_state_update(oper, subscribe_id: int, state: str):
-        """断言真实订阅状态更新会同步刷新更新时间。"""
+        """断言真实订阅状态更新只写入状态字段。"""
         oper.update.assert_called_once()
         assert oper.update.call_args.args[0] == subscribe_id
         payload = oper.update.call_args.args[1]
         assert payload["state"] == state
-        assert payload["last_update"]
+        assert "last_update" not in payload
 
     def test_toggle_single_match_enables(self):
         sub = _sub(id=3, name="X", state="S")
