@@ -782,6 +782,49 @@ def test_run_meta_check_full_best_version_without_pre_air_skips_pending_and_airi
     pause_manager.pause.assert_not_called()
 
 
+def test_run_meta_check_full_best_version_continue_keeps_following_subscriptions():
+    """全集洗版跳过按集流程时，只跳过当前订阅，不结束整轮巡检。"""
+    full = _sub(id=3, state="R", name="全集", best_version=1, best_version_full=1, type="电视剧")
+    normal = _sub(id=4, state="R", name="普通", best_version=0, best_version_full=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [full, normal]
+    full_mediainfo = SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date="2026-01-01",
+    )
+    normal_mediainfo = SimpleNamespace(
+        tmdb_id=101,
+        type=MediaType.TV,
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date="2026-01-01",
+    )
+    plugin._recognize_mediainfo = MagicMock(side_effect=[full_mediainfo, normal_mediainfo])
+    plugin._evaluate_fn = MagicMock(return_value=None)
+    episodes = [SimpleNamespace(episode_number=1, air_date="2026-01-01")]
+    plugin._tmdb_episodes = MagicMock(return_value=episodes)
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.pause = MagicMock()
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+    judge = plugin._modules["pending_judge"]
+    judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+    judge.mark_pending = MagicMock()
+
+    plugin.run_meta_check()
+
+    assert plugin._recognize_mediainfo.call_args_list == [((full,),), ((normal,),)]
+    judge.should_enter_pending.assert_called_once_with(normal, normal_mediainfo, episodes, None)
+    judge.mark_pending.assert_called_once_with(normal, source="pending_judge", reason="集数不足")
+
+
 def test_run_meta_check_resumes_full_best_version_pre_air_pause_when_condition_clears():
     """全集洗版的上映前暂停记录解除后可自动恢复。"""
     sub = _sub(id=3, state="S", name="X", best_version=1, best_version_full=1, type="电视剧")

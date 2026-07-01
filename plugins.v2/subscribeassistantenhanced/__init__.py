@@ -774,7 +774,39 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 logger.info(f"元数据巡检：{format_subscribe(subscribe)} 用户已重新启用，清除插件暂停标记({reason})")
                 pause_manager.clear_pause_record(subscribe)
 
-            if not full_best_version and pending_state and state == "P":
+            if full_best_version:
+                mediainfo = self._recognize_mediainfo(subscribe)
+                if not mediainfo:
+                    continue
+                # 全集洗版只复核上映前暂停；洗版搜索整季资源，不进入播出间隔和待定流程。
+                if state != "N" and cfg.pause_enhanced_enabled and airing and pause_manager:
+                    episodes = []
+                    if self._is_tv_media(mediainfo):
+                        episodes = self._tmdb_episodes(
+                            subscribe.tmdbid,
+                            subscribe.season,
+                            episode_group=subscribe.episode_group,
+                        )
+                    record_now = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
+                    if record_now:
+                        if state != "S":
+                            logger.info(f"元数据巡检：{format_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
+                            pause_manager.pause(subscribe, record_now)
+                        continue
+                    if state == "S":
+                        current_record = pause_manager.get_pause_record(subscribe)
+                        current_reason = current_record.reason if current_record else None
+                        if current_reason != "pre_air":
+                            detail(
+                                f"元数据巡检：{format_subscribe(subscribe)} 全集洗版仅恢复上映前暂停记录，"
+                                f"当前暂停原因={current_reason or '无'}，本轮不恢复"
+                            )
+                            continue
+                        logger.info(f"元数据巡检：{format_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
+                        pause_manager.resume(subscribe)
+                continue
+
+            if pending_state and state == "P":
                 sid = str(subscribe.id)
                 has_active_download = bool(download_monitor and download_monitor.has_active_downloads(subscribe.id))
                 if not has_active_download and not pending_state.has_active(subscribe.id) and sid not in blocks:
@@ -785,7 +817,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if not mediainfo:
                 continue
 
-            if not full_best_version and pending_judge and subscribe.state == "P":
+            if pending_judge and subscribe.state == "P":
                 # P 状态先尝试由待定域退出；若仍未退出，后续上映/播出暂停可按 S 高优先级覆盖 P。
                 if pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes):
                     continue
@@ -803,7 +835,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                         episode_group=subscribe.episode_group,
                     )
                 record_now = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
-                if not record_now and not full_best_version and self._is_tv_media(mediainfo):
+                if not record_now and self._is_tv_media(mediainfo):
                     record_now = airing.check(
                         subscribe, mediainfo,
                         next_episode=mediainfo.next_episode_to_air,
@@ -820,12 +852,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 if state == "S":
                     current_record = pause_manager.get_pause_record(subscribe)
                     current_reason = current_record.reason if current_record else None
-                    if full_best_version and current_reason != "pre_air":
-                        detail(
-                            f"元数据巡检：{format_subscribe(subscribe)} 全集洗版仅恢复上映前暂停记录，"
-                            f"当前暂停原因={current_reason or '无'}，本轮不恢复"
-                        )
-                        continue
                     if current_reason not in ("pre_air", "airing_gap"):
                         detail(f"元数据巡检：{format_subscribe(subscribe)} 非插件上映/播出暂停，本轮不恢复")
                         continue
@@ -842,10 +868,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
                             continue
                     logger.info(f"元数据巡检：{format_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
                     pause_manager.resume(subscribe)
-
-            if full_best_version:
-                # 全集洗版完成上映前暂停复核后，不进入按集播出暂停和待定流程。
-                continue
 
             # 待定复核：进入/退出
             if cfg.pending_enhanced_enabled and pending_judge:
