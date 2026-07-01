@@ -382,7 +382,7 @@ class PluginConfig:
 
     @property
     def pause_enhanced_enabled(self) -> bool:
-        """自动暂停订阅：按播出距离、上映距离、无下载窗口和用户名单暂停订阅。"""
+        """自动暂停订阅：按播出距离、上映距离和用户名单暂停订阅。"""
         return self.get_bool("pause_enhanced_enabled", False)
 
     @property

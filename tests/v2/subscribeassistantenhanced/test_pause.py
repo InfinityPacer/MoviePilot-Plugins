@@ -767,7 +767,7 @@ class TestPauseManager:
         assert mgr.get_pause_record(_sub()) is None
         payload = mgr._subscribe_oper.update.call_args.args[1]
         assert payload["state"] == "R"
-        assert payload["last_update"]
+        assert "last_update" not in payload
 
     def test_no_record_state_s_returns_none(self):
         """无插件暂停记录时即便 state=S 也返回 None，不合成外部暂停。"""
@@ -780,6 +780,40 @@ class TestPauseManager:
         assert mgr.check_auto_pause_for_user(_sub(username="testuser")) is True
         rec = mgr.get_pause_record(_sub())
         assert rec.reason == "auto_user"
+
+    def test_pre_air_does_not_override_auto_user_marker(self):
+        """上映前暂停不能覆盖用户名标记暂停，避免后续按上映窗口自动恢复。"""
+        mgr = self._make_manager(auto_users=["testuser"])
+        sub = _sub(username="testuser")
+
+        assert mgr.check_auto_pause_for_user(sub) is True
+        assert mgr.pause(sub, PauseRecord(reason="pre_air", detail="未上映")) is False
+
+        rec = mgr.get_pause_record(sub)
+        assert rec.reason == "auto_user"
+
+    def test_airing_gap_does_not_override_auto_user_marker(self):
+        """播出间隔暂停不能覆盖用户名标记暂停，避免后续按播出窗口自动恢复。"""
+        mgr = self._make_manager(auto_users=["testuser"])
+        sub = _sub(username="testuser")
+
+        assert mgr.check_auto_pause_for_user(sub) is True
+        assert mgr.pause(sub, PauseRecord(reason="airing_gap", detail="播出间隔")) is False
+
+        rec = mgr.get_pause_record(sub)
+        assert rec.reason == "auto_user"
+
+    def test_auto_recoverable_pause_does_not_override_no_download_marker(self):
+        """上映/播出暂停不能覆盖无下载标记暂停，避免资源侧停滞处理被自动恢复。"""
+        mgr = self._make_manager()
+        sub = _sub()
+
+        assert mgr.pause(sub, PauseRecord(reason="no_download", detail="无下载")) is True
+        assert mgr.pause(sub, PauseRecord(reason="pre_air", detail="未上映")) is False
+        assert mgr.pause(sub, PauseRecord(reason="airing_gap", detail="播出间隔")) is False
+
+        rec = mgr.get_pause_record(sub)
+        assert rec.reason == "no_download"
 
     def test_pause_sends_status_notification_for_airing_rule(self):
         """播出类暂停应发送状态通知。"""

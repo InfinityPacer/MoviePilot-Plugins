@@ -10,9 +10,10 @@ from ..shared.log import detail
 from ..shared.subscribe import format_subscribe
 from ..shared.update import update_subscribe
 
-# 暂停原因优先级：仅用于 pause() 时判定新原因能否覆盖旧原因。
-# pre_air / no_download / auto_user 等未列出原因隐式按 0 处理，不参与覆盖竞争。
-PRIORITY_ORDER = {"airing_gap": 1}
+# 只为 PauseManager 持有的暂停原因定义覆盖顺序；其他业务场景不写 pause_reason 参与优先级竞争。
+# 未列出的兼容/异常原因按 0 处理，数值越大越优先。
+# airing_gap 比 pre_air 更具体；auto_user/no_download 属于标记暂停，不被可自动恢复暂停接管。
+PRIORITY_ORDER = {"pre_air": 0, "airing_gap": 1, "auto_user": 2, "no_download": 2}
 
 
 class PauseManager:

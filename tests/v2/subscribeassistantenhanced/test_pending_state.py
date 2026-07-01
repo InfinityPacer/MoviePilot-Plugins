@@ -58,6 +58,7 @@ class TestPendingStateCoordinator:
             call_args.args[0] == 1 and call_args.args[1]["state"] == "P"
             for call_args in oper.update.call_args_list
         )
+        assert all("last_update" not in call_args.args[1] for call_args in oper.update.call_args_list)
         assert oper.update.call_args_list[-1].args[1]["state"] != "R"
 
     def test_clear_last_source_restores_r(self):
@@ -75,6 +76,7 @@ class TestPendingStateCoordinator:
             call_args.args[0] == 1 and call_args.args[1]["state"] == "R"
             for call_args in oper.update.call_args_list
         )
+        assert all("last_update" not in call_args.args[1] for call_args in oper.update.call_args_list)
 
     def test_clear_active_rejects_missing_subscribe_or_source(self):
         """解除待定来源缺少订阅或来源名时，不应改写任务状态。"""
@@ -147,6 +149,7 @@ class TestPendingStateCoordinator:
         assert task["source"] is None
         assert task["pause_reason"] == "pre_air"
         assert oper.update.call_args.args[1]["state"] == "S"
+        assert all("last_update" not in call.args[1] for call in oper.update.call_args_list)
         assert not any(call.args[1].get("state") == "R" for call in oper.update.call_args_list)
 
     def test_active_sources_normalizes_legacy_single_source_task(self):

@@ -153,8 +153,8 @@ class EventProxy:
     def on_subscribe_added(self, event):
         """SubscribeAdded → 用户名自动暂停 + 上映前暂停 + 剧集待定 / 播出暂停。
 
-        洗版不做按集播出暂停/待定；其他订阅先检查上映窗口，
-        剧集再按 TMDB 集数和播出间隔判定。
+        全集洗版保留用户名和上映前暂停，跳过按集播出暂停/待定；
+        分集洗版和普通剧集继续按 TMDB 集数和播出间隔判定。
         """
         data = event.event_data
         if not isinstance(data, dict):
@@ -188,17 +188,13 @@ class EventProxy:
                         subscribe, episodes, scene=self._format_backfill_scene("plugin_backfill")
                     )
 
-        # 洗版搜索的是整季资源，不使用按集播出窗口和待定规则。
-        if is_full_best_version_subscribe(subscribe):
-            detail(f"订阅新增：{format_subscribe(subscribe)} 为洗版，跳过按集播出暂停/待定")
-            return
-
         mediainfo_from_dict = self.get("mediainfo_from_dict")
         mediainfo = mediainfo_from_dict(data.get("mediainfo")) if mediainfo_from_dict else None
         if not mediainfo:
             detail(f"订阅新增：{format_subscribe(subscribe)} 媒体信息缺失，跳过播出暂停/待定")
             return
 
+        full_best_version = is_full_best_version_subscribe(subscribe)
         is_tv = self.get("is_tv_fn")
         is_tv_media = True if is_tv is None else bool(is_tv(mediainfo))
         tmdb_episodes_fn = self.get("tmdb_episodes_fn")
@@ -218,6 +214,11 @@ class EventProxy:
                 logger.info(f"订阅新增：{format_subscribe(subscribe)} 满足上映前暂停条件，置为禁用")
                 pause_manager.pause(subscribe, record)
                 return
+
+        if full_best_version:
+            # 全集洗版已完成用户名和上映前暂停检查，后续按集播出/待定流程不适用。
+            detail(f"订阅新增：{format_subscribe(subscribe)} 为全集洗版，跳过按集播出暂停/待定")
+            return
 
         if is_tv is not None and not is_tv_media:
             return

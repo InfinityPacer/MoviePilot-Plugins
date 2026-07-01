@@ -746,7 +746,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
           不被上映检查自动恢复、也不重复处理；用户重新启用（state!=S）则清掉插件标记。
         - 上映/播出类暂停（pre_air / airing_gap）双向：条件成立时暂停，条件解除且当前为 S 时自动恢复。
         暂停复核优先于待定：满足暂停条件时先写状态并跳过本轮待定；
-        洗版因不按集搜索而跳过。
+        全集洗版只参与上映前暂停复核，不参与播出间隔和待定。
         """
         if not self._subscribe_oper:
             return
@@ -759,8 +759,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         blocks = self.get_data("blocks") or {}
         detail("元数据巡检：开始")
         for subscribe in (self._subscribe_oper.list(state="N,R,P,S") or []):
-            if is_full_best_version_subscribe(subscribe):
-                continue
+            full_best_version = is_full_best_version_subscribe(subscribe)
 
             # 标记暂停必须在媒体识别前处理，避免被上映检查误恢复。
             record = pause_manager.get_pause_record(subscribe) if pause_manager else None
@@ -774,6 +773,38 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 # 用户已重新启用：丢弃插件标记，状态归属交还订阅本身，继续后续上映/待定判定
                 logger.info(f"元数据巡检：{format_subscribe(subscribe)} 用户已重新启用，清除插件暂停标记({reason})")
                 pause_manager.clear_pause_record(subscribe)
+
+            if full_best_version:
+                mediainfo = self._recognize_mediainfo(subscribe)
+                if not mediainfo:
+                    continue
+                # 全集洗版只复核上映前暂停；洗版搜索整季资源，不进入播出间隔和待定流程。
+                if state != "N" and cfg.pause_enhanced_enabled and airing and pause_manager:
+                    episodes = []
+                    if self._is_tv_media(mediainfo):
+                        episodes = self._tmdb_episodes(
+                            subscribe.tmdbid,
+                            subscribe.season,
+                            episode_group=subscribe.episode_group,
+                        )
+                    record_now = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
+                    if record_now:
+                        if state != "S":
+                            logger.info(f"元数据巡检：{format_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
+                            pause_manager.pause(subscribe, record_now)
+                        continue
+                    if state == "S":
+                        current_record = pause_manager.get_pause_record(subscribe)
+                        current_reason = current_record.reason if current_record else None
+                        if current_reason != "pre_air":
+                            detail(
+                                f"元数据巡检：{format_subscribe(subscribe)} 全集洗版仅恢复上映前暂停记录，"
+                                f"当前暂停原因={current_reason or '无'}，本轮不恢复"
+                            )
+                            continue
+                        logger.info(f"元数据巡检：{format_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
+                        pause_manager.resume(subscribe)
+                continue
 
             if pending_state and state == "P":
                 sid = str(subscribe.id)
