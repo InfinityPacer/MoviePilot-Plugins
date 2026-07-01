@@ -246,6 +246,14 @@ class TestUpdateSubscribe:
         """订阅写库依赖缺失时跳过，避免事件补偿链路报错。"""
         assert update_subscribe(None, 1, {"state": "R"}) is None
 
+    def test_empty_payload_skips_update(self):
+        """空 payload 不调用 SubscribeOper.update，避免产生无意义写库。"""
+        oper = MagicMock()
+
+        assert update_subscribe(oper, 1, {}) is None
+        assert update_subscribe(oper, 1, None) is None
+        oper.update.assert_not_called()
+
     def test_update_payload_keeps_state_only_payload_minimal(self):
         """订阅更新 payload 只表达调用方要求变更的字段。"""
         assert subscribe_update_payload({"state": "R"}) == {"state": "R"}

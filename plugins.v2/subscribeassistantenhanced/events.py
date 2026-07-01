@@ -216,6 +216,7 @@ class EventProxy:
                 return
 
         if full_best_version:
+            # 全集洗版已完成用户名和上映前暂停检查，后续按集播出/待定流程不适用。
             detail(f"订阅新增：{format_subscribe(subscribe)} 为全集洗版，跳过按集播出暂停/待定")
             return
 

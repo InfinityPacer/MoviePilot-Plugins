@@ -821,7 +821,10 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     current_record = pause_manager.get_pause_record(subscribe)
                     current_reason = current_record.reason if current_record else None
                     if full_best_version and current_reason != "pre_air":
-                        detail(f"元数据巡检：{format_subscribe(subscribe)} 非全集洗版上映前暂停，本轮不恢复")
+                        detail(
+                            f"元数据巡检：{format_subscribe(subscribe)} 全集洗版仅恢复上映前暂停记录，"
+                            f"当前暂停原因={current_reason or '无'}，本轮不恢复"
+                        )
                         continue
                     if current_reason not in ("pre_air", "airing_gap"):
                         detail(f"元数据巡检：{format_subscribe(subscribe)} 非插件上映/播出暂停，本轮不恢复")
@@ -841,6 +844,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     pause_manager.resume(subscribe)
 
             if full_best_version:
+                # 全集洗版完成上映前暂停复核后，不进入按集播出暂停和待定流程。
                 continue
 
             # 待定复核：进入/退出
