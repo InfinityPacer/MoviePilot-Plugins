@@ -70,6 +70,35 @@ class TaskDataManager:
         for key in ("volatility", "blocks", "releases"):
             self.update(key, _clear_subscribe)
 
+    def clear_tasks_for_pause(self, subscribe_id, preserve_subscribe_keys: list[str] | None = None):
+        """清理暂停前无效任务，同时保留指定订阅任务字段。
+
+        订阅暂停记录、防打回窗口等字段与下载待定、种子任务共用 ``subscribes`` 记录。
+        暂停流程需要清理旧下载任务和待定来源，但不能抹掉刚写入的暂停归因或恢复保护窗口。
+        """
+        sid = str(subscribe_id)
+        preserve_subscribe_keys = preserve_subscribe_keys or []
+
+        def _clear_subscribe(data: dict) -> dict:
+            task = data.get(sid, {})
+            preserved = {key: task[key] for key in preserve_subscribe_keys if key in task}
+            if preserved:
+                data[sid] = preserved
+            else:
+                data.pop(sid, None)
+            return data
+
+        def _clear_torrents(data: dict) -> dict:
+            for torrent_hash in list(data.keys()):
+                if str(data[torrent_hash].get("subscribe_id")) == sid:
+                    del data[torrent_hash]
+            return data
+
+        self.update("subscribes", _clear_subscribe)
+        self.update("torrents", _clear_torrents)
+        for key in ("volatility", "blocks", "releases"):
+            self.update(key, _clear_subscribe)
+
     def clean_torrent_tasks(self, torrent_hash):
         """按 hash 同步清理单个种子的任务记录：从 torrents 移除，并从各订阅的 torrent_tasks 移除。
 

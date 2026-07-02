@@ -37,6 +37,7 @@ from .pending.state import PendingStateCoordinator
 from .pause.airing import AiringPauseChecker
 from .pause.manager import PauseManager
 from .pause.nodownload import NoDownloadPolicy
+from .pause.probe import PausedProbeCoordinator
 from .best_version.priority import PriorityManager
 from .best_version.converter import BestVersionConverter
 from .best_version.orchestrator import BestVersionOrchestrator
@@ -85,7 +86,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.4.9"
+    plugin_version = "0.5.0"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -108,6 +109,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._config: Optional[PluginConfig] = None
         self._task_manager: Optional[TaskDataManager] = None
         self._event_proxy: Optional[EventProxy] = None
+        self._paused_probe_coordinator: Optional[PausedProbeCoordinator] = None
         self._modules: dict = {}
         self._onlyonce = False
         # DB oper / chain 在 init_plugin 实例化后注入各业务域模块。
@@ -267,6 +269,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             auto_pause_users=auto_pause_users,
             notify_fn=self._send_subscribe_status_notification,
             pending_state=pending_state,
+            pause_enhanced_enabled=cfg.pause_enhanced_enabled,
         )
         no_download_policy = NoDownloadPolicy(
             movie_days=cfg.movie_no_download_days,
@@ -383,6 +386,16 @@ class SubscribeAssistantEnhanced(_PluginBase):
             cleanup_history_type=cfg.subscription_cleanup_history_type,
             cleanup_history_scenes=cfg.subscription_cleanup_history_scenes,
         )
+        paused_probe = PausedProbeCoordinator(
+            cfg,
+            tm.read,
+            tm.update,
+            subscribe_oper=self._subscribe_oper,
+            subscribe_chain=self._subscribe_chain,
+            pause_manager=pause_manager,
+            download_monitor=download_monitor,
+        )
+        self._paused_probe_coordinator = paused_probe
 
         self._event_proxy = EventProxy(
             task_manager=tm,
@@ -435,6 +448,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "airing_checker": airing_checker if cfg.pause_enhanced_enabled else None,
             "no_download_policy": no_download_policy,
             "download_monitor": download_monitor,
+            "paused_probe": paused_probe,
             "torrent_cleanup": torrent_cleanup,
             "deletes_store": deletes_store,
             "guard": guard,
@@ -445,6 +459,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     def stop_service(self):
         """清理定时任务和事件监听。"""
+        if self._paused_probe_coordinator:
+            self._paused_probe_coordinator.stop()
+            self._paused_probe_coordinator = None
         self._event_proxy = None
         self._modules = {}
 
@@ -547,6 +564,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     def _reset_task_data(self):
         """先恢复增强版持有的订阅状态，再清空全部插件任务数据。"""
+        if self._paused_probe_coordinator:
+            self._paused_probe_coordinator.stop()
         recovered_pending = []
         recovered_paused = []
         pending_state = self._modules.get("pending_state")
@@ -966,6 +985,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         tasks = [("待定释放", self.run_pending_release)]
         tasks.append(("待定状态一致性检查", self.run_pending_state_reconcile))
         tasks.append(("无下载处理", self.run_no_download_check))
+        tasks.append(("暂停订阅低频补搜", self.run_paused_probe_check))
         if self._config.download_monitor_enabled:
             tasks.append(("删除记录清理", self.run_deletes_cleanup))
         tasks.append(("完成快照清理", self.run_completion_snapshot_cleanup))
@@ -977,6 +997,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 task()
             except Exception as err:
                 logger.error(f"通用巡检：{task_name}执行失败：{err}", exc_info=True)
+
+    def run_paused_probe_check(self):
+        """暂停订阅低频补搜巡检：登记外部暂停，并按配置安排单订阅搜索。"""
+        coordinator = self._modules.get("paused_probe")
+        if coordinator:
+            coordinator.run()
 
     def run_completion_verify(self):
         """完成后自验证巡检：复查完成快照，发现 TMDB 增集后重建订阅并通知。"""
@@ -1158,13 +1184,20 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
                     f"原因={decision.reason}，处理=暂停订阅"
                 )
-                # 暂停记录与下载/待定任务共用 subscribes key，先清旧任务再写入新的暂停归属。
-                self._task_manager.clear_tasks(subscribe_id)
-                pause_manager.pause(subscribe, PauseRecord(
+                paused = pause_manager.pause(subscribe, PauseRecord(
                     reason="no_download",
                     since=time.time(),
                     detail=decision.reason,
                 ))
+                if not paused:
+                    continue
+                self._task_manager.clear_tasks_for_pause(subscribe_id, preserve_subscribe_keys=[
+                    "pause_reason",
+                    "pause_since",
+                    "pause_detail",
+                    "paused_probe_resume_guard_reason",
+                    "paused_probe_resume_guard_until",
+                ])
             elif action == "complete":
                 logger.info(
                     f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "

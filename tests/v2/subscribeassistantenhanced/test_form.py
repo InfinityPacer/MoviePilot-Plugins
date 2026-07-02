@@ -1,7 +1,7 @@
 """form 配置表单单测：聚合契约 + model 键覆盖（不漂移）+ 控件类型。"""
 import re
 
-from subscribeassistantenhanced.form import HINTS, LABELS, MULTI_ITEMS, build_form
+from subscribeassistantenhanced.form import HINTS, LABELS, MULTI_ITEMS, SELECT_ITEMS, build_form
 from subscribeassistantenhanced.form.components import field_for
 from subscribeassistantenhanced.shared.config import PluginConfig
 
@@ -352,6 +352,55 @@ def test_best_version_remaining_days_labels_are_split_by_media_type():
     assert LABELS["best_version_tv_remaining_days"] == "剧集洗版时限（天）"
     assert "电影洗版订阅" in HINTS["best_version_movie_remaining_days"]
     assert "剧集洗版订阅达到指定天数后自动终止" in HINTS["best_version_tv_remaining_days"]
+
+
+def test_paused_probe_fields_live_in_pause_tab():
+    """暂停订阅补搜配置属于订阅暂停页签，默认不主动搜索暂停订阅。"""
+    conf, model = build_form()
+    pause_tab = conf[4]["content"][2]["content"]
+    probe_cols = pause_tab[3]["content"]
+
+    assert [col["content"][0]["props"]["model"] for col in probe_cols] == [
+        "paused_probe_reasons",
+        "paused_probe_min_pause_days",
+        "paused_probe_interval_hours",
+    ]
+    assert [col["props"]["md"] for col in probe_cols] == [4, 4, 4]
+    assert model["paused_probe_reasons"] == ["no_download"]
+    assert model["paused_probe_min_pause_days"] == 14
+    assert model["paused_probe_interval_hours"] == 72
+
+
+def test_paused_probe_labels_hints_and_interval_select_are_human_readable():
+    """补搜场景说明使用面向用户的简短文案。"""
+    assert LABELS["paused_probe_reasons"] == "暂停订阅补搜场景"
+    assert LABELS["paused_probe_min_pause_days"] == "暂停满N天后补搜"
+    assert LABELS["paused_probe_interval_hours"] == "补搜间隔（小时）"
+    assert HINTS["paused_probe_reasons"] == "选择哪些暂停原因需要低频补搜"
+    assert HINTS["paused_probe_min_pause_days"] == "暂停满N天后才补搜，为0时不处理"
+    assert HINTS["paused_probe_interval_hours"] == "同一订阅两次补搜的最小间隔"
+    assert MULTI_ITEMS["paused_probe_reasons"] == [
+        {"title": "无下载", "value": "no_download"},
+        {"title": "上映/开播", "value": "pre_air"},
+        {"title": "播出间隔", "value": "airing_gap"},
+        {"title": "用户名", "value": "auto_user"},
+        {"title": "外部暂停", "value": "external"},
+        {"title": "全部", "value": "all"},
+    ]
+    assert SELECT_ITEMS["paused_probe_interval_hours"] == [
+        {"title": "24", "value": 24},
+        {"title": "48", "value": 48},
+        {"title": "72", "value": 72},
+        {"title": "96", "value": 96},
+        {"title": "120", "value": 120},
+        {"title": "144", "value": 144},
+    ]
+    conf, _model = build_form()
+    fields = _controls_with_model(conf[4])
+    interval = next(field for field in fields
+                    if field["props"].get("model") == "paused_probe_interval_hours")
+    assert interval["component"] == "VSelect"
+    assert interval["props"]["items"] == SELECT_ITEMS["paused_probe_interval_hours"]
 
 
 def test_subscription_cleanup_tab_replaces_seed_delete_title():

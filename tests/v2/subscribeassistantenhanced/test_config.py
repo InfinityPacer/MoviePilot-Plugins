@@ -123,6 +123,12 @@ class PluginConfigDefaultsTest:
         assert self.cfg.movie_no_download_days == 365
         assert self.cfg.tv_no_download_days == 180
 
+    def test_paused_probe_defaults(self):
+        """暂停订阅补搜默认只开启无下载场景，并保留保守的时间门槛。"""
+        assert self.cfg.paused_probe_reasons == ["no_download"]
+        assert self.cfg.paused_probe_min_pause_days == 14
+        assert self.cfg.paused_probe_interval_hours == 72
+
     # --- pending ---
 
     def test_auto_tv_pending_days_default_disabled(self):
@@ -244,3 +250,19 @@ class PluginConfigCoercionTest:
         for val in ["on", "guard", "yes", "1", "TRUE"]:
             cfg = PluginConfig({"pending_use_volatility": val})
             assert cfg.pending_use_volatility is True, f"Expected True for {val!r}"
+
+    def test_paused_probe_reasons_parse_list_or_csv(self):
+        """补搜场景按多选值解析，不受自动暂停总开关直接裁剪。"""
+        assert PluginConfig({"paused_probe_reasons": []}).paused_probe_reasons == []
+        assert PluginConfig({"paused_probe_reasons": ["no_download", " external "]}).paused_probe_reasons == [
+            "no_download",
+            "external",
+        ]
+        assert PluginConfig({"paused_probe_reasons": "pre_air,airing_gap"}).paused_probe_reasons == [
+            "pre_air",
+            "airing_gap",
+        ]
+
+    def test_paused_probe_interval_has_24h_runtime_floor(self):
+        """同一订阅主动补搜间隔最低 24 小时，避免配置误填造成高频搜索。"""
+        assert PluginConfig({"paused_probe_interval_hours": 1}).paused_probe_interval_hours == 24

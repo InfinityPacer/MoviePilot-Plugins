@@ -420,6 +420,21 @@ class PluginConfig:
         """无下载处理策略（多选）：pause/complete/delete × movie/tv 的组合。"""
         return self.get_list("no_download_actions")
 
+    @property
+    def paused_probe_reasons(self) -> list:
+        """暂停订阅低频补搜场景；缺省只对无下载暂停进行主动搜索。"""
+        return self.get_list("paused_probe_reasons", ["no_download"])
+
+    @property
+    def paused_probe_min_pause_days(self) -> int:
+        """暂停订阅达到天数后才允许主动补搜；0=不处理。"""
+        return self.get_int("paused_probe_min_pause_days", 14)
+
+    @property
+    def paused_probe_interval_hours(self) -> int:
+        """同一订阅主动补搜的最小间隔，运行时不低于 24 小时。"""
+        return max(self.get_int("paused_probe_interval_hours", 72), 24)
+
     # ---- 订阅洗版 ----
 
     @property

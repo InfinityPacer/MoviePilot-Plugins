@@ -57,6 +57,9 @@ LABELS = {
     "tv_no_download_days": "剧集无下载处理天数",
     "movie_no_download_days": "电影无下载处理天数",
     "no_download_actions": "无下载处理策略",
+    "paused_probe_reasons": "暂停订阅补搜场景",
+    "paused_probe_min_pause_days": "暂停满N天后补搜",
+    "paused_probe_interval_hours": "补搜间隔（小时）",
     # 订阅洗版
     "best_version_type": "洗版类型",
     "best_version_episode_to_full": "分集转全集",
@@ -129,6 +132,9 @@ HINTS = {
     "tv_no_download_days": "剧集上映后N天内无新的订阅下载，则按策略处理，为0时不处理",
     "movie_no_download_days": "电影上映后N天内无新的订阅下载，则按策略处理，为0时不处理",
     "no_download_actions": "选择无下载时的处理策略",
+    "paused_probe_reasons": "选择哪些暂停原因需要低频补搜",
+    "paused_probe_min_pause_days": "暂停满N天后才补搜，为0时不处理",
+    "paused_probe_interval_hours": "同一订阅两次补搜的最小间隔",
     # 订阅洗版
     "best_version_type": "选择需要自动洗版的类型，关闭时不自动创建和巡检洗版订阅",
     "best_version_episode_to_full": "订阅目标集数满足时，从分集洗版切换为全集洗版",
@@ -179,6 +185,7 @@ TABS = [
         [("pause_enhanced_enabled", 4), ("auto_pause_users", 8)],
         ["movie_air_pause_days", "tv_air_pause_days", "airing_pause_days"],
         ["movie_no_download_days", "tv_no_download_days", "no_download_actions"],
+        ["paused_probe_reasons", "paused_probe_min_pause_days", "paused_probe_interval_hours"],
     ]),
     ("订阅洗版", [
         ["best_version_type", "best_version_movie_remaining_days", "best_version_tv_remaining_days"],
@@ -233,6 +240,14 @@ SELECT_ITEMS = {
         {"title": "12小时", "value": 12},
         {"title": "24小时", "value": 24},
     ],
+    "paused_probe_interval_hours": [
+        {"title": "24", "value": 24},
+        {"title": "48", "value": 48},
+        {"title": "72", "value": 72},
+        {"title": "96", "value": 96},
+        {"title": "120", "value": 120},
+        {"title": "144", "value": 144},
+    ],
     "best_version_type": [
         {"title": "关闭", "value": "no"},
         {"title": "全部", "value": "all"},
@@ -281,6 +296,14 @@ MULTI_ITEMS = {
         {"title": "完成剧集订阅", "value": "complete_tv"},
         {"title": "删除电影订阅", "value": "delete_movie"},
         {"title": "删除剧集订阅", "value": "delete_tv"},
+    ],
+    "paused_probe_reasons": [
+        {"title": "无下载", "value": "no_download"},
+        {"title": "上映/开播", "value": "pre_air"},
+        {"title": "播出间隔", "value": "airing_gap"},
+        {"title": "用户名", "value": "auto_user"},
+        {"title": "外部暂停", "value": "external"},
+        {"title": "全部", "value": "all"},
     ],
 }
 

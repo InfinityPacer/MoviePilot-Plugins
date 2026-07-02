@@ -5,12 +5,12 @@
 - SubscribeEpisodesRefresh → volatility.record (先) + pending observer (后)
 - SubscribeAdded → best_version + priority.backfill + pause.auto_pause_user
 - SubscribeDeleted → task_manager.cleanup
-- SubscribeModified → task_manager.reset_on_modify
+- SubscribeModified → 暂停状态归属维护 + task_manager.reset_on_modify
 - SubscribeComplete → verifier.snapshot + best_version
 - TransferIntercept → subscription_cleanup.history_clear
 - ResourceSelection → 洗版串行 + 识别增强 + 删除指纹过滤
 - ResourceDownload → subscription_cleanup + monitor.mark_pending
-- DownloadAdded → monitor.on_download
+- DownloadAdded → monitor.on_download + 暂停订阅下载命中恢复
 - TransferComplete → 清下载待定 + 移动模式清理 + 分集转全集补偿
 - PluginAction → toggle_subscribe_state
 """
@@ -252,9 +252,9 @@ class EventProxy:
             task_manager.clear_tasks(subscribe_id)
 
     def on_subscribe_modified(self, event):
-        """SubscribeModified → 状态变更重置暂停跟踪 + 分集洗版下载事实回填。
+        """SubscribeModified → 状态变更维护暂停归属 + 分集洗版下载事实回填。
 
-        state 变化时重置插件侧暂停记录；普通订阅首次切成洗版时，
+        state 变化时维护插件侧暂停记录；普通订阅首次切成洗版时，
         把媒体库已有集交给主程序 backfill 合同，避免已在库的集被重新洗版。
         """
         data = event.event_data
@@ -278,8 +278,15 @@ class EventProxy:
         if "state" in different_keys:
             pause_manager = self.get("pause_manager")
             if pause_manager:
-                detail(f"订阅修改事件：{format_subscribe(subscribe)} 状态已变更，清理插件暂停记录")
-                pause_manager.clear_pause_record(subscribe)
+                old_state = old_info.get("state")
+                new_state = subscribe_info.get("state", subscribe.state)
+                if old_state != "S" and new_state == "S":
+                    if not pause_manager.get_pause_record(subscribe):
+                        detail(f"订阅修改事件：{format_subscribe(subscribe)} 状态变为暂停，登记外部暂停")
+                        pause_manager.adopt_external(subscribe)
+                elif old_state == "S" and new_state != "S":
+                    detail(f"订阅修改事件：{format_subscribe(subscribe)} 状态已脱离暂停，清理插件暂停记录")
+                    pause_manager.clear_pause_record(subscribe)
 
         # 只在普通订阅首次切成洗版时回填；插件后续写进度字段也会触发修改事件，不能重复回填。
         if ("best_version" in different_keys
@@ -535,11 +542,7 @@ class EventProxy:
                 )
 
     def on_download_added(self, event):
-        """DownloadAdded → 登记种子监控数据，并为无 hash 下载待定补齐真实 hash。
-
-        下载添加不在此处恢复暂停；暂停恢复仅由元数据检查的上映条件双向判定负责，
-        避免下载落地即把上映暂停或标记暂停误清掉。
-        """
+        """DownloadAdded → 登记种子监控数据，并在暂停订阅命中下载时恢复订阅。"""
         data = event.event_data
         if not isinstance(data, dict):
             return
@@ -561,6 +564,66 @@ class EventProxy:
                 title=getattr(torrent_info, "title", None),
                 description=getattr(torrent_info, "description", None),
             )
+        self._resume_paused_subscribe_on_download(subscribe)
+
+    def _resume_paused_subscribe_on_download(self, subscribe):
+        """下载事实命中暂停订阅时恢复为订阅中，并按原暂停原因维护防打回窗口。"""
+        pause_manager = self.get("pause_manager")
+        if not pause_manager or not subscribe or subscribe.state != "S":
+            return
+        record = pause_manager.get_pause_record(subscribe)
+        if not record:
+            pause_manager.adopt_external(subscribe)
+            record = pause_manager.get_pause_record(subscribe)
+        if not record:
+            logger.info(f"DownloadAdded：{format_subscribe(subscribe)} 暂停记录缺失，跳过下载命中恢复")
+            return
+        reason = record.reason
+        if not pause_manager.resume(subscribe, notify=False):
+            logger.info(f"DownloadAdded：{format_subscribe(subscribe)} 暂停恢复未生效，原因={reason}")
+            return
+        pause_manager.clear_probe_fields_for_resume(subscribe)
+        guard_written = False
+        if reason != "external":
+            guard_written = pause_manager.set_resume_guard(subscribe, reason, hours=48)
+        logger.info(
+            f"DownloadAdded：{format_subscribe(subscribe)} 已因下载命中恢复暂停订阅，"
+            f"原暂停原因={reason}，写入防打回={guard_written}"
+        )
+        self._notify_download_resume(subscribe, reason)
+
+    def _notify_download_resume(self, subscribe, reason: str):
+        """发送下载命中恢复暂停订阅通知；实际推送仍由全局通知开关控制。"""
+        notify_fn = self.get("notify_fn")
+        if not notify_fn:
+            return
+        external = reason == "external"
+        title = (
+            f"{format_subscribe(subscribe)} 检测到下载任务，已恢复外部暂停订阅"
+            if external else
+            f"{format_subscribe(subscribe)} 检测到下载任务，已恢复暂停订阅"
+        )
+        notify_fn(
+            title,
+            reason=self._pause_reason_label(reason),
+            action="已恢复为订阅中",
+            follow_up=(
+                "用户再次手动暂停仍会立即生效"
+                if external else
+                "48小时内不会因同一原因再次自动暂停"
+            ),
+        )
+
+    @staticmethod
+    def _pause_reason_label(reason: str) -> str:
+        """把内部暂停原因转换为通知可读文本。"""
+        return {
+            "no_download": "无下载暂停",
+            "pre_air": "上映/开播暂停",
+            "airing_gap": "播出间隔暂停",
+            "auto_user": "用户名暂停",
+            "external": "外部暂停",
+        }.get(reason, f"{reason} 暂停")
 
     def on_transfer_complete(self, event):
         """TransferComplete → 清下载待定 + 移动模式同步清理种子任务记录。

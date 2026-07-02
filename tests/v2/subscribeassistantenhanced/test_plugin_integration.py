@@ -1354,6 +1354,7 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_pending_release = MagicMock()
     plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
+    plugin.run_paused_probe_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
     plugin.run_subscription_cleanup_expired = MagicMock()
@@ -1363,6 +1364,7 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_pending_release.assert_called_once()
     plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
+    plugin.run_paused_probe_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
     plugin.run_subscription_cleanup_expired.assert_called_once()
@@ -1375,6 +1377,7 @@ def test_run_common_check_isolates_subtask_failures():
     plugin.run_pending_release = MagicMock(side_effect=RuntimeError("pending failed"))
     plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
+    plugin.run_paused_probe_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
     plugin.run_subscription_cleanup_expired = MagicMock()
@@ -1383,6 +1386,7 @@ def test_run_common_check_isolates_subtask_failures():
 
     plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
+    plugin.run_paused_probe_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
     plugin.run_subscription_cleanup_expired.assert_called_once()
@@ -1395,6 +1399,7 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_pending_release = MagicMock()
     plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
+    plugin.run_paused_probe_check = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
     plugin.run_subscription_cleanup_expired = MagicMock()
@@ -1404,6 +1409,7 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_pending_release.assert_called_once()
     plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
+    plugin.run_paused_probe_check.assert_called_once()
     plugin.run_deletes_cleanup.assert_not_called()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
     plugin.run_subscription_cleanup_expired.assert_called_once()
@@ -2802,8 +2808,8 @@ class TestNoDownloadCheck:
 
         plugin._subscribe_oper.delete.assert_called_once_with(18)
 
-    def test_overdue_tv_pause_action_clears_plugin_tasks(self):
-        """剧集超期执行暂停后清理关联插件任务。"""
+    def test_overdue_tv_pause_action_clears_stale_tasks_after_pause(self):
+        """剧集超期执行暂停后清理旧任务，同时保留暂停记录与恢复保护。"""
         subscribe = _sub(id=19, state="R", name="测试", type="电视剧", season=1)
         mediainfo = _mediainfo(
             season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
@@ -2818,13 +2824,54 @@ class TestNoDownloadCheck:
         plugin._subscribe_oper.list.return_value = [subscribe]
         plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
         plugin._last_download_date = MagicMock(return_value=None)
-        plugin._task_manager.clear_tasks = MagicMock()
+        plugin._task_manager.clear_tasks_for_pause = MagicMock()
         plugin._modules["pause_manager"].pause = MagicMock()
 
         plugin.run_no_download_check()
 
         plugin._modules["pause_manager"].pause.assert_called_once()
-        plugin._task_manager.clear_tasks.assert_called_once_with(19)
+        plugin._task_manager.clear_tasks_for_pause.assert_called_once_with(19, preserve_subscribe_keys=[
+            "pause_reason",
+            "pause_since",
+            "pause_detail",
+            "paused_probe_resume_guard_reason",
+            "paused_probe_resume_guard_until",
+        ])
+
+    def test_overdue_tv_pause_action_respects_resume_guard(self):
+        """下载命中恢复保护期内，无下载巡检不清任务、不通知、不再次暂停。"""
+        subscribe = _sub(id=29, state="R", name="测试", type="电视剧", season=1)
+        mediainfo = _mediainfo(
+            season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
+            first_air_date="2025-01-01",
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "pause_enhanced_enabled": True,
+            "notify": True,
+            "tv_no_download_days": 180,
+            "no_download_actions": ["pause_tv"],
+        })
+        plugin.save_data("subscribes", {
+            "29": {
+                "paused_probe_resume_guard_reason": "no_download",
+                "paused_probe_resume_guard_until": time.time() + 3600,
+            },
+        })
+        plugin._subscribe_oper = MagicMock()
+        plugin._modules["pause_manager"]._subscribe_oper = plugin._subscribe_oper
+        plugin._subscribe_oper.list.return_value = [subscribe]
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._last_download_date = MagicMock(return_value=None)
+        plugin._task_manager.clear_tasks_for_pause = MagicMock()
+        plugin.post_message = MagicMock()
+
+        plugin.run_no_download_check()
+
+        task = plugin.get_data("subscribes")["29"]
+        assert "pause_reason" not in task
+        plugin._task_manager.clear_tasks_for_pause.assert_not_called()
+        plugin.post_message.assert_not_called()
 
     def test_episode_best_version_tv_overdue_pause_action_pauses_subscribe(self):
         """分集洗版剧集超期且无下载时仍按剧集无下载策略暂停订阅。"""

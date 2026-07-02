@@ -108,22 +108,78 @@ class TestEventOrdering:
 
         assert EventProxy._format_episodes_refresh_label(data) == "镖人 (2023) S1(id=32, tmdbid=325228, scene=refresh)"
 
-    def test_download_added_registers_monitor_without_resuming(self):
-        """DownloadAdded → 仅经 source 解析订阅后登记监控数据，不在此处恢复暂停。"""
+    def test_download_added_registers_monitor_and_resumes_paused_subscribe(self):
+        """DownloadAdded → 登记监控数据，并恢复命中下载的暂停订阅。"""
         sub = _sub(id=1, state="S")
         oper = MagicMock()
         oper.get.return_value = sub
         monitor = MagicMock()
         pause_mgr = MagicMock()
-        proxy = EventProxy(subscribe_oper=oper, download_monitor=monitor, pause_manager=pause_mgr)
+        pause_mgr.get_pause_record.return_value = PauseRecord(reason="no_download", since=1.0, detail="无下载")
+        pause_mgr.resume.return_value = True
+        notify = MagicMock()
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            download_monitor=monitor,
+            pause_manager=pause_mgr,
+            notify_fn=notify,
+        )
         proxy.on_download_added(SimpleNamespace(event_data={
             "source": 'Subscribe|{"id": 1}', "hash": "h1", "episodes": [1, 2], "downloader": "qb",
         }))
         monitor.on_download.assert_called_once_with(
             1, "h1", episodes=[1, 2], downloader="qb",
             enclosure=None, page_url=None, title=None, description=None)
-        # 下载添加事件不触发暂停恢复；恢复仅由元数据巡检的上映双向判定负责。
+        pause_mgr.resume.assert_called_once_with(sub, notify=False)
+        pause_mgr.clear_probe_fields_for_resume.assert_called_once_with(sub)
+        pause_mgr.set_resume_guard.assert_called_once_with(sub, "no_download", hours=48)
+        notify.assert_called_once()
+        assert "已恢复暂停订阅" in notify.call_args.args[0]
+        assert notify.call_args.kwargs["reason"] == "无下载暂停"
+        assert notify.call_args.kwargs["follow_up"] == "48小时内不会因同一原因再次自动暂停"
+
+    def test_download_added_adopts_external_before_resume_when_record_missing(self):
+        """暂停订阅没有插件记录时，DownloadAdded 先登记 external 再恢复。"""
+        sub = _sub(id=1, state="S")
+        oper = MagicMock()
+        oper.get.return_value = sub
+        pause_mgr = MagicMock()
+        records = [None, PauseRecord(reason="external", since=2.0, detail="外部暂停")]
+        pause_mgr.get_pause_record.side_effect = records
+        pause_mgr.resume.return_value = True
+        notify = MagicMock()
+        proxy = EventProxy(subscribe_oper=oper, pause_manager=pause_mgr, notify_fn=notify)
+
+        proxy.on_download_added(SimpleNamespace(event_data={
+            "source": 'Subscribe|{"id": 1}', "hash": "h1",
+        }))
+
+        pause_mgr.adopt_external.assert_called_once_with(sub)
+        pause_mgr.resume.assert_called_once_with(sub, notify=False)
+        pause_mgr.set_resume_guard.assert_not_called()
+        notify.assert_called_once()
+        assert "已恢复外部暂停订阅" in notify.call_args.args[0]
+        assert notify.call_args.kwargs["follow_up"] == "用户再次手动暂停仍会立即生效"
+
+    def test_download_added_ignores_unresolved_or_non_paused_subscribe_for_resume(self):
+        """source 无法解析、订阅不存在或状态不是 S 时，不恢复、不写 guard、不通知。"""
+        notify = MagicMock()
+        pause_mgr = MagicMock()
+        oper = MagicMock()
+        oper.get.return_value = None
+        EventProxy(subscribe_oper=oper, pause_manager=pause_mgr, notify_fn=notify).on_download_added(
+            SimpleNamespace(event_data={"source": "bad", "hash": "h1"})
+        )
         pause_mgr.resume.assert_not_called()
+        notify.assert_not_called()
+
+        running = _sub(id=2, state="R")
+        oper.get.return_value = running
+        EventProxy(subscribe_oper=oper, pause_manager=pause_mgr, notify_fn=notify).on_download_added(
+            SimpleNamespace(event_data={"source": 'Subscribe|{"id": 2}', "hash": "h2"})
+        )
+        pause_mgr.resume.assert_not_called()
+        notify.assert_not_called()
 
     def test_download_added_skips_torrent_index_when_both_download_toggles_disabled(self):
         """下载待定和下载管理都关闭时，不写无消费方的 torrents 索引。"""
@@ -464,6 +520,21 @@ class TestSubscribeLifecycle:
             "old_subscribe_info": {"state": "S"},
         }))
         pause.clear_pause_record.assert_called_once_with(sub)
+
+    def test_modified_to_paused_adopts_external_when_no_pause_record(self):
+        """非 S → S 且无插件暂停记录时登记 external。"""
+        pause = MagicMock()
+        pause.get_pause_record.return_value = None
+        sub = _sub(id=9, state="S")
+        oper = MagicMock()
+        oper.get.return_value = sub
+        proxy = EventProxy(pause_manager=pause, subscribe_oper=oper)
+        proxy.on_subscribe_modified(SimpleNamespace(event_data={
+            "subscribe_id": 9,
+            "subscribe_info": {"state": "S"},
+            "old_subscribe_info": {"state": "R"},
+        }))
+        pause.adopt_external.assert_called_once_with(sub)
 
     def test_modified_without_state_change_noop(self):
         pause = MagicMock()

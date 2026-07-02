@@ -369,6 +369,32 @@ class TestEventRegistration:
         plugin._notify_subscribe.assert_not_called()
         assert any("未发现需要恢复的订阅状态" in call.args[0] for call in logger_info.call_args_list)
 
+    def test_plugin_data_reset_stops_paused_probe_coordinator(self, monkeypatch):
+        """重置任务数据前先失效待执行 probe Timer。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin._config = PluginConfig({})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.side_effect = [[], []]
+        coordinator = MagicMock()
+        plugin._paused_probe_coordinator = coordinator
+        plugin._modules = {"pending_state": MagicMock(), "pause_manager": MagicMock()}
+        monkeypatch.setattr(plugin, "save_data", lambda key, value: None)
+
+        plugin._reset_task_data()
+
+        coordinator.stop.assert_called_once_with()
+
+    def test_stop_service_stops_paused_probe_coordinator(self):
+        """插件停止或热重载时取消待执行 probe Timer。"""
+        plugin = SubscribeAssistantEnhanced()
+        coordinator = MagicMock()
+        plugin._paused_probe_coordinator = coordinator
+
+        plugin.stop_service()
+
+        coordinator.stop.assert_called_once_with()
+        assert plugin._paused_probe_coordinator is None
+
 
 class TestScheduler:
     """get_service 按域开关声明定时任务。"""

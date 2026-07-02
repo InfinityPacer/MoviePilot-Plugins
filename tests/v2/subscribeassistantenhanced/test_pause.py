@@ -718,7 +718,7 @@ class TestNoDownloadPolicy:
 
 class TestPauseManager:
 
-    def _make_manager(self, store=None, auto_users=None, notify=None):
+    def _make_manager(self, store=None, auto_users=None, notify=None, pause_enhanced_enabled=True):
         store = store if store is not None else {}
         mgr = PauseManager(
             task_data_read=lambda key: store.get(key, {}),
@@ -726,6 +726,7 @@ class TestPauseManager:
             subscribe_oper=MagicMock(),
             auto_pause_users=auto_users,
             notify_fn=notify,
+            pause_enhanced_enabled=pause_enhanced_enabled,
         )
         mgr._store = store
         return mgr
@@ -815,6 +816,135 @@ class TestPauseManager:
         rec = mgr.get_pause_record(sub)
         assert rec.reason == "no_download"
 
+    def test_adopt_external_writes_record_only_once_for_paused_subscription(self, monkeypatch):
+        """外部暂停登记只接管无记录的 S 状态订阅，不刷新首次接管时间。"""
+        store = {}
+        mgr = self._make_manager(store=store)
+        sub = _sub(state="S")
+        monkeypatch.setattr(time, "time", lambda: 1000.0)
+
+        assert mgr.adopt_external(sub, detail="用户暂停") is True
+        monkeypatch.setattr(time, "time", lambda: 2000.0)
+        assert mgr.adopt_external(sub, detail="再次发现") is False
+
+        task = store["subscribes"]["1"]
+        assert task["pause_reason"] == "external"
+        assert task["pause_since"] == 1000.0
+        assert task["pause_detail"] == "用户暂停"
+        mgr._subscribe_oper.update.assert_not_called()
+
+    def test_adopt_external_ignores_running_subscription(self):
+        """只有已经暂停的订阅才会被登记为 external。"""
+        mgr = self._make_manager()
+
+        assert mgr.adopt_external(_sub(state="R")) is False
+        assert mgr.get_pause_record(_sub(state="R")) is None
+
+    def test_external_pause_has_highest_priority(self):
+        """外部暂停代表用户或外部系统意图，不被自动暂停原因覆盖。"""
+        mgr = self._make_manager()
+        sub = _sub(state="S")
+
+        assert mgr.adopt_external(sub) is True
+        assert mgr.pause(sub, PauseRecord(reason="no_download", detail="无下载")) is False
+        assert mgr.pause(sub, PauseRecord(reason="pre_air", detail="未上映")) is False
+
+        rec = mgr.get_pause_record(sub)
+        assert rec.reason == "external"
+
+    def test_clear_probe_schedule_can_preserve_or_clear_last_scheduled_at(self):
+        """本轮调度字段和上次安排时间分开清理，供跳过与恢复场景分别使用。"""
+        store = {"subscribes": {"1": {
+            "paused_probe_last_scheduled_at": 100.0,
+            "paused_probe_scheduled_run_at": 120.0,
+            "paused_probe_reason": "no_download",
+        }}}
+        mgr = self._make_manager(store=store)
+
+        mgr.clear_probe_schedule(_sub(), include_last=False)
+        assert store["subscribes"]["1"] == {"paused_probe_last_scheduled_at": 100.0}
+
+        store["subscribes"]["1"].update({
+            "paused_probe_scheduled_run_at": 220.0,
+            "paused_probe_reason": "pre_air",
+        })
+        mgr.clear_probe_schedule(_sub(), include_last=True)
+        assert store["subscribes"]["1"] == {}
+
+    def test_clear_probe_fields_for_resume_clears_all_probe_schedule_fields(self):
+        """下载命中恢复后清掉主动补搜调度字段，但保留防打回字段。"""
+        store = {"subscribes": {"1": {
+            "paused_probe_last_scheduled_at": 100.0,
+            "paused_probe_scheduled_run_at": 120.0,
+            "paused_probe_reason": "no_download",
+            "paused_probe_resume_guard_reason": "no_download",
+            "paused_probe_resume_guard_until": 200.0,
+        }}}
+        mgr = self._make_manager(store=store)
+
+        mgr.clear_probe_fields_for_resume(_sub())
+
+        assert store["subscribes"]["1"] == {
+            "paused_probe_resume_guard_reason": "no_download",
+            "paused_probe_resume_guard_until": 200.0,
+        }
+
+    def test_set_resume_guard_rejects_external_reason(self, monkeypatch):
+        """外部暂停不写防打回，用户或外部系统再次暂停应立即生效。"""
+        store = {}
+        mgr = self._make_manager(store=store)
+        monkeypatch.setattr(time, "time", lambda: 1000.0)
+
+        assert mgr.set_resume_guard(_sub(), "external") is False
+        assert store == {}
+
+        assert mgr.set_resume_guard(_sub(), "no_download", hours=2) is True
+        assert store["subscribes"]["1"]["paused_probe_resume_guard_reason"] == "no_download"
+        assert store["subscribes"]["1"]["paused_probe_resume_guard_until"] == 8200.0
+
+    def test_pause_guard_blocks_same_reason_without_mutating_state(self, monkeypatch):
+        """下载命中恢复后的同原因保护窗口内不写暂停记录，也不改订阅状态。"""
+        store = {"subscribes": {"1": {
+            "paused_probe_resume_guard_reason": "no_download",
+            "paused_probe_resume_guard_until": 2000.0,
+        }}}
+        messages = []
+        mgr = self._make_manager(store=store)
+        monkeypatch.setattr(time, "time", lambda: 1000.0)
+        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.log_detail", messages.append)
+
+        assert mgr.pause(_sub(), PauseRecord(reason="no_download", detail="无下载")) is False
+
+        assert "pause_reason" not in store["subscribes"]["1"]
+        mgr._subscribe_oper.update.assert_not_called()
+        assert any("保护" in message and "no_download" in message for message in messages)
+
+    def test_pause_guard_does_not_block_different_reason_or_external(self, monkeypatch):
+        """防打回只拦截同一自动暂停原因，external 始终代表外部暂停事实。"""
+        store = {"subscribes": {"1": {
+            "paused_probe_resume_guard_reason": "no_download",
+            "paused_probe_resume_guard_until": 2000.0,
+        }}}
+        mgr = self._make_manager(store=store)
+        monkeypatch.setattr(time, "time", lambda: 1000.0)
+
+        assert mgr.pause(_sub(), PauseRecord(reason="airing_gap", detail="播出间隔")) is True
+        assert store["subscribes"]["1"]["pause_reason"] == "airing_gap"
+        assert mgr.pause(_sub(), PauseRecord(reason="external", detail="外部暂停")) is True
+        assert store["subscribes"]["1"]["pause_reason"] == "external"
+
+    def test_pause_enhanced_disabled_does_not_read_resume_guard(self, monkeypatch):
+        """自动暂停增强关闭时保留历史 guard 数据但不参与暂停判断。"""
+        store = {"subscribes": {"1": {
+            "paused_probe_resume_guard_reason": "no_download",
+            "paused_probe_resume_guard_until": 2000.0,
+        }}}
+        mgr = self._make_manager(store=store, pause_enhanced_enabled=False)
+        monkeypatch.setattr(time, "time", lambda: 1000.0)
+
+        assert mgr.pause(_sub(), PauseRecord(reason="no_download", detail="无下载")) is True
+        assert store["subscribes"]["1"]["pause_reason"] == "no_download"
+
     def test_pause_sends_status_notification_for_airing_rule(self):
         """播出类暂停应发送状态通知。"""
         notify = MagicMock()
@@ -831,7 +961,7 @@ class TestPauseManager:
         messages = []
         mgr = self._make_manager(notify=notify)
         sub = _sub(state="S")
-        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.detail", messages.append)
+        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.log_detail", messages.append)
 
         assert mgr.pause(sub, PauseRecord(reason="airing_gap", detail="下一集日期：2026-07-01")) is True
         notify.reset_mock()
@@ -870,7 +1000,7 @@ class TestPauseManager:
         notify = MagicMock()
         messages = []
         mgr = self._make_manager(notify=notify)
-        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.detail", messages.append)
+        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.log_detail", messages.append)
 
         assert mgr.resume(_sub(state="S")) is False
 
