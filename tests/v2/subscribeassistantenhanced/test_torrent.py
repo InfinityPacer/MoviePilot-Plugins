@@ -130,7 +130,7 @@ class TestFromTR:
             hashString="tr-snake", progress=50.0,
             name="", status="downloading", total_size=2000,
             size_when_done=1500, ratio=0, fields={"size_when_done"},
-            date_done=None, date_added=None, date_active=None,
+            done_date=None, date_added=None, date_active=None,
             tracker_stats=[], labels=[],
         )
         tr.get = lambda key, default=None: default
