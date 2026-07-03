@@ -14,13 +14,13 @@ from ..shared.subscribe import format_subscribe, resolve_subscribe_media_type
 from .state import PendingStateCoordinator
 
 ENTER_TITLES = {
-    "pending_judge": "满足剧集待定条件，已标记待定",
-    "guard_veto": "完成前检查未通过，已标记待定",
+    "pending_judge": "剧集信息待确认，订阅已进入待定",
+    "guard_veto": "完成前检查未通过，订阅已进入待定",
 }
 
 EXIT_TITLES = {
-    "pending_judge": "剧集待定条件解除，已恢复订阅",
-    "guard_veto": "完成前观察结束，已恢复订阅",
+    "pending_judge": "剧集待定条件解除，订阅已恢复启用",
+    "guard_veto": "完成前观察结束，订阅已恢复启用",
 }
 
 
@@ -50,6 +50,8 @@ class PendingJudge:
                               signal: Optional[CompletionSignal] = None) -> tuple[bool, str]:
         """按 OR 逻辑判断是否进入待定（P），任一条件满足即待定。"""
         if resolve_subscribe_media_type(subscribe) != MediaType.TV:
+            return False, ""
+        if self._is_strong_completion_signal(signal):
             return False, ""
 
         season_air_date = get_tv_season_air_date(mediainfo, subscribe.season)
@@ -93,7 +95,7 @@ class PendingJudge:
         signal: CompletionSignal = self._evaluate(subscribe, mediainfo)
 
         if source == "pending_judge":
-            if signal.completed:
+            if self._is_strong_completion_signal(signal):
                 self._exit_pending(subscribe, "信号确认完结")
                 return True
             episodes = tmdb_episodes_fn(
@@ -121,6 +123,11 @@ class PendingJudge:
             return False
 
         return False
+
+    @staticmethod
+    def _is_strong_completion_signal(signal: Optional[CompletionSignal]) -> bool:
+        """只有高置信完结事实可影响剧集待定进入和提前释放。"""
+        return bool(signal and signal.completed and signal.confidence == "high")
 
     def _exit_pending(self, subscribe, reason: str):
         """退出当前待定来源，并由 PendingStateCoordinator 仲裁是否恢复启用（R）。"""

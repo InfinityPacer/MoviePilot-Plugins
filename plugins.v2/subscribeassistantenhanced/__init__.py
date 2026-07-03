@@ -86,7 +86,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.5.0"
+    plugin_version = "0.5.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -950,7 +950,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 if restored:
                     self._send_subscribe_status_notification(
                         subscribe,
-                        "完成前观察结束，已恢复订阅",
+                        "完成前观察已结束，订阅已恢复启用",
                         mediainfo=mediainfo,
                         detail="守门超时释放",
                     )

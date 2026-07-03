@@ -2464,7 +2464,7 @@ class TestPeriodicJobs:
         plugin.run_pending_release()
 
         plugin.post_message.assert_called_once()
-        assert "完成前观察结束，已恢复订阅" in plugin.post_message.call_args.kwargs["title"]
+        assert "完成前观察已结束，订阅已恢复启用" in plugin.post_message.call_args.kwargs["title"]
 
     def test_pending_release_guard_block_is_discarded_without_token(self, monkeypatch):
         """缺少媒体身份的 guard_veto 不能借给当前订阅。"""

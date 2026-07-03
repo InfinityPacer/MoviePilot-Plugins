@@ -81,7 +81,47 @@ class TestShouldEnterPending:
         eps = [_ep(1), _ep(2)]
         should, reason = j.should_enter_pending(_sub(), mi, eps)
         assert should is True
-        assert "集数不足" in reason
+        assert reason == "集数不足（2 ≤ 3）"
+
+    def test_low_confidence_completion_does_not_skip_episode_pending(self):
+        """低置信季级完结信号不能绕过剧集待定。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
+        sig = CompletionSignal(completed=True, confidence="low", signals=["I:all_aired"])
+
+        should, reason = j.should_enter_pending(_sub(), _mi(), [_ep(1)], signal=sig)
+
+        assert should is True
+        assert reason == "集数不足（1 ≤ 1）"
+
+    def test_medium_confidence_completion_does_not_skip_episode_pending(self):
+        """中置信完结信号不能绕过剧集待定。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
+        sig = CompletionSignal(completed=True, confidence="medium", signals=["I:next_season"])
+
+        should, reason = j.should_enter_pending(_sub(), _mi(), [_ep(1)], signal=sig)
+
+        assert should is True
+        assert reason == "集数不足（1 ≤ 1）"
+
+    def test_high_confidence_completion_skips_episode_pending(self):
+        """高置信完结事实应阻止剧集待定进入。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
+        sig = CompletionSignal(completed=True, confidence="high", signals=["E:ended"])
+
+        should, reason = j.should_enter_pending(_sub(), _mi(), [_ep(1)], signal=sig)
+
+        assert should is False
+        assert reason == ""
+
+    def test_l_signal_does_not_skip_episode_pending(self):
+        """L 目标满足信号不参与 pending_judge 进入判定。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
+        sig = CompletionSignal(completed=True, confidence="low", signals=["L:target_satisfied"])
+
+        should, reason = j.should_enter_pending(_sub(), _mi(), [_ep(1)], signal=sig)
+
+        assert should is True
+        assert reason == "集数不足（1 ≤ 1）"
 
     def test_episode_count_above_threshold(self):
         """集数充足 → 不待定。"""
@@ -279,14 +319,44 @@ class TestCheckExit:
         assert result is True
         j._timeout.check_release.assert_called_once_with(subscribe, sig, total_episode=3)
 
-    def test_pending_judge_exits_on_completion(self):
-        """pending_judge P：信号确认完结 → 退出。"""
+    def test_pending_judge_does_not_exit_on_medium_completion(self):
+        """pending_judge P：中置信完结信号不能提前释放。"""
         store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
-        sig = CompletionSignal(completed=True, confidence="medium")
+        sig = CompletionSignal(completed=True, confidence="medium", signals=["I:next_season"])
+        j = _judge(
+            evaluate_result=sig,
+            store=store,
+            config=PluginConfig({"auto_tv_pending_episodes": 1}),
+        )
+
+        result = j.check_exit(_sub(state="P"), _mi(), lambda *a, **kwargs: [_ep(1)])
+
+        assert result is False
+
+    def test_pending_judge_does_not_exit_on_low_completion(self):
+        """pending_judge P：低置信完结信号不能提前释放。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=True, confidence="low", signals=["I:all_aired"])
+        j = _judge(
+            evaluate_result=sig,
+            store=store,
+            config=PluginConfig({"auto_tv_pending_episodes": 1}),
+        )
+
+        result = j.check_exit(_sub(state="P"), _mi(), lambda *a, **kwargs: [_ep(1)])
+
+        assert result is False
+
+    def test_pending_judge_exits_on_high_completion(self):
+        """pending_judge P：高置信完结信号可提前释放。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=True, confidence="high", signals=["E:ended"])
         j = _judge(evaluate_result=sig, store=store)
-        mi = _mi()
-        result = j.check_exit(_sub(state="P"), mi, lambda *a: [])
+
+        result = j.check_exit(_sub(state="P"), _mi(), lambda *a: [_ep(1)])
+
         assert result is True
+        assert store["subscribes"]["1"]["reason"] == "信号确认完结"
 
     def test_not_pending_returns_false(self):
         """非 P 状态 → 返回 False。"""
@@ -316,7 +386,7 @@ class TestMarkPending:
         j.mark_pending(_sub(), source="pending_judge", reason="集数不足")
 
         notify.assert_called_once()
-        assert "满足剧集待定条件，已标记待定" in notify.call_args.args[1]
+        assert "剧集信息待确认，订阅已进入待定" in notify.call_args.args[1]
         assert notify.call_args.kwargs["detail"] == "集数不足"
 
     def test_mark_pending_sends_guard_veto_status_notification(self):
@@ -327,7 +397,7 @@ class TestMarkPending:
         j.mark_pending(_sub(), source="guard_veto", reason="目标总集数近期变化（12 -> 13）")
 
         notify.assert_called_once()
-        assert "完成前检查未通过，已标记待定" in notify.call_args.args[1]
+        assert "完成前检查未通过，订阅已进入待定" in notify.call_args.args[1]
         assert notify.call_args.kwargs["detail"] == "目标总集数近期变化（12 -> 13）"
 
     def test_mark_pending_download_pending_stays_silent(self):
@@ -418,7 +488,7 @@ class TestExitPending:
         j._exit_pending(_sub(state="P"), "待定条件不再满足")
 
         notify.assert_called_once()
-        assert "剧集待定条件解除，已恢复订阅" in notify.call_args.args[1]
+        assert "剧集待定条件解除，订阅已恢复启用" in notify.call_args.args[1]
 
     def test_exit_guard_veto_sends_observation_end_notification(self):
         """guard_veto 退出待定应发送完成前观察结束通知。"""
@@ -433,7 +503,7 @@ class TestExitPending:
         j._exit_pending(_sub(state="P"), "完成前观察结束")
 
         notify.assert_called_once()
-        assert "完成前观察结束，已恢复订阅" in notify.call_args.args[1]
+        assert "完成前观察结束，订阅已恢复启用" in notify.call_args.args[1]
 
     def test_exit_keeps_p_when_download_pending_active(self):
         """业务待定退出时若下载待定仍活跃，则订阅保持 P。"""
