@@ -6,6 +6,8 @@ from dataclasses import fields
 from hashlib import sha1
 from types import SimpleNamespace
 
+from app.core.metainfo import MetaInfo
+
 from .audit import redact_sensitive_text, sanitize_candidate_summary
 from .keywords import load_keyword_groups, match_first
 from .scope import build_target, candidate_from_context
@@ -23,8 +25,19 @@ from .types import (
     RecognitionRuntime,
     RecognitionSettings,
     RecognitionTarget,
+    SecondaryRecognitionRouteResult,
 )
 
+_SECONDARY_CACHE_KEY_VERSION = "v2"
+_SECONDARY_ROUTE_TITLE = "title"
+_SECONDARY_ROUTE_TITLE_SUBTITLE = "title_subtitle"
+_SECONDARY_CONTROL_FIELDS = ("tmdbid", "doubanid", "episode_group", "type")
+_BRACED_CONTROL_TAG_RE = re.compile(
+    r"\{\[[^\]]*(?:tmdbid|doubanid|type|g|s|e)\s*=[^\]]*]\}",
+    re.IGNORECASE,
+)
+_SQUARE_TMDB_TAG_RE = re.compile(r"\[(?:tmdbid|tmdb)[=-]\d+]", re.IGNORECASE)
+_BRACE_TMDB_TAG_RE = re.compile(r"\{(?:tmdbid|tmdb)[=-]\d+}", re.IGNORECASE)
 _HARD_BLOCK = "hard_block"
 _SOFT_BLOCK = "soft_block"
 _OBSERVE = "observe"
@@ -85,7 +98,7 @@ class RecognitionGuard:
         self.last_target = target
         raw_contexts = list(contexts or [])
         candidates = [
-            self._candidate_with_secondary(context, candidate_from_context(context, order=index))
+            self._candidate_with_secondary(target, context, candidate_from_context(context, order=index))
             for index, context in enumerate(raw_contexts)
         ]
         batch = self.filter_candidate_dicts(
@@ -511,47 +524,200 @@ class RecognitionGuard:
         stages.append({"stage": "recognition", "input": input_count, "output": output_count})
         return stages
 
-    def _candidate_with_secondary(self, context, candidate: CandidateResource) -> CandidateResource:
+    def _candidate_with_secondary(self, target: RecognitionTarget, context, candidate: CandidateResource
+                                  ) -> CandidateResource:
         if not self._should_run_secondary():
             return candidate
-        meta = getattr(context, "meta_info", None)
-        if not meta or not self.runtime.secondary_recognizer:
+        title_meta = getattr(context, "meta_info", None)
+        if not title_meta or not self.runtime.secondary_recognizer:
             return candidate
-        cache_key = self._secondary_cache_key(candidate)
+
+        title_route_title = self._meta_route_title(title_meta, candidate.title)
+        title_route_subtitle = self._meta_route_subtitle(title_meta, candidate.description)
+        routes = [
+            self._run_secondary_route(
+                target,
+                candidate,
+                _SECONDARY_ROUTE_TITLE,
+                title_route_title,
+                title_route_subtitle,
+                title_meta,
+            ),
+            self._run_title_subtitle_route(target, candidate, title_meta),
+        ]
+        candidate.secondary_routes = routes
+        self._apply_secondary_routes(target, candidate)
+        return candidate
+
+    def _run_title_subtitle_route(self, target: RecognitionTarget, candidate: CandidateResource, title_meta
+                                  ) -> SecondaryRecognitionRouteResult:
+        subtitle = candidate.description or ""
+        if not subtitle.strip():
+            return SecondaryRecognitionRouteResult(
+                route=_SECONDARY_ROUTE_TITLE_SUBTITLE,
+                route_title=candidate.title or "",
+                route_subtitle=subtitle,
+                status="skipped",
+                cache_key_version=_SECONDARY_CACHE_KEY_VERSION,
+                skipped_reason="empty_subtitle",
+            )
+
+        promoted_subtitle, control_fields_sanitized = self._sanitize_promoted_subtitle(subtitle)
+        route_title = " ".join(part for part in [candidate.title or "", promoted_subtitle] if part).strip()
+        if (
+                not promoted_subtitle
+                or self._normalize_route_text(route_title) == self._normalize_route_text(candidate.title or "")
+        ):
+            return SecondaryRecognitionRouteResult(
+                route=_SECONDARY_ROUTE_TITLE_SUBTITLE,
+                route_title=route_title or candidate.title or "",
+                route_subtitle=subtitle,
+                status="skipped",
+                cache_key_version=_SECONDARY_CACHE_KEY_VERSION,
+                skipped_reason="duplicate_route",
+                control_fields_sanitized=control_fields_sanitized,
+            )
+        try:
+            meta = MetaInfo(title=route_title, subtitle=subtitle, custom_words=target.custom_words)
+        except Exception as err:
+            return SecondaryRecognitionRouteResult(
+                route=_SECONDARY_ROUTE_TITLE_SUBTITLE,
+                route_title=route_title,
+                route_subtitle=subtitle,
+                status="failed",
+                cache_key_version=_SECONDARY_CACHE_KEY_VERSION,
+                failure=redact_sensitive_text(err),
+                control_fields_sanitized=control_fields_sanitized,
+            )
+
+        ignored_fields = (
+            self._restore_promoted_control_fields(title_meta, meta)
+            if control_fields_sanitized
+            else []
+        )
+        return self._run_secondary_route(
+            target,
+            candidate,
+            _SECONDARY_ROUTE_TITLE_SUBTITLE,
+            route_title,
+            subtitle,
+            meta,
+            control_fields_sanitized=control_fields_sanitized,
+            control_fields_ignored=ignored_fields,
+        )
+
+    def _run_secondary_route(self, target: RecognitionTarget, candidate: CandidateResource, route: str, route_title: str,
+                             route_subtitle: str, meta, *, control_fields_sanitized: bool = False,
+                             control_fields_ignored: list[str] | None = None) -> SecondaryRecognitionRouteResult:
+        result = SecondaryRecognitionRouteResult(
+            route=route,
+            route_title=route_title,
+            route_subtitle=route_subtitle,
+            cache_key_version=_SECONDARY_CACHE_KEY_VERSION,
+            applied_words_count=len(getattr(meta, "apply_words", []) or []),
+            control_fields_sanitized=control_fields_sanitized,
+            control_fields_ignored=list(control_fields_ignored or []),
+            meta=meta,
+        )
+        cache_key = self._secondary_cache_key(target, candidate, route, route_title, route_subtitle)
         cached = self._secondary_cache.get(cache_key)
         if cached is not None:
-            candidate.secondary_tmdb_id = cached.get("tmdb_id")
-            candidate.secondary_douban_id = cached.get("douban_id")
-            candidate.secondary_status = cached.get("status") or "not_run"
-            candidate.secondary_failure = cached.get("failure") or ""
-            return candidate
+            result.cache_hit = True
+            result.status = cached.get("status") or "not_run"
+            result.tmdb_id = cached.get("tmdb_id")
+            result.douban_id = cached.get("douban_id")
+            result.failure = cached.get("failure") or ""
+            return result
+
         try:
             media_info = self.runtime.secondary_recognizer(meta)
         except Exception as err:
-            candidate.secondary_status = "failed"
-            candidate.secondary_failure = redact_sensitive_text(err)
-            return candidate
+            result.status = "failed"
+            result.failure = redact_sensitive_text(err)
+            self._remember_secondary(cache_key, result)
+            return result
         if not media_info:
+            result.status = "empty"
+            self._remember_secondary(cache_key, result)
+            return result
+        result.tmdb_id = getattr(media_info, "tmdb_id", None)
+        result.douban_id = getattr(media_info, "douban_id", None)
+        result.status = "recognized"
+        self._remember_secondary(cache_key, result)
+        return result
+
+    def _apply_secondary_routes(self, target: RecognitionTarget, candidate: CandidateResource):
+        recognized = [route for route in candidate.secondary_routes if route.status == "recognized"]
+        candidate.secondary_result_conflict = self._secondary_result_conflict(recognized)
+        target_matches = [route for route in recognized if self._secondary_route_matches_target(target, route)]
+        selected = target_matches[0] if target_matches else (recognized[0] if recognized else None)
+        if selected:
+            candidate.secondary_tmdb_id = selected.tmdb_id
+            candidate.secondary_douban_id = selected.douban_id
+            candidate.secondary_status = "recognized"
+            candidate.secondary_failure = ""
+            candidate.secondary_selected_route = selected.route
+            candidate.secondary_result_target_match = bool(target_matches)
+            return
+
+        failures = [route for route in candidate.secondary_routes if route.status == "failed"]
+        if failures:
+            candidate.secondary_status = "failed"
+            candidate.secondary_failure = "; ".join(filter(None, [route.failure for route in failures]))
+            return
+        if any(route.status == "empty" for route in candidate.secondary_routes):
             candidate.secondary_status = "empty"
-            self._remember_secondary(cache_key, {
-                "tmdb_id": None,
-                "douban_id": None,
-                "status": "empty",
-                "failure": "",
-            })
-            return candidate
-        tmdb_id = getattr(media_info, "tmdb_id", None) if media_info else None
-        douban_id = getattr(media_info, "douban_id", None) if media_info else None
-        candidate.secondary_tmdb_id = tmdb_id
-        candidate.secondary_douban_id = douban_id
-        candidate.secondary_status = "recognized"
-        self._remember_secondary(cache_key, {
-            "tmdb_id": tmdb_id,
-            "douban_id": douban_id,
-            "status": "recognized",
-            "failure": "",
-        })
-        return candidate
+            return
+        candidate.secondary_status = "not_run"
+
+    @staticmethod
+    def _secondary_route_matches_target(target: RecognitionTarget, route: SecondaryRecognitionRouteResult) -> bool:
+        if target.tmdb_id and route.tmdb_id and int(target.tmdb_id) == int(route.tmdb_id):
+            return True
+        return bool(target.douban_id and route.douban_id and str(target.douban_id) == str(route.douban_id))
+
+    @staticmethod
+    def _secondary_result_conflict(routes: list[SecondaryRecognitionRouteResult]) -> bool:
+        tmdb_ids = {str(route.tmdb_id) for route in routes if route.tmdb_id}
+        if tmdb_ids:
+            return len(tmdb_ids) > 1
+        douban_ids = {str(route.douban_id) for route in routes if route.douban_id}
+        return len(douban_ids) > 1
+
+    @staticmethod
+    def _sanitize_promoted_subtitle(subtitle: str) -> tuple[str, bool]:
+        sanitized = subtitle
+        control_fields_sanitized = False
+        for pattern in (_BRACED_CONTROL_TAG_RE, _SQUARE_TMDB_TAG_RE, _BRACE_TMDB_TAG_RE):
+            sanitized_next = pattern.sub("", sanitized)
+            if sanitized_next != sanitized:
+                control_fields_sanitized = True
+            sanitized = sanitized_next
+        return re.sub(r"\s+", " ", sanitized).strip(), control_fields_sanitized
+
+    @staticmethod
+    def _restore_promoted_control_fields(title_meta, promoted_meta) -> list[str]:
+        ignored = []
+        for field_name in _SECONDARY_CONTROL_FIELDS:
+            baseline = getattr(title_meta, field_name, None)
+            current = getattr(promoted_meta, field_name, None)
+            if current == baseline:
+                continue
+            setattr(promoted_meta, field_name, baseline)
+            ignored.append(field_name)
+        return ignored
+
+    @staticmethod
+    def _normalize_route_text(value: str) -> str:
+        return re.sub(r"\s+", " ", str(value or "")).strip()
+
+    @staticmethod
+    def _meta_route_title(meta, fallback: str) -> str:
+        return str(getattr(meta, "title", None) or getattr(meta, "org_string", None) or fallback or "")
+
+    @staticmethod
+    def _meta_route_subtitle(meta, fallback: str) -> str:
+        return str(getattr(meta, "subtitle", None) or fallback or "")
 
     def _should_run_secondary(self) -> bool:
         mode = "balanced" if self.settings.mode == "audit" else self.settings.mode
@@ -568,23 +734,47 @@ class RecognitionGuard:
             return mode in {"balanced", "strict"}
         return False
 
-    @staticmethod
-    def _secondary_cache_key(candidate: CandidateResource) -> str:
+    def _secondary_cache_key(self, target: RecognitionTarget, candidate: CandidateResource,
+                             route: str, route_title: str, route_subtitle: str) -> str:
+        target_identity = str(target.subscribe_id or "") or "|".join([
+            f"name={target.name or ''}",
+            f"tmdb_id={target.tmdb_id or ''}",
+            f"douban_id={target.douban_id or ''}",
+            f"media_type={target.media_type or ''}",
+            f"season={target.season or ''}",
+        ])
+        media_type = candidate.media_type or target.media_type or ""
+        year = candidate.year if candidate.year is not None else target.year
+        season = candidate.season if candidate.season is not None else target.season
+        episode_group = candidate.episode_group or target.episode_group or ""
         raw = "\n".join([
-            candidate.title or "",
-            candidate.description or "",
-            str(candidate.year or ""),
-            candidate.media_type or "",
-            str(candidate.season or ""),
-            ",".join(str(ep) for ep in candidate.episodes),
+            _SECONDARY_CACHE_KEY_VERSION,
+            target_identity,
+            route,
+            self._hash_text(route_title),
+            self._hash_text(route_subtitle),
+            self._hash_text("\n".join(target.custom_words or [])),
+            str(media_type),
+            str(year or ""),
+            str(season or ""),
+            str(episode_group),
         ])
         return sha1(raw.encode("utf-8")).hexdigest()
 
-    def _remember_secondary(self, key: str, value: dict):
+    @staticmethod
+    def _hash_text(value: str) -> str:
+        return sha1(RecognitionGuard._normalize_route_text(value).encode("utf-8")).hexdigest()
+
+    def _remember_secondary(self, key: str, value: SecondaryRecognitionRouteResult):
         maxsize = max(1, int(self.settings.cache_maxsize or 1))
         if key in self._secondary_cache:
             del self._secondary_cache[key]
-        self._secondary_cache[key] = value
+        self._secondary_cache[key] = {
+            "tmdb_id": value.tmdb_id,
+            "douban_id": value.douban_id,
+            "status": value.status,
+            "failure": value.failure,
+        }
         while len(self._secondary_cache) > maxsize:
             oldest = next(iter(self._secondary_cache))
             del self._secondary_cache[oldest]
@@ -634,14 +824,50 @@ class RecognitionGuard:
                 "would_action={would_action} code={code} reason={reason}".format(
                     index=index,
                     fingerprint=candidate.fingerprint or "-",
-                    summary=summary,
+                    summary=self._audit_value(summary),
                     original_action=decision.action,
                     final_action=decision.final_action,
                     would_action=decision.would_action,
                     code=decision.code,
-                    reason=self._safe_reason(decision.reason),
+                    reason=self._audit_value(decision.reason),
                 )
             )
+            if candidate.secondary_routes:
+                parts.append(
+                    "candidate={index} secondary_routes={routes} selected_route={selected_route} "
+                    "target_match={target_match} result_conflict={result_conflict}".format(
+                        index=index,
+                        routes=",".join(route.route for route in candidate.secondary_routes),
+                        selected_route=candidate.secondary_selected_route or "-",
+                        target_match=str(candidate.secondary_result_target_match).lower(),
+                        result_conflict=str(candidate.secondary_result_conflict).lower(),
+                    )
+                )
+            for route in candidate.secondary_routes:
+                parts.append(
+                    "candidate={index} route={route} route_status={status} "
+                    "route_title={route_title} route_subtitle={route_subtitle} "
+                    "route_tmdb_id={tmdb_id} route_douban_id={douban_id} "
+                    "route_cache_hit={cache_hit} route_cache_key_version={cache_key_version} "
+                    "applied_words_count={applied_words_count} skipped_reason={skipped_reason} "
+                    "failure={failure} control_fields_sanitized={control_fields_sanitized} "
+                    "control_fields_ignored={control_fields_ignored}".format(
+                        index=index,
+                        route=route.route,
+                        status=route.status,
+                        route_title=self._audit_value(route.route_title),
+                        route_subtitle=self._audit_value(route.route_subtitle),
+                        tmdb_id=route.tmdb_id or "",
+                        douban_id=route.douban_id or "",
+                        cache_hit=str(route.cache_hit).lower(),
+                        cache_key_version=route.cache_key_version,
+                        applied_words_count=route.applied_words_count,
+                        skipped_reason=self._audit_value(route.skipped_reason),
+                        failure=self._audit_value(route.failure),
+                        control_fields_sanitized=str(route.control_fields_sanitized).lower(),
+                        control_fields_ignored=",".join(route.control_fields_ignored),
+                    )
+                )
         return " | ".join(parts)
 
     def _notification_summary(self, batch: BatchDecision) -> str:
@@ -669,6 +895,11 @@ class RecognitionGuard:
     @staticmethod
     def _safe_reason(reason: str) -> str:
         return redact_sensitive_text(reason)
+
+    @staticmethod
+    def _audit_value(value) -> str:
+        text = redact_sensitive_text(value)
+        return text.replace("\r", "\\n").replace("\n", "\\n").replace("|", "/").replace("=", ":")
 
     @staticmethod
     def _known_season_conflict(target: RecognitionTarget, candidate: CandidateResource) -> bool:

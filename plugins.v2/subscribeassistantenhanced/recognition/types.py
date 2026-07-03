@@ -56,6 +56,25 @@ class RecognitionTarget:
 
 
 @dataclass
+class SecondaryRecognitionRouteResult:
+    """二次识别单路输入、输出和缓存状态，用于审计 route 级行为。"""
+    route: str = ""
+    route_title: str = ""
+    route_subtitle: str = ""
+    status: str = "not_run"
+    tmdb_id: Optional[int] = None
+    douban_id: Optional[str] = None
+    cache_hit: bool = False
+    cache_key_version: str = ""
+    applied_words_count: int = 0
+    skipped_reason: str = ""
+    failure: str = ""
+    control_fields_sanitized: bool = False
+    control_fields_ignored: list[str] = field(default_factory=list)
+    meta: object = field(default=None, repr=False, compare=False)
+
+
+@dataclass
 class CandidateResource:
     """单个候选资源的可审计摘要。"""
     fingerprint: str = ""
@@ -82,6 +101,10 @@ class CandidateResource:
     secondary_douban_id: Optional[str] = None
     secondary_status: str = "not_run"
     secondary_failure: str = ""
+    secondary_routes: list[SecondaryRecognitionRouteResult] = field(default_factory=list)
+    secondary_selected_route: str = ""
+    secondary_result_target_match: bool = False
+    secondary_result_conflict: bool = False
     candidate_recognized: bool = False
     match_source: str = "unknown"
     media_info_is_target: bool = False

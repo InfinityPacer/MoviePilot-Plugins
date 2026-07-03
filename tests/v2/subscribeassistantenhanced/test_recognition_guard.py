@@ -78,6 +78,22 @@ def _candidate(**kwargs):
     return defaults
 
 
+class RecordingSecondaryRecognizer:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def __call__(self, meta):
+        self.calls.append(meta)
+        if not self.results:
+            return None
+        return self.results.pop(0)
+
+
+def _media_result(tmdb_id=None, douban_id=None):
+    return SimpleNamespace(tmdb_id=tmdb_id, douban_id=douban_id)
+
+
 def test_candidate_fingerprint_uses_sensitive_url_without_leaking_it():
     torrent = SimpleNamespace(
         enclosure="https://tracker.local/download?id=1&passkey=SECRET",
@@ -1142,3 +1158,443 @@ def test_secondary_empty_result_cache_hit_preserves_fail_open_in_strict():
     assert second.decisions[0].final_action == "fail_open"
     assert second.decisions[0].code == "secondary_recognition_fail_open"
     assert second.decisions[0].candidate.secondary_status == "empty"
+
+
+def test_secondary_title_subtitle_route_can_recognize_when_title_route_is_empty():
+    secondary = RecordingSecondaryRecognizer([None, _media_result(tmdb_id=100)])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    subscribe = _sub(name="问心", custom_words="The Heart => 问心")
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(
+            title="Episode 01",
+            description="The Heart 问心 第1集 普通媒体文本",
+            site_name="站点",
+        ),
+        meta_info=SimpleNamespace(year=2026, type=None, episode_list=[1], begin_season=1),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=subscribe)
+    decision = guard.last_batch.decisions[0]
+    candidate = decision.candidate
+    second_meta = secondary.calls[1]
+
+    assert len(secondary.calls) == 2
+    assert candidate.secondary_status == "recognized"
+    assert candidate.secondary_tmdb_id == 100
+    assert decision.code != "secondary_recognition_fail_open"
+    assert "secondary_routes=title,title_subtitle" in guard.last_batch.audit_summary
+    assert "route=title_subtitle" in guard.last_batch.audit_summary
+    assert "route_title=Episode 01 The Heart 问心 第1集 普通媒体文本" in guard.last_batch.audit_summary
+    assert "route_subtitle=The Heart 问心 第1集 普通媒体文本" in guard.last_batch.audit_summary
+    assert "The Heart => 问心" in second_meta.apply_words
+    assert "问心 第1集" in second_meta.subtitle
+
+
+def test_secondary_route_audit_records_full_route_text_but_redacts_credentials():
+    secondary = RecordingSecondaryRecognizer([None, None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(
+            title="The Heart S01E01",
+            description=(
+                "问心=第1集|特典\n正片 普通媒体文本 "
+                "https://tracker.local/download?token=SECRET&passkey=PASS "
+                "magnet:?xt=urn:btih:abcdef "
+                "Authorization Bearer SECRET_BEARER "
+                "Cookie session=COOKIE_SECRET"
+            ),
+            site_name="站点",
+        ),
+        meta_info=SimpleNamespace(year=2026, type=None, episode_list=[1], begin_season=1),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=_sub(name="问心", custom_words="The Heart => 问心"))
+    audit = guard.last_batch.audit_summary
+
+    assert "route_title=" in audit
+    assert "route_subtitle=" in audit
+    assert "The Heart S01E01" in audit
+    assert "问心:第1集/特典\\n正片" in audit
+    assert "\n" not in audit
+    assert "问心=第1集|特典" not in audit
+    assert "SECRET" not in audit
+    assert "PASS" not in audit
+    assert "SECRET_BEARER" not in audit
+    assert "COOKIE_SECRET" not in audit
+    assert "magnet:?" not in audit
+    assert "token=" not in audit
+    assert "passkey=" not in audit
+    assert "[redacted-url]" in audit
+    assert "[redacted-secret]" in audit
+
+
+def test_title_subtitle_route_ignores_subtitle_promoted_explicit_ids():
+    secondary = RecordingSecondaryRecognizer([None, None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(
+            title="The Heart S01E01",
+            description="问心 第1集 {[tmdbid=999;type=movie;g=abc123;s=1;e=1]} [tmdbid=888]",
+            site_name="站点",
+        ),
+        meta_info=SimpleNamespace(year=None, type=None, episode_list=[1], begin_season=1),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=_sub(name="问心", custom_words="The Heart => 问心"))
+    decision = guard.last_batch.decisions[0]
+    route = decision.candidate.secondary_routes[1]
+    title_meta, title_subtitle_meta = secondary.calls
+
+    assert "[tmdbid=999" not in route.route_title
+    assert "[tmdbid=888]" not in route.route_title
+    assert route.control_fields_sanitized is True
+    assert getattr(title_subtitle_meta, "tmdbid", None) == getattr(title_meta, "tmdbid", None)
+    assert getattr(title_subtitle_meta, "doubanid", None) == getattr(title_meta, "doubanid", None)
+    assert getattr(title_subtitle_meta, "episode_group", None) == getattr(title_meta, "episode_group", None)
+    assert getattr(title_subtitle_meta, "type", None) == getattr(title_meta, "type", None)
+    assert decision.final_action == "fail_open"
+    assert decision.code == "secondary_recognition_fail_open"
+
+
+def test_title_subtitle_route_keeps_type_inferred_from_ordinary_subtitle_text():
+    secondary = RecordingSecondaryRecognizer([None, None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(
+            title="Weak Title",
+            description="问心   第1集\n正片",
+            site_name="站点",
+        ),
+        meta_info=SimpleNamespace(year=None, type=MediaType.UNKNOWN, episode_list=[], begin_season=None),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=_sub(name="问心", custom_words=""))
+    route = guard.last_batch.decisions[0].candidate.secondary_routes[1]
+    title_subtitle_meta = secondary.calls[1]
+
+    assert route.control_fields_sanitized is False
+    assert route.route_title == "Weak Title 问心 第1集 正片"
+    assert getattr(title_subtitle_meta, "type", None) == MediaType.TV
+
+
+def test_secondary_target_route_wins_over_non_target_route_conflict():
+    secondary = RecordingSecondaryRecognizer([
+        _media_result(tmdb_id=999),
+        _media_result(tmdb_id=100),
+    ])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
+        meta_info=SimpleNamespace(year=2026, type=None, episode_list=[1], begin_season=1),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=_sub(name="问心", custom_words="The Heart => 问心"))
+    decision = guard.last_batch.decisions[0]
+    candidate = decision.candidate
+
+    assert candidate.secondary_tmdb_id == 100
+    assert candidate.secondary_selected_route == "title_subtitle"
+    assert candidate.secondary_result_target_match is True
+    assert candidate.secondary_result_conflict is True
+    assert decision.final_action != "block"
+
+
+def test_secondary_result_conflict_normalizes_same_tmdb_with_partial_douban():
+    secondary = RecordingSecondaryRecognizer([
+        _media_result(tmdb_id=100),
+        _media_result(tmdb_id=100, douban_id="db100"),
+    ])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
+        meta_info=SimpleNamespace(year=2026, type=None, episode_list=[1], begin_season=1),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=_sub(name="问心", custom_words="The Heart => 问心"))
+    candidate = guard.last_batch.decisions[0].candidate
+
+    assert candidate.secondary_result_target_match is True
+    assert candidate.secondary_result_conflict is False
+
+
+def test_title_subtitle_meta_build_failure_is_route_failure_and_fail_open(monkeypatch):
+    secondary = RecordingSecondaryRecognizer([None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    original_metainfo = __import__(
+        "subscribeassistantenhanced.recognition.guard",
+        fromlist=["MetaInfo"],
+    ).MetaInfo
+
+    def failing_metainfo(*args, **kwargs):
+        if len(secondary.calls) >= 1:
+            raise RuntimeError("token=SECRET")
+        return original_metainfo(*args, **kwargs)
+
+    monkeypatch.setattr("subscribeassistantenhanced.recognition.guard.MetaInfo", failing_metainfo)
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
+        meta_info=SimpleNamespace(year=None, type=None, episode_list=[1], begin_season=1),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=_sub(name="问心", custom_words="The Heart => 问心"))
+    decision = guard.last_batch.decisions[0]
+    route = decision.candidate.secondary_routes[1]
+
+    assert len(secondary.calls) == 1
+    assert route.route == "title_subtitle"
+    assert route.status == "failed"
+    assert "SECRET" not in route.failure
+    assert "[redacted-secret]" in route.failure
+    assert decision.final_action == "fail_open"
+    assert decision.code == "secondary_recognition_fail_open"
+
+
+def test_secondary_route_cache_isolated_by_target_route_and_custom_words():
+    secondary = RecordingSecondaryRecognizer([None, None, None, None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+
+    def context():
+        return SimpleNamespace(
+            torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
+            meta_info=SimpleNamespace(year=None, type=None, episode_list=[1], begin_season=1),
+            media_info=None,
+            candidate_recognized=False,
+            match_source="title",
+            media_info_is_target=True,
+        )
+
+    guard.filter([context()], subscribe=_sub(id=None, name="问心", custom_words="The Heart => 问心"))
+    guard.filter([context()], subscribe=_sub(id=None, name="问心", custom_words="The Heart => 赤心"))
+
+    assert len(secondary.calls) == 4
+
+
+def test_secondary_route_cache_isolated_by_candidate_media_type():
+    secondary = RecordingSecondaryRecognizer([None, None, None, None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+
+    def context(media_type):
+        return SimpleNamespace(
+            torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
+            meta_info=SimpleNamespace(
+                year=2026,
+                type=media_type,
+                episode_list=[1],
+                begin_season=1,
+                episode_group="eg1",
+            ),
+            media_info=None,
+            candidate_recognized=False,
+            match_source="title",
+            media_info_is_target=True,
+        )
+
+    subscribe = _sub(id=1, name="问心", custom_words="The Heart => 问心")
+    guard.filter([context(MediaType.TV)], subscribe=subscribe)
+    guard.filter([context(MediaType.MOVIE)], subscribe=subscribe)
+
+    assert len(secondary.calls) == 4
+
+
+def test_secondary_route_cache_isolated_by_candidate_episode_group():
+    secondary = RecordingSecondaryRecognizer([None, None, None, None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+
+    def context(episode_group):
+        return SimpleNamespace(
+            torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
+            meta_info=SimpleNamespace(
+                year=2026,
+                type=MediaType.TV,
+                episode_list=[1],
+                begin_season=1,
+                episode_group=episode_group,
+            ),
+            media_info=None,
+            candidate_recognized=False,
+            match_source="title",
+            media_info_is_target=True,
+        )
+
+    subscribe = _sub(id=1, name="问心", custom_words="The Heart => 问心")
+    guard.filter([context("eg1")], subscribe=subscribe)
+    guard.filter([context("eg2")], subscribe=subscribe)
+
+    assert len(secondary.calls) == 4
+
+
+def test_secondary_title_route_audit_and_cache_use_actual_meta_text():
+    secondary = RecordingSecondaryRecognizer([None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+
+    def context(raw_title):
+        return SimpleNamespace(
+            torrent_info=SimpleNamespace(title=raw_title, description="", site_name="站点"),
+            meta_info=SimpleNamespace(
+                title="Meta Title S01E01",
+                subtitle="Meta Subtitle 第1集",
+                year=None,
+                type=None,
+                episode_list=[1],
+                begin_season=1,
+            ),
+            media_info=None,
+            candidate_recognized=False,
+            match_source="title",
+            media_info_is_target=True,
+        )
+
+    subscribe = _sub(id=1, name="问心", custom_words="The Heart => 问心")
+    guard.filter([context("Raw Title A")], subscribe=subscribe)
+    guard.filter([context("Raw Title B")], subscribe=subscribe)
+    audit = guard.last_batch.audit_summary
+
+    assert len(secondary.calls) == 1
+    assert guard.last_batch.decisions[0].candidate.secondary_routes[0].cache_hit is True
+    assert "route=title" in audit
+    assert "route=title route_status=empty route_title=Meta Title S01E01" in audit
+    assert "route=title route_status=empty route_title=Raw Title B" not in audit
+    assert "route_subtitle=Meta Subtitle 第1集" in audit
+
+
+def test_title_subtitle_route_skips_duplicate_after_control_tag_cleanup():
+    secondary = RecordingSecondaryRecognizer([None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+    context = SimpleNamespace(
+        torrent_info=SimpleNamespace(
+            title="The Heart S01E01",
+            description="{[tmdbid=999;type=movie;g=abc123;s=1;e=1]} [tmdbid=888]",
+            site_name="站点",
+        ),
+        meta_info=SimpleNamespace(year=None, type=None, episode_list=[1], begin_season=1),
+        media_info=None,
+        candidate_recognized=False,
+        match_source="title",
+        media_info_is_target=True,
+    )
+
+    guard.filter([context], subscribe=_sub(name="问心", custom_words="The Heart => 问心"))
+    route = guard.last_batch.decisions[0].candidate.secondary_routes[1]
+
+    assert len(secondary.calls) == 1
+    assert route.route == "title_subtitle"
+    assert route.status == "skipped"
+    assert route.skipped_reason == "duplicate_route"
+    assert route.control_fields_sanitized is True
+
+
+def test_secondary_route_cache_hits_each_route_on_repeated_candidate():
+    secondary = RecordingSecondaryRecognizer([None, None])
+    guard = RecognitionGuard(
+        RecognitionSettings(mode="strict", tmdb_recheck_mode="all"),
+        runtime=RecognitionRuntime(secondary_recognizer=secondary),
+    )
+
+    def context():
+        return SimpleNamespace(
+            torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
+            meta_info=SimpleNamespace(year=None, type=None, episode_list=[1], begin_season=1),
+            media_info=None,
+            candidate_recognized=False,
+            match_source="title",
+            media_info_is_target=True,
+        )
+
+    subscribe = _sub(id=1, name="问心", custom_words="The Heart => 问心")
+    guard.filter([context()], subscribe=subscribe)
+    first = guard.last_batch
+    guard.filter([context()], subscribe=subscribe)
+    second = guard.last_batch
+
+    assert len(secondary.calls) == 2
+    assert [route.cache_hit for route in first.decisions[0].candidate.secondary_routes] == [False, False]
+    assert [route.cache_hit for route in second.decisions[0].candidate.secondary_routes] == [True, True]
+    assert first.decisions[0].final_action == "fail_open"
+    assert second.decisions[0].final_action == "fail_open"
+    assert first.decisions[0].code == "secondary_recognition_fail_open"
+    assert second.decisions[0].code == "secondary_recognition_fail_open"
+
+
+def test_audit_escapes_reason_delimiters():
+    guard = RecognitionGuard(RecognitionSettings(mode="strict"))
+    batch = guard.filter_candidate_dicts(
+        _target(target_episodes=[1], range_confidence="high"),
+        [
+            CandidateResource(
+                title="测试剧 S01E01",
+                episodes=[1],
+                secondary_status="failed",
+                secondary_failure="route failure a=b|c\nD",
+            )
+        ],
+        [object()],
+    )
+    audit = batch.audit_summary
+
+    assert "reason=二次识别失败，按 fail-open 放行：route failure a:b/c\\nD" in audit
+    assert "a=b|c" not in audit
+    assert "\n" not in audit

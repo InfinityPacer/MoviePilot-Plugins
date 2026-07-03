@@ -18,6 +18,7 @@ from subscribeassistantenhanced.recognition.types import (
     CandidateResource,
     Decision,
     RecognitionSettings,
+    SecondaryRecognitionRouteResult,
 )
 
 
@@ -215,11 +216,13 @@ def test_strategy_supported_action_codes_are_explicit():
 
 
 def test_recognition_types_keep_identity_and_batch_contracts():
+    route = SecondaryRecognitionRouteResult(route="title_subtitle")
     candidate = CandidateResource(
         explicit_tmdb_id=100,
         explicit_douban_id="db100",
         recognized_tmdb_id=200,
         recognized_douban_id="db200",
+        secondary_routes=[route],
         candidate_recognized=True,
         match_source="tmdbid",
         media_info_is_target=False,
@@ -236,6 +239,7 @@ def test_recognition_types_keep_identity_and_batch_contracts():
 
     assert candidate.explicit_tmdb_id == 100
     assert candidate.recognized_tmdb_id == 200
+    assert candidate.secondary_routes[0].route == "title_subtitle"
     assert decision.removed is True
     assert Decision(action=ACTION_BLOCK, final_action=ACTION_ALLOW).removed is False
     assert batch.selection_original_count == 3
