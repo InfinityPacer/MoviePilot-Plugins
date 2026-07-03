@@ -3497,11 +3497,11 @@ class BrushFlowLowFreq(_PluginBase):
             # 标题
             torrent_title = torrent.name
             # 做种时间
-            if (not torrent.date_done
-                    or torrent.date_done.timestamp() < 1):
+            if (not torrent.done_date
+                    or torrent.done_date.timestamp() < 1):
                 seeding_time = 0
             else:
-                seeding_time = date_now - int(torrent.date_done.timestamp())
+                seeding_time = date_now - int(torrent.done_date.timestamp())
             # 下载耗时
             if (not torrent.date_added
                     or torrent.date_added.timestamp() < 1):
