@@ -1042,7 +1042,7 @@ class TorrentClassifier(_PluginBase):
 
 - torrent_filter:
     # 种子标题的过滤条件，支持使用正则表达式匹配
-    torrent_title: '.*\.测试标题2'
+    torrent_title: '.*\\.测试标题2'
     # 种子必须属于的分类
     torrent_category: '测试分类2'
     # 种子必须具有的标签，多个标签时，任一满足即可
