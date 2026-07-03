@@ -31,7 +31,7 @@ class TorrentClassifier(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/TorrentClassifier.png"
     # 插件版本
-    plugin_version = "1.5"
+    plugin_version = "1.5.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -893,18 +893,21 @@ class TorrentClassifier(_PluginBase):
             torrent_id = torrent.hashString
             # 标题
             torrent_title = torrent.name
+            done_date = getattr(torrent, "date_done", None) or getattr(torrent, "done_date", None)
+            added_date = getattr(torrent, "date_added", None) or getattr(torrent, "added_date", None)
+            active_date = getattr(torrent, "date_active", None) or getattr(torrent, "activity_date", None)
             # 做种时间
-            if (not torrent.date_done
-                    or torrent.date_done.timestamp() < 1):
+            if (not done_date
+                    or done_date.timestamp() < 1):
                 seeding_time = 0
             else:
-                seeding_time = date_now - int(torrent.date_done.timestamp())
+                seeding_time = date_now - int(done_date.timestamp())
             # 下载耗时
-            if (not torrent.date_added
-                    or torrent.date_added.timestamp() < 1):
+            if (not added_date
+                    or added_date.timestamp() < 1):
                 dltime = 0
             else:
-                dltime = date_now - int(torrent.date_added.timestamp())
+                dltime = date_now - int(added_date.timestamp())
             # 下载量
             downloaded = int(torrent.total_size * torrent.progress / 100)
             # 分享率
@@ -917,20 +920,21 @@ class TorrentClassifier(_PluginBase):
             else:
                 avg_upspeed = uploaded
             # 未活动时间
-            if (not torrent.date_active
-                    or torrent.date_active.timestamp() < 1):
+            if (not active_date
+                    or active_date.timestamp() < 1):
                 iatime = 0
             else:
-                iatime = date_now - int(torrent.date_active.timestamp())
+                iatime = date_now - int(active_date.timestamp())
             # 种子大小
             total_size = torrent.total_size
             # 添加时间
-            add_on = (torrent.date_added.timestamp() if torrent.date_added else 0)
+            add_on = (added_date.timestamp() if added_date else 0)
             add_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(add_on))
             # 种子标签
-            tags = torrent.get("tags")
+            tags = torrent.get("tags") or getattr(torrent, "labels", None) or []
             # tracker
-            tracker = torrent.get("tracker")
+            trackers = getattr(torrent, "trackers", None) or []
+            tracker = torrent.get("tracker") or (getattr(trackers[0], "announce", "") if trackers else "")
             # 种子分类
             category = torrent.get("category")
 

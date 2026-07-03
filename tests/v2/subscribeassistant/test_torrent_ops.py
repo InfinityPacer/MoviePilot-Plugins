@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 from app.schemas.types import MediaType, NotificationType
 
 from subscribeassistant import SubscribeAssistant
+from ..torrent_sdk_fixtures import make_tr_v7_torrent
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value
@@ -354,6 +355,30 @@ class TestGetTorrentInfoQB:
         info = self._call(t)
         assert info["tracker_responses"] == ["OK"]
 
+    def test_tracker_responses_from_dict_trackers(self):
+        """qB tracker 列表项可能是 dict 或 SDK 对象，均应读取 msg。"""
+        t = self._make_qb_torrent()
+        t.trackers = [
+            {"tier": 0, "msg": "OK"},
+            {"tier": -1, "msg": "skip"},
+            {"tier": 1, "msg": ""},
+        ]
+        info = self._call(t)
+        assert info["tracker_responses"] == ["OK"]
+
+    def test_tracker_lazy_load_failure_does_not_break_mapping(self):
+        """qB tracker lazy API 异常不应打断主种子信息映射。"""
+        class _QbTorrent(dict):
+            @property
+            def trackers(self):
+                raise RuntimeError("tracker api unavailable")
+
+        t = _QbTorrent(self._make_qb_torrent().__dict__)
+        t.pop("trackers", None)
+        info = self._call(t)
+        assert info["hash"] == "abc123"
+        assert info["tracker_responses"] == []
+
     def test_no_trackers(self):
         t = self._make_qb_torrent()
         t.trackers = None
@@ -405,6 +430,50 @@ class TestGetTorrentInfoTR:
         assert info["title"] == "TR.Test"
         assert info["ratio"] == 2.0
         assert info["state"] == "seeding"
+
+    def test_transmission_rpc_v7_fields(self):
+        """transmission-rpc 7.x 真实 Torrent 字段名应可正常读取。"""
+        info = self._call(make_tr_v7_torrent())
+        assert info["hash"] == "tr_hash_1"
+        assert info["seeding_time"] > 0
+        assert info["dltime"] > 0
+        assert info["iatime"] > 0
+        assert info["target_size"] == 4096000
+        assert info["add_on"] == 900
+        assert info["tags"] == ["tag1"]
+        assert info["tracker"] == "https://tracker/announce"
+        assert info["tracker_responses"] == ["OK"]
+
+    def test_transmission_raw_camel_fields(self):
+        """TR raw camel 字段替身应覆盖 sizeWhenDone 和 trackerStats 兜底路径。"""
+        now = datetime.now()
+        t = SimpleNamespace(
+            hashString="tr_hash_1",
+            name="TR.Test",
+            done_date=now,
+            added_date=now,
+            activity_date=now,
+            total_size=4096000,
+            sizeWhenDone=2048000,
+            progress=50,
+            ratio=2.0,
+            status="seeding",
+            labels=["tag1"],
+            trackers=[SimpleNamespace(announce="https://tracker/announce")],
+            trackerStats=[
+                {"tier": 0, "lastAnnounceResult": "OK"},
+                {"tier": -1, "lastAnnounceResult": "SKIP"},
+            ],
+            fields={"sizeWhenDone": 2048000},
+        )
+        t.get = lambda key, default=None: default
+
+        info = self._call(t)
+
+        assert info["target_size"] == 2048000
+        assert info["tags"] == ["tag1"]
+        assert info["tracker"] == "https://tracker/announce"
+        assert info["tracker_responses"] == ["OK"]
 
     def test_no_date_done(self):
         t = self._make_tr_torrent(date_done=None)

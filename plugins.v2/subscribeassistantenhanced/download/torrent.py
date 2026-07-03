@@ -74,14 +74,14 @@ class TorrentAdapter:
         """TR 种子对象 → TorrentInfo，优先使用 size_when_done 作为已选文件目标体积。"""
         total_size = _get_attr(torrent, "total_size", "totalSize", default=0)
         target_size = total_size
-        fields = getattr(torrent, "fields", None)
-        if fields is None or "size_when_done" in fields:
-            target_size = getattr(torrent, "size_when_done", total_size)
+        fields = _get_attr(torrent, "fields", default=None)
+        if fields is None or "size_when_done" in fields or "sizeWhenDone" in fields:
+            target_size = _get_attr(torrent, "size_when_done", "sizeWhenDone", default=total_size)
         downloaded = _get_attr(torrent, "downloaded_ever", "downloadedEver", default=None)
         if downloaded is None:
-            downloaded = int(total_size * (getattr(torrent, "progress", 0.0) or 0) / 100)
-        dltime = int(getattr(torrent, "secondsDownloading", 0))
-        seeding_time = int(getattr(torrent, "secondsSeeding", 0))
+            downloaded = int(total_size * (_get_attr(torrent, "progress", default=0.0) or 0) / 100)
+        dltime = int(_get_attr(torrent, "seconds_downloading", "secondsDownloading", default=0) or 0)
+        seeding_time = int(_get_attr(torrent, "seconds_seeding", "secondsSeeding", default=0) or 0)
         progress = _progress_fraction(downloaded, target_size or total_size)
         completed, completion_time = _completion_status(
             state=getattr(torrent, "status", ""),
@@ -94,11 +94,11 @@ class TorrentAdapter:
         uploaded = _get_attr(torrent, "uploaded_ever", "uploadedEver", default=None)
         if uploaded is None:
             uploaded = int(downloaded * ratio)
-        added_date = getattr(torrent, "addedDate", None)
+        added_date = _get_attr(torrent, "added_date", "addedDate", default=None)
         return TorrentInfo(
-            hash=getattr(torrent, "hashString", ""),
-            title=getattr(torrent, "name", ""),
-            state=getattr(torrent, "status", ""),
+            hash=_get_attr(torrent, "hashString", default=""),
+            title=_get_attr(torrent, "name", default=""),
+            state=_get_attr(torrent, "status", default=""),
             progress=progress,
             total_size=total_size,
             target_size=target_size,
@@ -107,11 +107,11 @@ class TorrentAdapter:
             ratio=ratio,
             dltime=dltime,
             seeding_time=seeding_time,
-            iatime=int(getattr(torrent, "idleSeconds", 0) or 0),
-            avg_upspeed=int(getattr(torrent, "rateUpload", 0)),
+            iatime=int(_get_attr(torrent, "idle_seconds", "idleSeconds", default=0) or 0),
+            avg_upspeed=int(_get_attr(torrent, "rate_upload", "rateUpload", default=0) or 0),
             add_time=str(added_date or ""),
             add_on=int(added_date.timestamp()) if hasattr(added_date, "timestamp") else 0,
-            tags=list(getattr(torrent, "labels", [])),
+            tags=list(_get_attr(torrent, "labels", default=[]) or []),
             tracker=_get_tr_tracker(torrent),
             tracker_responses=_get_tr_tracker_responses(torrent),
             completed=completed,
@@ -184,26 +184,41 @@ def _parse_tags(tags_str) -> list:
 def _get_attr(obj, *names, default=None):
     """按多个候选属性读取值，兼容下载器 SDK 的 snake/camel 命名差异。"""
     for name in names:
-        if hasattr(obj, name):
-            return getattr(obj, name)
+        if isinstance(obj, dict) and name in obj:
+            return obj[name]
+        try:
+            value = getattr(obj, name)
+        except Exception:
+            value = None
+        if value is not None:
+            return value
+        getter = getattr(obj, "get", None)
+        if callable(getter):
+            try:
+                value = getter(name, None)
+            except Exception:
+                value = None
+            if value is not None:
+                return value
     return default
 
 
 def _get_qb_tracker_responses(torrent) -> list:
     """读取 qB tracker.msg，过滤禁用 tier 和空响应。"""
-    trackers = getattr(torrent, "trackers", []) or []
+    trackers = _get_attr(torrent, "trackers", default=[]) or []
     responses = []
     for tracker in trackers:
-        if getattr(tracker, "tier", 0) == -1:
+        tier = tracker.get("tier", 0) if isinstance(tracker, dict) else getattr(tracker, "tier", 0)
+        if tier == -1:
             continue
-        msg = getattr(tracker, "msg", "")
+        msg = tracker.get("msg", "") if isinstance(tracker, dict) else getattr(tracker, "msg", "")
         if msg:
             responses.append(str(msg))
     return responses
 
 
 def _get_tr_tracker(torrent) -> str:
-    trackers = getattr(torrent, "trackers", [])
+    trackers = _get_attr(torrent, "trackers", default=[])
     if trackers:
         first = trackers[0] if isinstance(trackers, list) else None
         if first:
@@ -216,6 +231,8 @@ def _get_tr_tracker_responses(torrent) -> list:
     trackers = _get_attr(torrent, "tracker_stats", "trackerStats", default=[])
     responses = []
     for t in (trackers or []):
+        if _get_attr(t, "tier", default=0) == -1:
+            continue
         msg = _get_attr(t, "last_announce_result", "lastAnnounceResult", default="")
         if msg:
             responses.append(str(msg))

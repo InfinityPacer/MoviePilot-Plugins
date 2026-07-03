@@ -1,7 +1,10 @@
 """download/torrent.py TorrentAdapter 单测。"""
 from types import SimpleNamespace
 
+from qbittorrentapi.torrents import TorrentInfoList
+
 from subscribeassistantenhanced.download.torrent import TorrentAdapter, TorrentInfo
+from ..torrent_sdk_fixtures import make_tr_v7_torrent
 
 
 class TestTorrentInfoHelpers:
@@ -40,6 +43,43 @@ class TestFromQB:
         assert info.completed is False
         assert info.tags == ["tag1", "tag2"]
 
+    def test_qbittorrent_api_torrent_dictionary(self):
+        """qB SDK TorrentDictionary 应保持 dict 风格字段读取。"""
+        qb = TorrentInfoList([{
+            "hash": "sdk123", "name": "SDK Torrent",
+            "state": "downloading", "progress": 0.5,
+            "total_size": 1000, "size": 500, "downloaded": 500,
+            "uploaded": 100, "ratio": 0.2,
+            "tags": "tag1, tag2", "tracker": "https://tracker",
+        }])[0]
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.hash == "sdk123"
+        assert info.title == "SDK Torrent"
+        assert info.completed is True
+        assert info.target_size == 500
+        assert info.tags == ["tag1", "tag2"]
+
+    def test_tracker_lazy_load_failure_does_not_break_mapping(self):
+        """qB tracker lazy API 异常不应打断主种子信息映射。"""
+        class _QbTorrent(dict):
+            @property
+            def trackers(self):
+                raise RuntimeError("tracker api unavailable")
+
+        qb = _QbTorrent({
+            "hash": "tracker-fail", "name": "Tracker Fail",
+            "state": "downloading", "progress": 0.5,
+            "total_size": 1000, "size": 1000, "downloaded": 500,
+            "tags": "",
+        })
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.hash == "tracker-fail"
+        assert info.tracker_responses == []
+
     def test_completed_torrent(self):
         qb = {"hash": "done", "progress": 1.0}
         info = TorrentAdapter.from_qb(qb)
@@ -73,6 +113,20 @@ class TestFromQB:
         info = TorrentAdapter.from_qb(qb)
         assert info.tracker_responses == ["torrent not registered"]
 
+    def test_tracker_responses_from_qb_dict_trackers(self):
+        """QB tracker 列表项可能是 dict 或 SDK 对象，均应读取 msg。"""
+        qb = {
+            "hash": "tracker", "state": "downloading",
+            "downloaded": 100, "size": 1000, "total_size": 1000,
+            "trackers": [
+                {"tier": 0, "msg": "torrent not registered"},
+                {"tier": -1, "msg": "ignored"},
+                {"tier": 1, "msg": ""},
+            ],
+        }
+        info = TorrentAdapter.from_qb(qb)
+        assert info.tracker_responses == ["torrent not registered"]
+
     def test_empty_tags(self):
         info = TorrentAdapter.from_qb({"hash": "h", "tags": ""})
         assert info.tags == []
@@ -95,6 +149,25 @@ class TestFromTR:
         assert info.progress == 0.5
         assert info.completed is False
         assert info.tags == ["label1"]
+
+    def test_transmission_rpc_v7_fields(self):
+        """transmission-rpc 7.x 真实 Torrent 字段名应可正常读取。"""
+        info = TorrentAdapter.from_tr(make_tr_v7_torrent(
+            downloadedEver=4096000,
+            totalSize=8192000,
+            sizeWhenDone=4096000,
+        ))
+
+        assert info.hash == "tr_hash_1"
+        assert info.target_size == 4096000
+        assert info.completed is True
+        assert info.dltime == 100
+        assert info.seeding_time == 200
+        assert info.avg_upspeed == 300
+        assert info.add_on == 900
+        assert info.tags == ["tag1"]
+        assert info.tracker == "https://tracker/announce"
+        assert info.tracker_responses == ["OK"]
 
     def test_completed(self):
         tr = SimpleNamespace(
