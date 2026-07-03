@@ -381,7 +381,7 @@ class TestGetTorrentInfoTR:
         base = dict(
             hashString="tr_hash_1",
             name="TR.Test",
-            done_date=now,
+            date_done=now,
             date_added=now,
             date_active=now,
             total_size=4096000,
@@ -407,13 +407,13 @@ class TestGetTorrentInfoTR:
         assert info["state"] == "seeding"
 
     def test_no_date_done(self):
-        t = self._make_tr_torrent(done_date=None)
+        t = self._make_tr_torrent(date_done=None)
         info = self._call(t)
         assert info["seeding_time"] == 0
 
     def test_date_done_timestamp_lt_1(self):
         epoch = datetime(1970, 1, 1, 0, 0, 1)
-        t = self._make_tr_torrent(done_date=epoch)
+        t = self._make_tr_torrent(date_done=epoch)
         info = self._call(t)
         assert info["seeding_time"] == 0
 
