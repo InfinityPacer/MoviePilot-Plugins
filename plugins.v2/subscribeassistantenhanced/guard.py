@@ -5,41 +5,31 @@ from app.log import logger
 from app.schemas.event import SubscribeCompletionCheckEventData
 from app.schemas.types import MediaType
 
-from .engine.scope import build_scope
-from .engine.local import (
-    LocalSignalResult,
-    check_l_signal_detail,
-    first_blocking_future_episode,
-    format_future_blocked_reason,
-)
-from .engine.types import CompletionSignal, PendingTimeoutManagerProtocol
+from .engine.types import CompletionEvidence, CompletionSignal, PendingTimeoutManagerProtocol
 from .shared.log import detail
 from .shared.subscribe import (
     format_subscribe,
     is_full_best_version_subscribe,
-    is_tv_episode_best_version_subscribe,
     resolve_subscribe_media_type,
 )
 
 
 class CompletionGuard:
-    """完成守卫：下载待定检查 + 完结信号引擎最终裁决。"""
+    """完成守卫：下载待定检查与完成证据流水线裁决。"""
 
     def __init__(self,
-                 evaluate_fn: Callable,
+                 evidence_pipeline,
                  has_active_downloads_fn: Callable,
                  mark_pending_fn: Callable,
                  timeout_manager: PendingTimeoutManagerProtocol,
-                 tmdb_episodes_fn: Callable = None,
                  mode: str = "balanced",
                  pending_download_enabled: bool = True,
                  resolve_missing_fn: Callable = None):
         """保存完成守卫依赖与下载中待定开关。"""
-        self.evaluate_fn = evaluate_fn
+        self.evidence_pipeline = evidence_pipeline
         self.has_active_downloads_fn = has_active_downloads_fn
         self.mark_pending_fn = mark_pending_fn
         self.timeout_manager = timeout_manager
-        self.tmdb_episodes_fn = tmdb_episodes_fn
         self.mode = mode
         self.pending_download_enabled = pending_download_enabled
         self.resolve_missing_fn = resolve_missing_fn
@@ -72,111 +62,132 @@ class CompletionGuard:
             detail(f"完成守卫：{format_subscribe(subscribe)} 非普通/分集剧集订阅，跳过")
             return
 
-        signal: CompletionSignal = self.evaluate_fn(subscribe, data.mediainfo)
+        evidence: CompletionEvidence = self.evidence_pipeline.evaluate(
+            subscribe,
+            data.mediainfo,
+            resolve_missing_fn=self.resolve_missing_fn,
+            meta=getattr(data, "meta", None),
+        )
 
-        if not signal.stable:
-            local_result = self._local_signal_result(subscribe, data.mediainfo, data.meta)
-            local_signal = local_result.signal
-            allowed, deny_reason = self._allow_unstable_local_completion_detail(local_signal, signal)
-            if allowed:
-                detail(
-                    f"完成守卫：{format_subscribe(subscribe)} F 不稳定但命中可信 L 目标满足信号，"
-                    f"按 {self.mode} 模式放行"
-                )
-                return
-            reason = deny_reason or local_result.blocked_reason or "未命中 L"
-            logger.info(
-                f"完成守卫：{format_subscribe(subscribe)} F 不稳定，L 兜底未放行（{reason}），"
-                f"原始原因：{signal.reason}"
-            )
-            logger.info(f"完成守卫：{format_subscribe(subscribe)} 信号不稳定（{signal.reason}），否决完成并进入待定（P）")
-            data.cancel = True
-            data.source = "subscribeassistantenhanced"
-            data.reason = signal.reason
-            self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
-            self.timeout_manager.record_block(
-                subscribe,
-                signal=signal,
-                total_episode=signal.scope_total or subscribe.total_episode,
-            )
+        if evidence.hard_veto is not None:
+            self._record_observation(data, subscribe, evidence.hard_veto, evidence)
             return
 
-        if "M:mid_season" in signal.signals:
-            self._block_completion(data, subscribe, signal)
-            return
-
-        if signal.completed:
-            if signal.confidence == "low" and not self._allow_low_confidence(signal):
-                self._observe_low_confidence(data, subscribe, signal)
-                return
+        if self._is_active_high_completion(evidence):
+            self.timeout_manager.clear_release(subscribe)
             detail(
-                f"完成守卫：{format_subscribe(subscribe)} "
-                f"{signal.confidence or '未知'}置信完结，按 {self.mode} 模式放行"
+                f"完成守卫：{format_subscribe(subscribe)} 高置信完结，"
+                f"按 {self.mode} 模式放行"
             )
             return
 
-        local_result = self._local_signal_result(subscribe, data.mediainfo, data.meta)
-        local_signal = local_result.signal
-        if local_signal is not None:
-            if self._allow_low_confidence(local_signal):
+        if (
+            evidence.unstable_signal is not None
+            and not self._allow_unstable_target_complete(evidence)
+        ):
+            self._record_observation(data, subscribe, evidence.unstable_signal, evidence)
+            return
+
+        if evidence.unstable_signal is not None:
+            self.timeout_manager.clear_release(subscribe)
+            detail(
+                f"完成守卫：{format_subscribe(subscribe)} F 不稳定但命中当前目标完成证据，"
+                f"按 {self.mode} 模式放行"
+            )
+            return
+
+        if evidence.target_complete_signal is not None:
+            signal = evidence.target_complete_signal
+            if self.mode in ("balanced", "loose"):
+                self.timeout_manager.clear_release(subscribe)
                 detail(
-                    f"完成守卫：{format_subscribe(subscribe)} 命中 L 目标满足信号，"
+                    f"完成守卫：{format_subscribe(subscribe)} 命中当前目标完成证据，"
                     f"按 {self.mode} 模式放行"
                 )
                 return
-            self._observe_low_confidence(data, subscribe, local_signal)
+            self._record_observation(data, subscribe, signal, evidence)
+            return
+
+        if self._is_medium_i_completion(evidence.i_signal):
+            self.timeout_manager.clear_release(subscribe)
+            detail(
+                f"完成守卫：{format_subscribe(subscribe)} 中置信完结，"
+                f"按 {self.mode} 模式放行"
+            )
+            return
+
+        low_signal = self._low_signal(evidence)
+        if low_signal is not None:
+            if self._allow_low_confidence(low_signal):
+                self.timeout_manager.clear_release(subscribe)
+                detail(
+                    f"完成守卫：{format_subscribe(subscribe)} 低置信完结，"
+                    f"按 {self.mode} 模式放行"
+                )
+                return
+            self._consume_or_observe(data, subscribe, low_signal, evidence)
             return
 
         self._block_completion(
             data,
             subscribe,
-            signal,
-            reason=self._completion_block_reason(signal, local_result),
-        )
-
-    def _local_signal(self, subscribe, mediainfo, meta=None):
-        """计算 L 信号；目标范围外后续集仍会阻断目标满足口径。"""
-        return self._local_signal_result(subscribe, mediainfo, meta).signal
-
-    def _local_signal_result(self, subscribe, mediainfo, meta=None) -> LocalSignalResult:
-        """计算 L 信号并保留失败原因，便于完成守卫输出可诊断日志。"""
-        if not self.tmdb_episodes_fn:
-            return LocalSignalResult(blocked_reason="缺少 TMDB 分集数据入口，未命中 L")
-        scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
-        future_episode = first_blocking_future_episode(subscribe, scope)
-        if future_episode:
-            return LocalSignalResult(
-                blocked_reason=format_future_blocked_reason(future_episode)
-            )
-        return check_l_signal_detail(
-            subscribe,
-            scope,
-            mediainfo=mediainfo,
-            meta=meta,
-            resolve_missing_fn=self.resolve_missing_fn,
+            evidence.primary_signal,
+            reason=self._completion_block_reason(evidence),
         )
 
     @staticmethod
-    def _best_version_mode_label(subscribe) -> str:
-        """按订阅实际洗版形态返回完成守卫日志标签。"""
-        if is_full_best_version_subscribe(subscribe):
-            return "洗版"
-        if is_tv_episode_best_version_subscribe(subscribe):
-            return "分集洗版"
-        return "洗版"
-
-    @staticmethod
-    def _completion_block_reason(signal: CompletionSignal, local_result: LocalSignalResult) -> str:
+    def _completion_block_reason(evidence: CompletionEvidence) -> str:
         """普通未完成否决优先使用 L 失败诊断，避免用户只看到泛化无信号。"""
+        signal = evidence.primary_signal
         if (
             signal.signals == ["none"]
             and signal.reason == "无信号确认当前目标范围已播完"
-            and local_result is not None
-            and local_result.blocked_reason
-            and local_result.blocked_reason != "未命中 L"
+            and evidence.local_blocked_reason
+            and evidence.local_blocked_reason != "未命中 L"
         ):
-            return local_result.blocked_reason
+            return evidence.local_blocked_reason
         return signal.reason
+
+    def _allow_unstable_target_complete(self, evidence: CompletionEvidence) -> bool:
+        """F up/普通波动只允许由当前目标完成证据在宽松策略下覆盖。"""
+        if evidence.target_complete_signal is None:
+            return False
+        if evidence.unstable_signal.volatility_direction == "down":
+            return False
+        return self.mode in ("balanced", "loose")
+
+    @staticmethod
+    def _is_active_high_completion(evidence: CompletionEvidence) -> bool:
+        """只接受流水线已选为主结论的高置信完成证据。"""
+        return (
+            evidence.high_completion is not None
+            and evidence.primary_signal == evidence.high_completion
+        )
+
+    @staticmethod
+    def _is_medium_i_completion(signal: CompletionSignal) -> bool:
+        """识别独立的 medium I 完成证据，不把它当作 target_complete 组合证据。"""
+        return (
+            signal is not None
+            and signal.completed
+            and signal.confidence == "medium"
+        )
+
+    @staticmethod
+    def _low_signal(evidence: CompletionEvidence) -> CompletionSignal:
+        """返回需要按低置信策略裁决的单一 I/L 完成信号。"""
+        for signal in (
+            evidence.i_low_signal,
+            evidence.local_signal,
+            evidence.primary_signal,
+        ):
+            if (
+                signal is not None
+                and signal.completed
+                and signal.confidence == "low"
+            ):
+                return signal
+        return None
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""
@@ -190,41 +201,24 @@ class CompletionGuard:
             return signal.scope_total >= 3 and not signal.scope_high_risk
         return False
 
-    def _allow_unstable_local_completion(self, local_signal: CompletionSignal,
-                                         unstable_signal: CompletionSignal) -> bool:
-        """F 不稳定时只允许可信 L 绕过普通波动，不绕过 total 缩小风险。"""
-        allowed, _ = self._allow_unstable_local_completion_detail(local_signal, unstable_signal)
-        return allowed
-
-    def _allow_unstable_local_completion_detail(self, local_signal: CompletionSignal,
-                                                unstable_signal: CompletionSignal) -> tuple[bool, str]:
-        """F 不稳定时给出 L 是否可覆盖以及不可覆盖原因。"""
-        if local_signal is None:
-            return False, ""
-        if "L:target_satisfied" not in local_signal.signals:
-            return False, "未命中 L"
-        if unstable_signal.volatility_direction == "down":
-            return False, "F 缩小风险"
-        if local_signal.scope_total < 3:
-            return False, "短样本 L"
-        if local_signal.scope_high_risk:
-            return False, "高风险目标范围"
-        if self.mode == "strict":
-            return False, "strict 模式限制"
-        if self.mode in ("balanced", "loose"):
-            return True, ""
-        return False, f"{self.mode} 模式限制"
-
-    def _observe_low_confidence(self, data, subscribe, signal: CompletionSignal):
-        """低置信信号未获策略直接放行时，消费令牌或进入完成前观察。"""
-        total_episode = signal.scope_total or subscribe.total_episode
+    def _consume_or_observe(self, data, subscribe, signal: CompletionSignal,
+                            evidence: CompletionEvidence):
+        """完成证据未获策略直接放行时，消费令牌或进入完成前观察。"""
+        total_episode = self._signal_total(signal, evidence, subscribe)
         if self.timeout_manager.consume_release(
             subscribe, signal, total_episode=total_episode
         ):
-            detail(f"完成守卫：{format_subscribe(subscribe)} 低置信观察已释放，放行完成")
+            detail(f"完成守卫：{format_subscribe(subscribe)} 完成前观察已释放，放行完成")
             return
+        self._record_observation(data, subscribe, signal, evidence, total_episode=total_episode)
+
+    def _record_observation(self, data, subscribe, signal: CompletionSignal,
+                            evidence: CompletionEvidence, total_episode: int = None):
+        """写入 guard_veto 观察前清理旧释放令牌，避免过期令牌跨信号放行。"""
+        total_episode = total_episode or self._signal_total(signal, evidence, subscribe)
+        self.timeout_manager.clear_release(subscribe)
         logger.info(
-            f"完成守卫：{format_subscribe(subscribe)} 低置信完结（{signal.reason}），"
+            f"完成守卫：{format_subscribe(subscribe)} 完成证据需观察（{signal.reason}），"
             "进入完成前观察"
         )
         data.cancel = True
@@ -234,6 +228,11 @@ class CompletionGuard:
         self.timeout_manager.record_block(
             subscribe, signal=signal, total_episode=total_episode
         )
+
+    @staticmethod
+    def _signal_total(signal: CompletionSignal, evidence: CompletionEvidence, subscribe) -> int:
+        """观察期增集判断优先使用证据流水线的 SeasonScope 目标集数。"""
+        return signal.scope_total or evidence.scope_total or subscribe.total_episode
 
     def _block_completion(self, data, subscribe, signal: CompletionSignal, reason: str = None):
         """记录普通完成否决并进入待定观察。"""

@@ -7,7 +7,7 @@ from app.schemas.types import MediaType
 
 from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
-from subscribeassistantenhanced.engine.types import CompletionSignal, SeasonScope
+from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, SeasonScope
 from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.pending.judge import PendingJudge
 from subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
@@ -86,6 +86,13 @@ def _primary(subscribe, mediainfo, tmdb_episodes_fn, volatility_tracker, config,
         config=config,
     )
     return pipeline.evaluate(subscribe, mediainfo, as_of=as_of).primary_signal
+
+
+def _pipeline_for_signal(signal, **evidence_fields):
+    evidence = CompletionEvidence(primary_signal=signal, scope_total=signal.scope_total)
+    for key, value in evidence_fields.items():
+        setattr(evidence, key, value)
+    return SimpleNamespace(evaluate=MagicMock(return_value=evidence))
 
 
 # ---------- 正常完成 ----------
@@ -197,18 +204,21 @@ class TestBestVersionFlow:
 
     def test_episode_best_version_uses_normal_tv_completion_guard(self):
         """分集洗版与普通剧集订阅共用完成守卫策略。"""
-        sig = CompletionSignal(completed=False, stable=True, signals=["none"])
+        sig = CompletionSignal(
+            completed=True,
+            confidence="low",
+            stable=True,
+            signals=["L:target_satisfied"],
+            reason="订阅目标范围已无待下载集",
+            scope_total=2,
+        )
         guard = CompletionGuard.__new__(CompletionGuard)
-        guard.evaluate_fn = MagicMock(return_value=sig)
+        guard.evidence_pipeline = _pipeline_for_signal(sig, local_signal=sig)
         guard.has_active_downloads_fn = MagicMock(return_value=False)
         guard.mark_pending_fn = MagicMock()
         guard.verifier = MagicMock()
         guard.timeout_manager = MagicMock()
         guard.timeout_manager.consume_release.return_value = False
-        guard.tmdb_episodes_fn = MagicMock(return_value=[
-            SimpleNamespace(episode_number=1, season_number=1, air_date="2026-01-01", episode_type="standard"),
-            SimpleNamespace(episode_number=2, season_number=1, air_date="2026-01-01", episode_type="standard"),
-        ])
         guard.pending_download_enabled = True
         guard.mode = "strict"
         guard.resolve_missing_fn = MagicMock(return_value=(True, {}))
@@ -218,7 +228,6 @@ class TestBestVersionFlow:
         guard.handle(ev)
         assert ev.event_data.cancel is True
         assert ev.event_data.reason == "订阅目标范围已无待下载集"
-        guard.resolve_missing_fn.assert_called_once()
         guard.mark_pending_fn.assert_called_once()
 
     def test_payload_preserves_episode_group(self):
@@ -266,7 +275,7 @@ class TestDownloadPending:
 
     def test_active_download_blocks_no_p(self):
         guard = CompletionGuard.__new__(CompletionGuard)
-        guard.evaluate_fn = MagicMock()
+        guard.evidence_pipeline = SimpleNamespace(evaluate=MagicMock())
         guard.has_active_downloads_fn = MagicMock(return_value=True)
         guard.mark_pending_fn = MagicMock()
         guard.verifier = MagicMock()
@@ -282,7 +291,7 @@ class TestDownloadPending:
 
     def test_no_p_no_j_on_download_block(self):
         guard = CompletionGuard.__new__(CompletionGuard)
-        guard.evaluate_fn = MagicMock()
+        guard.evidence_pipeline = SimpleNamespace(evaluate=MagicMock())
         guard.has_active_downloads_fn = MagicMock(return_value=True)
         guard.mark_pending_fn = MagicMock()
         guard.verifier = MagicMock()

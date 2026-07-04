@@ -1,11 +1,11 @@
-"""完结信号引擎数据类型与跨模块协议。"""
+"""完成证据流水线数据类型与跨模块协议。"""
 from dataclasses import dataclass, field
 from typing import Protocol, Optional, runtime_checkable
 
 
 @dataclass
 class CompletionSignal:
-    """完结信号引擎输出，描述当前 SeasonScope 的播出完成状态。"""
+    """完成证据中的单一信号，描述当前 SeasonScope 的播出完成状态。"""
     completed: bool = False           # 是否判定为已完结
     confidence: str = "none"          # 置信度档位：none/low/medium/high
     stable: bool = True               # F 信号：total_episode 近窗口内是否稳定（不稳定则否决完成）
@@ -29,7 +29,7 @@ class CompletionEvidence:
         signals=["none"],
         reason="无信号确认当前目标范围已播完",
     ))                                # 主完结信号，缺省为无完成证据
-    hard_veto: Optional[CompletionSignal] = None  # 不可被观察释放覆盖的否决信号
+    hard_veto: Optional[CompletionSignal] = None  # 不可被目标完成证据直接覆盖的否决信号
     unstable_signal: Optional[CompletionSignal] = None  # F 不稳定信号
     high_completion: Optional[CompletionSignal] = None  # 高置信完结信号
     i_signal: Optional[CompletionSignal] = None  # I 类播出完成信号
@@ -77,7 +77,7 @@ class CompletionObservationDecision:
 
 @dataclass
 class SeasonScope:
-    """当前订阅的逻辑季范围，供信号引擎、待定和完成后验证统一使用。"""
+    """当前订阅的逻辑季范围，供完成证据、待定和完成后验证统一使用。"""
     tmdbid: int = 0                   # TMDB 媒体 ID
     season: int = 0                   # 订阅季号
     episode_group_id: Optional[str] = None  # 剧集组 ID，非空表示按 episode_group 取集

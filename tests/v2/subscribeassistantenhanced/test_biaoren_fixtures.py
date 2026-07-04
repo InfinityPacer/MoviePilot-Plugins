@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.signals import last_aired_episode
+from subscribeassistantenhanced.engine.types import CompletionEvidence
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.pause.airing import AiringPauseChecker
@@ -96,6 +97,17 @@ def _primary(subscribe, mediainfo, tmdb_episodes_fn, volatility_tracker, config,
     return pipeline.evaluate(subscribe, mediainfo, as_of=as_of).primary_signal
 
 
+def _pipeline_for_low_i(signal):
+    """构造只包含低置信 I 证据的 fake pipeline，保持守卫测试聚焦状态流转。"""
+    return SimpleNamespace(
+        evaluate=MagicMock(return_value=CompletionEvidence(
+            primary_signal=signal,
+            i_low_signal=signal,
+            scope_total=signal.scope_total,
+        ))
+    )
+
+
 def _evaluate_fixture(subscribe, mediainfo, episodes_fn, as_of):
     """按默认配置和稳定 tracker 执行完成证据流水线。"""
     manager, _ = _store()
@@ -145,7 +157,7 @@ def test_biaoren_s02_low_confidence_enters_guard_observation_before_snapshot():
     manager, store = _store()
 
     guard = CompletionGuard(
-        evaluate_fn=MagicMock(return_value=signal),
+        evidence_pipeline=_pipeline_for_low_i(signal),
         has_active_downloads_fn=MagicMock(return_value=False),
         mark_pending_fn=MagicMock(),
         timeout_manager=PendingTimeoutManager(manager.read, manager.update, timeout_days=7),
@@ -189,7 +201,7 @@ def test_biaoren_s02_observation_timeout_records_release_and_next_guard_snapshot
     assert store["releases"]["45"]["total_episode"] == 2
 
     guard = CompletionGuard(
-        evaluate_fn=MagicMock(return_value=signal),
+        evidence_pipeline=_pipeline_for_low_i(signal),
         has_active_downloads_fn=MagicMock(return_value=False),
         mark_pending_fn=MagicMock(),
         timeout_manager=timeout,

@@ -120,7 +120,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._transferhistory_oper: Optional[TransferHistoryOper] = None
         self._downloadhistory_oper: Optional[DownloadHistoryOper] = None
         self._downloader_helper: Optional[DownloaderHelper] = None
-        # 当前完成主信号闭包供待定释放和守卫/暂停等旧消费点复用。
+        # 当前完成主信号提供函数，供仍只需要单一信号的待定、暂停与事件入口复用。
         self._completion_signal_fn: Optional[Callable] = None
 
     def init_plugin(self, config: dict = None):
@@ -338,12 +338,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         )
 
         guard = CompletionGuard(
-            evaluate_fn=completion_signal_fn,
+            evidence_pipeline=completion_pipeline,
             has_active_downloads_fn=lambda sub: download_monitor.has_active_downloads(
                 sub.id),
             mark_pending_fn=pending_judge.mark_pending,
             timeout_manager=timeout_manager,
-            tmdb_episodes_fn=self._tmdb_episodes,
             mode=cfg.completion_guard_mode,
             pending_download_enabled=cfg.pending_download_enabled,
             resolve_missing_fn=self._resolve_subscribe_missing,

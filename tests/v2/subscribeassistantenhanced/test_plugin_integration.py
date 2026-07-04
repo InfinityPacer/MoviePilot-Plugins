@@ -12,7 +12,7 @@ from packaging.version import Version
 from app.schemas.types import MediaType
 
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.engine.types import CompletionSignal, PauseRecord
+from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
 
 
 def _sub(**kwargs):
@@ -2560,7 +2560,13 @@ class TestPeriodicJobs:
         )
         plugin._completion_signal_fn = MagicMock(return_value=sig)
         plugin._modules["pending_judge"]._evaluate = plugin._completion_signal_fn
-        plugin._modules["guard"].evaluate_fn = plugin._completion_signal_fn
+        plugin._modules["guard"].evidence_pipeline = SimpleNamespace(
+            evaluate=MagicMock(return_value=CompletionEvidence(
+                primary_signal=sig,
+                i_low_signal=sig,
+                scope_total=2,
+            ))
+        )
 
         plugin.run_pending_release()
 
