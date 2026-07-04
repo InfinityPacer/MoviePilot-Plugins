@@ -21,6 +21,9 @@ def _sub(**kwargs):
     return SimpleNamespace(**defaults)
 
 
+FULL_SEASON_EPISODES = list(range(1, 13))
+
+
 class TestHistoryClear:
     """订阅清理：源文件 / 媒体库文件删除经注入回调（mock 不触达真实文件系统）。"""
 
@@ -72,20 +75,76 @@ class TestHistoryClear:
         orch._notify = lambda title, text=None, **kwargs: notifies.append((title, text, kwargs))
         orch._get_histories = lambda tmdbid, mtype, season=None: [h]
         sub = _sub(name="X", total_episode=1, lack_episode=0)
-        orch.handle_resource_download_history_clear(sub)
+        orch.handle_resource_download_history_clear(sub, episodes=[1])
         assert deletes == [{"path": "/src/a.mkv"}]
         assert events == [("/src/a.mkv", "hashA")]   # 携带旧 download_hash → 主程序删历史种子
         assert hist_deletes == ["1"]
         assert len(store["subscription_cleanup_histories"]) == 1
         task = next(iter(store["subscription_cleanup_histories"].values()))
         assert task["tmdbid"] == 100
-        assert task["target_episodes"] == [1]
+        assert task["target_episodes"] == []
         assert notifies[0][0].endswith("即将开始洗版下载，已处理 1 条整理记录对应的源文件")
-        assert notifies[0][1] == "清理路径：\n/src/a.mkv"
+        assert notifies[0][1] is None
         assert "reason" not in notifies[0][2]
         assert "action" not in notifies[0][2]
         assert notifies[0][2]["image"] == "subscribe.jpg"
         assert task["subscribe_image"] == "subscribe.jpg"
+
+    def test_full_best_version_cleans_entire_season_after_cover_guard_passes(self):
+        """全集洗版资源覆盖目标范围后，旧整理记录按同季整体清理。"""
+        histories = [
+            self._history(
+                "1", {"path": "/src/e1.mkv"}, {"path": "/dest/e1.mkv"},
+                "/src/e1.mkv", "hash1", episodes="E01",
+            ),
+            self._history(
+                "28", {"path": "/src/e28.mkv"}, {"path": "/dest/e28.mkv"},
+                "/src/e28.mkv", "hash28", episodes="E28",
+            ),
+        ]
+        orch, store, deletes, events, hist_deletes = self._orch_clear()
+        orch._get_histories = MagicMock(return_value=histories)
+        context = SimpleNamespace(
+            selected_episodes=None,
+            torrent_info=SimpleNamespace(title="测试剧 S02E01-E40", description="全季资源"),
+        )
+
+        result = orch.handle_resource_download_history_clear(
+            _sub(season=2, start_episode=28, total_episode=40),
+            context=context,
+            episodes=list(range(1, 41)),
+        )
+
+        assert result is True
+        assert deletes == [{"path": "/src/e1.mkv"}, {"path": "/src/e28.mkv"}]
+        assert events == [("/src/e1.mkv", "hash1"), ("/src/e28.mkv", "hash28")]
+        assert hist_deletes == ["1", "28"]
+        task = next(iter(store["subscription_cleanup_histories"].values()))
+        assert task["target_episodes"] == []
+        assert task["histories"] == [
+            histories[0].to_dict(),
+            histories[1].to_dict(),
+        ]
+
+    def test_full_best_version_skips_when_cover_guard_cannot_confirm_resource_range(self):
+        """全集洗版资源覆盖范围无法确认时，不扩大到同季清理。"""
+        orch, _store, deletes, events, hist_deletes = self._orch_clear()
+        orch._get_histories = MagicMock(return_value=[
+            self._history("1", {"path": "/src/e1.mkv"}, None, "/src/e1.mkv", "hash1", episodes="E01"),
+            self._history("28", {"path": "/src/e28.mkv"}, None, "/src/e28.mkv", "hash28", episodes="E28"),
+        ])
+
+        result = orch.handle_resource_download_history_clear(
+            _sub(season=2, start_episode=28, total_episode=40),
+            context=None,
+            episodes=[],
+        )
+
+        assert result is True
+        orch._get_histories.assert_not_called()
+        assert deletes == []
+        assert events == []
+        assert hist_deletes == []
 
     def test_source_history_clear_logs_final_summary(self, monkeypatch):
         """源文件清理完成后输出最终摘要，便于用户确认破坏性动作结果。"""
@@ -134,7 +193,7 @@ class TestHistoryClear:
         orch, store, deletes, _e, _h = self._orch_clear(cleanup_history_type="no")
         orch._get_histories = lambda *a, **k: [object()]
         sub = _sub()
-        orch.handle_resource_download_history_clear(sub)
+        orch.handle_resource_download_history_clear(sub, episodes=FULL_SEASON_EPISODES)
         assert deletes == []
 
     def test_normal_subscription_cleans_when_scene_enabled(self):
@@ -176,7 +235,7 @@ class TestHistoryClear:
         orch, store, deletes, _e, _h = self._orch_clear()
         orch._get_histories = lambda *a, **k: [object()]
         sub = _sub(best_version_full=0)
-        orch.handle_resource_download_history_clear(sub)
+        orch.handle_resource_download_history_clear(sub, episodes=FULL_SEASON_EPISODES)
         assert deletes == []   # 场景未命中时分集洗版不触发清理。
 
     def test_episode_best_version_cleans_when_scene_enabled(self):
@@ -345,7 +404,7 @@ class TestHistoryClear:
         orch._get_histories = MagicMock(return_value=[])
         sub = _sub()
 
-        orch.handle_resource_download_history_clear(sub)
+        orch.handle_resource_download_history_clear(sub, episodes=FULL_SEASON_EPISODES)
 
         orch._get_histories.assert_called_once_with(100, "电视剧", "S01")
 
@@ -354,7 +413,7 @@ class TestHistoryClear:
         orch, _store, _deletes, _events, _hist_deletes = self._orch_clear(cleanup_history_type="tv")
         orch._get_histories = MagicMock()
 
-        result = orch.handle_resource_download_history_clear(_sub(season=None))
+        result = orch.handle_resource_download_history_clear(_sub(season=None), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         orch._get_histories.assert_not_called()
@@ -364,7 +423,7 @@ class TestHistoryClear:
         orch, _store, _deletes, _events, _hist_deletes = self._orch_clear(cleanup_history_type="tv")
         orch._get_histories = MagicMock()
 
-        result = orch.handle_resource_download_history_clear(_sub(season="invalid"))
+        result = orch.handle_resource_download_history_clear(_sub(season="invalid"), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         orch._get_histories.assert_not_called()
@@ -392,7 +451,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=histories)
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert sleeps == [5, 5, 5]
@@ -409,7 +468,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=[history])
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert actions == ["sleep:5", "query"]
@@ -424,7 +483,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=[history])
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert events == [("/src/a.mkv", None)]
@@ -438,7 +497,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=[history])
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert events == [(None, None)]
@@ -451,7 +510,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=[history])
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert events == []
@@ -466,7 +525,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=[history])
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert sleeps == [5] * 36
@@ -481,7 +540,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=[history])
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert sleeps == [5] * 12
@@ -506,7 +565,7 @@ class TestHistoryClear:
         )
         orch._get_histories = MagicMock(return_value=histories)
 
-        result = orch.handle_resource_download_history_clear(_sub())
+        result = orch.handle_resource_download_history_clear(_sub(), episodes=FULL_SEASON_EPISODES)
 
         assert result is True
         assert checks == {"absent": 1, "failed": 12, "present": 36}
@@ -548,6 +607,33 @@ class TestHistoryClear:
             "target_episodes": [1, 2],
             "subscribe_desc": "X",
             "mode_label": "普通订阅",
+            "histories": [
+                {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+                {"dest_fileitem": {"path": "/dest/e2.mkv"}, "episodes": "E02"},
+            ],
+            "time": time.time(),
+        }}}
+        orch, _store, deletes, _events, _histories = self._orch_clear(store)
+
+        assert orch.handle_history_clear(self._transfer_event(episode=1)) is True
+
+        assert deletes == [{"path": "/dest/e1.mkv"}]
+        task = store["subscription_cleanup_histories"]["task-e1-e2"]
+        assert task["target_episodes"] == [2]
+        assert task["histories"] == [
+            {"dest_fileitem": {"path": "/dest/e2.mkv"}, "episodes": "E02"},
+        ]
+
+    def test_episode_best_version_multi_episode_snapshot_consumes_current_episode_only(self):
+        """分集洗版多集快照按当前整理集消费，不扩大到整季清理。"""
+        store = {"subscription_cleanup_histories": {"task-e1-e2": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "best_version_episode",
+            "target_episodes": [1, 2],
+            "subscribe_desc": "X",
+            "mode_label": "分集洗版",
             "histories": [
                 {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
                 {"dest_fileitem": {"path": "/dest/e2.mkv"}, "episodes": "E02"},
@@ -1005,6 +1091,34 @@ class TestHistoryClear:
         assert "reason" not in notifies[0][2]
         assert "action" not in notifies[0][2]
         assert notifies[0][2]["image"] == "subscribe.jpg"
+
+    def test_transfer_intercept_best_version_empty_target_consumes_whole_snapshot(self):
+        """洗版按季清理快照不绑定集数，命中同季整理事件后整体消费。"""
+        notifies = []
+        store = {"subscription_cleanup_histories": {"task-full": {
+            "tmdbid": 100,
+            "type": "电视剧",
+            "season": "S01",
+            "scene": "best_version",
+            "target_episodes": [],
+            "subscribe_desc": "X",
+            "mode_label": "洗版",
+            "subscribe_image": "subscribe.jpg",
+            "histories": [
+                {"dest_fileitem": {"path": "/dest/e1.mkv"}, "episodes": "E01"},
+                {"dest_fileitem": {"path": "/dest/e28.mkv"}, "episodes": "E28"},
+            ],
+            "time": time.time(),
+        }}}
+        orch, store, deletes, _e, _h = self._orch_clear(store)
+        orch._notify = lambda title, text=None, **kwargs: notifies.append((title, text, kwargs))
+
+        assert orch.handle_history_clear(self._transfer_event(episode=28)) is True
+
+        assert deletes == [{"path": "/dest/e1.mkv"}, {"path": "/dest/e28.mkv"}]
+        assert store["subscription_cleanup_histories"] == {}
+        assert notifies[0][0] == "X 即将开始洗版整理，已处理 2 条整理记录对应的媒体库文件"
+        assert notifies[0][1] is None
 
     def test_transfer_intercept_without_snapshot_returns_false(self):
         """无订阅清理快照时整理拦截不产生日志噪音。"""

@@ -59,18 +59,19 @@ class SubscriptionCleanup:
     def handle_resource_download_history_clear(self, subscribe, context=None, episodes=None) -> bool:
         """清理旧整理记录并等待关联下载任务释放，允许继续下载时返回 True。
 
-        订阅清理只在媒体类型和场景都命中配置时进入破坏性事务。剧集按本次目标集过滤整理记录；
-        明确存在的旧 hash 最多等待 3 分钟，查询失败最多等待 1 分钟，达到上限后降级放行。
+        订阅清理只在媒体类型和场景都命中配置时进入破坏性事务。普通订阅和分集洗版按本次目标集
+        过滤整理记录；剧集全集洗版确认资源覆盖订阅目标范围后按同季清理。明确存在的旧 hash
+        最多等待 3 分钟，查询失败最多等待 1 分钟，达到上限后降级放行。
         """
         media_type = resolve_subscribe_media_type(subscribe)
         if not self._cleanup_enabled_for(subscribe, media_type):
             return True
         scene = self._cleanup_scene(subscribe)
         mode_label = self._cleanup_scene_label(scene, media_type)
-        if scene == "best_version" and media_type == MediaType.TV and context and getattr(context, "torrent_info", None):
+        if scene == "best_version" and media_type == MediaType.TV:
             actual_episodes, source = self._download_resource_episodes(context=context, episodes=episodes)
             target_episodes = self._subscribe_target_episodes(subscribe)
-            if actual_episodes and target_episodes and not set(target_episodes).issubset(actual_episodes):
+            if not actual_episodes or not target_episodes or not set(target_episodes).issubset(actual_episodes):
                 self._notify_history_clear_skipped(
                     subscribe=subscribe,
                     context=context,
@@ -90,16 +91,17 @@ class SubscriptionCleanup:
             )
             return True
         target_episodes = []
+        episode_scoped_cleanup = self._episode_scoped_cleanup_scene(scene)
         if media_type == MediaType.TV:
             target_episodes = self._clear_target_episodes(subscribe, context=context, episodes=episodes, scene=scene)
-            if not target_episodes:
+            if episode_scoped_cleanup and not target_episodes:
                 logger.warning(
                     f"订阅清理：{format_subscribe_desc(subscribe)} {mode_label}无法确定本次目标集，"
                     "为避免扩大清理范围，跳过旧整理记录清理"
                 )
                 return True
         histories = self._get_histories(tmdbid, subscribe.type, season) or []
-        if media_type == MediaType.TV:
+        if media_type == MediaType.TV and episode_scoped_cleanup:
             histories = self._filter_histories_by_episodes(histories, target_episodes)
         if not histories:
             logger.info(
@@ -123,11 +125,16 @@ class SubscriptionCleanup:
         return self._wait_for_torrents_removed(subscribe=subscribe, download_hashes=old_hashes)
 
     def _clear_target_episodes(self, subscribe, context=None, episodes=None, scene: str = "") -> list[int]:
-        """返回订阅清理目标集范围；洗版用订阅范围，其余场景用本次资源范围。"""
+        """返回订阅清理目标集范围；整季洗版通过覆盖保护后按季清理。"""
         if scene == "best_version":
-            return self._subscribe_target_episodes(subscribe)
+            return []
         target_episodes, _source = self._download_resource_episodes(context=context, episodes=episodes)
         return target_episodes
+
+    @staticmethod
+    def _episode_scoped_cleanup_scene(scene: str) -> bool:
+        """判断清理事务是否必须绑定到明确集数，避免误清同季其他集。"""
+        return scene in {"normal", "best_version_episode"}
 
     @staticmethod
     def _subscribe_target_episodes(subscribe) -> list[int]:
