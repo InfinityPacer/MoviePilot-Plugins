@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.signals import last_aired_episode
-from subscribeassistantenhanced.engine.types import CompletionEvidence
+from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.pause.airing import AiringPauseChecker
@@ -132,7 +132,9 @@ def test_biaoren_s01_next_season_completes_and_current_pause_logic_does_not_paus
 
     checker = AiringPauseChecker(
         pause_days=30,
-        evaluate_fn=lambda _subscribe, _mediainfo: signal,
+        evidence_pipeline=SimpleNamespace(
+            evaluate=MagicMock(return_value=CompletionEvidence(primary_signal=signal))
+        ),
     )
     latest = last_aired_episode(episodes_fn(325228, 1), as_of=date(2026, 6, 12))
 
@@ -194,10 +196,21 @@ def test_biaoren_s02_observation_timeout_records_release_and_next_guard_snapshot
     signal = _evaluate_fixture(subscribe, mediainfo, episodes_fn, as_of=date(2026, 6, 12))
     manager, store = _store()
     timeout = PendingTimeoutManager(manager.read, manager.update, timeout_days=7)
-    timeout.record_block(subscribe, signal=signal, total_episode=2)
+    timeout.record_observation(subscribe, signal=signal, total_episode=2)
     store["blocks"]["45"]["blocked_at"] = time.time() - 8 * 86400
 
-    assert timeout.check_release(subscribe, signal, total_episode=2) is True
+    decision = timeout.check_observation(
+        subscribe,
+        CompletionEvidence(
+            primary_signal=signal,
+            i_low_signal=signal,
+            scope_total=2,
+            observation_kind="low_i",
+        ),
+        mode="strict",
+    )
+
+    assert decision.action == "release_with_token"
     assert store["releases"]["45"]["total_episode"] == 2
 
     guard = CompletionGuard(
@@ -232,16 +245,28 @@ def test_biaoren_s02_total_growth_releases_observation_without_allowing_completi
         "total_episode": 2,
     }}})
     timeout = PendingTimeoutManager(manager.read, manager.update, timeout_days=7)
-    signal = SimpleNamespace(
+    signal = CompletionSignal(
         completed=False,
         confidence="none",
         stable=True,
         cadence_expired=False,
         signals=["none"],
+        reason="无信号确认当前目标范围已播完",
         scope_total=3,
     )
 
-    assert timeout.check_release(45, signal, total_episode=2) is True
+    decision = timeout.check_observation(
+        45,
+        CompletionEvidence(
+            primary_signal=signal,
+            scope_total=3,
+            observation_kind="none",
+        ),
+        mode="strict",
+    )
+
+    assert decision.action == "release_guard"
+    assert "45" not in store.get("blocks", {})
     assert store.get("releases", {}) == {}
 
 

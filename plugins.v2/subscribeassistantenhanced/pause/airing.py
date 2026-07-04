@@ -1,7 +1,7 @@
 """域 ④：播出暂停——完结信号前置过滤后按间隔判断。"""
 import re
 from datetime import date, timedelta
-from typing import Callable, Optional
+from typing import Optional
 
 from app.schemas.types import MediaType
 
@@ -21,11 +21,11 @@ from ..shared.subscribe import resolve_subscribe_media_type
 class AiringPauseChecker:
     """播出暂停判定：完结信号确认后不暂停，否则按间隔判断。"""
 
-    def __init__(self, pause_days: int, evaluate_fn: Callable,
+    def __init__(self, pause_days: int, evidence_pipeline,
                  movie_air_days: int = 0, tv_air_days: int = 0):
         """保存播出间隔与上映前暂停阈值。"""
         self._pause_days = pause_days
-        self._evaluate = evaluate_fn
+        self._evidence_pipeline = evidence_pipeline
         self._movie_air_days = movie_air_days
         self._tv_air_days = tv_air_days
 
@@ -88,7 +88,10 @@ class AiringPauseChecker:
         """按聚合字段、SeasonScope 和 note 首待下载集检查是否应播出暂停。"""
         today = as_of or date.today()
 
-        signal: CompletionSignal = self._evaluate(subscribe, mediainfo)
+        signal: CompletionSignal = self._evidence_pipeline.evaluate(
+            subscribe,
+            mediainfo,
+        ).primary_signal
         if signal.completed:
             return None
 
@@ -120,7 +123,10 @@ class AiringPauseChecker:
         """判断已有 airing_gap 暂停是否具备明确恢复证据。"""
         today = as_of or date.today()
 
-        signal: CompletionSignal = self._evaluate(subscribe, mediainfo)
+        signal: CompletionSignal = self._evidence_pipeline.evaluate(
+            subscribe,
+            mediainfo,
+        ).primary_signal
         if signal.completed:
             return True
 

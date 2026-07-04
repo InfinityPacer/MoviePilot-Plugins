@@ -73,7 +73,7 @@ def test_on_subscribe_added_movie_pre_air_pause():
     pause_manager = MagicMock()
     airing_checker = AiringPauseChecker(
         pause_days=14,
-        evaluate_fn=MagicMock(),
+        evidence_pipeline=SimpleNamespace(evaluate=MagicMock()),
         movie_air_days=7,
         tv_air_days=0,
     )

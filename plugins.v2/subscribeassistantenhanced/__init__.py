@@ -10,7 +10,7 @@ import re
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 from apscheduler.triggers.cron import CronTrigger
 
@@ -68,7 +68,6 @@ from .shared.config import (
 )
 from .shared.log import detail, truncate_log_value
 from .shared.subscribe import format_subscribe
-from .shared.update import update_subscribe
 
 
 class SubscribeAssistantEnhanced(_PluginBase):
@@ -120,8 +119,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._transferhistory_oper: Optional[TransferHistoryOper] = None
         self._downloadhistory_oper: Optional[DownloadHistoryOper] = None
         self._downloader_helper: Optional[DownloaderHelper] = None
-        # 当前完成主信号提供函数，供仍只需要单一信号的待定、暂停与事件入口复用。
-        self._completion_signal_fn: Optional[Callable] = None
 
     def init_plugin(self, config: dict = None):
         """解析配置 → 注入 DB/chain 依赖 → 初始化各业务域模块。"""
@@ -315,24 +312,21 @@ class SubscribeAssistantEnhanced(_PluginBase):
             config=cfg,
         )
 
-        def completion_signal_fn(subscribe, mediainfo):
-            return completion_pipeline.evaluate(subscribe, mediainfo).primary_signal
-
         airing_checker = AiringPauseChecker(
             pause_days=cfg.airing_pause_days,
-            evaluate_fn=completion_signal_fn,
+            evidence_pipeline=completion_pipeline,
             movie_air_days=cfg.movie_air_pause_days,
             tv_air_days=cfg.tv_air_pause_days,
         )
-        self._completion_signal_fn = completion_signal_fn
 
         pending_judge = PendingJudge(
             config=cfg,
-            evaluate_fn=completion_signal_fn,
+            evidence_pipeline=completion_pipeline,
             subscribe_oper=self._subscribe_oper,
             timeout_manager=timeout_manager,
             task_data_read=tm.read,
             task_data_update=tm.update,
+            resolve_missing_fn=self._resolve_subscribe_missing,
             notify_fn=self._send_subscribe_status_notification,
             state_coordinator=pending_state,
         )
@@ -416,7 +410,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
             airing_checker=airing_checker if cfg.pause_enhanced_enabled else None,
             pending_judge=pending_judge if cfg.pending_enhanced_enabled else None,
             pending_state=pending_state,
-            evaluate_fn=completion_signal_fn,
             tmdb_episodes_fn=self._tmdb_episodes,
             mediainfo_from_dict=self._mediainfo_from_dict,
             is_tv_fn=self._is_tv_media,
@@ -455,6 +448,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "recognition_guard": recognition_guard,
             "orchestrator": orchestrator,
             "subscription_cleanup": subscription_cleanup,
+            "completion_pipeline": completion_pipeline,
         }
 
     def stop_service(self):
@@ -598,7 +592,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "subscription_cleanup_histories",
         ]:
             self.save_data(key, {})
-        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行标记、完成快照、删除指纹、集数变化记录、订阅清理记录）")
+        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行令牌、完成快照、删除指纹、集数变化记录、订阅清理记录）")
 
     @staticmethod
     def _format_reset_recovery_summary(recovered_pending: List[str], recovered_paused: List[str]) -> str:
@@ -775,7 +769,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
         airing = self._modules.get("airing_checker")
         pause_manager = self._modules.get("pause_manager")
         download_monitor = self._modules.get("download_monitor")
-        blocks = self.get_data("blocks") or {}
         detail("元数据巡检：开始")
         for subscribe in (self._subscribe_oper.list(state="N,R,P,S") or []):
             full_best_version = is_full_best_version_subscribe(subscribe)
@@ -826,10 +819,10 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 continue
 
             if pending_state and state == "P":
-                sid = str(subscribe.id)
                 has_active_download = bool(download_monitor and download_monitor.has_active_downloads(subscribe.id))
-                if not has_active_download and not pending_state.has_active(subscribe.id) and sid not in blocks:
+                if not has_active_download and not pending_state.has_active(subscribe.id):
                     if pending_state.reconcile_orphaned(subscribe, reason="无有效待定来源，状态恢复"):
+                        self._clear_orphan_completion_observation(subscribe)
                         continue
 
             mediainfo = self._recognize_mediainfo(subscribe)
@@ -895,19 +888,18 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     subscribe.season,
                     episode_group=subscribe.episode_group,
                 )
-                signal = self._completion_signal_fn(subscribe, mediainfo) if self._completion_signal_fn else None
                 should, reason = pending_judge.should_enter_pending(
-                    subscribe, mediainfo, episodes, signal
+                    subscribe, mediainfo, episodes
                 )
                 if should:
                     logger.info(f"元数据巡检：{format_subscribe(subscribe)} 判定进入待定（{reason}）")
                     pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
 
     def run_pending_release(self):
-        """待定释放巡检：先处理 pending_judge，再兜底释放长期 guard_veto。
+        """待定释放巡检：活跃来源走待定判定器，残留观察记录只做清理。
 
         PendingStateCoordinator 对 download_pending、pending_judge、guard_veto 做多来源仲裁；
-        解除单一来源时仍有其他来源活跃，订阅必须继续保持待定（P）。
+        guard_veto 退出必须经完成证据流水线复核，孤儿观察记录不参与状态释放。
         """
         detail("待定释放巡检：开始")
         pending_judge = self._modules.get("pending_judge")
@@ -921,61 +913,56 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes)
 
         timeout_manager = self._modules.get("timeout_manager")
-        if not timeout_manager or not self._subscribe_oper or not self._completion_signal_fn:
+        if not timeout_manager or not self._subscribe_oper:
             return
         for sid in list((self.get_data("blocks") or {}).keys()):
             subscribe = self._subscribe_oper.get(int(sid))
             if not subscribe:
                 detail(f"待定释放：{format_subscribe_label(subscribe_id=sid)} 已不存在，清理残留待定记录")
-                timeout_manager.clear_block(int(sid))
+                timeout_manager.clear_observation(int(sid))
+                timeout_manager.clear_release_token(int(sid))
                 continue
-            mediainfo = self._recognize_mediainfo(subscribe)
-            if not mediainfo:
+            task_data = self.get_data("subscribes") or {}
+            task = task_data.get(str(sid), {})
+            has_guard_source = (
+                task.get("source") == "guard_veto"
+                or "guard_veto" in (task.get("pending_sources") or {})
+            )
+            if subscribe.state == "P" and has_guard_source:
                 continue
-            signal = self._completion_signal_fn(subscribe, mediainfo)
-            if timeout_manager.check_release(
-                subscribe,
-                signal,
-                total_episode=signal.scope_total or subscribe.total_episode,
-            ):
-                logger.info(f"待定释放：{format_subscribe(subscribe)} 完成前检查长期未确认，解除该待定原因")
-                pending_state = self._modules.get("pending_state")
-                restored = False
-                if pending_state:
-                    restored = pending_state.clear_active(subscribe, source="guard_veto", reason="守门超时释放")
-                else:
-                    update_subscribe(self._subscribe_oper, int(sid), {"state": "R"})
-                    restored = True
-                timeout_manager.clear_block(int(sid))
-                if restored:
-                    self._send_subscribe_status_notification(
-                        subscribe,
-                        "完成前观察已结束，订阅已恢复启用",
-                        mediainfo=mediainfo,
-                        detail="守门超时释放",
-                    )
+            detail(f"待定释放：{format_subscribe(subscribe)} 无活跃完成前观察来源，清理残留记录")
+            timeout_manager.clear_observation(int(sid))
+            timeout_manager.clear_release_token(int(sid))
 
     def run_pending_state_reconcile(self):
         """修复增强版任务仍声明 P、但所有待定来源均已丢失的状态残留。
 
-        完成守卫记录和下载待定任务是独立的活跃证据，存在时不得恢复；主程序 WebUI 不能手工恢复 P，
-        因此完全没有增强版任务记录的 P 也按历史残留恢复。
+        只有 pending_sources/source 中的活跃来源才代表增强版仍持有 P；孤儿观察记录按残留清理，
+        不阻止无有效来源的 P 恢复。
         """
         pending_state = self._modules.get("pending_state")
         if not pending_state or not self._subscribe_oper:
             return
-        blocks = self.get_data("blocks") or {}
         download_monitor = self._modules.get("download_monitor")
         for subscribe in (self._subscribe_oper.list(state="P") or []):
-            sid = str(subscribe.id)
             if download_monitor and download_monitor.has_active_downloads(subscribe.id):
                 continue
-            if pending_state.has_active(subscribe.id) or sid in blocks:
+            if pending_state.has_active(subscribe.id):
                 continue
-            pending_state.reconcile_orphaned(
+            restored = pending_state.reconcile_orphaned(
                 subscribe,
                 reason="无有效待定来源，状态恢复",
             )
+            if restored:
+                self._clear_orphan_completion_observation(subscribe)
+
+    def _clear_orphan_completion_observation(self, subscribe):
+        """恢复无活跃 guard_veto 的 P 残留后，清理同订阅完成前观察状态。"""
+        timeout_manager = self._modules.get("timeout_manager")
+        if not timeout_manager or not subscribe:
+            return
+        timeout_manager.clear_observation(subscribe.id)
+        timeout_manager.clear_release_token(subscribe.id)
 
     def run_common_check(self):
         """统一执行待定、无下载及各类本地过期数据清理。

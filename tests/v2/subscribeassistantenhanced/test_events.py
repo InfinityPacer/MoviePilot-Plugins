@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
-from subscribeassistantenhanced.engine.types import CompletionSignal, PauseRecord
+from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
 from subscribeassistantenhanced.events import EventProxy
 from subscribeassistantenhanced.pause.airing import AiringPauseChecker
 
@@ -35,6 +35,14 @@ def _mi(**kwargs):
     defaults = dict(type="tv", next_episode_to_air=None, release_date=None, first_air_date=None)
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
+
+
+def _pipeline(signal=None):
+    """构造只返回 primary_signal 的完成证据流水线替身。"""
+    signal = signal or CompletionSignal()
+    return SimpleNamespace(
+        evaluate=MagicMock(return_value=CompletionEvidence(primary_signal=signal))
+    )
 
 
 class TestEventOrdering:
@@ -770,7 +778,6 @@ class TestSubscribeLifecycle:
             mediainfo_from_dict=lambda d: _mi(),
             is_tv_fn=lambda mi: True,
             tmdb_episodes_fn=lambda tmdbid, season, episode_group=None: [],
-            evaluate_fn=lambda s, m: None,
         )
         return proxy, pause, pending, airing
 
@@ -792,7 +799,7 @@ class TestSubscribeLifecycle:
         pending.should_enter_pending.return_value = (True, "集数不足")
         airing = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(return_value=CompletionSignal()),
+            evidence_pipeline=_pipeline(),
             tv_air_days=5,
         )
         proxy = EventProxy(
@@ -805,7 +812,6 @@ class TestSubscribeLifecycle:
             tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: [
                 SimpleNamespace(air_date=None, episode_number=1)
             ],
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -835,7 +841,6 @@ class TestSubscribeLifecycle:
             mediainfo_from_dict=lambda _data: _mi(),
             is_tv_fn=lambda _mi: True,
             tmdb_episodes_fn=tmdb_episodes,
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -859,7 +864,6 @@ class TestSubscribeLifecycle:
             pause_manager=MagicMock(),
             mediainfo_from_dict=lambda _data: _mi(),
             tmdb_episodes_fn=tmdb_episodes,
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -885,7 +889,6 @@ class TestSubscribeLifecycle:
             mediainfo_from_dict=lambda _data: _mi(type="movie"),
             is_tv_fn=lambda _mi: False,
             tmdb_episodes_fn=tmdb_episodes,
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -916,7 +919,6 @@ class TestSubscribeLifecycle:
             mediainfo_from_dict=lambda _data: mediainfo,
             is_tv_fn=lambda _mi: True,
             tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: episodes,
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -935,7 +937,7 @@ class TestSubscribeLifecycle:
         pending.should_enter_pending.return_value = (False, "")
         airing = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(return_value=CompletionSignal()),
+            evidence_pipeline=_pipeline(),
         )
         proxy = EventProxy(
             subscribe_oper=oper,
@@ -947,7 +949,6 @@ class TestSubscribeLifecycle:
             tmdb_episodes_fn=lambda tmdbid, season, episode_group=None: [
                 SimpleNamespace(air_date="2000-01-01", episode_number=15)
             ],
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -994,7 +995,6 @@ class TestSubscribeLifecycle:
             mediainfo_from_dict=lambda _data: _mi(),
             is_tv_fn=lambda _mi: True,
             tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: [],
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
@@ -1035,7 +1035,6 @@ class TestSubscribeLifecycle:
             mediainfo_from_dict=lambda _data: _mi(type="movie"),
             is_tv_fn=lambda _mi: False,
             tmdb_episodes_fn=tmdb_episodes,
-            evaluate_fn=lambda _subscribe, _mediainfo: None,
         )
 
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))

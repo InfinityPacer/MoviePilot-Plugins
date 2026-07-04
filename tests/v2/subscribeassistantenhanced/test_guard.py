@@ -78,7 +78,7 @@ def _guard(evidence=None, has_active=False, mode="strict"):
     """构造 CompletionGuard，使用 fake evidence pipeline 注入守卫证据。"""
     pipeline = SimpleNamespace(evaluate=MagicMock(return_value=evidence or _evidence()))
     timeout_manager = MagicMock()
-    timeout_manager.consume_release.return_value = False
+    timeout_manager.consume_release_token.return_value = False
     guard = CompletionGuard(
         evidence_pipeline=pipeline,
         has_active_downloads_fn=MagicMock(return_value=has_active),
@@ -140,7 +140,7 @@ class TestCompletionGuard:
         assert "下载" in event.event_data.reason
         guard.evidence_pipeline.evaluate.assert_not_called()
         guard.mark_pending_fn.assert_not_called()
-        guard.timeout_manager.record_block.assert_not_called()
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_active_download_does_not_block_when_pending_download_disabled(self):
         """关闭自动待定下载中订阅后，下载中状态不再单独否决完成。"""
@@ -231,13 +231,13 @@ class TestCompletionGuard:
 
         assert event.event_data.cancel is True
         assert event.event_data.reason == "目标总集数缩小"
-        assert guard.timeout_manager.method_calls[0] == call.clear_release(event.event_data.subscribe)
+        assert guard.timeout_manager.method_calls[0] == call.clear_release_token(event.event_data.subscribe)
         guard.mark_pending_fn.assert_called_once_with(
             event.event_data.subscribe,
             source="guard_veto",
             reason="目标总集数缩小",
         )
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=hard,
             total_episode=12,
@@ -265,9 +265,9 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.mark_pending_fn.assert_not_called()
-        guard.timeout_manager.record_block.assert_not_called()
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_high_completion_primary_releases_even_when_unstable_context_exists(self):
         """pipeline 已确认 E 高置信可绕过 F 时，guard 不再按 F 进入观察。"""
@@ -291,9 +291,9 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.mark_pending_fn.assert_not_called()
-        guard.timeout_manager.record_block.assert_not_called()
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_f_up_with_independent_medium_i_still_observes_unstable(self):
         """独立中置信 I 不覆盖 F up，仍进入不稳定观察。"""
@@ -318,8 +318,8 @@ class TestCompletionGuard:
 
         assert event.event_data.cancel is True
         assert event.event_data.reason == "目标总集数增加"
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=unstable,
             total_episode=12,
@@ -339,9 +339,9 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is True
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.mark_pending_fn.assert_called_once()
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=unstable,
             total_episode=12,
@@ -356,8 +356,8 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
-        guard.timeout_manager.consume_release.assert_not_called()
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.consume_release_token.assert_not_called()
         guard.mark_pending_fn.assert_not_called()
 
     def test_balanced_medium_target_complete_releases_and_clears_token(self):
@@ -375,8 +375,8 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
-        guard.timeout_manager.record_block.assert_not_called()
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_strict_medium_target_complete_enters_observation(self):
         """strict 把 target_complete 作为 guard_veto 观察，不直接完成。"""
@@ -394,9 +394,9 @@ class TestCompletionGuard:
 
         assert event.event_data.cancel is True
         assert event.event_data.reason == "当前目标完成"
-        guard.timeout_manager.consume_release.assert_not_called()
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.consume_release_token.assert_not_called()
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=target,
             total_episode=12,
@@ -417,7 +417,7 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
 
     def test_allowed_single_low_releases_and_clears_stale_token(self):
         """balanced 接受三集及以上、非高风险的单一低置信 L 证据。"""
@@ -434,8 +434,8 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
-        guard.timeout_manager.consume_release.assert_not_called()
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.consume_release_token.assert_not_called()
 
     def test_low_confidence_with_release_token_releases(self):
         """不允许直接完成的低置信观察，命中释放令牌后放行。"""
@@ -447,20 +447,20 @@ class TestCompletionGuard:
             scope_total=2,
         )
         guard = _guard(evidence=_evidence(primary=low, i_low_signal=low), mode="balanced")
-        guard.timeout_manager.consume_release.return_value = True
+        guard.timeout_manager.consume_release_token.return_value = True
         event = _event()
 
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.consume_release.assert_called_once_with(
+        guard.timeout_manager.consume_release_token.assert_called_once_with(
             event.event_data.subscribe,
             low,
             total_episode=2,
         )
-        guard.timeout_manager.clear_release.assert_not_called()
+        guard.timeout_manager.clear_release_token.assert_not_called()
         guard.mark_pending_fn.assert_not_called()
-        guard.timeout_manager.record_block.assert_not_called()
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_short_l_low_still_enters_observation_even_in_loose_and_clears_token(self):
         """宽松模式也不直接接受一至两集短样本 L。"""
@@ -478,9 +478,9 @@ class TestCompletionGuard:
 
         assert event.event_data.cancel is True
         assert event.event_data.reason == "订阅目标范围已无待下载集"
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.mark_pending_fn.assert_called_once()
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=low,
             total_episode=2,
@@ -502,7 +502,7 @@ class TestCompletionGuard:
 
         assert event.event_data.cancel is True
         assert event.event_data.reason == "订阅目标范围已无待下载集"
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=low,
             total_episode=2,
@@ -524,7 +524,7 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is True
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=low,
             total_episode=80,
@@ -545,8 +545,8 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is False
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
-        guard.timeout_manager.consume_release.assert_not_called()
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.consume_release_token.assert_not_called()
 
     def test_low_confidence_completion_enters_guard_observation(self):
         """低置信 I 完成首次命中时进入 guard_veto 观察。"""
@@ -564,9 +564,9 @@ class TestCompletionGuard:
 
         assert event.event_data.cancel is True
         assert event.event_data.reason == "目标范围内所有集已播且未发现后续集"
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.mark_pending_fn.assert_called_once()
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=low,
             total_episode=2,
@@ -624,8 +624,8 @@ class TestCompletionGuard:
 
         assert event.event_data.cancel is True
         assert event.event_data.reason == "最后已播集为 mid_season，阶段中场"
-        guard.timeout_manager.clear_release.assert_called_once_with(event.event_data.subscribe)
-        guard.timeout_manager.record_block.assert_called_once_with(
+        guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
+        guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=hard,
             total_episode=12,

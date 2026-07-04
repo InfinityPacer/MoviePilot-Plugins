@@ -28,16 +28,18 @@ class PendingJudge:
     """待定判定器，区分 pending_judge 与 guard_veto 来源。"""
 
     def __init__(self, config: PluginConfig,
-                 evaluate_fn: Callable,
+                 evidence_pipeline,
                  subscribe_oper,
                  timeout_manager: PendingTimeoutManagerProtocol,
                  task_data_read: Callable,
                  task_data_update: Callable,
+                 resolve_missing_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
                  state_coordinator: Optional[PendingStateCoordinator] = None):
         """注入待定判定、状态写库、超时管理、任务数据和状态通知回调。"""
         self._config = config
-        self._evaluate = evaluate_fn
+        self._evidence_pipeline = evidence_pipeline
+        self._resolve_missing_fn = resolve_missing_fn
         self._subscribe_oper = subscribe_oper
         self._timeout = timeout_manager
         self._read = task_data_read
@@ -51,8 +53,20 @@ class PendingJudge:
         """按 OR 逻辑判断是否进入待定（P），任一条件满足即待定。"""
         if resolve_subscribe_media_type(subscribe) != MediaType.TV:
             return False, ""
-        if self._is_strong_completion_signal(signal):
-            return False, ""
+
+        evaluated_signal = signal
+
+        def current_signal() -> CompletionSignal:
+            nonlocal evaluated_signal
+            if evaluated_signal is None:
+                evaluated_signal = self._evidence_pipeline.evaluate(
+                    subscribe,
+                    mediainfo,
+                ).primary_signal
+            return evaluated_signal
+
+        def has_strong_completion() -> bool:
+            return self._is_strong_completion_signal(current_signal())
 
         season_air_date = get_tv_season_air_date(mediainfo, subscribe.season)
         air_date = parse_date(season_air_date or mediainfo.first_air_date)
@@ -62,25 +76,35 @@ class PendingJudge:
             from datetime import date, timedelta
             today = date.today()
             if air_date + timedelta(days=pending_days) > today:
+                if has_strong_completion():
+                    return False, ""
                 return True, f"{date_context('开播日期', air_date, as_of=today)}，仍在开播待定窗口内"
 
         ep_count = len(episodes) if episodes else 0
         pending_episodes = self._config.auto_tv_pending_episodes
         if pending_episodes and ep_count <= pending_episodes:
+            if has_strong_completion():
+                return False, ""
             return True, f"集数不足（{ep_count} ≤ {pending_episodes}）"
 
-        if self._config.pending_use_volatility and signal and not signal.stable:
+        signal_for_volatility = current_signal() if self._config.pending_use_volatility else None
+        if signal_for_volatility and not signal_for_volatility.stable:
             proximity = assess_completion_proximity(
                 episodes=episodes,
-                total=signal.scope_total or subscribe.total_episode or len(episodes or []),
+                total=signal_for_volatility.scope_total or subscribe.total_episode or len(episodes or []),
                 missing_episodes=None,
             )
             if proximity.near_completion:
-                detail_text = f"（{signal.volatility_detail}）" if signal.volatility_detail else ""
+                detail_text = (
+                    f"（{signal_for_volatility.volatility_detail}）"
+                    if signal_for_volatility.volatility_detail else ""
+                )
                 return True, f"目标总集数近期变化{detail_text}"
             detail(f"待定判定：{format_subscribe(subscribe)} 总集数近期变化但未接近完结，不进入待定")
 
         if episodes and not any(ep.air_date for ep in episodes):
+            if has_strong_completion():
+                return False, ""
             return True, "本季无任何 air_date 信息"
 
         return False, ""
@@ -92,9 +116,12 @@ class PendingJudge:
             return False
 
         source = task_data.get("source", "pending_judge")
-        signal: CompletionSignal = self._evaluate(subscribe, mediainfo)
 
         if source == "pending_judge":
+            signal: CompletionSignal = self._evidence_pipeline.evaluate(
+                subscribe,
+                mediainfo,
+            ).primary_signal
             if self._is_strong_completion_signal(signal):
                 self._exit_pending(subscribe, "信号确认完结")
                 return True
@@ -110,15 +137,19 @@ class PendingJudge:
             return False
 
         elif source == "guard_veto":
-            if signal.completed and signal.confidence != "low":
-                self._exit_pending(subscribe, "信号确认完结")
-                return True
-            if self._timeout.check_release(
+            evidence = self._evidence_pipeline.evaluate(
                 subscribe,
-                signal,
-                total_episode=signal.scope_total or subscribe.total_episode,
-            ):
-                self._exit_pending(subscribe, "完成前观察结束")
+                mediainfo,
+                resolve_missing_fn=self._resolve_missing_fn,
+                meta=None,
+            )
+            decision = self._timeout.check_observation(
+                subscribe,
+                evidence,
+                mode=self._config.completion_guard_mode,
+            )
+            if decision.exit_pending:
+                self._exit_pending(subscribe, decision.reason or "完成前观察结束")
                 return True
             return False
 
@@ -135,7 +166,7 @@ class PendingJudge:
         task = self._read_subscribe_task(subscribe)
         source = task.get("source", "pending_judge")
         if source == "guard_veto":
-            self._timeout.clear_block(sid)
+            self._timeout.clear_observation(sid)
         restored = self._state.clear_active(
             subscribe,
             source=source,

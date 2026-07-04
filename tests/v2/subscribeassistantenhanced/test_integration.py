@@ -7,7 +7,12 @@ from app.schemas.types import MediaType
 
 from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
-from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, SeasonScope
+from subscribeassistantenhanced.engine.types import (
+    CompletionEvidence,
+    CompletionObservationDecision,
+    CompletionSignal,
+    SeasonScope,
+)
 from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.pending.judge import PendingJudge
 from subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
@@ -218,7 +223,7 @@ class TestBestVersionFlow:
         guard.mark_pending_fn = MagicMock()
         guard.verifier = MagicMock()
         guard.timeout_manager = MagicMock()
-        guard.timeout_manager.consume_release.return_value = False
+        guard.timeout_manager.consume_release_token.return_value = False
         guard.pending_download_enabled = True
         guard.mode = "strict"
         guard.resolve_missing_fn = MagicMock(return_value=(True, {}))
@@ -251,22 +256,25 @@ class TestPendingSourceSplit:
         sig = CompletionSignal(completed=False, stable=True)
         judge = PendingJudge.__new__(PendingJudge)
         judge._config = _cfg()
-        judge._evaluate = MagicMock(return_value=sig)
+        judge._evidence_pipeline = _pipeline_for_signal(sig)
+        judge._resolve_missing_fn = None
         judge._subscribe_oper = MagicMock()
         judge._timeout = MagicMock()
-        judge._timeout.check_release.return_value = False
+        judge._timeout.check_observation.return_value = CompletionObservationDecision.hold("继续观察")
         judge._read = tm.read
         judge._update = tm.update
+        judge._state = MagicMock()
         result = judge.check_exit(_sub(state="P"), _mi(), lambda *a: [])
         assert result is False
 
     def test_guard_veto_released_by_j(self):
         tm, store = _store()
         timeout = PendingTimeoutManager(tm.read, tm.update, timeout_days=21)
-        timeout.record_block(1)
+        timeout.record_observation(1)
         store["blocks"]["1"]["blocked_at"] -= 25 * 86400
         sig = CompletionSignal(stable=True, cadence_expired=False)
-        assert timeout.check_release(1, sig) is True
+        evidence = CompletionEvidence(primary_signal=sig, observation_kind="none")
+        assert timeout.check_observation(1, evidence, mode="balanced").action == "release_guard"
 
 
 # ---------- 下载待定 ----------
@@ -287,7 +295,7 @@ class TestDownloadPending:
         guard.handle(ev)
         assert ev.event_data.cancel is True
         guard.mark_pending_fn.assert_not_called()
-        guard.timeout_manager.record_block.assert_not_called()
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_no_p_no_j_on_download_block(self):
         guard = CompletionGuard.__new__(CompletionGuard)
@@ -302,7 +310,7 @@ class TestDownloadPending:
                              cancel=False, reason="", source=""))
         guard.handle(ev)
         guard.mark_pending_fn.assert_not_called()
-        guard.timeout_manager.record_block.assert_not_called()
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_transfer_clears_then_recheck(self):
         tm, store = _store()

@@ -9,7 +9,7 @@ from app.schemas.types import MediaType
 from subscribeassistantenhanced.pause.airing import AiringPauseChecker
 from subscribeassistantenhanced.pause.manager import PauseManager
 from subscribeassistantenhanced.pause.nodownload import NoDownloadPolicy
-from subscribeassistantenhanced.engine.types import CompletionSignal, PauseRecord
+from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
 
 
 def _sub(sid=1, state="R", username="", media_type="电视剧"):
@@ -40,6 +40,14 @@ def _ep(air_date, episode_number=1, season_number=1):
     )
 
 
+def _pipeline(signal=None):
+    """构造只返回 primary_signal 的完成证据流水线替身。"""
+    signal = signal or CompletionSignal()
+    return SimpleNamespace(
+        evaluate=MagicMock(return_value=CompletionEvidence(primary_signal=signal))
+    )
+
+
 def test_clear_pause_record_drops_metadata_without_state_change():
     """clear_pause_record 丢弃插件暂停元数据，但不调用 subscribe_oper 改订阅状态。"""
     store = {"subscribes": {"9": {"pause_reason": "airing_gap", "pause_since": 1.0, "pause_detail": "x"}}}
@@ -63,7 +71,7 @@ class TestAiringPause:
         """电影距离上映窗口较远时暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=7,
             tv_air_days=0,
         )
@@ -83,7 +91,7 @@ class TestAiringPause:
         """电影进入上映前订阅窗口后不暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=7,
             tv_air_days=0,
         )
@@ -101,7 +109,7 @@ class TestAiringPause:
         """剧集距离目标季开播窗口较远时暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=0,
             tv_air_days=5,
         )
@@ -124,7 +132,7 @@ class TestAiringPause:
         """剧集季日期和首播日期缺失时，使用当前分集范围 E01 日期判断开播窗口。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=0,
             tv_air_days=5,
         )
@@ -148,7 +156,7 @@ class TestAiringPause:
         """剧集组分集已由调用方按组缩窄，E01 fallback 不再按原始 season_number 过滤。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=0,
             tv_air_days=5,
         )
@@ -171,7 +179,7 @@ class TestAiringPause:
         """剧集季日期、首播日期和 E01 日期都缺失时按开播日期未知暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=0,
             tv_air_days=5,
         )
@@ -192,7 +200,7 @@ class TestAiringPause:
         """未知媒体类型不走电影或剧集上映前暂停，避免脏数据被误暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=7,
             tv_air_days=5,
         )
@@ -214,7 +222,7 @@ class TestAiringPause:
         """电影上映前暂停天数为零时关闭该规则。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=0,
             tv_air_days=0,
         )
@@ -231,14 +239,14 @@ class TestAiringPause:
     def test_completed_signal_no_pause(self):
         """完结信号确认 → 不暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal(completed=True))
-        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=14, evidence_pipeline=_pipeline(evaluate.return_value))
         result = checker.check(_sub(), None, next_episode=_ep("2027-01-01"), latest_episode=None)
         assert result is None
 
     def test_next_episode_far_away_pauses(self):
         """下一集超阈值 → 暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=14, evidence_pipeline=_pipeline(evaluate.return_value))
         far = (date(2026, 6, 1) + timedelta(days=30)).isoformat()
         result = checker.check(_sub(), None, next_episode=_ep(far), latest_episode=None,
                                as_of=date(2026, 6, 1))
@@ -249,7 +257,7 @@ class TestAiringPause:
     def test_next_episode_dict_far_away_pauses(self):
         """下一集为 TMDB dict 形态时，仍按 air_date 判断播出间隔。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=14, evidence_pipeline=_pipeline(evaluate.return_value))
         far = (date(2026, 6, 1) + timedelta(days=30)).isoformat()
         result = checker.check(_sub(), None, next_episode={"air_date": far}, latest_episode=None,
                                as_of=date(2026, 6, 1))
@@ -259,7 +267,7 @@ class TestAiringPause:
     def test_next_episode_near_no_pause(self):
         """下一集在阈值内 → 不暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=14, evidence_pipeline=_pipeline(evaluate.return_value))
         near = (date(2026, 6, 1) + timedelta(days=5)).isoformat()
         result = checker.check(_sub(), None, next_episode=_ep(near), latest_episode=None,
                                as_of=date(2026, 6, 1))
@@ -268,7 +276,7 @@ class TestAiringPause:
     def test_stale_same_day_aggregate_falls_back_to_scope_first_missing_episode(self):
         """聚合字段停留在当天已播集时，按分集表中的订阅首缺集判断播出间隔。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 92
         subscribe.note = list(range(1, 88))
@@ -294,7 +302,7 @@ class TestAiringPause:
     def test_future_scope_episode_does_not_pause_when_it_is_not_first_missing(self):
         """后续播出排期不是订阅首缺集时不暂停，避免冻结仍有早期缺集可搜索的订阅。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 12
         subscribe.lack_episode = 2
@@ -318,7 +326,7 @@ class TestAiringPause:
     def test_inventory_caught_up_uses_future_episode_when_note_has_historical_gap(self):
         """媒体库实缺只剩未播集时，note 历史空洞不应阻止播出暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 92
         subscribe.lack_episode = 5
@@ -348,7 +356,7 @@ class TestAiringPause:
     def test_short_window_does_not_pause_before_same_day_episode_is_ingested(self):
         """当天已播集尚未入库时，短窗口配置不应提前暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 92
         subscribe.lack_episode = 6
@@ -376,7 +384,7 @@ class TestAiringPause:
     def test_short_window_pauses_after_same_day_episode_is_ingested(self):
         """当天已播集入库后，短窗口配置应立即暂停等待下一集。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 92
         subscribe.lack_episode = 5
@@ -406,7 +414,7 @@ class TestAiringPause:
     def test_inventory_fallback_requires_lack_to_match_future_count(self):
         """媒体库实缺数量少于后续播出排期时不按库存口径暂停，避免陈旧缺集数量误判。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 92
         subscribe.lack_episode = 4
@@ -434,7 +442,7 @@ class TestAiringPause:
     def test_inventory_fallback_counts_manual_total_tail_without_tmdb_schedule(self):
         """手动总集数大于 TMDB 已知排期时，末尾未知集也属于实缺未播目标。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 95
         subscribe.lack_episode = 8
@@ -464,7 +472,7 @@ class TestAiringPause:
     def test_airing_gap_resumes_when_next_episode_reaches_airing_day_with_historical_note_gap(self):
         """下一集已到播出日时，即使 note 有历史空洞也应明确释放播出暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 92
         subscribe.lack_episode = 5
@@ -490,7 +498,7 @@ class TestAiringPause:
     def test_airing_gap_resumes_when_check_runs_after_next_episode_air_day(self):
         """巡检晚于下一集播出日时，已进入窗口的锚点集仍应释放播出暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 92
         subscribe.lack_episode = 5
@@ -517,7 +525,7 @@ class TestAiringPause:
     def test_deleted_downloaded_episode_does_not_override_note(self):
         """已下载集即使从媒体库删除，播出暂停仍按 note 推导首个待下载集。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.total_episode = 12
         subscribe.note = list(range(1, 12))
@@ -542,7 +550,7 @@ class TestAiringPause:
     def test_episode_best_version_uses_positive_priority_as_downloaded(self):
         """分集洗版已有任意优先级版本的集不再作为首待下载集。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=1, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=1, evidence_pipeline=_pipeline(evaluate.return_value))
         subscribe = _sub()
         subscribe.best_version = 1
         subscribe.best_version_full = 0
@@ -570,7 +578,7 @@ class TestAiringPause:
     def test_no_next_last_old_no_pause(self):
         """无下一集 + 最后集超阈值不再直接暂停，避免历史季全缺被搜索前冻结。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=14, evidence_pipeline=_pipeline(evaluate.return_value))
         old = (date(2026, 6, 1) - timedelta(days=30)).isoformat()
         result = checker.check(_sub(), None, next_episode=None, latest_episode=_ep(old),
                                as_of=date(2026, 6, 1))
@@ -579,7 +587,7 @@ class TestAiringPause:
     def test_latest_episode_dict_old_no_pause(self):
         """最后集为 TMDB dict 形态时，也不因无下一集直接暂停。"""
         evaluate = MagicMock(return_value=CompletionSignal())
-        checker = AiringPauseChecker(pause_days=14, evaluate_fn=evaluate)
+        checker = AiringPauseChecker(pause_days=14, evidence_pipeline=_pipeline(evaluate.return_value))
         old = (date(2026, 6, 1) - timedelta(days=30)).isoformat()
         result = checker.check(_sub(), None, next_episode=None, latest_episode={"air_date": old},
                                as_of=date(2026, 6, 1))
@@ -589,7 +597,7 @@ class TestAiringPause:
         """电影上映日期无法解析且 movie_air_days 已配置时，默认暂停等待。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=7,
             tv_air_days=0,
         )
@@ -603,7 +611,7 @@ class TestAiringPause:
         """电影上映日期无法解析但 movie_air_days=0（规则未开）时，不暂停。"""
         checker = AiringPauseChecker(
             pause_days=14,
-            evaluate_fn=MagicMock(),
+            evidence_pipeline=_pipeline(),
             movie_air_days=0,
             tv_air_days=0,
         )

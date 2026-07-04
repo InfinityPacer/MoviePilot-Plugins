@@ -5,7 +5,11 @@ from unittest.mock import MagicMock
 
 from subscribeassistantenhanced.pending.judge import PendingJudge
 from subscribeassistantenhanced.pending.state import PendingStateCoordinator
-from subscribeassistantenhanced.engine.types import CompletionSignal
+from subscribeassistantenhanced.engine.types import (
+    CompletionEvidence,
+    CompletionObservationDecision,
+    CompletionSignal,
+)
 from subscribeassistantenhanced.shared.config import PluginConfig
 
 
@@ -37,15 +41,20 @@ def _mi(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-def _judge(config=None, evaluate_result=None, store=None, notify=None):
+def _judge(config=None, evaluate_result=None, evidence=None, store=None,
+           notify=None, resolve_missing_fn=None):
     store = store if store is not None else {}
     cfg = config or PluginConfig({})
+    signal = evaluate_result or CompletionSignal()
+    evidence = evidence or CompletionEvidence(primary_signal=signal)
     j = PendingJudge.__new__(PendingJudge)
     j._config = cfg
-    j._evaluate = MagicMock(return_value=evaluate_result or CompletionSignal())
+    j._evidence_pipeline = MagicMock()
+    j._evidence_pipeline.evaluate.return_value = evidence
+    j._resolve_missing_fn = resolve_missing_fn
     j._subscribe_oper = MagicMock()
     j._timeout = MagicMock()
-    j._timeout.check_release.return_value = False
+    j._timeout.check_observation.return_value = CompletionObservationDecision.hold("继续观察")
     j._read = lambda key: store.get(key, {})
     j._notify = notify
 
@@ -113,6 +122,20 @@ class TestShouldEnterPending:
         assert should is False
         assert reason == ""
 
+    def test_high_completion_from_pipeline_skips_episode_pending_when_signal_missing(self):
+        """调用方未传 signal 时，命中待定前从流水线读取高置信完成事实。"""
+        sig = CompletionSignal(completed=True, confidence="high", signals=["E:ended"])
+        j = _judge(
+            evaluate_result=sig,
+            config=PluginConfig({"auto_tv_pending_episodes": 1}),
+        )
+
+        should, reason = j.should_enter_pending(_sub(), _mi(), [_ep(1)])
+
+        assert should is False
+        assert reason == ""
+        j._evidence_pipeline.evaluate.assert_called_once()
+
     def test_l_signal_does_not_skip_episode_pending(self):
         """L 目标满足信号不参与 pending_judge 进入判定。"""
         j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
@@ -130,6 +153,20 @@ class TestShouldEnterPending:
         eps = [_ep(1), _ep(2), _ep(3)]
         should, _ = j.should_enter_pending(_sub(), mi, eps)
         assert should is False
+
+    def test_no_pending_risk_does_not_evaluate_completion_pipeline(self):
+        """没有待定命中风险时不额外收集完成证据。"""
+        j = _judge(config=PluginConfig({
+            "auto_tv_pending_days": 0,
+            "auto_tv_pending_episodes": 0,
+            "pending_use_volatility": False,
+        }))
+
+        should, reason = j.should_enter_pending(_sub(), _mi(), [_ep(1), _ep(2)])
+
+        assert should is False
+        assert reason == ""
+        j._evidence_pipeline.evaluate.assert_not_called()
 
     def test_pending_days_reason_uses_air_date_distance(self):
         """剧集待定原因应展示开播日期和相对当前的真实天数。"""
@@ -203,6 +240,36 @@ class TestShouldEnterPending:
         assert should is True
         assert reason == "目标总集数近期变化"
 
+    def test_should_enter_pending_evaluates_primary_signal_when_signal_missing(self):
+        """调用方未传 signal 时，待定判定从完成证据流水线取 primary_signal。"""
+        sig = CompletionSignal(
+            completed=False,
+            stable=False,
+            signals=["F:unstable"],
+            scope_total=12,
+            volatility_detail="10 -> 12",
+        )
+        evidence = CompletionEvidence(
+            primary_signal=sig,
+            unstable_signal=sig,
+            scope_total=12,
+            observation_kind="unstable",
+        )
+        j = _judge(
+            evidence=evidence,
+            config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}),
+        )
+
+        should, reason = j.should_enter_pending(
+            _sub(total_episode=12),
+            _mi(),
+            [_ep(i) for i in range(1, 12)],
+        )
+
+        assert should is True
+        assert "目标总集数近期变化" in reason
+        j._evidence_pipeline.evaluate.assert_called_once()
+
     def test_no_air_date_triggers_pending(self):
         """无 air_date → 待定。"""
         j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 0}))
@@ -262,62 +329,83 @@ class TestCheckExit:
         tmdb_fn.assert_called_once_with(100, 1, episode_group=None)
 
     def test_guard_veto_stays_until_signal_confirms(self):
-        """guard_veto P：信号未确认 → 保持 P。"""
+        """guard_veto P：完成观察仍需保持 → 保持 P。"""
         store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
         sig = CompletionSignal(completed=False, stable=True)
-        j = _judge(evaluate_result=sig, store=store)
+        evidence = CompletionEvidence(primary_signal=sig)
+        j = _judge(evidence=evidence, store=store)
+        j._timeout.check_observation.return_value = CompletionObservationDecision.hold("继续观察")
         mi = _mi()
         result = j.check_exit(_sub(state="P"), mi, lambda *a: [])
         assert result is False
+        j._timeout.check_observation.assert_called_once()
 
     def test_guard_veto_exits_when_completed(self):
-        """guard_veto P：信号确认完结 → 退出。"""
+        """guard_veto P：观察裁决允许完成 → 退出。"""
         store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
         sig = CompletionSignal(completed=True, confidence="high")
-        j = _judge(evaluate_result=sig, store=store)
+        evidence = CompletionEvidence(primary_signal=sig)
+        j = _judge(evidence=evidence, store=store)
+        j._timeout.check_observation.return_value = CompletionObservationDecision.allow_complete("信号确认完结")
         mi = _mi()
         result = j.check_exit(_sub(state="P"), mi, lambda *a: [])
         assert result is True
+        j._timeout.check_observation.assert_called_once()
 
     def test_guard_veto_uses_timeout_release_for_low_confidence_completion(self):
-        """guard_veto 低置信完成需等待 timeout_manager 释放。"""
+        """guard_veto 低置信完成按完成观察裁决释放。"""
         store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
         sig = CompletionSignal(completed=True, confidence="low", stable=True, signals=["I:all_aired"])
-        j = _judge(evaluate_result=sig, store=store)
-        j._timeout.check_release.return_value = True
+        evidence = CompletionEvidence(primary_signal=sig, i_low_signal=sig, scope_total=2, observation_kind="low_i")
+        j = _judge(evidence=evidence, store=store)
+        j._timeout.check_observation.return_value = CompletionObservationDecision.release_with_token("完成前观察到期")
 
         subscribe = _sub(state="P", total_episode=2)
         result = j.check_exit(subscribe, _mi(), lambda *a: [])
 
         assert result is True
-        j._timeout.check_release.assert_called_once_with(subscribe, sig, total_episode=2)
+        j._timeout.check_observation.assert_called_once_with(subscribe, evidence, mode=j._config.completion_guard_mode)
 
     def test_guard_veto_low_confidence_stays_before_timeout_release(self):
-        """guard_veto 低置信完成未超观察期时继续保持 P。"""
+        """guard_veto 低置信观察未满足退出裁决时继续保持 P。"""
         store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
         sig = CompletionSignal(completed=True, confidence="low", stable=True, signals=["I:all_aired"])
-        j = _judge(evaluate_result=sig, store=store)
-        j._timeout.check_release.return_value = False
+        evidence = CompletionEvidence(primary_signal=sig, i_low_signal=sig, scope_total=2, observation_kind="low_i")
+        j = _judge(evidence=evidence, store=store)
+        j._timeout.check_observation.return_value = CompletionObservationDecision.hold("继续观察")
 
         subscribe = _sub(state="P", total_episode=2)
         result = j.check_exit(subscribe, _mi(), lambda *a: [])
 
         assert result is False
-        j._timeout.check_release.assert_called_once_with(subscribe, sig, total_episode=2)
+        j._timeout.check_observation.assert_called_once_with(subscribe, evidence, mode=j._config.completion_guard_mode)
 
-    def test_guard_veto_uses_signal_scope_total_when_available(self):
-        """guard_veto 释放判断优先使用本轮 TMDB scope 总数。"""
+    def test_guard_veto_recomputes_l_with_resolver_before_timeout_decision(self):
+        """guard_veto 巡检必须带主程序缺集 resolver 重算 L 后再交给观察状态机。"""
         store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
-        sig = CompletionSignal(completed=True, confidence="low", stable=True,
-                               signals=["I:all_aired"], scope_total=3)
-        j = _judge(evaluate_result=sig, store=store)
-        j._timeout.check_release.return_value = True
+        low_l = CompletionSignal(
+            completed=True,
+            confidence="low",
+            signals=["L:target_satisfied"],
+            scope_total=12,
+        )
+        evidence = CompletionEvidence(
+            primary_signal=low_l,
+            local_signal=low_l,
+            scope_total=12,
+            observation_kind="low_l",
+        )
+        resolver = MagicMock(return_value=(True, {}))
+        j = _judge(evidence=evidence, store=store, resolve_missing_fn=resolver)
+        j._timeout.check_observation.return_value = CompletionObservationDecision.hold("继续观察")
 
         subscribe = _sub(state="P", total_episode=2)
         result = j.check_exit(subscribe, _mi(), lambda *a: [])
 
-        assert result is True
-        j._timeout.check_release.assert_called_once_with(subscribe, sig, total_episode=3)
+        assert result is False
+        _, kwargs = j._evidence_pipeline.evaluate.call_args
+        assert kwargs["resolve_missing_fn"] is resolver
+        assert j._timeout.check_observation.call_args.args[1].local_signal is low_l
 
     def test_pending_judge_does_not_exit_on_medium_completion(self):
         """pending_judge P：中置信完结信号不能提前释放。"""
@@ -441,11 +529,11 @@ class TestMarkPending:
 
 class TestExitPending:
 
-    def test_exit_clears_j_block(self):
+    def test_exit_clears_guard_observation(self):
         store = {"subscribes": {"1": {"state": "P", "source": "guard_veto"}}}
         j = _judge(store=store)
         j._exit_pending(_sub(), "测试退出")
-        j._timeout.clear_block.assert_called_once_with(1)
+        j._timeout.clear_observation.assert_called_once_with(1)
         assert store["subscribes"]["1"]["state"] == "R"
 
     def test_exit_pending_judge_keeps_guard_veto_block_when_guard_source_remains(self):
@@ -461,12 +549,12 @@ class TestExitPending:
 
         j._exit_pending(_sub(state="P"), "待定条件不再满足")
 
-        j._timeout.clear_block.assert_not_called()
+        j._timeout.clear_observation.assert_not_called()
         task = store["subscribes"]["1"]
         assert task["state"] == "P"
         assert task["source"] == "guard_veto"
 
-    def test_exit_guard_veto_clears_guard_veto_block(self):
+    def test_exit_guard_veto_clears_guard_veto_observation(self):
         store = {"subscribes": {"1": {
             "state": "P",
             "source": "guard_veto",
@@ -476,7 +564,7 @@ class TestExitPending:
 
         j._exit_pending(_sub(state="P"), "完成前观察结束")
 
-        j._timeout.clear_block.assert_called_once_with(1)
+        j._timeout.clear_observation.assert_called_once_with(1)
         assert store["subscribes"]["1"]["state"] == "R"
 
     def test_exit_sends_status_notification(self):

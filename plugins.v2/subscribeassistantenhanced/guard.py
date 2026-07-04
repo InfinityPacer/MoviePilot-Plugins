@@ -74,7 +74,7 @@ class CompletionGuard:
             return
 
         if self._is_active_high_completion(evidence):
-            self.timeout_manager.clear_release(subscribe)
+            self.timeout_manager.clear_release_token(subscribe)
             detail(
                 f"完成守卫：{format_subscribe(subscribe)} 高置信完结，"
                 f"按 {self.mode} 模式放行"
@@ -89,7 +89,7 @@ class CompletionGuard:
             return
 
         if evidence.unstable_signal is not None:
-            self.timeout_manager.clear_release(subscribe)
+            self.timeout_manager.clear_release_token(subscribe)
             detail(
                 f"完成守卫：{format_subscribe(subscribe)} F 不稳定但命中当前目标完成证据，"
                 f"按 {self.mode} 模式放行"
@@ -99,7 +99,7 @@ class CompletionGuard:
         if evidence.target_complete_signal is not None:
             signal = evidence.target_complete_signal
             if self.mode in ("balanced", "loose"):
-                self.timeout_manager.clear_release(subscribe)
+                self.timeout_manager.clear_release_token(subscribe)
                 detail(
                     f"完成守卫：{format_subscribe(subscribe)} 命中当前目标完成证据，"
                     f"按 {self.mode} 模式放行"
@@ -109,7 +109,7 @@ class CompletionGuard:
             return
 
         if self._is_medium_i_completion(evidence.i_signal):
-            self.timeout_manager.clear_release(subscribe)
+            self.timeout_manager.clear_release_token(subscribe)
             detail(
                 f"完成守卫：{format_subscribe(subscribe)} 中置信完结，"
                 f"按 {self.mode} 模式放行"
@@ -119,7 +119,7 @@ class CompletionGuard:
         low_signal = self._low_signal(evidence)
         if low_signal is not None:
             if self._allow_low_confidence(low_signal):
-                self.timeout_manager.clear_release(subscribe)
+                self.timeout_manager.clear_release_token(subscribe)
                 detail(
                     f"完成守卫：{format_subscribe(subscribe)} 低置信完结，"
                     f"按 {self.mode} 模式放行"
@@ -205,7 +205,7 @@ class CompletionGuard:
                             evidence: CompletionEvidence):
         """完成证据未获策略直接放行时，消费令牌或进入完成前观察。"""
         total_episode = self._signal_total(signal, evidence, subscribe)
-        if self.timeout_manager.consume_release(
+        if self.timeout_manager.consume_release_token(
             subscribe, signal, total_episode=total_episode
         ):
             detail(f"完成守卫：{format_subscribe(subscribe)} 完成前观察已释放，放行完成")
@@ -216,7 +216,7 @@ class CompletionGuard:
                             evidence: CompletionEvidence, total_episode: int = None):
         """写入 guard_veto 观察前清理旧释放令牌，避免过期令牌跨信号放行。"""
         total_episode = total_episode or self._signal_total(signal, evidence, subscribe)
-        self.timeout_manager.clear_release(subscribe)
+        self.timeout_manager.clear_release_token(subscribe)
         logger.info(
             f"完成守卫：{format_subscribe(subscribe)} 完成证据需观察（{signal.reason}），"
             "进入完成前观察"
@@ -225,7 +225,7 @@ class CompletionGuard:
         data.source = "subscribeassistantenhanced"
         data.reason = signal.reason
         self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
-        self.timeout_manager.record_block(
+        self.timeout_manager.record_observation(
             subscribe, signal=signal, total_episode=total_episode
         )
 
@@ -245,4 +245,4 @@ class CompletionGuard:
         data.source = "subscribeassistantenhanced"
         data.reason = block_reason
         self.mark_pending_fn(subscribe, source="guard_veto", reason=block_reason)
-        self.timeout_manager.record_block(subscribe)
+        self.timeout_manager.record_observation(subscribe)

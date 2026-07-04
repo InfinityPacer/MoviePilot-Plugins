@@ -225,10 +225,8 @@ class EventProxy:
 
         # TV 待定优先于播出暂停：满足待定条件即进入待定并跳过播出暂停。
         pending_judge = self.get("pending_judge")
-        evaluate = self.get("evaluate_fn")
         if pending_judge:
-            signal = evaluate(subscribe, mediainfo) if evaluate else None
-            should, reason = pending_judge.should_enter_pending(subscribe, mediainfo, episodes, signal)
+            should, reason = pending_judge.should_enter_pending(subscribe, mediainfo, episodes)
             if should:
                 logger.info(f"订阅新增：{format_subscribe(subscribe)} 判定进入待定（{reason}）")
                 pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
