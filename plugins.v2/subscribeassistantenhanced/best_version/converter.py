@@ -1,4 +1,4 @@
-"""域 ⑤：分集→全集转换——以替换订阅方式切换为全集洗版。"""
+"""分集到全集转换：以替换订阅方式切换为全集洗版。"""
 
 from app.log import logger
 from app.schemas.types import EventType

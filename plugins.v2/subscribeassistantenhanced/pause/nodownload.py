@@ -1,4 +1,4 @@
-"""域 ④：无下载处理策略——上映后超期且无下载时按配置暂停、完成或删除订阅。"""
+"""无下载处理策略：上映后超期且无下载时按配置暂停、完成或删除订阅。"""
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional

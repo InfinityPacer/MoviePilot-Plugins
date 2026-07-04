@@ -1,4 +1,4 @@
-"""域 ④：播出暂停——完结信号前置过滤后按间隔判断。"""
+"""播出暂停：完结信号前置过滤后按间隔判断是否暂停订阅。"""
 import re
 from datetime import date, timedelta
 from typing import Optional

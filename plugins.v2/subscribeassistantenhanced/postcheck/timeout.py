@@ -1,4 +1,4 @@
-"""域 ⑦J：完成前观察状态机，防止守卫待定永久卡住。"""
+"""完成前观察状态机：管理守卫待定与一次性低置信放行令牌。"""
 import time
 from typing import Callable, Optional
 

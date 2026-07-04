@@ -1,4 +1,4 @@
-"""域 ④：暂停管理——优先级覆盖 + 用户名自动暂停 + 双向恢复。"""
+"""暂停管理：处理优先级覆盖、用户名自动暂停和双向恢复。"""
 import re
 import time
 from typing import Callable, Optional

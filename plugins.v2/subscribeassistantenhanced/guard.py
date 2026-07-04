@@ -1,4 +1,4 @@
-"""域 ②：完成守卫——CompletionCheck 事件处理。"""
+"""完成守卫：处理 CompletionCheck 事件并按证据流水线裁决是否完成。"""
 from typing import Callable
 
 from app.log import logger
