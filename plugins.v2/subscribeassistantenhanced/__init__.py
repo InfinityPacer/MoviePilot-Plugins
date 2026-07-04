@@ -29,7 +29,7 @@ from app.helper.downloader import DownloaderHelper
 
 from .engine.types import CompletionSignal, SeasonScope, PauseRecord
 from .engine.volatility import VolatilityTracker
-from .engine.evaluate import evaluate as engine_evaluate
+from .engine.pipeline import CompletionEvidencePipeline
 from .guard import CompletionGuard
 from .pending.judge import PendingJudge
 from .pending.refresh import PendingRefresh
@@ -120,8 +120,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._transferhistory_oper: Optional[TransferHistoryOper] = None
         self._downloadhistory_oper: Optional[DownloadHistoryOper] = None
         self._downloader_helper: Optional[DownloaderHelper] = None
-        # 信号引擎评估闭包供待定释放和守卫/暂停等策略复用。
-        self._evaluate_fn: Optional[Callable] = None
+        # 当前完成主信号闭包供待定释放和守卫/暂停等旧消费点复用。
+        self._completion_signal_fn: Optional[Callable] = None
 
     def init_plugin(self, config: dict = None):
         """解析配置 → 注入 DB/chain 依赖 → 初始化各业务域模块。"""
@@ -309,25 +309,26 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
         )
 
-        def evaluate_fn(subscribe, mediainfo):
-            return engine_evaluate(
-                subscribe, mediainfo,
-                tmdb_episodes_fn=self._tmdb_episodes,
-                volatility_tracker=volatility,
-                config=cfg,
-            )
+        completion_pipeline = CompletionEvidencePipeline(
+            tmdb_episodes_fn=self._tmdb_episodes,
+            volatility_tracker=volatility,
+            config=cfg,
+        )
+
+        def completion_signal_fn(subscribe, mediainfo):
+            return completion_pipeline.evaluate(subscribe, mediainfo).primary_signal
 
         airing_checker = AiringPauseChecker(
             pause_days=cfg.airing_pause_days,
-            evaluate_fn=evaluate_fn,
+            evaluate_fn=completion_signal_fn,
             movie_air_days=cfg.movie_air_pause_days,
             tv_air_days=cfg.tv_air_pause_days,
         )
-        self._evaluate_fn = evaluate_fn
+        self._completion_signal_fn = completion_signal_fn
 
         pending_judge = PendingJudge(
             config=cfg,
-            evaluate_fn=evaluate_fn,
+            evaluate_fn=completion_signal_fn,
             subscribe_oper=self._subscribe_oper,
             timeout_manager=timeout_manager,
             task_data_read=tm.read,
@@ -337,7 +338,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         )
 
         guard = CompletionGuard(
-            evaluate_fn=evaluate_fn,
+            evaluate_fn=completion_signal_fn,
             has_active_downloads_fn=lambda sub: download_monitor.has_active_downloads(
                 sub.id),
             mark_pending_fn=pending_judge.mark_pending,
@@ -416,7 +417,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             airing_checker=airing_checker if cfg.pause_enhanced_enabled else None,
             pending_judge=pending_judge if cfg.pending_enhanced_enabled else None,
             pending_state=pending_state,
-            evaluate_fn=evaluate_fn,
+            evaluate_fn=completion_signal_fn,
             tmdb_episodes_fn=self._tmdb_episodes,
             mediainfo_from_dict=self._mediainfo_from_dict,
             is_tv_fn=self._is_tv_media,
@@ -895,7 +896,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     subscribe.season,
                     episode_group=subscribe.episode_group,
                 )
-                signal = self._evaluate_fn(subscribe, mediainfo) if self._evaluate_fn else None
+                signal = self._completion_signal_fn(subscribe, mediainfo) if self._completion_signal_fn else None
                 should, reason = pending_judge.should_enter_pending(
                     subscribe, mediainfo, episodes, signal
                 )
@@ -921,7 +922,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes)
 
         timeout_manager = self._modules.get("timeout_manager")
-        if not timeout_manager or not self._subscribe_oper or not self._evaluate_fn:
+        if not timeout_manager or not self._subscribe_oper or not self._completion_signal_fn:
             return
         for sid in list((self.get_data("blocks") or {}).keys()):
             subscribe = self._subscribe_oper.get(int(sid))
@@ -932,7 +933,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mediainfo = self._recognize_mediainfo(subscribe)
             if not mediainfo:
                 continue
-            signal = self._evaluate_fn(subscribe, mediainfo)
+            signal = self._completion_signal_fn(subscribe, mediainfo)
             if timeout_manager.check_release(
                 subscribe,
                 signal,
@@ -1367,7 +1368,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         pass
 
     def _tmdb_episodes(self, tmdbid: int, season: int, episode_group: str = None):
-        """查询 TMDB 季内集信息供信号引擎构建 SeasonScope；不可用时返回空列表。"""
+        """查询 TMDB 季内集信息供完成证据流水线构建 SeasonScope；不可用时返回空列表。"""
         if not self._tmdb_chain or not tmdbid or season is None:
             return []
         return self._tmdb_chain.tmdb_episodes(

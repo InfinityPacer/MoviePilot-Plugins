@@ -605,8 +605,8 @@ def test_run_meta_check_releases_existing_pending_when_pending_disabled():
         SimpleNamespace(episode_number=i, air_date="2026-01-01", episode_type="standard")
         for i in range(1, 13)
     ])
-    plugin._evaluate_fn = MagicMock(return_value=CompletionSignal(completed=True, confidence="high"))
-    plugin._modules["pending_judge"]._evaluate = plugin._evaluate_fn
+    plugin._completion_signal_fn = MagicMock(return_value=CompletionSignal(completed=True, confidence="high"))
+    plugin._modules["pending_judge"]._evaluate = plugin._completion_signal_fn
 
     plugin.run_meta_check()
 
@@ -805,7 +805,7 @@ def test_run_meta_check_full_best_version_continue_keeps_following_subscriptions
         first_air_date="2026-01-01",
     )
     plugin._recognize_mediainfo = MagicMock(side_effect=[full_mediainfo, normal_mediainfo])
-    plugin._evaluate_fn = MagicMock(return_value=None)
+    plugin._completion_signal_fn = MagicMock(return_value=None)
     episodes = [SimpleNamespace(episode_number=1, air_date="2026-01-01")]
     plugin._tmdb_episodes = MagicMock(return_value=episodes)
 
@@ -1158,7 +1158,7 @@ def test_run_meta_check_marks_pending_when_should_enter_pending():
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
     plugin._tmdb_episodes = MagicMock(return_value=[])
-    plugin._evaluate_fn = MagicMock(return_value=None)
+    plugin._completion_signal_fn = MagicMock(return_value=None)
 
     # 暂停检查器均返回 None（不暂停）；airing_checker 存在于 _modules
     airing = plugin._modules["airing_checker"]
@@ -1207,7 +1207,7 @@ def test_run_meta_check_check_exit_called_for_p_state_sub():
     airing.check_pre_air = MagicMock(return_value=None)
     airing.check = MagicMock(return_value=None)
     plugin._tmdb_episodes = MagicMock(return_value=[])
-    plugin._evaluate_fn = MagicMock(return_value=None)
+    plugin._completion_signal_fn = MagicMock(return_value=None)
 
     plugin.run_meta_check()
 
@@ -1332,7 +1332,7 @@ def test_run_all_checks_runs_real_pending_release_without_timeout_switch(monkeyp
     plugin._modules["pending_state"]._read = plugin._task_manager.read
     plugin._modules["pending_state"]._update = plugin._task_manager.update
     plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
-    plugin._evaluate_fn = MagicMock(return_value=CompletionSignal())
+    plugin._completion_signal_fn = MagicMock(return_value=CompletionSignal())
     timeout_manager = MagicMock()
     timeout_manager.check_release.return_value = True
     timeout_manager.clear_block.side_effect = lambda sid: task_store["blocks"].pop(str(sid), None)
@@ -2365,7 +2365,7 @@ class TestPeriodicJobs:
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: _mediainfo())
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
-        plugin._evaluate_fn = lambda s, m: CompletionSignal()
+        plugin._completion_signal_fn = lambda s, m: CompletionSignal()
         timeout_manager = MagicMock()
         timeout_manager.check_release.return_value = True
         plugin._modules["timeout_manager"] = timeout_manager
@@ -2407,7 +2407,7 @@ class TestPeriodicJobs:
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: _mediainfo())
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
-        plugin._evaluate_fn = lambda s, m: CompletionSignal()
+        plugin._completion_signal_fn = lambda s, m: CompletionSignal()
         timeout_manager = MagicMock()
         timeout_manager.check_release.return_value = True
         plugin._modules["timeout_manager"] = timeout_manager
@@ -2455,7 +2455,7 @@ class TestPeriodicJobs:
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda s: mediainfo)
         monkeypatch.setattr(plugin, "get_data",
                             lambda key: {"1": {"blocked_at": 0}} if key == "blocks" else {})
-        plugin._evaluate_fn = lambda s, m: CompletionSignal()
+        plugin._completion_signal_fn = lambda s, m: CompletionSignal()
         timeout_manager = MagicMock()
         timeout_manager.check_release.return_value = True
         plugin._modules["timeout_manager"] = timeout_manager
@@ -2494,7 +2494,7 @@ class TestPeriodicJobs:
         plugin._subscribe_oper.get.return_value = sub
         plugin._subscribe_oper.list.return_value = []
         monkeypatch.setattr(plugin, "_recognize_mediainfo", lambda _subscribe: _mediainfo())
-        plugin._evaluate_fn = lambda _subscribe, _mediainfo: CompletionSignal(
+        plugin._completion_signal_fn = lambda _subscribe, _mediainfo: CompletionSignal(
             completed=True,
             confidence="low",
             stable=True,
@@ -2558,9 +2558,9 @@ class TestPeriodicJobs:
             signals=["I:all_aired"],
             reason="低置信",
         )
-        plugin._evaluate_fn = MagicMock(return_value=sig)
-        plugin._modules["pending_judge"]._evaluate = plugin._evaluate_fn
-        plugin._modules["guard"].evaluate_fn = plugin._evaluate_fn
+        plugin._completion_signal_fn = MagicMock(return_value=sig)
+        plugin._modules["pending_judge"]._evaluate = plugin._completion_signal_fn
+        plugin._modules["guard"].evaluate_fn = plugin._completion_signal_fn
 
         plugin.run_pending_release()
 

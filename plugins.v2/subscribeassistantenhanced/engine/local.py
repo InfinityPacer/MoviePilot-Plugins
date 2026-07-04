@@ -88,10 +88,10 @@ def _future_episode_number(episode) -> int | None:
         return None
 
 
-def first_blocking_future_episode(subscribe, scope: SeasonScope):
+def first_blocking_future_episode(subscribe, scope: SeasonScope, as_of=None):
     """返回当前订阅目标范围外的最早后续集。"""
     target_episodes = set(target_episode_range(subscribe))
-    for episode in scope_future_episodes(scope):
+    for episode in scope_future_episodes(scope, as_of=as_of):
         number = _future_episode_number(episode)
         if number is None or not target_episodes or number not in target_episodes:
             return episode

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.engine.evaluate import evaluate
+from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.signals import last_aired_episode
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 from subscribeassistantenhanced.guard import CompletionGuard
@@ -86,11 +86,21 @@ def _subscribe(runtime_fixture: dict, key: str):
     return SimpleNamespace(**data)
 
 
+def _primary(subscribe, mediainfo, tmdb_episodes_fn, volatility_tracker, config, as_of=None):
+    """运行完成证据流水线，并返回守卫当前消费的主信号。"""
+    pipeline = CompletionEvidencePipeline(
+        tmdb_episodes_fn=tmdb_episodes_fn,
+        volatility_tracker=volatility_tracker,
+        config=config,
+    )
+    return pipeline.evaluate(subscribe, mediainfo, as_of=as_of).primary_signal
+
+
 def _evaluate_fixture(subscribe, mediainfo, episodes_fn, as_of):
-    """按默认配置和稳定 tracker 执行完结信号引擎。"""
+    """按默认配置和稳定 tracker 执行完成证据流水线。"""
     manager, _ = _store()
     tracker = VolatilityTracker(manager, window_days=7)
-    return evaluate(subscribe, mediainfo, episodes_fn, tracker, PluginConfig({}), as_of=as_of)
+    return _primary(subscribe, mediainfo, episodes_fn, tracker, PluginConfig({}), as_of=as_of)
 
 
 def test_biaoren_s01_next_season_completes_and_current_pause_logic_does_not_pause():

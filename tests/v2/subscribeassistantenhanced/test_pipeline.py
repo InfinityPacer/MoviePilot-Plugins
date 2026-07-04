@@ -1,9 +1,9 @@
-"""engine/evaluate.py 合并逻辑单测。"""
+"""engine/pipeline.py 完成证据流水线单测。"""
 from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.engine.evaluate import evaluate
+from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 from subscribeassistantenhanced.shared.config import PluginConfig
 from subscribeassistantenhanced.shared.task import TaskDataManager
@@ -16,19 +16,19 @@ def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
     )
 
 
-def _mi(status="Returning Series", next_ep=None, seasons=None):
+def _mi(status="Returning Series", next_ep=None, last_ep=None, seasons=None):
     return SimpleNamespace(
         tmdb_id=100,
         tmdb_info=SimpleNamespace(
             status=status,
             next_episode_to_air=next_ep,
-            last_episode_to_air=None,
+            last_episode_to_air=last_ep,
             seasons=seasons or [SimpleNamespace(season_number=1)],
         ),
     )
 
 
-def _make_tracker(stable=True):
+def _make_tracker(stable=True, direction="up"):
     store = {}
     mgr = TaskDataManager(get_data_fn=lambda k: store.get(k), save_data_fn=lambda k, v: store.__setitem__(k, v))
     tracker = VolatilityTracker(mgr, window_days=7)
@@ -36,15 +36,21 @@ def _make_tracker(stable=True):
         subscribe = SimpleNamespace(
             id=1, tmdbid=100, season=1, episode_group=None
         )
-        tracker.record(total=10, subscribe=subscribe)
-        tracker.record(total=15, subscribe=subscribe)
+        if direction == "down":
+            tracker.record(total=15, subscribe=subscribe)
+            tracker.record(total=10, subscribe=subscribe)
+        else:
+            tracker.record(total=10, subscribe=subscribe)
+            tracker.record(total=15, subscribe=subscribe)
     return tracker
 
 
-def _sub(sid=1, season=1, episode_group=None, best_version=0, name="测试剧"):
+def _sub(sid=1, season=1, episode_group=None, best_version=0, name="测试剧",
+         start_episode=1, total_episode=12):
     return SimpleNamespace(
         id=sid, name=name, tmdbid=100, season=season,
         episode_group=episode_group, best_version=best_version,
+        start_episode=start_episode, total_episode=total_episode,
     )
 
 
@@ -58,13 +64,286 @@ def _tmdb_fn(episodes):
     return fn
 
 
-class TestEvaluatePipeline:
+def _evidence(subscribe, mediainfo, tmdb_episodes_fn, volatility_tracker, config,
+              as_of=None, resolve_missing_fn=None, meta=None):
+    pipeline = CompletionEvidencePipeline(
+        tmdb_episodes_fn=tmdb_episodes_fn,
+        volatility_tracker=volatility_tracker,
+        config=config,
+    )
+    return pipeline.evaluate(
+        subscribe,
+        mediainfo,
+        as_of=as_of,
+        resolve_missing_fn=resolve_missing_fn,
+        meta=meta,
+    )
+
+
+def _primary(*args, **kwargs):
+    return _evidence(*args, **kwargs).primary_signal
+
+
+def _resolver(result=True):
+    return MagicMock(return_value=(result, {}))
+
+
+class TestCompletionEvidencePipeline:
+    """完成证据流水线按固定阶段保留候选信号。"""
+
+    def test_l_target_satisfied_and_i_all_aired_builds_medium_target_complete(self):
+        """L 与 I:all_aired 共同证明当前订阅目标完成，主信号升级为目标完成。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        resolve_missing = _resolver(True)
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(),
+            as_of=date(2026, 6, 1),
+            resolve_missing_fn=resolve_missing,
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+        )
+
+        assert evidence.local_signal.signals == ["L:target_satisfied"]
+        assert evidence.i_low_signal.signals == ["I:all_aired"]
+        assert evidence.target_complete_signal is evidence.primary_signal
+        assert evidence.primary_signal.completed is True
+        assert evidence.primary_signal.confidence == "medium"
+        assert evidence.primary_signal.signals == ["L:target_satisfied", "I:all_aired"]
+        assert evidence.primary_signal.scope_total == 12
+        assert evidence.primary_signal.scope_high_risk is False
+        assert evidence.observation_kind == "medium_target_complete"
+        assert evidence.cadence_expired is False
+
+    def test_l_target_satisfied_and_i_cooldown_builds_medium_target_complete(self):
+        """L 与 I:cooldown 可共同证明当前订阅目标完成。"""
+        episodes = [
+            _ep(1, air_date="2026-01-01"),
+            SimpleNamespace(episode_number=None, season_number=1, air_date=None, episode_type="standard"),
+        ]
+        resolve_missing = _resolver(True)
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(season_cooldown_days=14),
+            as_of=date(2026, 2, 1),
+            resolve_missing_fn=resolve_missing,
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+        )
+
+        assert evidence.local_signal.signals == ["L:target_satisfied"]
+        assert evidence.i_low_signal.signals == ["I:cooldown"]
+        assert evidence.target_complete_signal is evidence.primary_signal
+        assert evidence.primary_signal.confidence == "medium"
+        assert evidence.primary_signal.signals == ["L:target_satisfied", "I:cooldown"]
+        assert evidence.observation_kind == "medium_target_complete"
+
+    def test_missing_resolver_keeps_i_all_aired_low_without_target_complete(self):
+        """没有主程序缺集入口时不生成 L，中低置信 I 不能升级为目标完成。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 4)]
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=3),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(),
+            as_of=date(2026, 6, 1),
+        )
+
+        assert evidence.local_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.primary_signal is evidence.i_low_signal
+        assert evidence.primary_signal.confidence == "low"
+        assert evidence.primary_signal.signals == ["I:all_aired"]
+        assert evidence.observation_kind == "i_low"
+
+    def test_l_without_i_stays_low_l_primary_signal(self):
+        """只有 L 命中时保留 single low 语义，供守卫按模式决定观察或放行。"""
+        episodes = [_ep(1, air_date="2026-02-01")]
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(),
+            as_of=date(2026, 1, 9),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+        )
+
+        assert evidence.local_signal is evidence.primary_signal
+        assert evidence.i_low_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.primary_signal.confidence == "low"
+        assert evidence.primary_signal.signals == ["L:target_satisfied"]
+        assert evidence.observation_kind == "low_l"
+
+    def test_medium_i_next_season_remains_i_signal_not_target_complete(self):
+        """既有中置信 I 信号不与 L 合成 target_complete。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 4)]
+        mediainfo = _mi(seasons=[SimpleNamespace(season_number=1), SimpleNamespace(season_number=2)])
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=3),
+            mediainfo=mediainfo,
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(),
+            as_of=date(2026, 6, 1),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+        )
+
+        assert evidence.local_signal.signals == ["L:target_satisfied"]
+        assert evidence.i_signal is evidence.primary_signal
+        assert evidence.i_signal.signals == ["I:next_season"]
+        assert evidence.i_signal.confidence == "medium"
+        assert evidence.target_complete_signal is None
+
+    def test_stable_e_ended_remains_high_with_scope_future(self):
+        """稳定状态下剧级 Ended 是高置信完成事实，不被 scope 后续集降级。"""
+        episodes = [_ep(1, air_date="2026-01-01"), _ep(2, air_date="2026-02-01")]
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(),
+            as_of=date(2026, 1, 9),
+        )
+
+        assert evidence.high_completion is evidence.primary_signal
+        assert evidence.primary_signal.completed is True
+        assert evidence.primary_signal.confidence == "high"
+        assert evidence.primary_signal.signals == ["E:ended"]
+
+    def test_e_ended_with_future_tail_does_not_override_unstable_observation(self):
+        """scope 仍有后续集时，Ended 不绕过活跃的 F 不稳定观察。"""
+        episodes = [_ep(1, air_date="2026-01-01"), _ep(2, air_date=None)]
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(stable=False),
+            config=_cfg(),
+            as_of=date(2026, 1, 9),
+        )
+
+        assert evidence.high_completion.signals == ["E:ended"]
+        assert evidence.unstable_signal is evidence.primary_signal
+        assert evidence.primary_signal.stable is False
+        assert evidence.primary_signal.signals == ["F:unstable"]
+
+    def test_f_down_is_hard_veto_before_completion_candidates(self):
+        """total 缩小风险不可被 E 或 L/I 目标完成候选绕过。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(stable=False, direction="down"),
+            config=_cfg(),
+            as_of=date(2026, 6, 1),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+        )
+
+        assert evidence.hard_veto is evidence.primary_signal
+        assert evidence.primary_signal.signals == ["F:unstable"]
+        assert evidence.primary_signal.volatility_direction == "down"
+        assert evidence.high_completion is None
+        assert evidence.local_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.observation_kind == "hard_veto"
+
+    def test_future_outside_target_blocks_i_low_l_and_target_complete(self):
+        """目标范围外后续集只阻断候选信号，不升级为全局硬否决。"""
+        future = (date(2026, 1, 9) + timedelta(days=14)).isoformat()
+        episodes = [_ep(1, air_date="2026-01-01"), _ep(2, air_date=future)]
+        resolve_missing = _resolver(True)
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(),
+            as_of=date(2026, 1, 9),
+            resolve_missing_fn=resolve_missing,
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+        )
+
+        assert evidence.hard_veto is None
+        assert evidence.local_signal is None
+        assert evidence.i_low_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.primary_signal.signals == ["none"]
+        assert "E2" in evidence.local_blocked_reason
+        resolve_missing.assert_not_called()
+
+    def test_future_outside_target_blocks_cooldown_candidate(self):
+        """目标范围外后续集存在时，不按目标内最后已播集生成 I:cooldown。"""
+        future = (date(2026, 2, 1) + timedelta(days=14)).isoformat()
+        episodes = [_ep(1, air_date="2026-01-01"), _ep(2, air_date=future)]
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(season_cooldown_days=14),
+            as_of=date(2026, 2, 1),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+        )
+
+        assert evidence.i_low_signal is None
+        assert evidence.local_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.primary_signal.signals == ["none"]
+
+    def test_i_cooldown_without_l_stays_low(self):
+        """I:cooldown 没有 L 目标满足证据时不能升级为 target_complete。"""
+        episodes = [
+            _ep(1, air_date="2026-01-01"),
+            SimpleNamespace(episode_number=None, season_number=1, air_date=None, episode_type="standard"),
+        ]
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(season_cooldown_days=14),
+            as_of=date(2026, 2, 1),
+        )
+
+        assert evidence.local_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.primary_signal is evidence.i_low_signal
+        assert evidence.primary_signal.confidence == "low"
+        assert evidence.primary_signal.signals == ["I:cooldown"]
+        assert evidence.observation_kind == "i_low"
+
+
+class TestPipelinePrimarySignal:
     """M → F → E → I → G → 兜底。"""
 
     def test_mid_season_vetoes_first(self):
         """M 硬否决优先于一切。"""
         eps = [_ep(1), _ep(2, ep_type="mid_season")]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -76,7 +355,7 @@ class TestEvaluatePipeline:
     def test_f_unstable_vetoes(self):
         """F 不稳定优先于 E/I。"""
         eps = [_ep(1)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
@@ -89,10 +368,10 @@ class TestEvaluatePipeline:
         assert "total_episode" not in sig.reason
 
     def test_ended_without_scope_future_confirms_completion_despite_recent_total_change(self):
-        """Ended 且未发现后续集时，可跳过旧 F 观察。"""
+        """Ended 且未发现后续集时，可跳过 F 观察。"""
         eps = [_ep(i, air_date="2026-06-28") for i in range(1, 13)]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -106,10 +385,10 @@ class TestEvaluatePipeline:
         assert "E:ended" in sig.signals
 
     def test_canceled_without_scope_future_confirms_completion_despite_recent_total_change(self):
-        """Canceled 且未发现后续集时，也可跳过旧 F 观察。"""
+        """Canceled 且未发现后续集时，也可跳过 F 观察。"""
         eps = [_ep(i, air_date="2026-06-28") for i in range(1, 3)]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(status="Canceled"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -129,7 +408,7 @@ class TestEvaluatePipeline:
             _ep(2, air_date="2026-07-01"),
         ]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -149,7 +428,7 @@ class TestEvaluatePipeline:
             _ep(2, air_date=None),
         ]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -169,7 +448,7 @@ class TestEvaluatePipeline:
             _ep(2, air_date=None),
         ]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(status="Canceled"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -185,7 +464,7 @@ class TestEvaluatePipeline:
     def test_f_unstable_carries_recent_change_direction(self):
         """F 信号携带窗口内最近变化方向，供守卫识别 total 缩小风险。"""
         eps = [_ep(1)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
@@ -197,7 +476,7 @@ class TestEvaluatePipeline:
     def test_f_unstable_carries_recent_total_change_detail(self):
         """F 信号携带窗口内最近 total 变化明细，供状态通知展示。"""
         eps = [_ep(1)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),
@@ -211,7 +490,7 @@ class TestEvaluatePipeline:
         eps = [_ep(i, air_date="2026-06-01") for i in range(1, 33)]
         eps.append(_ep(33, ep_type="finale", air_date="2026-06-17"))
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -232,7 +511,7 @@ class TestEvaluatePipeline:
             season_number=1, episode_number=34, air_date="2026-06-24",
         )
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(next_ep=next_ep),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -252,7 +531,7 @@ class TestEvaluatePipeline:
             _ep(2, ep_type="finale", air_date="2026-01-08"),
         ]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -270,7 +549,7 @@ class TestEvaluatePipeline:
             _ep(2, air_date="2026-02-01"),
         ]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -289,7 +568,7 @@ class TestEvaluatePipeline:
             _ep(2, air_date=None),
         ]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(),
             mediainfo=_mi(status="Canceled"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -304,7 +583,7 @@ class TestEvaluatePipeline:
     def test_e_ended_releases(self):
         """E：status=Ended → 高置信度放行。"""
         eps = [_ep(1)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -317,7 +596,7 @@ class TestEvaluatePipeline:
     def test_e_scope_finale_releases(self):
         """E：scope 末集 finale → 放行。"""
         eps = [_ep(1), _ep(2, ep_type="finale")]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -330,7 +609,7 @@ class TestEvaluatePipeline:
         """I-1：有下一季 → 放行。"""
         eps = [_ep(1)]
         mi = _mi(seasons=[SimpleNamespace(season_number=1), SimpleNamespace(season_number=2)])
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=mi,
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -342,7 +621,7 @@ class TestEvaluatePipeline:
     def test_signal_carries_scope_total_for_timeout_observation(self):
         """信号携带本轮 TMDB scope 总集数，避免待定释放依赖滞后的订阅表字段。"""
         eps = [_ep(1), _ep(2), _ep(3)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -353,7 +632,7 @@ class TestEvaluatePipeline:
     def test_i_all_aired_no_next_releases(self):
         """I-3：所有集已播 + 无 next → 低置信度放行。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -370,7 +649,7 @@ class TestEvaluatePipeline:
             season_number=1, episode_number=12, air_date="2026-06-13"
         )
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(next_ep=next_ep),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -388,7 +667,7 @@ class TestEvaluatePipeline:
             _ep(3, ep_type="finale", air_date="2026-01-15"),
         ]
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -409,7 +688,7 @@ class TestEvaluatePipeline:
             "next_episode_to_air": {"season_number": 1, "episode_number": 81},
         })
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=mediainfo,
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -424,7 +703,7 @@ class TestEvaluatePipeline:
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 80)]
         eps.append(_ep(80, air_date=None))
 
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -437,7 +716,7 @@ class TestEvaluatePipeline:
     def test_high_risk_blocks_i3(self):
         """高风险绝对季 I-3 不放行。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 81)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -446,11 +725,19 @@ class TestEvaluatePipeline:
         assert sig.completed is False
         assert sig.cadence_expired is True  # I-3 降级为辅助
 
+        evidence = _evidence(
+            subscribe=_sub(), mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(eps),
+            volatility_tracker=_make_tracker(stable=True),
+            config=_cfg(), as_of=date(2026, 6, 1),
+        )
+        assert evidence.observation_kind == "none"
+
     def test_fallback_not_completed(self):
         """无信号 → 未完成。"""
         future = (date(2026, 6, 1) + timedelta(days=30)).isoformat()
         eps = [_ep(1, air_date=future)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -462,7 +749,7 @@ class TestEvaluatePipeline:
     def test_subscribe_id_none_skips_f(self):
         """创建场景 subscribe_id=None → F 跳过。"""
         eps = [_ep(1)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=SimpleNamespace(id=None, tmdbid=100, season=1, episode_group=None, best_version=0),
             mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
@@ -474,7 +761,7 @@ class TestEvaluatePipeline:
     def test_80_percent_fast_path(self):
         """80% 正常数据：stable + Ended → 零延迟。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=True),
@@ -487,7 +774,7 @@ class TestEvaluatePipeline:
     def test_volatility_disabled_skips_f_even_when_pending_volatility_requested(self):
         """volatility_enabled=False → 即便待定参考 F，信号层也不生成 F。"""
         eps = [_ep(1)]
-        sig = evaluate(
+        sig = _primary(
             subscribe=_sub(), mediainfo=_mi(status="Ended"),
             tmdb_episodes_fn=_tmdb_fn(eps),
             volatility_tracker=_make_tracker(stable=False),

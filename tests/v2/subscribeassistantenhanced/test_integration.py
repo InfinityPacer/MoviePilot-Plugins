@@ -1,11 +1,11 @@
-"""端到端集成测试——验证信号引擎到守门到待定到暂停的完整链路。"""
+"""端到端集成测试——验证完成证据流水线到守门到待定到暂停的完整链路。"""
 from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.engine.evaluate import evaluate
+from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 from subscribeassistantenhanced.engine.types import CompletionSignal, SeasonScope
 from subscribeassistantenhanced.guard import CompletionGuard
@@ -79,13 +79,22 @@ def _tmdb_fn(episodes):
     return lambda *a, **k: episodes
 
 
+def _primary(subscribe, mediainfo, tmdb_episodes_fn, volatility_tracker, config, as_of=None):
+    pipeline = CompletionEvidencePipeline(
+        tmdb_episodes_fn=tmdb_episodes_fn,
+        volatility_tracker=volatility_tracker,
+        config=config,
+    )
+    return pipeline.evaluate(subscribe, mediainfo, as_of=as_of).primary_signal
+
+
 # ---------- 正常完成 ----------
 
 class TestNormalCompletion:
 
     def test_ended_show_completes_immediately(self):
         eps = [_ep(i) for i in range(1, 13)]
-        sig = evaluate(_sub(), _mi(status="Ended"), _tmdb_fn(eps),
+        sig = _primary(_sub(), _mi(status="Ended"), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is True
         assert sig.confidence == "high"
@@ -93,12 +102,12 @@ class TestNormalCompletion:
     def test_returning_with_next_season_completes(self):
         eps = [_ep(i) for i in range(1, 13)]
         mi = _mi(seasons=[SimpleNamespace(season_number=1), SimpleNamespace(season_number=2)])
-        sig = evaluate(_sub(), mi, _tmdb_fn(eps), _tracker(), _cfg(), as_of=date(2026, 6, 1))
+        sig = _primary(_sub(), mi, _tmdb_fn(eps), _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is True
 
     def test_returning_with_finale_as_last_ep(self):
         eps = [_ep(i) for i in range(1, 12)] + [_ep(12, ep_type="finale")]
-        sig = evaluate(_sub(), _mi(), _tmdb_fn(eps), _tracker(), _cfg(), as_of=date(2026, 6, 1))
+        sig = _primary(_sub(), _mi(), _tmdb_fn(eps), _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is True
         assert "E:finale" in sig.signals
 
@@ -109,21 +118,21 @@ class TestAbnormalCompletion:
 
     def test_volatile_total_blocks(self):
         eps = [_ep(1)]
-        sig = evaluate(_sub(), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(), _mi(), _tmdb_fn(eps),
                        _tracker(stable=False), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
         assert sig.stable is False
 
     def test_mid_season_hard_veto(self):
         eps = [_ep(i) for i in range(1, 72)] + [_ep(72, ep_type="mid_season")]
-        sig = evaluate(_sub(), _mi(status="Ended"), _tmdb_fn(eps),
+        sig = _primary(_sub(), _mi(status="Ended"), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
         assert "M:mid_season" in sig.signals
 
     def test_high_risk_i3_not_release(self):
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 81)]
-        sig = evaluate(_sub(), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
         assert sig.cadence_expired is True
@@ -137,7 +146,7 @@ class TestAbsoluteSeason:
         """Re:ZERO 主 S1 (85集) E66 有 finale 但不是末集 → 不放行。"""
         eps = [_ep(i) for i in range(1, 86)]
         eps[65] = _ep(66, ep_type="finale")
-        sig = evaluate(_sub(), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
 
@@ -145,7 +154,7 @@ class TestAbsoluteSeason:
         """Re:ZERO Group S3 (E51-E66), E66=末集 finale → 放行。"""
         eps = [_ep(i) for i in range(51, 67)]
         eps[-1] = _ep(66, ep_type="finale")
-        sig = evaluate(_sub(episode_group="eg-s3"), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(episode_group="eg-s3"), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is True
 
@@ -153,7 +162,7 @@ class TestAbsoluteSeason:
         """Re:ZERO Group S4 E77 mid_season → 否决。"""
         eps = [_ep(i) for i in range(67, 78)]
         eps[-1] = _ep(77, ep_type="mid_season")
-        sig = evaluate(_sub(episode_group="eg-s4"), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(episode_group="eg-s4"), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
         assert "M:mid_season" in sig.signals
@@ -162,7 +171,7 @@ class TestAbsoluteSeason:
         """Re:ZERO Group S4 E85 finale 是末集 → 放行。"""
         eps = [_ep(i) for i in range(67, 86)]
         eps[-1] = _ep(85, ep_type="finale")
-        sig = evaluate(_sub(episode_group="eg-s4"), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(episode_group="eg-s4"), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is True
 
@@ -170,14 +179,14 @@ class TestAbsoluteSeason:
         """凡人修仙传 E72 mid_season。"""
         eps = [_ep(i) for i in range(1, 73)]
         eps[-1] = _ep(72, ep_type="mid_season")
-        sig = evaluate(_sub(), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
 
     def test_fanren_standard_hiatus_high_risk(self):
         """凡人修仙传 E152 standard + high_risk → 不完成。"""
         eps = [_ep(i, air_date="2026-01-01") for i in range(1, 153)]
-        sig = evaluate(_sub(), _mi(), _tmdb_fn(eps),
+        sig = _primary(_sub(), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False
 
