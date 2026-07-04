@@ -92,7 +92,7 @@ class CompletionGuard:
             self.timeout_manager.clear_release_token(subscribe)
             detail(
                 f"完成守卫：{format_subscribe(subscribe)} F 不稳定但命中当前目标完成证据，"
-                f"按 {self.mode} 模式放行"
+                f"信号={self._signal_tags(evidence.target_complete_signal)}，按 {self.mode} 模式放行"
             )
             return
 
@@ -102,7 +102,7 @@ class CompletionGuard:
                 self.timeout_manager.clear_release_token(subscribe)
                 detail(
                     f"完成守卫：{format_subscribe(subscribe)} 命中当前目标完成证据，"
-                    f"按 {self.mode} 模式放行"
+                    f"信号={self._signal_tags(signal)}，按 {self.mode} 模式放行"
                 )
                 return
             self._record_observation(data, subscribe, signal, evidence)
@@ -188,6 +188,11 @@ class CompletionGuard:
             ):
                 return signal
         return None
+
+    @staticmethod
+    def _signal_tags(signal: CompletionSignal) -> str:
+        """把完成信号来源压缩成日志可读的组合标签。"""
+        return " + ".join(signal.signals or ["none"]) if signal else "none"
 
     def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
         """按守卫模式判断低置信 I/L 是否可立即完成。"""

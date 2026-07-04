@@ -139,7 +139,9 @@ class TestCheckObservation:
         assert store["blocks"]["1"]["signals"] == ["L:target_satisfied"]
         assert store.get("releases", {}) == {}
 
-    def test_l_to_i_low_replaces_observation_without_release(self):
+    def test_l_to_i_low_replaces_observation_without_release(self, monkeypatch):
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time(),
@@ -173,6 +175,8 @@ class TestCheckObservation:
         assert decision.action == "hold"
         assert store["blocks"]["1"]["signals"] == ["I:all_aired"]
         assert "1" not in store.get("releases", {})
+        assert any("低置信观察来源切换" in message for message in messages)
+        assert not any("观察信号已变化" in message for message in messages)
 
     def test_i_family_switch_does_not_reset_timer(self):
         old_ts = time.time() - 3 * 86400
@@ -203,7 +207,9 @@ class TestCheckObservation:
         assert store["blocks"]["1"]["blocked_at"] == old_ts
         assert store["blocks"]["1"]["signals"] == ["I:cooldown"]
 
-    def test_l_plus_i_medium_allows_complete_and_clears_release(self):
+    def test_l_plus_i_medium_allows_complete_and_clears_release(self, monkeypatch):
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time(),
@@ -236,6 +242,7 @@ class TestCheckObservation:
 
         assert decision.action == "allow_complete"
         assert "1" not in store.get("releases", {})
+        assert any("L:target_satisfied + I:all_aired" in message for message in messages)
 
     def test_l_plus_i_medium_overrides_ordinary_unstable(self):
         """普通 F 波动遇到当前目标完成证据时，balanced 仍可结束观察。"""
@@ -362,7 +369,9 @@ class TestCheckObservation:
         assert store["blocks"]["1"]["blocked_at"] == old_ts
         assert "1" not in store.get("releases", {})
 
-    def test_hard_veto_replaces_low_and_resets_timer(self):
+    def test_hard_veto_replaces_low_and_resets_timer(self, monkeypatch):
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         old_ts = time.time() - 3 * 86400
         store = {
             "blocks": {"1": {
@@ -379,7 +388,12 @@ class TestCheckObservation:
         }
         read, update, _ = _store_mgr(store)
         mgr = PendingTimeoutManager(read, update)
-        hard = CompletionSignal(completed=False, signals=["M:mid_season"], scope_total=12)
+        hard = CompletionSignal(
+            completed=False,
+            signals=["M:mid_season"],
+            reason="季中间隔未完结",
+            scope_total=12,
+        )
         evidence = CompletionEvidence(
             primary_signal=hard,
             hard_veto=hard,
@@ -393,6 +407,8 @@ class TestCheckObservation:
         assert store["blocks"]["1"]["blocked_at"] > old_ts
         assert store["blocks"]["1"]["signals"] == ["M:mid_season"]
         assert "1" not in store.get("releases", {})
+        assert any("切换为 hard_veto 观察" in message for message in messages)
+        assert any("季中间隔未完结" in message for message in messages)
 
     def test_hard_veto_overrides_target_complete_in_observation(self):
         """不可覆盖的 hard veto 与目标完成证据并存时，状态机保持完成前观察。"""
@@ -506,8 +522,10 @@ class TestCheckObservation:
         assert store["releases"]["1"]["signals"] == ["L:target_satisfied"]
         assert store["releases"]["1"]["total_episode"] == 12
 
-    def test_cadence_acceleration_halves_low_timeout_without_joining_identity(self):
+    def test_cadence_acceleration_halves_low_timeout_without_joining_identity(self, monkeypatch):
         """G 只缩短观察超时，不写入完成证据身份。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {"blocks": {"1": {
             "blocked_at": time.time() - 12 * 86400,
             "signals": ["I:all_aired"],
@@ -536,6 +554,7 @@ class TestCheckObservation:
 
         assert decision.action == "release_with_token"
         assert store["releases"]["1"]["signals"] == ["I:all_aired"]
+        assert any("节奏已到期" in message for message in messages)
 
     def test_cadence_no_acceleration_when_disabled(self):
         store = {"blocks": {"1": {
@@ -567,8 +586,10 @@ class TestCheckObservation:
         assert decision.action == "hold"
         assert store.get("releases", {}) == {}
 
-    def test_total_growth_resets_observation_without_release_token(self):
+    def test_total_growth_resets_observation_without_release_token(self, monkeypatch):
         """观察期间 TMDB 增集属于明确不放行，释放本轮 guard 但不写放行令牌。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {"blocks": {"1": {
             "blocked_at": time.time() - 25 * 86400,
             "signals": ["I:all_aired"],
@@ -586,8 +607,11 @@ class TestCheckObservation:
 
         assert "1" not in store.get("blocks", {})
         assert "1" not in store.get("releases", {})
+        assert any("观察期间总集数增长 2→3" in message for message in messages)
 
-    def test_no_completion_evidence_timeout_releases_guard_without_token(self):
+    def test_no_completion_evidence_timeout_releases_guard_without_token(self, monkeypatch):
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time() - 8 * 86400,
@@ -611,8 +635,12 @@ class TestCheckObservation:
         assert decision.action == "release_guard"
         assert "1" not in store.get("blocks", {})
         assert "1" not in store.get("releases", {})
+        assert any("当前无完成证据且观察到期" in message for message in messages)
+        assert not any("观察信号已变化" in message for message in messages)
 
-    def test_off_mode_releases_guard_and_clears_tokens(self):
+    def test_off_mode_releases_guard_and_clears_tokens(self, monkeypatch):
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time(),
@@ -635,8 +663,9 @@ class TestCheckObservation:
         assert decision.action == "release_guard"
         assert "1" not in store.get("blocks", {})
         assert "1" not in store.get("releases", {})
+        assert any("守卫已关闭，清理既有观察状态" in message for message in messages)
 
-    def test_old_block_without_kind_is_parsed_for_low_observation(self):
+    def test_persisted_observation_without_kind_is_parsed_for_low_observation(self):
         store = {"blocks": {"1": {
             "blocked_at": time.time(),
             "signals": ["I:all_aired"],
@@ -662,7 +691,7 @@ class TestCheckObservation:
 
         assert decision.action == "hold"
 
-    def test_unparseable_old_block_restarts_observation_without_borrowing_timer(self):
+    def test_unparseable_persisted_observation_restarts_without_borrowing_timer(self):
         old_ts = time.time() - 30 * 86400
         store = {"blocks": {"1": {"blocked_at": old_ts, "reason": "guard_veto"}}}
         read, update, _ = _store_mgr(store)
@@ -728,7 +757,7 @@ class TestCheckObservation:
 
         assert "1" not in store.get("releases", {})
 
-    def test_old_matching_release_token_is_consumed(self):
+    def test_persisted_matching_release_token_is_consumed(self):
         store = {"releases": {"1": {
             "signals": ["I:all_aired"],
             "confidence": "low",
@@ -747,7 +776,7 @@ class TestCheckObservation:
 
         assert mgr.consume_release_token(1, sig, total_episode=12) is True
 
-    def test_reused_id_cannot_consume_old_media_release_token(self):
+    def test_reused_id_cannot_consume_stale_media_release_token(self):
         """一次性放行令牌必须匹配当前媒体身份。"""
         old = _sub(100)
         new = _sub(200)

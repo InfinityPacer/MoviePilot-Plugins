@@ -1,4 +1,4 @@
-"""域 ⑦J：P 状态超时释放——防止永久卡住。"""
+"""域 ⑦J：完成前观察状态机，防止守卫待定永久卡住。"""
 import time
 from typing import Callable, Optional
 
@@ -10,7 +10,7 @@ from ..shared.subscribe import (
 
 
 class PendingTimeoutManager:
-    """P 状态超时释放，实现 PendingTimeoutManagerProtocol。"""
+    """完成前观察状态机与一次性低置信放行令牌管理。"""
 
     def __init__(self, task_data_read: Callable, task_data_update: Callable,
                  timeout_days: int = 7,
@@ -35,7 +35,9 @@ class PendingTimeoutManager:
                 subscribe is not None
                 and self._identity_mismatched(current, subscribe)
             ):
-                data[sid] = self._block_payload(snapshot, subscribe, reset_timer=True)
+                data[sid] = self._observation_record_payload(
+                    snapshot, subscribe, reset_timer=True
+                )
                 if subscribe is not None:
                     data[sid]["identity"] = subscribe_identity(subscribe)
             return data
@@ -115,73 +117,89 @@ class PendingTimeoutManager:
             return CompletionObservationDecision.release_guard("完成守卫已关闭")
 
         data = self._read("blocks") or {}
-        block = data.get(sid)
-        if block and subscribe is not None and self._identity_mismatched(block, subscribe):
+        observation_record = data.get(sid)
+        if (
+            observation_record
+            and subscribe is not None
+            and self._identity_mismatched(observation_record, subscribe)
+        ):
             detail(f"完成前观察：{label} 观察记录媒体身份不匹配，重新建立观察状态")
             self.clear_observation(subscribe_id)
             self._clear_release_token(sid)
-            block = None
+            observation_record = None
 
-        block_snapshot = self._snapshot_from_block(block) if block else {}
-        block_parseable = self._is_parseable_snapshot(block_snapshot)
+        record_snapshot = (
+            self._snapshot_from_observation_record(observation_record)
+            if observation_record else {}
+        )
+        record_parseable = self._is_parseable_snapshot(record_snapshot)
 
         kind = snapshot.get("observation_kind") or "none"
         if kind in ("hard_veto", "unstable"):
-            reset = not block_parseable or not self._same_observation_family(block_snapshot, snapshot)
+            reset = not record_parseable or not self._same_observation_family(record_snapshot, snapshot)
             self._write_observation(sid, subscribe, snapshot, reset_timer=reset)
             self._clear_release_token(sid)
             if reset:
-                detail(f"完成前观察：{label} 切换为 {kind} 观察，重新计时")
+                detail(
+                    f"完成前观察：{label} 切换为 {kind} 观察，"
+                    f"原因={snapshot.get('reason') or 'guard_veto'}，重新计时"
+                )
             return CompletionObservationDecision.hold("继续观察")
 
         if self._is_allowed_completion(evidence, signal, mode):
-            detail(f"完成前观察：{label} 当前证据已允许完成，清理观察状态")
+            detail(
+                f"完成前观察：{label} 当前证据已允许完成，"
+                f"信号={self._signal_tags(signal)}，清理观察状态"
+            )
             self.clear_observation(subscribe_id)
             self._clear_release_token(sid)
             return CompletionObservationDecision.allow_complete("信号确认完结")
 
-        block_total = block_snapshot.get("total_episode")
-        if block_parseable and block_total and total_episode and total_episode > block_total:
-            detail(f"完成前观察：{label} 观察期间总集数增长 {block_total}→{total_episode}，释放本轮观察并等待重新判定")
+        record_total = record_snapshot.get("total_episode")
+        if record_parseable and record_total and total_episode and total_episode > record_total:
+            detail(
+                f"完成前观察：{label} 观察期间总集数增长 "
+                f"{record_total}→{total_episode}，释放本轮观察并等待重新判定"
+            )
             self.clear_observation(subscribe_id)
             self._clear_release_token(sid)
             return CompletionObservationDecision.release_guard("观察期间目标总集数增长")
 
         if kind == "medium_target_complete":
-            reset = not block_parseable or not self._same_observation_family(block_snapshot, snapshot)
+            reset = not record_parseable or not self._same_observation_family(record_snapshot, snapshot)
             self._write_observation(sid, subscribe, snapshot, reset_timer=reset)
             self._clear_release_token(sid)
-            block = self._read("blocks").get(sid, {})
-            block_snapshot = self._snapshot_from_block(block)
+            observation_record = self._read("blocks").get(sid, {})
+            record_snapshot = self._snapshot_from_observation_record(observation_record)
             if reset:
                 detail(f"完成前观察：{label} 切换为 target_complete 观察，重新计时")
             effective_timeout = self._effective_timeout(evidence, signal, label)
-            elapsed = time.time() - block_snapshot.get("blocked_at", time.time())
+            elapsed = time.time() - record_snapshot.get("blocked_at", time.time())
             if elapsed <= effective_timeout:
                 return CompletionObservationDecision.hold("继续观察")
             self.clear_observation(subscribe_id)
             return CompletionObservationDecision.release_guard("完成前观察到期")
 
         if self._is_low_observation(snapshot, signal):
-            if not block or not block_parseable:
+            if not observation_record or not record_parseable:
                 detail(f"完成前观察：{label} 开始低置信完成前观察")
                 self._write_observation(sid, subscribe, snapshot, reset_timer=True)
-                block = self._read("blocks").get(sid, {})
-                block_snapshot = self._snapshot_from_block(block)
-            elif self._same_low_identity(block_snapshot, snapshot):
+                observation_record = self._read("blocks").get(sid, {})
+                record_snapshot = self._snapshot_from_observation_record(observation_record)
+            elif self._same_low_identity(record_snapshot, snapshot):
                 self._write_observation(sid, subscribe, snapshot, reset_timer=False)
-            elif self._same_i_family(block_snapshot, snapshot):
+            elif self._same_i_family(record_snapshot, snapshot):
                 detail(f"完成前观察：{label} I 族低置信信号切换，沿用观察计时")
                 self._write_observation(sid, subscribe, snapshot, reset_timer=False)
             else:
                 detail(f"完成前观察：{label} 低置信观察来源切换，重新计时")
                 self._write_observation(sid, subscribe, snapshot, reset_timer=True)
-                block = self._read("blocks").get(sid, {})
-                block_snapshot = self._snapshot_from_block(block)
+                observation_record = self._read("blocks").get(sid, {})
+                record_snapshot = self._snapshot_from_observation_record(observation_record)
             self._clear_release_token(sid)
 
             effective_timeout = self._effective_timeout(evidence, signal, label)
-            elapsed = time.time() - block_snapshot.get("blocked_at", time.time())
+            elapsed = time.time() - record_snapshot.get("blocked_at", time.time())
             if elapsed <= effective_timeout:
                 return CompletionObservationDecision.hold("继续观察")
 
@@ -191,11 +209,11 @@ class PendingTimeoutManager:
             self.clear_observation(subscribe_id)
             return CompletionObservationDecision.release_with_token("完成前观察到期")
 
-        if not block:
+        if not observation_record:
             self._clear_release_token(sid)
             return CompletionObservationDecision.release_guard("完成前观察记录缺失")
 
-        if not block_parseable:
+        if not record_parseable:
             detail(f"完成前观察：{label} 旧观察记录无法解析，重新建立无完成证据观察")
             self._write_observation(sid, subscribe, snapshot, reset_timer=True)
             self._clear_release_token(sid)
@@ -203,7 +221,7 @@ class PendingTimeoutManager:
 
         self._clear_release_token(sid)
         effective_timeout = self._effective_timeout(evidence, signal, label)
-        elapsed = time.time() - block_snapshot.get("blocked_at", time.time())
+        elapsed = time.time() - record_snapshot.get("blocked_at", time.time())
         if elapsed <= effective_timeout:
             return CompletionObservationDecision.hold("继续观察")
 
@@ -213,7 +231,7 @@ class PendingTimeoutManager:
 
     @staticmethod
     def _resolve_subscribe(subscribe_or_id):
-        """兼容旧整数调用，并在对象调用时返回完整订阅身份。"""
+        """同时支持订阅对象和订阅 ID；对象路径可校验媒体身份。"""
         if hasattr(subscribe_or_id, "id"):
             return subscribe_or_id, subscribe_or_id.id
         return None, subscribe_or_id
@@ -228,7 +246,7 @@ class PendingTimeoutManager:
         """写入当前观察快照；同源切换可保留原计时。"""
         def updater(data: dict) -> dict:
             current = data.get(sid, {})
-            payload = self._block_payload(
+            payload = self._observation_record_payload(
                 snapshot,
                 subscribe,
                 reset_timer=reset_timer,
@@ -306,20 +324,20 @@ class PendingTimeoutManager:
         snapshot["total_episode"] = total_episode
         return snapshot
 
-    def _snapshot_from_block(self, block: Optional[dict]) -> dict:
+    def _snapshot_from_observation_record(self, record: Optional[dict]) -> dict:
         """解析当前和旧格式观察记录；缺少必要信号字段时标记为无法复用计时。"""
-        if not block:
+        if not record:
             return {}
-        signals = block.get("signals") or []
-        confidence = block.get("confidence") or ""
+        signals = record.get("signals") or []
+        confidence = record.get("confidence") or ""
         return {
-            "observation_kind": block.get("observation_kind")
-                                or self._observation_kind_from_block(block),
+            "observation_kind": record.get("observation_kind")
+                                or self._observation_kind_from_observation_record(record),
             "signals": list(signals),
             "confidence": confidence,
-            "total_episode": block.get("total_episode"),
-            "reason": block.get("reason") or "",
-            "blocked_at": block.get("blocked_at"),
+            "total_episode": record.get("total_episode"),
+            "reason": record.get("reason") or "",
+            "blocked_at": record.get("blocked_at"),
         }
 
     @staticmethod
@@ -336,6 +354,11 @@ class PendingTimeoutManager:
             or evidence.primary_signal
             or CompletionSignal(signals=["none"])
         )
+
+    @staticmethod
+    def _signal_tags(signal: CompletionSignal) -> str:
+        """把完成信号来源压缩成日志可读的组合标签。"""
+        return " + ".join(signal.signals or ["none"]) if signal else "none"
 
     @staticmethod
     def _observation_kind_from_signal(signal: CompletionSignal) -> str:
@@ -359,11 +382,11 @@ class PendingTimeoutManager:
             return "unstable"
         return "none"
 
-    def _observation_kind_from_block(self, block: dict) -> str:
+    def _observation_kind_from_observation_record(self, record: dict) -> str:
         """从旧格式观察记录的 signals/confidence 恢复当前观察类别。"""
-        signals = list(block.get("signals") or [])
-        confidence = block.get("confidence") or ""
-        if not signals and not confidence and block.get("total_episode") is None:
+        signals = list(record.get("signals") or [])
+        confidence = record.get("confidence") or ""
+        if not signals and not confidence and record.get("total_episode") is None:
             return ""
         if confidence == "low" and signals == ["L:target_satisfied"]:
             return "low_l"
@@ -461,8 +484,12 @@ class PendingTimeoutManager:
         return self._timeout_seconds
 
     @staticmethod
-    def _block_payload(snapshot: dict, subscribe=None, reset_timer: bool = True,
-                       current: Optional[dict] = None) -> dict:
+    def _observation_record_payload(
+        snapshot: dict,
+        subscribe=None,
+        reset_timer: bool = True,
+        current: Optional[dict] = None,
+    ) -> dict:
         """按观察快照生成持久化观察记录，保留同源切换的既有计时。"""
         current = current or {}
         payload = {

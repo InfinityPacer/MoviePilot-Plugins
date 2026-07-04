@@ -5,9 +5,11 @@ from unittest.mock import MagicMock, call, patch
 from app.schemas.types import MediaType
 
 from subscribeassistantenhanced.engine.local import check_l_signal
+from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.scope import build_scope
 from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal
 from subscribeassistantenhanced.guard import CompletionGuard
+from subscribeassistantenhanced.shared.config import PluginConfig
 from subscribeassistantenhanced.shared.subscribe import pending_subscription_episodes
 
 
@@ -176,6 +178,34 @@ class TestCompletionGuard:
         assert event.event_data.cancel is True
         assert "下载" in event.event_data.reason
         guard.evidence_pipeline.evaluate.assert_not_called()
+
+    def test_wenxin_like_40_episode_l_satisfied_balanced_completes_without_guard_veto(self):
+        """40 集普通剧集不再因超长季风险进入完成前观察，L+I 证据可在 balanced 放行。"""
+        subscribe = _sub()
+        subscribe.total_episode = 40
+        episodes = [_ep(i) for i in range(1, 41)]
+        volatility = SimpleNamespace(is_stable=MagicMock(return_value=True))
+        pipeline = CompletionEvidencePipeline(
+            tmdb_episodes_fn=MagicMock(return_value=episodes),
+            volatility_tracker=volatility,
+            config=PluginConfig({}),
+        )
+        guard = CompletionGuard(
+            evidence_pipeline=pipeline,
+            has_active_downloads_fn=MagicMock(return_value=False),
+            mark_pending_fn=MagicMock(),
+            timeout_manager=MagicMock(),
+            mode="balanced",
+            pending_download_enabled=True,
+            resolve_missing_fn=MagicMock(return_value=(True, {})),
+        )
+        event = _event(subscribe=subscribe)
+
+        guard.handle(event)
+
+        assert event.event_data.cancel is False
+        guard.mark_pending_fn.assert_not_called()
+        guard.timeout_manager.record_observation.assert_not_called()
 
     def test_evidence_pipeline_receives_missing_resolver_and_meta(self):
         """完成守卫把主程序缺集口径与 CompletionCheck meta 交给 evidence pipeline。"""
@@ -360,8 +390,10 @@ class TestCompletionGuard:
         guard.timeout_manager.consume_release_token.assert_not_called()
         guard.mark_pending_fn.assert_not_called()
 
-    def test_balanced_medium_target_complete_releases_and_clears_token(self):
+    def test_balanced_medium_target_complete_releases_and_clears_token(self, monkeypatch):
         """balanced 接受 L+I 合成的当前目标完成证据，并清理旧完成释放令牌。"""
+        messages = []
+        monkeypatch.setattr("subscribeassistantenhanced.guard.detail", messages.append)
         target = _signal(
             completed=True,
             confidence="medium",
@@ -377,6 +409,7 @@ class TestCompletionGuard:
         assert event.event_data.cancel is False
         guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.timeout_manager.record_observation.assert_not_called()
+        assert any("L:target_satisfied + I:all_aired" in message for message in messages)
 
     def test_strict_medium_target_complete_enters_observation(self):
         """strict 把 target_complete 作为 guard_veto 观察，不直接完成。"""

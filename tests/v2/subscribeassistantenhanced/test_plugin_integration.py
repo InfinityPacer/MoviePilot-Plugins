@@ -2368,7 +2368,7 @@ class TestPeriodicJobs:
         assert plugin._modules["verifier"]._notify.call_args.args[0].endswith("已移除旧洗版订阅并重建订阅")
         assert data_store["snapshots"]["list"] == []
 
-    def test_pending_release_active_guard_veto_uses_pending_judge_not_block_fallback(self, monkeypatch):
+    def test_pending_release_active_guard_veto_uses_pending_judge_not_orphan_cleanup(self, monkeypatch):
         """活跃 guard_veto P 必须交给 PendingJudge，不绕过证据流水线释放。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
@@ -2617,7 +2617,7 @@ class TestPeriodicJobs:
         assert data_store.get("snapshots", {}) == {}
 
     def test_pending_release_checks_pending_judge_tasks(self):
-        """pending_judge 写入的 P 订阅应由定时巡检调用 check_exit，而不只处理 blocks。"""
+        """pending_judge 写入的 P 订阅应由定时巡检调用 check_exit，而不只清理孤儿观察记录。"""
         sub = _sub(id=7, state="P", name="测试", best_version=0)
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({"pending_enhanced_enabled": True})
