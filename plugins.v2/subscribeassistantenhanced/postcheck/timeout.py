@@ -135,6 +135,16 @@ class PendingTimeoutManager:
         record_parseable = self._is_parseable_snapshot(record_snapshot)
 
         kind = snapshot.get("observation_kind") or "none"
+        record_total = record_snapshot.get("total_episode")
+        if record_parseable and record_total and total_episode and total_episode > record_total:
+            detail(
+                f"完成前观察：{label} 观察期间总集数增长 "
+                f"{record_total}→{total_episode}，释放本轮观察并等待重新判定"
+            )
+            self.clear_observation(subscribe_id)
+            self._clear_release_token(sid)
+            return CompletionObservationDecision.release_guard("观察期间目标总集数增长")
+
         if kind in ("hard_veto", "unstable"):
             reset = not record_parseable or not self._same_observation_family(record_snapshot, snapshot)
             self._write_observation(sid, subscribe, snapshot, reset_timer=reset)
@@ -154,16 +164,6 @@ class PendingTimeoutManager:
             self.clear_observation(subscribe_id)
             self._clear_release_token(sid)
             return CompletionObservationDecision.allow_complete("信号确认完结")
-
-        record_total = record_snapshot.get("total_episode")
-        if record_parseable and record_total and total_episode and total_episode > record_total:
-            detail(
-                f"完成前观察：{label} 观察期间总集数增长 "
-                f"{record_total}→{total_episode}，释放本轮观察并等待重新判定"
-            )
-            self.clear_observation(subscribe_id)
-            self._clear_release_token(sid)
-            return CompletionObservationDecision.release_guard("观察期间目标总集数增长")
 
         if kind == "medium_target_complete":
             reset = not record_parseable or not self._same_observation_family(record_snapshot, snapshot)
@@ -270,7 +270,7 @@ class PendingTimeoutManager:
 
     def _matches_token(self, token: dict, signal: CompletionSignal,
                        total_episode: Optional[int]) -> bool:
-        """判断一次性 release token 是否仍匹配当前低置信信号。"""
+        """判断一次性放行令牌是否仍匹配当前低置信信号。"""
         return (
             token.get("confidence") == signal.confidence
             and token.get("signals") == list(signal.signals)
@@ -343,6 +343,21 @@ class PendingTimeoutManager:
     @staticmethod
     def _signal_from_evidence(evidence: CompletionEvidence) -> CompletionSignal:
         """选择代表当前观察身份的信号；G 只留在 evidence，不进入身份。"""
+        kind = evidence.observation_kind
+        if kind == "hard_veto" and evidence.hard_veto is not None:
+            return evidence.hard_veto
+        if kind == "unstable" and evidence.unstable_signal is not None:
+            return evidence.unstable_signal
+        if kind == "medium_target_complete" and evidence.target_complete_signal is not None:
+            return evidence.target_complete_signal
+        if kind == "high_completion" and evidence.high_completion is not None:
+            return evidence.high_completion
+        if kind == "low_l" and evidence.local_signal is not None:
+            return evidence.local_signal
+        if kind == "low_i" and evidence.i_low_signal is not None:
+            return evidence.i_low_signal
+        if kind == "i_medium" and evidence.i_signal is not None:
+            return evidence.i_signal
         return (
             evidence.hard_veto
             or evidence.high_completion
@@ -433,7 +448,7 @@ class PendingTimeoutManager:
 
     @staticmethod
     def _is_low_observation(snapshot: dict, signal: CompletionSignal) -> bool:
-        """低置信 L/I 才能生成 release token。"""
+        """低置信 L/I 才能生成一次性放行令牌。"""
         return bool(
             signal
             and signal.completed

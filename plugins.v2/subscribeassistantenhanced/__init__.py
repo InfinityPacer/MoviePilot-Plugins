@@ -592,7 +592,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "subscription_cleanup_histories",
         ]:
             self.save_data(key, {})
-        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、待定记录、观察放行令牌、完成快照、删除指纹、集数变化记录、订阅清理记录）")
+        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、完成前观察记录、放行令牌、完成快照、删除指纹、集数变化记录、订阅清理记录）")
 
     @staticmethod
     def _format_reset_recovery_summary(recovered_pending: List[str], recovered_paused: List[str]) -> str:
@@ -918,7 +918,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         for sid in list((self.get_data("blocks") or {}).keys()):
             subscribe = self._subscribe_oper.get(int(sid))
             if not subscribe:
-                detail(f"待定释放：{format_subscribe_label(subscribe_id=sid)} 已不存在，清理残留待定记录")
+                detail(f"待定释放：{format_subscribe_label(subscribe_id=sid)} 已不存在，清理残留完成前观察记录")
                 timeout_manager.clear_observation(int(sid))
                 timeout_manager.clear_release_token(int(sid))
                 continue

@@ -117,7 +117,7 @@ class TestProtocolConformance:
 
 class TestCheckObservation:
 
-    def test_no_block_low_starts_observation_without_release(self):
+    def test_without_existing_observation_low_starts_observation_without_release_token(self):
         read, update, store = _store_mgr()
         mgr = PendingTimeoutManager(read, update, timeout_days=7)
         low_l = CompletionSignal(
@@ -330,6 +330,46 @@ class TestCheckObservation:
 
         assert decision.action == "allow_complete"
         assert "1" not in store.get("blocks", {})
+        assert "1" not in store.get("releases", {})
+
+    def test_unstable_observation_uses_f_signal_even_with_high_context(self):
+        """F 仍需观察时，持久观察身份应使用 F，不被旁路保留的 E high 覆盖。"""
+        store = {"blocks": {"1": {
+            "blocked_at": time.time(),
+            "signals": ["F:unstable"],
+            "confidence": "",
+            "total_episode": 12,
+        }}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(read, update)
+        unstable = CompletionSignal(
+            completed=False,
+            stable=False,
+            signals=["F:unstable"],
+            reason="目标总集数最近发生变化",
+            volatility_direction="up",
+            scope_total=12,
+        )
+        ended = CompletionSignal(
+            completed=True,
+            confidence="high",
+            signals=["E:ended"],
+            reason="TMDB 状态为 Ended",
+            scope_total=12,
+        )
+        evidence = CompletionEvidence(
+            primary_signal=unstable,
+            high_completion=ended,
+            unstable_signal=unstable,
+            scope_total=12,
+            observation_kind="unstable",
+        )
+
+        decision = mgr.check_observation(1, evidence, mode="balanced")
+
+        assert decision.action == "hold"
+        assert store["blocks"]["1"]["signals"] == ["F:unstable"]
+        assert store["blocks"]["1"]["reason"] == "目标总集数最近发生变化"
         assert "1" not in store.get("releases", {})
 
     def test_strict_target_complete_medium_keeps_observation(self):
@@ -608,6 +648,59 @@ class TestCheckObservation:
         assert "1" not in store.get("blocks", {})
         assert "1" not in store.get("releases", {})
         assert any("观察期间总集数增长 2→3" in message for message in messages)
+
+    def test_total_growth_precedes_medium_or_high_completion(self):
+        """观察期间增集先释放本轮守卫，不借当前 medium/high 完成证据直接放行。"""
+        for signal, evidence_kwargs in (
+            (
+                CompletionSignal(
+                    completed=True,
+                    confidence="medium",
+                    signals=["L:target_satisfied", "I:all_aired"],
+                    scope_total=3,
+                ),
+                {"target_complete_signal": "self", "observation_kind": "medium_target_complete"},
+            ),
+            (
+                CompletionSignal(
+                    completed=True,
+                    confidence="high",
+                    signals=["E:ended"],
+                    scope_total=3,
+                ),
+                {"high_completion": "self", "observation_kind": "high_completion"},
+            ),
+        ):
+            store = {
+                "blocks": {"1": {
+                    "blocked_at": time.time() - 25 * 86400,
+                    "signals": ["I:all_aired"],
+                    "confidence": "low",
+                    "total_episode": 2,
+                }},
+                "releases": {"1": {
+                    "signals": ["I:all_aired"],
+                    "confidence": "low",
+                    "total_episode": 2,
+                }},
+            }
+            read, update, _ = _store_mgr(store)
+            mgr = PendingTimeoutManager(read, update, timeout_days=21)
+            kwargs = {
+                key: signal if value == "self" else value
+                for key, value in evidence_kwargs.items()
+            }
+            evidence = CompletionEvidence(
+                primary_signal=signal,
+                scope_total=3,
+                **kwargs,
+            )
+
+            decision = mgr.check_observation(1, evidence, mode="balanced")
+
+            assert decision.action == "release_guard"
+            assert "1" not in store.get("blocks", {})
+            assert "1" not in store.get("releases", {})
 
     def test_no_completion_evidence_timeout_releases_guard_without_token(self, monkeypatch):
         messages = []

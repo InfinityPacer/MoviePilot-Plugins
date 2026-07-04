@@ -1295,8 +1295,8 @@ def test_run_all_checks_invokes_verify_when_enabled():
     plugin.run_completion_verify.assert_called_once()
 
 
-def test_run_all_checks_runs_real_pending_release_without_timeout_switch(monkeypatch):
-    """立即巡检必须真实进入完成前观察释放，不受旧布尔开关影响。"""
+def test_run_all_checks_runs_pending_release_as_lifecycle_task(monkeypatch):
+    """立即巡检必须执行待定释放生命周期任务，不受其他可选域开关影响。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({
         "enabled": True,
