@@ -2,7 +2,7 @@
 import time
 from typing import Callable, Optional
 
-from ..engine.types import CompletionSignal
+from ..engine.types import CompletionEvidence, CompletionObservationDecision, CompletionSignal
 from ..shared.log import detail
 from ..shared.subscribe import (
     format_subscribe_label, identity_matches, subscribe_identity,
@@ -99,6 +99,22 @@ class PendingTimeoutManager:
 
         self._clear_release(sid)
         return True
+
+    def clear_release(self, subscribe_id):
+        """公开清理一次性完成放行标记，供完成守卫直接放行时清除旧令牌。"""
+        _, subscribe_id = self._resolve_subscribe(subscribe_id)
+        self._clear_release(str(subscribe_id))
+
+    def check_observation(self, subscribe_id, evidence: CompletionEvidence,
+                          mode: str) -> CompletionObservationDecision:
+        """按当前信号超时规则生成完成前观察裁决。"""
+        signal = evidence.primary_signal
+        total_episode = evidence.scope_total or signal.scope_total
+        if self.check_release(subscribe_id, signal, total_episode=total_episode):
+            if signal.completed and signal.confidence == "low":
+                return CompletionObservationDecision.release_with_token("完成前观察到期")
+            return CompletionObservationDecision.release_guard("完成前观察释放")
+        return CompletionObservationDecision.hold("继续观察")
 
     def check_release(self, subscribe_id,
                       signal: CompletionSignal,

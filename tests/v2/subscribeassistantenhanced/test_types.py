@@ -1,6 +1,8 @@
 """engine/types.py 数据类型与协议桩单测。"""
 from subscribeassistantenhanced.engine.types import (
     CompletionSignal,
+    CompletionEvidence,
+    CompletionObservationDecision,
     SeasonScope,
     PauseRecord,
     CompletionVerifierProtocol,
@@ -52,6 +54,75 @@ class CompletionSignalTest:
         assert sig.completed is True
         assert sig.confidence == "none"
         assert sig.reason == "partial"
+
+
+class CompletionEvidenceTest:
+    """CompletionEvidence 默认值与构造。"""
+
+    def test_defaults(self):
+        evidence = CompletionEvidence()
+
+        assert evidence.scope_total == 0
+        assert evidence.scope_high_risk is False
+        assert evidence.primary_signal.completed is False
+        assert evidence.primary_signal.stable is True
+        assert evidence.primary_signal.signals == ["none"]
+        assert evidence.primary_signal.reason == "无信号确认当前目标范围已播完"
+        assert evidence.hard_veto is None
+        assert evidence.unstable_signal is None
+        assert evidence.high_completion is None
+        assert evidence.i_signal is None
+        assert evidence.i_low_signal is None
+        assert evidence.local_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.cadence_expired is False
+        assert evidence.observation_kind == "none"
+        assert evidence.local_blocked_reason == ""
+
+    def test_primary_signal_independence(self):
+        """不同 evidence 的默认 primary_signal 互不影响。"""
+        a = CompletionEvidence()
+        b = CompletionEvidence()
+
+        a.primary_signal.signals.append("x")
+
+        assert b.primary_signal.signals == ["none"]
+
+
+class CompletionObservationDecisionTest:
+    """CompletionObservationDecision 默认值与构造器。"""
+
+    def test_hold_constructor(self):
+        decision = CompletionObservationDecision.hold("继续观察")
+
+        assert decision.action == "hold"
+        assert decision.reason == "继续观察"
+        assert decision.exit_pending is False
+        assert decision.write_release_token is False
+
+    def test_release_guard_constructor(self):
+        decision = CompletionObservationDecision.release_guard("释放守卫")
+
+        assert decision.action == "release_guard"
+        assert decision.reason == "释放守卫"
+        assert decision.exit_pending is True
+        assert decision.write_release_token is False
+
+    def test_release_with_token_constructor(self):
+        decision = CompletionObservationDecision.release_with_token("写入令牌")
+
+        assert decision.action == "release_with_token"
+        assert decision.reason == "写入令牌"
+        assert decision.exit_pending is True
+        assert decision.write_release_token is True
+
+    def test_allow_complete_constructor(self):
+        decision = CompletionObservationDecision.allow_complete("允许完成")
+
+        assert decision.action == "allow_complete"
+        assert decision.reason == "允许完成"
+        assert decision.exit_pending is True
+        assert decision.write_release_token is False
 
 
 class SeasonScopeTest:
@@ -131,6 +202,12 @@ class ProtocolStubTest:
 
             def consume_release(self, subscribe_id, signal, total_episode=None):
                 return False
+
+            def clear_release(self, subscribe_id):
+                pass
+
+            def check_observation(self, subscribe_id, evidence, mode):
+                return CompletionObservationDecision.hold()
 
         assert isinstance(Dummy(), PendingTimeoutManagerProtocol)
 

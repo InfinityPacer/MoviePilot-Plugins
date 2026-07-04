@@ -2,7 +2,9 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from ..shared.media import episode_field, target_episode_range
 from ..shared.subscribe import build_subscribe_meta, is_tv_episode_best_version_subscribe
+from .signals import scope_future_episodes
 from .types import CompletionSignal, SeasonScope
 
 
@@ -58,3 +60,39 @@ def check_l_signal_detail(subscribe, scope: SeasonScope, mediainfo, meta=None,
         ),
         blocked_reason="",
     )
+
+
+def format_future_episode(episode) -> str:
+    """把后续集排期格式化为简短日志片段。"""
+    if isinstance(episode, dict):
+        number = episode.get("episode_number")
+        air_date = episode.get("air_date")
+    else:
+        number = getattr(episode, "episode_number", None)
+        air_date = getattr(episode, "air_date", None)
+    episode_label = f"E{number}" if number is not None else "未知集号"
+    return f"{episode_label}，播出日期：{air_date or '未知'}"
+
+
+def format_future_blocked_reason(episode) -> str:
+    """说明 TMDB 已存在当前订阅目标外的后续集。"""
+    return f"TMDB 已存在目标范围外的后续集（{format_future_episode(episode)}）"
+
+
+def _future_episode_number(episode) -> int | None:
+    """解析 TMDB 分集集号；无法确认归属目标范围时按未知处理。"""
+    number = episode_field(episode, "episode_number", None)
+    try:
+        return int(number)
+    except (TypeError, ValueError):
+        return None
+
+
+def first_blocking_future_episode(subscribe, scope: SeasonScope):
+    """返回当前订阅目标范围外的最早后续集。"""
+    target_episodes = set(target_episode_range(subscribe))
+    for episode in scope_future_episodes(scope):
+        number = _future_episode_number(episode)
+        if number is None or not target_episodes or number not in target_episodes:
+            return episode
+    return None

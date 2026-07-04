@@ -3,7 +3,11 @@ import time
 from types import SimpleNamespace
 
 from subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
-from subscribeassistantenhanced.engine.types import CompletionSignal
+from subscribeassistantenhanced.engine.types import (
+    CompletionEvidence,
+    CompletionSignal,
+    PendingTimeoutManagerProtocol,
+)
 
 
 def _store_mgr(store=None):
@@ -63,6 +67,37 @@ class TestClearBlock:
         mgr = PendingTimeoutManager(read, update)
         mgr.clear_block(1)
         assert "1" not in store.get("blocks", {})
+
+
+class TestProtocolConformance:
+    """真实超时管理器必须满足完成守卫依赖的运行时协议。"""
+
+    def test_timeout_manager_satisfies_protocol(self):
+        read, update, _ = _store_mgr()
+        mgr = PendingTimeoutManager(read, update)
+
+        assert isinstance(mgr, PendingTimeoutManagerProtocol)
+
+    def test_clear_release_public_api_removes_token(self):
+        store = {"releases": {"1": {"signals": ["I:all_aired"]}}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(read, update)
+
+        mgr.clear_release(1)
+
+        assert "1" not in store.get("releases", {})
+
+    def test_check_observation_legacy_wrapper_holds_before_timeout(self):
+        store = {"blocks": {"1": {"blocked_at": time.time(), "reason": "guard_veto"}}}
+        read, update, _ = _store_mgr(store)
+        mgr = PendingTimeoutManager(read, update, timeout_days=21)
+        signal = CompletionSignal(stable=True, signals=["none"])
+        evidence = CompletionEvidence(primary_signal=signal)
+
+        decision = mgr.check_observation(1, evidence, mode="strict")
+
+        assert decision.action == "hold"
+        assert decision.exit_pending is False
 
 
 class TestCheckRelease:

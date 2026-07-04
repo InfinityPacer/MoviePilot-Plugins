@@ -52,20 +52,35 @@ class TestDetectHighRisk:
         scope = SeasonScope(episodes=[_ep(i) for i in range(1, 13)], total=12)
         assert detect_high_risk(scope, make_mediainfo()) is False
 
-    def test_exactly_80_episodes_high_risk(self, make_mediainfo):
-        """条件 1 边界：scope 集数 == 80 → high_risk。"""
-        scope = SeasonScope(episodes=[_ep(i) for i in range(1, 81)], total=80)
-        assert detect_high_risk(scope, make_mediainfo()) is True
+    def test_40_episodes_not_high_risk(self, make_mediainfo):
+        """数量边界：40 集不因集数本身进入 high_risk。"""
+        scope = SeasonScope(episodes=[_ep(i) for i in range(1, 41)], total=40)
+        assert detect_high_risk(scope, make_mediainfo()) is False
 
-    def test_79_episodes_not_high_risk(self, make_mediainfo):
-        """条件 1 边界：scope 集数 == 79 → not high_risk。"""
-        scope = SeasonScope(episodes=[_ep(i) for i in range(1, 80)], total=79)
+    def test_39_episodes_not_high_risk(self, make_mediainfo):
+        """数量边界：39 集不因集数本身进入 high_risk。"""
+        scope = SeasonScope(episodes=[_ep(i) for i in range(1, 40)], total=39)
         assert detect_high_risk(scope, make_mediainfo()) is False
 
     def test_50_episodes_not_high_risk(self, make_mediainfo):
-        """条件 1：scope 集数 < 80。"""
+        """数量边界：50 集不因集数本身进入 high_risk。"""
         scope = SeasonScope(episodes=[_ep(i) for i in range(1, 51)], total=50)
         assert detect_high_risk(scope, make_mediainfo()) is False
+
+    def test_79_episodes_not_high_risk(self, make_mediainfo):
+        """数量边界：79 集不因集数本身进入 high_risk。"""
+        scope = SeasonScope(episodes=[_ep(i) for i in range(1, 80)], total=79)
+        assert detect_high_risk(scope, make_mediainfo()) is False
+
+    def test_80_episodes_high_risk(self, make_mediainfo):
+        """数量边界：80 集按超长绝对季进入 high_risk。"""
+        scope = SeasonScope(episodes=[_ep(i) for i in range(1, 81)], total=80)
+        assert detect_high_risk(scope, make_mediainfo()) is True
+
+    def test_85_episodes_high_risk(self, make_mediainfo):
+        """数量边界：85 集按超长绝对季进入 high_risk。"""
+        scope = SeasonScope(episodes=[_ep(i) for i in range(1, 86)], total=85)
+        assert detect_high_risk(scope, make_mediainfo()) is True
 
     def test_mid_season_in_middle_high_risk(self, make_mediainfo):
         """条件 2：中间有 mid_season。"""

@@ -19,6 +19,63 @@ class CompletionSignal:
 
 
 @dataclass
+class CompletionEvidence:
+    """完成观察裁决的输入证据，聚合各类完结信号与本地阻断信息。"""
+    scope_total: int = 0              # 本轮 SeasonScope 的目标总集数
+    scope_high_risk: bool = False     # 当前目标范围是否属于高风险范围
+    primary_signal: CompletionSignal = field(default_factory=lambda: CompletionSignal(
+        completed=False,
+        stable=True,
+        signals=["none"],
+        reason="无信号确认当前目标范围已播完",
+    ))                                # 主完结信号，缺省为无完成证据
+    hard_veto: Optional[CompletionSignal] = None  # 不可被观察释放覆盖的否决信号
+    unstable_signal: Optional[CompletionSignal] = None  # F 不稳定信号
+    high_completion: Optional[CompletionSignal] = None  # 高置信完结信号
+    i_signal: Optional[CompletionSignal] = None  # I 类播出完成信号
+    i_low_signal: Optional[CompletionSignal] = None  # 低置信 I 信号
+    local_signal: Optional[CompletionSignal] = None  # L 本地目标满足信号
+    target_complete_signal: Optional[CompletionSignal] = None  # 当前目标范围完成信号
+    cadence_expired: bool = False     # G 信号是否已达到播出节奏超期
+    observation_kind: str = "none"    # 观察策略类别，供超时管理区分释放口径
+    local_blocked_reason: str = ""    # L 信号未命中时的可诊断原因
+
+
+@dataclass
+class CompletionObservationDecision:
+    """完成前观察的裁决结果，描述是否退出待定以及是否写入释放令牌。"""
+    action: str = "hold"              # 裁决动作：hold/release_guard/release_with_token/allow_complete
+    reason: str = ""                  # 裁决原因，用于日志和状态说明
+    exit_pending: bool = False        # 是否解除当前 guard_veto 待定状态
+    write_release_token: bool = False  # 是否写入一次性完成释放令牌
+
+    @classmethod
+    def hold(cls, reason: str = ""):
+        """保持观察状态。"""
+        return cls(action="hold", reason=reason)
+
+    @classmethod
+    def release_guard(cls, reason: str = ""):
+        """释放守卫待定状态，但不写完成释放令牌。"""
+        return cls(action="release_guard", reason=reason, exit_pending=True)
+
+    @classmethod
+    def release_with_token(cls, reason: str = ""):
+        """释放守卫待定状态，并写入一次性完成释放令牌。"""
+        return cls(
+            action="release_with_token",
+            reason=reason,
+            exit_pending=True,
+            write_release_token=True,
+        )
+
+    @classmethod
+    def allow_complete(cls, reason: str = ""):
+        """允许当前完成检查继续通过。"""
+        return cls(action="allow_complete", reason=reason, exit_pending=True)
+
+
+@dataclass
 class SeasonScope:
     """当前订阅的逻辑季范围，供信号引擎、待定和完成后验证统一使用。"""
     tmdbid: int = 0                   # TMDB 媒体 ID
@@ -60,6 +117,10 @@ class PendingTimeoutManagerProtocol(Protocol):
     def consume_release(self, subscribe_id: int,
                         signal: CompletionSignal,
                         total_episode: Optional[int] = None) -> bool: ...
+    def clear_release(self, subscribe_id: int) -> None: ...
+    def check_observation(self, subscribe_id: int,
+                          evidence: CompletionEvidence,
+                          mode: str) -> CompletionObservationDecision: ...
 
 
 @runtime_checkable

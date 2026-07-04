@@ -6,11 +6,14 @@ from app.schemas.event import SubscribeCompletionCheckEventData
 from app.schemas.types import MediaType
 
 from .engine.scope import build_scope
-from .engine.local import LocalSignalResult, check_l_signal_detail
-from .engine.signals import scope_future_episodes
+from .engine.local import (
+    LocalSignalResult,
+    check_l_signal_detail,
+    first_blocking_future_episode,
+    format_future_blocked_reason,
+)
 from .engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from .shared.log import detail
-from .shared.media import episode_field, target_episode_range
 from .shared.subscribe import (
     format_subscribe,
     is_full_best_version_subscribe,
@@ -140,10 +143,10 @@ class CompletionGuard:
         if not self.tmdb_episodes_fn:
             return LocalSignalResult(blocked_reason="缺少 TMDB 分集数据入口，未命中 L")
         scope = build_scope(subscribe, mediainfo, self.tmdb_episodes_fn)
-        future_episode = self._first_blocking_future_episode(subscribe, scope)
+        future_episode = first_blocking_future_episode(subscribe, scope)
         if future_episode:
             return LocalSignalResult(
-                blocked_reason=self._format_future_blocked_reason(future_episode)
+                blocked_reason=format_future_blocked_reason(future_episode)
             )
         return check_l_signal_detail(
             subscribe,
@@ -161,41 +164,6 @@ class CompletionGuard:
         if is_tv_episode_best_version_subscribe(subscribe):
             return "分集洗版"
         return "洗版"
-
-    @staticmethod
-    def _format_future_episode(episode) -> str:
-        """把后续集排期格式化为简短日志片段。"""
-        if isinstance(episode, dict):
-            number = episode.get("episode_number")
-            air_date = episode.get("air_date")
-        else:
-            number = getattr(episode, "episode_number", None)
-            air_date = getattr(episode, "air_date", None)
-        episode_label = f"E{number}" if number is not None else "未知集号"
-        return f"{episode_label}，播出日期：{air_date or '未知'}"
-
-    @classmethod
-    def _format_future_blocked_reason(cls, episode) -> str:
-        """说明 TMDB 已存在当前订阅目标外的后续集。"""
-        return f"TMDB 已存在目标范围外的后续集（{cls._format_future_episode(episode)}）"
-
-    @staticmethod
-    def _future_episode_number(episode) -> int | None:
-        """解析 TMDB 分集集号；无法确认归属目标范围时按未知处理。"""
-        number = episode_field(episode, "episode_number", None)
-        try:
-            return int(number)
-        except (TypeError, ValueError):
-            return None
-
-    def _first_blocking_future_episode(self, subscribe, scope):
-        """返回当前订阅目标范围外的最早后续集。"""
-        target_episodes = set(target_episode_range(subscribe))
-        for episode in scope_future_episodes(scope):
-            number = self._future_episode_number(episode)
-            if number is None or not target_episodes or number not in target_episodes:
-                return episode
-        return None
 
     @staticmethod
     def _completion_block_reason(signal: CompletionSignal, local_result: LocalSignalResult) -> str:
