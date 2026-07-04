@@ -301,10 +301,10 @@ class TestCompletionGuard:
         monkeypatch.setattr("subscribeassistantenhanced.guard.logger.info", messages.append)
         sig = CompletionSignal(completed=False, stable=False, signals=["F:unstable"], reason="变动")
         g = _guard(signal=sig, mode="balanced")
-        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 41)]
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 81)]
         subscribe = _sub()
-        subscribe.total_episode = 40
-        subscribe.note = list(range(1, 41))
+        subscribe.total_episode = 80
+        subscribe.note = list(range(1, 81))
         ev = _event(subscribe=subscribe)
         g.resolve_missing_fn = MagicMock(return_value=(True, {}))
 
@@ -848,10 +848,10 @@ class TestCompletionGuard:
         """平衡模式下高风险目标范围的 L 信号仍进入完成前观察。"""
         sig = CompletionSignal(completed=False, stable=True, signals=["none"], reason="无信号")
         g = _guard(signal=sig, mode="balanced")
-        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 41)]
+        g.tmdb_episodes_fn.return_value = [_ep(i) for i in range(1, 81)]
         subscribe = _sub()
-        subscribe.total_episode = 40
-        subscribe.note = list(range(1, 41))
+        subscribe.total_episode = 80
+        subscribe.note = list(range(1, 81))
         ev = _event(subscribe=subscribe)
         g.resolve_missing_fn = MagicMock(return_value=(True, {}))
 

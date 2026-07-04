@@ -401,12 +401,12 @@ class TestEvaluatePipeline:
 
     def test_high_risk_ignores_aggregate_next_ep_dict_for_cadence_release(self):
         """高风险 scope 的 G 辅助释放只看 SeasonScope 后续集。"""
-        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 50)]
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 81)]
         mediainfo = SimpleNamespace(tmdb_id=100, tmdb_info={
             "status": "Returning Series",
             "seasons": [{"season_number": 1}],
             "last_episode_to_air": None,
-            "next_episode_to_air": {"season_number": 1, "episode_number": 50},
+            "next_episode_to_air": {"season_number": 1, "episode_number": 81},
         })
 
         sig = evaluate(
@@ -421,8 +421,8 @@ class TestEvaluatePipeline:
 
     def test_high_risk_scope_unknown_tail_blocks_cadence_release(self):
         """高风险 scope 内后续集缺 air_date 时，G 辅助释放继续保持观察。"""
-        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 50)]
-        eps.append(_ep(50, air_date=None))
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 80)]
+        eps.append(_ep(80, air_date=None))
 
         sig = evaluate(
             subscribe=_sub(), mediainfo=_mi(),
@@ -436,7 +436,7 @@ class TestEvaluatePipeline:
 
     def test_high_risk_blocks_i3(self):
         """高风险绝对季 I-3 不放行。"""
-        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 50)]
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 81)]
         sig = evaluate(
             subscribe=_sub(), mediainfo=_mi(),
             tmdb_episodes_fn=_tmdb_fn(eps),

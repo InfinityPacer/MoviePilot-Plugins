@@ -122,7 +122,7 @@ class TestAbnormalCompletion:
         assert "M:mid_season" in sig.signals
 
     def test_high_risk_i3_not_release(self):
-        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 50)]
+        eps = [_ep(i, air_date="2026-01-01") for i in range(1, 81)]
         sig = evaluate(_sub(), _mi(), _tmdb_fn(eps),
                        _tracker(), _cfg(), as_of=date(2026, 6, 1))
         assert sig.completed is False

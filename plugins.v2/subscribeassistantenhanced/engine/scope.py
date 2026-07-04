@@ -5,6 +5,7 @@ from .types import SeasonScope
 from .signals import _field
 
 PRODUCTION_GROUP_TYPE = 7  # TMDB 剧集组类型枚举值 7：按制作/拍摄顺序分组（绝对季常见来源）
+HIGH_RISK_EPISODE_THRESHOLD = 80  # 超长绝对季阈值，低于该集数时不单独触发 high_risk。
 
 
 def build_scope(subscribe, mediainfo, tmdb_episodes_fn: Callable) -> SeasonScope:
@@ -34,7 +35,7 @@ def build_scope(subscribe, mediainfo, tmdb_episodes_fn: Callable) -> SeasonScope
 
 def detect_high_risk(scope: SeasonScope, mediainfo) -> bool:
     """检测 high_risk 范围：超长季、阶段标记或多个制作顺序剧集组。"""
-    if len(scope.episodes) >= 40:
+    if len(scope.episodes) >= HIGH_RISK_EPISODE_THRESHOLD:
         return True
 
     for ep in scope.episodes[:-1]:
