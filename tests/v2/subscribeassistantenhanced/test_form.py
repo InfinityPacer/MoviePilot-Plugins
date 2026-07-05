@@ -120,6 +120,8 @@ class TestGetForm:
         conf, model = SubscribeAssistantEnhanced().get_form()
         assert conf and isinstance(model, dict)
         assert model["completion_guard_mode"] == "balanced"
+        assert model["auto_check_interval_minutes"] == 30
+        assert model["site_completion_evidence_enabled"] is True
         assert model["verify_retention_days"] == 180
         assert "completion_guard_enabled" not in model
 
@@ -472,6 +474,7 @@ def test_completion_signal_hints_explain_behavior_and_scope():
         "cadence_min_episodes", "season_cooldown_days", "verify_enabled",
         "verify_interval_hours", "verify_retention_days",
         "timeout_release_days", "timeout_cadence_acceleration",
+        "site_total_probe_enabled", "site_completion_evidence_enabled",
     )
     for key in keys:
         hint = HINTS[key]
@@ -487,7 +490,7 @@ def test_completion_signal_hints_explain_behavior_and_scope():
 
 
 def test_common_check_interval_uses_reduced_options():
-    """通用巡检使用 30 至 240 分钟，下载检查仍保留高频选项。"""
+    """通用巡检允许追更场景高频采样，下载检查仍保留自身选项。"""
     conf, _model = build_form()
     controls = {
         col["content"][0]["props"]["model"]: col["content"][0]
@@ -496,7 +499,7 @@ def test_common_check_interval_uses_reduced_options():
 
     common_items = controls["auto_check_interval_minutes"]["props"]["items"]
     download_items = controls["download_check_interval_minutes"]["props"]["items"]
-    assert [item["value"] for item in common_items] == [30, 60, 120, 240]
+    assert [item["value"] for item in common_items] == [10, 20, 30, 60, 120, 240]
     assert [item["value"] for item in download_items] == [5, 10, 15, 30, 60, 120]
 
 
@@ -505,9 +508,14 @@ def test_completion_labels_use_concise_names_without_enable_prefix():
     assert LABELS["completion_guard_mode"] == "完结守卫模式"
     assert LABELS["volatility_enabled"] == "变更速率信号"
     assert LABELS["cadence_enabled"] == "播出节奏信号"
+    assert LABELS["site_total_probe_enabled"] == "站点集数探测"
+    assert LABELS["site_completion_evidence_enabled"] == "站点完结信号"
     assert LABELS["verify_enabled"] == "自动纠错"
     assert LABELS["verify_interval_hours"] == "自动纠错间隔（小时）"
     assert LABELS["timeout_release_days"] == "完成前观察天数"
+    assert HINTS["auto_check_interval_minutes"] == "站点采样、待定释放、无下载处理和清理周期"
+    assert HINTS["site_total_probe_enabled"] == "根据站点资源探测剧集目标集数"
+    assert HINTS["site_completion_evidence_enabled"] == "使用站点资源标题佐证完结信号"
 
 
 def test_completion_tab_uses_original_flat_grid():
@@ -521,11 +529,11 @@ def test_completion_tab_uses_original_flat_grid():
         [col["content"][0]["props"]["model"] for col in row["content"]]
         for row in completion_rows
     ] == [
-        ["completion_guard_mode", "volatility_enabled", "cadence_enabled"],
-        ["verify_enabled", "timeout_cadence_acceleration"],
-        ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
-        ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
-        ["verify_retention_days", "timeout_release_days"],
+        ["verify_enabled", "site_total_probe_enabled", "site_completion_evidence_enabled"],
+        ["volatility_enabled", "cadence_enabled", "timeout_cadence_acceleration"],
+        ["completion_guard_mode", "volatility_window_days", "cadence_multiplier"],
+        ["cadence_min_window_days", "cadence_min_episodes", "season_cooldown_days"],
+        ["verify_interval_hours", "verify_retention_days", "timeout_release_days"],
     ]
 
 
@@ -539,6 +547,8 @@ def test_completion_flat_grid_keeps_persistent_hints():
         "completion_guard_mode",
         "volatility_enabled",
         "cadence_enabled",
+        "site_total_probe_enabled",
+        "site_completion_evidence_enabled",
         "volatility_window_days",
         "cadence_multiplier",
         "cadence_min_window_days",

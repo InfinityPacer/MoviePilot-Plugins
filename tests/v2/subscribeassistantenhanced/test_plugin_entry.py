@@ -115,6 +115,42 @@ class TestPluginEntry:
         assert "识别增强=off" in joined
         assert "识别增强告警=invalid_mode" in joined
 
+    def test_site_cache_candidates_degrades_when_main_helper_missing(self, monkeypatch):
+        """旧主程序缺少缓存候选 helper 时，站点证据扫描应跳过而不是中断巡检。"""
+        warnings = []
+
+        class _OldTorrentsChain:
+            pass
+
+        monkeypatch.setattr(plugin_module, "TorrentsChain", _OldTorrentsChain)
+        monkeypatch.setattr(plugin_module.logger, "warning", warnings.append)
+        monkeypatch.setattr(SubscribeAssistantEnhanced, "_site_cache_candidate_helper_warned", False)
+
+        first = SubscribeAssistantEnhanced._site_cache_candidates(SimpleNamespace(id=1), allow_title_match=True)
+        second = SubscribeAssistantEnhanced._site_cache_candidates(SimpleNamespace(id=1), allow_title_match=True)
+
+        assert first == []
+        assert second == []
+        assert len(warnings) == 1
+        assert "缺少站点缓存候选读取能力" in warnings[0]
+
+    def test_site_cache_candidates_delegates_to_main_helper(self, monkeypatch):
+        """主程序 helper 存在时，插件只透传订阅和参数，不自行读取或刷新缓存。"""
+        calls = []
+
+        class _TorrentsChain:
+            def get_subscribe_cache_candidates(self, subscribe, **kwargs):
+                calls.append((subscribe, kwargs))
+                return ["ctx"]
+
+        subscribe = SimpleNamespace(id=1)
+        monkeypatch.setattr(plugin_module, "TorrentsChain", _TorrentsChain)
+
+        result = SubscribeAssistantEnhanced._site_cache_candidates(subscribe, allow_title_match=True)
+
+        assert result == ["ctx"]
+        assert calls == [(subscribe, {"allow_title_match": True})]
+
     def test_torrent_exists_returns_true_when_any_downloader_contains_hash(self):
         """跨下载器查询任一命中 hash 时返回 True。"""
         plugin = SubscribeAssistantEnhanced()
@@ -346,7 +382,7 @@ class TestEventRegistration:
         assert "已将 1 个自动暂停订阅恢复为启用：暂停剧 S2" in kwargs["text"]
         assert set(saved) == {
             "subscribes", "torrents", "blocks", "releases", "snapshots",
-            "deletes", "volatility", "subscription_cleanup_histories",
+            "deletes", "volatility", "site_evidence", "subscription_cleanup_histories",
         }
 
     def test_plugin_data_reset_event_logs_without_notify_when_nothing_recovered(self, monkeypatch):

@@ -68,14 +68,14 @@ def _mediainfo(**kwargs):
     return media
 
 
-def test_release_metadata_requires_main_program_2_13_17_or_newer():
-    """插件版本门禁使用 >= 语义，要求 MoviePilot v2.13.17 及以上版本。"""
+def test_release_metadata_requires_main_program_newer_than_2_14_1():
+    """插件版本门禁要求高于当前 MoviePilot v2.14.1 主程序版本。"""
     package = json.loads(Path("package.v2.json").read_text(encoding="utf-8"))
     specifier = SpecifierSet(package["SubscribeAssistantEnhanced"]["system_version"])
 
-    assert package["SubscribeAssistantEnhanced"]["system_version"].startswith(">=")
-    assert Version("2.13.16") not in specifier
-    assert Version("2.13.17") in specifier
+    assert package["SubscribeAssistantEnhanced"]["system_version"] == ">2.14.1"
+    assert Version("2.14.1") not in specifier
+    assert Version("2.14.2") in specifier
 
 
 def test_converter_is_wired():
@@ -714,6 +714,87 @@ def test_run_meta_check_includes_episode_best_version_subscription():
     plugin.run_meta_check()
 
     airing.check.assert_called_once()
+
+
+def test_run_site_evidence_scan_refreshes_active_tv_subscriptions():
+    """站点证据扫描刷新 P/R 普通剧集和分集洗版证据。"""
+    normal = _sub(id=3, state="R", name="普通", best_version=0, type="电视剧")
+    pending = _sub(id=4, state="P", name="待定", best_version=0, type="电视剧")
+    episode_best = _sub(id=5, state="R", name="分集洗版", best_version=1, best_version_full=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({
+        "site_total_probe_enabled": True,
+        "pause_enhanced_enabled": False,
+        "pending_enhanced_enabled": False,
+    })
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [normal, pending, episode_best]
+    site_evidence = MagicMock()
+    plugin._modules["site_evidence"] = site_evidence
+
+    plugin.run_site_evidence_scan()
+
+    assert site_evidence.refresh_subscribe.call_args_list == [
+        ((normal,),),
+        ((pending,),),
+        ((episode_best,),),
+    ]
+
+
+def test_run_site_evidence_scan_scope_filters():
+    """站点证据刷新只覆盖 P/R 剧集普通订阅和分集洗版。"""
+    eligible = _sub(id=6, state="R", name="普通", best_version=0, type="电视剧")
+    pending = _sub(id=7, state="P", name="待定", best_version=0, type="电视剧")
+    new_subscribe = _sub(id=8, state="N", name="新增", best_version=0, type="电视剧")
+    disabled = _sub(id=9, state="S", name="禁用", best_version=0, type="电视剧")
+    movie = _sub(id=10, state="R", name="电影", best_version=0, type="电影")
+    full_best = _sub(id=11, state="R", name="全集洗版", best_version=1, best_version_full=1, type="电视剧")
+    manual_total = _sub(id=12, state="R", name="手动总集数", best_version=0, type="电视剧", manual_total_episode=True)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({
+        "site_total_probe_enabled": True,
+        "pause_enhanced_enabled": False,
+        "pending_enhanced_enabled": False,
+    })
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [
+        eligible,
+        pending,
+        new_subscribe,
+        disabled,
+        movie,
+        full_best,
+        manual_total,
+    ]
+    site_evidence = MagicMock()
+    plugin._modules["site_evidence"] = site_evidence
+
+    plugin.run_site_evidence_scan()
+
+    assert site_evidence.refresh_subscribe.call_args_list == [
+        ((eligible,),),
+        ((pending,),),
+    ]
+
+
+def test_run_meta_check_does_not_refresh_site_evidence():
+    """元数据巡检不消费短窗口站点缓存，避免和通用巡检职责重叠。"""
+    sub = _sub(id=13, state="R", name="普通", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({
+        "site_total_probe_enabled": True,
+        "pause_enhanced_enabled": False,
+        "pending_enhanced_enabled": False,
+    })
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=MediaType.TV))
+    site_evidence = MagicMock()
+    plugin._modules["site_evidence"] = site_evidence
+
+    plugin.run_meta_check()
+
+    site_evidence.refresh_subscribe.assert_not_called()
 
 
 def test_run_meta_check_pauses_full_best_version_when_pre_air_condition_holds():
@@ -1355,6 +1436,7 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_paused_probe_check = MagicMock()
+    plugin.run_site_evidence_scan = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
     plugin.run_subscription_cleanup_expired = MagicMock()
@@ -1365,6 +1447,7 @@ def test_run_common_check_runs_enabled_subtasks():
     plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_paused_probe_check.assert_called_once()
+    plugin.run_site_evidence_scan.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
     plugin.run_subscription_cleanup_expired.assert_called_once()
@@ -1378,6 +1461,7 @@ def test_run_common_check_isolates_subtask_failures():
     plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_paused_probe_check = MagicMock()
+    plugin.run_site_evidence_scan = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
     plugin.run_subscription_cleanup_expired = MagicMock()
@@ -1387,6 +1471,7 @@ def test_run_common_check_isolates_subtask_failures():
     plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_paused_probe_check.assert_called_once()
+    plugin.run_site_evidence_scan.assert_called_once()
     plugin.run_deletes_cleanup.assert_called_once()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
     plugin.run_subscription_cleanup_expired.assert_called_once()
@@ -1400,6 +1485,7 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_pending_state_reconcile = MagicMock()
     plugin.run_no_download_check = MagicMock()
     plugin.run_paused_probe_check = MagicMock()
+    plugin.run_site_evidence_scan = MagicMock()
     plugin.run_deletes_cleanup = MagicMock()
     plugin.run_completion_snapshot_cleanup = MagicMock()
     plugin.run_subscription_cleanup_expired = MagicMock()
@@ -1410,6 +1496,7 @@ def test_run_common_check_respects_domain_switches():
     plugin.run_pending_state_reconcile.assert_called_once()
     plugin.run_no_download_check.assert_called_once()
     plugin.run_paused_probe_check.assert_called_once()
+    plugin.run_site_evidence_scan.assert_called_once()
     plugin.run_deletes_cleanup.assert_not_called()
     plugin.run_completion_snapshot_cleanup.assert_called_once()
     plugin.run_subscription_cleanup_expired.assert_called_once()
@@ -1474,7 +1561,10 @@ def test_reset_task_restores_plugin_owned_p_and_s_before_clearing_data(monkeypat
     updates = {call.args[0]: call.args[1]["state"] for call in subscribe_oper.update.call_args_list}
     assert updates == {7: "R", 8: "R"}
     cleared = {c.args[0] for c in plugin.save_data.call_args_list}
-    assert {"subscribes", "torrents", "blocks", "releases", "snapshots", "deletes", "volatility"} <= cleared
+    assert {
+        "subscribes", "torrents", "blocks", "releases", "snapshots",
+        "deletes", "volatility", "site_evidence",
+    } <= cleared
     plugin.update_config.assert_called()
 
 

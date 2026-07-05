@@ -220,6 +220,7 @@ class TestCompletionGuard:
             event.event_data.mediainfo,
             resolve_missing_fn=guard.resolve_missing_fn,
             meta=event.event_data.meta,
+            consume_site_evidence=True,
         )
 
     def test_evidence_pipeline_receives_none_when_event_meta_absent(self):
@@ -236,6 +237,7 @@ class TestCompletionGuard:
             event.event_data.mediainfo,
             resolve_missing_fn=guard.resolve_missing_fn,
             meta=None,
+            consume_site_evidence=True,
         )
 
     def test_hard_veto_blocks_even_when_target_complete_exists(self):

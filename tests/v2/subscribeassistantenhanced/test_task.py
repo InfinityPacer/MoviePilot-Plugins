@@ -67,6 +67,7 @@ class TaskDataManagerTest:
         self.mgr.write("volatility", {"9": [{"total": 2}], "10": [{"total": 3}]})
         self.mgr.write("blocks", {"9": {"blocked_at": 1}, "10": {"blocked_at": 2}})
         self.mgr.write("releases", {"9": {"signals": []}, "10": {"signals": []}})
+        self.mgr.write("site_evidence", {"9": {"snapshot": {}}, "10": {"snapshot": {}}})
         self.mgr.write("snapshots", {"list": [{"tmdbid": 100}]})
         self.mgr.write("deletes", {"hash": {"time": 1}})
         self.mgr.clear_tasks(9)
@@ -75,8 +76,27 @@ class TaskDataManagerTest:
         assert self.mgr.read("volatility") == {"10": [{"total": 3}]}
         assert self.mgr.read("blocks") == {"10": {"blocked_at": 2}}
         assert self.mgr.read("releases") == {"10": {"signals": []}}
+        assert self.mgr.read("site_evidence") == {"10": {"snapshot": {}}}
         assert self.mgr.read("snapshots") == {"list": [{"tmdbid": 100}]}
         assert self.mgr.read("deletes") == {"hash": {"time": 1}}
+
+    def test_clear_tasks_for_pause_removes_subscription_instance_state(self):
+        """暂停前清理同样移除按订阅 id 保存的临时状态。"""
+        self.mgr.write("subscribes", {"9": {"pause_reason": "airing_gap", "x": 1}, "10": {"y": 2}})
+        self.mgr.write("torrents", {"h1": {"subscribe_id": 9}, "h2": {"subscribe_id": 10}})
+        self.mgr.write("volatility", {"9": [{"total": 2}], "10": [{"total": 3}]})
+        self.mgr.write("blocks", {"9": {"blocked_at": 1}, "10": {"blocked_at": 2}})
+        self.mgr.write("releases", {"9": {"signals": []}, "10": {"signals": []}})
+        self.mgr.write("site_evidence", {"9": {"snapshot": {}}, "10": {"snapshot": {}}})
+
+        self.mgr.clear_tasks_for_pause(9, preserve_subscribe_keys=["pause_reason"])
+
+        assert self.mgr.read("subscribes") == {"9": {"pause_reason": "airing_gap"}, "10": {"y": 2}}
+        assert self.mgr.read("torrents") == {"h2": {"subscribe_id": 10}}
+        assert self.mgr.read("volatility") == {"10": [{"total": 3}]}
+        assert self.mgr.read("blocks") == {"10": {"blocked_at": 2}}
+        assert self.mgr.read("releases") == {"10": {"signals": []}}
+        assert self.mgr.read("site_evidence") == {"10": {"snapshot": {}}}
 
     def test_clean_torrent_tasks_removes_by_hash(self):
         """按 hash 清理：从 torrents 移除，并从订阅 torrent_tasks 移除该 hash。"""

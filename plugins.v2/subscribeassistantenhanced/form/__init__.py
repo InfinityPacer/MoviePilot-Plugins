@@ -69,6 +69,8 @@ LABELS = {
     "best_version_tv_remaining_days": "剧集洗版时限（天）",
     # 完结信号
     "completion_guard_mode": "完结守卫模式",
+    "site_total_probe_enabled": "站点集数探测",
+    "site_completion_evidence_enabled": "站点完结信号",
     "volatility_enabled": "变更速率信号",
     "volatility_window_days": "变更速率窗口（天）",
     "cadence_enabled": "播出节奏信号",
@@ -91,7 +93,7 @@ HINTS = {
     "reset_task": "将重置所有待定/暂停/监控等任务数据，执行后自动复位",
     "onlyonce": "保存后立即运行一次全量巡检，执行后自动复位",
     # 周期
-    "auto_check_interval_minutes": "待定释放、无下载处理和删除记录清理的周期",
+    "auto_check_interval_minutes": "站点采样、待定释放、无下载处理和清理周期",
     "download_check_interval_minutes": "下载检查的周期，定时检查下载任务状态",
     "meta_check_interval_hours": "元数据检查的周期，定时复核订阅元数据状态",
     "best_version_cron": "洗版检查的周期，如 0 15 * * *",
@@ -144,6 +146,8 @@ HINTS = {
     "best_version_tv_remaining_days": "剧集洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
     # 完结信号
     "completion_guard_mode": "选择完成前复核强度，默认使用平衡策略",
+    "site_total_probe_enabled": "根据站点资源探测剧集目标集数",
+    "site_completion_evidence_enabled": "使用站点资源标题佐证完结信号",
     "volatility_enabled": "总集数近期变化时视为不稳定",
     "volatility_window_days": "统计总集数变化的天数，越长越保守",
     "cadence_enabled": "按已播间隔判断等待期，不会直接判定完结",
@@ -192,11 +196,11 @@ TABS = [
         ["best_version_episode_to_full", "best_version_backfill_enabled", "backfill_best_version_now"],
     ]),
     ("完结信号", [
-        ["completion_guard_mode", "volatility_enabled", "cadence_enabled"],
-        ["verify_enabled", "timeout_cadence_acceleration"],
-        ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
-        ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
-        ["verify_retention_days", "timeout_release_days"],
+        ["verify_enabled", "site_total_probe_enabled", "site_completion_evidence_enabled"],
+        ["volatility_enabled", "cadence_enabled", "timeout_cadence_acceleration"],
+        ["completion_guard_mode", "volatility_window_days", "cadence_multiplier"],
+        ["cadence_min_window_days", "cadence_min_episodes", "season_cooldown_days"],
+        ["verify_interval_hours", "verify_retention_days", "timeout_release_days"],
     ]),
     ("识别增强", [
         ["recognition_guard_mode", "recognition_guard_notify", "recognition_guard_notify_interval"],
@@ -215,8 +219,10 @@ _MINUTE_INTERVAL_ITEMS = [
     {"title": "120分钟", "value": 120},
 ]
 
-# 通用巡检处理天级策略，无需 30 分钟以内的高频扫描。
+# 通用巡检承载站点证据采样与本地生命周期巡检，保留高频选项给追更敏感场景按需调整。
 _COMMON_INTERVAL_ITEMS = [
+    {"title": "10分钟", "value": 10},
+    {"title": "20分钟", "value": 20},
     {"title": "30分钟", "value": 30},
     {"title": "60分钟", "value": 60},
     {"title": "120分钟", "value": 120},

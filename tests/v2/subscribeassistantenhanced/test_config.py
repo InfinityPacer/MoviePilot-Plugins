@@ -25,6 +25,11 @@ class PluginConfigDefaultsTest:
     def test_verify_enabled_default_false(self):
         assert self.cfg.verify_enabled is False
 
+    def test_site_signal_defaults(self):
+        """站点完结信号默认参与守卫佐证，扩集仍需用户显式开启。"""
+        assert self.cfg.site_total_probe_enabled is False
+        assert self.cfg.site_completion_evidence_enabled is True
+
     def test_completion_observation_declares_single_days_key(self):
         keys = set(self.cfg.declared_keys())
         assert {key for key in keys if key.startswith("timeout_release")} == {"timeout_release_days"}
@@ -70,7 +75,7 @@ class PluginConfigDefaultsTest:
     # --- download ---
 
     def test_auto_check_interval_minutes_default(self):
-        assert self.cfg.auto_check_interval_minutes == 60
+        assert self.cfg.auto_check_interval_minutes == 30
 
     def test_download_check_interval_minutes_default(self):
         assert self.cfg.download_check_interval_minutes == 10

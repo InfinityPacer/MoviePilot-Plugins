@@ -1,9 +1,12 @@
 """engine/pipeline.py 完成证据流水线单测。"""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
+from subscribeassistantenhanced.engine.site import SITE_EVIDENCE_TTL_HOURS, SiteEvidence
 from subscribeassistantenhanced.engine.volatility import VolatilityTracker
 from subscribeassistantenhanced.shared.config import PluginConfig
 from subscribeassistantenhanced.shared.task import TaskDataManager
@@ -46,11 +49,14 @@ def _make_tracker(stable=True, direction="up"):
 
 
 def _sub(sid=1, season=1, episode_group=None, best_version=0, name="测试剧",
-         start_episode=1, total_episode=12):
+         start_episode=1, total_episode=12, state="R", manual_total_episode=False,
+         stype="电视剧", best_version_full=0):
     return SimpleNamespace(
         id=sid, name=name, tmdbid=100, season=season,
         episode_group=episode_group, best_version=best_version,
         start_episode=start_episode, total_episode=total_episode,
+        state=state, manual_total_episode=manual_total_episode,
+        type=stype, best_version_full=best_version_full,
     )
 
 
@@ -65,11 +71,15 @@ def _tmdb_fn(episodes):
 
 
 def _evidence(subscribe, mediainfo, tmdb_episodes_fn, volatility_tracker, config,
-              as_of=None, resolve_missing_fn=None, meta=None):
+              as_of=None, resolve_missing_fn=None, meta=None, site_provider=None,
+              consume_site_evidence=None, now=None):
+    now = now or datetime(2026, 7, 5, 12, 0, tzinfo=timezone.utc)
     pipeline = CompletionEvidencePipeline(
         tmdb_episodes_fn=tmdb_episodes_fn,
         volatility_tracker=volatility_tracker,
         config=config,
+        site_evidence_provider=site_provider,
+        now_fn=lambda: now,
     )
     return pipeline.evaluate(
         subscribe,
@@ -77,6 +87,9 @@ def _evidence(subscribe, mediainfo, tmdb_episodes_fn, volatility_tracker, config
         as_of=as_of,
         resolve_missing_fn=resolve_missing_fn,
         meta=meta,
+        consume_site_evidence=(
+            site_provider is not None if consume_site_evidence is None else consume_site_evidence
+        ),
     )
 
 
@@ -86,6 +99,32 @@ def _primary(*args, **kwargs):
 
 def _resolver(result=True):
     return MagicMock(return_value=(result, {}))
+
+
+def _site(kind, candidate_total=12, current_total=10, now=None, site_total=None, **kwargs):
+    now = now or datetime(2026, 7, 5, 12, 0, tzinfo=timezone.utc)
+    reliable_total = candidate_total if site_total is None else site_total
+    defaults = {
+        "kind": kind,
+        "confidence": "medium" if kind != "site_complete_pack" else "low",
+        "tmdbid": 100,
+        "season": 1,
+        "episode_group": "",
+        "type": "电视剧",
+        "site_candidate_total": candidate_total,
+        "max_episode": candidate_total,
+        "site_total": reliable_total,
+        "complete_hint": kind in ("site_complete_total", "site_complete_pack"),
+        "current_target_total": current_total,
+        "match_level": "strict",
+        "source": "rss",
+        "sample_titles": ["测试剧 S01"],
+        "scanned_at": now.isoformat(),
+        "expires_at": (now + timedelta(hours=SITE_EVIDENCE_TTL_HOURS)).isoformat(),
+        "reason": f"站点证据 {kind}",
+    }
+    defaults.update(kwargs)
+    return SiteEvidence(**defaults)
 
 
 class TestCompletionEvidencePipeline:
@@ -143,6 +182,318 @@ class TestCompletionEvidencePipeline:
         assert evidence.primary_signal.confidence == "medium"
         assert evidence.primary_signal.signals == ["L:target_satisfied", "I:cooldown"]
         assert evidence.observation_kind == "medium_target_complete"
+
+    def test_l_target_satisfied_and_site_complete_total_builds_medium_target_complete(self):
+        """L 与 S:site_complete_total 可共同证明当前订阅目标完成。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        site_provider = MagicMock(return_value=_site("site_complete_total", site_total=12, current_total=12))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_completion_evidence_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.local_signal.signals == ["L:target_satisfied"]
+        assert evidence.site_signal is evidence.target_complete_signal
+        assert evidence.target_complete_signal is evidence.primary_signal
+        assert evidence.primary_signal.confidence == "medium"
+        assert evidence.primary_signal.signals == ["L:target_satisfied", "S:site_complete_total"]
+        assert evidence.observation_kind == "medium_target_complete"
+
+    def test_site_complete_pack_with_l_builds_medium_target_complete(self):
+        """低置信 S:site_complete_pack 必须与 L 合成后才升级为 medium。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        site_provider = MagicMock(return_value=_site("site_complete_pack", site_total=0))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_completion_evidence_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.site_signal is evidence.primary_signal
+        assert evidence.primary_signal.confidence == "medium"
+        assert evidence.primary_signal.signals == ["L:target_satisfied", "S:site_complete_pack"]
+
+    def test_site_complete_without_l_is_diagnostic_only(self):
+        """S 完结证据没有 L 目标满足时不能单独放行完成。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        site_provider = MagicMock(return_value=_site("site_complete_total", site_total=12, current_total=12))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_completion_evidence_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(False),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.site_signal is None
+        assert evidence.site_conflict.signals == ["S:site_conflict"]
+        assert evidence.site_conflict.reason.startswith("site_complete_total:")
+        assert evidence.target_complete_signal is None
+
+    @pytest.mark.parametrize(
+        ("site_kind", "site_kwargs"),
+        [
+            ("site_complete_total", {"candidate_total": 1, "site_total": 1, "current_total": 1}),
+            ("site_complete_pack", {"candidate_total": 0, "site_total": 0, "current_total": 1}),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "subscribe_kwargs",
+        [
+            {"manual_total_episode": True},
+            {"best_version": 1, "best_version_full": 1},
+            {"state": "S"},
+        ],
+    )
+    def test_site_completion_is_ignored_when_subscribe_is_not_site_evidence_eligible(
+            self, site_kind, site_kwargs, subscribe_kwargs):
+        """S 完结信号只适用于 P/R 剧集普通订阅和分集洗版。"""
+        episodes = [_ep(1, air_date="2026-02-01")]
+        site_provider = MagicMock(return_value=_site(site_kind, **site_kwargs))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=1, **subscribe_kwargs),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_completion_evidence_enabled=True),
+            as_of=date(2026, 1, 9),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.site_signal is None
+        assert evidence.target_complete_signal is None
+        assert evidence.primary_signal is evidence.local_signal
+        assert evidence.primary_signal.signals == ["L:target_satisfied"]
+
+    def test_old_site_ahead_snapshot_normalizes_to_complete_when_live_total_catches_up(self):
+        """旧 ahead 快照在 live total 追上后归一为 S 完结证据，不继续 hard veto。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        site_provider = MagicMock(return_value=_site("site_total_ahead", site_total=12, current_total=10))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True, site_completion_evidence_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.hard_veto is None
+        assert evidence.site_total_ahead_veto is None
+        assert evidence.primary_signal.signals == ["L:target_satisfied", "S:site_complete_total"]
+
+    def test_site_ahead_equal_live_total_without_reliable_total_is_diagnostic_only(self):
+        """旧 ahead 追平当前目标时，缺少可靠 total 或完结标题只能诊断。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        site_provider = MagicMock(return_value=_site(
+            "site_total_ahead",
+            candidate_total=12,
+            current_total=10,
+            site_total=0,
+            complete_hint=False,
+        ))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True, site_completion_evidence_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.site_signal is None
+        assert evidence.site_conflict.signals == ["S:site_conflict"]
+        assert evidence.site_conflict.reason.startswith("site_total_ahead:")
+        assert evidence.target_complete_signal is not evidence.site_signal
+
+    def test_site_ahead_equal_live_total_with_complete_hint_builds_medium_target_complete(self):
+        """旧 ahead 追平当前目标时，完结标题可与 L 合成 S 完成证据。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 13)]
+        site_provider = MagicMock(return_value=_site(
+            "site_total_ahead",
+            candidate_total=12,
+            current_total=10,
+            site_total=0,
+            complete_hint=True,
+        ))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=12),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True, site_completion_evidence_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.site_signal is evidence.primary_signal
+        assert evidence.primary_signal.signals == ["L:target_satisfied", "S:site_complete_total"]
+
+    def test_site_ahead_hard_veto_when_live_total_still_lower_and_no_e(self):
+        """站点 total 高于 live target 且未命中 E 时，S:ahead 一票否决完成。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 11)]
+        site_provider = MagicMock(return_value=_site("site_total_ahead", site_total=12, current_total=10))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=10),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.hard_veto is evidence.site_total_ahead_veto
+        assert evidence.primary_signal.signals == ["S:site_total_ahead"]
+        assert evidence.observation_kind == "hard_veto"
+
+    def test_site_evidence_ttl_uses_current_time_not_end_of_day(self):
+        """同一天稍后才过期的 S 快照仍可参与本轮完成检查。"""
+        now = datetime(2026, 7, 5, 12, 0, tzinfo=timezone.utc)
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 11)]
+        site_provider = MagicMock(return_value=_site(
+            "site_total_ahead",
+            candidate_total=12,
+            current_total=10,
+            expires_at=(now + timedelta(hours=1)).isoformat(),
+        ))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=10),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+            now=now,
+        )
+
+        assert evidence.hard_veto is evidence.site_total_ahead_veto
+        assert evidence.primary_signal.signals == ["S:site_total_ahead"]
+
+    def test_site_evidence_is_not_consumed_without_completion_check_gate(self):
+        """完成守卫以外复用流水线时不消费 S 快照，避免巡检路径参与 S 裁决。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 11)]
+        site_provider = MagicMock(return_value=_site("site_total_ahead", candidate_total=12, current_total=10))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=10),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+            consume_site_evidence=False,
+        )
+
+        assert evidence.site_total_ahead_veto is None
+        assert evidence.site_conflict is None
+        assert evidence.primary_signal.signals == ["L:target_satisfied", "I:all_aired"]
+
+    def test_site_ahead_is_diagnostic_when_subscribe_cannot_expand_total(self):
+        """订阅已由手动总集数接管时，旧 ahead 快照不能继续 hard veto。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 11)]
+        site_provider = MagicMock(return_value=_site("site_total_ahead", site_total=12, current_total=10))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=10, manual_total_episode=True),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.hard_veto is None
+        assert evidence.site_conflict.signals == ["S:site_conflict"]
+
+    def test_site_ahead_is_diagnostic_when_total_evidence_disabled(self):
+        """关闭站点集数探测后，ahead 只记录诊断，不否决完成。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 11)]
+        site_provider = MagicMock(return_value=_site("site_total_ahead", site_total=12, current_total=10))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=10),
+            mediainfo=_mi(),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=False),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.hard_veto is None
+        assert evidence.site_conflict.signals == ["S:site_conflict"]
+        assert evidence.site_conflict.reason.startswith("site_total_ahead:")
+
+    def test_site_ahead_is_diagnostic_when_high_confidence_e_is_present(self):
+        """事件携带的 TMDB 完结信号成立时，S:ahead 不否决，只保留冲突诊断。"""
+        episodes = [_ep(i, air_date="2026-01-01") for i in range(1, 11)]
+        site_provider = MagicMock(return_value=_site("site_total_ahead", site_total=12, current_total=10))
+
+        evidence = _evidence(
+            subscribe=_sub(total_episode=10),
+            mediainfo=_mi(status="Ended"),
+            tmdb_episodes_fn=_tmdb_fn(episodes),
+            volatility_tracker=_make_tracker(),
+            config=_cfg(site_total_probe_enabled=True),
+            as_of=date(2026, 7, 5),
+            resolve_missing_fn=_resolver(True),
+            meta=SimpleNamespace(type="电视剧", begin_season=1, season=1),
+            site_provider=site_provider,
+        )
+
+        assert evidence.high_completion is evidence.primary_signal
+        assert evidence.site_conflict.signals == ["S:site_conflict"]
+        assert evidence.site_conflict.reason.startswith("site_total_ahead:")
 
     def test_missing_resolver_keeps_i_all_aired_low_without_target_complete(self):
         """没有主程序缺集入口时不生成 L，中低置信 I 不能升级为目标完成。"""
@@ -619,7 +970,7 @@ class TestPipelinePrimarySignal:
         assert "I:next_season" in sig.signals
 
     def test_signal_carries_scope_total_for_timeout_observation(self):
-        """信号携带本轮 TMDB scope 总集数，避免待定释放依赖滞后的订阅表字段。"""
+        """信号携带事件内 TMDB scope 总集数，避免待定释放依赖滞后的订阅表字段。"""
         eps = [_ep(1), _ep(2), _ep(3)]
         sig = _primary(
             subscribe=_sub(), mediainfo=_mi(),

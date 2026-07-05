@@ -35,6 +35,9 @@ class CompletionEvidence:
     i_signal: Optional[CompletionSignal] = None  # I 类播出完成信号
     i_low_signal: Optional[CompletionSignal] = None  # 低置信 I 信号
     local_signal: Optional[CompletionSignal] = None  # L 本地目标满足信号
+    site_signal: Optional[CompletionSignal] = None  # S 站点资源佐证的目标完成信号
+    site_conflict: Optional[CompletionSignal] = None  # S 站点证据诊断冲突，不直接裁决完成
+    site_total_ahead_veto: Optional[CompletionSignal] = None  # S 站点证据显示目标集数仍需扩展
     target_complete_signal: Optional[CompletionSignal] = None  # 当前目标范围完成信号
     cadence_expired: bool = False     # G 信号是否已达到播出节奏超期
     observation_kind: str = "none"    # 观察策略类别，供超时管理区分释放口径

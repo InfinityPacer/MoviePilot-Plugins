@@ -22,12 +22,14 @@ from app.schemas.types import EventType, ChainEventType, MediaType
 from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
 from app.chain.tmdb import TmdbChain
+from app.chain.torrents import TorrentsChain
 from app.db.downloadhistory_oper import DownloadHistoryOper
 from app.db.subscribe_oper import SubscribeOper
 from app.db.transferhistory_oper import TransferHistoryOper
 from app.helper.downloader import DownloaderHelper
 
 from .engine.types import CompletionSignal, SeasonScope, PauseRecord
+from .engine.site import SiteEpisodesRefreshHandler, SiteEvidenceScanner, SiteEvidenceStore
 from .engine.volatility import VolatilityTracker
 from .engine.pipeline import CompletionEvidencePipeline
 from .guard import CompletionGuard
@@ -85,7 +87,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.5.7"
+    plugin_version = "0.5.8"
+    _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -172,6 +175,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             f"待定增强={cfg.pending_enhanced_enabled} 暂停优化={cfg.pause_enhanced_enabled} "
             f"洗版类型={cfg.best_version_type} 下载管理={cfg.download_monitor_enabled} "
             f"完成验证={cfg.verify_enabled} 识别增强={recognition_mode} "
+            f"站点集数探测={cfg.site_total_probe_enabled} "
+            f"站点完结信号={cfg.site_completion_evidence_enabled} "
             f"识别增强通知={recognition_notify} 二次识别={recognition_recheck} "
             f"识别增强通知限频={recognition_interval} 识别增强缓存={recognition_cache_size} "
             f"识别增强告警={recognition_warnings} 通知={cfg.notify}"
@@ -306,10 +311,22 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
         )
 
+        site_store = SiteEvidenceStore(tm)
         completion_pipeline = CompletionEvidencePipeline(
             tmdb_episodes_fn=self._tmdb_episodes,
             volatility_tracker=volatility,
             config=cfg,
+            site_evidence_provider=site_store.read_snapshot,
+        )
+        site_evidence = SiteEvidenceScanner(
+            config=cfg,
+            store=site_store,
+            candidate_provider=self._site_cache_candidates,
+        )
+        site_refresh = SiteEpisodesRefreshHandler(
+            config=cfg,
+            store=site_store,
+            subscribe_oper=self._subscribe_oper,
         )
 
         airing_checker = AiringPauseChecker(
@@ -405,6 +422,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             guard=guard if cfg.completion_guard_mode != "off" else None,
             recognition_guard=recognition_guard if cfg.recognition_guard_mode != "off" else None,
             volatility=volatility if cfg.volatility_enabled else None,
+            site_refresh=site_refresh,
             pending_refresh=pending_refresh if cfg.pending_enhanced_enabled else None,
             pause_manager=pause_manager if cfg.pause_enhanced_enabled else None,
             airing_checker=airing_checker if cfg.pause_enhanced_enabled else None,
@@ -449,6 +467,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "orchestrator": orchestrator,
             "subscription_cleanup": subscription_cleanup,
             "completion_pipeline": completion_pipeline,
+            "site_evidence_store": site_store,
+            "site_evidence": site_evidence,
+            "site_refresh": site_refresh,
         }
 
     def stop_service(self):
@@ -589,10 +610,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "snapshots",
             "deletes",
             "volatility",
+            "site_evidence",
             "subscription_cleanup_histories",
         ]:
             self.save_data(key, {})
-        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、完成前观察记录、放行令牌、完成快照、删除指纹、集数变化记录、订阅清理记录）")
+        logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、完成前观察记录、放行令牌、完成快照、删除指纹、集数变化记录、站点证据、订阅清理记录）")
 
     @staticmethod
     def _format_reset_recovery_summary(recovered_pending: List[str], recovered_paused: List[str]) -> str:
@@ -973,6 +995,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         tasks.append(("待定状态一致性检查", self.run_pending_state_reconcile))
         tasks.append(("无下载处理", self.run_no_download_check))
         tasks.append(("暂停订阅低频补搜", self.run_paused_probe_check))
+        tasks.append(("站点证据采样", self.run_site_evidence_scan))
         if self._config.download_monitor_enabled:
             tasks.append(("删除记录清理", self.run_deletes_cleanup))
         tasks.append(("完成快照清理", self.run_completion_snapshot_cleanup))
@@ -990,6 +1013,22 @@ class SubscribeAssistantEnhanced(_PluginBase):
         coordinator = self._modules.get("paused_probe")
         if coordinator:
             coordinator.run()
+
+    def run_site_evidence_scan(self):
+        """站点证据采样：只读主程序 RSS/spider 缓存并固化短窗口资源证据。"""
+        site_evidence = self._modules.get("site_evidence")
+        if not site_evidence or not self._subscribe_oper:
+            return
+        detail("站点证据采样：开始")
+        for subscribe in (self._subscribe_oper.list(state="P,R") or []):
+            if (
+                getattr(subscribe, "state", None) in ("P", "R")
+                and
+                resolve_subscribe_media_type(subscribe) == MediaType.TV
+                and not is_full_best_version_subscribe(subscribe)
+                and not bool(getattr(subscribe, "manual_total_episode", False))
+            ):
+                site_evidence.refresh_subscribe(subscribe)
 
     def run_completion_verify(self):
         """完成后自验证巡检：复查完成快照，发现 TMDB 增集后重建订阅并通知。"""
@@ -1230,7 +1269,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
     @eventmanager.register(ChainEventType.SubscribeEpisodesRefresh)
     def on_episodes_refresh(self, event):
-        """订阅集数刷新 → 变更速率记录 + 待定状态观察。"""
+        """订阅集数刷新 → 变更速率记录 + 站点证据消费 + 待定状态观察。"""
         if self._event_proxy:
             self._event_proxy.on_episodes_refresh(event)
 
@@ -1338,6 +1377,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 "自动洗版": cfg.best_version_type != "no",
                 "下载管理": cfg.download_monitor_enabled,
                 "完成后验证": cfg.verify_enabled,
+                "站点集数探测": cfg.site_total_probe_enabled,
+                "站点完结信号": cfg.site_completion_evidence_enabled,
                 "识别增强": cfg.recognition_guard_mode,
             },
             "pending_count": pending,
@@ -1360,6 +1401,21 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return self._tmdb_chain.tmdb_episodes(
             tmdbid=tmdbid, season=season, episode_group=episode_group
         ) or []
+
+    @staticmethod
+    def _site_cache_candidates(subscribe, **kwargs):
+        """读取主程序已有 RSS/spider 缓存候选；不触发站点刷新或缓存写入。"""
+        chain = TorrentsChain()
+        helper = getattr(chain, "get_subscribe_cache_candidates", None)
+        if not callable(helper):
+            if not SubscribeAssistantEnhanced._site_cache_candidate_helper_warned:
+                logger.warning(
+                    "信号引擎(S)：当前 MoviePilot 主程序缺少站点缓存候选读取能力，"
+                    "跳过站点证据扫描；请升级主程序后再启用站点证据"
+                )
+                SubscribeAssistantEnhanced._site_cache_candidate_helper_warned = True
+            return []
+        return helper(subscribe, **kwargs)
 
     @staticmethod
     def _mediainfo_from_dict(data):

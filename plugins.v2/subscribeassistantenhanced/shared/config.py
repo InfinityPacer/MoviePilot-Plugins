@@ -196,8 +196,8 @@ class PluginConfig:
 
     @property
     def auto_check_interval_minutes(self) -> int:
-        """通用巡检周期（分钟）：待定释放、无下载处理和删除记录清理共用。"""
-        return self.get_int("auto_check_interval_minutes", 60)
+        """通用巡检周期（分钟）：站点证据采样、待定释放、无下载处理和本地清理共用。"""
+        return self.get_int("auto_check_interval_minutes", 30)
 
     @property
     def download_check_interval_minutes(self) -> int:
@@ -475,6 +475,16 @@ class PluginConfig:
         """完结守卫模式：关闭、严格、平衡或宽松。"""
         value = self.get_str("completion_guard_mode", "balanced").strip().lower()
         return value if value in {"off", "strict", "balanced", "loose"} else "balanced"
+
+    @property
+    def site_total_probe_enabled(self) -> bool:
+        """站点集数探测：使用站点缓存资源扩展剧集目标集数。"""
+        return self.get_bool("site_total_probe_enabled", False)
+
+    @property
+    def site_completion_evidence_enabled(self) -> bool:
+        """站点完结信号：使用站点资源标题佐证当前目标完成。"""
+        return self.get_bool("site_completion_evidence_enabled", True)
 
     @property
     def volatility_enabled(self) -> bool:

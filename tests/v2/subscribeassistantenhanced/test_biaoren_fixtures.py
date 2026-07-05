@@ -148,7 +148,7 @@ def test_biaoren_s01_next_season_completes_and_current_pause_logic_does_not_paus
 
 
 def test_biaoren_s02_low_confidence_enters_guard_observation_before_snapshot():
-    """S02 当前 TMDB 只给 2 集且无 next_episode，低置信 I 完结必须先进入观察。"""
+    """S02 事件携带的 TMDB 数据只给 2 集且无 next_episode，低置信 I 完结必须先进入观察。"""
     tmdb = _load_fixture("biaoren_tmdb.json")
     runtime = _load_fixture("biaoren_runtime.json")
     mediainfo = _mediainfo(tmdb)

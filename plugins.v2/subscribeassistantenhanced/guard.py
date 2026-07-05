@@ -67,6 +67,7 @@ class CompletionGuard:
             data.mediainfo,
             resolve_missing_fn=self.resolve_missing_fn,
             meta=getattr(data, "meta", None),
+            consume_site_evidence=True,
         )
 
         if evidence.hard_veto is not None:

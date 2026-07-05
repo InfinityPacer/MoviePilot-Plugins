@@ -67,7 +67,7 @@ class TaskDataManager:
 
         self.update("subscribes", _clear_subscribe)
         self.update("torrents", _clear_torrents)
-        for key in ("volatility", "blocks", "releases"):
+        for key in ("volatility", "blocks", "releases", "site_evidence"):
             self.update(key, _clear_subscribe)
 
     def clear_tasks_for_pause(self, subscribe_id, preserve_subscribe_keys: list[str] | None = None):
@@ -96,7 +96,7 @@ class TaskDataManager:
 
         self.update("subscribes", _clear_subscribe)
         self.update("torrents", _clear_torrents)
-        for key in ("volatility", "blocks", "releases"):
+        for key in ("volatility", "blocks", "releases", "site_evidence"):
             self.update(key, _clear_subscribe)
 
     def clean_torrent_tasks(self, torrent_hash):

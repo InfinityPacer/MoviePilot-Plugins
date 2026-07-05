@@ -48,21 +48,23 @@ def _pipeline(signal=None):
 class TestEventOrdering:
     """事件处理顺序验证。"""
 
-    def test_episodes_refresh_f_before_pending_observer(self):
-        """EpisodesRefresh 中 F 记录在待定观察之前。"""
+    def test_episodes_refresh_site_refresh_between_f_and_pending_observer(self):
+        """EpisodesRefresh 中 F 记录、站点证据消费、待定观察按固定顺序执行。"""
         from app.schemas.event import SubscribeEpisodesRefreshEventData
 
         call_order = []
         volatility = MagicMock()
         volatility.record.side_effect = lambda **kw: call_order.append("f_record")
+        site_refresh = MagicMock()
+        site_refresh.handle_refresh.side_effect = lambda ev: call_order.append("site_refresh")
         pending_refresh = MagicMock()
         pending_refresh.handle_refresh.side_effect = lambda ev: call_order.append("pending_refresh")
 
-        proxy = EventProxy(volatility=volatility, pending_refresh=pending_refresh)
+        proxy = EventProxy(volatility=volatility, site_refresh=site_refresh, pending_refresh=pending_refresh)
         event = SimpleNamespace(event_data=SubscribeEpisodesRefreshEventData(current_total_episode=12, subscribe_id=1))
         proxy.on_episodes_refresh(event)
 
-        assert call_order == ["f_record", "pending_refresh"]
+        assert call_order == ["f_record", "site_refresh", "pending_refresh"]
 
     def test_episodes_refresh_uses_event_data_for_f_and_pending_observer(self):
         """EpisodesRefresh 必须从 event.event_data 读写，主程序只读取该数据类。"""

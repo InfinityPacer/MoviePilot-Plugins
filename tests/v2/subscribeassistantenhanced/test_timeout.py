@@ -34,6 +34,21 @@ class TestRecordObservation:
         mgr.record_observation(1)
         assert "1" in store.get("blocks", {})
 
+    def test_records_l_plus_s_as_medium_target_complete(self):
+        """L+S medium 信号按 target_complete 观察类别记录。"""
+        read, update, store = _store_mgr()
+        mgr = PendingTimeoutManager(read, update, timeout_days=21)
+        signal = CompletionSignal(
+            completed=True,
+            confidence="medium",
+            signals=["L:target_satisfied", "S:site_complete_total"],
+            scope_total=12,
+        )
+
+        mgr.record_observation(1, signal=signal, total_episode=12)
+
+        assert store["blocks"]["1"]["observation_kind"] == "medium_target_complete"
+
     def test_does_not_overwrite_existing(self):
         """已有观察记录不覆盖。"""
         old_ts = time.time() - 86400
