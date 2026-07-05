@@ -181,6 +181,27 @@ def get_tv_season_info(mediainfo, season: int) -> Optional[dict]:
     return None
 
 
+def get_tv_season_episode_count(mediainfo, season: int, episodes: list | None = None) -> Optional[int]:
+    """解析当前季总集数；未知时返回 None，不把空查询当 0 集。"""
+    info = get_tv_season_info(mediainfo, season)
+    if info:
+        episode_count = info.get("episode_count")
+        if episode_count is not None:
+            try:
+                return int(episode_count)
+            except (TypeError, ValueError):
+                pass
+        raw_episodes = info.get("episodes")
+        if raw_episodes:
+            return len(raw_episodes)
+    if episodes:
+        return len([
+            ep for ep in episodes
+            if episode_field(ep, "episode_number") is not None
+        ])
+    return None
+
+
 def get_tv_season_air_date(mediainfo, season: int) -> Optional[str]:
     """获取指定季的开播日期。"""
     info = get_tv_season_info(mediainfo, season)

@@ -9,7 +9,7 @@ from ..engine.proximity import assess_completion_proximity
 from ..engine.types import CompletionSignal, PendingTimeoutManagerProtocol
 from ..shared.config import PluginConfig
 from ..shared.log import detail
-from ..shared.media import date_context, get_tv_season_air_date, parse_date
+from ..shared.media import date_context, get_tv_season_air_date, get_tv_season_episode_count, parse_date
 from ..shared.subscribe import format_subscribe, resolve_subscribe_media_type
 from .state import PendingStateCoordinator
 
@@ -80,9 +80,9 @@ class PendingJudge:
                     return False, ""
                 return True, f"{date_context('开播日期', air_date, as_of=today)}，仍在开播待定窗口内"
 
-        ep_count = len(episodes) if episodes else 0
+        ep_count = get_tv_season_episode_count(mediainfo, subscribe.season, episodes)
         pending_episodes = self._config.auto_tv_pending_episodes
-        if pending_episodes and ep_count <= pending_episodes:
+        if pending_episodes and ep_count is not None and ep_count <= pending_episodes:
             if has_strong_completion():
                 return False, ""
             return True, f"集数不足（{ep_count} ≤ {pending_episodes}）"

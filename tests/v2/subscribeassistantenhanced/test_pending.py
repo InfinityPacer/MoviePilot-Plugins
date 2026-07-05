@@ -92,6 +92,59 @@ class TestShouldEnterPending:
         assert should is True
         assert reason == "集数不足（2 ≤ 3）"
 
+    def test_season_info_episode_count_prevents_empty_episode_list_from_zero_pending(self):
+        """优先使用 season_info 的 episode_count，不把分集详情空结果当 0 集。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
+        mi = _mi(season_info=[{"season_number": 1, "episode_count": 190}])
+
+        should, reason = j.should_enter_pending(_sub(total_episode=190), mi, [])
+
+        assert should is False
+        assert reason == ""
+
+    def test_season_info_episode_count_can_enter_pending_when_explicitly_low(self):
+        """season_info 明确给出低集数时，待定原因仍是集数不足。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
+        mi = _mi(season_info=[{"season_number": 1, "episode_count": 0}])
+
+        should, reason = j.should_enter_pending(_sub(total_episode=190), mi, [])
+
+        assert should is True
+        assert reason == "集数不足（0 ≤ 1）"
+
+    def test_season_info_episodes_length_is_used_when_episode_count_missing(self):
+        """season_info 没有 episode_count 时，使用同季 episodes 长度兜底。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 3}))
+        mi = _mi(season_info=[{"season_number": 1, "episodes": [{"episode_number": 1}, {"episode_number": 2}]}])
+
+        should, reason = j.should_enter_pending(_sub(), mi, [])
+
+        assert should is True
+        assert reason == "集数不足（2 ≤ 3）"
+
+    def test_invalid_season_info_episode_count_falls_back_to_season_episodes(self):
+        """season_info 的 episode_count 无效时，继续使用同季 episodes 长度兜底。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 3}))
+        mi = _mi(season_info=[{
+            "season_number": 1,
+            "episode_count": "",
+            "episodes": [{"episode_number": 1}, {"episode_number": 2}],
+        }])
+
+        should, reason = j.should_enter_pending(_sub(), mi, [])
+
+        assert should is True
+        assert reason == "集数不足（2 ≤ 3）"
+
+    def test_unknown_episode_count_does_not_report_zero_episode_pending(self):
+        """season_info 和分集表都拿不到时，不伪造成 0 集。"""
+        j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
+
+        should, reason = j.should_enter_pending(_sub(total_episode=190), _mi(), [])
+
+        assert should is False
+        assert reason == ""
+
     def test_low_confidence_completion_does_not_skip_episode_pending(self):
         """低置信季级完结信号不能绕过剧集待定。"""
         j = _judge(config=PluginConfig({"auto_tv_pending_episodes": 1}))
