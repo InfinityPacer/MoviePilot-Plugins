@@ -40,6 +40,7 @@ from .pause.airing import AiringPauseChecker
 from .pause.manager import PauseManager
 from .pause.nodownload import NoDownloadPolicy
 from .pause.probe import PausedProbeCoordinator
+from .noresult import NoResultDiagnosticCoordinator
 from .best_version.priority import PriorityManager
 from .best_version.converter import BestVersionConverter
 from .best_version.orchestrator import BestVersionOrchestrator
@@ -408,6 +409,15 @@ class SubscribeAssistantEnhanced(_PluginBase):
         )
         self._paused_probe_coordinator = paused_probe
 
+        no_result_diagnostic = NoResultDiagnosticCoordinator(
+            cfg,
+            tm.read,
+            tm.update,
+            subscribe_oper=self._subscribe_oper,
+            notify_fn=self._notify_subscribe,
+            get_subscribe_image_fn=self._get_subscribe_image,
+        )
+
         self._event_proxy = EventProxy(
             task_manager=tm,
             subscribe_oper=self._subscribe_oper,
@@ -460,6 +470,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "no_download_policy": no_download_policy,
             "download_monitor": download_monitor,
             "paused_probe": paused_probe,
+            "no_result_diagnostic": no_result_diagnostic,
             "torrent_cleanup": torrent_cleanup,
             "deletes_store": deletes_store,
             "guard": guard,
@@ -611,6 +622,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "deletes",
             "volatility",
             "site_evidence",
+            "no_result",
             "subscription_cleanup_histories",
         ]:
             self.save_data(key, {})
@@ -995,6 +1007,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         tasks.append(("待定状态一致性检查", self.run_pending_state_reconcile))
         tasks.append(("无下载处理", self.run_no_download_check))
         tasks.append(("暂停订阅低频补搜", self.run_paused_probe_check))
+        tasks.append(("搜索诊断", self.run_no_result_diagnostic))
         tasks.append(("站点证据采样", self.run_site_evidence_scan))
         if self._config.download_monitor_enabled:
             tasks.append(("删除记录清理", self.run_deletes_cleanup))
@@ -1011,6 +1024,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
     def run_paused_probe_check(self):
         """暂停订阅低频补搜巡检：登记外部暂停，并按配置安排单订阅搜索。"""
         coordinator = self._modules.get("paused_probe")
+        if coordinator:
+            coordinator.run()
+
+    def run_no_result_diagnostic(self):
+        """搜索诊断巡检：识别按原规则长期搜不到的订阅并发出诊断通知。"""
+        coordinator = self._modules.get("no_result_diagnostic")
         if coordinator:
             coordinator.run()
 
