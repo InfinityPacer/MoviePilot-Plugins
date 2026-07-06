@@ -60,6 +60,10 @@ LABELS = {
     "paused_probe_reasons": "暂停订阅补搜场景",
     "paused_probe_min_pause_days": "暂停满N天后补搜",
     "paused_probe_interval_hours": "补搜间隔（小时）",
+    # 搜索诊断
+    "no_result_diagnostic_enabled": "搜索诊断",
+    "no_result_diagnostic_rounds": "连续未搜到轮数",
+    "no_result_diagnostic_cooldown_hours": "通知冷却（小时）",
     # 订阅洗版
     "best_version_type": "洗版类型",
     "best_version_episode_to_full": "分集转全集",
@@ -137,6 +141,10 @@ HINTS = {
     "paused_probe_reasons": "选择哪些暂停原因需要低频补搜",
     "paused_probe_min_pause_days": "暂停满N天后才补搜，为0时不处理",
     "paused_probe_interval_hours": "同一订阅两次补搜的最小间隔",
+    # 搜索诊断
+    "no_result_diagnostic_enabled": "订阅按原规则长期搜不到时发诊断通知；只读观察，不改搜索规则/站点、不下载",
+    "no_result_diagnostic_rounds": "缺失集数连续 N 轮巡检未减少后提醒；0=不处理",
+    "no_result_diagnostic_cooldown_hours": "同一订阅两次诊断通知的最小间隔，避免反复打扰",
     # 订阅洗版
     "best_version_type": "选择需要自动洗版的类型，关闭时不自动创建和巡检洗版订阅",
     "best_version_episode_to_full": "订阅目标集数满足时，从分集洗版切换为全集洗版",
@@ -206,6 +214,9 @@ TABS = [
         ["recognition_guard_mode", "recognition_guard_notify", "recognition_guard_notify_interval"],
         ["recognition_guard_tmdb_recheck_mode", "recognition_guard_cache_maxsize"],
         [("recognition_guard_custom_config", 12)],
+    ]),
+    ("搜索诊断", [
+        ["no_result_diagnostic_enabled", "no_result_diagnostic_rounds", "no_result_diagnostic_cooldown_hours"],
     ]),
 ]
 
