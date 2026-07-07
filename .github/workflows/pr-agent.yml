@@ -59,62 +59,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Prepare PR-Agent description markers
-        if: >-
-          github.event_name == 'pull_request_target' ||
-          (
-            github.event_name == 'issue_comment' &&
-            (
-              github.event.comment.body == '/describe' ||
-              startsWith(github.event.comment.body, '/describe ')
-            )
-          )
+      - name: Snapshot PR-Agent review state
+        id: review_state_before
+        if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          current_body="$(mktemp)"
-          next_body="$(mktemp)"
-          payload="$(mktemp)"
+          review_count="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews" --jq '[.[] | select(.user.login == "github-actions[bot]")] | length')"
+          inline_count="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/comments" --jq '[.[] | select(.user.login == "github-actions[bot]")] | length')"
+          {
+            echo "review_count=${review_count}"
+            echo "inline_count=${inline_count}"
+          } >> "${GITHUB_OUTPUT}"
 
-          gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.body // ""' > "${current_body}"
-          python3 - "${current_body}" "${next_body}" <<'PY'
-          import sys
-          from pathlib import Path
+      - name: Clean previous PR-Agent update notification
+        if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          marker="<!-- pr-agent-update-notification -->"
+          comment_ids="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${marker}\"))) | .id] | .[]")"
 
-          current_path = Path(sys.argv[1])
-          next_path = Path(sys.argv[2])
-
-          body = current_path.read_text()
-          start = "<!-- pr-agent-summary:start -->"
-          end = "<!-- pr-agent-summary:end -->"
-          placeholder = "pr_agent:summary"
-          agent_block = f"## PR-Agent 摘要\n\n{start}\n{placeholder}\n{end}\n"
-
-          start_index = body.find(start)
-          end_index = body.find(end)
-          if start_index >= 0 and end_index > start_index:
-              next_body = body[: start_index + len(start)] + f"\n{placeholder}\n" + body[end_index:]
-          else:
-              separator = "\n\n" if body.strip() else ""
-              next_body = body.rstrip() + separator + agent_block
-
-          next_path.write_text(next_body)
-          PY
-
-          if ! cmp -s "${current_body}" "${next_body}"; then
-            python3 - "${next_body}" "${payload}" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          body = Path(sys.argv[1]).read_text()
-          Path(sys.argv[2]).write_text(json.dumps({"body": body}, ensure_ascii=False))
-          PY
-            gh api --method PATCH "repos/${REPO}/pulls/${PR_NUMBER}" --input "${payload}" >/dev/null
+          if [ -z "${comment_ids}" ]; then
+            echo "No previous PR-Agent update notification to clean."
+            exit 0
           fi
+
+          while IFS= read -r comment_id; do
+            [ -z "${comment_id}" ] && continue
+            gh api --method DELETE "repos/${REPO}/issues/comments/${comment_id}" >/dev/null
+          done <<< "${comment_ids}"
 
       - name: Run PR-Agent
         id: pragent
@@ -141,36 +121,36 @@ jobs:
           config.ignore_pr_title: '["^\\[Auto\\]", "^Auto"]'
           config.ignore_pr_labels: '["skip pr-agent"]'
 
-          # PR 初次进入评审或后续 push 时，整理 PR 描述并发布 GitHub Review 行内建议。
-          github_action_config.auto_review: "false"
+          # PR 初次进入评审或后续 push 时，整理 PR 摘要、更新 Review Guide 并发布 GitHub Review 行内建议。
+          github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
 
-          # synchronize 由 push_commands 单独处理；每次 push 更新 Agent 摘要并重新生成行内 Review，旧行评由 GitHub 标记 outdated。
+          # synchronize 由 push_commands 单独处理；每次 push 更新摘要、Guide 和行内 Review，旧行评由 GitHub 标记 outdated。
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
           github_action_config.handle_push_trigger: "true"
-          github_action_config.push_commands: '["/describe", "/improve"]'
+          github_action_config.push_commands: '["/describe", "/review", "/improve"]'
 
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
 
-          # /describe 行为控制；markers 模式只填充 PR body 中的 Agent 专区，保留人工说明。
+          # /describe 行为控制；使用独立 persistent comment，不改写人工 PR body，也不生成 File Walkthrough。
           pr_description.generate_ai_title: "false"
           pr_description.publish_labels: "false"
-          pr_description.publish_description_as_comment: "false"
+          pr_description.publish_description_as_comment: "true"
+          pr_description.publish_description_as_comment_persistent: "true"
           pr_description.enable_pr_diagram: "false"
-          pr_description.enable_pr_type: "false"
+          pr_description.enable_pr_type: "true"
           pr_description.enable_help_text: "false"
           pr_description.enable_help_comment: "false"
+          pr_description.enable_semantic_files_types: "false"
           pr_description.collapsible_file_list: "adaptive"
-          pr_description.add_original_user_description: "true"
-          pr_description.use_description_markers: "true"
-          pr_description.include_generated_by_header: "false"
+          pr_description.add_original_user_description: "false"
+          pr_description.use_description_markers: "false"
           pr_description.final_update_message: "false"
           pr_description.extra_instructions: |
             请用中文输出。
             只生成维护者需要快速判断的简短摘要，避免复述每个文件、测试命令或低价值细节。
-            不要改写人工说明；仅填充 PR 描述中的 PR-Agent 摘要占位符。
 
           # /review 输出策略，聚焦维护者需要处理的风险和缺口。
           pr_reviewer.extra_instructions: |
@@ -204,3 +184,60 @@ jobs:
           # github_action_config.auto_improve: "true"
           # config.verbosity_level: "1"
           # pr_reviewer.num_max_findings: "3"
+
+      - name: Notify PR-Agent review update
+        if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BEFORE_REVIEW_COUNT: ${{ steps.review_state_before.outputs.review_count }}
+          BEFORE_INLINE_COUNT: ${{ steps.review_state_before.outputs.inline_count }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          before_review_count="${BEFORE_REVIEW_COUNT:-0}"
+          before_inline_count="${BEFORE_INLINE_COUNT:-0}"
+          after_review_count="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews" --jq '[.[] | select(.user.login == "github-actions[bot]")] | length')"
+          after_inline_count="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/comments" --jq '[.[] | select(.user.login == "github-actions[bot]")] | length')"
+          head_review_count="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews" --jq "[.[] | select(.user.login == \"github-actions[bot]\" and .commit_id == \"${HEAD_SHA}\")] | length")"
+          head_inline_count="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/comments" --jq "[.[] | select(.user.login == \"github-actions[bot]\" and .commit_id == \"${HEAD_SHA}\")] | length")"
+
+          if [ "${after_review_count}" -le "${before_review_count}" ] && [ "${after_inline_count}" -le "${before_inline_count}" ]; then
+            echo "PR-Agent did not publish new review output; skip notification."
+            exit 0
+          fi
+
+          if [ "${head_review_count}" -eq 0 ] && [ "${head_inline_count}" -eq 0 ]; then
+            echo "PR-Agent did not publish review output on the latest commit; skip notification."
+            exit 0
+          fi
+
+          short_sha="${HEAD_SHA:0:7}"
+          pr_url="https://github.com/${REPO}/pull/${PR_NUMBER}"
+          commit_url="https://github.com/${REPO}/commit/${HEAD_SHA}"
+          payload="$(mktemp)"
+
+          python3 - "${payload}" "${pr_url}" "${commit_url}" "${short_sha}" "${head_review_count}" "${head_inline_count}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload_path = Path(sys.argv[1])
+          pr_url = sys.argv[2]
+          commit_url = sys.argv[3]
+          short_sha = sys.argv[4]
+          review_count = sys.argv[5]
+          inline_count = sys.argv[6]
+
+          body = (
+              f"<!-- pr-agent-update-notification -->\n"
+              f"PR-Agent 已更新到最新提交 [{short_sha}]({commit_url})。\n\n"
+              f"- PR：{pr_url}\n"
+              f"- 本次新增 Review 数：{review_count}\n"
+              f"- 本次新增行内评论数：{inline_count}"
+          )
+          payload_path.write_text(json.dumps({"body": body}, ensure_ascii=False))
+          PY
+
+          gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/comments" --input "${payload}" >/dev/null
