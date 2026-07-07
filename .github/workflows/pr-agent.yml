@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   pr-agent:
-    name: PR-Agent describe and inline review
+    name: PR-Agent inline review
     # 所有非 Bot PR 自动处理；手动命令仍限制在可信贡献者的 PR 评论中。
     if: >-
       github.event.sender.type != 'Bot' &&
@@ -59,19 +59,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Remove stale PR-Agent summary comments
-        # Gemini 风格只保留 GitHub Review/行内 discussion；旧版 PR-Agent summary comment 不再留在时间线里。
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-        run: |
-          gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and ((.body | startswith("## PR Reviewer Guide")) or (.body | startswith("## PR Code Suggestions")) or (.body | contains("Persistent review updated")) or (.body | contains("Persistent suggestions updated")))) | .id' \
-          | while read -r comment_id; do
-              gh api -X DELETE "repos/${REPO}/issues/comments/${comment_id}"
-            done
-
       - name: Run PR-Agent
         id: pragent
         # 使用版本号加 digest 固定容器构建，避免 tag 被重推后改变运行内容。
@@ -97,15 +84,15 @@ jobs:
           config.ignore_pr_title: '["^\\[Auto\\]", "^Auto"]'
           config.ignore_pr_labels: '["skip pr-agent"]'
 
-          # PR 初次进入评审或后续 push 时，使用 GitHub Review 的行内建议形态对标 Gemini。
+          # PR 初次进入评审或后续 push 时，使用 GitHub Review 的行内建议形态对标 Gemini/Codex Reviewer。
           github_action_config.auto_review: "false"
-          github_action_config.auto_describe: "true"
+          github_action_config.auto_describe: "false"
           github_action_config.auto_improve: "true"
 
           # synchronize 由 push_commands 单独处理；每次 push 重新生成行内 Review，旧行评由 GitHub 标记 outdated。
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
           github_action_config.handle_push_trigger: "true"
-          github_action_config.push_commands: '["/describe --pr_description.final_update_message=false", "/improve"]'
+          github_action_config.push_commands: '["/improve"]'
 
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
