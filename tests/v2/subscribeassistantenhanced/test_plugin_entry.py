@@ -251,7 +251,7 @@ class TestPluginEntry:
         """下载器返回种子时应转换为统一 TorrentInfo，供超时巡检判断进度。"""
         plugin = SubscribeAssistantEnhanced()
         service = SimpleNamespace(type="qbittorrent", instance=MagicMock())
-        service.instance.get_torrents.return_value = ([{"hash": "abc", "progress": 1.0}], False)
+        service.instance.get_torrents.return_value = ([{"hash": "abc", "state": "uploading", "progress": 1.0}], False)
         plugin._downloader_helper = MagicMock()
         plugin._downloader_helper.get_service.return_value = service
 

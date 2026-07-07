@@ -61,6 +61,90 @@ class TestFromQB:
         assert info.target_size == 500
         assert info.tags == ["tag1", "tag2"]
 
+    def test_qb_negative_completion_on_does_not_complete(self):
+        """qB completion_on=-1 表示尚未完成，不能当做种时间或完成信号。"""
+        qb = {
+            "hash": "pending", "state": "downloading",
+            "completion_on": -1, "downloaded": 10,
+            "size": 100, "total_size": 100,
+        }
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.completed is False
+        assert info.seeding_time == 0
+
+    def test_qb_positive_completion_on_builds_seeding_time(self, monkeypatch):
+        """qB completion_on 为正数时表示完成时间戳，可换算为做种时长。"""
+        monkeypatch.setattr("subscribeassistantenhanced.download.torrent.time.time", lambda: 2000)
+        qb = {
+            "hash": "done-time", "state": "downloading",
+            "completion_on": 1900, "downloaded": 10,
+            "size": 100, "total_size": 100,
+        }
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.completed is True
+        assert info.seeding_time == 100
+
+    def test_qb_state_enum_complete_marks_done(self):
+        """qB SDK state_enum.is_complete 为真时，应优先按下载器完成态处理。"""
+        qb = SimpleNamespace(
+            hash="enum-done", name="", state="downloading",
+            state_enum=SimpleNamespace(is_complete=True),
+            downloaded=10, size=100, total_size=100,
+        )
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.completed is True
+
+    def test_qb_state_enum_errors_fall_back_to_state(self):
+        """qB SDK 动态属性异常不应打断映射，按普通状态和体积兜底判断。"""
+        class _BrokenStateEnumTorrent(dict):
+            @property
+            def state_enum(self):
+                raise RuntimeError("state enum unavailable")
+
+        qb = _BrokenStateEnumTorrent({
+            "hash": "enum-error", "state": "downloading",
+            "downloaded": 10, "size": 100, "total_size": 100,
+        })
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.completed is False
+
+    def test_qb_state_enum_complete_flag_errors_are_ignored(self):
+        """qB state_enum 对象存在但完成标记异常时，应继续走状态兜底。"""
+        class _BrokenCompleteFlag:
+            @property
+            def is_complete(self):
+                raise RuntimeError("complete flag unavailable")
+
+        qb = SimpleNamespace(
+            hash="enum-flag-error", name="", state="downloading",
+            state_enum=_BrokenCompleteFlag(),
+            downloaded=10, size=100, total_size=100,
+        )
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.completed is False
+
+    def test_qb_invalid_ratio_falls_back_to_zero(self):
+        """qB ratio 可能来自外部 SDK 原始值，异常值按 0 处理。"""
+        qb = {
+            "hash": "bad-ratio", "state": "downloading",
+            "downloaded": 10, "size": 100, "total_size": 100,
+            "ratio": "bad",
+        }
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.ratio == 0.0
+
     def test_tracker_lazy_load_failure_does_not_break_mapping(self):
         """qB tracker lazy API 异常不应打断主种子信息映射。"""
         class _QbTorrent(dict):
@@ -81,10 +165,22 @@ class TestFromQB:
         assert info.tracker_responses == []
 
     def test_completed_torrent(self):
-        qb = {"hash": "done", "progress": 1.0}
+        qb = {"hash": "done", "state": "uploading", "progress": 1.0}
         info = TorrentAdapter.from_qb(qb)
         assert info.completed is True
         assert info.completion_time == 0.0
+
+    def test_qb_zero_target_size_does_not_complete_by_size(self):
+        """qB 目标大小缺失时不能用 0>=0 提前释放下载待定。"""
+        qb = {
+            "hash": "zero", "state": "downloading",
+            "downloaded": 0, "size": 0, "total_size": 0,
+        }
+
+        info = TorrentAdapter.from_qb(qb)
+
+        assert info.completed is False
+        assert info.progress == 0.0
 
     def test_completed_uses_selected_size(self):
         """QB 按已选文件大小 size 判断完成，避免部分选文件时被 total_size 误判未完成。"""
@@ -172,15 +268,32 @@ class TestFromTR:
     def test_completed(self):
         tr = SimpleNamespace(
             hashString="tr", progress=100.0,
-            name="", status="", totalSize=0,
+            name="", status="", totalSize=1000,
+            downloadedEver=1000, uploadedEver=0,
+            uploadRatio=0, secondsDownloading=0,
+            secondsSeeding=10, rateUpload=0,
+            addedDate=0, labels=[], trackers=[],
+            trackerStats=[],
+        )
+        info = TorrentAdapter.from_tr(tr)
+        assert info.completed is True
+
+    def test_tr_zero_target_size_does_not_complete_by_size(self):
+        """TR 目标大小缺失时不能用 0>=0 提前释放下载待定。"""
+        tr = SimpleNamespace(
+            hashString="tr-zero", progress=0.0,
+            name="", status="downloading", totalSize=0,
             downloadedEver=0, uploadedEver=0,
             uploadRatio=0, secondsDownloading=0,
             secondsSeeding=0, rateUpload=0,
             addedDate=0, labels=[], trackers=[],
             trackerStats=[],
         )
+
         info = TorrentAdapter.from_tr(tr)
-        assert info.completed is True
+
+        assert info.completed is False
+        assert info.target_size == 0
 
     def test_completed_uses_size_when_done(self):
         """TR 按 size_when_done 判断完成，兼容只选择部分文件下载的种子。"""
@@ -196,6 +309,23 @@ class TestFromTR:
         info = TorrentAdapter.from_tr(tr)
         assert info.completed is True
         assert info.target_size == 1000
+
+    def test_zero_size_when_done_falls_back_to_total_size(self):
+        """TR sizeWhenDone=0 不代表完成目标为 0，应回退到全种大小。"""
+        tr = SimpleNamespace(
+            hashString="tr-zero-selected", progress=0.0,
+            name="", status="downloading", totalSize=2000,
+            sizeWhenDone=0, downloadedEver=0,
+            uploadedEver=0, uploadRatio=0, secondsDownloading=60,
+            secondsSeeding=0, rateUpload=0, addedDate=0,
+            labels=[], trackers=[], trackerStats=[],
+            fields={"sizeWhenDone"},
+        )
+
+        info = TorrentAdapter.from_tr(tr)
+
+        assert info.target_size == 2000
+        assert info.completed is False
 
     def test_snake_case_object_does_not_complete_early(self):
         """TR snake_case 字段必须正确读取，不能因大小为 0 被误判完成。"""

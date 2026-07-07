@@ -1,6 +1,17 @@
 """TorrentInfo 标准化结构 + TorrentAdapter（QB/TR 封装）。"""
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+QB_COMPLETE_STATES = {
+    "uploading",
+    "stalledUP",
+    "checkingUP",
+    "pausedUP",
+    "stoppedUP",
+    "queuedUP",
+    "forcedUP",
+}
 
 
 @dataclass
@@ -34,36 +45,38 @@ class TorrentAdapter:
     @staticmethod
     def from_qb(torrent: dict) -> TorrentInfo:
         """QB 种子字典 → TorrentInfo，以 size 作为已选文件目标体积。"""
-        total_size = torrent.get("total_size", 0)
-        target_size = torrent.get("size") or total_size
-        downloaded = torrent.get("downloaded", 0)
-        seeding_time = torrent.get("completion_on", torrent.get("seeding_time", 0))
+        state = _get_attr(torrent, "state", default="")
+        total_size = _as_int(_get_attr(torrent, "total_size", default=0))
+        target_size = _positive_int(_get_attr(torrent, "size", default=None)) or total_size
+        downloaded = _as_int(_get_attr(torrent, "downloaded", default=0))
+        seeding_time = _qb_seeding_time(torrent)
         progress = _progress_fraction(downloaded, target_size or total_size)
         completed, completion_time = _completion_status(
-            state=torrent.get("state", ""),
+            state=state,
             seeding_time=seeding_time,
             downloaded=downloaded,
             target_size=target_size,
-            dltime=torrent.get("dltime", 0),
+            dltime=_as_int(_get_attr(torrent, "dltime", default=0)),
+            state_complete=_is_qb_complete_state(torrent, state),
         )
         return TorrentInfo(
-            hash=torrent.get("hash", ""),
-            title=torrent.get("name", ""),
-            state=torrent.get("state", ""),
+            hash=_get_attr(torrent, "hash", default=""),
+            title=_get_attr(torrent, "name", default=""),
+            state=state,
             progress=progress,
             total_size=total_size,
             target_size=target_size,
             downloaded=downloaded,
-            uploaded=torrent.get("uploaded", 0),
-            ratio=torrent.get("ratio", 0.0),
-            dltime=torrent.get("dltime", 0),
+            uploaded=_as_int(_get_attr(torrent, "uploaded", default=0)),
+            ratio=_as_float(_get_attr(torrent, "ratio", default=0.0)),
+            dltime=_as_int(_get_attr(torrent, "dltime", default=0)),
             seeding_time=seeding_time,
-            iatime=torrent.get("inactive_seeding_time", torrent.get("last_activity", 0)),
-            avg_upspeed=torrent.get("up_limit", 0),
-            add_time=torrent.get("added_on_str", ""),
-            add_on=torrent.get("added_on", 0),
-            tags=_parse_tags(torrent.get("tags", "")),
-            tracker=torrent.get("tracker", ""),
+            iatime=_as_int(_get_attr(torrent, "inactive_seeding_time", "last_activity", default=0)),
+            avg_upspeed=_as_int(_get_attr(torrent, "up_limit", default=0)),
+            add_time=_get_attr(torrent, "added_on_str", default=""),
+            add_on=_as_int(_get_attr(torrent, "added_on", default=0)),
+            tags=_parse_tags(_get_attr(torrent, "tags", default="")),
+            tracker=_get_attr(torrent, "tracker", default=""),
             tracker_responses=_get_qb_tracker_responses(torrent),
             completed=completed,
             completion_time=completion_time,
@@ -72,19 +85,23 @@ class TorrentAdapter:
     @staticmethod
     def from_tr(torrent) -> TorrentInfo:
         """TR 种子对象 → TorrentInfo，优先使用 size_when_done 作为已选文件目标体积。"""
-        total_size = _get_attr(torrent, "total_size", "totalSize", default=0)
+        total_size = _as_int(_get_attr(torrent, "total_size", "totalSize", default=0))
         target_size = total_size
         fields = _get_attr(torrent, "fields", default=None)
         if fields is None or "size_when_done" in fields or "sizeWhenDone" in fields:
-            target_size = _get_attr(torrent, "size_when_done", "sizeWhenDone", default=total_size)
+            target_size = _positive_int(
+                _get_attr(torrent, "size_when_done", "sizeWhenDone", default=None)
+            ) or total_size
         downloaded = _get_attr(torrent, "downloaded_ever", "downloadedEver", default=None)
         if downloaded is None:
             downloaded = int(total_size * (_get_attr(torrent, "progress", default=0.0) or 0) / 100)
+        downloaded = _as_int(downloaded)
         dltime = int(_get_attr(torrent, "seconds_downloading", "secondsDownloading", default=0) or 0)
         seeding_time = int(_get_attr(torrent, "seconds_seeding", "secondsSeeding", default=0) or 0)
+        state = _get_attr(torrent, "status", default="")
         progress = _progress_fraction(downloaded, target_size or total_size)
         completed, completion_time = _completion_status(
-            state=getattr(torrent, "status", ""),
+            state=state,
             seeding_time=seeding_time,
             downloaded=downloaded,
             target_size=target_size,
@@ -98,7 +115,7 @@ class TorrentAdapter:
         return TorrentInfo(
             hash=_get_attr(torrent, "hashString", default=""),
             title=_get_attr(torrent, "name", default=""),
-            state=_get_attr(torrent, "status", default=""),
+            state=state,
             progress=progress,
             total_size=total_size,
             target_size=target_size,
@@ -144,15 +161,38 @@ class TorrentAdapter:
 
 
 def _completion_status(state: str, seeding_time: int, downloaded: int,
-                       target_size: int, dltime: int) -> tuple[bool, float]:
-    """判断种子是否完成：做种、已有做种时长或已下载达到目标体积。"""
-    if state in ["seeding", "seed_pending"]:
+                       target_size: int, dltime: int,
+                       state_complete: bool = False) -> tuple[bool, float]:
+    """判断种子是否完成：下载器完成态优先，体积兜底必须有有效目标大小。"""
+    if state_complete or state in ["seeding", "seed_pending"]:
         return True, 0.0
-    if seeding_time:
+    if _positive_int(seeding_time):
         return True, 0.0
-    if downloaded >= target_size:
+    if _positive_int(target_size) and downloaded >= target_size:
         return True, 0.0
     return False, dltime
+
+
+def _is_qb_complete_state(torrent, state: str) -> bool:
+    """使用 qB SDK 的 state_enum.is_complete；普通 dict 按 SDK 状态集合兜底。"""
+    try:
+        state_enum = getattr(torrent, "state_enum", None)
+    except Exception:
+        state_enum = None
+    try:
+        if state_enum is not None and bool(getattr(state_enum, "is_complete", False)):
+            return True
+    except Exception:
+        pass
+    return str(state or "") in QB_COMPLETE_STATES
+
+
+def _qb_seeding_time(torrent) -> int:
+    """qB completion_on 是完成时间戳；小于等于 0 表示未完成，不能当做种时长。"""
+    completion_on = _as_int(_get_attr(torrent, "completion_on", default=0))
+    if completion_on > 0:
+        return max(0, int(time.time()) - completion_on)
+    return _positive_int(_get_attr(torrent, "seeding_time", default=0))
 
 
 def _progress_fraction(downloaded: int, target_size: int) -> float:
@@ -170,6 +210,28 @@ def _progress_percent(downloaded: int, target_size: int) -> float:
     if target_value <= 0:
         return 0.0
     return max(0.0, min(downloaded_value / target_value * 100, 100.0))
+
+
+def _as_int(value, default: int = 0) -> int:
+    """把 SDK 原始数值统一为 int，异常值按默认值处理。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _positive_int(value) -> int:
+    """只接受正整数；下载目标大小和做种时间的 0/负数都视为无效。"""
+    value = _as_int(value)
+    return value if value > 0 else 0
+
+
+def _as_float(value, default: float = 0.0) -> float:
+    """把 SDK 原始数值统一为 float，异常值按默认值处理。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _parse_tags(tags_str) -> list:
