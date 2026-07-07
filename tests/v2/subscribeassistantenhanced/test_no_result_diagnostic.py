@@ -163,3 +163,27 @@ def test_zero_rounds_threshold_disables_diagnostic():
         coord.run()
     assert data[NO_RESULT_TASK_KEY] == {}
     notify.assert_not_called()
+
+
+def test_no_candidate_truncation_covers_all_subscribes():
+    """不做固定候选截断：订阅较多时尾部订阅同样累计并触发通知，不漏诊断。"""
+    subs = [_sub(sid=i, lack=5) for i in range(80)]
+    coord, data, notify, _ = _coordinator(subs, cfg=_cfg(no_result_diagnostic_rounds=3))
+    for _ in range(4):  # 基线 + 3 轮
+        coord.run()
+    # 80 个订阅应全部通知，且尾部订阅状态被正确累计（旧版 50 截断会漏后 30 个）
+    assert notify.call_count == 80
+    assert data[NO_RESULT_TASK_KEY]["79"]["miss_rounds"] == 3
+
+
+def test_notification_wording_is_conservative():
+    """诊断文案保守：不对具体原因下定论，标注仅供参考并回到原生订阅链路。"""
+    coord, data, notify, _ = _coordinator([_sub(lack=5)], cfg=_cfg(no_result_diagnostic_rounds=3))
+    for _ in range(4):
+        coord.run()
+    assert notify.call_count == 1
+    _, kwargs = notify.call_args
+    assert "仅供参考" in kwargs["action"]
+    assert "可能原因" in kwargs["action"]
+    assert kwargs.get("follow_up")
+    assert kwargs.get("diagnostic") is True
