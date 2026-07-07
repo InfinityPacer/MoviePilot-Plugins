@@ -415,7 +415,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
             tm.update,
             subscribe_oper=self._subscribe_oper,
             notify_fn=self._notify_subscribe,
-            get_subscribe_image_fn=self._get_subscribe_image,
         )
 
         self._event_proxy = EventProxy(
