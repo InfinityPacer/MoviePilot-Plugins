@@ -59,6 +59,63 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Prepare PR-Agent description markers
+        if: >-
+          github.event_name == 'pull_request_target' ||
+          (
+            github.event_name == 'issue_comment' &&
+            (
+              github.event.comment.body == '/describe' ||
+              startsWith(github.event.comment.body, '/describe ')
+            )
+          )
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          current_body="$(mktemp)"
+          next_body="$(mktemp)"
+          payload="$(mktemp)"
+
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.body // ""' > "${current_body}"
+          python3 - "${current_body}" "${next_body}" <<'PY'
+          import sys
+          from pathlib import Path
+
+          current_path = Path(sys.argv[1])
+          next_path = Path(sys.argv[2])
+
+          body = current_path.read_text()
+          start = "<!-- pr-agent-summary:start -->"
+          end = "<!-- pr-agent-summary:end -->"
+          placeholder = "pr_agent:summary"
+          agent_block = f"## PR-Agent 摘要\n\n{start}\n{placeholder}\n{end}\n"
+
+          start_index = body.find(start)
+          end_index = body.find(end)
+          if start_index >= 0 and end_index > start_index:
+              next_body = body[: start_index + len(start)] + f"\n{placeholder}\n" + body[end_index:]
+          else:
+              separator = "\n\n" if body.strip() else ""
+              next_body = body.rstrip() + separator + agent_block
+
+          next_path.write_text(next_body)
+          PY
+
+          if ! cmp -s "${current_body}" "${next_body}"; then
+            python3 - "${next_body}" "${payload}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          body = Path(sys.argv[1]).read_text()
+          Path(sys.argv[2]).write_text(json.dumps({"body": body}, ensure_ascii=False))
+          PY
+            gh api --method PATCH "repos/${REPO}/pulls/${PR_NUMBER}" --input "${payload}" >/dev/null
+          fi
+
       - name: Run PR-Agent
         id: pragent
         # 使用版本号加 digest 固定容器构建，避免 tag 被重推后改变运行内容。
@@ -84,26 +141,36 @@ jobs:
           config.ignore_pr_title: '["^\\[Auto\\]", "^Auto"]'
           config.ignore_pr_labels: '["skip pr-agent"]'
 
-          # PR 初次进入评审或后续 push 时，使用 GitHub Review 的行内建议形态对标 Gemini/Codex Reviewer。
+          # PR 初次进入评审或后续 push 时，整理 PR 描述并发布 GitHub Review 行内建议。
           github_action_config.auto_review: "false"
-          github_action_config.auto_describe: "false"
+          github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
 
-          # synchronize 由 push_commands 单独处理；每次 push 重新生成行内 Review，旧行评由 GitHub 标记 outdated。
+          # synchronize 由 push_commands 单独处理；每次 push 更新 Agent 摘要并重新生成行内 Review，旧行评由 GitHub 标记 outdated。
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
           github_action_config.handle_push_trigger: "true"
-          github_action_config.push_commands: '["/improve"]'
+          github_action_config.push_commands: '["/describe", "/improve"]'
 
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
 
-          # /describe 行为控制；与自动触发配置放在同一层，避免使用默认图表和标签策略。
+          # /describe 行为控制；markers 模式只填充 PR body 中的 Agent 专区，保留人工说明。
           pr_description.generate_ai_title: "false"
           pr_description.publish_labels: "false"
+          pr_description.publish_description_as_comment: "false"
           pr_description.enable_pr_diagram: "false"
+          pr_description.enable_pr_type: "false"
+          pr_description.enable_help_text: "false"
+          pr_description.enable_help_comment: "false"
           pr_description.collapsible_file_list: "adaptive"
           pr_description.add_original_user_description: "true"
+          pr_description.use_description_markers: "true"
+          pr_description.include_generated_by_header: "false"
           pr_description.final_update_message: "false"
+          pr_description.extra_instructions: |
+            请用中文输出。
+            只生成维护者需要快速判断的简短摘要，避免复述每个文件、测试命令或低价值细节。
+            不要改写人工说明；仅填充 PR 描述中的 PR-Agent 摘要占位符。
 
           # /review 输出策略，聚焦维护者需要处理的风险和缺口。
           pr_reviewer.extra_instructions: |
