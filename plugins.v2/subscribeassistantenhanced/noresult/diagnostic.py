@@ -38,7 +38,6 @@ class NoResultDiagnosticCoordinator:
 
     def __init__(self, config, task_data_read: Callable, task_data_update: Callable,
                  subscribe_oper, notify_fn: Callable,
-                 get_subscribe_image_fn: Optional[Callable] = None,
                  now_fn: Optional[Callable] = None):
         """注入配置、任务数据读写、订阅查询和通知入口。
 
@@ -47,7 +46,6 @@ class NoResultDiagnosticCoordinator:
         :param task_data_update: 任务数据读-改-写函数（TaskDataManager.update）。
         :param subscribe_oper: 订阅查询操作对象。
         :param notify_fn: 通知发送函数（插件的 _notify_subscribe）。
-        :param get_subscribe_image_fn: 可选，返回订阅海报图片的函数。
         :param now_fn: 可选，可替换时钟，便于测试。
         """
         self._config = config
@@ -55,7 +53,6 @@ class NoResultDiagnosticCoordinator:
         self._update = task_data_update
         self._subscribe_oper = subscribe_oper
         self._notify = notify_fn
-        self._get_image = get_subscribe_image_fn
         self._now = now_fn or time.time
 
     def run(self):
@@ -80,6 +77,9 @@ class NoResultDiagnosticCoordinator:
         # 不发起搜索请求，开销很小，因此不做固定截断，避免订阅较多时列表
         # 尾部订阅永远无法累计轮数、且其历史状态被误清理导致漏诊断。
         scanned_sids = set()
+        # 本轮新达到阈值、需要提醒的订阅统一收集，最后合并为一条汇总通知，
+        # 避免订阅较多时逐条推送造成通知风暴。
+        due_notify = []
         for subscribe in subscribes:
             sid = str(subscribe.id)
             scanned_sids.add(sid)
@@ -88,15 +88,22 @@ class NoResultDiagnosticCoordinator:
                 # 已补齐：不属于搜不到，清掉可能存在的历史计数
                 self._clear(sid)
                 continue
-            self._evaluate(subscribe, sid, lack, now, rounds_threshold, cooldown_seconds)
+            if self._evaluate(subscribe, sid, lack, now, rounds_threshold, cooldown_seconds):
+                due_notify.append((subscribe, lack))
+
+        if due_notify:
+            self._send_summary(due_notify)
 
         # 仅清理"已不在启用订阅列表中"（删除/暂停/完成）的历史记录；
         # 只按本轮完整扫描到的订阅全集判断，不受任何截断影响。
         self._prune(scanned_sids)
 
     def _evaluate(self, subscribe, sid: str, lack: int, now: float,
-                  rounds_threshold: int, cooldown_seconds: int):
-        """比对本轮与上轮缺集数，更新轮数并在达标时通知。"""
+                  rounds_threshold: int, cooldown_seconds: int) -> bool:
+        """比对本轮与上轮缺集数并更新轮数。
+
+        返回本轮是否"新达到阈值且已过冷却"，由调用方收集后合并为一条汇总通知。
+        """
         record = (self._read(NO_RESULT_TASK_KEY) or {}).get(sid, {})
         last_lack = record.get("last_lack")
         last_notified_at = float(record.get("last_notified_at") or 0)
@@ -116,13 +123,11 @@ class NoResultDiagnosticCoordinator:
             and (last_notified_at <= 0 or now - last_notified_at >= cooldown_seconds)
         )
 
-        notified_at = last_notified_at
+        notified_at = now if should_notify else last_notified_at
         if should_notify:
-            self._send_notification(subscribe, lack, miss_rounds)
-            notified_at = now
             logger.info(
                 f"搜索诊断：{format_subscribe(subscribe)} 连续 {miss_rounds} 轮未搜到资源，"
-                f"缺 {lack} 集，已发送诊断通知"
+                f"缺 {lack} 集，纳入本轮诊断汇总"
             )
 
         def updater(data: dict) -> dict:
@@ -134,29 +139,38 @@ class NoResultDiagnosticCoordinator:
             return data
 
         self._update(NO_RESULT_TASK_KEY, updater)
+        return should_notify
 
-    def _send_notification(self, subscribe, lack: int, miss_rounds: int):
-        """发送保守的诊断提示：仅告知长期无进展，不对具体原因下定论。"""
-        title = f"{format_subscribe_label(subscribe, str(subscribe.id))} 长期无新进展"
-        image = None
-        if self._get_image:
-            try:
-                image = self._get_image(subscribe)
-            except Exception:
-                image = None
-        link = (
-            "#/subscribe/tv?tab=mysub"
-            if getattr(subscribe, "type", "") == "电视剧"
-            else "#/subscribe/movie?tab=mysub"
+    def _send_summary(self, due_notify: list):
+        """把本轮所有新达标订阅合并为一条保守的诊断汇总通知，避免通知风暴。
+
+        :param due_notify: [(subscribe, lack), ...]
+        """
+        count = len(due_notify)
+        # 逐条明细，条数较多时截断展示，完整数量在标题体现
+        max_lines = 20
+        lines = []
+        for subscribe, lack in due_notify[:max_lines]:
+            lines.append(f"· {format_subscribe_label(subscribe, str(subscribe.id))}（仍缺 {lack} 集）")
+        if count > max_lines:
+            lines.append(f"…… 等共 {count} 个订阅")
+
+        title = (
+            f"{count} 个订阅长期无新进展"
+            if count > 1
+            else f"{format_subscribe_label(due_notify[0][0], str(due_notify[0][0].id))} 长期无新进展"
         )
+        # 跳转到订阅管理页；汇总覆盖多个订阅，不附单个海报
+        link = "#/subscribe/tv?tab=mysub"
         self._notify(
             title,
-            reason=f"连续 {miss_rounds} 轮巡检缺失集数未减少，当前仍缺 {lack} 集",
+            text="\n".join(lines),
             action=(
                 "可能原因较多（资源暂未发布、仍在播出、订阅规则或站点范围较窄、识别或下载异常等），"
-                "本提示仅供参考，建议在方便时留意该订阅"
+                "本提示仅供参考，建议在方便时留意这些订阅"
             ),
             follow_up="如确认规则或站点范围过窄，可在原生订阅中调整后由订阅链路继续搜索",
+            link=link,
             diagnostic=True,
         )
 
