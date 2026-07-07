@@ -14,5 +14,13 @@ class ProbeRequest:
 
 def fetch_probe(request: ProbeRequest) -> str:
     """执行测试请求并返回输出。"""
-    command = f"curl -sS {request.url}?q={request.query}"
-    return subprocess.check_output(command, shell=True, text=True)
+    command = [
+        "curl",
+        "-sS",
+        "--get",
+        "--data-urlencode",
+        f"q={request.query}",
+        "--",
+        request.url,
+    ]
+    return subprocess.check_output(command, text=True)
