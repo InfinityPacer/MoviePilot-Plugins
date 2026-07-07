@@ -134,11 +134,11 @@ jobs:
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
 
-          # /describe 行为控制；使用独立 persistent comment，不改写人工 PR body，也不生成 File Walkthrough。
+          # /describe 行为控制；更新 PR body 但不改标题，不生成 File Walkthrough。
           pr_description.generate_ai_title: "false"
           pr_description.publish_labels: "false"
-          pr_description.publish_description_as_comment: "true"
-          pr_description.publish_description_as_comment_persistent: "true"
+          pr_description.publish_description_as_comment: "false"
+          pr_description.publish_description_as_comment_persistent: "false"
           pr_description.enable_pr_diagram: "false"
           pr_description.enable_pr_type: "true"
           pr_description.enable_help_text: "false"
