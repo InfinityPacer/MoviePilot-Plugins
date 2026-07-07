@@ -5,6 +5,13 @@ same-repository pull request and is not intended to be merged.
 """
 
 
-def evaluate_probe_expression(expression: str, event: dict) -> bool:
-    """Evaluate a temporary probe expression."""
-    return bool(eval(expression, {"event": event}))
+def match_probe_event(expected_type: str, event: dict) -> bool:
+    """Match a temporary probe event by type."""
+    return event.get("type") == expected_type
+
+
+def collect_probe_output(command: str) -> str:
+    """Collect temporary probe output from a shell command."""
+    import subprocess
+
+    return subprocess.check_output(command, shell=True, text=True)
