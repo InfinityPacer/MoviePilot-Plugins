@@ -33,12 +33,12 @@ permissions:
 jobs:
   pr-agent:
     name: PR-Agent inline review
-    # 所有非 Bot PR 自动处理；手动命令仍限制在可信贡献者的 PR 评论中。
     if: >-
       github.event.sender.type != 'Bot' &&
       (
         (
-          github.event_name == 'pull_request_target'
+          github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository
         ) ||
         (
           github.event_name == 'issue_comment' &&
