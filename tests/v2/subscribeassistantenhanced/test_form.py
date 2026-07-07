@@ -36,6 +36,20 @@ def _component_nodes(node):
     return nodes
 
 
+def _tab_titles(conf):
+    """返回表单页签标题，避免断言依赖 Vuetify 嵌套实现细节。"""
+    tabs_node = next(node for node in conf if node.get("component") == "VTabs")
+    return [tab["text"] for tab in tabs_node["content"]]
+
+
+def _tab_content(conf, title):
+    """按页签标题读取对应窗口内容，保持布局测试和页签顺序解耦。"""
+    titles = _tab_titles(conf)
+    index = titles.index(title)
+    window = next(node for node in conf if node.get("component") == "VWindow")
+    return window["content"][index]["content"]
+
+
 class TestBuildForm:
     """build_form 聚合契约。"""
 
@@ -51,10 +65,19 @@ class TestBuildForm:
             assert key in model, f"表单 model 缺少配置键 {key}"
 
     def test_seven_tabs(self):
-        """配置表单使用 7 个 Tab（含搜索诊断）；顶部 BETA 提示不改变 Tab 数量。"""
+        """配置表单使用 7 个 Tab，诊断和补搜统一归入订阅补全。"""
         conf, _model = build_form()
         assert conf[3]["component"] == "VTabs"
         assert len(conf[3]["content"]) == 7
+        assert _tab_titles(conf) == [
+            "订阅清理",
+            "订阅待定",
+            "订阅暂停",
+            "订阅补全",
+            "订阅洗版",
+            "完结信号",
+            "识别增强",
+        ]
 
     def test_beta_alert_precedes_form_controls(self):
         """BETA 风险提示固定显示在开关、周期和分页配置之前。"""
@@ -320,7 +343,7 @@ def test_best_version_tab_uses_type_without_extra_flow_switch():
     """洗版 Tab 以枚举字段作为用户入口，不再暴露冗余布尔开关。"""
     import json
     conf, model = build_form()
-    best_tab = conf[4]["content"][3]["content"]
+    best_tab = _tab_content(conf, "订阅洗版")
     flat = json.dumps(best_tab, ensure_ascii=False)
 
     assert '"best_version_type"' in flat
@@ -335,7 +358,7 @@ def test_best_version_tab_uses_type_without_extra_flow_switch():
 def test_best_version_type_and_remaining_days_use_third_width_columns():
     """订阅洗版首行展示洗版类型、电影洗版时限和剧集洗版时限。"""
     conf, _model = build_form()
-    best_tab = conf[4]["content"][3]["content"]
+    best_tab = _tab_content(conf, "订阅洗版")
     first_row_cols = best_tab[0]["content"]
 
     assert [col["content"][0]["props"]["model"] for col in first_row_cols] == [
@@ -356,21 +379,36 @@ def test_best_version_remaining_days_labels_are_split_by_media_type():
     assert "剧集洗版订阅达到指定天数后自动终止" in HINTS["best_version_tv_remaining_days"]
 
 
-def test_paused_probe_fields_live_in_pause_tab():
-    """暂停订阅补搜配置属于订阅暂停页签，默认不主动搜索暂停订阅。"""
+def test_completion_tab_contains_probe_and_diagnostic_fields():
+    """订阅补全承载低频补搜和无进展诊断，暂停页只保留暂停规则。"""
+    import json
     conf, model = build_form()
-    pause_tab = conf[4]["content"][2]["content"]
-    probe_cols = pause_tab[3]["content"]
+    pause_tab = _tab_content(conf, "订阅暂停")
+    completion_tab = _tab_content(conf, "订阅补全")
+    pause_flat = json.dumps(pause_tab, ensure_ascii=False)
+    probe_cols = completion_tab[0]["content"]
+    diagnostic_cols = completion_tab[1]["content"]
 
+    assert "paused_probe_reasons" not in pause_flat
+    assert "progress_diagnostic_enabled" not in pause_flat
     assert [col["content"][0]["props"]["model"] for col in probe_cols] == [
         "paused_probe_reasons",
         "paused_probe_min_pause_days",
         "paused_probe_interval_hours",
     ]
     assert [col["props"]["md"] for col in probe_cols] == [4, 4, 4]
+    assert [col["content"][0]["props"]["model"] for col in diagnostic_cols] == [
+        "progress_diagnostic_enabled",
+        "progress_diagnostic_stalled_rounds",
+        "progress_diagnostic_cooldown_hours",
+    ]
+    assert [col["props"]["md"] for col in diagnostic_cols] == [4, 4, 4]
     assert model["paused_probe_reasons"] == ["no_download"]
     assert model["paused_probe_min_pause_days"] == 14
     assert model["paused_probe_interval_hours"] == 72
+    assert model["progress_diagnostic_enabled"] is False
+    assert model["progress_diagnostic_stalled_rounds"] == 3
+    assert model["progress_diagnostic_cooldown_hours"] == 24
 
 
 def test_paused_probe_labels_hints_and_interval_select_are_human_readable():
@@ -405,6 +443,16 @@ def test_paused_probe_labels_hints_and_interval_select_are_human_readable():
     assert interval["props"]["items"] == SELECT_ITEMS["paused_probe_interval_hours"]
 
 
+def test_progress_diagnostic_labels_and_hints_describe_readonly_scope():
+    """无进展诊断文案必须说明只读边界，不暗示会改规则、站点或下载。"""
+    assert LABELS["progress_diagnostic_enabled"] == "无进展诊断"
+    assert LABELS["progress_diagnostic_stalled_rounds"] == "连续无进展轮数"
+    assert LABELS["progress_diagnostic_cooldown_hours"] == "诊断冷却（小时）"
+    assert HINTS["progress_diagnostic_enabled"] == "订阅进度长期无变化时仅发送诊断提醒，不改规则、站点或下载"
+    assert HINTS["progress_diagnostic_stalled_rounds"] == "连续 N 轮订阅缺失数量未减少后提醒，0 表示不处理"
+    assert HINTS["progress_diagnostic_cooldown_hours"] == "同一订阅两次诊断提醒的最小间隔，避免反复打扰"
+
+
 def test_subscription_cleanup_tab_replaces_seed_delete_title():
     """旧入口统一调整为订阅清理，不再暴露种子删除页签命名。"""
     import json
@@ -419,8 +467,8 @@ def test_subscription_cleanup_fields_live_in_cleanup_tab():
     """订阅清理页签承载清理整理记录范围/场景，洗版页签不再承载清理配置。"""
     import json
     conf, model = build_form()
-    cleanup_tab = conf[4]["content"][0]["content"]
-    wash_tab = conf[4]["content"][3]["content"]
+    cleanup_tab = _tab_content(conf, "订阅清理")
+    wash_tab = _tab_content(conf, "订阅洗版")
     cleanup_history_cols = cleanup_tab[2]["content"]
     cleanup_flat = json.dumps(cleanup_tab, ensure_ascii=False)
     wash_flat = json.dumps(wash_tab, ensure_ascii=False)
@@ -458,7 +506,7 @@ def test_tracker_keywords_in_dialog_as_textarea():
     import json
     conf, _model = build_form()
     # 「订阅清理」页（conf[4] = VWindow，第 1 个 VWindowItem）含一个绑定 open_tracker_dialog 的 VDialog。
-    cleanup_tab = conf[4]["content"][0]["content"]
+    cleanup_tab = _tab_content(conf, "订阅清理")
     dialog = next(el for el in cleanup_tab if el["component"] == "VDialog")
     assert dialog["props"]["model"] == "open_tracker_dialog"
     flat_dialog = json.dumps(dialog, ensure_ascii=False)
@@ -521,7 +569,7 @@ def test_completion_labels_use_concise_names_without_enable_prefix():
 def test_completion_tab_uses_original_flat_grid():
     """完结信号页保持统一平铺，不增加分组标题或卡片容器。"""
     conf, _model = build_form()
-    completion_rows = conf[4]["content"][4]["content"]
+    completion_rows = _tab_content(conf, "完结信号")
     assert len(completion_rows) == 5
     assert all(row["component"] == "VRow" for row in completion_rows)
     assert not any(item.get("component") == "VCard" for item in completion_rows)
@@ -540,7 +588,7 @@ def test_completion_tab_uses_original_flat_grid():
 def test_completion_flat_grid_keeps_persistent_hints():
     """平铺布局继续保留全部字段说明。"""
     conf, model = build_form()
-    completion_items = conf[4]["content"][4]["content"]
+    completion_items = _tab_content(conf, "完结信号")
     controls = _controls_with_model(completion_items)
     assert {key for key in model if key.startswith("timeout_release")} == {"timeout_release_days"}
     assert {control["props"]["model"] for control in controls} == {

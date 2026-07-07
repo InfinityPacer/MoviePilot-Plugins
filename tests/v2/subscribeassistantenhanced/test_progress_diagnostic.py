@@ -417,17 +417,14 @@ def test_one_run_performs_one_subscribes_update_when_state_changes():
     assert set(data[STATE_KEY]) == {"1", "2"}
 
 
-def test_no_old_task_key_imports_or_references():
-    """无进展诊断测试与实现不再引用旧独立任务数据 key。"""
-    test_source = Path(__file__).read_text(encoding="utf-8")
-    impl_source = Path(diagnostic_module.__file__).read_text(encoding="utf-8")
-    old_constant = "NO_RESULT" + "_TASK_KEY"
-    old_task_key = "no" + "_result"
-
-    assert old_constant not in test_source
-    assert old_constant not in impl_source
-    assert f'"{old_task_key}"' not in impl_source
-    assert f"'{old_task_key}'" not in impl_source
+def test_progress_state_uses_subscribe_task_record_fields():
+    """无进展诊断状态写入订阅任务记录，并只暴露本模块字段。"""
+    assert diagnostic_module.SUBSCRIBES_TASK_KEY == STATE_KEY
+    assert {
+        diagnostic_module.STALLED_ROUNDS_FIELD,
+        diagnostic_module.LAST_MISSING_FIELD,
+        diagnostic_module.NOTIFIED_AT_FIELD,
+    } == PROGRESS_FIELDS
 
 
 def test_diagnostic_does_not_use_getattr_for_stable_subscribe_fields():

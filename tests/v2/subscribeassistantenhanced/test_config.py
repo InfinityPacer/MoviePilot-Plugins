@@ -140,15 +140,14 @@ class PluginConfigDefaultsTest:
         assert self.cfg.progress_diagnostic_stalled_rounds == 3
         assert self.cfg.progress_diagnostic_cooldown_hours == 24
 
-    def test_old_no_result_diagnostic_keys_are_not_declared(self):
-        """配置契约只暴露无进展诊断新 key，不继续声明旧搜索诊断 key。"""
+    def test_progress_diagnostic_keys_are_declared(self):
+        """配置契约只暴露当前无进展诊断 key。"""
         keys = set(self.cfg.declared_keys())
-        assert "progress_diagnostic_enabled" in keys
-        assert "progress_diagnostic_stalled_rounds" in keys
-        assert "progress_diagnostic_cooldown_hours" in keys
-        assert "no_result_diagnostic_enabled" not in keys
-        assert "no_result_diagnostic_rounds" not in keys
-        assert "no_result_diagnostic_cooldown_hours" not in keys
+        assert {key for key in keys if key.startswith("progress_diagnostic_")} == {
+            "progress_diagnostic_enabled",
+            "progress_diagnostic_stalled_rounds",
+            "progress_diagnostic_cooldown_hours",
+        }
 
     # --- pending ---
 

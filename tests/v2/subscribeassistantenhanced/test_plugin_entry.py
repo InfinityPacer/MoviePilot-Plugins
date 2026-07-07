@@ -90,7 +90,6 @@ class TestPluginEntry:
         plugin.init_plugin({})
 
         assert "progress_diagnostic" in plugin._modules
-        assert "no_result_diagnostic" not in plugin._modules
 
     def test_recognition_external_failure_logs_are_sanitized(self, monkeypatch):
         """识别增强外部识别异常日志不得泄漏令牌或本地路径。"""

@@ -1,4 +1,4 @@
-"""配置表单（vuetify 模式）：顶部开关行 + 周期行 + 6 个 Tab 分页 + 底部提示。
+"""配置表单（vuetify 模式）：顶部开关行 + 周期行 + 7 个 Tab 分页 + 底部提示。
 
 设计：表单字段名 == PluginConfig 配置键，model 默认值由 PluginConfig.defaults() 派生，避免保存配置与运行时键漂移。
 conf 结构：[switch_row, period_row, VTabs, VWindow, *footer]，VTabs/VWindow 共用 model "_tab" 联动当前页；
@@ -57,13 +57,13 @@ LABELS = {
     "tv_no_download_days": "剧集无下载处理天数",
     "movie_no_download_days": "电影无下载处理天数",
     "no_download_actions": "无下载处理策略",
+    # 订阅补全
     "paused_probe_reasons": "暂停订阅补搜场景",
     "paused_probe_min_pause_days": "暂停满N天后补搜",
     "paused_probe_interval_hours": "补搜间隔（小时）",
-    # 搜索诊断
     "progress_diagnostic_enabled": "无进展诊断",
     "progress_diagnostic_stalled_rounds": "连续无进展轮数",
-    "progress_diagnostic_cooldown_hours": "通知冷却（小时）",
+    "progress_diagnostic_cooldown_hours": "诊断冷却（小时）",
     # 订阅洗版
     "best_version_type": "洗版类型",
     "best_version_episode_to_full": "分集转全集",
@@ -138,13 +138,13 @@ HINTS = {
     "tv_no_download_days": "剧集上映后N天内无新的订阅下载，则按策略处理，为0时不处理",
     "movie_no_download_days": "电影上映后N天内无新的订阅下载，则按策略处理，为0时不处理",
     "no_download_actions": "选择无下载时的处理策略",
+    # 订阅补全
     "paused_probe_reasons": "选择哪些暂停原因需要低频补搜",
     "paused_probe_min_pause_days": "暂停满N天后才补搜，为0时不处理",
     "paused_probe_interval_hours": "同一订阅两次补搜的最小间隔",
-    # 搜索诊断
-    "progress_diagnostic_enabled": "订阅缺失集数长期无新进展时发诊断通知；只读观察，不改搜索规则/站点、不下载",
-    "progress_diagnostic_stalled_rounds": "缺失集数连续 N 轮巡检未减少后提醒；0=不处理",
-    "progress_diagnostic_cooldown_hours": "同一订阅两次诊断通知的最小间隔，避免反复打扰",
+    "progress_diagnostic_enabled": "订阅进度长期无变化时仅发送诊断提醒，不改规则、站点或下载",
+    "progress_diagnostic_stalled_rounds": "连续 N 轮订阅缺失数量未减少后提醒，0 表示不处理",
+    "progress_diagnostic_cooldown_hours": "同一订阅两次诊断提醒的最小间隔，避免反复打扰",
     # 订阅洗版
     "best_version_type": "选择需要自动洗版的类型，关闭时不自动创建和巡检洗版订阅",
     "best_version_episode_to_full": "订阅目标集数满足时，从分集洗版切换为全集洗版",
@@ -197,7 +197,10 @@ TABS = [
         [("pause_enhanced_enabled", 4), ("auto_pause_users", 8)],
         ["movie_air_pause_days", "tv_air_pause_days", "airing_pause_days"],
         ["movie_no_download_days", "tv_no_download_days", "no_download_actions"],
+    ]),
+    ("订阅补全", [
         ["paused_probe_reasons", "paused_probe_min_pause_days", "paused_probe_interval_hours"],
+        ["progress_diagnostic_enabled", "progress_diagnostic_stalled_rounds", "progress_diagnostic_cooldown_hours"],
     ]),
     ("订阅洗版", [
         ["best_version_type", "best_version_movie_remaining_days", "best_version_tv_remaining_days"],
@@ -214,9 +217,6 @@ TABS = [
         ["recognition_guard_mode", "recognition_guard_notify", "recognition_guard_notify_interval"],
         ["recognition_guard_tmdb_recheck_mode", "recognition_guard_cache_maxsize"],
         [("recognition_guard_custom_config", 12)],
-    ]),
-    ("搜索诊断", [
-        ["progress_diagnostic_enabled", "progress_diagnostic_stalled_rounds", "progress_diagnostic_cooldown_hours"],
     ]),
 ]
 
@@ -434,7 +434,7 @@ def _footer() -> list:
 
 
 def build_form():
-    """聚合表单：顶部开关行 + 周期行 + 6 个 Tab + 底部提示；model 为全部配置键默认值。"""
+    """聚合表单：顶部开关行 + 周期行 + 7 个 Tab + 底部提示；model 为全部配置键默认值。"""
     defaults = PluginConfig.defaults()
     beta_alert = alert_row(
         "warning",
