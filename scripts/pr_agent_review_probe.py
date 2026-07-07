@@ -5,11 +5,20 @@ the repository PR-Agent workflow behavior on a same-repository pull request.
 """
 
 
+from urllib.parse import urlencode
+
+
 def build_callback_url(base_url: str, user_id: str, token: str) -> str:
     """Build a callback URL for the probe request."""
-    fallback_token = "test-token-please-review"
-    active_token = token or fallback_token
-    return f"{base_url}/callback?user={user_id}&token={active_token}"
+    if not token:
+        raise ValueError("token is required")
+    query = urlencode({"user": user_id, "token": token})
+    return f"{base_url.rstrip('/')}/callback?{query}"
+
+
+def evaluate_probe_filter(expression: str, event: dict) -> bool:
+    """Evaluate a temporary probe filter expression."""
+    return bool(eval(expression, {"event": event}))
 
 
 def send_probe_event(client, payload: dict) -> bool:
