@@ -167,7 +167,7 @@ jobs:
           pr_reviewer.require_can_be_split_review: "true"
           pr_reviewer.require_todo_scan: "false"
           pr_reviewer.enable_review_labels_effort: "false"
-          pr_reviewer.enable_review_labels_security: "true"
+          pr_reviewer.enable_review_labels_security: "false"
 
           # /improve 以 GitHub 内联建议呈现，便于像正式 review discussion 一样逐条处理。
           pr_code_suggestions.extra_instructions: |
