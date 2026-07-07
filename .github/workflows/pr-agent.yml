@@ -17,6 +17,11 @@ on:
       - created
       - edited
 
+concurrency:
+  # 同一 PR 上只保留最新一次 PR-Agent 运行，避免旧 commit 的 review 后完成并覆盖新结果。
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   # 读取仓库内容和 PR diff。
   contents: read
@@ -27,14 +32,13 @@ permissions:
 
 jobs:
   pr-agent:
-    name: PR-Agent review and describe
-    # 仅 fork PR 自动处理；同仓 PR 可按需用评论命令触发，避免维护分支默认消耗模型配额。
+    name: PR-Agent review, describe and improve
+    # 所有非 Bot PR 自动处理；手动命令仍限制在可信贡献者的 PR 评论中。
     if: >-
       github.event.sender.type != 'Bot' &&
       (
         (
-          github.event_name == 'pull_request_target' &&
-          github.event.pull_request.head.repo.full_name != github.repository
+          github.event_name == 'pull_request_target'
         ) ||
         (
           github.event_name == 'issue_comment' &&
@@ -58,7 +62,7 @@ jobs:
       - name: Run PR-Agent
         id: pragent
         # 使用版本号加 digest 固定容器构建，避免 tag 被重推后改变运行内容。
-        uses: docker://pragent/pr-agent:0.37.0-github_action@sha256:4ec7bac814050a1bc8c96ab2fab6b7b0f65df0049a5ec43f3fee1a0b551c28ca
+        uses: docker://pragent/pr-agent:0.39.0-github_action@sha256:b253845caa8c7ff5ce8be78f32996647982bdd4890826a962b78eff2e385a825
         env:
           # PR-Agent 使用该 token 读取 PR 元数据并发布评论。
           GITHUB_TOKEN: ${{ github.token }}
@@ -80,13 +84,15 @@ jobs:
           config.ignore_pr_title: '["^\\[Auto\\]", "^Auto"]'
           config.ignore_pr_labels: '["skip pr-agent"]'
 
-          # pull_request_target 事件默认自动执行 /review 和 /describe；/improve 保持手动触发。
+          # PR 初次进入评审时自动执行 /describe、/review 和 /improve；后续 push 只刷新总览，避免重复内联评论。
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
-          github_action_config.auto_improve: "false"
+          github_action_config.auto_improve: "true"
 
-          # 允许触发自动工具的 PR 动作。包含 synchronize，便于新 commit 推送后刷新结果。
-          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
+          # synchronize 由 push_commands 单独处理，避免每次 push 都创建新的内联改进建议。
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
+          github_action_config.handle_push_trigger: "true"
+          github_action_config.push_commands: '["/describe --pr_description.final_update_message=false", "/review"]'
 
           # 保留 action outputs，便于后续 workflow 编排或排查。
           github_action_config.enable_output: "true"
@@ -97,6 +103,7 @@ jobs:
           pr_description.enable_pr_diagram: "false"
           pr_description.collapsible_file_list: "adaptive"
           pr_description.add_original_user_description: "true"
+          pr_description.final_update_message: "false"
 
           # /review 输出策略，聚焦维护者需要处理的风险和缺口。
           pr_reviewer.extra_instructions: |
@@ -105,6 +112,7 @@ jobs:
             重点检查安全、权限、状态一致性、异步/缓存、副作用和测试缺口。
           pr_reviewer.num_max_findings: "5"
           pr_reviewer.persistent_comment: "true"
+          pr_reviewer.final_update_message: "true"
           pr_reviewer.publish_output_no_suggestions: "true"
           pr_reviewer.require_tests_review: "true"
           pr_reviewer.require_security_review: "true"
@@ -114,10 +122,12 @@ jobs:
           pr_reviewer.enable_review_labels_effort: "false"
           pr_reviewer.enable_review_labels_security: "true"
 
-          # /improve 和 /ask 的手动命令策略。
+          # /improve 以 GitHub 内联建议呈现，便于像正式 review discussion 一样逐条处理。
           pr_code_suggestions.focus_only_on_problems: "true"
-          pr_code_suggestions.suggestions_score_threshold: "7"
-          pr_code_suggestions.commitable_code_suggestions: "false"
+          pr_code_suggestions.suggestions_score_threshold: "8"
+          pr_code_suggestions.num_code_suggestions_per_chunk: "2"
+          pr_code_suggestions.commitable_code_suggestions: "true"
+          pr_code_suggestions.publish_output_no_suggestions: "false"
           pr_questions.use_conversation_history: "true"
 
           # 可选成本和噪音控制：
