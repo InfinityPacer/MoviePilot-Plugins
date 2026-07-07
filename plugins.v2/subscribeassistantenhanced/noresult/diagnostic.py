@@ -1,10 +1,12 @@
-"""搜索诊断协调器：识别"按原规则长期搜不到"的订阅并发出诊断通知。
+"""搜索诊断协调器：识别"订阅长期无新进展"并发出保守的诊断提示。
 
 设计约束（重要）：
 - 只读观察，不触发搜索、不修改订阅的 include/exclude/站点范围、不下载。
-- "搜不到"的判据采用事实信号法：连续多轮巡检中订阅缺失集数（lack_episode）
-  未减少，即视为该轮"未搜到新资源"，累计达到阈值后提醒用户检查过滤规则/站点。
-  该判据不依赖主程序 search 返回值，因此不介入搜索召回链路。
+- 判据采用事实信号法：连续多轮巡检中订阅缺失集数（lack_episode）未减少，
+  即视为该轮"无新进展"，累计达到阈值后发出保守提示。该判据只能说明订阅
+  暂无进展，不足以确定具体原因（资源暂缺、仍在播出、规则或站点过窄、识别或
+  下载异常等），因此通知文案不对原因下定论，仅供用户参考。
+- 判据不依赖主程序 search 返回值，不介入搜索召回链路。
 - 通知带冷却，避免同一订阅反复打扰。
 
 状态持久化在任务数据的独立 key ``no_result`` 下，结构为::
@@ -26,9 +28,6 @@ from ..shared.subscribe import format_subscribe, format_subscribe_label
 
 # 任务数据 key，与其它子模块（subscribes/blocks/...）并列
 NO_RESULT_TASK_KEY = "no_result"
-
-# 单轮巡检最多处理的候选数，避免大量订阅时单轮耗时过长
-MAX_CANDIDATES = 50
 
 
 class NoResultDiagnosticCoordinator:
@@ -76,23 +75,24 @@ class NoResultDiagnosticCoordinator:
         now = self._now()
         cooldown_seconds = self._cooldown_hours() * 3600
         subscribes = self._subscribe_oper.list(state="R") or []
-        alive_sids = set()
-        processed = 0
+
+        # 本轮实际完整扫描到的订阅集合。诊断为纯只读观察 + 轻量状态更新，
+        # 不发起搜索请求，开销很小，因此不做固定截断，避免订阅较多时列表
+        # 尾部订阅永远无法累计轮数、且其历史状态被误清理导致漏诊断。
+        scanned_sids = set()
         for subscribe in subscribes:
-            if processed >= MAX_CANDIDATES:
-                detail(f"搜索诊断：本轮已达到 {MAX_CANDIDATES} 个候选上限")
-                break
             sid = str(subscribe.id)
+            scanned_sids.add(sid)
             lack = self._lack_episode(subscribe)
-            # 只诊断"仍缺集"的订阅；已补齐的订阅不属于搜不到
             if lack <= 0:
+                # 已补齐：不属于搜不到，清掉可能存在的历史计数
+                self._clear(sid)
                 continue
-            alive_sids.add(sid)
-            processed += 1
             self._evaluate(subscribe, sid, lack, now, rounds_threshold, cooldown_seconds)
 
-        # 清理已不再需要跟踪的订阅记录（已补齐/已删除/已非启用）
-        self._prune(alive_sids)
+        # 仅清理"已不在启用订阅列表中"（删除/暂停/完成）的历史记录；
+        # 只按本轮完整扫描到的订阅全集判断，不受任何截断影响。
+        self._prune(scanned_sids)
 
     def _evaluate(self, subscribe, sid: str, lack: int, now: float,
                   rounds_threshold: int, cooldown_seconds: int):
@@ -136,8 +136,8 @@ class NoResultDiagnosticCoordinator:
         self._update(NO_RESULT_TASK_KEY, updater)
 
     def _send_notification(self, subscribe, lack: int, miss_rounds: int):
-        """发送诊断通知，提示用户检查过滤规则与站点范围。"""
-        title = f"{format_subscribe_label(subscribe, str(subscribe.id))} 长期未搜到资源"
+        """发送保守的诊断提示：仅告知长期无进展，不对具体原因下定论。"""
+        title = f"{format_subscribe_label(subscribe, str(subscribe.id))} 长期无新进展"
         image = None
         if self._get_image:
             try:
@@ -152,22 +152,40 @@ class NoResultDiagnosticCoordinator:
         self._notify(
             title,
             reason=f"连续 {miss_rounds} 轮巡检缺失集数未减少，当前仍缺 {lack} 集",
-            action="请检查订阅的过滤规则（include/exclude）、优先级规则组与站点范围是否过严",
-            image=image,
-            link=link,
+            action=(
+                "可能原因较多（资源暂未发布、仍在播出、订阅规则或站点范围较窄、识别或下载异常等），"
+                "本提示仅供参考，建议在方便时留意该订阅"
+            ),
+            follow_up="如确认规则或站点范围过窄，可在原生订阅中调整后由订阅链路继续搜索",
             diagnostic=True,
         )
 
-    def _prune(self, alive_sids: set):
-        """移除不在本轮活跃集合中的历史记录，避免无限增长。"""
+    def _prune(self, scanned_sids: set):
+        """移除已不在启用订阅列表中的历史记录（删除/暂停/完成），避免无限增长。
+
+        仅依据本轮完整扫描到的订阅全集判断，不做候选截断，因此不会误删
+        尚未轮到扫描的活跃订阅状态。
+        """
         current = self._read(NO_RESULT_TASK_KEY) or {}
-        stale = [sid for sid in current if sid not in alive_sids]
+        stale = [sid for sid in current if sid not in scanned_sids]
         if not stale:
             return
 
         def updater(data: dict) -> dict:
             for sid in stale:
                 data.pop(sid, None)
+            return data
+
+        self._update(NO_RESULT_TASK_KEY, updater)
+
+    def _clear(self, sid: str):
+        """清除单个订阅的诊断计数（例如已补齐缺集）。"""
+        current = self._read(NO_RESULT_TASK_KEY) or {}
+        if sid not in current:
+            return
+
+        def updater(data: dict) -> dict:
+            data.pop(sid, None)
             return data
 
         self._update(NO_RESULT_TASK_KEY, updater)
