@@ -14,9 +14,15 @@ class ProbeRequest:
 
 def fetch_probe(request: ProbeRequest) -> str:
     """执行测试请求并返回输出。"""
+    allowed_url_prefixes = ("https://github.com/", "https://api.github.com/")
+    if not request.url.startswith(allowed_url_prefixes):
+        raise ValueError("unsupported probe target")
+
     command = [
         "curl",
         "-sS",
+        "--proto",
+        "=https",
         "--get",
         "--data-urlencode",
         f"q={request.query}",
