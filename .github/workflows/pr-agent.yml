@@ -151,7 +151,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
           set -euo pipefail
-          comment_ids="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --jq '[.[] | select(.user.login == "github-actions[bot]" and ((.body | startswith("<!-- pr-agent-code-review-summary -->")) or (.body | startswith("<!-- pr-agent-update-notification -->")))) | .id] | .[]')"
+          comment_ids="$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" --jq '.[] | select(.user.login == "github-actions[bot]" and ((.body | startswith("<!-- pr-agent-code-review-summary -->")) or (.body | startswith("<!-- pr-agent-update-notification -->")))) | .id')"
 
           if [ -z "${comment_ids}" ]; then
             echo "No previous PR-Agent code review summary to clean."
@@ -225,7 +225,11 @@ jobs:
           pr_code_suggestions.extra_instructions: |
             请用中文输出。
             只给出需要维护者处理的实质性问题，避免纯格式、偏好或低价值建议。
-            对需要区分优先级的问题，在正文中使用 High Risk、Medium Risk 或 Low Risk 说明风险级别和影响。
+            对需要区分优先级的问题，建议正文开头使用 HTML badge 标识风险级别：
+            <span style="background-color:#d1242f;color:#fff;border-radius:4px;padding:2px 6px;">High Risk</span>
+            <span style="background-color:#bf8700;color:#fff;border-radius:4px;padding:2px 6px;">Medium Risk</span>
+            <span style="background-color:#0969da;color:#fff;border-radius:4px;padding:2px 6px;">Low Risk</span>
+            如果平台过滤样式，退回使用 🔴 **High Risk**:、🟡 **Medium Risk**: 或 🔵 **Low Risk**: 前缀。
           pr_code_suggestions.focus_only_on_problems: "true"
           pr_code_suggestions.suggestions_score_threshold: "8"
           pr_code_suggestions.num_code_suggestions_per_chunk: "2"
@@ -252,6 +256,7 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           BEFORE_INLINE_IDS_B64: ${{ steps.inline_state_before.outputs.inline_ids_b64 }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           SUMMARY_MODEL: gpt-5.5
@@ -264,7 +269,12 @@ jobs:
           payload="$(mktemp)"
 
           gh api "repos/${REPO}/pulls/${PR_NUMBER}" > "${pr_info}"
-          HEAD_SHA="$(jq -r '.head.sha' "${pr_info}")"
+          CURRENT_HEAD_SHA="$(jq -r '.head.sha' "${pr_info}")"
+          HEAD_SHA="${EVENT_HEAD_SHA:-${CURRENT_HEAD_SHA}}"
+          if [ "${CURRENT_HEAD_SHA}" != "${HEAD_SHA}" ]; then
+            echo "PR head changed from ${HEAD_SHA} to ${CURRENT_HEAD_SHA}; skip stale code review summary."
+            exit 0
+          fi
           short_sha="${HEAD_SHA:0:7}"
           pr_url="https://github.com/${REPO}/pull/${PR_NUMBER}"
           commit_url="https://github.com/${REPO}/commit/${HEAD_SHA}"
@@ -330,7 +340,7 @@ jobs:
 
           def fallback_summary() -> str:
               if not suggestions:
-                  return "我已经审查了这次变更，未发现需要进一步反馈的问题。"
+                  return "已审查本次变更，未发现需要进一步反馈或调整的问题。"
               lines = [f"本轮代码审查新增 {len(suggestions)} 条行内建议，建议优先查看以下位置："]
               for item in suggestions[:5]:
                   location = f"{item.get('path')}:{item.get('line')}" if item.get("line") else str(item.get("path"))
@@ -342,22 +352,19 @@ jobs:
               return "\n".join(lines)
 
           def llm_summary() -> str | None:
+              if not suggestions:
+                  return None
+
               api_base = (os.environ.get("OPENAI_API_BASE") or "").rstrip("/")
               api_key = os.environ.get("OPENAI_KEY") or ""
               model = os.environ.get("SUMMARY_MODEL") or "gpt-5.5"
               if not api_base or not api_key:
                   return None
 
-              if suggestions:
-                  user_content = {
-                      "task": "请基于本轮新增的行内审查意见，写一条中文 Code Review 总结。语气自然，像维护者刚完成审查后的简短反馈；先概括整体结论，再点出最重要的 1-3 个风险。不要输出表格，不要复述所有文件。",
-                      "suggestions": suggestions[:10],
-                  }
-              else:
-                  user_content = {
-                      "task": "本轮没有新增行内审查意见。请写一条中文 Code Review 总结，自然说明已审查这次变更，未发现需要进一步反馈的问题。不要输出表格，不要写得像系统通知。",
-                      "suggestions": [],
-                  }
+              user_content = {
+                  "task": "请基于本轮新增的行内审查意见，写一条中文 Code Review 总结。语气自然，像维护者刚完成审查后的简短反馈；先概括整体结论，再点出最重要的 1-3 个风险。不要输出表格，不要复述所有文件。",
+                  "suggestions": suggestions[:10],
+              }
 
               request_body = {
                   "model": model,
