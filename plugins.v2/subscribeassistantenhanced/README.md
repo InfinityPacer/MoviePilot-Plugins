@@ -16,6 +16,7 @@
 
 ## 版本更新日志
 
+- v0.5.9：新增订阅补全页签，集中承载站点集数探测、暂停订阅补搜和无进展诊断，支持订阅长期无进展时按模式发送诊断提醒。
 - v0.5.8：新增站点集数探测与站点完结信号，支持按需使用主程序缓存资源扩展剧集目标并辅助完结守卫。
 - v0.5.7：修正剧集待定集数判断，优先使用季总集数信息，避免分集详情临时失败时误报 0 集。
 - v0.5.6：重构剧集完结证据与完成前观察策略，L 与已播完/冷却期信号同时满足时可直接完成，并避免完成前观察释放后反复进入待定。
@@ -169,16 +170,17 @@
 
 ### 订阅补全
 
-订阅补全页签承载长期缺失订阅的辅助能力。暂停订阅低频补搜会在订阅保持暂停时触发单订阅搜索；无进展诊断只读取订阅进度并推送提醒，不修改搜索规则、站点范围、订阅字段或下载任务。
+订阅补全页签承载长期缺失订阅的辅助能力。站点集数探测只消费主程序缓存资源，辅助发现目标范围不足；暂停订阅低频补搜会在订阅保持暂停时触发单订阅搜索；无进展诊断当前仅发送提醒，不修改搜索规则、站点范围、订阅字段或下载任务。
 
 | 配置项 | 标识 | 类型 | 默认值 | 说明 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| [暂停订阅补搜场景](#cfg-paused_probe_reasons) | `paused_probe_reasons` | multi enum | `["no_download"]` | 选择哪些暂停原因参与低频补搜 | 默认补搜无下载暂停；下载命中恢复不依赖此多选 |
-| [暂停满N天后补搜](#cfg-paused_probe_min_pause_days) | `paused_probe_min_pause_days` | int（天） | `14` | 暂停达到指定天数后才允许第一次补搜 | 配置为 0 表示不处理 |
+| [站点集数探测](#cfg-site_total_probe_enabled) | `site_total_probe_enabled` | bool | `false` | 用站点缓存资源辅助发现目标集数不足 | 仅普通剧集和分集洗版；不请求站点 |
+| [暂停订阅补搜场景](#cfg-paused_probe_reasons) | `paused_probe_reasons` | multi enum | `["no_download"]` | 选择允许低频补搜的暂停原因 | 默认补搜无下载暂停；下载命中恢复不依赖此多选 |
+| [暂停满N天后补搜](#cfg-paused_probe_min_pause_days) | `paused_probe_min_pause_days` | int（天） | `14` | 暂停达到天数后开始补搜 | 配置为 0 表示不处理 |
 | [补搜间隔（小时）](#cfg-paused_probe_interval_hours) | `paused_probe_interval_hours` | enum（小时） | `72` | 同一订阅两次补搜的最小间隔 | 可选 24 / 48 / 72 / 96 / 120 / 144 |
-| [无进展诊断](#cfg-progress_diagnostic_enabled) | `progress_diagnostic_enabled` | bool | `false` | 订阅进度长期无变化时仅发送诊断提醒 | 不改规则、站点或下载 |
-| [连续无进展轮数](#cfg-progress_diagnostic_stalled_rounds) | `progress_diagnostic_stalled_rounds` | int | `3` | 连续 N 轮订阅缺失数量未减少后提醒 | 配置为 0 表示不处理 |
-| [诊断冷却（小时）](#cfg-progress_diagnostic_cooldown_hours) | `progress_diagnostic_cooldown_hours` | int（小时） | `24` | 同一订阅两次诊断提醒的最小间隔 | 避免反复打扰 |
+| [无进展诊断模式](#cfg-progress_diagnostic_mode) | `progress_diagnostic_mode` | enum | `off` | 订阅长期无进展时的诊断处理方式 | 可选 `off` / `notify` |
+| [连续无进展轮数](#cfg-progress_diagnostic_stalled_rounds) | `progress_diagnostic_stalled_rounds` | int | `3` | 连续无进展多少轮后处理 | 配置为 0 表示不处理 |
+| [诊断冷却（小时）](#cfg-progress_diagnostic_cooldown_hours) | `progress_diagnostic_cooldown_hours` | int（小时） | `24` | 同一订阅诊断提醒的最小间隔 | 仅通知模式生效 |
 
 ### 订阅洗版
 
@@ -196,7 +198,6 @@
 | 配置项 | 标识 | 类型 | 默认值 | 说明 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | [自动纠错](#cfg-verify_enabled) | `verify_enabled` | bool | `false` | 完成后复查 TMDB 增集 | 发现增集可重建订阅 |
-| 站点集数探测 | `site_total_probe_enabled` | bool | `false` | 根据站点资源探测剧集目标集数 | 仅普通剧集和分集洗版；不请求站点，只消费主程序缓存 |
 | 站点完结信号 | `site_completion_evidence_enabled` | bool | `true` | 使用站点资源标题佐证完结信号 | 需要当前目标满足后才参与完成守卫 |
 | 变更速率信号 | `volatility_enabled` | bool | `true` | 记录并启用目标总集数变动信号（F） | 完结守卫默认消费；剧集待定还需开启「待定参考变更速率」才消费 |
 | 播出节奏信号 | `cadence_enabled` | bool | `true` | 用播出间隔辅助判断 | 绝对季等高风险目标范围会采用更保守的判断 |
@@ -343,7 +344,13 @@
 - **典型联动**：「即将播出暂停天数」「剧集上映暂停天数」「电影上映暂停天数」控制可自动恢复的暂停。上映前规则开启后，电影上映日期未知或剧集无可用开播日期时也会暂停等待；分集洗版与普通按集订阅一致，全集洗版保留用户名自动暂停和上映前暂停，不参与播出间隔暂停和剧集待定。无下载动作本身不受本开关控制，但外部暂停接管、暂停订阅低频补搜、下载命中恢复和恢复后的同原因保护都依赖本开关。
 - **常见误用**：下载超时删种不会暂停订阅。近期删除过的同一资源会被跳过，内部通过删除指纹匹配，后续是否补搜由「删除后触发搜索补全」决定。
 
-> 以下两项属于「订阅补全」页签：暂停订阅低频补搜负责保守触发单订阅搜索，无进展诊断只做只读提醒。
+> 以下能力属于「订阅补全」页签：站点集数探测辅助发现目标范围不足，暂停订阅低频补搜负责保守触发单订阅搜索，无进展诊断当前只做通知。
+
+<a id="cfg-site_total_probe_enabled"></a>
+#### 站点集数探测（`site_total_probe_enabled`）
+
+- **解决什么问题**：主程序缓存的 RSS / spider 资源标题可能先出现更高集数，增强版可用这些证据发现当前订阅目标范围可能偏小。
+- **当前边界**：只消费主程序已有缓存，不主动请求站点，不直接改订阅规则或下载任务；命中后仍由订阅生命周期和完结守卫处理。
 
 <a id="cfg-paused_probe_reasons"></a>
 <a id="cfg-paused_probe_min_pause_days"></a>
@@ -358,14 +365,14 @@
 - **外部暂停**：用户手工暂停、其他插件暂停、主程序 UI 暂停或旧的无归属 `S` 状态会被记录为 `external`。外部暂停优先级最高，不会被上映、播出、无下载或用户名暂停覆盖；首次登记不发送暂停通知。
 - **常见误用**：只勾选「暂停订阅补搜场景」但未开启「自动暂停订阅」不会生效。未选择任何场景时不主动补搜，但自动暂停开启时仍会接管外部暂停，并可在下载命中时恢复暂停订阅。
 
-<a id="cfg-progress_diagnostic_enabled"></a>
+<a id="cfg-progress_diagnostic_mode"></a>
 <a id="cfg-progress_diagnostic_stalled_rounds"></a>
 <a id="cfg-progress_diagnostic_cooldown_hours"></a>
-#### 无进展诊断（`progress_diagnostic_enabled` / `progress_diagnostic_stalled_rounds` / `progress_diagnostic_cooldown_hours`）
+#### 无进展诊断（`progress_diagnostic_mode` / `progress_diagnostic_stalled_rounds` / `progress_diagnostic_cooldown_hours`）
 
 - **解决什么问题**：订阅在多轮通用巡检后缺失数量一直没有减少时，增强版可以推送诊断提醒，帮助用户判断是否需要人工检查订阅规则、站点范围、资源发布情况或下载链路。
 - **当前边界**：这是只读诊断。它只读取活动订阅的进度和本插件记录的上一轮缺失数量，不修改订阅规则、站点范围、订阅字段或下载任务，不直接发起下载，也不插入主程序搜索链路。
-- **什么时候开或关闭**：想知道长期缺集订阅是否一直没有进展时可以开启。若订阅量很大、通知渠道不希望收到此类提醒，保持默认关闭即可。
+- **模式选择**：`off` 关闭诊断；`notify` 仅发送诊断提醒。后续如果主程序提供稳定补全 hook，再扩展建议、辅助纠正或自动纠正模式。
 - **典型联动**：「连续无进展轮数」决定连续多少轮缺失数量未减少后提醒；「诊断冷却（小时）」限制同一订阅的重复提醒频率。诊断随「通用巡检」执行，配置为 0 时不处理。
 - **未来扩展**：如果后续主程序提供正式的诊断或补全 hook，本模块可以通过原生订阅链路扩展能力，而不是绕过主搜索、站点或下载流程。
 

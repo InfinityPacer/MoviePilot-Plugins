@@ -50,6 +50,14 @@ def _tab_content(conf, title):
     return window["content"][index]["content"]
 
 
+def _tab_models(conf, title):
+    """提取指定页签内所有绑定 model 的字段键。"""
+    return [
+        field["props"].get("model") or field["props"].get("modelvalue")
+        for field in _controls_with_model(_tab_content(conf, title))
+    ]
+
+
 class TestBuildForm:
     """build_form 聚合契约。"""
 
@@ -379,34 +387,50 @@ def test_best_version_remaining_days_labels_are_split_by_media_type():
     assert "剧集洗版订阅达到指定天数后自动终止" in HINTS["best_version_tv_remaining_days"]
 
 
-def test_completion_tab_contains_probe_and_diagnostic_fields():
-    """订阅补全承载低频补搜和无进展诊断，暂停页只保留暂停规则。"""
-    import json
+def test_completion_tab_contains_probe_diagnostic_and_site_total_fields():
+    """订阅补全承载低频补搜、无进展诊断和站点集数探测。"""
     conf, model = build_form()
-    pause_tab = _tab_content(conf, "订阅暂停")
     completion_tab = _tab_content(conf, "订阅补全")
-    pause_flat = json.dumps(pause_tab, ensure_ascii=False)
-    probe_cols = completion_tab[0]["content"]
-    diagnostic_cols = completion_tab[1]["content"]
+    completion_models = _tab_models(conf, "订阅补全")
+    pause_models = _tab_models(conf, "订阅暂停")
+    guard_models = _tab_models(conf, "完结信号")
 
-    assert "paused_probe_reasons" not in pause_flat
-    assert "progress_diagnostic_enabled" not in pause_flat
-    assert [col["content"][0]["props"]["model"] for col in probe_cols] == [
+    for key in (
         "paused_probe_reasons",
         "paused_probe_min_pause_days",
         "paused_probe_interval_hours",
-    ]
-    assert [col["props"]["md"] for col in probe_cols] == [4, 4, 4]
-    assert [col["content"][0]["props"]["model"] for col in diagnostic_cols] == [
-        "progress_diagnostic_enabled",
+        "site_total_probe_enabled",
+        "progress_diagnostic_mode",
         "progress_diagnostic_stalled_rounds",
         "progress_diagnostic_cooldown_hours",
+    ):
+        assert key in completion_models
+        assert key not in pause_models
+
+    assert "site_total_probe_enabled" not in guard_models
+    assert "site_completion_evidence_enabled" in guard_models
+    assert len(completion_tab) == 3
+    assert [
+        [
+            col["content"][0]["props"].get("model") or col["content"][0]["props"].get("modelvalue")
+            for col in row["content"]
+        ]
+        for row in completion_tab
+    ] == [
+        ["site_total_probe_enabled"],
+        ["progress_diagnostic_mode", "progress_diagnostic_stalled_rounds", "progress_diagnostic_cooldown_hours"],
+        ["paused_probe_reasons", "paused_probe_min_pause_days", "paused_probe_interval_hours"],
     ]
-    assert [col["props"]["md"] for col in diagnostic_cols] == [4, 4, 4]
+    assert [[col["props"]["md"] for col in row["content"]] for row in completion_tab] == [
+        [12],
+        [4, 4, 4],
+        [4, 4, 4],
+    ]
     assert model["paused_probe_reasons"] == ["no_download"]
     assert model["paused_probe_min_pause_days"] == 14
     assert model["paused_probe_interval_hours"] == 72
-    assert model["progress_diagnostic_enabled"] is False
+    assert model["site_total_probe_enabled"] is False
+    assert model["progress_diagnostic_mode"] == "off"
     assert model["progress_diagnostic_stalled_rounds"] == 3
     assert model["progress_diagnostic_cooldown_hours"] == 24
 
@@ -416,8 +440,8 @@ def test_paused_probe_labels_hints_and_interval_select_are_human_readable():
     assert LABELS["paused_probe_reasons"] == "暂停订阅补搜场景"
     assert LABELS["paused_probe_min_pause_days"] == "暂停满N天后补搜"
     assert LABELS["paused_probe_interval_hours"] == "补搜间隔（小时）"
-    assert HINTS["paused_probe_reasons"] == "选择哪些暂停原因需要低频补搜"
-    assert HINTS["paused_probe_min_pause_days"] == "暂停满N天后才补搜，为0时不处理"
+    assert HINTS["paused_probe_reasons"] == "选择允许低频补搜的暂停原因"
+    assert HINTS["paused_probe_min_pause_days"] == "暂停达到天数后开始补搜，0 表示不处理"
     assert HINTS["paused_probe_interval_hours"] == "同一订阅两次补搜的最小间隔"
     assert MULTI_ITEMS["paused_probe_reasons"] == [
         {"title": "无下载", "value": "no_download"},
@@ -444,13 +468,28 @@ def test_paused_probe_labels_hints_and_interval_select_are_human_readable():
 
 
 def test_progress_diagnostic_labels_and_hints_describe_readonly_scope():
-    """无进展诊断文案必须说明只读边界，不暗示会改规则、站点或下载。"""
-    assert LABELS["progress_diagnostic_enabled"] == "无进展诊断"
+    """无进展诊断模式当前只提供通知，为后续纠正能力保留扩展口。"""
+    assert LABELS["progress_diagnostic_mode"] == "无进展诊断模式"
     assert LABELS["progress_diagnostic_stalled_rounds"] == "连续无进展轮数"
     assert LABELS["progress_diagnostic_cooldown_hours"] == "诊断冷却（小时）"
-    assert HINTS["progress_diagnostic_enabled"] == "订阅进度长期无变化时仅发送诊断提醒，不改规则、站点或下载"
-    assert HINTS["progress_diagnostic_stalled_rounds"] == "连续 N 轮订阅缺失数量未减少后提醒，0 表示不处理"
-    assert HINTS["progress_diagnostic_cooldown_hours"] == "同一订阅两次诊断提醒的最小间隔，避免反复打扰"
+    assert HINTS["progress_diagnostic_mode"] == "订阅长期无进展时的诊断处理方式"
+    assert HINTS["progress_diagnostic_stalled_rounds"] == "连续无进展多少轮后处理，0 表示不处理"
+    assert HINTS["progress_diagnostic_cooldown_hours"] == "同一订阅诊断提醒的最小间隔"
+    assert SELECT_ITEMS["progress_diagnostic_mode"] == [
+        {"title": "关闭", "value": "off"},
+        {"title": "仅通知", "value": "notify"},
+    ]
+
+
+def test_site_total_probe_label_and_hint_belong_to_completion_tab():
+    """站点集数探测属于订阅补全，站点完结信号仍属于完结信号。"""
+    conf, _model = build_form()
+
+    assert LABELS["site_total_probe_enabled"] == "站点集数探测"
+    assert HINTS["site_total_probe_enabled"] == "用站点缓存资源辅助发现目标集数不足"
+    assert "site_total_probe_enabled" in _tab_models(conf, "订阅补全")
+    assert "site_total_probe_enabled" not in _tab_models(conf, "完结信号")
+    assert "site_completion_evidence_enabled" in _tab_models(conf, "完结信号")
 
 
 def test_subscription_cleanup_tab_replaces_seed_delete_title():
@@ -522,7 +561,7 @@ def test_completion_signal_hints_explain_behavior_and_scope():
         "cadence_min_episodes", "season_cooldown_days", "verify_enabled",
         "verify_interval_hours", "verify_retention_days",
         "timeout_release_days", "timeout_cadence_acceleration",
-        "site_total_probe_enabled", "site_completion_evidence_enabled",
+        "site_completion_evidence_enabled",
     )
     for key in keys:
         hint = HINTS[key]
@@ -556,13 +595,11 @@ def test_completion_labels_use_concise_names_without_enable_prefix():
     assert LABELS["completion_guard_mode"] == "完结守卫模式"
     assert LABELS["volatility_enabled"] == "变更速率信号"
     assert LABELS["cadence_enabled"] == "播出节奏信号"
-    assert LABELS["site_total_probe_enabled"] == "站点集数探测"
     assert LABELS["site_completion_evidence_enabled"] == "站点完结信号"
     assert LABELS["verify_enabled"] == "自动纠错"
     assert LABELS["verify_interval_hours"] == "自动纠错间隔（小时）"
     assert LABELS["timeout_release_days"] == "完成前观察天数"
     assert HINTS["auto_check_interval_minutes"] == "站点采样、待定释放、无下载处理和清理周期"
-    assert HINTS["site_total_probe_enabled"] == "根据站点资源探测剧集目标集数"
     assert HINTS["site_completion_evidence_enabled"] == "使用站点资源标题佐证完结信号"
 
 
@@ -577,11 +614,11 @@ def test_completion_tab_uses_original_flat_grid():
         [col["content"][0]["props"]["model"] for col in row["content"]]
         for row in completion_rows
     ] == [
-        ["verify_enabled", "site_total_probe_enabled", "site_completion_evidence_enabled"],
-        ["volatility_enabled", "cadence_enabled", "timeout_cadence_acceleration"],
-        ["completion_guard_mode", "volatility_window_days", "cadence_multiplier"],
-        ["cadence_min_window_days", "cadence_min_episodes", "season_cooldown_days"],
-        ["verify_interval_hours", "verify_retention_days", "timeout_release_days"],
+        ["verify_enabled", "site_completion_evidence_enabled", "volatility_enabled"],
+        ["cadence_enabled", "timeout_cadence_acceleration", "completion_guard_mode"],
+        ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
+        ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
+        ["verify_retention_days", "timeout_release_days"],
     ]
 
 
@@ -595,7 +632,6 @@ def test_completion_flat_grid_keeps_persistent_hints():
         "completion_guard_mode",
         "volatility_enabled",
         "cadence_enabled",
-        "site_total_probe_enabled",
         "site_completion_evidence_enabled",
         "volatility_window_days",
         "cadence_multiplier",

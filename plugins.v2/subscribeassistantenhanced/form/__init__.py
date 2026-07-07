@@ -61,7 +61,8 @@ LABELS = {
     "paused_probe_reasons": "暂停订阅补搜场景",
     "paused_probe_min_pause_days": "暂停满N天后补搜",
     "paused_probe_interval_hours": "补搜间隔（小时）",
-    "progress_diagnostic_enabled": "无进展诊断",
+    "site_total_probe_enabled": "站点集数探测",
+    "progress_diagnostic_mode": "无进展诊断模式",
     "progress_diagnostic_stalled_rounds": "连续无进展轮数",
     "progress_diagnostic_cooldown_hours": "诊断冷却（小时）",
     # 订阅洗版
@@ -73,7 +74,6 @@ LABELS = {
     "best_version_tv_remaining_days": "剧集洗版时限（天）",
     # 完结信号
     "completion_guard_mode": "完结守卫模式",
-    "site_total_probe_enabled": "站点集数探测",
     "site_completion_evidence_enabled": "站点完结信号",
     "volatility_enabled": "变更速率信号",
     "volatility_window_days": "变更速率窗口（天）",
@@ -139,12 +139,13 @@ HINTS = {
     "movie_no_download_days": "电影上映后N天内无新的订阅下载，则按策略处理，为0时不处理",
     "no_download_actions": "选择无下载时的处理策略",
     # 订阅补全
-    "paused_probe_reasons": "选择哪些暂停原因需要低频补搜",
-    "paused_probe_min_pause_days": "暂停满N天后才补搜，为0时不处理",
+    "paused_probe_reasons": "选择允许低频补搜的暂停原因",
+    "paused_probe_min_pause_days": "暂停达到天数后开始补搜，0 表示不处理",
     "paused_probe_interval_hours": "同一订阅两次补搜的最小间隔",
-    "progress_diagnostic_enabled": "订阅进度长期无变化时仅发送诊断提醒，不改规则、站点或下载",
-    "progress_diagnostic_stalled_rounds": "连续 N 轮订阅缺失数量未减少后提醒，0 表示不处理",
-    "progress_diagnostic_cooldown_hours": "同一订阅两次诊断提醒的最小间隔，避免反复打扰",
+    "site_total_probe_enabled": "用站点缓存资源辅助发现目标集数不足",
+    "progress_diagnostic_mode": "订阅长期无进展时的诊断处理方式",
+    "progress_diagnostic_stalled_rounds": "连续无进展多少轮后处理，0 表示不处理",
+    "progress_diagnostic_cooldown_hours": "同一订阅诊断提醒的最小间隔",
     # 订阅洗版
     "best_version_type": "选择需要自动洗版的类型，关闭时不自动创建和巡检洗版订阅",
     "best_version_episode_to_full": "订阅目标集数满足时，从分集洗版切换为全集洗版",
@@ -154,7 +155,6 @@ HINTS = {
     "best_version_tv_remaining_days": "剧集洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
     # 完结信号
     "completion_guard_mode": "选择完成前复核强度，默认使用平衡策略",
-    "site_total_probe_enabled": "根据站点资源探测剧集目标集数",
     "site_completion_evidence_enabled": "使用站点资源标题佐证完结信号",
     "volatility_enabled": "总集数近期变化时视为不稳定",
     "volatility_window_days": "统计总集数变化的天数，越长越保守",
@@ -199,19 +199,20 @@ TABS = [
         ["movie_no_download_days", "tv_no_download_days", "no_download_actions"],
     ]),
     ("订阅补全", [
+        [("site_total_probe_enabled", 12)],
+        ["progress_diagnostic_mode", "progress_diagnostic_stalled_rounds", "progress_diagnostic_cooldown_hours"],
         ["paused_probe_reasons", "paused_probe_min_pause_days", "paused_probe_interval_hours"],
-        ["progress_diagnostic_enabled", "progress_diagnostic_stalled_rounds", "progress_diagnostic_cooldown_hours"],
     ]),
     ("订阅洗版", [
         ["best_version_type", "best_version_movie_remaining_days", "best_version_tv_remaining_days"],
         ["best_version_episode_to_full", "best_version_backfill_enabled", "backfill_best_version_now"],
     ]),
     ("完结信号", [
-        ["verify_enabled", "site_total_probe_enabled", "site_completion_evidence_enabled"],
-        ["volatility_enabled", "cadence_enabled", "timeout_cadence_acceleration"],
-        ["completion_guard_mode", "volatility_window_days", "cadence_multiplier"],
-        ["cadence_min_window_days", "cadence_min_episodes", "season_cooldown_days"],
-        ["verify_interval_hours", "verify_retention_days", "timeout_release_days"],
+        ["verify_enabled", "site_completion_evidence_enabled", "volatility_enabled"],
+        ["cadence_enabled", "timeout_cadence_acceleration", "completion_guard_mode"],
+        ["volatility_window_days", "cadence_multiplier", "cadence_min_window_days"],
+        ["cadence_min_episodes", "season_cooldown_days", "verify_interval_hours"],
+        ["verify_retention_days", "timeout_release_days"],
     ]),
     ("识别增强", [
         ["recognition_guard_mode", "recognition_guard_notify", "recognition_guard_notify_interval"],
@@ -264,6 +265,10 @@ SELECT_ITEMS = {
         {"title": "96", "value": 96},
         {"title": "120", "value": 120},
         {"title": "144", "value": 144},
+    ],
+    "progress_diagnostic_mode": [
+        {"title": "关闭", "value": "off"},
+        {"title": "仅通知", "value": "notify"},
     ],
     "best_version_type": [
         {"title": "关闭", "value": "no"},

@@ -228,8 +228,8 @@ class ProgressDiagnosticCoordinator:
         return None
 
     def _enabled(self) -> bool:
-        """读取无进展诊断总开关。"""
-        return bool(self._config.progress_diagnostic_enabled)
+        """当前仅 notify 模式执行只读诊断提醒。"""
+        return self._config.progress_diagnostic_mode == "notify"
 
     def _rounds_threshold(self) -> int:
         """读取连续无进展轮数阈值。"""

@@ -420,6 +420,13 @@ class PluginConfig:
         """无下载处理策略（多选）：pause/complete/delete × movie/tv 的组合。"""
         return self.get_list("no_download_actions")
 
+    # ---- 订阅补全 ----
+
+    @property
+    def site_total_probe_enabled(self) -> bool:
+        """站点集数探测：使用站点缓存资源辅助发现目标集数不足。"""
+        return self.get_bool("site_total_probe_enabled", False)
+
     @property
     def paused_probe_reasons(self) -> list:
         """暂停订阅低频补搜场景；缺省只对无下载暂停进行主动搜索。"""
@@ -438,9 +445,10 @@ class PluginConfig:
     # ---- 无进展诊断 ----
 
     @property
-    def progress_diagnostic_enabled(self) -> bool:
-        """无进展诊断：订阅长期缺集未减少时发出诊断通知；只读观察，不改搜索规则/站点、不下载。"""
-        return self.get_bool("progress_diagnostic_enabled", False)
+    def progress_diagnostic_mode(self) -> str:
+        """无进展诊断模式：off=关闭，notify=仅发送诊断通知。"""
+        val = self.get_str("progress_diagnostic_mode", "off").strip().lower()
+        return val if val in ("off", "notify") else "off"
 
     @property
     def progress_diagnostic_stalled_rounds(self) -> int:
@@ -492,11 +500,6 @@ class PluginConfig:
         """完结守卫模式：关闭、严格、平衡或宽松。"""
         value = self.get_str("completion_guard_mode", "balanced").strip().lower()
         return value if value in {"off", "strict", "balanced", "loose"} else "balanced"
-
-    @property
-    def site_total_probe_enabled(self) -> bool:
-        """站点集数探测：使用站点缓存资源扩展剧集目标集数。"""
-        return self.get_bool("site_total_probe_enabled", False)
 
     @property
     def site_completion_evidence_enabled(self) -> bool:

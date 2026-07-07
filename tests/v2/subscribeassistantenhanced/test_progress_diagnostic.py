@@ -29,7 +29,7 @@ def _sub(sid=1, missing=5, media_type="电视剧", name=None, season=1, state="R
 def _cfg(**kwargs):
     """构造无进展诊断所需配置替身。"""
     defaults = dict(
-        progress_diagnostic_enabled=True,
+        progress_diagnostic_mode="notify",
         progress_diagnostic_stalled_rounds=3,
         progress_diagnostic_cooldown_hours=24,
     )
@@ -87,7 +87,7 @@ def test_disabled_switch_does_not_write_state():
     """诊断关闭时不读订阅、不写状态。"""
     coord, data, notify, oper, _clock, update_calls = _coordinator(
         [_sub()],
-        cfg=_cfg(progress_diagnostic_enabled=False),
+        cfg=_cfg(progress_diagnostic_mode="off"),
     )
 
     coord.run()

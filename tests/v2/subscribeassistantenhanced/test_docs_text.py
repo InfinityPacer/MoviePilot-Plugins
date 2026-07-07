@@ -20,7 +20,8 @@ def test_readme_documents_site_evidence_boundaries():
     readme = README_PATH.read_text(encoding="utf-8")
 
     assert "站点集数探测" in readme
-    assert "根据站点资源探测剧集目标集数" in readme
+    assert "用站点缓存资源辅助发现目标集数不足" in readme
+    assert "仅普通剧集和分集洗版；不请求站点" in readme
     assert "站点完结信号" in readme
     assert "站点完结信号默认开启" in readme
     assert "| 站点完结信号 | `site_completion_evidence_enabled` | bool | `true` |" in readme
