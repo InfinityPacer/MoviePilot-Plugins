@@ -134,6 +134,22 @@ class PluginConfigDefaultsTest:
         assert self.cfg.paused_probe_min_pause_days == 14
         assert self.cfg.paused_probe_interval_hours == 72
 
+    def test_progress_diagnostic_defaults(self):
+        """无进展诊断默认关闭，轮数与冷却保持保守阈值。"""
+        assert self.cfg.progress_diagnostic_enabled is False
+        assert self.cfg.progress_diagnostic_stalled_rounds == 3
+        assert self.cfg.progress_diagnostic_cooldown_hours == 24
+
+    def test_old_no_result_diagnostic_keys_are_not_declared(self):
+        """配置契约只暴露无进展诊断新 key，不继续声明旧搜索诊断 key。"""
+        keys = set(self.cfg.declared_keys())
+        assert "progress_diagnostic_enabled" in keys
+        assert "progress_diagnostic_stalled_rounds" in keys
+        assert "progress_diagnostic_cooldown_hours" in keys
+        assert "no_result_diagnostic_enabled" not in keys
+        assert "no_result_diagnostic_rounds" not in keys
+        assert "no_result_diagnostic_cooldown_hours" not in keys
+
     # --- pending ---
 
     def test_auto_tv_pending_days_default_disabled(self):

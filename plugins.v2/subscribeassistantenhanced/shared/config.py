@@ -435,22 +435,22 @@ class PluginConfig:
         """同一订阅主动补搜的最小间隔，运行时不低于 24 小时。"""
         return max(self.get_int("paused_probe_interval_hours", 72), 24)
 
-    # ---- 搜索诊断 ----
+    # ---- 无进展诊断 ----
 
     @property
-    def no_result_diagnostic_enabled(self) -> bool:
-        """搜索诊断：订阅按原规则长期搜不到资源时发出诊断通知；只读观察，不改搜索规则/站点、不下载。"""
-        return self.get_bool("no_result_diagnostic_enabled", False)
+    def progress_diagnostic_enabled(self) -> bool:
+        """无进展诊断：订阅长期缺集未减少时发出诊断通知；只读观察，不改搜索规则/站点、不下载。"""
+        return self.get_bool("progress_diagnostic_enabled", False)
 
     @property
-    def no_result_diagnostic_rounds(self) -> int:
-        """连续未搜到轮数阈值：缺失集数连续 N 轮巡检未减少后发出诊断通知；0=不处理。"""
-        return self.get_int("no_result_diagnostic_rounds", 3)
+    def progress_diagnostic_stalled_rounds(self) -> int:
+        """连续无进展轮数阈值：缺失集数连续 N 轮巡检未减少后发出诊断通知；0=不处理。"""
+        return self.get_int("progress_diagnostic_stalled_rounds", 3)
 
     @property
-    def no_result_diagnostic_cooldown_hours(self) -> int:
+    def progress_diagnostic_cooldown_hours(self) -> int:
         """同一订阅两次诊断通知的最小间隔小时数，避免反复打扰。"""
-        return self.get_int("no_result_diagnostic_cooldown_hours", 24)
+        return self.get_int("progress_diagnostic_cooldown_hours", 24)
 
     # ---- 订阅洗版 ----
 

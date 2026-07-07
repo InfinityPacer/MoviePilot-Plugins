@@ -84,6 +84,14 @@ class TestPluginEntry:
         assert plugin._modules["recognition_guard"] is not None
         assert plugin._event_proxy.get("recognition_guard") is None
 
+    def test_init_plugin_registers_progress_diagnostic_module(self):
+        """无进展诊断按 progress_diagnostic 模块 key 注入，供巡检入口读取。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+
+        assert "progress_diagnostic" in plugin._modules
+        assert "no_result_diagnostic" not in plugin._modules
+
     def test_recognition_external_failure_logs_are_sanitized(self, monkeypatch):
         """识别增强外部识别异常日志不得泄漏令牌或本地路径。"""
         messages = []
@@ -382,7 +390,7 @@ class TestEventRegistration:
         assert "已将 1 个自动暂停订阅恢复为启用：暂停剧 S2" in kwargs["text"]
         assert set(saved) == {
             "subscribes", "torrents", "blocks", "releases", "snapshots",
-            "deletes", "volatility", "site_evidence", "no_result",
+            "deletes", "volatility", "site_evidence",
             "subscription_cleanup_histories",
         }
 
