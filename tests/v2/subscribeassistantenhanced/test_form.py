@@ -50,11 +50,11 @@ class TestBuildForm:
         for key in PluginConfig({}).declared_keys():
             assert key in model, f"表单 model 缺少配置键 {key}"
 
-    def test_six_tabs(self):
-        """配置表单使用 6 个 Tab；顶部 BETA 提示不改变 Tab 数量。"""
+    def test_seven_tabs(self):
+        """配置表单使用 7 个 Tab（含搜索诊断）；顶部 BETA 提示不改变 Tab 数量。"""
         conf, _model = build_form()
         assert conf[3]["component"] == "VTabs"
-        assert len(conf[3]["content"]) == 6
+        assert len(conf[3]["content"]) == 7
 
     def test_beta_alert_precedes_form_controls(self):
         """BETA 风险提示固定显示在开关、周期和分页配置之前。"""
