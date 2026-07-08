@@ -1,9 +1,9 @@
 name: PR Agent
 
 on:
-  pull_request:
-    # 临时使用 pull_request 让当前同仓 PR 可以按分支内 workflow 自测。
-    # workflow 不 checkout 或执行 PR 分支代码，只通过 GitHub API 读取 PR diff。
+  pull_request_target:
+    # PR-Agent 通过 base repo 上下文读取 PR diff 并发布 Review，不 checkout 或执行 PR 分支代码。
+    # pull_request_target 允许 fork PR 使用仓库 secrets，因此 workflow 只运行固定 digest 的 PR-Agent 容器。
     types:
       - opened
       - reopened
@@ -32,8 +32,8 @@ jobs:
       github.event.sender.type != 'Bot' &&
       (
         (
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name == github.repository
+          github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository
         ) ||
         (
           github.event_name == 'issue_comment' &&
@@ -51,7 +51,7 @@ jobs:
       )
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -122,7 +122,7 @@ jobs:
         if: >-
           steps.pr_language.outputs.skip_pr_agent != 'true' &&
           (
-            github.event_name == 'pull_request' ||
+            github.event_name == 'pull_request_target' ||
             (
               github.event_name == 'issue_comment' &&
               (
@@ -199,7 +199,7 @@ jobs:
         if: >-
           steps.pr_language.outputs.skip_pr_agent != 'true' &&
           (
-            github.event_name == 'pull_request' ||
+            github.event_name == 'pull_request_target' ||
             (
               github.event_name == 'issue_comment' &&
               (
@@ -297,7 +297,7 @@ jobs:
         if: >-
           steps.pr_language.outputs.skip_pr_agent != 'true' &&
           (
-            github.event_name == 'pull_request' ||
+            github.event_name == 'pull_request_target' ||
             (
               github.event_name == 'issue_comment' &&
               (
