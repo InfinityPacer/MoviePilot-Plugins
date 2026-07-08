@@ -6,10 +6,10 @@
 
 `.github/workflows/pr-agent.yml` 监听：
 
-- `pull_request_target`：fork PR 打开、重新打开、标记 ready、请求 review、推送新 commit 时自动运行。
+- `pull_request`：同仓 PR 打开、重新打开、标记 ready、请求 review、推送新 commit 时自动运行。
 - `issue_comment`：允许身份在 PR 评论里写允许的命令时手动运行。
 
-默认只自动处理 fork PR；同仓 PR 不自动运行，允许身份可以在 PR 评论中使用允许的命令触发受控审查。
+默认自动处理同仓 PR；允许身份也可以在 PR 评论中使用允许的命令触发受控审查。
 允许身份包括 `OWNER`、`MEMBER`、`COLLABORATOR`、`CONTRIBUTOR` 和 `FIRST_TIME_CONTRIBUTOR`。
 
 ## Workflow 权限
@@ -24,7 +24,7 @@ workflow 设置了最小可用权限：
 
 ## 自动行为
 
-fork PR 默认自动执行：
+同仓 PR 默认自动执行：
 
 - `/describe`：更新 PR Body 中的 `PR-Agent 摘要` / `PR-Agent Summary` 标记区域，保留用户原始描述。
 - `/improve`：发布 GitHub 行内代码审查建议，不发布 PR-Agent 建议表格。
@@ -58,7 +58,7 @@ workflow 会在 `/improve` 后发布一条普通 PR 评论：
 
 PR-Agent 配置集中在 `.github/workflows/pr-agent.yml` 中维护。公开说明只描述用户可见行为：
 
-- 根据用户原始 PR 描述自动选择中文或英文；无法识别时默认中文。
+- 根据 PR 标题和用户原始描述自动选择中文或英文；无法识别时默认中文。
 - 保留用户原始 PR 描述，只更新 PR Body 中的 PR-Agent 标记区域。
 - 不使用 PR-Agent 的 Reviewer Guide 输出。
 - 不输出 PR Type、额外标签、图表或 describe 评论。
@@ -83,4 +83,4 @@ PR-Agent 配置集中在 `.github/workflows/pr-agent.yml` 中维护。公开说�
 
 PR-Agent 依赖的 Docker 镜像在 workflow 中固定版本号和 digest，不使用浮动的 `latest` 或仅依赖可变 tag。
 
-当前使用 `pull_request_target` 支持 fork PR 自动审查，但 workflow 不 checkout 或执行来自 fork 的代码，只运行固定 digest 的 PR-Agent 容器并通过 GitHub API 读取 PR diff。`issue_comment` 属于 base repo 事件，因此评论命令只允许指定身份触发。
+当前临时使用 `pull_request` 验证同仓 PR 自动审查；workflow 不 checkout 或执行 PR 分支代码，只运行固定 digest 的 PR-Agent 容器并通过 GitHub API 读取 PR diff。`issue_comment` 属于 base repo 事件，因此评论命令只允许指定身份触发。
