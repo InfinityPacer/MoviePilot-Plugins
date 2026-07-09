@@ -47,17 +47,22 @@ def fake_lifecycle():
         return []
 
     tmdb_episodes = MagicMock(side_effect=tmdb_episodes_side_effect)
+    recognize = MagicMock()
+    clear_tasks_for_pause = MagicMock()
+    subscribe_oper = MagicMock()
 
     coordinator = SubscribeLifecycleCoordinator(
         config=MagicMock(),
-        subscribe_oper=MagicMock(),
+        subscribe_oper=subscribe_oper,
         pause_manager=pause_manager,
         pending_judge=pending_judge,
         pending_state=pending_state,
         airing_checker=airing,
         tmdb_episodes_fn=tmdb_episodes,
+        recognize_mediainfo_fn=recognize,
         is_tv_fn=lambda _mediainfo: True,
         schedule_initial_pending_search_fn=lambda subscribe: calls.append(f"schedule_search:{subscribe.id}"),
+        clear_tasks_for_pause_fn=clear_tasks_for_pause,
     )
     return SimpleNamespace(
         coordinator=coordinator,
@@ -66,6 +71,9 @@ def fake_lifecycle():
         pause_manager=pause_manager,
         airing=airing,
         tmdb_episodes=tmdb_episodes,
+        subscribe_oper=subscribe_oper,
+        recognize=recognize,
+        clear_tasks_for_pause=clear_tasks_for_pause,
         calls=calls,
     )
 
@@ -181,6 +189,68 @@ def test_subscribe_added_running_subscription_pauses_after_library_update(fake_l
         episodes=[],
     )
     fake_lifecycle.pause_manager.pause.assert_called_once_with(subscribe, record)
+
+
+def test_meta_check_refreshes_same_pause_silently(fake_lifecycle):
+    subscribe = SimpleNamespace(id=20, state="S", best_version=False, tmdbid=100, season=1, episode_group=None)
+    existing = PauseRecord(reason="pre_air", since=1.0, detail="旧原因")
+    current = PauseRecord(reason="pre_air", since=2.0, detail="新原因")
+    fake_lifecycle.pause_manager.get_pause_record.return_value = existing
+    fake_lifecycle.airing.check_pre_air.return_value = current
+    fake_lifecycle.recognize.return_value = object()
+
+    result = fake_lifecycle.coordinator.handle_meta_check_subscription(subscribe)
+
+    assert result.changed is False
+    fake_lifecycle.pause_manager.pause.assert_called_once_with(subscribe, current, notify=False)
+
+
+def test_meta_check_restores_orphan_p_before_pause(fake_lifecycle):
+    subscribe = SimpleNamespace(id=21, state="P", best_version=False)
+    fake_lifecycle.pending_state.has_active.return_value = False
+    fake_lifecycle.pending_state.reconcile_orphaned.return_value = True
+
+    result = fake_lifecycle.coordinator.handle_meta_check_subscription(subscribe)
+
+    assert result.changed is True
+    assert result.stopped is True
+    assert result.state == "R"
+    fake_lifecycle.recognize.assert_not_called()
+
+
+def test_no_download_pause_clears_tasks_after_success(fake_lifecycle):
+    subscribe = SimpleNamespace(id=22, state="R")
+    fake_lifecycle.pause_manager.pause.return_value = True
+
+    result = fake_lifecycle.coordinator.pause_for_no_download(subscribe, "上映后长期无下载")
+
+    assert result.changed is True
+    fake_lifecycle.clear_tasks_for_pause.assert_called_once_with(22)
+
+
+def test_restore_owned_states_before_reset_recovers_pending_and_airing_pause(fake_lifecycle):
+    pending = SimpleNamespace(id=23, state="P", name="待定剧", season=1)
+    paused = SimpleNamespace(id=24, state="S", name="暂停剧", season=2)
+    fake_lifecycle.subscribe_oper.list.side_effect = [[pending], [paused]]
+    fake_lifecycle.pending_state.clear_all_owned.return_value = True
+    fake_lifecycle.pause_manager.get_pause_record.return_value = PauseRecord(
+        reason="airing_gap",
+        since=1.0,
+        detail="播出间隔",
+    )
+    fake_lifecycle.pause_manager.resume.return_value = True
+
+    result = fake_lifecycle.coordinator.restore_owned_states_before_reset()
+
+    assert result.changed is True
+    assert result.state == "R"
+    assert "待定剧 S1" in result.message
+    assert "暂停剧 S2" in result.message
+    fake_lifecycle.pending_state.clear_all_owned.assert_called_once_with(
+        pending,
+        reason="插件任务重置",
+    )
+    fake_lifecycle.pause_manager.resume.assert_called_once_with(paused, notify=False)
 
 
 def test_subscribe_added_full_best_version_stops_before_pending(fake_lifecycle):

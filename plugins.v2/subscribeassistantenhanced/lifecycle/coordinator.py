@@ -137,8 +137,55 @@ class SubscribeLifecycleCoordinator:
         )
 
     def handle_meta_check_subscription(self, subscribe, mediainfo=None, episodes=None) -> LifecycleResult:
-        """元数据巡检入口契约；未处理时返回空生命周期结果。"""
-        return LifecycleResult()
+        """复核单个订阅的上映暂停、待定归属和待定退出。"""
+        if not subscribe:
+            return LifecycleResult()
+
+        state = getattr(subscribe, "state", None)
+        changed = False
+
+        record = self._pause_manager.get_pause_record(subscribe) if self._pause_manager else None
+        reason = record.reason if record else None
+        flag_paused = reason in ("no_download", "auto_user")
+        if flag_paused and state == "S":
+            detail(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 标记暂停({reason})且为禁用态，本轮跳过")
+            return LifecycleResult(stopped=True, state="S", reason=reason)
+        if flag_paused and state != "S" and self._pause_manager:
+            logger.info(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 用户已重新启用，清除插件暂停标记({reason})")
+            self._pause_manager.clear_pause_record(subscribe)
+            changed = True
+
+        restored = self._restore_orphan_pending_if_needed(subscribe)
+        if restored.changed:
+            return restored
+
+        mediainfo = self._resolve_mediainfo(subscribe, mediainfo)
+        if not mediainfo:
+            return LifecycleResult(changed=changed, state=state if changed else None)
+
+        if is_full_best_version_subscribe(subscribe):
+            result = self._handle_full_best_version_meta_check(subscribe, mediainfo, episodes, state)
+            result.changed = result.changed or changed
+            return result
+
+        if self._pending_judge and state == "P":
+            if self._pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes):
+                return LifecycleResult(changed=True, stopped=True, state="R", reason="待定释放巡检")
+
+        result = self._handle_airing_pause(subscribe, mediainfo, episodes, state)
+        changed = changed or result.changed
+        if result.stopped:
+            result.changed = changed
+            return result
+
+        if bool(getattr(self._config, "pending_enhanced_enabled", False)) and self._pending_judge:
+            resolved_episodes = self._resolve_episodes(subscribe, mediainfo, episodes)
+            pending = self.enter_pending_from_judge(subscribe, mediainfo, resolved_episodes)
+            pending.changed = pending.changed or changed
+            if pending.stopped or pending.changed:
+                return pending
+
+        return LifecycleResult(changed=changed, state=state if changed else None)
 
     def handle_download_added_for_subscribe(self, subscribe, reason: str = "") -> LifecycleResult:
         """下载命中入口契约；未处理时返回空生命周期结果。"""
@@ -201,12 +248,32 @@ class SubscribeLifecycleCoordinator:
 
     def release_pending_source(self, subscribe, source: str, reason: str) -> LifecycleResult:
         """释放指定待定来源，并按剩余来源决定是否恢复启用态。"""
+        if source in ("pending_judge", "guard_veto") and self._pending_judge:
+            if self._has_active_downloads:
+                self._has_active_downloads(subscribe.id)
+            mediainfo = self._resolve_mediainfo(subscribe)
+            if not mediainfo:
+                return LifecycleResult(reason=reason)
+            changed = bool(self._pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes))
+            state = "P" if changed and self._pending_state.has_active(subscribe.id) else "R"
+            return LifecycleResult(
+                changed=changed,
+                stopped=changed,
+                state=state if changed else None,
+                reason=reason,
+            )
         changed = self._pending_state.clear_active(subscribe, source=source, reason=reason)
         return LifecycleResult(changed=changed, state="R" if changed else None, reason=reason)
 
     def reconcile_pending(self, subscribe, reason: str) -> LifecycleResult:
         """恢复缺少有效生命周期归属的待定残留。"""
+        if self._has_active_downloads and self._has_active_downloads(subscribe.id):
+            return LifecycleResult(reason=reason)
+        if self._pending_state.has_active(subscribe.id):
+            return LifecycleResult(reason=reason)
         changed = self._pending_state.reconcile_orphaned(subscribe, reason=reason)
+        if changed and self._clear_orphan_completion_observation:
+            self._clear_orphan_completion_observation(subscribe)
         return LifecycleResult(changed=changed, state="R" if changed else None, reason=reason)
 
     def toggle_subscribe_by_user_command(self, subscribe) -> LifecycleResult:
@@ -223,24 +290,172 @@ class SubscribeLifecycleCoordinator:
 
     def restore_owned_states_before_reset(self) -> LifecycleResult:
         """重置前恢复增强版明确持有的待定状态，避免残留 P 状态失去来源。"""
-        changed = False
+        reason = "插件任务重置"
+        recovered_pending = []
+        recovered_paused = []
         for subscribe in self._list_subscribes(state="P"):
-            changed = self._pending_state.clear_all_owned(
-                subscribe, reason="插件重置前恢复生命周期状态"
-            ) or changed
+            if self._pending_state.clear_all_owned(subscribe, reason=reason):
+                recovered_pending.append(_format_lifecycle_subscribe(subscribe))
+        if self._pause_manager:
+            for subscribe in self._list_subscribes(state="S"):
+                record = self._pause_manager.get_pause_record(subscribe)
+                if record and record.reason in ("pre_air", "airing_gap"):
+                    if self._pause_manager.resume(subscribe, notify=False):
+                        recovered_paused.append(_format_lifecycle_subscribe(subscribe))
+        changed = bool(recovered_pending or recovered_paused)
         return LifecycleResult(
             changed=changed,
             state="R" if changed else None,
-            reason="插件重置前恢复生命周期状态",
+            reason=reason,
+            message=self._format_reset_recovery_summary(recovered_pending, recovered_paused),
         )
 
     def pause_for_no_download(self, subscribe, reason: str) -> LifecycleResult:
         """因长期无下载进入标记暂停，并清理暂停覆盖下不应继续执行的待定任务。"""
         record = PauseRecord(reason="no_download", detail=reason)
-        changed = self._pause_manager.pause(subscribe, record, notify=True)
+        changed = bool(self._pause_manager.pause(subscribe, record, notify=True))
         if changed and self._clear_tasks_for_pause:
-            self._clear_tasks_for_pause(subscribe)
+            self._clear_tasks_for_pause(subscribe.id)
         return LifecycleResult(changed=changed, state="S" if changed else None, reason=reason)
+
+    def _restore_orphan_pending_if_needed(self, subscribe) -> LifecycleResult:
+        """P 态缺少活跃归属时先恢复，避免后续暂停或待定复核接管残留状态。"""
+        if getattr(subscribe, "state", None) != "P" or not self._pending_state:
+            return LifecycleResult()
+        if self._has_active_downloads and self._has_active_downloads(subscribe.id):
+            return LifecycleResult()
+        if self._pending_state.has_active(subscribe.id):
+            return LifecycleResult()
+        reason = "无有效待定来源，状态恢复"
+        changed = self._pending_state.reconcile_orphaned(subscribe, reason=reason)
+        if changed and self._clear_orphan_completion_observation:
+            self._clear_orphan_completion_observation(subscribe)
+        return LifecycleResult(
+            changed=changed,
+            stopped=changed,
+            state="R" if changed else None,
+            reason=reason,
+        )
+
+    def _handle_full_best_version_meta_check(self, subscribe, mediainfo, episodes, state: str | None) -> LifecycleResult:
+        """全集洗版只参与上映前暂停复核，不进入按集待定或播出间隔流程。"""
+        if state != "N" and self._airing and self._pause_manager:
+            resolved_episodes = self._resolve_episodes(subscribe, mediainfo, episodes)
+            record_now = self._airing.check_pre_air(subscribe, mediainfo, episodes=resolved_episodes)
+            if record_now:
+                current_record = self._pause_manager.get_pause_record(subscribe) if state == "S" else None
+                if state != "S":
+                    logger.info(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
+                    changed = bool(self._pause_manager.pause(subscribe, record_now))
+                    return LifecycleResult(changed=changed, stopped=True, state="S" if changed else state,
+                                           reason=record_now.reason)
+                if current_record:
+                    refreshed = bool(self._pause_manager.pause(subscribe, record_now, notify=False))
+                    changed = refreshed and current_record.reason != record_now.reason
+                    return LifecycleResult(changed=changed, stopped=True, state="S", reason=record_now.reason)
+                return LifecycleResult(stopped=True, state="S", reason=record_now.reason)
+            if state == "S":
+                current_record = self._pause_manager.get_pause_record(subscribe)
+                current_reason = current_record.reason if current_record else None
+                if current_reason != "pre_air":
+                    detail(
+                        f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 全集洗版仅恢复上映前暂停记录，"
+                        f"当前暂停原因={current_reason or '无'}，本轮不恢复"
+                    )
+                    return LifecycleResult(stopped=True, state="S", reason=current_reason or "")
+                logger.info(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
+                changed = bool(self._pause_manager.resume(subscribe))
+                return LifecycleResult(changed=changed, stopped=True, state="R" if changed else "S",
+                                       reason=current_reason)
+        return LifecycleResult(stopped=True, reason="full_best_version")
+
+    def _handle_airing_pause(self, subscribe, mediainfo, episodes, state: str | None) -> LifecycleResult:
+        """按上映前和播出间隔规则处理自动暂停，并只恢复插件拥有的暂停记录。"""
+        if state == "N" or not (self._airing and self._pause_manager):
+            return LifecycleResult()
+
+        is_tv_media = self._is_tv_media(mediainfo)
+        resolved_episodes = self._resolve_episodes(subscribe, mediainfo, episodes) if is_tv_media else []
+        record_now = self._airing.check_pre_air(subscribe, mediainfo, episodes=resolved_episodes)
+        if not record_now and is_tv_media:
+            record_now = self._airing.check(
+                subscribe,
+                mediainfo,
+                next_episode=mediainfo.next_episode_to_air,
+                latest_episode=last_aired_episode(resolved_episodes),
+                episodes=resolved_episodes,
+            )
+        if record_now:
+            current_record = self._pause_manager.get_pause_record(subscribe) if state == "S" else None
+            if state != "S":
+                logger.info(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
+                changed = bool(self._pause_manager.pause(subscribe, record_now))
+                return LifecycleResult(changed=changed, stopped=True, state="S" if changed else state,
+                                       reason=record_now.reason)
+            if current_record:
+                refreshed = bool(self._pause_manager.pause(subscribe, record_now, notify=False))
+                changed = refreshed and current_record.reason != record_now.reason
+                return LifecycleResult(changed=changed, stopped=True, state="S", reason=record_now.reason)
+            return LifecycleResult(stopped=True, state="S", reason=record_now.reason)
+
+        if state == "S":
+            current_record = self._pause_manager.get_pause_record(subscribe)
+            current_reason = current_record.reason if current_record else None
+            if current_reason not in ("pre_air", "airing_gap"):
+                detail(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 非插件上映/播出暂停，本轮不恢复")
+                return LifecycleResult(stopped=True, state="S", reason=current_reason or "")
+            if current_reason == "airing_gap":
+                should_resume = self._airing.should_resume_airing_gap(
+                    subscribe,
+                    mediainfo,
+                    next_episode=mediainfo.next_episode_to_air,
+                    episodes=resolved_episodes if is_tv_media else [],
+                    current_record=current_record,
+                )
+                if not should_resume:
+                    detail(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 播出暂停记录保留，等待明确下一集窗口释放")
+                    return LifecycleResult(stopped=True, state="S", reason=current_reason)
+            logger.info(f"元数据巡检：{_format_lifecycle_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
+            changed = bool(self._pause_manager.resume(subscribe))
+            return LifecycleResult(changed=changed, state="R" if changed else "S", reason=current_reason)
+
+        return LifecycleResult()
+
+    def _resolve_mediainfo(self, subscribe, mediainfo=None):
+        """复用已识别媒体信息；未传入时调用入口注入的识别函数。"""
+        if mediainfo is not None:
+            return mediainfo
+        if not self._recognize_mediainfo:
+            return None
+        return self._recognize_mediainfo(subscribe)
+
+    def _resolve_episodes(self, subscribe, mediainfo, episodes=None) -> list:
+        """按订阅季和 episode_group 读取 TMDB 分集列表；非剧集按空列表处理。"""
+        if episodes is not None:
+            return list(episodes or [])
+        if not self._is_tv_media(mediainfo) or not self._tmdb_episodes:
+            return []
+        return list(self._tmdb_episodes(
+            getattr(subscribe, "tmdbid", None),
+            getattr(subscribe, "season", None),
+            episode_group=getattr(subscribe, "episode_group", None),
+        ) or [])
+
+    def _is_tv_media(self, mediainfo) -> bool:
+        """统一封装媒体类型判断；未注入判断器时按剧集兼容旧测试替身。"""
+        if self._is_tv is None:
+            return True
+        return bool(self._is_tv(mediainfo))
+
+    @staticmethod
+    def _format_reset_recovery_summary(recovered_pending: list[str], recovered_paused: list[str]) -> str:
+        """生成插件任务数据重置前的订阅状态恢复汇总。"""
+        lines = []
+        if recovered_pending:
+            lines.append(f"已将 {len(recovered_pending)} 个待定订阅恢复为启用：" + "、".join(recovered_pending))
+        if recovered_paused:
+            lines.append(f"已将 {len(recovered_paused)} 个自动暂停订阅恢复为启用：" + "、".join(recovered_paused))
+        return "\n".join(lines)
 
     def _pause_after_library_update(self, subscribe, mediainfo, episodes: list, source: str) -> LifecycleResult:
         """媒体库状态已更新后，按当前播出窗口决定是否暂停订阅。"""

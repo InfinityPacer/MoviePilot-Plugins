@@ -13,6 +13,7 @@ from app.schemas.types import MediaType
 
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
 from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
+from subscribeassistantenhanced.lifecycle import LifecycleResult
 
 
 def _sub(**kwargs):
@@ -714,6 +715,30 @@ def test_run_meta_check_includes_episode_best_version_subscription():
     plugin.run_meta_check()
 
     airing.check.assert_called_once()
+
+
+def test_run_meta_check_delegates_each_subscription_to_lifecycle():
+    """元数据巡检入口只负责枚举订阅，单订阅生命周期顺序交给协调器。"""
+    subscriptions = [
+        _sub(id=1, state="N"),
+        _sub(id=2, state="R"),
+        _sub(id=3, state="P"),
+        _sub(id=4, state="S"),
+    ]
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = subscriptions
+    lifecycle = MagicMock()
+    plugin._modules["lifecycle"] = lifecycle
+
+    plugin.run_meta_check()
+
+    plugin._subscribe_oper.list.assert_called_once_with(state="N,R,P,S")
+    assert [
+        call.args[0].id
+        for call in lifecycle.handle_meta_check_subscription.call_args_list
+    ] == [1, 2, 3, 4]
 
 
 def test_run_site_evidence_scan_refreshes_active_tv_subscriptions():
@@ -1817,6 +1842,27 @@ def test_pending_state_reconcile_restores_owned_p_without_sources():
     assert data_store["subscribes"]["7"]["state"] == "R"
 
 
+def test_pending_state_reconcile_delegates_each_p_subscription_to_lifecycle():
+    """待定状态一致性入口只枚举 P 订阅，恢复策略由生命周期协调器维护。"""
+    sub = _sub(id=7, state="P")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    lifecycle = MagicMock()
+    plugin._modules["lifecycle"] = lifecycle
+    pending_state = plugin._modules["pending_state"]
+    pending_state.reconcile_orphaned = MagicMock(return_value=True)
+
+    plugin.run_pending_state_reconcile()
+
+    lifecycle.reconcile_pending.assert_called_once_with(
+        sub,
+        reason="待定状态一致性检查",
+    )
+    pending_state.reconcile_orphaned.assert_not_called()
+
+
 def test_pending_state_reconcile_restores_orphan_observation_and_keeps_active_guard_source():
     """孤儿观察记录不阻止 P 恢复；活跃 guard_veto 来源仍保持 P。"""
     unowned = _sub(id=7, state="P")
@@ -2708,6 +2754,29 @@ class TestPeriodicJobs:
         pending_judge.check_exit.assert_called_once()
         plugin._modules["timeout_manager"].clear_observation.assert_not_called()
 
+    def test_pending_release_delegates_active_p_to_lifecycle(self):
+        """待定释放巡检只调度生命周期协调器，不在入口重复待定退出判定。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        sub = _sub(id=7, state="P")
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [sub]
+        plugin._subscribe_oper.get.return_value = sub
+        plugin.get_data = MagicMock(return_value={})
+        lifecycle = MagicMock()
+        plugin._modules["lifecycle"] = lifecycle
+        pending_judge = plugin._modules["pending_judge"]
+        pending_judge.check_exit = MagicMock(return_value=True)
+
+        plugin.run_pending_release()
+
+        lifecycle.release_pending_source.assert_called_once_with(
+            sub,
+            source="pending_judge",
+            reason="待定释放巡检",
+        )
+        pending_judge.check_exit.assert_not_called()
+
     def test_pending_release_active_guard_veto_recomputes_l_with_plugin_resolver(self, monkeypatch):
         """活跃 guard_veto 巡检要带插件主程序缺集 resolver 重算 L。"""
         plugin = SubscribeAssistantEnhanced()
@@ -3185,6 +3254,34 @@ class TestNoDownloadCheck:
             "paused_probe_resume_guard_reason",
             "paused_probe_resume_guard_until",
         ])
+
+    def test_no_download_pause_action_delegates_to_lifecycle(self):
+        """无下载暂停只由生命周期协调器执行，完成/删除动作仍留在入口本地处理。"""
+        subscribe = _sub(id=30, state="R", name="测试", type="电视剧", season=1)
+        mediainfo = _mediainfo(
+            season_info=[{"season_number": 1, "air_date": "2025-01-01"}],
+            first_air_date="2025-01-01",
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "tv_no_download_days": 180,
+            "no_download_actions": ["pause_tv"],
+        })
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [subscribe]
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._last_download_date = MagicMock(return_value=None)
+        lifecycle = MagicMock()
+        lifecycle.pause_for_no_download.return_value = LifecycleResult(changed=True)
+        plugin._modules["lifecycle"] = lifecycle
+        plugin._modules["pause_manager"].pause = MagicMock()
+
+        plugin.run_no_download_check()
+
+        lifecycle.pause_for_no_download.assert_called_once()
+        assert lifecycle.pause_for_no_download.call_args.args[0] is subscribe
+        assert "无下载截止日" in lifecycle.pause_for_no_download.call_args.args[1]
+        plugin._modules["pause_manager"].pause.assert_not_called()
 
     def test_overdue_tv_pause_action_respects_resume_guard(self):
         """下载命中恢复保护期内，无下载巡检不清任务、不通知、不再次暂停。"""

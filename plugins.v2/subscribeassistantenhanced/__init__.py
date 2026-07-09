@@ -28,7 +28,7 @@ from app.db.subscribe_oper import SubscribeOper
 from app.db.transferhistory_oper import TransferHistoryOper
 from app.helper.downloader import DownloaderHelper
 
-from .engine.types import CompletionSignal, SeasonScope, PauseRecord
+from .engine.types import CompletionSignal, SeasonScope
 from .engine.site import SiteEpisodesRefreshHandler, SiteEvidenceScanner, SiteEvidenceStore
 from .engine.volatility import VolatilityTracker
 from .engine.pipeline import CompletionEvidencePipeline
@@ -62,7 +62,6 @@ from .postcheck.verifier import CompletionVerifier, _format_snapshot_label
 from .postcheck.timeout import PendingTimeoutManager
 from .events import EventProxy
 from .shared.media import parse_date
-from .engine.signals import last_aired_episode
 from .shared.task import TaskDataManager
 from .shared.config import (
     DEFAULT_DELETE_EXCLUDE_TAGS,
@@ -357,16 +356,16 @@ class SubscribeAssistantEnhanced(_PluginBase):
             pending_judge=pending_judge,
             pending_state=pending_state,
             airing_checker=airing_checker if cfg.pause_enhanced_enabled else None,
-            tmdb_episodes_fn=self._tmdb_episodes,
-            recognize_mediainfo_fn=self._recognize_mediainfo,
-            is_tv_fn=self._is_tv_media,
-            schedule_initial_pending_search_fn=self._schedule_initial_pending_search,
+            tmdb_episodes_fn=lambda *args, **kwargs: self._tmdb_episodes(*args, **kwargs),
+            recognize_mediainfo_fn=lambda subscribe: self._recognize_mediainfo(subscribe),
+            is_tv_fn=lambda mediainfo: self._is_tv_media(mediainfo),
+            schedule_initial_pending_search_fn=lambda subscribe: self._schedule_initial_pending_search(subscribe),
             has_active_downloads_fn=lambda sid: bool(
                 download_monitor and download_monitor.has_active_downloads(sid)
             ),
             clear_orphan_completion_observation_fn=self._clear_orphan_completion_observation,
-            clear_tasks_for_pause_fn=lambda subscribe: self._task_manager.clear_tasks_for_pause(
-                subscribe.id,
+            clear_tasks_for_pause_fn=lambda subscribe_id: self._task_manager.clear_tasks_for_pause(
+                subscribe_id,
                 preserve_subscribe_keys=[
                     "pause_reason",
                     "pause_since",
@@ -626,24 +625,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """先恢复增强版持有的订阅状态，再清空全部插件任务数据。"""
         if self._paused_probe_coordinator:
             self._paused_probe_coordinator.stop()
-        recovered_pending = []
-        recovered_paused = []
-        pending_state = self._modules.get("pending_state")
-        if pending_state and self._subscribe_oper:
-            for subscribe in (self._subscribe_oper.list(state="P") or []):
-                if pending_state.clear_all_owned(subscribe, reason="插件任务重置"):
-                    recovered_pending.append(format_subscribe(subscribe))
-        pause_manager = self._modules.get("pause_manager")
-        if pause_manager and self._subscribe_oper:
-            for subscribe in (self._subscribe_oper.list(state="S") or []):
-                record = pause_manager.get_pause_record(subscribe)
-                if record and record.reason in ("pre_air", "airing_gap"):
-                    if pause_manager.resume(subscribe, notify=False):
-                        recovered_paused.append(format_subscribe(subscribe))
-        recovered_count = len(recovered_pending) + len(recovered_paused)
-        if recovered_count:
-            summary = self._format_reset_recovery_summary(recovered_pending, recovered_paused)
-            logger.info(f"重置任务：数据清空前已恢复 {recovered_count} 个订阅状态；{summary}")
+        lifecycle = self._modules.get("lifecycle")
+        result = lifecycle.restore_owned_states_before_reset() if lifecycle else None
+        if result and result.changed:
+            summary = result.message or result.reason
+            logger.info(f"重置任务：数据清空前已恢复订阅状态；{summary}")
             self._notify_subscribe("订阅助手数据重置前已恢复订阅状态", text=summary)
         else:
             logger.info("重置任务：数据清空前未发现需要恢复的订阅状态")
@@ -660,16 +646,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
         ]:
             self.save_data(key, {})
         logger.info("重置任务：已清空全部插件任务数据（订阅、下载任务、完成前观察记录、放行令牌、完成快照、删除指纹、集数变化记录、站点证据、订阅清理记录）")
-
-    @staticmethod
-    def _format_reset_recovery_summary(recovered_pending: List[str], recovered_paused: List[str]) -> str:
-        """生成插件任务数据重置前的订阅状态恢复汇总。"""
-        lines = []
-        if recovered_pending:
-            lines.append(f"已将 {len(recovered_pending)} 个待定订阅恢复为启用：" + "、".join(recovered_pending))
-        if recovered_paused:
-            lines.append(f"已将 {len(recovered_paused)} 个自动暂停订阅恢复为启用：" + "、".join(recovered_paused))
-        return "\n".join(lines)
 
     def _run_backfill_now(self):
         """对现有分集洗版订阅执行一次下载事实回填，并推送扫描结果汇总。"""
@@ -819,156 +795,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return ""
 
     def run_meta_check(self):
-        """元数据检查巡检：对活动订阅周期性复核上映前/播出暂停（双向）与待定（进入/退出）。
-
-        暂停语义：
-        - 标记暂停（no_download / auto_user）在 state=S 时直接跳过，
-          不被上映检查自动恢复、也不重复处理；用户重新启用（state!=S）则清掉插件标记。
-        - 上映/播出类暂停（pre_air / airing_gap）双向：条件成立时暂停，条件解除且当前为 S 时自动恢复。
-        暂停复核优先于待定：满足暂停条件时先写状态并跳过本轮待定；
-        全集洗版只参与上映前暂停复核，不参与播出间隔和待定。
-        """
+        """元数据检查巡检：枚举订阅并委托生命周期协调器处理单订阅状态流转。"""
         if not self._subscribe_oper:
             return
-        cfg = self._config
-        pending_judge = self._modules.get("pending_judge")
-        pending_state = self._modules.get("pending_state")
-        airing = self._modules.get("airing_checker")
-        pause_manager = self._modules.get("pause_manager")
-        download_monitor = self._modules.get("download_monitor")
+        lifecycle = self._modules.get("lifecycle")
         detail("元数据巡检：开始")
         for subscribe in (self._subscribe_oper.list(state="N,R,P,S") or []):
-            full_best_version = is_full_best_version_subscribe(subscribe)
-
-            # 标记暂停必须在媒体识别前处理，避免被上映检查误恢复。
-            record = pause_manager.get_pause_record(subscribe) if pause_manager else None
-            reason = record.reason if record else None
-            flag_paused = reason in ("no_download", "auto_user")
-            state = subscribe.state
-            if flag_paused and state == "S":
-                detail(f"元数据巡检：{format_subscribe(subscribe)} 标记暂停({reason})且为禁用态，本轮跳过")
-                continue
-            if flag_paused and state != "S" and pause_manager:
-                # 用户已重新启用：丢弃插件标记，状态归属交还订阅本身，继续后续上映/待定判定
-                logger.info(f"元数据巡检：{format_subscribe(subscribe)} 用户已重新启用，清除插件暂停标记({reason})")
-                pause_manager.clear_pause_record(subscribe)
-
-            if full_best_version:
-                mediainfo = self._recognize_mediainfo(subscribe)
-                if not mediainfo:
-                    continue
-                # 全集洗版只复核上映前暂停；洗版搜索整季资源，不进入播出间隔和待定流程。
-                if state != "N" and cfg.pause_enhanced_enabled and airing and pause_manager:
-                    episodes = []
-                    if self._is_tv_media(mediainfo):
-                        episodes = self._tmdb_episodes(
-                            subscribe.tmdbid,
-                            subscribe.season,
-                            episode_group=subscribe.episode_group,
-                        )
-                    record_now = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
-                    if record_now:
-                        current_record = pause_manager.get_pause_record(subscribe) if state == "S" else None
-                        if state != "S":
-                            logger.info(f"元数据巡检：{format_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
-                            pause_manager.pause(subscribe, record_now)
-                        elif current_record:
-                            pause_manager.pause(subscribe, record_now, notify=False)
-                        continue
-                    if state == "S":
-                        current_record = pause_manager.get_pause_record(subscribe)
-                        current_reason = current_record.reason if current_record else None
-                        if current_reason != "pre_air":
-                            detail(
-                                f"元数据巡检：{format_subscribe(subscribe)} 全集洗版仅恢复上映前暂停记录，"
-                                f"当前暂停原因={current_reason or '无'}，本轮不恢复"
-                            )
-                            continue
-                        logger.info(f"元数据巡检：{format_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
-                        pause_manager.resume(subscribe)
-                continue
-
-            if pending_state and state == "P":
-                has_active_download = bool(download_monitor and download_monitor.has_active_downloads(subscribe.id))
-                if not has_active_download and not pending_state.has_active(subscribe.id):
-                    if pending_state.reconcile_orphaned(subscribe, reason="无有效待定来源，状态恢复"):
-                        self._clear_orphan_completion_observation(subscribe)
-                        continue
-
-            mediainfo = self._recognize_mediainfo(subscribe)
-            if not mediainfo:
-                continue
-
-            if pending_judge and subscribe.state == "P":
-                # P 状态先尝试由待定域退出；若仍未退出，后续上映/播出暂停可按 S 高优先级覆盖 P。
-                if pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes):
-                    continue
-
-            # 新增态仍处于首次搜索阶段，不做上映/播出暂停，避免冻结还没有机会下载的订阅。
-            check_airing_pause = state != "N"
-
-            # 上映/播出暂停复核（双向）：上映前（电影/剧集）+ 播出间隔（仅剧集）
-            if check_airing_pause and cfg.pause_enhanced_enabled and airing and pause_manager:
-                episodes = []
-                if self._is_tv_media(mediainfo):
-                    episodes = self._tmdb_episodes(
-                        subscribe.tmdbid,
-                        subscribe.season,
-                        episode_group=subscribe.episode_group,
-                    )
-                record_now = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
-                if not record_now and self._is_tv_media(mediainfo):
-                    record_now = airing.check(
-                        subscribe, mediainfo,
-                        next_episode=mediainfo.next_episode_to_air,
-                        latest_episode=last_aired_episode(episodes),
-                        episodes=episodes,
-                    )
-                if record_now:
-                    # 条件成立：交由 PauseManager 统一处理优先级、刷新与待定清理。暂停后本轮不再做待定。
-                    current_record = pause_manager.get_pause_record(subscribe) if state == "S" else None
-                    if state != "S":
-                        logger.info(f"元数据巡检：{format_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
-                        pause_manager.pause(subscribe, record_now)
-                    elif current_record:
-                        pause_manager.pause(subscribe, record_now, notify=False)
-                    continue
-                # 条件解除：仅恢复由上映/播出检查写入的 S 态订阅，避免触碰外部暂停状态。
-                if state == "S":
-                    current_record = pause_manager.get_pause_record(subscribe)
-                    current_reason = current_record.reason if current_record else None
-                    if current_reason not in ("pre_air", "airing_gap"):
-                        detail(f"元数据巡检：{format_subscribe(subscribe)} 非插件上映/播出暂停，本轮不恢复")
-                        continue
-                    if current_reason == "airing_gap":
-                        should_resume = airing.should_resume_airing_gap(
-                            subscribe,
-                            mediainfo,
-                            next_episode=mediainfo.next_episode_to_air,
-                            episodes=episodes if self._is_tv_media(mediainfo) else [],
-                            current_record=current_record,
-                        )
-                        if not should_resume:
-                            detail(f"元数据巡检：{format_subscribe(subscribe)} 播出暂停记录保留，等待明确下一集窗口释放")
-                            continue
-                    logger.info(f"元数据巡检：{format_subscribe(subscribe)} 上映/播出暂停条件解除，恢复订阅")
-                    pause_manager.resume(subscribe)
-
-            # 待定复核：进入/退出
-            if cfg.pending_enhanced_enabled and pending_judge:
-                episodes = self._tmdb_episodes(
-                    subscribe.tmdbid,
-                    subscribe.season,
-                    episode_group=subscribe.episode_group,
-                )
-                should, reason = pending_judge.should_enter_pending(
-                    subscribe, mediainfo, episodes
-                )
-                if should:
-                    logger.info(f"元数据巡检：{format_subscribe(subscribe)} 判定进入待定（{reason}）")
-                    if state == "N":
-                        self._schedule_initial_pending_search(subscribe)
-                    pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
+            if lifecycle:
+                lifecycle.handle_meta_check_subscription(subscribe)
 
     def run_pending_release(self):
         """待定释放巡检：活跃来源走待定判定器，残留观察记录只做清理。
@@ -977,15 +811,14 @@ class SubscribeAssistantEnhanced(_PluginBase):
         guard_veto 退出必须经完成证据流水线复核，孤儿观察记录不参与状态释放。
         """
         detail("待定释放巡检：开始")
-        pending_judge = self._modules.get("pending_judge")
-        download_monitor = self._modules.get("download_monitor")
-        if pending_judge and self._subscribe_oper:
+        lifecycle = self._modules.get("lifecycle")
+        if lifecycle and self._subscribe_oper:
             for subscribe in (self._subscribe_oper.list(state="P") or []):
-                if download_monitor:
-                    download_monitor.has_active_downloads(subscribe.id)
-                mediainfo = self._recognize_mediainfo(subscribe)
-                if mediainfo:
-                    pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes)
+                lifecycle.release_pending_source(
+                    subscribe,
+                    source="pending_judge",
+                    reason="待定释放巡检",
+                )
 
         timeout_manager = self._modules.get("timeout_manager")
         if not timeout_manager or not self._subscribe_oper:
@@ -1010,26 +843,15 @@ class SubscribeAssistantEnhanced(_PluginBase):
             timeout_manager.clear_release_token(int(sid))
 
     def run_pending_state_reconcile(self):
-        """修复增强版任务仍声明 P、但所有待定来源均已丢失的状态残留。
-
-        只有 pending_sources/source 中的活跃来源才代表增强版仍持有 P；孤儿观察记录按残留清理，
-        不阻止无有效来源的 P 恢复。
-        """
-        pending_state = self._modules.get("pending_state")
-        if not pending_state or not self._subscribe_oper:
+        """修复增强版任务仍声明 P、但所有待定来源均已丢失的状态残留。"""
+        lifecycle = self._modules.get("lifecycle")
+        if not lifecycle or not self._subscribe_oper:
             return
-        download_monitor = self._modules.get("download_monitor")
         for subscribe in (self._subscribe_oper.list(state="P") or []):
-            if download_monitor and download_monitor.has_active_downloads(subscribe.id):
-                continue
-            if pending_state.has_active(subscribe.id):
-                continue
-            restored = pending_state.reconcile_orphaned(
+            lifecycle.reconcile_pending(
                 subscribe,
-                reason="无有效待定来源，状态恢复",
+                reason="待定状态一致性检查",
             )
-            if restored:
-                self._clear_orphan_completion_observation(subscribe)
 
     def _clear_orphan_completion_observation(self, subscribe):
         """恢复无活跃 guard_veto 的 P 残留后，清理同订阅完成前观察状态。"""
@@ -1249,8 +1071,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
     def run_no_download_check(self):
         """无下载处理巡检：上映后超期且无下载的订阅按策略暂停、完成或删除。"""
         policy = self._modules.get("no_download_policy")
-        pause_manager = self._modules.get("pause_manager")
-        if not policy or not pause_manager or not self._subscribe_oper:
+        lifecycle = self._modules.get("lifecycle")
+        if not policy or not lifecycle or not self._subscribe_oper:
             return
 
         detail("无下载处理巡检：开始")
@@ -1270,20 +1092,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "
                     f"原因={decision.reason}，处理=暂停订阅"
                 )
-                paused = pause_manager.pause(subscribe, PauseRecord(
-                    reason="no_download",
-                    since=time.time(),
-                    detail=decision.reason,
-                ))
-                if not paused:
+                result = lifecycle.pause_for_no_download(subscribe, decision.reason)
+                if not result.changed:
                     continue
-                self._task_manager.clear_tasks_for_pause(subscribe_id, preserve_subscribe_keys=[
-                    "pause_reason",
-                    "pause_since",
-                    "pause_detail",
-                    "paused_probe_resume_guard_reason",
-                    "paused_probe_resume_guard_until",
-                ])
             elif action == "complete":
                 logger.info(
                     f"无下载处理：{format_subscribe(subscribe)}(id={subscribe_id}) "

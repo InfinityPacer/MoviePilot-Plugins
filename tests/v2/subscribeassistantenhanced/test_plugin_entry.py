@@ -14,6 +14,7 @@ from app.schemas.types import ChainEventType, EventType
 
 import subscribeassistantenhanced as plugin_module
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
+from subscribeassistantenhanced.lifecycle import LifecycleResult
 from subscribeassistantenhanced.shared.config import PluginConfig
 from subscribeassistantenhanced.shared.subscribe import subscribe_from_source
 
@@ -367,18 +368,16 @@ class TestEventRegistration:
 
     def test_plugin_data_reset_event_notifies_recovery_summary_when_notify_enabled(self, monkeypatch):
         """重置前恢复了待定/暂停状态时，按通知开关推送汇总。"""
-        pending_sub = SimpleNamespace(id=1, name="待定剧", season=1, state="P")
-        paused_sub = SimpleNamespace(id=2, name="暂停剧", season=2, state="S")
+        summary = "已将 1 个待定订阅恢复为启用：待定剧 S1\n已将 1 个自动暂停订阅恢复为启用：暂停剧 S2"
         plugin = SubscribeAssistantEnhanced()
         plugin._config = PluginConfig({"notify": True})
-        plugin._subscribe_oper = MagicMock()
-        plugin._subscribe_oper.list.side_effect = [[pending_sub], [paused_sub]]
-        pending_state = MagicMock()
-        pending_state.clear_all_owned.return_value = True
-        pause_manager = MagicMock()
-        pause_manager.get_pause_record.return_value = SimpleNamespace(reason="pre_air")
-        pause_manager.resume.return_value = True
-        plugin._modules = {"pending_state": pending_state, "pause_manager": pause_manager}
+        lifecycle = MagicMock()
+        lifecycle.restore_owned_states_before_reset.return_value = LifecycleResult(
+            changed=True,
+            state="R",
+            message=summary,
+        )
+        plugin._modules = {"lifecycle": lifecycle}
         plugin._notify_subscribe = MagicMock()
         saved = {}
         monkeypatch.setattr(plugin, "save_data", lambda key, value: saved.__setitem__(key, value))
@@ -388,8 +387,7 @@ class TestEventRegistration:
             PluginDataResetEventData(plugin_id="SubscribeAssistantEnhanced", reset_data=True),
         ))
 
-        pending_state.clear_all_owned.assert_called_once_with(pending_sub, reason="插件任务重置")
-        pause_manager.resume.assert_called_once_with(paused_sub, notify=False)
+        lifecycle.restore_owned_states_before_reset.assert_called_once_with()
         plugin._notify_subscribe.assert_called_once()
         kwargs = plugin._notify_subscribe.call_args.kwargs
         assert plugin._notify_subscribe.call_args.args[0] == "订阅助手数据重置前已恢复订阅状态"
@@ -405,9 +403,9 @@ class TestEventRegistration:
         """重置前没有恢复任何状态时只记录日志，不发送通知。"""
         plugin = SubscribeAssistantEnhanced()
         plugin._config = PluginConfig({"notify": True})
-        plugin._subscribe_oper = MagicMock()
-        plugin._subscribe_oper.list.side_effect = [[], []]
-        plugin._modules = {"pending_state": MagicMock(), "pause_manager": MagicMock()}
+        lifecycle = MagicMock()
+        lifecycle.restore_owned_states_before_reset.return_value = LifecycleResult()
+        plugin._modules = {"lifecycle": lifecycle}
         plugin._notify_subscribe = MagicMock()
         logger_info = MagicMock()
         monkeypatch.setattr(plugin_module.logger, "info", logger_info)
@@ -418,6 +416,7 @@ class TestEventRegistration:
             PluginDataResetEventData(plugin_id="SubscribeAssistantEnhanced", reset_data=True),
         ))
 
+        lifecycle.restore_owned_states_before_reset.assert_called_once_with()
         plugin._notify_subscribe.assert_not_called()
         assert any("未发现需要恢复的订阅状态" in call.args[0] for call in logger_info.call_args_list)
 
@@ -425,16 +424,17 @@ class TestEventRegistration:
         """重置任务数据前先失效待执行 probe Timer。"""
         plugin = SubscribeAssistantEnhanced()
         plugin._config = PluginConfig({})
-        plugin._subscribe_oper = MagicMock()
-        plugin._subscribe_oper.list.side_effect = [[], []]
         coordinator = MagicMock()
         plugin._paused_probe_coordinator = coordinator
-        plugin._modules = {"pending_state": MagicMock(), "pause_manager": MagicMock()}
+        lifecycle = MagicMock()
+        lifecycle.restore_owned_states_before_reset.return_value = LifecycleResult()
+        plugin._modules = {"lifecycle": lifecycle}
         monkeypatch.setattr(plugin, "save_data", lambda key, value: None)
 
         plugin._reset_task_data()
 
         coordinator.stop.assert_called_once_with()
+        lifecycle.restore_owned_states_before_reset.assert_called_once_with()
 
     def test_stop_service_stops_paused_probe_coordinator(self):
         """插件停止或热重载时取消待执行 probe Timer。"""
