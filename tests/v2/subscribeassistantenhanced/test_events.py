@@ -1,9 +1,7 @@
 """events.py 事件薄代理单测——顺序和域分发。"""
-from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
-from subscribeassistantenhanced.engine.types import PauseRecord
 from subscribeassistantenhanced.events import EventProxy
 from subscribeassistantenhanced.lifecycle import LifecycleResult
 
@@ -110,77 +108,81 @@ class TestEventOrdering:
 
         assert EventProxy._format_episodes_refresh_label(data) == "镖人 (2023) S1(id=32, tmdbid=325228, scene=refresh)"
 
-    def test_download_added_registers_monitor_and_resumes_paused_subscribe(self):
-        """DownloadAdded → 登记监控数据，并恢复命中下载的暂停订阅。"""
+    def test_download_added_registers_monitor_then_lifecycle_and_notifies_once(self):
+        """DownloadAdded 先登记下载事实，再按 lifecycle 结果发送一次恢复通知。"""
+        call_order = []
         sub = _sub(id=1, state="S")
         oper = MagicMock()
         oper.get.return_value = sub
         monitor = MagicMock()
-        pause_mgr = MagicMock()
-        pause_mgr.get_pause_record.return_value = PauseRecord(reason="no_download", since=1.0, detail="无下载")
-        pause_mgr.resume.return_value = True
-        notify = MagicMock()
+        monitor.on_download.side_effect = lambda *_args, **_kwargs: call_order.append("monitor")
+        lifecycle = MagicMock()
+        lifecycle.handle_download_added_for_subscribe.side_effect = (
+            lambda _subscribe: call_order.append("lifecycle")
+            or LifecycleResult(changed=True, state="R", reason="no_download")
+        )
+        notify = MagicMock(side_effect=lambda *_args, **_kwargs: call_order.append("notify"))
         proxy = EventProxy(
             subscribe_oper=oper,
             download_monitor=monitor,
-            pause_manager=pause_mgr,
+            lifecycle=lifecycle,
             notify_fn=notify,
         )
         proxy.on_download_added(SimpleNamespace(event_data={
             "source": 'Subscribe|{"id": 1}', "hash": "h1", "episodes": [1, 2], "downloader": "qb",
         }))
+        assert call_order == ["monitor", "lifecycle", "notify"]
         monitor.on_download.assert_called_once_with(
             1, "h1", episodes=[1, 2], downloader="qb",
             enclosure=None, page_url=None, title=None, description=None)
-        pause_mgr.resume.assert_called_once_with(sub, notify=False)
-        pause_mgr.clear_probe_fields_for_resume.assert_called_once_with(sub)
-        pause_mgr.set_resume_guard.assert_called_once_with(sub, "no_download", hours=48)
+        lifecycle.handle_download_added_for_subscribe.assert_called_once_with(sub)
         notify.assert_called_once()
         assert "已恢复暂停订阅" in notify.call_args.args[0]
         assert notify.call_args.kwargs["reason"] == "无下载暂停"
         assert notify.call_args.kwargs["follow_up"] == "48小时内不会因同一原因再次自动暂停"
 
-    def test_download_added_adopts_external_before_resume_when_record_missing(self):
-        """暂停订阅没有插件记录时，DownloadAdded 先登记 external 再恢复。"""
+    def test_download_added_external_result_uses_external_notification(self):
+        """外部暂停归属由 lifecycle 处理，事件层只按结果生成外部恢复通知。"""
         sub = _sub(id=1, state="S")
         oper = MagicMock()
         oper.get.return_value = sub
-        pause_mgr = MagicMock()
-        records = [None, PauseRecord(reason="external", since=2.0, detail="外部暂停")]
-        pause_mgr.get_pause_record.side_effect = records
-        pause_mgr.resume.return_value = True
+        lifecycle = MagicMock()
+        lifecycle.handle_download_added_for_subscribe.return_value = LifecycleResult(
+            changed=True,
+            state="R",
+            reason="external",
+        )
         notify = MagicMock()
-        proxy = EventProxy(subscribe_oper=oper, pause_manager=pause_mgr, notify_fn=notify)
+        proxy = EventProxy(subscribe_oper=oper, lifecycle=lifecycle, notify_fn=notify)
 
         proxy.on_download_added(SimpleNamespace(event_data={
             "source": 'Subscribe|{"id": 1}', "hash": "h1",
         }))
 
-        pause_mgr.adopt_external.assert_called_once_with(sub)
-        pause_mgr.resume.assert_called_once_with(sub, notify=False)
-        pause_mgr.set_resume_guard.assert_not_called()
+        lifecycle.handle_download_added_for_subscribe.assert_called_once_with(sub)
         notify.assert_called_once()
         assert "已恢复外部暂停订阅" in notify.call_args.args[0]
         assert notify.call_args.kwargs["follow_up"] == "用户再次手动暂停仍会立即生效"
 
-    def test_download_added_ignores_unresolved_or_non_paused_subscribe_for_resume(self):
-        """source 无法解析、订阅不存在或状态不是 S 时，不恢复、不写 guard、不通知。"""
+    def test_download_added_only_notifies_when_lifecycle_changes(self):
+        """source 无法解析不进 lifecycle；已解析订阅是否恢复由 lifecycle 结果决定。"""
         notify = MagicMock()
-        pause_mgr = MagicMock()
+        lifecycle = MagicMock()
         oper = MagicMock()
         oper.get.return_value = None
-        EventProxy(subscribe_oper=oper, pause_manager=pause_mgr, notify_fn=notify).on_download_added(
+        EventProxy(subscribe_oper=oper, lifecycle=lifecycle, notify_fn=notify).on_download_added(
             SimpleNamespace(event_data={"source": "bad", "hash": "h1"})
         )
-        pause_mgr.resume.assert_not_called()
+        lifecycle.handle_download_added_for_subscribe.assert_not_called()
         notify.assert_not_called()
 
         running = _sub(id=2, state="R")
         oper.get.return_value = running
-        EventProxy(subscribe_oper=oper, pause_manager=pause_mgr, notify_fn=notify).on_download_added(
+        lifecycle.handle_download_added_for_subscribe.return_value = LifecycleResult()
+        EventProxy(subscribe_oper=oper, lifecycle=lifecycle, notify_fn=notify).on_download_added(
             SimpleNamespace(event_data={"source": 'Subscribe|{"id": 2}', "hash": "h2"})
         )
-        pause_mgr.resume.assert_not_called()
+        lifecycle.handle_download_added_for_subscribe.assert_called_once_with(running)
         notify.assert_not_called()
 
     def test_download_added_skips_torrent_index_when_both_download_toggles_disabled(self):
@@ -242,71 +244,46 @@ class TestEventOrdering:
         }))
         tm.clean_torrent_tasks.assert_called_once_with("abc")
 
-    def test_transfer_complete_pauses_running_subscription_after_library_update(self):
-        """订阅下载入库后，当天应立即按播出间隔暂停已进入 R 态的订阅。"""
-        sub = _sub(id=1, state="R", lack_episode=5, note=list(range(31, 88)), total_episode=92)
+    def test_transfer_complete_clears_pending_and_move_tasks_before_lifecycle(self):
+        """TransferComplete 先清下载待定和移动任务，再把媒体库更新交给 lifecycle。"""
+        call_order = []
         tm = MagicMock()
         tm.read.return_value = {"abc": {"subscribe_id": 1}}
-        oper = MagicMock()
-        oper.get.return_value = sub
+        tm.clean_torrent_tasks.side_effect = lambda _hash: call_order.append("clean")
         monitor = MagicMock()
-        pause = MagicMock()
-        airing = MagicMock()
-        airing.check_pre_air.return_value = None
-        next_air_date = (date.today() + timedelta(days=7)).isoformat()
-        record = PauseRecord(reason="airing_gap", detail=f"下一集 {next_air_date}，距今 7 天")
-        airing.check.return_value = record
-        episodes = [SimpleNamespace(air_date=next_air_date, episode_number=88)]
-        mediainfo = _mi(next_episode_to_air=None)
-        tmdb_episodes = MagicMock(return_value=episodes)
+        monitor.clear_download_pending.side_effect = lambda *_args: call_order.append("clear")
+        lifecycle = MagicMock()
+        lifecycle.handle_library_updated.side_effect = lambda _subscribe_id: call_order.append("lifecycle")
         proxy = EventProxy(
             download_monitor=monitor,
             task_manager=tm,
-            subscribe_oper=oper,
-            pause_manager=pause,
-            airing_checker=airing,
-            recognize_mediainfo_fn=MagicMock(return_value=mediainfo),
-            is_tv_fn=lambda _mi: True,
-            tmdb_episodes_fn=tmdb_episodes,
+            lifecycle=lifecycle,
         )
 
         proxy.on_transfer_complete(SimpleNamespace(event_data={
-            "download_hash": "abc", "transferinfo": None,
+            "download_hash": "abc", "transferinfo": SimpleNamespace(transfer_type="move"),
         }))
 
+        assert call_order == ["clear", "clean", "lifecycle"]
         monitor.clear_download_pending.assert_called_once_with(1, "abc")
-        airing.check.assert_called_once_with(
-            sub,
-            mediainfo,
-            next_episode=None,
-            latest_episode=None,
-            episodes=episodes,
-        )
-        pause.pause.assert_called_once_with(sub, record)
+        tm.clean_torrent_tasks.assert_called_once_with("abc")
+        lifecycle.handle_library_updated.assert_called_once_with(1)
 
-    def test_transfer_complete_does_not_pause_new_subscription(self):
-        """订阅仍为 N 态时，入库事件不触发播出暂停。"""
-        sub = _sub(id=1, state="N")
+    def test_transfer_complete_delegates_library_update_state_decision(self):
+        """订阅状态是否需要播出暂停由 lifecycle 判断，事件层只传递订阅 id。"""
         tm = MagicMock()
         tm.read.return_value = {"abc": {"subscribe_id": 1}}
-        oper = MagicMock()
-        oper.get.return_value = sub
-        pause = MagicMock()
-        airing = MagicMock()
+        lifecycle = MagicMock()
         proxy = EventProxy(
             task_manager=tm,
-            subscribe_oper=oper,
-            pause_manager=pause,
-            airing_checker=airing,
-            recognize_mediainfo_fn=MagicMock(return_value=_mi()),
+            lifecycle=lifecycle,
         )
 
         proxy.on_transfer_complete(SimpleNamespace(event_data={
             "download_hash": "abc", "transferinfo": None,
         }))
 
-        airing.check.assert_not_called()
-        pause.pause.assert_not_called()
+        lifecycle.handle_library_updated.assert_called_once_with(1)
 
     def test_non_best_version_mode_label_is_empty(self):
         """普通订阅不应被洗版模式标签误标。"""
