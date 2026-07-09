@@ -71,6 +71,12 @@ class EventProxy:
         subscribe = subscribe_oper.get(subscribe_id) if subscribe_oper else None
         return format_subscribe_label(subscribe, subscribe_id)
 
+    def _schedule_initial_pending_search(self, subscribe):
+        """新增态写入 P 前安排单订阅搜索，避免常规定时服务按 N 态过滤时漏掉首轮搜索。"""
+        schedule_search = self.get("schedule_initial_pending_search_fn")
+        if schedule_search:
+            schedule_search(subscribe)
+
     @staticmethod
     def _format_episodes_refresh_label(data: SubscribeEpisodesRefreshEventData) -> str | None:
         """格式化集数刷新事件来源；订阅不可查或创建场景用媒体信息兜底。"""
@@ -172,8 +178,12 @@ class EventProxy:
         detail(f"订阅新增事件：{format_subscribe(subscribe)}(id={subscribe_id})")
 
         pause_manager = self.get("pause_manager")
+        auto_paused = False
         if pause_manager:
-            pause_manager.check_auto_pause_for_user(subscribe)
+            auto_paused = pause_manager.check_auto_pause_for_user(subscribe) is True
+            if auto_paused:
+                detail(f"订阅新增：{format_subscribe(subscribe)} 已按用户名规则暂停，跳过后续新增态判定")
+                return
 
         priority = self.get("priority_manager")
         if (
@@ -232,6 +242,8 @@ class EventProxy:
             should, reason = pending_judge.should_enter_pending(subscribe, mediainfo, episodes)
             if should:
                 logger.info(f"订阅新增：{format_subscribe(subscribe)} 判定进入待定（{reason}）")
+                if subscribe.state == "N" and not auto_paused:
+                    self._schedule_initial_pending_search(subscribe)
                 pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
                 return
 

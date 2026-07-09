@@ -1446,6 +1446,30 @@ def test_run_meta_check_marks_pending_when_should_enter_pending():
     assert call_args.kwargs.get("source") == "pending_judge"
 
 
+def test_run_meta_check_new_pending_schedules_initial_search_before_pending():
+    """元数据巡检将新增订阅置为待定前，应先安排单订阅搜索。"""
+    sub = _sub(id=4, state="N", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+
+    call_order = []
+    plugin._schedule_initial_pending_search = MagicMock(side_effect=lambda _sub: call_order.append("search"))
+
+    judge = plugin._modules["pending_judge"]
+    judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+    judge.mark_pending = MagicMock(side_effect=lambda *_args, **_kwargs: call_order.append("pending"))
+
+    plugin.run_meta_check()
+
+    plugin._schedule_initial_pending_search.assert_called_once_with(sub)
+    judge.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
+    assert call_order == ["search", "pending"]
+
+
 def test_run_meta_check_check_exit_called_for_p_state_sub():
     """P 状态订阅在巡检中仍先调用 check_exit。"""
     sub = _sub(id=7, state="P", name="X", best_version=0)

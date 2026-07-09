@@ -766,7 +766,7 @@ class TestSubscribeLifecycle:
             sub, [1, 2, 3, 4], scene="plugin_backfill<订阅助手（增强版）>"
         )
 
-    def _added_proxy(self, sub, pending_result, airing_record):
+    def _added_proxy(self, sub, pending_result, airing_record, schedule_search=None):
         oper = MagicMock()
         oper.get.return_value = sub
         pause = MagicMock()
@@ -780,6 +780,7 @@ class TestSubscribeLifecycle:
             mediainfo_from_dict=lambda d: _mi(),
             is_tv_fn=lambda mi: True,
             tmdb_episodes_fn=lambda tmdbid, season, episode_group=None: [],
+            schedule_initial_pending_search_fn=schedule_search,
         )
         return proxy, pause, pending, airing
 
@@ -789,6 +790,54 @@ class TestSubscribeLifecycle:
         proxy, pause, pending, airing = self._added_proxy(sub, (True, "集数不足"), None)
         proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
         pending.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
+        airing.check.assert_not_called()
+
+    def test_added_new_tv_pending_schedules_initial_search_before_pending(self):
+        """新增态进入待定前安排单订阅搜索，避免首轮搜索被状态过滤跳过。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="N")
+        call_order = []
+        schedule_search = MagicMock(side_effect=lambda _sub: call_order.append("search"))
+        proxy, _pause, pending, airing = self._added_proxy(
+            sub, (True, "集数不足"), None, schedule_search=schedule_search
+        )
+        pending.mark_pending.side_effect = lambda *_args, **_kwargs: call_order.append("pending")
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        schedule_search.assert_called_once_with(sub)
+        pending.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
+        assert call_order == ["search", "pending"]
+        airing.check.assert_not_called()
+
+    def test_added_non_new_tv_pending_does_not_schedule_initial_search(self):
+        """非新增态进入待定不安排首轮补搜，避免周期性刷新重复触发搜索。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="R")
+        schedule_search = MagicMock()
+        proxy, _pause, pending, airing = self._added_proxy(
+            sub, (True, "集数不足"), None, schedule_search=schedule_search
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        schedule_search.assert_not_called()
+        pending.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
+        airing.check.assert_not_called()
+
+    def test_added_auto_paused_pending_does_not_schedule_initial_search(self):
+        """用户名规则已暂停的新增订阅不进入待定或首轮补搜。"""
+        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="N")
+        schedule_search = MagicMock()
+        proxy, pause, pending, airing = self._added_proxy(
+            sub, (True, "集数不足"), None, schedule_search=schedule_search
+        )
+        pause.check_auto_pause_for_user.return_value = True
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
+
+        schedule_search.assert_not_called()
+        pending.should_enter_pending.assert_not_called()
+        pending.mark_pending.assert_not_called()
+        airing.check_pre_air.assert_not_called()
         airing.check.assert_not_called()
 
     def test_added_tv_unknown_air_date_pauses_before_pending(self):

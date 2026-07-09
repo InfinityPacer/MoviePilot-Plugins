@@ -439,6 +439,37 @@ class TestEventRegistration:
         coordinator.stop.assert_called_once_with()
         assert plugin._paused_probe_coordinator is None
 
+    def test_initial_pending_search_uses_timer_without_waiting(self, monkeypatch):
+        """新增待定补搜只安排 Timer；测试显式触发回调，不等待真实延迟。"""
+        timers = []
+
+        class FakeTimer:
+            def __init__(self, delay, callback):
+                self.delay = delay
+                self.callback = callback
+                self.started = False
+                timers.append(self)
+
+            def start(self):
+                self.started = True
+
+        monkeypatch.setattr(plugin_module.random, "uniform", lambda _start, _end: 3.25)
+        monkeypatch.setattr(plugin_module.threading, "Timer", FakeTimer)
+        plugin = SubscribeAssistantEnhanced()
+        plugin._subscribe_chain = MagicMock()
+        subscribe = SimpleNamespace(id=42, name="测试剧", season=1)
+
+        delay = plugin._schedule_initial_pending_search(subscribe)
+
+        assert delay == 195
+        assert timers[0].delay == 195
+        assert timers[0].started is True
+        plugin._subscribe_chain.search.assert_not_called()
+
+        timers[0].callback()
+
+        plugin._subscribe_chain.search.assert_called_once_with(sid=42)
+
 
 class TestScheduler:
     """get_service 按域开关声明定时任务。"""

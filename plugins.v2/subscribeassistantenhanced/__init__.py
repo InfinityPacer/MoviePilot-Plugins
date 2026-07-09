@@ -88,7 +88,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.5.11"
+    plugin_version = "0.5.12"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -443,6 +443,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             detect_existing_episodes_fn=self._detect_existing_episodes,
             detect_backfill_episodes_fn=self._detect_backfill_episodes,
             detect_missing_episodes_fn=self._detect_missing_episodes,
+            schedule_initial_pending_search_fn=self._schedule_initial_pending_search,
             resolve_missing_fn=self._resolve_subscribe_missing,
             recognize_mediainfo_fn=self._recognize_mediainfo,
             priority_manager=priority_manager,
@@ -931,6 +932,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 )
                 if should:
                     logger.info(f"元数据巡检：{format_subscribe(subscribe)} 判定进入待定（{reason}）")
+                    if state == "N":
+                        self._schedule_initial_pending_search(subscribe)
                     pending_judge.mark_pending(subscribe, source="pending_judge", reason=reason)
 
     def run_pending_release(self):
@@ -1652,8 +1655,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return None
         return bool(torrents)
 
-    def _search_subscribe(self, subscribe):
-        """删种后随机延迟 3-5 分钟补搜，并返回实际延迟秒数供通知展示。"""
+    def _schedule_delayed_subscribe_search(self, subscribe, scene: str):
+        """随机延迟执行单订阅搜索，并返回实际延迟秒数供调用方展示。"""
         if not self._subscribe_chain or not subscribe:
             return None
         sid = subscribe.id
@@ -1661,11 +1664,19 @@ class SubscribeAssistantEnhanced(_PluginBase):
             delay_minutes = random.uniform(3, 5)
             delay_seconds = delay_minutes * 60
             logger.info(
-                f"种子删除处理：{format_subscribe(subscribe)} 将在 {delay_minutes:.2f} 分钟后触发补全搜索"
+                f"{scene}：{format_subscribe(subscribe)} 将在 {delay_minutes:.2f} 分钟后触发补全搜索"
             )
             threading.Timer(delay_seconds, lambda: self._subscribe_chain.search(sid=sid)).start()
             return delay_seconds
         return None
+
+    def _search_subscribe(self, subscribe):
+        """删种后随机延迟补搜，并返回实际延迟秒数供通知展示。"""
+        return self._schedule_delayed_subscribe_search(subscribe, scene="种子删除处理")
+
+    def _schedule_initial_pending_search(self, subscribe):
+        """新增订阅进入待定前安排一次单订阅搜索。"""
+        return self._schedule_delayed_subscribe_search(subscribe, scene="新增待定处理")
 
     def _get_transfer_histories(self, tmdbid, mtype, season=None, episode=None):
         """按 tmdbid/类型/季/集获取整理历史记录，供订阅清理定位旧文件。"""
