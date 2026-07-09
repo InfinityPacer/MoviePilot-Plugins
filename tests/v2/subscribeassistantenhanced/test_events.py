@@ -3,9 +3,9 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
-from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
+from subscribeassistantenhanced.engine.types import PauseRecord
 from subscribeassistantenhanced.events import EventProxy
-from subscribeassistantenhanced.pause.airing import AiringPauseChecker
+from subscribeassistantenhanced.lifecycle import LifecycleResult
 
 
 def _sub(**kwargs):
@@ -35,14 +35,6 @@ def _mi(**kwargs):
     defaults = dict(type="tv", next_episode_to_air=None, release_date=None, first_air_date=None)
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
-
-
-def _pipeline(signal=None):
-    """构造只返回 primary_signal 的完成证据流水线替身。"""
-    signal = signal or CompletionSignal()
-    return SimpleNamespace(
-        evaluate=MagicMock(return_value=CompletionEvidence(primary_signal=signal))
-    )
 
 
 class TestEventOrdering:
@@ -518,44 +510,48 @@ class TestSubscribeLifecycle:
         proxy.on_subscribe_deleted(SimpleNamespace(event_data={}))
         tm.clear_tasks.assert_not_called()
 
-    def test_modified_state_change_clears_pause(self):
-        pause = MagicMock()
+    def test_modified_state_change_delegates_pause_record_cleanup(self):
+        lifecycle = MagicMock()
         sub = _sub(id=9)
         oper = MagicMock()
         oper.get.return_value = sub
-        proxy = EventProxy(pause_manager=pause, subscribe_oper=oper)
+        proxy = EventProxy(lifecycle=lifecycle, subscribe_oper=oper)
         proxy.on_subscribe_modified(SimpleNamespace(event_data={
             "subscribe_id": 9,
             "subscribe_info": {"state": "R"},
             "old_subscribe_info": {"state": "S"},
         }))
-        pause.clear_pause_record.assert_called_once_with(sub)
+        lifecycle.handle_subscribe_modified_state_change.assert_called_once_with(
+            sub, old_state="S", new_state="R"
+        )
 
-    def test_modified_to_paused_adopts_external_when_no_pause_record(self):
-        """非 S → S 且无插件暂停记录时登记 external。"""
-        pause = MagicMock()
-        pause.get_pause_record.return_value = None
+    def test_modified_to_paused_delegates_external_ownership(self):
+        """非 S → S 的外部暂停归属由 lifecycle 统一处理。"""
+        lifecycle = MagicMock()
         sub = _sub(id=9, state="S")
         oper = MagicMock()
         oper.get.return_value = sub
-        proxy = EventProxy(pause_manager=pause, subscribe_oper=oper)
+        proxy = EventProxy(lifecycle=lifecycle, subscribe_oper=oper)
         proxy.on_subscribe_modified(SimpleNamespace(event_data={
             "subscribe_id": 9,
             "subscribe_info": {"state": "S"},
             "old_subscribe_info": {"state": "R"},
         }))
-        pause.adopt_external.assert_called_once_with(sub)
+        lifecycle.handle_subscribe_modified_state_change.assert_called_once_with(
+            sub, old_state="R", new_state="S"
+        )
 
     def test_modified_without_state_change_noop(self):
-        pause = MagicMock()
+        lifecycle = MagicMock()
         oper = MagicMock()
-        proxy = EventProxy(pause_manager=pause, subscribe_oper=oper)
+        oper.get.return_value = _sub(id=9)
+        proxy = EventProxy(lifecycle=lifecycle, subscribe_oper=oper)
         proxy.on_subscribe_modified(SimpleNamespace(event_data={
             "subscribe_id": 9,
             "subscribe_info": {"name": "X", "state": "R"},
             "old_subscribe_info": {"name": "Y", "state": "R"},
         }))
-        pause.clear_pause_record.assert_not_called()
+        lifecycle.handle_subscribe_modified_state_change.assert_not_called()
 
     def test_modified_convert_to_best_version_backfills(self):
         """普通转洗版（best_version 假→真）→ 媒体库已有集回填 priority=100。"""
@@ -714,401 +710,69 @@ class TestSubscribeLifecycle:
 
         priority.backfill_existing.assert_not_called()
 
-    def test_added_runs_user_auto_pause(self):
-        """SubscribeAdded → 按 subscribe_id 查库后跑用户名自动暂停。"""
+    def test_added_delegates_lifecycle_after_loading_mediainfo(self):
+        """SubscribeAdded 事件层只保留取数职责，状态流转委托 lifecycle。"""
         sub = _sub(id=7)
         oper = MagicMock()
         oper.get.return_value = sub
-        pause = MagicMock()
-        proxy = EventProxy(subscribe_oper=oper, pause_manager=pause)
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7}))
-        pause.check_auto_pause_for_user.assert_called_once_with(sub)
-
-    def test_added_full_best_version_skips_backfill_detection(self):
-        """新增全集洗版订阅不探测媒体库已有集。"""
-        sub = _sub(id=7, best_version=1, best_version_full=1)
-        oper = MagicMock()
-        oper.get.return_value = sub
-        priority = MagicMock()
-        priority.can_backfill.return_value = False
-        detect_existing = MagicMock(return_value=[1, 2, 3])
+        lifecycle = MagicMock()
+        mediainfo = _mi()
         proxy = EventProxy(
             subscribe_oper=oper,
-            priority_manager=priority,
-            detect_existing_episodes_fn=detect_existing,
-            backfill_enabled=True,
+            lifecycle=lifecycle,
+            mediainfo_from_dict=lambda _data: mediainfo,
         )
 
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7}))
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
 
-        detect_existing.assert_not_called()
-        priority.backfill_existing.assert_not_called()
+        lifecycle.handle_subscribe_added.assert_called_once_with(sub, mediainfo)
+
+    def test_added_missing_mediainfo_skips_lifecycle(self):
+        """SubscribeAdded 无媒体信息时不进入生命周期判定。"""
+        sub = _sub(id=7)
+        oper = MagicMock()
+        oper.get.return_value = sub
+        lifecycle = MagicMock()
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            lifecycle=lifecycle,
+            mediainfo_from_dict=lambda _data: None,
+        )
+
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": None}))
+
+        lifecycle.handle_subscribe_added.assert_not_called()
 
     def test_added_backfill_uses_backfill_candidates(self):
-        """新增洗版订阅回填使用 note + 媒体库候选，覆盖 start_episode 前已下载集。"""
+        """新增洗版订阅回填使用 note + 媒体库候选，并先于 lifecycle。"""
+        call_order = []
         sub = _sub(id=7, best_version=1, best_version_full=0, start_episode=2, note=[1, 2, 3, 4])
         oper = MagicMock()
         oper.get.return_value = sub
         priority = MagicMock()
         priority.can_backfill.return_value = True
+        priority.backfill_existing.side_effect = lambda *_args, **_kwargs: call_order.append("backfill")
         detect_backfill = MagicMock(return_value=[1, 2, 3, 4])
+        lifecycle = MagicMock()
+        lifecycle.handle_subscribe_added.side_effect = lambda *_args, **_kwargs: call_order.append("lifecycle")
+        mediainfo = _mi()
         proxy = EventProxy(
             subscribe_oper=oper,
             priority_manager=priority,
             detect_backfill_episodes_fn=detect_backfill,
             backfill_enabled=True,
+            lifecycle=lifecycle,
+            mediainfo_from_dict=lambda _data: mediainfo,
         )
 
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7}))
+        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
 
         detect_backfill.assert_called_once_with(sub)
         priority.backfill_existing.assert_called_once_with(
             sub, [1, 2, 3, 4], scene="plugin_backfill<订阅助手（增强版）>"
         )
-
-    def _added_proxy(self, sub, pending_result, airing_record, schedule_search=None):
-        oper = MagicMock()
-        oper.get.return_value = sub
-        pause = MagicMock()
-        pending = MagicMock()
-        pending.should_enter_pending.return_value = pending_result
-        airing = MagicMock()
-        airing.check_pre_air.return_value = None
-        airing.check.return_value = airing_record
-        proxy = EventProxy(
-            subscribe_oper=oper, pause_manager=pause, pending_judge=pending, airing_checker=airing,
-            mediainfo_from_dict=lambda d: _mi(),
-            is_tv_fn=lambda mi: True,
-            tmdb_episodes_fn=lambda tmdbid, season, episode_group=None: [],
-            schedule_initial_pending_search_fn=schedule_search,
-        )
-        return proxy, pause, pending, airing
-
-    def test_added_tv_pending_enters_pending(self):
-        """剧集待定命中 → mark_pending，不再播出暂停。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
-        proxy, pause, pending, airing = self._added_proxy(sub, (True, "集数不足"), None)
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-        pending.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
-        airing.check.assert_not_called()
-
-    def test_added_new_tv_pending_schedules_initial_search_before_pending(self):
-        """新增态进入待定前安排单订阅搜索，避免首轮搜索被状态过滤跳过。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="N")
-        call_order = []
-        schedule_search = MagicMock(side_effect=lambda _sub: call_order.append("search"))
-        proxy, _pause, pending, airing = self._added_proxy(
-            sub, (True, "集数不足"), None, schedule_search=schedule_search
-        )
-        pending.mark_pending.side_effect = lambda *_args, **_kwargs: call_order.append("pending")
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        schedule_search.assert_called_once_with(sub)
-        pending.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
-        assert call_order == ["search", "pending"]
-        airing.check.assert_not_called()
-
-    def test_added_non_new_tv_pending_does_not_schedule_initial_search(self):
-        """非新增态进入待定不安排首轮补搜，避免周期性刷新重复触发搜索。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="R")
-        schedule_search = MagicMock()
-        proxy, _pause, pending, airing = self._added_proxy(
-            sub, (True, "集数不足"), None, schedule_search=schedule_search
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        schedule_search.assert_not_called()
-        pending.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
-        airing.check.assert_not_called()
-
-    def test_added_auto_paused_pending_does_not_schedule_initial_search(self):
-        """用户名规则已暂停的新增订阅不进入待定或首轮补搜。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="N")
-        schedule_search = MagicMock()
-        proxy, pause, pending, airing = self._added_proxy(
-            sub, (True, "集数不足"), None, schedule_search=schedule_search
-        )
-        pause.check_auto_pause_for_user.return_value = True
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        schedule_search.assert_not_called()
-        pending.should_enter_pending.assert_not_called()
-        pending.mark_pending.assert_not_called()
-        airing.check_pre_air.assert_not_called()
-        airing.check.assert_not_called()
-
-    def test_added_tv_unknown_air_date_pauses_before_pending(self):
-        """剧集完全缺少开播排期时先暂停，不被集数不足待定接管。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
-        oper = MagicMock()
-        oper.get.return_value = sub
-        pause = MagicMock()
-        pending = MagicMock()
-        pending.should_enter_pending.return_value = (True, "集数不足")
-        airing = AiringPauseChecker(
-            pause_days=14,
-            evidence_pipeline=_pipeline(),
-            tv_air_days=5,
-        )
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pause_manager=pause,
-            pending_judge=pending,
-            airing_checker=airing,
-            mediainfo_from_dict=lambda _data: _mi(season_info=[], first_air_date=None),
-            is_tv_fn=lambda _mi: True,
-            tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: [
-                SimpleNamespace(air_date=None, episode_number=1)
-            ],
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        pause.pause.assert_called_once()
-        record = pause.pause.call_args.args[1]
-        assert record.reason == "pre_air"
-        assert record.detail == "开播日期未知"
-        pending.should_enter_pending.assert_not_called()
-        pending.mark_pending.assert_not_called()
-
-    def test_added_uses_episode_group_scope(self):
-        """新增订阅评估待定时必须按订阅 episode_group 查询集列表。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, episode_group="eg-1")
-        oper = MagicMock()
-        oper.get.return_value = sub
-        tmdb_episodes = MagicMock(return_value=[])
-        pending = MagicMock()
-        pending.should_enter_pending.return_value = (False, "")
-        airing = MagicMock()
-        airing.check_pre_air.return_value = None
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pending_judge=pending,
-            airing_checker=airing,
-            pause_manager=MagicMock(),
-            mediainfo_from_dict=lambda _data: _mi(),
-            is_tv_fn=lambda _mi: True,
-            tmdb_episodes_fn=tmdb_episodes,
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        tmdb_episodes.assert_called_once_with(100, 1, episode_group="eg-1")
-
-    def test_added_without_is_tv_fn_keeps_legacy_tv_scope_lookup(self):
-        """直接构造 EventProxy 未注入媒体类型判断时，仍按旧 TV 流程查询分集。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, episode_group="eg-1")
-        oper = MagicMock()
-        oper.get.return_value = sub
-        tmdb_episodes = MagicMock(return_value=[])
-        pending = MagicMock()
-        pending.should_enter_pending.return_value = (False, "")
-        airing = MagicMock()
-        airing.check_pre_air.return_value = None
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pending_judge=pending,
-            airing_checker=airing,
-            pause_manager=MagicMock(),
-            mediainfo_from_dict=lambda _data: _mi(),
-            tmdb_episodes_fn=tmdb_episodes,
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        tmdb_episodes.assert_called_once_with(100, 1, episode_group="eg-1")
-        assert airing.check_pre_air.call_args.args[0] is sub
-        assert airing.check_pre_air.call_args.kwargs["episodes"] == []
-
-    def test_added_non_tv_skips_tv_scope_lookup_and_pending_flow(self):
-        """明确识别为非剧集时只做上映前暂停，不查询 TV 分集或进入待定流程。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, type="电影")
-        oper = MagicMock()
-        oper.get.return_value = sub
-        tmdb_episodes = MagicMock()
-        pending = MagicMock()
-        airing = MagicMock()
-        airing.check_pre_air.return_value = None
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pending_judge=pending,
-            airing_checker=airing,
-            pause_manager=MagicMock(),
-            mediainfo_from_dict=lambda _data: _mi(type="movie"),
-            is_tv_fn=lambda _mi: False,
-            tmdb_episodes_fn=tmdb_episodes,
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        tmdb_episodes.assert_not_called()
-        airing.check_pre_air.assert_called_once_with(sub, _mi(type="movie"), episodes=[])
-        pending.should_enter_pending.assert_not_called()
-
-    def test_added_new_subscription_does_not_airing_pause_when_not_pending(self):
-        """新增订阅仍为 N 态时不做播出暂停，需等首轮搜索后进入 R 态。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1, state="N")
-        record = object()
-        oper = MagicMock()
-        oper.get.return_value = sub
-        pause = MagicMock()
-        pending = MagicMock()
-        pending.should_enter_pending.return_value = (False, "")
-        airing = MagicMock()
-        airing.check_pre_air.return_value = None
-        airing.check.return_value = record
-        episodes = [SimpleNamespace(air_date="2026-06-21", episode_number=12)]
-        mediainfo = _mi(next_episode_to_air=None)
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pause_manager=pause,
-            pending_judge=pending,
-            airing_checker=airing,
-            mediainfo_from_dict=lambda _data: mediainfo,
-            is_tv_fn=lambda _mi: True,
-            tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: episodes,
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        pending.mark_pending.assert_not_called()
-        airing.check.assert_not_called()
-        pause.pause.assert_not_called()
-
-    def test_added_history_season_without_next_episode_does_not_pause_by_latest_air_date(self):
-        """新增历史季订阅没有下一集信息时，不按最后已播日期直接暂停。"""
-        sub = _sub(id=7, best_version=0, tmdbid=100, season=1)
-        oper = MagicMock()
-        oper.get.return_value = sub
-        pause = MagicMock()
-        pending = MagicMock()
-        pending.should_enter_pending.return_value = (False, "")
-        airing = AiringPauseChecker(
-            pause_days=14,
-            evidence_pipeline=_pipeline(),
-        )
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pause_manager=pause,
-            pending_judge=pending,
-            airing_checker=airing,
-            mediainfo_from_dict=lambda _data: _mi(next_episode_to_air=None),
-            is_tv_fn=lambda _mi: True,
-            tmdb_episodes_fn=lambda tmdbid, season, episode_group=None: [
-                SimpleNamespace(air_date="2000-01-01", episode_number=15)
-            ],
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        pending.mark_pending.assert_not_called()
-        pause.pause.assert_not_called()
-
-    def test_added_full_best_version_pauses_when_pre_air_condition_holds(self):
-        """全集洗版新增订阅支持上映前暂停。"""
-        record = PauseRecord(reason="pre_air", detail="未上映")
-        sub = _sub(id=7, best_version=1, best_version_full=1)
-        proxy, pause, pending, airing = self._added_proxy(sub, (True, "集数不足"), None)
-        airing.check_pre_air.return_value = record
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        airing.check_pre_air.assert_called_once()
-        pause.pause.assert_called_once_with(sub, record)
-        pending.should_enter_pending.assert_not_called()
-        airing.check.assert_not_called()
-
-    def test_added_full_best_version_keeps_auto_user_marker_when_pre_air_also_matches(self):
-        """全集洗版同时命中用户名和上映前暂停时，保留不会自动恢复的用户名暂停。"""
-        from subscribeassistantenhanced.pause.manager import PauseManager
-
-        store = {}
-        sub = _sub(id=7, username="testuser", best_version=1, best_version_full=1)
-        oper = MagicMock()
-        oper.get.return_value = sub
-        pause = PauseManager(
-            task_data_read=lambda key: store.get(key, {}),
-            task_data_update=lambda key, updater: store.__setitem__(key, updater(store.get(key, {}))),
-            subscribe_oper=oper,
-            auto_pause_users=["testuser"],
-        )
-        airing = MagicMock()
-        airing.check_pre_air.return_value = PauseRecord(reason="pre_air", detail="未上映")
-        pending = MagicMock()
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pause_manager=pause,
-            pending_judge=pending,
-            airing_checker=airing,
-            mediainfo_from_dict=lambda _data: _mi(),
-            is_tv_fn=lambda _mi: True,
-            tmdb_episodes_fn=lambda _tmdbid, _season, episode_group=None: [],
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        assert store["subscribes"]["7"]["pause_reason"] == "auto_user"
-        pending.should_enter_pending.assert_not_called()
-        airing.check.assert_not_called()
-
-    def test_added_full_best_version_without_pre_air_skips_pending_and_airing_gap(self):
-        """全集洗版未命中上映前暂停时，不进入待定和播出间隔暂停。"""
-        sub = _sub(id=7, best_version=1, best_version_full=1)
-        proxy, pause, pending, airing = self._added_proxy(sub, (True, "集数不足"), object())
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        airing.check_pre_air.assert_called_once()
-        pending.should_enter_pending.assert_not_called()
-        airing.check.assert_not_called()
-        pause.pause.assert_not_called()
-        pause.check_auto_pause_for_user.assert_called_once_with(sub)
-
-    def test_added_movie_best_version_pauses_when_pre_air_condition_holds(self):
-        """电影洗版新增订阅有媒体信息时支持上映前暂停。"""
-        record = PauseRecord(reason="pre_air", detail="未上映")
-        sub = _sub(id=7, type="电影", season=None, best_version=1, best_version_full=0)
-        oper = MagicMock()
-        oper.get.return_value = sub
-        pause = MagicMock()
-        pending = MagicMock()
-        airing = MagicMock()
-        airing.check_pre_air.return_value = record
-        tmdb_episodes = MagicMock(return_value=[])
-        proxy = EventProxy(
-            subscribe_oper=oper,
-            pause_manager=pause,
-            pending_judge=pending,
-            airing_checker=airing,
-            mediainfo_from_dict=lambda _data: _mi(type="movie"),
-            is_tv_fn=lambda _mi: False,
-            tmdb_episodes_fn=tmdb_episodes,
-        )
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        tmdb_episodes.assert_not_called()
-        airing.check_pre_air.assert_called_once_with(sub, _mi(type="movie"), episodes=[])
-        pause.pause.assert_called_once_with(sub, record)
-        pending.should_enter_pending.assert_not_called()
-        airing.check.assert_not_called()
-
-    def test_added_episode_best_version_uses_same_pending_flow(self):
-        """分集洗版使用按集订阅的待定判定流程。"""
-        sub = _sub(id=7, best_version=1, best_version_full=0)
-        proxy, _pause, pending, _airing = self._added_proxy(sub, (True, "集数不足"), None)
-
-        proxy.on_subscribe_added(SimpleNamespace(event_data={"subscribe_id": 7, "mediainfo": {"x": 1}}))
-
-        pending.should_enter_pending.assert_called_once()
-        pending.mark_pending.assert_called_once_with(
-            sub,
-            source="pending_judge",
-            reason="集数不足",
-        )
+        lifecycle.handle_subscribe_added.assert_called_once_with(sub, mediainfo)
+        assert call_order == ["backfill", "lifecycle"]
 
     def test_complete_clears_tasks_and_snapshots(self):
         """SubscribeComplete → 先保存 H 快照再清实例数据，避免历史被清理丢失。"""
@@ -1196,39 +860,53 @@ class TestPluginActionToggle:
         return SimpleNamespace(event_data=data)
 
     @staticmethod
-    def _assert_state_update(oper, subscribe_id: int, state: str):
-        """断言真实订阅状态更新只写入状态字段。"""
-        oper.update.assert_called_once()
-        assert oper.update.call_args.args[0] == subscribe_id
-        payload = oper.update.call_args.args[1]
-        assert payload["state"] == state
-        assert "last_update" not in payload
+    def _oper_with_subscribe(sub):
+        """构造只返回一个订阅的订阅表替身。"""
+        oper = MagicMock()
+        oper.list.return_value = [sub]
+        return oper
 
     def test_toggle_single_match_enables(self):
         sub = _sub(id=3, name="X", state="S")
-        oper = MagicMock()
-        oper.list.return_value = [sub]
+        oper = self._oper_with_subscribe(sub)
+        lifecycle = MagicMock()
+        lifecycle.toggle_subscribe_by_user_command.return_value = LifecycleResult(changed=True, state="R")
         msgs = []
-        proxy = EventProxy(subscribe_oper=oper, post_message=lambda **kw: msgs.append(kw))
+        proxy = EventProxy(subscribe_oper=oper, lifecycle=lifecycle, post_message=lambda **kw: msgs.append(kw))
         proxy.on_plugin_action(self._event(arg_str="3"))
-        self._assert_state_update(oper, 3, "R")
+        lifecycle.toggle_subscribe_by_user_command.assert_called_once_with(sub)
+        oper.update.assert_not_called()
         assert msgs and "启用" in msgs[0]["title"]
 
     def test_toggle_single_match_disables(self):
         sub = _sub(id=3, name="X", state="R")
-        oper = MagicMock()
-        oper.list.return_value = [sub]
-        proxy = EventProxy(subscribe_oper=oper, post_message=lambda **kw: None)
+        oper = self._oper_with_subscribe(sub)
+        lifecycle = MagicMock()
+        lifecycle.toggle_subscribe_by_user_command.return_value = LifecycleResult(changed=True, state="S")
+        proxy = EventProxy(subscribe_oper=oper, lifecycle=lifecycle, post_message=lambda **kw: None)
         proxy.on_plugin_action(self._event(arg_str="3"))
-        self._assert_state_update(oper, 3, "S")
+        lifecycle.toggle_subscribe_by_user_command.assert_called_once_with(sub)
+        oper.update.assert_not_called()
 
     def test_toggle_by_name(self):
         sub = _sub(id=3, name="剧名", state="R")
-        oper = MagicMock()
-        oper.list.return_value = [sub]
-        proxy = EventProxy(subscribe_oper=oper, post_message=lambda **kw: None)
+        oper = self._oper_with_subscribe(sub)
+        lifecycle = MagicMock()
+        lifecycle.toggle_subscribe_by_user_command.return_value = LifecycleResult(changed=True, state="S")
+        proxy = EventProxy(subscribe_oper=oper, lifecycle=lifecycle, post_message=lambda **kw: None)
         proxy.on_plugin_action(self._event(arg_str="剧名"))
-        self._assert_state_update(oper, 3, "S")
+        lifecycle.toggle_subscribe_by_user_command.assert_called_once_with(sub)
+        oper.update.assert_not_called()
+
+    def test_toggle_without_lifecycle_notifies_without_update(self):
+        """生命周期未注入时不直接写状态，避免事件层重新成为状态 owner。"""
+        sub = _sub(id=3, name="X", state="R")
+        oper = self._oper_with_subscribe(sub)
+        msgs = []
+        proxy = EventProxy(subscribe_oper=oper, post_message=lambda **kw: msgs.append(kw))
+        proxy.on_plugin_action(self._event(arg_str="3"))
+        oper.update.assert_not_called()
+        assert msgs and "生命周期未就绪" in msgs[0]["title"]
 
     def test_no_match_notifies_without_update(self):
         oper = MagicMock()

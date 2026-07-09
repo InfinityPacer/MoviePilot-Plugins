@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from subscribeassistantenhanced.engine.types import PauseRecord
 from subscribeassistantenhanced.lifecycle import LifecycleResult, SubscribeLifecycleCoordinator
 
 
@@ -31,10 +32,21 @@ def fake_lifecycle():
     pending_state.has_active.return_value = False
 
     pause_manager = MagicMock()
+    pause_manager.check_auto_pause_for_user.return_value = False
     pause_manager.pause.return_value = True
     pause_manager.resume.return_value = True
     pause_manager.adopt_external.return_value = True
     pause_manager.get_pause_record.return_value = SimpleNamespace(reason="external")
+
+    airing = MagicMock()
+    airing.check_pre_air.return_value = None
+    airing.check.return_value = None
+
+    def tmdb_episodes_side_effect(_tmdbid, _season, episode_group=None):
+        calls.append("episodes")
+        return []
+
+    tmdb_episodes = MagicMock(side_effect=tmdb_episodes_side_effect)
 
     coordinator = SubscribeLifecycleCoordinator(
         config=MagicMock(),
@@ -42,6 +54,9 @@ def fake_lifecycle():
         pause_manager=pause_manager,
         pending_judge=pending_judge,
         pending_state=pending_state,
+        airing_checker=airing,
+        tmdb_episodes_fn=tmdb_episodes,
+        is_tv_fn=lambda _mediainfo: True,
         schedule_initial_pending_search_fn=lambda subscribe: calls.append(f"schedule_search:{subscribe.id}"),
     )
     return SimpleNamespace(
@@ -49,6 +64,8 @@ def fake_lifecycle():
         pending_judge=pending_judge,
         pending_state=pending_state,
         pause_manager=pause_manager,
+        airing=airing,
+        tmdb_episodes=tmdb_episodes,
         calls=calls,
     )
 
@@ -74,6 +91,110 @@ def test_pending_from_judge_schedules_search_before_pending_for_new_subscribe(fa
     assert fake_lifecycle.calls == ["schedule_search:1", "mark_pending:pending_judge:开播日期未知"]
 
 
+def test_subscribe_added_auto_user_pause_stops_lifecycle(fake_lifecycle):
+    fake_lifecycle.pause_manager.check_auto_pause_for_user.return_value = True
+    subscribe = SimpleNamespace(id=10, state="N", best_version=False)
+
+    result = fake_lifecycle.coordinator.handle_subscribe_added(subscribe, object())
+
+    assert result.stopped is True
+    assert result.state == "S"
+    fake_lifecycle.pending_judge.should_enter_pending.assert_not_called()
+
+
+def test_subscribe_added_pre_air_stops_before_pending(fake_lifecycle):
+    subscribe = SimpleNamespace(id=11, state="N", best_version=False, tmdbid=100, season=1, episode_group=None)
+    record = PauseRecord(reason="pre_air", since=1.0, detail="开播日期未知")
+    fake_lifecycle.airing.check_pre_air.return_value = record
+
+    result = fake_lifecycle.coordinator.handle_subscribe_added(subscribe, object())
+
+    assert result.stopped is True
+    assert result.state == "S"
+    fake_lifecycle.pause_manager.pause.assert_called_once_with(subscribe, record)
+    fake_lifecycle.pending_judge.should_enter_pending.assert_not_called()
+
+
+def test_subscribe_added_pending_for_new_state_schedules_search_once(fake_lifecycle):
+    subscribe = SimpleNamespace(id=12, state="N", best_version=False, tmdbid=100, season=1, episode_group=None)
+    fake_lifecycle.pending_judge.should_enter_pending.return_value = (True, "开播日期未知")
+
+    result = fake_lifecycle.coordinator.handle_subscribe_added(subscribe, object())
+
+    assert result.state == "P"
+    assert fake_lifecycle.calls == ["episodes", "schedule_search:12", "mark_pending:pending_judge:开播日期未知"]
+
+
+def test_subscribe_added_uses_episode_group_scope(fake_lifecycle):
+    subscribe = SimpleNamespace(id=13, state="R", best_version=False, tmdbid=100, season=1, episode_group="eg-1")
+    fake_lifecycle.pending_judge.should_enter_pending.return_value = (False, "")
+
+    fake_lifecycle.coordinator.handle_subscribe_added(subscribe, SimpleNamespace(next_episode_to_air=None))
+
+    fake_lifecycle.tmdb_episodes.assert_called_once_with(100, 1, episode_group="eg-1")
+
+
+def test_subscribe_added_non_tv_skips_tv_pending_flow(fake_lifecycle):
+    subscribe = SimpleNamespace(id=14, state="R", best_version=False, tmdbid=100, season=1, episode_group=None)
+    fake_lifecycle.coordinator._is_tv = lambda _mediainfo: False
+
+    result = fake_lifecycle.coordinator.handle_subscribe_added(subscribe, SimpleNamespace(next_episode_to_air=None))
+
+    assert result.changed is False
+    fake_lifecycle.tmdb_episodes.assert_not_called()
+    fake_lifecycle.pending_judge.should_enter_pending.assert_not_called()
+    fake_lifecycle.airing.check_pre_air.assert_called_once_with(
+        subscribe, SimpleNamespace(next_episode_to_air=None), episodes=[]
+    )
+
+
+def test_subscribe_added_new_subscription_skips_airing_gap_when_not_pending(fake_lifecycle):
+    subscribe = SimpleNamespace(id=15, state="N", best_version=False, tmdbid=100, season=1, episode_group=None)
+    fake_lifecycle.pending_judge.should_enter_pending.return_value = (False, "")
+    fake_lifecycle.airing.check.return_value = PauseRecord(reason="airing_gap", detail="下一集距今 7 天")
+
+    result = fake_lifecycle.coordinator.handle_subscribe_added(
+        subscribe, SimpleNamespace(next_episode_to_air=None)
+    )
+
+    assert result.state == "N"
+    fake_lifecycle.airing.check.assert_not_called()
+    fake_lifecycle.pause_manager.pause.assert_not_called()
+
+
+def test_subscribe_added_running_subscription_pauses_after_library_update(fake_lifecycle):
+    subscribe = SimpleNamespace(id=16, state="R", best_version=False, tmdbid=100, season=1, episode_group=None)
+    fake_lifecycle.pending_judge.should_enter_pending.return_value = (False, "")
+    record = PauseRecord(reason="airing_gap", detail="下一集距今 7 天")
+    fake_lifecycle.airing.check.return_value = record
+    mediainfo = SimpleNamespace(next_episode_to_air=None)
+
+    result = fake_lifecycle.coordinator.handle_subscribe_added(subscribe, mediainfo)
+
+    assert result.changed is True
+    assert result.state == "S"
+    fake_lifecycle.airing.check.assert_called_once_with(
+        subscribe,
+        mediainfo,
+        next_episode=None,
+        latest_episode=None,
+        episodes=[],
+    )
+    fake_lifecycle.pause_manager.pause.assert_called_once_with(subscribe, record)
+
+
+def test_subscribe_added_full_best_version_stops_before_pending(fake_lifecycle):
+    subscribe = SimpleNamespace(id=17, state="R", best_version=True, best_version_full=True, type="电视剧",
+                                tmdbid=100, season=1, episode_group=None)
+
+    result = fake_lifecycle.coordinator.handle_subscribe_added(subscribe, object())
+
+    assert result.stopped is True
+    assert result.changed is False
+    fake_lifecycle.pending_judge.should_enter_pending.assert_not_called()
+    fake_lifecycle.airing.check.assert_not_called()
+
+
 def test_guard_pending_uses_lifecycle_pending_source(fake_lifecycle):
     subscribe = SimpleNamespace(id=2, state="R")
 
@@ -97,6 +218,30 @@ def test_download_pending_adapter_routes_through_lifecycle(fake_lifecycle):
         "pending_state_mark:download_pending:下载器已创建任务，等待整理入库",
         "pending_state_clear:download_pending:下载待定已清除",
     ]
+
+
+def test_subscribe_modified_external_pause_ownership_moves_to_lifecycle(fake_lifecycle):
+    subscribe = SimpleNamespace(id=14, state="S")
+
+    result = fake_lifecycle.coordinator.handle_subscribe_modified_state_change(
+        subscribe, old_state="R", new_state="S"
+    )
+
+    assert result.changed is True
+    assert result.state == "S"
+    fake_lifecycle.pause_manager.adopt_external.assert_called_once_with(subscribe)
+
+
+def test_subscribe_modified_resume_clears_plugin_pause_record(fake_lifecycle):
+    subscribe = SimpleNamespace(id=15, state="R")
+
+    result = fake_lifecycle.coordinator.handle_subscribe_modified_state_change(
+        subscribe, old_state="S", new_state="R"
+    )
+
+    assert result.changed is True
+    assert result.state == "R"
+    fake_lifecycle.pause_manager.clear_pause_record.assert_called_once_with(subscribe)
 
 
 def test_toggle_command_pause_uses_external_and_resume_silent(fake_lifecycle):
