@@ -52,6 +52,10 @@ class DownloadMonitor:
         self._state = state_coordinator
         self._pending_hash_grace_seconds = pending_hash_grace_seconds
 
+    def set_state_coordinator(self, state_coordinator):
+        """替换下载待定状态适配器，避免下载模块直接依赖完整生命周期对象。"""
+        self._state = state_coordinator
+
     def mark_download_pending(self, subscribe_id: int, torrent_hash: str):
         """记录订阅还有下载未整理完成。"""
         if not self._pending_download_enabled:

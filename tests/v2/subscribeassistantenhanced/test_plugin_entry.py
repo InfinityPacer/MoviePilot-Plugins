@@ -91,6 +91,14 @@ class TestPluginEntry:
 
         assert "progress_diagnostic" in plugin._modules
 
+    def test_plugin_initializes_lifecycle_coordinator(self):
+        """插件入口持有生命周期协调器，并把同一实例交给事件代理。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"enabled": True})
+
+        assert "lifecycle" in plugin._modules
+        assert plugin._event_proxy.get("lifecycle") is plugin._modules["lifecycle"]
+
     def test_recognition_external_failure_logs_are_sanitized(self, monkeypatch):
         """识别增强外部识别异常日志不得泄漏令牌或本地路径。"""
         messages = []

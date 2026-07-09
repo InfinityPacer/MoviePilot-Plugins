@@ -33,6 +33,7 @@ from .engine.site import SiteEpisodesRefreshHandler, SiteEvidenceScanner, SiteEv
 from .engine.volatility import VolatilityTracker
 from .engine.pipeline import CompletionEvidencePipeline
 from .guard import CompletionGuard
+from .lifecycle import SubscribeLifecycleCoordinator
 from .pending.judge import PendingJudge
 from .pending.refresh import PendingRefresh
 from .pending.state import PendingStateCoordinator
@@ -291,7 +292,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             tracker_keywords=tracker_keywords,
             exclude_tags=exclude_tags,
             subscribe_oper=self._subscribe_oper,
-            state_coordinator=pending_state,
+            state_coordinator=None,
             fetch_fn=self._fetch_downloader_torrent,
             present_fn=self._downloader_torrent_present,
             manual_delete_enabled=cfg.download_monitor_enabled and cfg.manual_delete_listen,
@@ -349,11 +350,42 @@ class SubscribeAssistantEnhanced(_PluginBase):
             state_coordinator=pending_state,
         )
 
+        lifecycle = SubscribeLifecycleCoordinator(
+            config=cfg,
+            subscribe_oper=self._subscribe_oper,
+            pause_manager=pause_manager,
+            pending_judge=pending_judge,
+            pending_state=pending_state,
+            airing_checker=airing_checker if cfg.pause_enhanced_enabled else None,
+            tmdb_episodes_fn=self._tmdb_episodes,
+            recognize_mediainfo_fn=self._recognize_mediainfo,
+            is_tv_fn=self._is_tv_media,
+            schedule_initial_pending_search_fn=self._schedule_initial_pending_search,
+            has_active_downloads_fn=lambda sid: bool(
+                download_monitor and download_monitor.has_active_downloads(sid)
+            ),
+            clear_orphan_completion_observation_fn=self._clear_orphan_completion_observation,
+            clear_tasks_for_pause_fn=lambda subscribe: self._task_manager.clear_tasks_for_pause(
+                subscribe.id,
+                preserve_subscribe_keys=[
+                    "pause_reason",
+                    "pause_since",
+                    "pause_detail",
+                    "paused_probe_resume_guard_reason",
+                    "paused_probe_resume_guard_until",
+                ],
+            ),
+        )
+        download_monitor.set_state_coordinator(lifecycle.download_pending_adapter())
+
         guard = CompletionGuard(
             evidence_pipeline=completion_pipeline,
             has_active_downloads_fn=lambda sub: download_monitor.has_active_downloads(
                 sub.id),
-            mark_pending_fn=pending_judge.mark_pending,
+            mark_pending_fn=lambda subscribe, source="guard_veto", reason="": lifecycle.enter_guard_pending(
+                subscribe,
+                reason=reason,
+            ),
             timeout_manager=timeout_manager,
             mode=cfg.completion_guard_mode,
             pending_download_enabled=cfg.pending_download_enabled,
@@ -437,6 +469,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             airing_checker=airing_checker if cfg.pause_enhanced_enabled else None,
             pending_judge=pending_judge if cfg.pending_enhanced_enabled else None,
             pending_state=pending_state,
+            lifecycle=lifecycle,
             tmdb_episodes_fn=self._tmdb_episodes,
             mediainfo_from_dict=self._mediainfo_from_dict,
             is_tv_fn=self._is_tv_media,
@@ -463,6 +496,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "converter": converter,
             "pending_judge": pending_judge,
             "pending_state": pending_state,
+            "lifecycle": lifecycle,
             "pending_refresh": pending_refresh,
             "pause_manager": pause_manager,
             # airing_checker 同时放入 _modules，供 run_meta_check 周期巡检按 enabled 门控读取

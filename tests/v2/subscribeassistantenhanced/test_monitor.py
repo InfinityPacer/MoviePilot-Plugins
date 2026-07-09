@@ -3,6 +3,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from subscribeassistantenhanced import SubscribeAssistantEnhanced
 from subscribeassistantenhanced.download.monitor import DownloadMonitor, TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS
 from subscribeassistantenhanced.download.torrent import TorrentInfo
 from subscribeassistantenhanced.pending.state import PendingStateCoordinator
@@ -28,6 +29,15 @@ def _info(hash="h1", progress=0.5, completed=False, tags=None,
         hash=hash, progress=progress, completed=completed,
         tags=tags or [], tracker_responses=tracker_responses or [],
     )
+
+
+def test_download_monitor_uses_lifecycle_adapter_for_download_pending():
+    """入口构造的下载监控只通过生命周期适配器操作下载待定来源。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+    monitor = plugin._modules["download_monitor"]
+
+    assert monitor._state.__class__.__name__ == "DownloadPendingLifecycleAdapter"
 
 
 class TestMarkDownloadPending:

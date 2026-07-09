@@ -8,6 +8,7 @@ from subscribeassistantenhanced.engine.local import check_l_signal
 from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
 from subscribeassistantenhanced.engine.scope import build_scope
 from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal
+from subscribeassistantenhanced import SubscribeAssistantEnhanced
 from subscribeassistantenhanced.guard import CompletionGuard
 from subscribeassistantenhanced.shared.config import PluginConfig
 from subscribeassistantenhanced.shared.subscribe import pending_subscription_episodes
@@ -97,6 +98,19 @@ def _guard(evidence=None, has_active=False, mode="strict"):
 
 
 class TestCompletionGuard:
+
+    def test_completion_guard_routes_guard_veto_to_lifecycle(self):
+        """入口构造的 guard_veto 回调经生命周期协调器登记。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        guard = plugin._modules["guard"]
+        lifecycle = plugin._modules["lifecycle"]
+        lifecycle.enter_guard_pending = MagicMock()
+        subscribe = SimpleNamespace(id=1)
+
+        guard.mark_pending_fn(subscribe, source="guard_veto", reason="观察")
+
+        lifecycle.enter_guard_pending.assert_called_once_with(subscribe, reason="观察")
 
     def test_movie_not_intercepted(self):
         """电影订阅不拦截，也不计算完成证据。"""
