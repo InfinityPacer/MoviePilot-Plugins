@@ -2358,12 +2358,16 @@ class TestEventDelegation:
         # init_plugin 时注入的是绑定方法；替换 mock 后需同步给事件代理，验证入口 wiring 与事件链路。
         plugin._event_proxy._modules["resolve_missing_fn"] = plugin._resolve_subscribe_missing
         plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
+        lifecycle = plugin._modules["lifecycle"]
+        lifecycle._subscribe_oper = oper
+        lifecycle.handle_library_updated = MagicMock(wraps=lifecycle.handle_library_updated)
 
         plugin.on_transfer_complete(SimpleNamespace(event_data={
             "download_hash": "abc",
             "transferinfo": None,
         }))
 
+        lifecycle.handle_library_updated.assert_called_once_with(7)
         converter.convert_to_full.assert_called_once_with(sub, mediainfo)
 
     def test_transfer_complete_event_pauses_after_lack_is_refreshed(self):
@@ -2406,12 +2410,16 @@ class TestEventDelegation:
         )
         pause_manager = plugin._modules["pause_manager"]
         pause_manager.pause = MagicMock()
+        lifecycle = plugin._modules["lifecycle"]
+        lifecycle._subscribe_oper = oper
+        lifecycle.handle_library_updated = MagicMock(wraps=lifecycle.handle_library_updated)
 
         plugin.on_transfer_complete(SimpleNamespace(event_data={
             "download_hash": "abc",
             "transferinfo": None,
         }))
 
+        lifecycle.handle_library_updated.assert_called_once_with(7)
         pause_manager.pause.assert_called_once()
         record = pause_manager.pause.call_args.args[1]
         assert record.reason == "airing_gap"

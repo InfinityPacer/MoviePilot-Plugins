@@ -194,12 +194,60 @@ class SubscribeLifecycleCoordinator:
         return LifecycleResult(changed=changed, state=state if changed else None)
 
     def handle_download_added_for_subscribe(self, subscribe, reason: str = "") -> LifecycleResult:
-        """下载命中入口契约；未处理时返回空生命周期结果。"""
-        return LifecycleResult()
+        """下载事实命中暂停订阅时恢复订阅，并维护同原因防打回窗口。"""
+        if not (self._pause_manager and subscribe and getattr(subscribe, "state", None) == "S"):
+            return LifecycleResult()
+
+        record = self._pause_manager.get_pause_record(subscribe)
+        if not record:
+            self._pause_manager.adopt_external(subscribe)
+            record = self._pause_manager.get_pause_record(subscribe)
+        if not record:
+            logger.info(f"DownloadAdded：{_format_lifecycle_subscribe(subscribe)} 暂停记录缺失，跳过下载命中恢复")
+            return LifecycleResult()
+
+        pause_reason = record.reason
+        if not self._pause_manager.resume(subscribe, notify=False):
+            logger.info(f"DownloadAdded：{_format_lifecycle_subscribe(subscribe)} 暂停恢复未生效，原因={pause_reason}")
+            return LifecycleResult(state="S", reason=pause_reason)
+
+        self._pause_manager.clear_probe_fields_for_resume(subscribe)
+        guard_written = False
+        if pause_reason != "external":
+            guard_written = bool(self._pause_manager.set_resume_guard(subscribe, pause_reason, hours=48))
+        message = f"已因下载命中恢复暂停订阅，原暂停原因={pause_reason}，写入防打回={guard_written}"
+        logger.info(f"DownloadAdded：{_format_lifecycle_subscribe(subscribe)} {message}")
+        return LifecycleResult(changed=True, state="R", reason=pause_reason, message=message)
 
     def handle_library_updated(self, subscribe_id: int | None = None, reason: str = "") -> LifecycleResult:
-        """媒体库更新入口契约；未处理时返回空生命周期结果。"""
-        return LifecycleResult()
+        """整理入库后即时复核播出暂停，避免短窗口配置只能等周期巡检。"""
+        if not subscribe_id:
+            return LifecycleResult(reason=reason)
+        subscribe = self._get_subscribe(subscribe_id)
+        if not subscribe:
+            return LifecycleResult(reason=reason)
+        state = getattr(subscribe, "state", None)
+        if state != "R":
+            return LifecycleResult(state=state, reason=reason)
+        if is_full_best_version_subscribe(subscribe):
+            return LifecycleResult(reason="full_best_version")
+
+        mediainfo = self._resolve_mediainfo(subscribe)
+        if not mediainfo or not self._is_tv_media(mediainfo):
+            return LifecycleResult(reason=reason)
+        episodes = []
+        if self._tmdb_episodes:
+            episodes = list(self._tmdb_episodes(
+                getattr(subscribe, "tmdbid", None),
+                getattr(subscribe, "season", None),
+                episode_group=getattr(subscribe, "episode_group", None),
+            ) or [])
+        return self._pause_after_library_update(
+            subscribe,
+            mediainfo,
+            episodes,
+            source=reason or "TransferComplete",
+        )
 
     def handle_subscribe_modified_state_change(
         self,
@@ -475,7 +523,7 @@ class SubscribeLifecycleCoordinator:
         record = self._airing.check(
             subscribe,
             mediainfo,
-            next_episode=mediainfo.next_episode_to_air,
+            next_episode=getattr(mediainfo, "next_episode_to_air", None),
             latest_episode=last_aired_episode(episodes),
             episodes=episodes,
         )

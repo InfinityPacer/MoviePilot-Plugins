@@ -20,7 +20,6 @@ from app.log import logger
 from app.core.context import MediaInfo
 from app.schemas.event import SubscribeEpisodesRefreshEventData
 
-from .engine.signals import last_aired_episode
 from .shared.log import detail
 from .shared.subscribe import (
     format_subscribe,
@@ -517,33 +516,10 @@ class EventProxy:
                 title=getattr(torrent_info, "title", None),
                 description=getattr(torrent_info, "description", None),
             )
-        self._resume_paused_subscribe_on_download(subscribe)
-
-    def _resume_paused_subscribe_on_download(self, subscribe):
-        """下载事实命中暂停订阅时恢复为订阅中，并按原暂停原因维护防打回窗口。"""
-        pause_manager = self.get("pause_manager")
-        if not pause_manager or not subscribe or subscribe.state != "S":
-            return
-        record = pause_manager.get_pause_record(subscribe)
-        if not record:
-            pause_manager.adopt_external(subscribe)
-            record = pause_manager.get_pause_record(subscribe)
-        if not record:
-            logger.info(f"DownloadAdded：{format_subscribe(subscribe)} 暂停记录缺失，跳过下载命中恢复")
-            return
-        reason = record.reason
-        if not pause_manager.resume(subscribe, notify=False):
-            logger.info(f"DownloadAdded：{format_subscribe(subscribe)} 暂停恢复未生效，原因={reason}")
-            return
-        pause_manager.clear_probe_fields_for_resume(subscribe)
-        guard_written = False
-        if reason != "external":
-            guard_written = pause_manager.set_resume_guard(subscribe, reason, hours=48)
-        logger.info(
-            f"DownloadAdded：{format_subscribe(subscribe)} 已因下载命中恢复暂停订阅，"
-            f"原暂停原因={reason}，写入防打回={guard_written}"
-        )
-        self._notify_download_resume(subscribe, reason)
+        lifecycle = self.get("lifecycle")
+        result = lifecycle.handle_download_added_for_subscribe(subscribe) if lifecycle else None
+        if result and result.changed:
+            self._notify_download_resume(subscribe, result.reason)
 
     def _notify_download_resume(self, subscribe, reason: str):
         """发送下载命中恢复暂停订阅通知；实际推送仍由全局通知开关控制。"""
@@ -611,47 +587,10 @@ class EventProxy:
         if transfer_info and transfer_info.transfer_type == "move" and task_manager:
             detail(f"TransferComplete：移动模式清理已完成下载任务 hash={download_hash}")
             task_manager.clean_torrent_tasks(download_hash)
-        self._pause_after_transfer_complete(subscribe_id)
+        lifecycle = self.get("lifecycle")
+        if lifecycle:
+            lifecycle.handle_library_updated(subscribe_id)
         self._convert_episode_best_version_to_full_if_ready(subscribe_id)
-
-    def _pause_after_transfer_complete(self, subscribe_id):
-        """整理入库后即时复核播出暂停，避免短窗口配置只能等周期巡检。"""
-        if not subscribe_id:
-            return
-        subscribe_oper = self.get("subscribe_oper")
-        recognize = self.get("recognize_mediainfo_fn")
-        is_tv = self.get("is_tv_fn")
-        tmdb_episodes_fn = self.get("tmdb_episodes_fn")
-        if not (subscribe_oper and recognize and is_tv and tmdb_episodes_fn):
-            return
-        subscribe = subscribe_oper.get(subscribe_id)
-        if not subscribe or subscribe.state != "R" or is_full_best_version_subscribe(subscribe):
-            return
-        mediainfo = recognize(subscribe)
-        if not mediainfo or not is_tv(mediainfo):
-            return
-        episodes = tmdb_episodes_fn(
-            subscribe.tmdbid,
-            subscribe.season,
-            episode_group=subscribe.episode_group,
-        )
-        self._pause_after_library_update(subscribe, mediainfo, episodes, source="TransferComplete")
-
-    def _pause_after_library_update(self, subscribe, mediainfo, episodes: list, source: str):
-        """媒体库状态已更新后，按当前播出窗口决定是否暂停订阅。"""
-        airing = self.get("airing_checker")
-        pause_manager = self.get("pause_manager")
-        if not (airing and pause_manager):
-            return
-        record = airing.check(
-            subscribe, mediainfo,
-            next_episode=mediainfo.next_episode_to_air,
-            latest_episode=last_aired_episode(episodes),
-            episodes=episodes,
-        )
-        if record:
-            logger.info(f"{source}：{format_subscribe(subscribe)} 满足播出间隔暂停条件，置为禁用")
-            pause_manager.pause(subscribe, record)
 
     def _convert_episode_best_version_to_full_if_ready(self, subscribe_id):
         """整理完成后补偿检查当前分集洗版订阅，避免目标集已齐全还要等下一次洗版巡检。"""

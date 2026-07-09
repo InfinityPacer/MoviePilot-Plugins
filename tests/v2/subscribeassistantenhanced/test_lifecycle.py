@@ -304,6 +304,75 @@ def test_download_pending_adapter_routes_through_lifecycle(fake_lifecycle):
     ]
 
 
+def test_download_added_resumes_plugin_pause_and_sets_guard(fake_lifecycle):
+    subscribe = SimpleNamespace(id=30, state="S", name="测试", season=1)
+    fake_lifecycle.pause_manager.get_pause_record.return_value = PauseRecord(
+        reason="pre_air", since=1.0, detail="开播前"
+    )
+    fake_lifecycle.pause_manager.resume.return_value = True
+    fake_lifecycle.pause_manager.set_resume_guard.return_value = True
+
+    result = fake_lifecycle.coordinator.handle_download_added_for_subscribe(subscribe)
+
+    assert result.changed is True
+    assert result.state == "R"
+    assert result.reason == "pre_air"
+    assert "写入防打回=True" in result.message
+    fake_lifecycle.pause_manager.resume.assert_called_once_with(subscribe, notify=False)
+    fake_lifecycle.pause_manager.clear_probe_fields_for_resume.assert_called_once_with(subscribe)
+    fake_lifecycle.pause_manager.set_resume_guard.assert_called_once_with(subscribe, "pre_air", hours=48)
+
+
+def test_download_added_external_resume_has_no_resume_guard(fake_lifecycle):
+    subscribe = SimpleNamespace(id=31, state="S", name="测试", season=1)
+    fake_lifecycle.pause_manager.get_pause_record.return_value = PauseRecord(
+        reason="external", since=1.0, detail="插件命令手动暂停"
+    )
+    fake_lifecycle.pause_manager.resume.return_value = True
+
+    result = fake_lifecycle.coordinator.handle_download_added_for_subscribe(subscribe)
+
+    assert result.changed is True
+    assert result.state == "R"
+    fake_lifecycle.pause_manager.resume.assert_called_once_with(subscribe, notify=False)
+    fake_lifecycle.pause_manager.set_resume_guard.assert_not_called()
+
+
+def test_download_added_missing_pause_record_is_adopted_as_external(fake_lifecycle):
+    subscribe = SimpleNamespace(id=33, state="S", name="测试", season=1)
+    fake_lifecycle.pause_manager.get_pause_record.side_effect = [
+        None,
+        PauseRecord(reason="external", since=1.0, detail="外部暂停"),
+    ]
+    fake_lifecycle.pause_manager.resume.return_value = True
+
+    result = fake_lifecycle.coordinator.handle_download_added_for_subscribe(subscribe)
+
+    assert result.changed is True
+    assert result.reason == "external"
+    fake_lifecycle.pause_manager.adopt_external.assert_called_once_with(subscribe)
+    fake_lifecycle.pause_manager.resume.assert_called_once_with(subscribe, notify=False)
+    fake_lifecycle.pause_manager.set_resume_guard.assert_not_called()
+
+
+def test_library_updated_checks_airing_gap_only_for_active_tv(fake_lifecycle):
+    subscribe = SimpleNamespace(id=32, state="R", best_version=False, tmdbid=100, season=1, episode_group=None)
+    fake_lifecycle.subscribe_oper.get.return_value = subscribe
+    mediainfo = SimpleNamespace(next_episode_to_air=None)
+    fake_lifecycle.recognize.return_value = mediainfo
+    fake_lifecycle.is_tv = MagicMock(return_value=True)
+    fake_lifecycle.coordinator._is_tv = fake_lifecycle.is_tv
+    fake_lifecycle.airing.check.return_value = PauseRecord(reason="airing_gap", since=1.0, detail="下一集较远")
+
+    result = fake_lifecycle.coordinator.handle_library_updated(32)
+
+    assert result.changed is True
+    assert result.state == "S"
+    fake_lifecycle.recognize.assert_called_once_with(subscribe)
+    fake_lifecycle.is_tv.assert_called_once_with(mediainfo)
+    fake_lifecycle.tmdb_episodes.assert_called_once_with(100, 1, episode_group=None)
+
+
 def test_release_pending_judge_reports_p_when_guard_veto_remains(fake_lifecycle):
     """显式释放 pending_judge 后若 guard_veto 仍活跃，生命周期结果保持 P。"""
     subscribe = SimpleNamespace(id=31, state="P", best_version=False)

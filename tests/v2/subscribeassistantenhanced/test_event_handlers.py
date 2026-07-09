@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from subscribeassistantenhanced.events import EventProxy
+from subscribeassistantenhanced.lifecycle import LifecycleResult
 
 
 def _sub(**kwargs):
@@ -174,3 +175,92 @@ def test_subscribe_added_backfills_episode_best_version():
     )
     lifecycle.handle_subscribe_added.assert_called_once_with(subscribe, mediainfo)
     assert call_order == ["backfill", "lifecycle"]
+
+
+def test_download_added_records_monitor_then_lifecycle_and_notifies_once():
+    """DownloadAdded 先登记下载事实，再按 lifecycle 结果发送一次恢复通知。"""
+    call_order = []
+    subscribe = _sub(state="S")
+    subscribe_oper = MagicMock()
+    subscribe_oper.get.return_value = subscribe
+    monitor = MagicMock()
+    monitor.on_download.side_effect = lambda *_args, **_kwargs: call_order.append("monitor")
+    lifecycle = MagicMock()
+    lifecycle.handle_download_added_for_subscribe.side_effect = (
+        lambda _subscribe: call_order.append("lifecycle")
+        or LifecycleResult(changed=True, state="R", reason="pre_air")
+    )
+    notify_fn = MagicMock(side_effect=lambda *_args, **_kwargs: call_order.append("notify"))
+    torrent_info = SimpleNamespace(
+        enclosure="magnet:?xt=abc",
+        page_url="https://example/detail",
+        title="测试剧 S01E01",
+        description="首集 1080p",
+    )
+    proxy = EventProxy(
+        subscribe_oper=subscribe_oper,
+        download_monitor=monitor,
+        lifecycle=lifecycle,
+        notify_fn=notify_fn,
+    )
+
+    proxy.on_download_added(SimpleNamespace(event_data={
+        "source": 'Subscribe|{"id": 7}',
+        "hash": "hash1",
+        "episodes": [1],
+        "downloader": "qb",
+        "context": SimpleNamespace(torrent_info=torrent_info),
+    }))
+
+    assert call_order == ["monitor", "lifecycle", "notify"]
+    monitor.on_download.assert_called_once_with(
+        7,
+        "hash1",
+        episodes=[1],
+        downloader="qb",
+        enclosure="magnet:?xt=abc",
+        page_url="https://example/detail",
+        title="测试剧 S01E01",
+        description="首集 1080p",
+    )
+    lifecycle.handle_download_added_for_subscribe.assert_called_once_with(subscribe)
+    notify_fn.assert_called_once()
+
+
+def test_transfer_complete_clears_pending_then_lifecycle_then_best_version_conversion():
+    """TransferComplete 先释放下载待定，再进入 lifecycle，分集转全集仍由事件层补偿。"""
+    call_order = []
+    subscribe = _sub(best_version=1, best_version_full=0, lack_episode=0)
+    subscribe_oper = MagicMock()
+    subscribe_oper.get.return_value = subscribe
+    task_manager = MagicMock()
+    task_manager.read.return_value = {"hash1": {"subscribe_id": 7}}
+    task_manager.clean_torrent_tasks.side_effect = lambda _hash: call_order.append("clean")
+    monitor = MagicMock()
+    monitor.clear_download_pending.side_effect = lambda *_args: call_order.append("clear")
+    lifecycle = MagicMock()
+    lifecycle.handle_library_updated.side_effect = lambda _subscribe_id: call_order.append("lifecycle")
+    converter = MagicMock()
+    converter.convert_to_full.side_effect = lambda *_args: call_order.append("convert")
+    mediainfo = SimpleNamespace()
+    proxy = EventProxy(
+        subscribe_oper=subscribe_oper,
+        task_manager=task_manager,
+        download_monitor=monitor,
+        lifecycle=lifecycle,
+        converter=converter,
+        best_version_episode_to_full=True,
+        recognize_mediainfo_fn=MagicMock(return_value=mediainfo),
+        resolve_missing_fn=MagicMock(return_value=(True, {})),
+    )
+
+    proxy.on_transfer_complete(SimpleNamespace(event_data={
+        "download_hash": "hash1",
+        "transferinfo": SimpleNamespace(transfer_type="move"),
+    }))
+
+    assert call_order == ["clear", "clean", "lifecycle", "convert"]
+    monitor.clear_download_pending.assert_called_once_with(7, "hash1")
+    task_manager.clean_torrent_tasks.assert_called_once_with("hash1")
+    lifecycle.handle_library_updated.assert_called_once_with(7)
+    converter.convert_to_full.assert_called_once_with(subscribe, mediainfo)
