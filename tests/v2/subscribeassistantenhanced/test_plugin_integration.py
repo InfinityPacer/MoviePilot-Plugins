@@ -899,6 +899,12 @@ def test_run_meta_check_full_best_version_continue_keeps_following_subscriptions
     plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [full, normal]
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+    data_store = {"subscribes": {}}
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
     full_mediainfo = SimpleNamespace(
         tmdb_id=100,
         type=MediaType.TV,
@@ -924,13 +930,17 @@ def test_run_meta_check_full_best_version_continue_keeps_following_subscriptions
     airing.check = MagicMock(return_value=None)
     judge = plugin._modules["pending_judge"]
     judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
-    judge.mark_pending = MagicMock()
+    judge._notify = MagicMock()
 
     plugin.run_meta_check()
 
     assert plugin._recognize_mediainfo.call_args_list == [((full,),), ((normal,),)]
     judge.should_enter_pending.assert_called_once_with(normal, normal_mediainfo, episodes)
-    judge.mark_pending.assert_called_once_with(normal, source="pending_judge", reason="集数不足")
+    task = data_store["subscribes"]["4"]
+    assert task["state"] == "P"
+    assert task["source"] == "pending_judge"
+    assert plugin._subscribe_oper.update.call_args.args[0] == normal.id
+    assert plugin._subscribe_oper.update.call_args.args[1].get("state") == "P"
 
 
 def test_run_meta_check_resumes_full_best_version_pre_air_pause_when_condition_clears():
@@ -1446,12 +1456,18 @@ def test_run_meta_check_clears_flag_when_user_reenabled():
 
 
 def test_run_meta_check_marks_pending_when_should_enter_pending():
-    """活动订阅未命中暂停但 pending 条件成立时，run_meta_check 调用 pending_judge.mark_pending。"""
+    """活动订阅未命中暂停但 pending 条件成立时，应通过生命周期进入待定状态。"""
     sub = _sub(id=4, state="R", name="X", best_version=0, type="电视剧")
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+    data_store = {"subscribes": {}}
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
     plugin._tmdb_episodes = MagicMock(return_value=[])
 
@@ -1462,13 +1478,16 @@ def test_run_meta_check_marks_pending_when_should_enter_pending():
 
     judge = plugin._modules["pending_judge"]
     judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
-    judge.mark_pending = MagicMock()
+    judge._notify = MagicMock()
 
     plugin.run_meta_check()
 
-    judge.mark_pending.assert_called_once()
-    call_args = judge.mark_pending.call_args
-    assert call_args.kwargs.get("source") == "pending_judge"
+    task = data_store["subscribes"]["4"]
+    assert task["state"] == "P"
+    assert task["source"] == "pending_judge"
+    assert task["reason"] == "集数不足"
+    assert plugin._subscribe_oper.update.call_args.args[0] == sub.id
+    assert plugin._subscribe_oper.update.call_args.args[1].get("state") == "P"
 
 
 def test_run_meta_check_new_pending_schedules_initial_search_before_pending():
@@ -1478,20 +1497,32 @@ def test_run_meta_check_new_pending_schedules_initial_search_before_pending():
     plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
+    plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
+    data_store = {"subscribes": {}}
+    plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+    plugin.save_data = MagicMock(side_effect=lambda key, value: data_store.__setitem__(key, value))
+    plugin._task_manager._get = plugin.get_data
+    plugin._task_manager._save = plugin.save_data
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
     plugin._tmdb_episodes = MagicMock(return_value=[])
 
     call_order = []
     plugin._schedule_initial_pending_search = MagicMock(side_effect=lambda _sub: call_order.append("search"))
+    plugin._subscribe_oper.update.side_effect = (
+        lambda _sid, payload: call_order.append("pending") if payload.get("state") == "P" else None
+    )
 
     judge = plugin._modules["pending_judge"]
     judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
-    judge.mark_pending = MagicMock(side_effect=lambda *_args, **_kwargs: call_order.append("pending"))
+    judge._notify = MagicMock()
 
     plugin.run_meta_check()
 
     plugin._schedule_initial_pending_search.assert_called_once_with(sub)
-    judge.mark_pending.assert_called_once_with(sub, source="pending_judge", reason="集数不足")
+    task = data_store["subscribes"]["4"]
+    assert task["state"] == "P"
+    assert task["source"] == "pending_judge"
+    assert task["reason"] == "集数不足"
     assert call_order == ["search", "pending"]
 
 
