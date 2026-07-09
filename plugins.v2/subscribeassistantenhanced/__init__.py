@@ -804,6 +804,21 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if lifecycle:
                 lifecycle.handle_meta_check_subscription(subscribe)
 
+    @staticmethod
+    def _pending_release_sources(task: dict) -> list[str]:
+        """返回需要通过待定判定器复核的业务待定来源。"""
+        sources = task.get("pending_sources") if isinstance(task, dict) else None
+        if isinstance(sources, dict) and sources:
+            ordered_sources = [
+                source for source in ("pending_judge", "guard_veto")
+                if source in sources
+            ]
+            return ordered_sources or ["pending_judge"]
+        source = task.get("source") if isinstance(task, dict) else None
+        if source in ("pending_judge", "guard_veto"):
+            return [source]
+        return ["pending_judge"]
+
     def run_pending_release(self):
         """待定释放巡检：活跃来源走待定判定器，残留观察记录只做清理。
 
@@ -813,12 +828,15 @@ class SubscribeAssistantEnhanced(_PluginBase):
         detail("待定释放巡检：开始")
         lifecycle = self._modules.get("lifecycle")
         if lifecycle and self._subscribe_oper:
+            task_data = self.get_data("subscribes") or {}
             for subscribe in (self._subscribe_oper.list(state="P") or []):
-                lifecycle.release_pending_source(
-                    subscribe,
-                    source="pending_judge",
-                    reason="待定释放巡检",
-                )
+                task = task_data.get(str(subscribe.id), {})
+                for source in self._pending_release_sources(task):
+                    lifecycle.release_pending_source(
+                        subscribe,
+                        source=source,
+                        reason="待定释放巡检",
+                    )
 
         timeout_manager = self._modules.get("timeout_manager")
         if not timeout_manager or not self._subscribe_oper:

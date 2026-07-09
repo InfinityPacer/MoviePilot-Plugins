@@ -109,21 +109,23 @@ class PendingJudge:
 
         return False, ""
 
-    def check_exit(self, subscribe, mediainfo, tmdb_episodes_fn) -> bool:
-        """检查待定是否应退出，返回 True 表示已退出。"""
+    def check_exit(self, subscribe, mediainfo, tmdb_episodes_fn, source: Optional[str] = None) -> bool:
+        """检查指定待定来源是否应退出，未指定时沿用任务主来源。"""
         task_data = self._read_subscribe_task(subscribe)
         if not task_data or task_data.get("state") != "P":
             return False
 
-        source = task_data.get("source", "pending_judge")
+        active_source = source or task_data.get("source") or "pending_judge"
+        if source is not None and source not in self._state.active_sources(subscribe.id):
+            return False
 
-        if source == "pending_judge":
+        if active_source == "pending_judge":
             signal: CompletionSignal = self._evidence_pipeline.evaluate(
                 subscribe,
                 mediainfo,
             ).primary_signal
             if self._is_strong_completion_signal(signal):
-                self._exit_pending(subscribe, "信号确认完结")
+                self._exit_pending(subscribe, "信号确认完结", source=active_source)
                 return True
             episodes = tmdb_episodes_fn(
                 subscribe.tmdbid,
@@ -132,11 +134,11 @@ class PendingJudge:
             )
             should_stay, _ = self.should_enter_pending(subscribe, mediainfo, episodes, signal)
             if not should_stay:
-                self._exit_pending(subscribe, "待定条件不再满足")
+                self._exit_pending(subscribe, "待定条件不再满足", source=active_source)
                 return True
             return False
 
-        elif source == "guard_veto":
+        elif active_source == "guard_veto":
             evidence = self._evidence_pipeline.evaluate(
                 subscribe,
                 mediainfo,
@@ -149,7 +151,7 @@ class PendingJudge:
                 mode=self._config.completion_guard_mode,
             )
             if decision.exit_pending:
-                self._exit_pending(subscribe, decision.reason or "完成前观察结束")
+                self._exit_pending(subscribe, decision.reason or "完成前观察结束", source=active_source)
                 return True
             return False
 
@@ -160,26 +162,26 @@ class PendingJudge:
         """只有高置信完结事实可影响剧集待定进入和提前释放。"""
         return bool(signal and signal.completed and signal.confidence == "high")
 
-    def _exit_pending(self, subscribe, reason: str):
-        """退出当前待定来源，并由 PendingStateCoordinator 仲裁是否恢复启用（R）。"""
+    def _exit_pending(self, subscribe, reason: str, source: Optional[str] = None):
+        """退出指定或当前待定来源，并由 PendingStateCoordinator 仲裁是否恢复启用（R）。"""
         sid = subscribe.id
         task = self._read_subscribe_task(subscribe)
-        source = task.get("source", "pending_judge")
-        if source == "guard_veto":
+        active_source = source or task.get("source") or "pending_judge"
+        if active_source == "guard_veto":
             self._timeout.clear_observation(sid)
         restored = self._state.clear_active(
             subscribe,
-            source=source,
+            source=active_source,
             reason=reason,
         )
         if restored:
             logger.info(f"待定退出：{format_subscribe(subscribe)} 退出待定（P），原因：{reason}")
-            title = EXIT_TITLES.get(source)
+            title = EXIT_TITLES.get(active_source)
             if title:
                 self._notify_status(subscribe, title, detail=reason)
         else:
             logger.info(
-                f"待定退出：{format_subscribe(subscribe)} 已解除来源={source}，"
+                f"待定退出：{format_subscribe(subscribe)} 已解除来源={active_source}，"
                 f"仍保持待定（P），原因：{reason}"
             )
             self._update_subscribe_task(subscribe, {

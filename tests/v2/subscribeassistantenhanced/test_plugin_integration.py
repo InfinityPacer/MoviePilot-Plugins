@@ -2752,6 +2752,7 @@ class TestPeriodicJobs:
         plugin.run_pending_release()
 
         pending_judge.check_exit.assert_called_once()
+        assert pending_judge.check_exit.call_args.kwargs["source"] == "guard_veto"
         plugin._modules["timeout_manager"].clear_observation.assert_not_called()
 
     def test_pending_release_delegates_active_p_to_lifecycle(self):
@@ -2776,6 +2777,35 @@ class TestPeriodicJobs:
             reason="待定释放巡检",
         )
         pending_judge.check_exit.assert_not_called()
+
+    def test_pending_release_delegates_active_guard_veto_source_to_lifecycle(self):
+        """活跃 guard_veto 定时释放必须把 guard_veto source 交给生命周期层。"""
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        sub = _sub(id=8, state="P")
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [sub]
+        plugin._subscribe_oper.get.return_value = sub
+        plugin.get_data = MagicMock(return_value={
+            "8": {
+                "state": "P",
+                "source": "pending_judge",
+                "pending_sources": {
+                    "pending_judge": {"reason": "集数不足"},
+                    "guard_veto": {"reason": "未完结"},
+                },
+            }
+        })
+        lifecycle = MagicMock()
+        plugin._modules["lifecycle"] = lifecycle
+
+        plugin.run_pending_release()
+
+        lifecycle.release_pending_source.assert_any_call(
+            sub,
+            source="guard_veto",
+            reason="待定释放巡检",
+        )
 
     def test_pending_release_active_guard_veto_recomputes_l_with_plugin_resolver(self, monkeypatch):
         """活跃 guard_veto 巡检要带插件主程序缺集 resolver 重算 L。"""

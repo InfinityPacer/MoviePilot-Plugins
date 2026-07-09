@@ -218,6 +218,20 @@ def test_meta_check_restores_orphan_p_before_pause(fake_lifecycle):
     fake_lifecycle.recognize.assert_not_called()
 
 
+def test_meta_check_reports_p_when_pending_exit_leaves_another_source(fake_lifecycle):
+    """元数据巡检只释放一个待定来源时，返回状态必须仍是待定（P）。"""
+    subscribe = SimpleNamespace(id=25, state="P", best_version=False, tmdbid=100, season=1, episode_group=None)
+    fake_lifecycle.pending_state.has_active.return_value = True
+    fake_lifecycle.pending_judge.check_exit.return_value = True
+    fake_lifecycle.recognize.return_value = object()
+
+    result = fake_lifecycle.coordinator.handle_meta_check_subscription(subscribe)
+
+    assert result.changed is True
+    assert result.stopped is True
+    assert result.state == "P"
+
+
 def test_no_download_pause_clears_tasks_after_success(fake_lifecycle):
     subscribe = SimpleNamespace(id=22, state="R")
     fake_lifecycle.pause_manager.pause.return_value = True
@@ -288,6 +302,43 @@ def test_download_pending_adapter_routes_through_lifecycle(fake_lifecycle):
         "pending_state_mark:download_pending:下载器已创建任务，等待整理入库",
         "pending_state_clear:download_pending:下载待定已清除",
     ]
+
+
+def test_release_pending_judge_reports_p_when_guard_veto_remains(fake_lifecycle):
+    """显式释放 pending_judge 后若 guard_veto 仍活跃，生命周期结果保持 P。"""
+    subscribe = SimpleNamespace(id=31, state="P", best_version=False)
+    fake_lifecycle.recognize.return_value = object()
+    fake_lifecycle.pending_judge.check_exit.return_value = True
+    fake_lifecycle.pending_state.has_active.return_value = True
+
+    result = fake_lifecycle.coordinator.release_pending_source(
+        subscribe,
+        source="pending_judge",
+        reason="待定释放巡检",
+    )
+
+    assert result.changed is True
+    assert result.stopped is True
+    assert result.state == "P"
+    assert fake_lifecycle.pending_judge.check_exit.call_args.kwargs["source"] == "pending_judge"
+
+
+def test_release_guard_veto_passes_explicit_source_when_pending_judge_is_primary(fake_lifecycle):
+    """显式释放 guard_veto 时，生命周期层必须把 source 原样传给 PendingJudge。"""
+    subscribe = SimpleNamespace(id=32, state="P", best_version=False)
+    fake_lifecycle.recognize.return_value = object()
+    fake_lifecycle.pending_judge.check_exit.return_value = True
+    fake_lifecycle.pending_state.has_active.return_value = True
+
+    result = fake_lifecycle.coordinator.release_pending_source(
+        subscribe,
+        source="guard_veto",
+        reason="完成前观察到期",
+    )
+
+    assert result.changed is True
+    assert result.state == "P"
+    assert fake_lifecycle.pending_judge.check_exit.call_args.kwargs["source"] == "guard_veto"
 
 
 def test_subscribe_modified_external_pause_ownership_moves_to_lifecycle(fake_lifecycle):

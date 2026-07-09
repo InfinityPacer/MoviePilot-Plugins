@@ -335,6 +335,65 @@ class TestShouldEnterPending:
 
 class TestCheckExit:
 
+    def test_explicit_guard_veto_exits_when_pending_judge_is_primary(self):
+        """显式释放 guard_veto 时，应忽略 primary source 并只解除完成前观察来源。"""
+        store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "pending_judge",
+            "pending_sources": {
+                "pending_judge": {"reason": "集数不足"},
+                "guard_veto": {"reason": "未完结"},
+            },
+        }}}
+        sig = CompletionSignal(completed=True, confidence="low", stable=True, signals=["I:all_aired"])
+        evidence = CompletionEvidence(primary_signal=sig, i_low_signal=sig, observation_kind="low_i")
+        j = _judge(evidence=evidence, store=store)
+        j._timeout.check_observation.return_value = CompletionObservationDecision.release_with_token("完成前观察到期")
+
+        result = j.check_exit(_sub(state="P"), _mi(), lambda *a: [], source="guard_veto")
+
+        assert result is True
+        task = store["subscribes"]["1"]
+        assert task["state"] == "P"
+        assert task["source"] == "pending_judge"
+        assert set(task["pending_sources"]) == {"pending_judge"}
+        j._timeout.clear_observation.assert_called_once_with(1)
+
+    def test_explicit_pending_judge_exit_leaves_guard_veto_active(self):
+        """显式释放 pending_judge 时，不应误清仍活跃的 guard_veto 来源。"""
+        store = {"subscribes": {"1": {
+            "state": "P",
+            "source": "pending_judge",
+            "pending_sources": {
+                "pending_judge": {"reason": "集数不足"},
+                "guard_veto": {"reason": "未完结"},
+            },
+        }}}
+        sig = CompletionSignal(completed=True, confidence="high", signals=["E:ended"])
+        j = _judge(evaluate_result=sig, store=store)
+
+        result = j.check_exit(_sub(state="P"), _mi(), lambda *a: [], source="pending_judge")
+
+        assert result is True
+        task = store["subscribes"]["1"]
+        assert task["state"] == "P"
+        assert task["source"] == "guard_veto"
+        assert set(task["pending_sources"]) == {"guard_veto"}
+        j._timeout.clear_observation.assert_not_called()
+
+    def test_explicit_inactive_source_does_not_exit_primary_source(self):
+        """显式来源未活跃时不应回退释放 primary source。"""
+        store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}
+        sig = CompletionSignal(completed=True, confidence="high", signals=["E:ended"])
+        j = _judge(evaluate_result=sig, store=store)
+
+        result = j.check_exit(_sub(state="P"), _mi(), lambda *a: [], source="guard_veto")
+
+        assert result is False
+        assert store["subscribes"]["1"]["state"] == "P"
+        assert store["subscribes"]["1"]["source"] == "pending_judge"
+        j._timeout.clear_observation.assert_not_called()
+
     def test_pending_judge_exits_when_conditions_clear(self):
         """pending_judge P：条件不再满足 → 退出。"""
         store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}

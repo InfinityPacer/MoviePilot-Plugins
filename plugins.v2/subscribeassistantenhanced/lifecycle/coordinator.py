@@ -170,7 +170,13 @@ class SubscribeLifecycleCoordinator:
 
         if self._pending_judge and state == "P":
             if self._pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes):
-                return LifecycleResult(changed=True, stopped=True, state="R", reason="待定释放巡检")
+                state_after_release = "P" if self._pending_state.has_active(subscribe.id) else "R"
+                return LifecycleResult(
+                    changed=True,
+                    stopped=True,
+                    state=state_after_release,
+                    reason="待定释放巡检",
+                )
 
         result = self._handle_airing_pause(subscribe, mediainfo, episodes, state)
         changed = changed or result.changed
@@ -254,7 +260,12 @@ class SubscribeLifecycleCoordinator:
             mediainfo = self._resolve_mediainfo(subscribe)
             if not mediainfo:
                 return LifecycleResult(reason=reason)
-            changed = bool(self._pending_judge.check_exit(subscribe, mediainfo, self._tmdb_episodes))
+            changed = bool(self._pending_judge.check_exit(
+                subscribe,
+                mediainfo,
+                self._tmdb_episodes,
+                source=source,
+            ))
             state = "P" if changed and self._pending_state.has_active(subscribe.id) else "R"
             return LifecycleResult(
                 changed=changed,
