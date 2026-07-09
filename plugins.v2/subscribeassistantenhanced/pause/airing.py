@@ -10,7 +10,7 @@ from ..shared.media import (
     episode_candidates_after,
     episode_field,
     date_context,
-    first_scope_episode_air_date,
+    first_available_scope_episode_air_date,
     get_tv_season_air_date,
     parse_date,
     resolve_airing_next_episode,
@@ -60,13 +60,12 @@ class AiringPauseChecker:
 
         if not self._tv_air_days:
             return None
-        air_date = get_tv_season_air_date(
+        air_date = parse_date(get_tv_season_air_date(
             mediainfo,
             subscribe.season,
-        ) or mediainfo.first_air_date
-        air_date = parse_date(air_date)
+        ))
         if air_date is None:
-            air_date = first_scope_episode_air_date(subscribe, episodes or [])
+            air_date = first_available_scope_episode_air_date(subscribe, episodes or [])
         if air_date is None:
             # 剧集没有任何可用排期时保持暂停，避免未知开播窗口被集数待定提前接管。
             return PauseRecord(

@@ -33,8 +33,8 @@ class PauseManager:
         self._pending_state = pending_state
         self._pause_enhanced_enabled = pause_enhanced_enabled
 
-    def pause(self, subscribe, record: PauseRecord):
-        """设置暂停，仅当新原因优先级 >= 当前原因时生效。"""
+    def pause(self, subscribe, record: PauseRecord, notify: bool = True):
+        """设置暂停，仅当新原因优先级 >= 当前原因时生效；可静默刷新内部归因。"""
         if self._pause_enhanced_enabled and self._is_guarded(subscribe, record):
             return False
 
@@ -56,6 +56,8 @@ class PauseManager:
                 f"暂停刷新：{format_subscribe(subscribe)} 暂停原因仍满足，"
                 f"原因={record.reason}，detail={record.detail}"
             )
+        elif not notify:
+            log_detail(f"暂停管理：{format_subscribe(subscribe)} 静默刷新暂停记录（原因={record.reason}，detail={record.detail}）")
         else:
             log_detail(f"暂停管理：{format_subscribe(subscribe)} 写暂停记录（原因={record.reason}，detail={record.detail}）并置订阅为禁用(S)")
         if self._pending_state:
@@ -71,9 +73,9 @@ class PauseManager:
 
         self._update("subscribes", updater)
 
-        if self._subscribe_oper and not is_refresh:
+        if self._subscribe_oper and not is_refresh and subscribe.state != "S":
             update_subscribe(self._subscribe_oper, subscribe.id, {"state": "S"})
-        if not is_refresh:
+        if notify and not is_refresh:
             self._notify_pause(subscribe, record)
         return not is_refresh
 

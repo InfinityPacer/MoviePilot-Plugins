@@ -17,7 +17,7 @@ from subscribeassistantenhanced.shared.media import (
     count_aired_episodes, last_aired_episode, all_aired,
     episode_candidates_after, resolve_airing_next_episode,
     resolve_inventory_next_episodes, target_episode_range,
-    unknown_tail_episode_count,
+    unknown_tail_episode_count, first_scope_episode_air_date,
 )
 
 
@@ -396,6 +396,16 @@ class TestMediaHelpers:
         ]
 
         assert unknown_tail_episode_count(subscribe, episodes) == 2
+
+    def test_first_scope_episode_air_date_keeps_current_season_boundary(self):
+        """兼容入口仍按当前季筛选，并返回范围内首个有效分集日期。"""
+        subscribe = SimpleNamespace(season=2, episode_group=None)
+        episodes = [
+            SimpleNamespace(season_number=1, episode_number=1, air_date="2026-01-01"),
+            SimpleNamespace(season_number=2, episode_number=2, air_date="2026-02-01"),
+        ]
+
+        assert first_scope_episode_air_date(subscribe, episodes) == date(2026, 2, 1)
 
     def test_episode_candidates_after_skips_other_season_and_outside_target(self):
         """后续播出候选必须同时属于当前季和订阅目标范围。"""

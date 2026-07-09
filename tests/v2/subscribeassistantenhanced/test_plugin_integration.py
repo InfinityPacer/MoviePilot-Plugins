@@ -1046,7 +1046,7 @@ def test_run_meta_check_keeps_airing_gap_when_current_check_is_inconclusive():
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
         tmdb_id=100,
-        type=SimpleNamespace(value="电视剧"),
+        type=MediaType.TV,
         tmdb_info={},
         next_episode_to_air=None,
         season_info=[],
@@ -1071,6 +1071,194 @@ def test_run_meta_check_keeps_airing_gap_when_current_check_is_inconclusive():
     pause_manager.resume.assert_not_called()
     pause_manager.pause.assert_not_called()
     pause_manager.clear_pause_record.assert_not_called()
+
+
+def test_run_meta_check_keeps_airing_pause_before_pending_when_pre_air_clears():
+    """上映前条件解除但播出暂停仍有效时，不应被恢复或改写为待定。"""
+    sub = _sub(id=3, state="S", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        tmdb_info={},
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    ))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(
+        return_value=PauseRecord(reason="airing_gap", since=0.0, detail="下一集日期：2026-07-01"))
+    pause_manager.resume = MagicMock()
+    pause_manager.pause = MagicMock()
+    pause_manager.clear_pause_record = MagicMock()
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    airing.check = MagicMock(return_value=None)
+    airing.should_resume_airing_gap = MagicMock(return_value=False)
+
+    pending_judge = plugin._modules["pending_judge"]
+    pending_judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+    pending_judge.mark_pending = MagicMock()
+
+    plugin.run_meta_check()
+
+    airing.should_resume_airing_gap.assert_called_once()
+    pause_manager.resume.assert_not_called()
+    pause_manager.pause.assert_not_called()
+    pending_judge.should_enter_pending.assert_not_called()
+    pending_judge.mark_pending.assert_not_called()
+
+
+def test_run_meta_check_updates_pre_air_record_to_airing_gap_while_paused():
+    """S 态订阅命中更具体的播出暂停时，应刷新原因并跳过待定。"""
+    sub = _sub(id=3, state="S", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        tmdb_info={},
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    ))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(
+        return_value=PauseRecord(reason="pre_air", since=0.0, detail="开播日期未知"))
+    pause_manager.pause = MagicMock()
+    pause_manager.resume = MagicMock()
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=None)
+    record = PauseRecord(reason="airing_gap", since=0.0, detail="下一集日期：2026-07-01")
+    airing.check = MagicMock(return_value=record)
+
+    pending_judge = plugin._modules["pending_judge"]
+    pending_judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+    pending_judge.mark_pending = MagicMock()
+
+    plugin.run_meta_check()
+
+    pause_manager.pause.assert_called_once_with(sub, record, notify=False)
+    pause_manager.resume.assert_not_called()
+    pending_judge.should_enter_pending.assert_not_called()
+    pending_judge.mark_pending.assert_not_called()
+
+
+def test_run_meta_check_silently_refreshes_pre_air_record_while_paused():
+    """S 态订阅继续命中上映前暂停时，只刷新归因，不重复发送暂停通知。"""
+    sub = _sub(id=3, state="S", name="X", best_version=0, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        tmdb_info={},
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    ))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(
+        return_value=PauseRecord(reason="pre_air", since=0.0, detail="旧原因"))
+    pause_manager.pause = MagicMock()
+    pause_manager.resume = MagicMock()
+
+    airing = plugin._modules["airing_checker"]
+    record = PauseRecord(reason="pre_air", since=0.0, detail="开播日期未知")
+    airing.check_pre_air = MagicMock(return_value=record)
+    airing.check = MagicMock()
+
+    pending_judge = plugin._modules["pending_judge"]
+    pending_judge.should_enter_pending = MagicMock(return_value=(True, "集数不足"))
+    pending_judge.mark_pending = MagicMock()
+
+    plugin.run_meta_check()
+
+    pause_manager.pause.assert_called_once_with(sub, record, notify=False)
+    pause_manager.resume.assert_not_called()
+    airing.check.assert_not_called()
+    pending_judge.should_enter_pending.assert_not_called()
+    pending_judge.mark_pending.assert_not_called()
+
+
+def test_run_meta_check_silently_refreshes_full_best_version_pre_air_record():
+    """全集洗版订阅继续命中上映前暂停时，也只静默刷新插件归因。"""
+    sub = _sub(id=3, state="S", name="X", best_version=1, best_version_full=1, type="电视剧")
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(
+        tmdb_id=100,
+        type=MediaType.TV,
+        tmdb_info={},
+        next_episode_to_air=None,
+        season_info=[],
+        first_air_date=None,
+    ))
+    plugin._tmdb_episodes = MagicMock(return_value=[])
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(
+        return_value=PauseRecord(reason="pre_air", since=0.0, detail="旧原因"))
+    pause_manager.pause = MagicMock()
+    pause_manager.resume = MagicMock()
+
+    record = PauseRecord(reason="pre_air", since=0.0, detail="开播日期未知")
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(return_value=record)
+    airing.check = MagicMock()
+
+    pending_judge = plugin._modules["pending_judge"]
+    pending_judge.should_enter_pending = MagicMock()
+    pending_judge.mark_pending = MagicMock()
+
+    plugin.run_meta_check()
+
+    pause_manager.pause.assert_called_once_with(sub, record, notify=False)
+    pause_manager.resume.assert_not_called()
+    airing.check.assert_not_called()
+    pending_judge.should_enter_pending.assert_not_called()
+    pending_judge.mark_pending.assert_not_called()
+
+
+def test_run_meta_check_does_not_adopt_manual_pause_when_pause_condition_holds():
+    """无插件暂停记录的 S 态订阅即使命中暂停条件，也不应被插件接管归因。"""
+    sub = _sub(id=3, state="S", name="X", best_version=0, type="电影", season=0)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"pause_enhanced_enabled": True, "pending_enhanced_enabled": False})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=MediaType.MOVIE))
+
+    pause_manager = plugin._modules["pause_manager"]
+    pause_manager.get_pause_record = MagicMock(return_value=None)
+    pause_manager.pause = MagicMock()
+    pause_manager.resume = MagicMock()
+
+    airing = plugin._modules["airing_checker"]
+    airing.check_pre_air = MagicMock(
+        return_value=PauseRecord(reason="pre_air", since=0.0, detail="未上映"))
+
+    plugin.run_meta_check()
+
+    pause_manager.pause.assert_not_called()
+    pause_manager.resume.assert_not_called()
 
 
 def test_run_meta_check_does_not_resume_manual_pause_without_plugin_record():

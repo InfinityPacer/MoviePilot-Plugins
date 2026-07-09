@@ -88,7 +88,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.5.10"
+    plugin_version = "0.5.11"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -833,9 +833,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
                         )
                     record_now = airing.check_pre_air(subscribe, mediainfo, episodes=episodes)
                     if record_now:
+                        current_record = pause_manager.get_pause_record(subscribe) if state == "S" else None
                         if state != "S":
                             logger.info(f"元数据巡检：{format_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
                             pause_manager.pause(subscribe, record_now)
+                        elif current_record:
+                            pause_manager.pause(subscribe, record_now, notify=False)
                         continue
                     if state == "S":
                         current_record = pause_manager.get_pause_record(subscribe)
@@ -887,10 +890,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
                         episodes=episodes,
                     )
                 if record_now:
-                    # 条件成立：尚未暂停才置 S；已是 S 则保持。暂停后本轮不再做待定
+                    # 条件成立：交由 PauseManager 统一处理优先级、刷新与待定清理。暂停后本轮不再做待定。
+                    current_record = pause_manager.get_pause_record(subscribe) if state == "S" else None
                     if state != "S":
                         logger.info(f"元数据巡检：{format_subscribe(subscribe)} 满足{record_now.reason}暂停条件，置为禁用")
                         pause_manager.pause(subscribe, record_now)
+                    elif current_record:
+                        pause_manager.pause(subscribe, record_now, notify=False)
                     continue
                 # 条件解除：仅恢复由上映/播出检查写入的 S 态订阅，避免触碰外部暂停状态。
                 if state == "S":
