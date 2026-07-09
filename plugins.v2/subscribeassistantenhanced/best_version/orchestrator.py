@@ -91,7 +91,7 @@ class BestVersionOrchestrator:
             "filter": subscribe.filter,
             "filter_groups": subscribe.filter_groups,
         }
-        # 普通剧集订阅完成后直接进入洗版，才能在新资源下载前执行整季旧版本清理。
+        # 普通剧集订阅完成后直接进入洗版，才能在新资源下载前执行整季既有版本清理。
         if not is_movie:
             payload["best_version_full"] = 1
         else:

@@ -153,7 +153,7 @@ class TestPendingStateCoordinator:
         assert not any(call.args[1].get("state") == "R" for call in oper.update.call_args_list)
 
     def test_active_sources_normalizes_legacy_single_source_task(self):
-        """旧版单 source 待定记录应归一化为 pending_sources 字典。"""
+        """单 source 待定记录应归一化为 pending_sources 字典。"""
         read, update, _ = _store_mgr({
             "subscribes": {
                 "1": {

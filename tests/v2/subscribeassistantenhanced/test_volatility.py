@@ -267,7 +267,7 @@ class TestVolatilityTracker:
         assert self.tracker.is_stable(subscribe_id=1) is False
 
     def test_legacy_recent_total_change_survives_subscribe_object_migration(self):
-        """带订阅对象写入旧 list 记录时，也要迁移并保留窗口内变化状态。"""
+        """带订阅对象写入 list 结构记录时，也要写入标准结构并保留窗口内变化状态。"""
         now = time.time()
         subscribe = SimpleNamespace(id=41, tmdbid=100, season=1, episode_group=None)
         self.store["volatility"] = {

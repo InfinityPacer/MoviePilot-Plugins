@@ -6,7 +6,7 @@ from subscribeassistantenhanced.best_version.converter import BestVersionConvert
 
 
 class _SubscribeSnapshot(SimpleNamespace):
-    """带 to_dict 的订阅快照替身，用于验证分集转全集迁移载荷。"""
+    """带 to_dict 的订阅快照替身，用于验证分集转全集转换载荷。"""
 
     def to_dict(self):
         """返回订阅快照字典，模拟主程序 Subscribe 对象。"""

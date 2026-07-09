@@ -148,7 +148,7 @@ def resolve_inventory_next_episodes(subscribe, episodes: list,
     """按媒体库实缺数量判断追更已到当前已播最新时，返回后续播出候选集。
 
     ``note`` 只记录订阅链路下载历史，手动下载后整理入库不会补写；播出暂停需要判断
-    真实库存是否已经追到当前已播最新，因此以主程序维护的 ``lack_episode`` 与未播集数量对齐为准。
+    真实库存是否已经追到当前已播最新，因此参考主程序维护的 ``lack_episode``，并结合未播集数量判断。
     """
     futures = future_episode_candidates(subscribe, episodes, as_of=as_of)
     if not futures:
