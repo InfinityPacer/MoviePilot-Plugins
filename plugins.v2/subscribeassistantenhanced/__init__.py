@@ -1282,7 +1282,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return "vue", "dist/assets"
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """返回完整配置表单（Vuetify schema 按 6 个功能 Tab 展示）与默认数据。"""
+        """返回宿主配置接口需要的表单结构和默认模型，Vue Config 使用默认模型初始化。"""
         from .form import build_form
         return build_form()
 
