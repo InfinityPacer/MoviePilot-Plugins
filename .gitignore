@@ -170,5 +170,6 @@ cython_debug/
 .vscode/
 
 !plugins.v2/subscribeassistantenhanced/dist/
+plugins.v2/subscribeassistantenhanced/dist/*
 !plugins.v2/subscribeassistantenhanced/dist/assets/
 !plugins.v2/subscribeassistantenhanced/dist/assets/**

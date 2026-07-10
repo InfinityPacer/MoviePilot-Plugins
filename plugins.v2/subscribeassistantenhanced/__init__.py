@@ -77,7 +77,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
     """订阅助手增强版——插件入口。
 
     生命周期：init_plugin → 事件注册 → 定时任务 → stop_service。
-    配置表单由 get_form 提供；运行概况由日志和 summary API 提供。
+    配置界面由 Vue 联邦 Config 渲染，get_form 提供初始模型与默认值；
+    运行概况由日志和只读 summary API 提供。
     继承 _PluginBase 以获得真实数据层（get_data/save_data）、事件管理器与消息能力。
     """
 
