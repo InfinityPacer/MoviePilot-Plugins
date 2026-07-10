@@ -25,6 +25,7 @@ const emit = defineEmits<{
 
 const README_URL =
   'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistantenhanced/README.md'
+// JS 折叠阈值必须与同文件 CSS 720px container query 保持一致。
 const MOBILE_CONTAINER_WIDTH = 720
 
 const draft = reactive<SaeConfig>({
@@ -62,6 +63,7 @@ const expandedPanelKeys = computed<(string | number)[]>({
   },
 })
 
+// 切换分组或跨过布局阈值时，清除上一组的展开状态并恢复当前布局默认值。
 watch(
   [activeGroup, isMobileLayout],
   () => {
@@ -186,7 +188,11 @@ function saveConfig(): void {
         </div>
 
         <nav class="sae-group-nav" aria-label="配置分组">
-          <VList class="sae-group-nav__list" density="compact" nav>
+          <VList
+            class="sae-group-nav__list app-surface-borderless app-surface-flat app-surface-square"
+            density="compact"
+            nav
+          >
             <VListItem
               v-for="group in groups"
               :key="group.key"
@@ -456,6 +462,7 @@ function saveConfig(): void {
 .sae-config-layout {
   display: grid;
   min-inline-size: 0;
+  /* 72px + safe-area 预留与 sticky 保存栏的回拉配对，避免末字段被遮挡。 */
   padding-block-end: calc(72px + env(safe-area-inset-bottom));
   margin-block-start: 10px;
   gap: 10px;
@@ -478,9 +485,11 @@ function saveConfig(): void {
   grid-area: navigation;
 }
 
-.sae-group-nav__list {
+.sae-group-nav > .sae-group-nav__list.v-list {
   padding: 0;
+  backdrop-filter: none;
   background: transparent;
+  background-color: transparent;
 }
 
 .sae-group-nav__list :deep(.v-list-item) {
@@ -641,6 +650,7 @@ function saveConfig(): void {
   inset-block-end: 0;
   padding-block: 8px calc(8px + env(safe-area-inset-bottom));
   padding-inline: 10px;
+  /* -62px - safe-area 回拉与内容底部预留配对，避免 sticky 保存栏遮挡末字段。 */
   margin-block-start: calc(-62px - env(safe-area-inset-bottom));
 }
 
