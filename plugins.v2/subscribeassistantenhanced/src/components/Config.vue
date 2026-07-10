@@ -173,32 +173,35 @@ function saveConfig(): void {
           <VBtn
             :href="README_URL"
             aria-label="查看插件 README"
-            icon="mdi-book-open-page-variant-outline"
+            icon
             rel="noopener noreferrer"
             size="small"
             target="_blank"
             variant="text"
           >
+            <VIcon icon="mdi-book-open-page-variant-outline" />
             <VTooltip activator="parent" text="查看 README" />
           </VBtn>
           <VBtn
             aria-label="保存配置"
             class="sae-config-header__save"
             color="primary"
-            icon="mdi-content-save"
+            icon
             size="small"
             type="submit"
             variant="text"
           >
+            <VIcon icon="mdi-content-save" />
             <VTooltip activator="parent" text="保存配置" />
           </VBtn>
           <VBtn
             aria-label="关闭配置"
-            icon="mdi-close"
+            icon
             size="small"
             variant="text"
             @click="emit('close')"
           >
+            <VIcon icon="mdi-close" />
             <VTooltip activator="parent" text="关闭配置" />
           </VBtn>
         </div>
@@ -477,11 +480,12 @@ function saveConfig(): void {
           <span>{{ trackerField.label }}</span>
           <VBtn
             :aria-label="`关闭${trackerField.label}`"
-            icon="mdi-close"
+            icon
             size="small"
             variant="text"
             @click="trackerDialogOpen = false"
           >
+            <VIcon icon="mdi-close" />
             <VTooltip activator="parent" text="关闭" />
           </VBtn>
         </VCardTitle>

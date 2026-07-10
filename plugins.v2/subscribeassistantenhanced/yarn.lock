@@ -404,7 +404,7 @@
     "@vue/compiler-core" "3.5.39"
     "@vue/shared" "3.5.39"
 
-"@vue/compiler-sfc@3.5.39":
+"@vue/compiler-sfc@3.5.39", "@vue/compiler-sfc@^3.5.13":
   version "3.5.39"
   resolved "https://registry.yarnpkg.com/@vue/compiler-sfc/-/compiler-sfc-3.5.39.tgz#3eb13950e7442bc86eeebe73287ecbc6bf1678f5"
   integrity sha512-d0ki86iOyN8LoZPBmk5SJWNwHP19CnDDCfuo//+2WJa2g5Ke0Jay983PIBIcSSzldC68I8DrD5GrHV3OSDfodg==

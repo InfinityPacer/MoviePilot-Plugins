@@ -1121,10 +1121,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     return (_ctx, _cache) => {
       const _component_VChip = _resolveComponent("VChip");
+      const _component_VIcon = _resolveComponent("VIcon");
       const _component_VTooltip = _resolveComponent("VTooltip");
       const _component_VBtn = _resolveComponent("VBtn");
       const _component_VAlert = _resolveComponent("VAlert");
-      const _component_VIcon = _resolveComponent("VIcon");
       const _component_VSelect = _resolveComponent("VSelect");
       const _component_VListItem = _resolveComponent("VListItem");
       const _component_VList = _resolveComponent("VList");
@@ -1188,13 +1188,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               _createVNode(_component_VBtn, {
                 href: README_URL,
                 "aria-label": "查看插件 README",
-                icon: "mdi-book-open-page-variant-outline",
+                icon: "",
                 rel: "noopener noreferrer",
                 size: "small",
                 target: "_blank",
                 variant: "text"
               }, {
                 default: _withCtx(() => [
+                  _createVNode(_component_VIcon, { icon: "mdi-book-open-page-variant-outline" }),
                   _createVNode(_component_VTooltip, {
                     activator: "parent",
                     text: "查看 README"
@@ -1206,12 +1207,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 "aria-label": "保存配置",
                 class: "sae-config-header__save",
                 color: "primary",
-                icon: "mdi-content-save",
+                icon: "",
                 size: "small",
                 type: "submit",
                 variant: "text"
               }, {
                 default: _withCtx(() => [
+                  _createVNode(_component_VIcon, { icon: "mdi-content-save" }),
                   _createVNode(_component_VTooltip, {
                     activator: "parent",
                     text: "保存配置"
@@ -1221,12 +1223,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               }),
               _createVNode(_component_VBtn, {
                 "aria-label": "关闭配置",
-                icon: "mdi-close",
+                icon: "",
                 size: "small",
                 variant: "text",
                 onClick: _cache[0] || (_cache[0] = ($event) => emit("close"))
               }, {
                 default: _withCtx(() => [
+                  _createVNode(_component_VIcon, { icon: "mdi-close" }),
                   _createVNode(_component_VTooltip, {
                     activator: "parent",
                     text: "关闭配置"
@@ -1606,12 +1609,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _createElementVNode("span", null, _toDisplayString(_unref(trackerField).label), 1),
                     _createVNode(_component_VBtn, {
                       "aria-label": `关闭${_unref(trackerField).label}`,
-                      icon: "mdi-close",
+                      icon: "",
                       size: "small",
                       variant: "text",
                       onClick: _cache[4] || (_cache[4] = ($event) => trackerDialogOpen.value = false)
                     }, {
                       default: _withCtx(() => [
+                        _createVNode(_component_VIcon, { icon: "mdi-close" }),
                         _createVNode(_component_VTooltip, {
                           activator: "parent",
                           text: "关闭"
@@ -1672,6 +1676,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-ace45cef"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f2ee2cd6"]]);
 
 export { Config as default };
