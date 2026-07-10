@@ -3,14 +3,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import saeLogo from '../assets/sae-logo.svg'
 import { loadSummary, type PluginApi, type SummaryPayload } from '../config/api'
-import { configDefaults, type NumberConfigKey, type SaeConfig } from '../config/defaults'
+import type { NumberConfigKey, SaeConfig } from '../config/defaults'
 import { fields, groups, type FieldMeta, type GroupKey } from '../config/fields'
 import { buildImpactPreview, type PreviewItem } from '../config/preview'
-import { normalizeFiniteNumber } from '../config/values'
+import { normalizeFiniteNumber, normalizeSaeConfig } from '../config/values'
 
 const props = defineProps<{
-  /** 宿主读取并传入的当前插件配置模型。 */
-  initialConfig?: Partial<SaeConfig>
+  /** 宿主传入的动态 JSON 配置模型，进入草稿前按稳定配置契约规范化。 */
+  initialConfig?: unknown
   /** 宿主注入的已认证插件 API 客户端。 */
   api?: PluginApi
 }>()
@@ -29,11 +29,7 @@ const README_URL =
 // JS 折叠阈值必须与同文件 CSS 720px container query 保持一致。
 const MOBILE_CONTAINER_WIDTH = 720
 
-const draft = reactive<SaeConfig>({
-  ...configDefaults,
-  ...props.initialConfig,
-  open_tracker_dialog: false,
-})
+const draft = reactive<SaeConfig>(normalizeSaeConfig(props.initialConfig))
 const renderedFields = fields.filter(field => !field.legacyUiKey && !field.dialogOnly)
 const trackerField = fields.find(
   field => field.key === 'default_tracker_response' && field.dialogOnly,
@@ -144,11 +140,7 @@ function updateNumber(key: NumberConfigKey, incoming: unknown): void {
 
 /** 保存完整配置，并确保弹窗触发位始终按关闭状态持久化。 */
 function saveConfig(): void {
-  emit('save', {
-    ...configDefaults,
-    ...draft,
-    open_tracker_dialog: false,
-  })
+  emit('save', normalizeSaeConfig(draft))
 }
 </script>
 

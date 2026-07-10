@@ -12,79 +12,6 @@ async function loadSummary(api) {
   }
 }
 
-const configDefaults = {
-  "enabled": false,
-  "notify": true,
-  "onlyonce": false,
-  "reset_task": false,
-  "auto_check_interval_minutes": 30,
-  "download_check_interval_minutes": 10,
-  "meta_check_interval_hours": 3,
-  "best_version_cron": "0 15 * * *",
-  "download_monitor_enabled": true,
-  "manual_delete_listen": true,
-  "tracker_response_listen": true,
-  "auto_search_when_delete": true,
-  "skip_deletion": true,
-  "download_timeout_minutes": 120,
-  "download_progress_threshold": 10,
-  "download_retry_limit": 3,
-  "delete_exclude_tags": "H&R",
-  "default_tracker_response": "torrent not registered with this tracker\ntorrent banned",
-  "open_tracker_dialog": false,
-  "delete_record_retention_hours": 24,
-  "subscription_cleanup_history_type": "no",
-  "subscription_cleanup_history_scenes": [],
-  "recognition_guard_mode": "off",
-  "recognition_guard_notify": "off",
-  "recognition_guard_notify_interval": 3600,
-  "recognition_guard_tmdb_recheck_mode": "balanced_strict",
-  "recognition_guard_cache_maxsize": 1e5,
-  "recognition_guard_custom_config": "####### 配置说明 BEGIN #######\n# 1. 本配置只控制识别增强的策略覆盖和关键词，不控制通知、二次识别触发或缓存大小。\n# 2. 未配置或保持注释的项目均继承 recognition_guard_mode 当前模板。\n# 3. actions 的值可选：inherit / observe / soft_block / block：\n#    - inherit：继承当前 recognition_guard_mode 模板，不单独覆盖。\n#    - observe：只记录审计和可选通知，不移除候选，下载选择不受影响。\n#    - soft_block：先从候选池移除；如果整轮候选被清空，且 empty_pool 策略允许，该候选可降级为 observe 恢复。\n#    - block：从候选池移除，集合级保护也不得恢复；用于用户明确不想下载的风险。\n# 4. allow 只能抵消非 hard veto 风险；不能覆盖显式 ID 错配、明确类型/形态互串、目标范围完全不覆盖等 hard veto。\n# 5. block 是普通黑名单风险，动作由 mode 或 actions.user_block 决定；hard_block 才是一律强拦截。\n# 6. 正则使用 Python re 语法；非法正则会跳过对应条目并记录配置告警，不影响其他规则。\n# 7. keywords 下的内置证据词分组如果取消注释配置，表示替换该分组；未配置的分组继续使用内置默认。\n####### 配置说明 END #######\n\nactions:\n  # 候选缺少年份。多站点用户可改为 block，少站点用户建议 inherit 或 observe。\n  # missing_year: block\n\n  # 候选全集范围明显大于目标窗口，例如目标缺 E08-E19，候选是全 60 集。\n  # target_range_oversized: block\n\n  # 命中 keywords.block 时的动作。\n  # user_block: soft_block\n\n  # 二次识别结果与订阅目标不一致。\n  # secondary_identity_conflict: block\n\nempty_pool:\n  # 整轮候选被识别增强清空时的恢复策略：recover_soft_block / never_recover。\n  # policy: recover_soft_block\n\n  # 即使动作是 soft_block，也不允许因整轮候选清空而恢复的原因码。\n  # non_recoverable_codes:\n  #   - target_range_oversized\n  #   - missing_year\n\nkeywords:\n  # 白名单：只抵消非 hard veto 风险。\n  # allow:\n  #   - 官方合集\n\n  # 普通黑名单：动作由 mode 或 actions.user_block 决定。\n  # block:\n  #   - 低可信风险词\n\n  # 强黑名单：所有启用模式下 hard veto；audit 只记录 would block。\n  # hard_block:\n  #   - 强制错误词\n\n  # 以下是内置证据词分组；如需覆盖某一组，取消注释并完整写出该组。\n  # live_action:\n  #   - 真人版\n  #   - 电视剧版\n  #   - 实拍版\n  #   - 真人剧\n  # animation:\n  #   - 动画\n  #   - 动漫\n  #   - 国漫\n  #   - 番剧\n  # movie:\n  #   - 电影版\n  #   - 剧场版\n  #   - 劇場版\n  #   - '\\bMovie\\b'\n  # tv:\n  #   - '\\bS\\d{1,3}(?:E\\d{1,4})?\\b'\n  #   - '第\\s*\\d+\\s*[集季]'\n  #   - '全\\s*\\d+\\s*集'\n",
-  "pending_enhanced_enabled": true,
-  "pending_download_enabled": true,
-  "auto_tv_pending_days": 0,
-  "auto_tv_pending_episodes": 1,
-  "pending_use_volatility": false,
-  "pause_enhanced_enabled": false,
-  "auto_pause_users": "",
-  "airing_pause_days": 30,
-  "movie_air_pause_days": 7,
-  "tv_air_pause_days": 14,
-  "movie_no_download_days": 365,
-  "tv_no_download_days": 180,
-  "no_download_actions": [],
-  "site_total_probe_enabled": false,
-  "paused_probe_reasons": [
-    "no_download"
-  ],
-  "paused_probe_min_pause_days": 14,
-  "paused_probe_interval_hours": 72,
-  "progress_diagnostic_mode": "off",
-  "progress_diagnostic_stalled_rounds": 3,
-  "progress_diagnostic_cooldown_hours": 24,
-  "best_version_type": "no",
-  "best_version_movie_remaining_days": 0,
-  "best_version_tv_remaining_days": 0,
-  "best_version_episode_to_full": false,
-  "best_version_backfill_enabled": false,
-  "backfill_best_version_now": false,
-  "completion_guard_mode": "balanced",
-  "site_completion_evidence_enabled": true,
-  "volatility_enabled": true,
-  "volatility_window_days": 3,
-  "cadence_enabled": true,
-  "cadence_multiplier": 2.5,
-  "cadence_min_window_days": 7,
-  "cadence_min_episodes": 3,
-  "season_cooldown_days": 14,
-  "verify_enabled": false,
-  "verify_interval_hours": 12,
-  "verify_retention_days": 180,
-  "timeout_release_days": 7,
-  "timeout_cadence_acceleration": true
-};
-
 const groups = [
   { key: "global", title: "全局运行", icon: "mdi-tune-variant", summary: "插件开关、通知、一次性动作与公共周期" },
   { key: "cleanup", title: "订阅清理", icon: "mdi-delete-sweep-outline", summary: "下载监控、删种、Tracker 与整理记录清理", highRisk: true },
@@ -909,6 +836,135 @@ const fields = [
   }
 ];
 
+const configDefaults = {
+  "enabled": false,
+  "notify": true,
+  "onlyonce": false,
+  "reset_task": false,
+  "auto_check_interval_minutes": 30,
+  "download_check_interval_minutes": 10,
+  "meta_check_interval_hours": 3,
+  "best_version_cron": "0 15 * * *",
+  "download_monitor_enabled": true,
+  "manual_delete_listen": true,
+  "tracker_response_listen": true,
+  "auto_search_when_delete": true,
+  "skip_deletion": true,
+  "download_timeout_minutes": 120,
+  "download_progress_threshold": 10,
+  "download_retry_limit": 3,
+  "delete_exclude_tags": "H&R",
+  "default_tracker_response": "torrent not registered with this tracker\ntorrent banned",
+  "open_tracker_dialog": false,
+  "delete_record_retention_hours": 24,
+  "subscription_cleanup_history_type": "no",
+  "subscription_cleanup_history_scenes": [],
+  "recognition_guard_mode": "off",
+  "recognition_guard_notify": "off",
+  "recognition_guard_notify_interval": 3600,
+  "recognition_guard_tmdb_recheck_mode": "balanced_strict",
+  "recognition_guard_cache_maxsize": 1e5,
+  "recognition_guard_custom_config": "####### 配置说明 BEGIN #######\n# 1. 本配置只控制识别增强的策略覆盖和关键词，不控制通知、二次识别触发或缓存大小。\n# 2. 未配置或保持注释的项目均继承 recognition_guard_mode 当前模板。\n# 3. actions 的值可选：inherit / observe / soft_block / block：\n#    - inherit：继承当前 recognition_guard_mode 模板，不单独覆盖。\n#    - observe：只记录审计和可选通知，不移除候选，下载选择不受影响。\n#    - soft_block：先从候选池移除；如果整轮候选被清空，且 empty_pool 策略允许，该候选可降级为 observe 恢复。\n#    - block：从候选池移除，集合级保护也不得恢复；用于用户明确不想下载的风险。\n# 4. allow 只能抵消非 hard veto 风险；不能覆盖显式 ID 错配、明确类型/形态互串、目标范围完全不覆盖等 hard veto。\n# 5. block 是普通黑名单风险，动作由 mode 或 actions.user_block 决定；hard_block 才是一律强拦截。\n# 6. 正则使用 Python re 语法；非法正则会跳过对应条目并记录配置告警，不影响其他规则。\n# 7. keywords 下的内置证据词分组如果取消注释配置，表示替换该分组；未配置的分组继续使用内置默认。\n####### 配置说明 END #######\n\nactions:\n  # 候选缺少年份。多站点用户可改为 block，少站点用户建议 inherit 或 observe。\n  # missing_year: block\n\n  # 候选全集范围明显大于目标窗口，例如目标缺 E08-E19，候选是全 60 集。\n  # target_range_oversized: block\n\n  # 命中 keywords.block 时的动作。\n  # user_block: soft_block\n\n  # 二次识别结果与订阅目标不一致。\n  # secondary_identity_conflict: block\n\nempty_pool:\n  # 整轮候选被识别增强清空时的恢复策略：recover_soft_block / never_recover。\n  # policy: recover_soft_block\n\n  # 即使动作是 soft_block，也不允许因整轮候选清空而恢复的原因码。\n  # non_recoverable_codes:\n  #   - target_range_oversized\n  #   - missing_year\n\nkeywords:\n  # 白名单：只抵消非 hard veto 风险。\n  # allow:\n  #   - 官方合集\n\n  # 普通黑名单：动作由 mode 或 actions.user_block 决定。\n  # block:\n  #   - 低可信风险词\n\n  # 强黑名单：所有启用模式下 hard veto；audit 只记录 would block。\n  # hard_block:\n  #   - 强制错误词\n\n  # 以下是内置证据词分组；如需覆盖某一组，取消注释并完整写出该组。\n  # live_action:\n  #   - 真人版\n  #   - 电视剧版\n  #   - 实拍版\n  #   - 真人剧\n  # animation:\n  #   - 动画\n  #   - 动漫\n  #   - 国漫\n  #   - 番剧\n  # movie:\n  #   - 电影版\n  #   - 剧场版\n  #   - 劇場版\n  #   - '\\bMovie\\b'\n  # tv:\n  #   - '\\bS\\d{1,3}(?:E\\d{1,4})?\\b'\n  #   - '第\\s*\\d+\\s*[集季]'\n  #   - '全\\s*\\d+\\s*集'\n",
+  "pending_enhanced_enabled": true,
+  "pending_download_enabled": true,
+  "auto_tv_pending_days": 0,
+  "auto_tv_pending_episodes": 1,
+  "pending_use_volatility": false,
+  "pause_enhanced_enabled": false,
+  "auto_pause_users": "",
+  "airing_pause_days": 30,
+  "movie_air_pause_days": 7,
+  "tv_air_pause_days": 14,
+  "movie_no_download_days": 365,
+  "tv_no_download_days": 180,
+  "no_download_actions": [],
+  "site_total_probe_enabled": false,
+  "paused_probe_reasons": [
+    "no_download"
+  ],
+  "paused_probe_min_pause_days": 14,
+  "paused_probe_interval_hours": 72,
+  "progress_diagnostic_mode": "off",
+  "progress_diagnostic_stalled_rounds": 3,
+  "progress_diagnostic_cooldown_hours": 24,
+  "best_version_type": "no",
+  "best_version_movie_remaining_days": 0,
+  "best_version_tv_remaining_days": 0,
+  "best_version_episode_to_full": false,
+  "best_version_backfill_enabled": false,
+  "backfill_best_version_now": false,
+  "completion_guard_mode": "balanced",
+  "site_completion_evidence_enabled": true,
+  "volatility_enabled": true,
+  "volatility_window_days": 3,
+  "cadence_enabled": true,
+  "cadence_multiplier": 2.5,
+  "cadence_min_window_days": 7,
+  "cadence_min_episodes": 3,
+  "season_cooldown_days": 14,
+  "verify_enabled": false,
+  "verify_interval_hours": 12,
+  "verify_retention_days": 180,
+  "timeout_release_days": 7,
+  "timeout_cadence_acceleration": true
+};
+
+function normalizeFiniteNumber(current, incoming) {
+  if (incoming === null || incoming === void 0) return current;
+  if (typeof incoming === "string" && !incoming.trim()) return current;
+  const parsed = typeof incoming === "number" ? incoming : Number(incoming);
+  return Number.isFinite(parsed) ? parsed : current;
+}
+function normalizeBoolean(defaultValue, incoming) {
+  if (incoming === null || incoming === void 0) return defaultValue;
+  if (typeof incoming === "boolean") return incoming;
+  if (typeof incoming === "string") {
+    return ["true", "on", "yes", "1", "guard"].includes(incoming.trim().toLowerCase());
+  }
+  if (typeof incoming === "number") return incoming !== 0;
+  if (Array.isArray(incoming)) return incoming.length > 0;
+  if (typeof incoming === "object") return Object.keys(incoming).length > 0;
+  return Boolean(incoming);
+}
+function normalizeNumber(defaultValue, incoming) {
+  if (incoming === null || incoming === void 0) return defaultValue;
+  if (typeof incoming === "string" && !incoming.trim()) return defaultValue;
+  if (typeof incoming !== "number" && typeof incoming !== "string") return defaultValue;
+  const parsed = Number(incoming);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
+}
+function normalizeString(defaultValue, incoming) {
+  return incoming === null || incoming === void 0 ? defaultValue : String(incoming);
+}
+function normalizeStringArray(defaultValue, incoming) {
+  if (Array.isArray(incoming)) {
+    return incoming.map((value) => String(value).trim()).filter(Boolean);
+  }
+  if (typeof incoming === "string") {
+    return incoming.split(",").map((value) => value.trim()).filter(Boolean);
+  }
+  return [...defaultValue];
+}
+function normalizeSaeConfig(input) {
+  const source = input !== null && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const entries = Object.keys(configDefaults).map((key) => {
+    const defaultValue = configDefaults[key];
+    const incoming = source[key];
+    if (key === "open_tracker_dialog") return [key, false];
+    if (Array.isArray(defaultValue)) {
+      return [key, normalizeStringArray(defaultValue, incoming)];
+    }
+    if (typeof defaultValue === "boolean") {
+      return [key, normalizeBoolean(defaultValue, incoming)];
+    }
+    if (typeof defaultValue === "number") {
+      return [key, normalizeNumber(defaultValue, incoming)];
+    }
+    return [key, normalizeString(defaultValue, incoming)];
+  });
+  return Object.fromEntries(entries);
+}
+
 function enabled(config, key) {
   const current = config[key];
   if (typeof current === "string") {
@@ -921,44 +977,57 @@ function value(config, key) {
   return String(config[key] ?? "");
 }
 function buildImpactPreview(config) {
+  const normalized = normalizeSaeConfig(config);
   const items = [];
-  if (!enabled(config, "enabled")) {
+  if (!enabled(normalized, "enabled")) {
     items.push({ title: "插件未启用", detail: "保存后不会注册订阅助手定时任务。", tone: "info" });
   }
-  if (enabled(config, "reset_task")) {
+  if (enabled(normalized, "reset_task")) {
     items.push({ title: "重置数据", detail: "保存后会清空插件任务数据并自动复位。", tone: "error" });
   }
-  if (enabled(config, "backfill_best_version_now")) {
+  if (enabled(normalized, "backfill_best_version_now")) {
     items.push({ title: "立即扫描存量并回填", detail: "保存后会扫描存量分集洗版订阅并回填媒体库已有集。", tone: "warning" });
   }
-  if (enabled(config, "enabled")) {
-    items.push({ title: "通用巡检可能运行", detail: `周期 ${value(config, "auto_check_interval_minutes")} 分钟。`, tone: "success" });
-    items.push({ title: "元数据检查可能运行", detail: `周期 ${value(config, "meta_check_interval_hours")} 小时。`, tone: "success" });
-    if (enabled(config, "onlyonce")) items.push({ title: "立即运行一次", detail: "保存后约 3 秒触发一次全量巡检。", tone: "warning" });
-    if (enabled(config, "pending_download_enabled") || enabled(config, "download_monitor_enabled")) {
-      items.push({ title: "下载任务检查可能运行", detail: `周期 ${value(config, "download_check_interval_minutes")} 分钟。`, tone: "success" });
+  if (enabled(normalized, "enabled")) {
+    items.push({ title: "通用巡检可能运行", detail: `周期 ${value(normalized, "auto_check_interval_minutes")} 分钟。`, tone: "success" });
+    items.push({ title: "元数据检查可能运行", detail: `周期 ${value(normalized, "meta_check_interval_hours")} 小时。`, tone: "success" });
+    if (enabled(normalized, "onlyonce")) items.push({ title: "立即运行一次", detail: "保存后约 3 秒触发一次全量巡检。", tone: "warning" });
+    if (enabled(normalized, "pending_download_enabled") || enabled(normalized, "download_monitor_enabled")) {
+      items.push({ title: "下载任务检查可能运行", detail: `周期 ${value(normalized, "download_check_interval_minutes")} 分钟。`, tone: "success" });
     }
-    if (value(config, "best_version_type") !== "no" && value(config, "best_version_cron").trim()) {
-      items.push({ title: "洗版订阅检查可能运行", detail: `CRON ${value(config, "best_version_cron")}。`, tone: "warning" });
+    if (value(normalized, "best_version_type") !== "no" && value(normalized, "best_version_cron").trim()) {
+      items.push({ title: "洗版订阅检查可能运行", detail: `CRON ${value(normalized, "best_version_cron")}。`, tone: "warning" });
     }
-    if (enabled(config, "verify_enabled")) {
-      items.push({ title: "自动纠错可能运行", detail: `周期 ${value(config, "verify_interval_hours")} 小时。`, tone: "warning" });
+    if (enabled(normalized, "verify_enabled")) {
+      items.push({ title: "自动纠错可能运行", detail: `周期 ${value(normalized, "verify_interval_hours")} 小时。`, tone: "warning" });
     }
-    if (enabled(config, "download_monitor_enabled")) {
+    if (enabled(normalized, "download_monitor_enabled")) {
       items.push({ title: "可能删除下载器任务", detail: "下载停滞、Tracker 关键字或手动删种场景可能触发删种处理。", tone: "error" });
     }
-    if (value(config, "subscription_cleanup_history_type") !== "no") {
+    if (value(normalized, "subscription_cleanup_history_type") !== "no") {
       items.push({ title: "可能清理整理记录或文件", detail: "订阅清理范围已启用，请确认清理场景。", tone: "error" });
+    }
+    const actions = normalized.no_download_actions;
+    if (actions.some((action) => action === "pause_movie" || action === "pause_tv")) {
+      items.push({ title: "可能暂停订阅", detail: "无下载策略命中后，电影或剧集订阅可能被暂停。", tone: "warning" });
+    }
+    if (actions.some((action) => action === "complete_movie" || action === "complete_tv")) {
+      items.push({ title: "可能完成订阅", detail: "无下载策略命中后，电影或剧集订阅可能被标记完成并移除。", tone: "warning" });
+    }
+    if (actions.some((action) => action === "delete_movie" || action === "delete_tv")) {
+      items.push({ title: "可能删除订阅", detail: "无下载策略命中后，电影或剧集订阅可能被直接删除。", tone: "error" });
+    }
+    if (enabled(normalized, "best_version_episode_to_full")) {
+      items.push({ title: "可能从分集洗版转为全集洗版", detail: "订阅目标集满足后，分集洗版可能切换为全集洗版。", tone: "warning" });
+    }
+    const recognitionMode = value(normalized, "recognition_guard_mode");
+    if (recognitionMode === "audit") {
+      items.push({ title: "识别增强可能记录候选风险", detail: "审计模式可能记录判定与通知，但不会过滤或移除候选。", tone: "info" });
+    } else if (["loose", "balanced", "strict"].includes(recognitionMode)) {
+      items.push({ title: "识别增强可能过滤候选", detail: "当前模式和生效的自定义策略覆盖可能过滤或移除候选。", tone: "warning" });
     }
   }
   return items;
-}
-
-function normalizeFiniteNumber(current, incoming) {
-  if (incoming === null || incoming === void 0) return current;
-  if (typeof incoming === "string" && !incoming.trim()) return current;
-  const parsed = typeof incoming === "number" ? incoming : Number(incoming);
-  return Number.isFinite(parsed) ? parsed : current;
 }
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -1022,11 +1091,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
-    const draft = reactive({
-      ...configDefaults,
-      ...props.initialConfig,
-      open_tracker_dialog: false
-    });
+    const draft = reactive(normalizeSaeConfig(props.initialConfig));
     const renderedFields = fields.filter((field) => !field.legacyUiKey && !field.dialogOnly);
     const trackerField = fields.find(
       (field) => field.key === "default_tracker_response" && field.dialogOnly
@@ -1113,11 +1178,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       draft[key] = normalizeFiniteNumber(draft[key], incoming);
     }
     function saveConfig() {
-      emit("save", {
-        ...configDefaults,
-        ...draft,
-        open_tracker_dialog: false
-      });
+      emit("save", normalizeSaeConfig(draft));
     }
     return (_ctx, _cache) => {
       const _component_VChip = _resolveComponent("VChip");
@@ -1676,6 +1737,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f2ee2cd6"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-5f555e81"]]);
 
 export { Config as default };

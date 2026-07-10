@@ -4,11 +4,14 @@ import {
   configDefaults,
   type SaeConfig,
 } from '../../../../plugins.v2/subscribeassistantenhanced/src/config/defaults'
-import { buildImpactPreview } from '../../../../plugins.v2/subscribeassistantenhanced/src/config/preview'
+import {
+  buildImpactPreview,
+  type PreviewItem,
+} from '../../../../plugins.v2/subscribeassistantenhanced/src/config/preview'
 
 type ConfigOverride = Partial<Record<keyof SaeConfig, unknown>>
 
-function previewTitles(overrides: ConfigOverride = {}): string[] {
+function previewItems(overrides: ConfigOverride = {}): PreviewItem[] {
   const config = {
     ...configDefaults,
     pending_download_enabled: false,
@@ -22,7 +25,11 @@ function previewTitles(overrides: ConfigOverride = {}): string[] {
     ...overrides,
   } as unknown as SaeConfig
 
-  return buildImpactPreview(config).map(item => item.title)
+  return buildImpactPreview(config)
+}
+
+function previewTitles(overrides: ConfigOverride = {}): string[] {
+  return previewItems(overrides).map(item => item.title)
 }
 
 describe('disabled plugin preview', () => {
@@ -104,6 +111,78 @@ describe('enabled plugin preview matrix', () => {
 
   it.each(cases)('%s returns the exact title set', (_name, overrides, expected) => {
     expect(previewTitles(overrides)).toEqual(expected)
+  })
+})
+
+describe('enabled operational risk preview matrix', () => {
+  const scheduled = ['通用巡检可能运行', '元数据检查可能运行']
+  const actionCases: Array<[string, string, string]> = [
+    ['pause movie', 'pause_movie', '可能暂停订阅'],
+    ['pause tv', 'pause_tv', '可能暂停订阅'],
+    ['complete movie', 'complete_movie', '可能完成订阅'],
+    ['complete tv', 'complete_tv', '可能完成订阅'],
+    ['delete movie', 'delete_movie', '可能删除订阅'],
+    ['delete tv', 'delete_tv', '可能删除订阅'],
+  ]
+
+  it.each(actionCases)('%s adds its exact risk category', (_name, action, expectedTitle) => {
+    expect(previewTitles({ enabled: true, no_download_actions: [action] })).toEqual([
+      ...scheduled,
+      expectedTitle,
+    ])
+  })
+
+  it('deduplicates categories and keeps pause, completion, deletion order', () => {
+    expect(
+      previewTitles({
+        enabled: true,
+        no_download_actions: [
+          'delete_tv',
+          'pause_movie',
+          'complete_tv',
+          'pause_tv',
+          'delete_movie',
+          'complete_movie',
+        ],
+      }),
+    ).toEqual([...scheduled, '可能暂停订阅', '可能完成订阅', '可能删除订阅'])
+  })
+
+  it('adds episode-wash to full-wash conversion risk', () => {
+    expect(previewTitles({ enabled: true, best_version_episode_to_full: true })).toEqual([
+      ...scheduled,
+      '可能从分集洗版转为全集洗版',
+    ])
+  })
+
+  it('distinguishes non-filtering audit from filtering modes', () => {
+    const audit = previewItems({ enabled: true, recognition_guard_mode: 'audit' }).at(-1)
+
+    expect(audit).toEqual({
+      title: '识别增强可能记录候选风险',
+      detail: '审计模式可能记录判定与通知，但不会过滤或移除候选。',
+      tone: 'info',
+    })
+  })
+
+  it.each(['loose', 'balanced', 'strict'])('%s warns about candidate filtering', mode => {
+    const filtering = previewItems({ enabled: true, recognition_guard_mode: mode }).at(-1)
+
+    expect(filtering).toEqual({
+      title: '识别增强可能过滤候选',
+      detail: '当前模式和生效的自定义策略覆盖可能过滤或移除候选。',
+      tone: 'warning',
+    })
+  })
+
+  it('keeps all operational risks behind the plugin-enabled gate', () => {
+    expect(
+      previewTitles({
+        no_download_actions: ['pause_movie', 'complete_tv', 'delete_movie'],
+        best_version_episode_to_full: true,
+        recognition_guard_mode: 'strict',
+      }),
+    ).toEqual(['插件未启用'])
   })
 })
 
