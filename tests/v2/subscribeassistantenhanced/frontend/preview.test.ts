@@ -80,12 +80,12 @@ describe('enabled plugin preview matrix', () => {
     [
       'enabled wash without cron',
       { enabled: true, best_version_type: 'all', best_version_cron: '' },
-      scheduled,
+      [...scheduled, '可能自动创建洗版订阅'],
     ],
     [
       'enabled wash with cron',
       { enabled: true, best_version_type: 'all', best_version_cron: '0 15 * * *' },
-      [...scheduled, '洗版订阅检查可能运行'],
+      [...scheduled, '可能自动创建洗版订阅', '洗版订阅检查可能运行'],
     ],
     [
       'completion verification',
@@ -111,6 +111,63 @@ describe('enabled plugin preview matrix', () => {
 
   it.each(cases)('%s returns the exact title set', (_name, overrides, expected) => {
     expect(previewTitles(overrides)).toEqual(expected)
+  })
+})
+
+describe('automatic wash impact preview', () => {
+  const scheduled = ['通用巡检可能运行', '元数据检查可能运行']
+  const enabledCases: Array<[string, string]> = [
+    ['all', 'all'],
+    ['movie', 'movie'],
+    ['tv', 'tv'],
+    ['tv episode', 'tv_episode'],
+  ]
+
+  it.each(enabledCases)('%s with blank cron warns about automatic creation', (_name, type) => {
+    expect(
+      previewTitles({ enabled: true, best_version_type: type, best_version_cron: '' }),
+    ).toEqual([...scheduled, '可能自动创建洗版订阅'])
+  })
+
+  it.each(enabledCases)('%s with non-blank cron keeps both wash impacts', (_name, type) => {
+    expect(
+      previewTitles({
+        enabled: true,
+        best_version_type: type,
+        best_version_cron: '0 15 * * *',
+      }),
+    ).toEqual([
+      ...scheduled,
+      '可能自动创建洗版订阅',
+      '洗版订阅检查可能运行',
+    ])
+  })
+
+  it.each([
+    ['blank cron', ''],
+    ['non-blank cron', '0 15 * * *'],
+  ])('disabled wash with %s shows neither wash impact', (_name, cron) => {
+    expect(
+      previewTitles({ enabled: true, best_version_type: 'no', best_version_cron: cron }),
+    ).toEqual(scheduled)
+  })
+
+  it('hides both wash impacts while the plugin is disabled', () => {
+    expect(
+      previewTitles({ best_version_type: 'tv_episode', best_version_cron: '0 15 * * *' }),
+    ).toEqual(['插件未启用'])
+  })
+
+  it('describes automatic wash-subscription creation as a warning', () => {
+    const creation = previewItems({ enabled: true, best_version_type: 'movie' }).find(
+      item => item.title === '可能自动创建洗版订阅',
+    )
+
+    expect(creation).toEqual({
+      title: '可能自动创建洗版订阅',
+      detail: '普通订阅完成后，符合当前洗版范围的媒体可能自动创建洗版订阅。',
+      tone: 'warning',
+    })
   })
 })
 
@@ -148,6 +205,62 @@ describe('enabled operational risk preview matrix', () => {
     ).toEqual([...scheduled, '可能暂停订阅', '可能完成订阅', '可能删除订阅'])
   })
 
+  const thresholdCases: Array<[string, ConfigOverride, string[]]> = [
+    [
+      'movie zero',
+      { movie_no_download_days: 0, no_download_actions: ['pause_movie'] },
+      scheduled,
+    ],
+    [
+      'TV zero',
+      { tv_no_download_days: 0, no_download_actions: ['complete_tv'] },
+      scheduled,
+    ],
+    [
+      'both zero',
+      {
+        movie_no_download_days: 0,
+        tv_no_download_days: 0,
+        no_download_actions: ['pause_movie', 'complete_tv', 'delete_movie'],
+      },
+      scheduled,
+    ],
+    [
+      'mixed action and media thresholds',
+      {
+        movie_no_download_days: 0,
+        tv_no_download_days: 2,
+        no_download_actions: ['delete_movie', 'pause_tv', 'complete_movie', 'complete_tv'],
+      },
+      [...scheduled, '可能暂停订阅', '可能完成订阅'],
+    ],
+    [
+      'non-zero thresholds',
+      {
+        movie_no_download_days: 1,
+        tv_no_download_days: 2,
+        no_download_actions: ['delete_tv', 'pause_movie', 'complete_tv'],
+      },
+      [...scheduled, '可能暂停订阅', '可能完成订阅', '可能删除订阅'],
+    ],
+    [
+      'negative finite thresholds',
+      {
+        movie_no_download_days: -1,
+        tv_no_download_days: -2,
+        no_download_actions: ['delete_movie', 'pause_tv', 'complete_movie'],
+      },
+      [...scheduled, '可能暂停订阅', '可能完成订阅', '可能删除订阅'],
+    ],
+  ]
+
+  it.each(thresholdCases)(
+    '%s aligns action risks with enabled media thresholds',
+    (_name, overrides, expected) => {
+      expect(previewTitles({ enabled: true, ...overrides })).toEqual(expected)
+    },
+  )
+
   it('adds episode-wash to full-wash conversion risk', () => {
     expect(previewTitles({ enabled: true, best_version_episode_to_full: true })).toEqual([
       ...scheduled,
@@ -155,8 +268,8 @@ describe('enabled operational risk preview matrix', () => {
     ])
   })
 
-  it('distinguishes non-filtering audit from filtering modes', () => {
-    const audit = previewItems({ enabled: true, recognition_guard_mode: 'audit' }).at(-1)
+  it.each(['audit', ' Audit '])('%s distinguishes non-filtering audit mode', mode => {
+    const audit = previewItems({ enabled: true, recognition_guard_mode: mode }).at(-1)
 
     expect(audit).toEqual({
       title: '识别增强可能记录候选风险',
@@ -165,15 +278,18 @@ describe('enabled operational risk preview matrix', () => {
     })
   })
 
-  it.each(['loose', 'balanced', 'strict'])('%s warns about candidate filtering', mode => {
-    const filtering = previewItems({ enabled: true, recognition_guard_mode: mode }).at(-1)
+  it.each(['loose', 'balanced', 'strict', ' STRICT '])(
+    '%s warns about candidate filtering',
+    mode => {
+      const filtering = previewItems({ enabled: true, recognition_guard_mode: mode }).at(-1)
 
-    expect(filtering).toEqual({
-      title: '识别增强可能过滤候选',
-      detail: '当前模式和生效的自定义策略覆盖可能过滤或移除候选。',
-      tone: 'warning',
-    })
-  })
+      expect(filtering).toEqual({
+        title: '识别增强可能过滤候选',
+        detail: '当前模式和生效的自定义策略覆盖可能过滤或移除候选。',
+        tone: 'warning',
+      })
+    },
+  )
 
   it('keeps all operational risks behind the plugin-enabled gate', () => {
     expect(

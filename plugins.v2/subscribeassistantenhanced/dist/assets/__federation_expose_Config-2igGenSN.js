@@ -995,8 +995,11 @@ function buildImpactPreview(config) {
     if (enabled(normalized, "pending_download_enabled") || enabled(normalized, "download_monitor_enabled")) {
       items.push({ title: "下载任务检查可能运行", detail: `周期 ${value(normalized, "download_check_interval_minutes")} 分钟。`, tone: "success" });
     }
-    if (value(normalized, "best_version_type") !== "no" && value(normalized, "best_version_cron").trim()) {
-      items.push({ title: "洗版订阅检查可能运行", detail: `CRON ${value(normalized, "best_version_cron")}。`, tone: "warning" });
+    if (value(normalized, "best_version_type") !== "no") {
+      items.push({ title: "可能自动创建洗版订阅", detail: "普通订阅完成后，符合当前洗版范围的媒体可能自动创建洗版订阅。", tone: "warning" });
+      if (value(normalized, "best_version_cron").trim()) {
+        items.push({ title: "洗版订阅检查可能运行", detail: `CRON ${value(normalized, "best_version_cron")}。`, tone: "warning" });
+      }
     }
     if (enabled(normalized, "verify_enabled")) {
       items.push({ title: "自动纠错可能运行", detail: `周期 ${value(normalized, "verify_interval_hours")} 小时。`, tone: "warning" });
@@ -1008,19 +1011,24 @@ function buildImpactPreview(config) {
       items.push({ title: "可能清理整理记录或文件", detail: "订阅清理范围已启用，请确认清理场景。", tone: "error" });
     }
     const actions = normalized.no_download_actions;
-    if (actions.some((action) => action === "pause_movie" || action === "pause_tv")) {
+    const movieNoDownloadEnabled = normalized.movie_no_download_days !== 0;
+    const tvNoDownloadEnabled = normalized.tv_no_download_days !== 0;
+    const hasEnabledMediaAction = (movieAction, tvAction) => actions.some(
+      (action) => movieNoDownloadEnabled && action === movieAction || tvNoDownloadEnabled && action === tvAction
+    );
+    if (hasEnabledMediaAction("pause_movie", "pause_tv")) {
       items.push({ title: "可能暂停订阅", detail: "无下载策略命中后，电影或剧集订阅可能被暂停。", tone: "warning" });
     }
-    if (actions.some((action) => action === "complete_movie" || action === "complete_tv")) {
+    if (hasEnabledMediaAction("complete_movie", "complete_tv")) {
       items.push({ title: "可能完成订阅", detail: "无下载策略命中后，电影或剧集订阅可能被标记完成并移除。", tone: "warning" });
     }
-    if (actions.some((action) => action === "delete_movie" || action === "delete_tv")) {
+    if (hasEnabledMediaAction("delete_movie", "delete_tv")) {
       items.push({ title: "可能删除订阅", detail: "无下载策略命中后，电影或剧集订阅可能被直接删除。", tone: "error" });
     }
     if (enabled(normalized, "best_version_episode_to_full")) {
       items.push({ title: "可能从分集洗版转为全集洗版", detail: "订阅目标集满足后，分集洗版可能切换为全集洗版。", tone: "warning" });
     }
-    const recognitionMode = value(normalized, "recognition_guard_mode");
+    const recognitionMode = value(normalized, "recognition_guard_mode").trim().toLowerCase();
     if (recognitionMode === "audit") {
       items.push({ title: "识别增强可能记录候选风险", detail: "审计模式可能记录判定与通知，但不会过滤或移除候选。", tone: "info" });
     } else if (["loose", "balanced", "strict"].includes(recognitionMode)) {
