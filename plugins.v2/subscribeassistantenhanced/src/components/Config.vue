@@ -2,9 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import saeLogo from '../assets/sae-logo.svg'
-import { type PluginApi } from '../config/api'
+import { loadSummary, type PluginApi, type SummaryPayload } from '../config/api'
 import { configDefaults, type NumberConfigKey, type SaeConfig } from '../config/defaults'
 import { fields, groups, type FieldMeta, type GroupKey } from '../config/fields'
+import { buildImpactPreview, type PreviewItem } from '../config/preview'
 import { normalizeFiniteNumber } from '../config/values'
 
 const props = defineProps<{
@@ -34,11 +35,26 @@ const draft = reactive<SaeConfig>({
   open_tracker_dialog: false,
 })
 const renderedFields = fields.filter(field => !field.legacyUiKey && !field.dialogOnly)
+const trackerField = fields.find(
+  field => field.key === 'default_tracker_response' && field.dialogOnly,
+)!
 const activeGroup = ref<GroupKey>('global')
 const configRoot = ref<HTMLElement | null>(null)
 const containerWidth = ref(0)
 const expandedAdvancedKeys = ref<string[]>([])
+const impactItems = computed(() => buildImpactPreview(draft))
+const runtimeSummary = ref<SummaryPayload | null>(null)
+const summaryState = ref<'loading' | 'available' | 'unavailable'>('loading')
+// 对话框开关只控制当前界面，持久化的旧版触发字段始终保持 false。
+const trackerDialogOpen = ref(false)
 let resizeObserver: ResizeObserver | undefined
+
+const impactToneIcons: Record<PreviewItem['tone'], string> = {
+  info: 'mdi-information-outline',
+  success: 'mdi-check-circle-outline',
+  warning: 'mdi-alert-outline',
+  error: 'mdi-alert-circle-outline',
+}
 
 const activeGroupMeta = computed(
   () => groups.find(group => group.key === activeGroup.value) ?? groups[0]!,
@@ -53,6 +69,7 @@ const collapsibleFieldKeys = computed(() =>
   activeFields.value.filter(isCollapsibleField).map(field => field.key),
 )
 const isMobileLayout = computed(() => containerWidth.value < MOBILE_CONTAINER_WIDTH)
+const summaryDomains = computed(() => Object.entries(runtimeSummary.value?.domains ?? {}))
 const expandedPanelKeys = computed<(string | number)[]>({
   get: () => [...coreFieldKeys.value, ...expandedAdvancedKeys.value],
   set: keys => {
@@ -73,14 +90,19 @@ watch(
 )
 
 onMounted(() => {
-  if (!configRoot.value) return
+  if (configRoot.value) {
+    containerWidth.value = configRoot.value.getBoundingClientRect().width
+    resizeObserver = new ResizeObserver(entries => {
+      const entry = entries[0]
+      if (entry) containerWidth.value = entry.contentRect.width
+    })
+    resizeObserver.observe(configRoot.value)
+  }
 
-  containerWidth.value = configRoot.value.getBoundingClientRect().width
-  resizeObserver = new ResizeObserver(entries => {
-    const entry = entries[0]
-    if (entry) containerWidth.value = entry.contentRect.width
+  void loadSummary(props.api).then(payload => {
+    runtimeSummary.value = payload
+    summaryState.value = payload ? 'available' : 'unavailable'
   })
-  resizeObserver.observe(configRoot.value)
 })
 
 onBeforeUnmount(() => resizeObserver?.disconnect())
@@ -95,6 +117,24 @@ function fieldColor(field: FieldMeta): 'error' | 'warning' | undefined {
   if (field.risk === 'danger') return 'error'
   if (field.risk === 'notice') return 'warning'
   return undefined
+}
+
+/** 按概览契约显示布尔状态，字符串模式保持后端原值。 */
+function formatDomainStatus(value: boolean | string): string {
+  if (typeof value === 'boolean') return value ? '启用' : '关闭'
+  return value
+}
+
+/** 使用稳定图标区分开关状态与模式值，不推断额外运行健康度。 */
+function domainIcon(value: boolean | string): string {
+  if (typeof value !== 'boolean') return 'mdi-tune-variant'
+  return value ? 'mdi-check-circle-outline' : 'mdi-minus-circle-outline'
+}
+
+/** 概览状态只使用 Vuetify 语义色。 */
+function domainColor(value: boolean | string): 'info' | 'success' | undefined {
+  if (typeof value !== 'boolean') return 'info'
+  return value ? 'success' : undefined
 }
 
 /** 数值字段只接受有限 number，避免动态输入污染完整保存 payload。 */
@@ -332,6 +372,26 @@ function saveConfig(): void {
               </VExpansionPanelText>
             </VExpansionPanel>
           </VExpansionPanels>
+
+          <div v-if="activeGroup === 'cleanup'" class="sae-tracker-entry">
+            <div class="sae-tracker-entry__copy">
+              <VIcon color="primary" icon="mdi-message-text-outline" size="22" />
+              <div>
+                <strong>{{ trackerField.label }}</strong>
+                <p>{{ trackerField.hint }}</p>
+              </div>
+            </div>
+            <VBtn
+              :aria-label="`编辑${trackerField.label}`"
+              color="primary"
+              prepend-icon="mdi-pencil-outline"
+              type="button"
+              variant="tonal"
+              @click="trackerDialogOpen = true"
+            >
+              编辑{{ trackerField.label }}
+            </VBtn>
+          </div>
         </main>
 
         <aside class="sae-impact-preview">
@@ -346,13 +406,56 @@ function saveConfig(): void {
               <p>{{ activeGroupMeta.summary }}</p>
             </div>
           </div>
-          <VChip
-            :color="activeGroupMeta.highRisk ? 'error' : 'success'"
-            size="small"
-            variant="tonal"
-          >
-            {{ activeGroupMeta.highRisk ? '高风险分组' : '常规分组' }}
-          </VChip>
+
+          <ul class="sae-impact-preview__list">
+            <li v-for="item in impactItems" :key="item.title" class="sae-impact-preview__item">
+              <VIcon :color="item.tone" :icon="impactToneIcons[item.tone]" size="20" />
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.detail }}</p>
+              </div>
+            </li>
+          </ul>
+
+          <section aria-label="运行概况" class="sae-runtime-summary">
+            <div class="sae-runtime-summary__title">
+              <VIcon color="primary" icon="mdi-chart-box-outline" size="19" />
+              <h3>运行概况</h3>
+            </div>
+
+            <div v-if="summaryState === 'loading'" class="sae-runtime-summary__state">
+              <VProgressCircular color="primary" indeterminate size="18" width="2" />
+              <span>正在读取运行概况</span>
+            </div>
+
+            <template v-else-if="summaryState === 'available' && runtimeSummary">
+              <div class="sae-runtime-summary__metrics">
+                <div class="sae-runtime-summary__row">
+                  <VIcon icon="mdi-timer-sand" size="18" />
+                  <span>待定订阅</span>
+                  <strong>{{ runtimeSummary.pending_count }}</strong>
+                </div>
+                <div class="sae-runtime-summary__row">
+                  <VIcon icon="mdi-download-network-outline" size="18" />
+                  <span>监控下载任务</span>
+                  <strong>{{ runtimeSummary.monitored_torrents }}</strong>
+                </div>
+              </div>
+              <div class="sae-runtime-summary__domains">
+                <div
+                  v-for="[name, status] in summaryDomains"
+                  :key="name"
+                  class="sae-runtime-summary__row"
+                >
+                  <VIcon :color="domainColor(status)" :icon="domainIcon(status)" size="18" />
+                  <span>{{ name }}</span>
+                  <strong>{{ formatDomainStatus(status) }}</strong>
+                </div>
+              </div>
+            </template>
+
+            <p v-else class="sae-runtime-summary__unavailable">运行概况暂不可用</p>
+          </section>
         </aside>
       </div>
 
@@ -362,6 +465,45 @@ function saveConfig(): void {
         </VBtn>
       </div>
     </form>
+
+    <VDialog
+      v-model="trackerDialogOpen"
+      max-width="720"
+      scrollable
+      width="calc(100% - 24px)"
+    >
+      <VCard>
+        <VCardTitle class="sae-tracker-dialog__title">
+          <span>{{ trackerField.label }}</span>
+          <VBtn
+            :aria-label="`关闭${trackerField.label}`"
+            icon="mdi-close"
+            size="small"
+            variant="text"
+            @click="trackerDialogOpen = false"
+          >
+            <VTooltip activator="parent" text="关闭" />
+          </VBtn>
+        </VCardTitle>
+        <VCardText>
+          <VTextarea
+            v-model="draft.default_tracker_response"
+            :aria-label="trackerField.label"
+            :hint="trackerField.hint"
+            :label="trackerField.label"
+            persistent-hint
+            rows="10"
+            variant="outlined"
+          />
+        </VCardText>
+        <VCardActions class="sae-tracker-dialog__actions">
+          <VSpacer />
+          <VBtn color="primary" prepend-icon="mdi-check" @click="trackerDialogOpen = false">
+            完成
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </section>
 </template>
 
@@ -612,6 +754,57 @@ function saveConfig(): void {
   line-height: 1rem;
 }
 
+.sae-tracker-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-inline-size: 0;
+  padding: 14px;
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.09);
+  gap: 12px;
+}
+
+.sae-tracker-entry__copy {
+  display: flex;
+  align-items: flex-start;
+  min-inline-size: 0;
+  gap: 9px;
+}
+
+.sae-tracker-entry__copy > div {
+  min-inline-size: 0;
+}
+
+.sae-tracker-entry strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+  letter-spacing: 0;
+  line-height: 1.2rem;
+}
+
+.sae-tracker-entry p {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  line-height: 1.05rem;
+}
+
+.sae-tracker-entry :deep(.v-btn) {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  block-size: auto;
+  min-block-size: 36px;
+  padding-block: 7px;
+}
+
+.sae-tracker-entry :deep(.v-btn__content) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .sae-impact-preview {
   min-inline-size: 0;
   padding: 14px;
@@ -644,6 +837,114 @@ function saveConfig(): void {
   line-height: 1.1rem;
 }
 
+.sae-impact-preview__list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sae-impact-preview__item,
+.sae-runtime-summary__row,
+.sae-runtime-summary__state,
+.sae-runtime-summary__title {
+  display: grid;
+  align-items: start;
+  min-inline-size: 0;
+  gap: 8px;
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+
+.sae-impact-preview__item {
+  padding-block: 10px;
+}
+
+.sae-impact-preview__item + .sae-impact-preview__item {
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.09);
+}
+
+.sae-impact-preview__item > div {
+  min-inline-size: 0;
+}
+
+.sae-runtime-summary {
+  padding-block-start: 13px;
+  margin-block-start: 12px;
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+}
+
+.sae-runtime-summary__title {
+  align-items: center;
+}
+
+.sae-runtime-summary__title h3 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.1rem;
+}
+
+.sae-runtime-summary__state,
+.sae-runtime-summary__row {
+  align-items: center;
+  padding-block: 7px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  line-height: 1.05rem;
+}
+
+.sae-runtime-summary__state {
+  margin-block-start: 6px;
+}
+
+.sae-runtime-summary__metrics,
+.sae-runtime-summary__domains {
+  margin-block-start: 6px;
+}
+
+.sae-runtime-summary__domains {
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.09);
+}
+
+.sae-runtime-summary__row {
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, auto);
+}
+
+.sae-runtime-summary__row span,
+.sae-runtime-summary__row strong {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.sae-runtime-summary__row strong {
+  color: rgb(var(--v-theme-on-surface));
+  font-weight: 600;
+  text-align: end;
+}
+
+.sae-runtime-summary__unavailable {
+  margin-block-start: 9px;
+}
+
+.sae-tracker-dialog__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-inline-size: 0;
+  gap: 12px;
+}
+
+.sae-tracker-dialog__title > span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.sae-tracker-dialog__actions {
+  flex-wrap: wrap;
+}
+
 .sae-mobile-savebar {
   position: sticky;
   z-index: 5;
@@ -667,6 +968,15 @@ function saveConfig(): void {
 
   .sae-config-header__actions {
     justify-content: flex-end;
+  }
+
+  .sae-tracker-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sae-tracker-entry :deep(.v-btn) {
+    inline-size: 100%;
   }
 }
 
