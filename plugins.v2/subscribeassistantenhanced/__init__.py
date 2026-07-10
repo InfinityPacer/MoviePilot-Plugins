@@ -1247,6 +1247,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "path": "/summary",
             "endpoint": self._api_summary,
             "methods": ["GET"],
+            "auth": "bear",
             "summary": "订阅助手（增强版）概览",
             "description": "返回各业务域启用状态与待定/监控计数",
         }]
@@ -1273,6 +1274,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "pending_count": pending,
             "monitored_torrents": len(torrents),
         }
+
+    @staticmethod
+    def get_render_mode() -> Tuple[str, str]:
+        """使用 Vue 联邦组件渲染配置页，构建产物随插件发布。"""
+        return "vue", "dist/assets"
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """返回完整配置表单（Vuetify schema 按 6 个功能 Tab 展示）与默认数据。"""

@@ -168,3 +168,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 .vscode/
+
+!plugins.v2/subscribeassistantenhanced/dist/
+!plugins.v2/subscribeassistantenhanced/dist/assets/
+!plugins.v2/subscribeassistantenhanced/dist/assets/**
