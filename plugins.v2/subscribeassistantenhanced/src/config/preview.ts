@@ -4,12 +4,13 @@ import type { BooleanConfigKey, SaeConfig } from './defaults'
 export interface PreviewItem {
   /** 影响项标题。 */
   title: string
-  /** 使用“可能”口径描述的简短影响说明。 */
+  /** 初始化期动作使用确定口径，条件性影响使用“可能”口径。 */
   detail: string
   /** 映射到 MoviePilot/Vuetify 语义色的提示等级。 */
   tone: 'info' | 'success' | 'warning' | 'error'
 }
 
+/** 兼容后端布尔配置的字符串与数值表示，确保预览判断与持久化配置语义一致。 */
 function enabled(config: SaeConfig, key: BooleanConfigKey): boolean {
   const current = config[key] as boolean | number | string
   if (typeof current === 'string') {

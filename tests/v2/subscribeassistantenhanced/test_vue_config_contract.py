@@ -1,4 +1,6 @@
 import json
+import re
+from collections import OrderedDict
 from pathlib import Path
 
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
@@ -66,6 +68,51 @@ def _load_json_export(path: Path, marker: str):
     _, separator, suffix = path.read_text(encoding="utf-8").partition(marker)
     assert separator, f"缺少配置导出标记：{marker}"
     return json.loads(suffix.strip())
+
+
+def _load_interface_types(path: Path, interface_name: str) -> OrderedDict[str, str]:
+    assert path.is_file(), f"缺少生成配置契约：{path.relative_to(REPO_ROOT)}"
+    text = path.read_text(encoding="utf-8")
+    match = re.search(
+        rf"export interface {re.escape(interface_name)}\s*\{{(?P<body>.*?)^\}}",
+        text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    assert match, f"缺少配置接口声明：{interface_name}"
+
+    body = re.sub(r"/\*\*.*?\*/", "", match.group("body"), flags=re.DOTALL)
+    interface_types = OrderedDict()
+    for line in body.splitlines():
+        declaration = line.strip().removesuffix(";")
+        if not declaration:
+            continue
+        key, separator, value_type = declaration.partition(":")
+        assert separator and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key), (
+            f"无法解析 {interface_name} 属性声明：{declaration}"
+        )
+        assert key not in interface_types, f"{interface_name} 存在重复属性：{key}"
+        interface_types[key] = value_type.strip()
+    return interface_types
+
+
+def _expected_interface_types(defaults: dict) -> OrderedDict[str, str]:
+    list_keys = {key for key, value in defaults.items() if isinstance(value, list)}
+    assert list_keys == set(MULTI_ITEMS), "列表默认值必须与多选配置键完全一致"
+
+    expected_types = OrderedDict()
+    for key, value in defaults.items():
+        if isinstance(value, bool):
+            value_type = "boolean"
+        elif isinstance(value, (int, float)):
+            value_type = "number"
+        elif isinstance(value, str):
+            value_type = "string"
+        elif isinstance(value, list):
+            value_type = "string[]"
+        else:
+            raise AssertionError(f"不支持的配置默认值类型：{key}={type(value).__name__}")
+        expected_types[key] = value_type
+    return expected_types
 
 
 def _expected_fields(defaults: dict) -> list[dict]:
@@ -145,9 +192,11 @@ def test_summary_api_uses_bear_auth_and_coarse_payload_shape():
 
 def test_generated_vue_config_contract_matches_python_sources():
     defaults = PluginConfig.defaults()
+    generated_types = _load_interface_types(DEFAULTS_PATH, "SaeConfig")
     generated_defaults = _load_json_export(DEFAULTS_PATH, "export const configDefaults: SaeConfig = ")
     generated_fields = _load_json_export(FIELDS_PATH, "export const fields: FieldMeta[] = ")
 
+    assert generated_types == _expected_interface_types(defaults)
     assert generated_defaults == defaults
     assert generated_fields == _expected_fields(defaults)
     for field in generated_fields:
