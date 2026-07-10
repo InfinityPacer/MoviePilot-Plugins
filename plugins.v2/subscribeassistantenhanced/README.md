@@ -104,9 +104,11 @@
 | 类型 | 标识 | 说明 |
 | --- | --- | --- |
 | 命令 | `/subscribe_toggle` | 切换订阅启用 / 禁用状态；参数为订阅 ID 或完整订阅名，命中多个同名订阅时会返回 ID 列表并提示带 ID 重试 |
-| API | `GET /api/v1/plugin/SubscribeAssistantEnhanced/summary` | 返回各功能启用状态、待定数量和记录中的下载任务数量；需要 MoviePilot 插件 API 鉴权，插件 ID 按 `SubscribeAssistantEnhanced` 使用 |
+| API | `GET /api/v1/plugin/SubscribeAssistantEnhanced/summary` | 返回各功能启用状态、待定数量和记录中的下载任务数量；配置页通过登录态读取该粗粒度概况，不返回配置明细、路径、站点凭据或日志内容 |
 
 ## 配置说明
+
+> 新版配置页使用 MoviePilot Vue 联邦组件渲染，外观跟随主程序主题、圆角、阴影和透明主题设置；配置字段和默认值仍以本表为准。
 
 看不懂的配置项可跳到下方的「深入说明」对照查看；不在「深入说明」里的项一般按默认值即可。
 
