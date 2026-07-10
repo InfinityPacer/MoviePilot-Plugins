@@ -34,7 +34,7 @@ function updateNumber(key: NumberConfigKey, incoming: unknown): void {
   draft[key] = normalizeFiniteNumber(draft[key], incoming)
 }
 
-/** 保存完整配置，并确保旧版弹窗状态不会被持久化为开启。 */
+/** 保存完整配置，并确保弹窗触发位始终按关闭状态持久化。 */
 function saveConfig(): void {
   emit('save', {
     ...configDefaults,
@@ -111,7 +111,7 @@ function saveConfig(): void {
       </div>
 
       <div class="sae-config-actions">
-        <VBtn color="primary" type="submit">保存</VBtn>
+        <VBtn color="primary" type="submit" icon="mdi-content-save" aria-label="保存配置" />
       </div>
     </form>
   </section>
