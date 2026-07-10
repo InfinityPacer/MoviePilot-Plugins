@@ -18,6 +18,7 @@ from subscribeassistantenhanced.shared.config import PluginConfig
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+README_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/README.md"
 DEFAULTS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/src/config/defaults.ts"
 FIELDS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/src/config/fields.ts"
 
@@ -202,3 +203,16 @@ def test_generated_vue_config_contract_matches_python_sources():
     for field in generated_fields:
         if field["key"] in MULTI_ITEMS:
             assert all(isinstance(option["value"], str) for option in field["options"])
+
+
+def test_readme_wash_schedule_registration_requires_nonempty_cron():
+    service_row = next(
+        line
+        for line in README_PATH.read_text(encoding="utf-8").splitlines()
+        if line.startswith("| 洗版订阅检查 |")
+    )
+    description = service_row.strip("|").split("|")[3].strip()
+    _details, separator, registration_condition = description.rpartition("；")
+
+    assert separator
+    assert registration_condition == "仅「洗版类型」不是关闭且「洗版检查周期」非空时注册"
