@@ -175,11 +175,12 @@
         "name": "Plex中文本地化",
         "description": "实现拼音排序、搜索及类型标签中文本地化功能。",
         "labels": "Plex",
-        "version": "1.9",
+        "version": "2.0",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexlocalization.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v2.0": "重构插件执行逻辑，提升全量处理性能和稳定性",
             "v1.9": "修复标题排序写入端点，避免日志显示成功但 Plex 未实际更新",
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex中文本地化插件"
