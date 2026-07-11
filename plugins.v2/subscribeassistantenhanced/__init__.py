@@ -88,7 +88,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.5.13"
+    plugin_version = "0.6.0"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
