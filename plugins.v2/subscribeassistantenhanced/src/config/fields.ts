@@ -67,7 +67,7 @@ export const groups: GroupMeta[] = [
   { key: 'cleanup', title: '订阅清理', icon: 'mdi-delete-sweep-outline', summary: '下载监控、删种、Tracker 与整理记录清理', highRisk: true },
   { key: 'pending', title: '订阅待定', icon: 'mdi-timer-sand', summary: '下载中与剧集目标未稳定时保持待定' },
   { key: 'pause', title: '订阅暂停', icon: 'mdi-pause-circle-outline', summary: '按用户、上映播出窗口和无下载策略暂停订阅' },
-  { key: 'completion', title: '订阅补全', icon: 'mdi-radar', summary: '站点集数探测、暂停补搜与无进展诊断' },
+  { key: 'completion', title: '订阅补全', icon: 'mdi-radar', summary: '站点集数探测与暂停订阅补搜' },
   { key: 'bestVersion', title: '订阅洗版', icon: 'mdi-auto-fix', summary: '洗版范围、时限、回填和分集转全集', highRisk: true },
   { key: 'guard', title: '完结信号', icon: 'mdi-shield-check-outline', summary: '完结守卫、站点证据、波动节奏和自动纠错' },
   { key: 'recognition', title: '识别增强', icon: 'mdi-account-search-outline', summary: '候选准入、通知、二次识别和自定义策略' },
@@ -650,39 +650,6 @@ export const fields: FieldMeta[] = [
         "value": 144
       }
     ],
-    "advanced": true
-  },
-  {
-    "key": "progress_diagnostic_mode",
-    "label": "无进展诊断模式",
-    "group": "completion",
-    "kind": "select",
-    "hint": "订阅长期无进展时的诊断处理方式",
-    "options": [
-      {
-        "title": "关闭",
-        "value": "off"
-      },
-      {
-        "title": "仅通知",
-        "value": "notify"
-      }
-    ]
-  },
-  {
-    "key": "progress_diagnostic_stalled_rounds",
-    "label": "连续无进展轮数",
-    "group": "completion",
-    "kind": "number",
-    "hint": "连续无进展多少轮后处理，0 表示不处理",
-    "advanced": true
-  },
-  {
-    "key": "progress_diagnostic_cooldown_hours",
-    "label": "诊断冷却（小时）",
-    "group": "completion",
-    "kind": "number",
-    "hint": "同一订阅诊断提醒的最小间隔",
     "advanced": true
   },
   {

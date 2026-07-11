@@ -59,9 +59,6 @@ const configDefaults = {
   ],
   "paused_probe_min_pause_days": 14,
   "paused_probe_interval_hours": 72,
-  "progress_diagnostic_mode": "off",
-  "progress_diagnostic_stalled_rounds": 3,
-  "progress_diagnostic_cooldown_hours": 24,
   "best_version_type": "no",
   "best_version_movie_remaining_days": 0,
   "best_version_tv_remaining_days": 0,
@@ -159,7 +156,7 @@ const groups = [
   { key: "cleanup", title: "订阅清理", icon: "mdi-delete-sweep-outline", summary: "下载监控、删种、Tracker 与整理记录清理", highRisk: true },
   { key: "pending", title: "订阅待定", icon: "mdi-timer-sand", summary: "下载中与剧集目标未稳定时保持待定" },
   { key: "pause", title: "订阅暂停", icon: "mdi-pause-circle-outline", summary: "按用户、上映播出窗口和无下载策略暂停订阅" },
-  { key: "completion", title: "订阅补全", icon: "mdi-radar", summary: "站点集数探测、暂停补搜与无进展诊断" },
+  { key: "completion", title: "订阅补全", icon: "mdi-radar", summary: "站点集数探测与暂停订阅补搜" },
   { key: "bestVersion", title: "订阅洗版", icon: "mdi-auto-fix", summary: "洗版范围、时限、回填和分集转全集", highRisk: true },
   { key: "guard", title: "完结信号", icon: "mdi-shield-check-outline", summary: "完结守卫、站点证据、波动节奏和自动纠错" },
   { key: "recognition", title: "识别增强", icon: "mdi-account-search-outline", summary: "候选准入、通知、二次识别和自定义策略" }
@@ -744,39 +741,6 @@ const fields = [
     "advanced": true
   },
   {
-    "key": "progress_diagnostic_mode",
-    "label": "无进展诊断模式",
-    "group": "completion",
-    "kind": "select",
-    "hint": "订阅长期无进展时的诊断处理方式",
-    "options": [
-      {
-        "title": "关闭",
-        "value": "off"
-      },
-      {
-        "title": "仅通知",
-        "value": "notify"
-      }
-    ]
-  },
-  {
-    "key": "progress_diagnostic_stalled_rounds",
-    "label": "连续无进展轮数",
-    "group": "completion",
-    "kind": "number",
-    "hint": "连续无进展多少轮后处理，0 表示不处理",
-    "advanced": true
-  },
-  {
-    "key": "progress_diagnostic_cooldown_hours",
-    "label": "诊断冷却（小时）",
-    "group": "completion",
-    "kind": "number",
-    "hint": "同一订阅诊断提醒的最小间隔",
-    "advanced": true
-  },
-  {
     "key": "best_version_type",
     "label": "洗版类型",
     "group": "bestVersion",
@@ -1040,7 +1004,6 @@ const messages = {
     "section.airing": "上映与播出窗口",
     "section.noDownload": "无下载处理",
     "section.siteProbe": "站点集数探测",
-    "section.diagnostic": "无进展诊断",
     "section.pausedProbe": "暂停订阅补搜",
     "section.bestVersionScope": "洗版范围",
     "section.backfill": "转换与回填",
@@ -1106,7 +1069,6 @@ const messages = {
     "section.airing": "上映與播出窗口",
     "section.noDownload": "無下載處理",
     "section.siteProbe": "站點集數探測",
-    "section.diagnostic": "無進度診斷",
     "section.pausedProbe": "暫停訂閱補搜",
     "section.bestVersionScope": "洗版範圍",
     "section.backfill": "轉換與回填",
@@ -1172,7 +1134,6 @@ const messages = {
     "section.airing": "Release and airing windows",
     "section.noDownload": "No-download handling",
     "section.siteProbe": "Site episode probe",
-    "section.diagnostic": "Stalled-progress diagnostics",
     "section.pausedProbe": "Paused subscription search",
     "section.bestVersionScope": "Best-version scope",
     "section.backfill": "Conversion and backfill",
@@ -1194,7 +1155,7 @@ const groupTranslations = {
   cleanup: { tw: ["訂閱清理", "下載監控、刪除種子、Tracker 與整理記錄清理"], en: ["Cleanup", "Download monitoring, torrent removal, Tracker rules, and history cleanup"] },
   pending: { tw: ["訂閱待定", "下載中或集數目標尚未穩定時保持待定"], en: ["Pending", "Keep subscriptions pending while downloads or episode targets are unsettled"] },
   pause: { tw: ["訂閱暫停", "依使用者、播出窗口與無下載策略暫停訂閱"], en: ["Pause", "Pause subscriptions by user, release window, or no-download policy"] },
-  completion: { tw: ["訂閱補全", "站點集數探測、暫停補搜與無進度診斷"], en: ["Completion", "Site episode probes, paused searches, and stalled-progress diagnostics"] },
+  completion: { tw: ["訂閱補全", "站點集數探測與暫停訂閱補搜"], en: ["Completion", "Site episode probes and paused subscription searches"] },
   bestVersion: { tw: ["訂閱洗版", "洗版範圍、時限、回填與分集轉全集"], en: ["Best version", "Upgrade scope, time limits, backfill, and episode-to-season conversion"] },
   guard: { tw: ["完結訊號", "完結守衛、站點證據、波動節奏與自動修正"], en: ["Completion guard", "Completion checks, site evidence, cadence, and automatic correction"] },
   recognition: { tw: ["識別增強", "候選准入、通知、二次識別與自訂策略"], en: ["Recognition", "Candidate checks, notifications, re-identification, and custom policies"] }
@@ -1244,9 +1205,6 @@ const englishFields = {
   paused_probe_reasons: ["Paused search scenarios", "Choose pause reasons that allow low-frequency searches"],
   paused_probe_min_pause_days: ["Search after N paused days", "Start searching after this many paused days; 0 disables it"],
   paused_probe_interval_hours: ["Search interval (hours)", "Minimum interval between two searches for the same subscription"],
-  progress_diagnostic_mode: ["Stalled-progress diagnostics", "Choose how to handle subscriptions with no progress"],
-  progress_diagnostic_stalled_rounds: ["Consecutive stalled rounds", "Handle after this many rounds without progress; 0 disables it"],
-  progress_diagnostic_cooldown_hours: ["Diagnostic cooldown (hours)", "Minimum interval between diagnostic notifications for one subscription"],
   best_version_type: ["Best-version type", "Select media types for automatic upgrades; Off disables creation and checks"],
   best_version_movie_remaining_days: ["Movie upgrade time limit (days)", "Stop movie upgrade subscriptions after this period; 0 means unlimited"],
   best_version_tv_remaining_days: ["TV upgrade time limit (days)", "Stop TV upgrade subscriptions after this period; 0 means unlimited"],
@@ -1602,7 +1560,6 @@ function numberFieldUnit(key, locale = "zh-CN") {
   if (key === "cadence_multiplier") return units.multiplier;
   if (key === "download_progress_threshold") return units.percent;
   if (key === "download_retry_limit") return units.count;
-  if (key === "progress_diagnostic_stalled_rounds") return units.round;
   if (key === "recognition_guard_cache_maxsize") return units.item;
   if (key === "recognition_guard_notify_interval") return units.second;
   if (key.endsWith("_minutes")) return units.minute;
@@ -1812,14 +1769,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       ],
       completion: [
         { titleKey: "section.siteProbe", keys: ["site_total_probe_enabled"] },
-        {
-          titleKey: "section.diagnostic",
-          keys: [
-            "progress_diagnostic_mode",
-            "progress_diagnostic_stalled_rounds",
-            "progress_diagnostic_cooldown_hours"
-          ]
-        },
         {
           titleKey: "section.pausedProbe",
           keys: [
@@ -2690,6 +2639,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-aa1912a1"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-4690db6a"]]);
 
 export { Config as default };

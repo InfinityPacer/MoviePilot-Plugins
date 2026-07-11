@@ -131,25 +131,9 @@ class PluginConfigDefaultsTest:
         assert self.cfg.paused_probe_min_pause_days == 14
         assert self.cfg.paused_probe_interval_hours == 72
 
-    def test_progress_diagnostic_defaults(self):
-        """无进展诊断默认关闭，轮数与冷却保持保守阈值。"""
-        assert self.cfg.progress_diagnostic_mode == "off"
-        assert self.cfg.progress_diagnostic_stalled_rounds == 3
-        assert self.cfg.progress_diagnostic_cooldown_hours == 24
-
-    def test_progress_diagnostic_mode_accepts_only_current_modes(self):
-        """无进展诊断按模式扩展，非法值回退关闭。"""
-        assert PluginConfig({"progress_diagnostic_mode": "notify"}).progress_diagnostic_mode == "notify"
-        assert PluginConfig({"progress_diagnostic_mode": "auto"}).progress_diagnostic_mode == "off"
-
-    def test_progress_diagnostic_keys_are_declared(self):
-        """配置契约只暴露当前无进展诊断 key。"""
-        keys = set(self.cfg.declared_keys())
-        assert {key for key in keys if key.startswith("progress_diagnostic_")} == {
-            "progress_diagnostic_mode",
-            "progress_diagnostic_stalled_rounds",
-            "progress_diagnostic_cooldown_hours",
-        }
+    def test_progress_diagnostic_keys_are_retired(self):
+        """配置契约不再暴露已下线的无进展诊断字段。"""
+        assert not any(key.startswith("progress_diagnostic_") for key in self.cfg.declared_keys())
 
     # --- pending ---
 

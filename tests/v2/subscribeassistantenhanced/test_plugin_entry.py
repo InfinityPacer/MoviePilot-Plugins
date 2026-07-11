@@ -85,12 +85,12 @@ class TestPluginEntry:
         assert plugin._modules["recognition_guard"] is not None
         assert plugin._event_proxy.get("recognition_guard") is None
 
-    def test_init_plugin_registers_progress_diagnostic_module(self):
-        """无进展诊断按 progress_diagnostic 模块 key 注入，供巡检入口读取。"""
+    def test_init_plugin_does_not_register_retired_progress_diagnostic_module(self):
+        """下线后的无进展诊断不再进入模块表。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
 
-        assert "progress_diagnostic" in plugin._modules
+        assert "progress_diagnostic" not in plugin._modules
 
     def test_plugin_initializes_lifecycle_coordinator(self):
         """插件入口持有生命周期协调器，并把同一实例交给事件代理。"""

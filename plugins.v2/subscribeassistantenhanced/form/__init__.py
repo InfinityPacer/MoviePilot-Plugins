@@ -61,9 +61,6 @@ LABELS = {
     "paused_probe_min_pause_days": "暂停满N天后补搜",
     "paused_probe_interval_hours": "补搜间隔（小时）",
     "site_total_probe_enabled": "站点集数探测",
-    "progress_diagnostic_mode": "无进展诊断模式",
-    "progress_diagnostic_stalled_rounds": "连续无进展轮数",
-    "progress_diagnostic_cooldown_hours": "诊断冷却（小时）",
     # 订阅洗版
     "best_version_type": "洗版类型",
     "best_version_episode_to_full": "分集转全集",
@@ -141,9 +138,6 @@ HINTS = {
     "paused_probe_min_pause_days": "暂停达到天数后开始补搜，0 表示不处理",
     "paused_probe_interval_hours": "同一订阅两次补搜的最小间隔",
     "site_total_probe_enabled": "用站点缓存资源辅助发现目标集数不足",
-    "progress_diagnostic_mode": "订阅长期无进展时的诊断处理方式",
-    "progress_diagnostic_stalled_rounds": "连续无进展多少轮后处理，0 表示不处理",
-    "progress_diagnostic_cooldown_hours": "同一订阅诊断提醒的最小间隔",
     # 订阅洗版
     "best_version_type": "选择需要自动洗版的类型，关闭时不自动创建和巡检洗版订阅",
     "best_version_episode_to_full": "订阅目标集数满足时，从分集洗版切换为全集洗版",
@@ -198,7 +192,6 @@ TABS = [
     ]),
     ("订阅补全", [
         [("site_total_probe_enabled", 12)],
-        ["progress_diagnostic_mode", "progress_diagnostic_stalled_rounds", "progress_diagnostic_cooldown_hours"],
         ["paused_probe_reasons", "paused_probe_min_pause_days", "paused_probe_interval_hours"],
     ]),
     ("订阅洗版", [
@@ -263,10 +256,6 @@ SELECT_ITEMS = {
         {"title": "96", "value": 96},
         {"title": "120", "value": 120},
         {"title": "144", "value": 144},
-    ],
-    "progress_diagnostic_mode": [
-        {"title": "关闭", "value": "off"},
-        {"title": "仅通知", "value": "notify"},
     ],
     "best_version_type": [
         {"title": "关闭", "value": "no"},

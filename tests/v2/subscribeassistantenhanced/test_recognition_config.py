@@ -112,6 +112,9 @@ def test_upgrade_persistence_drops_retired_config_keys():
         "recognition_guard_target_mode": "animation",
         "recognition_guard_missing_year_policy": "block",
         "open_tracker_dialog": True,
+        "progress_diagnostic_mode": "notify",
+        "progress_diagnostic_stalled_rounds": 3,
+        "progress_diagnostic_cooldown_hours": 24,
     })
 
     persisted = plugin.update_config.call_args.args[0]
@@ -122,6 +125,9 @@ def test_upgrade_persistence_drops_retired_config_keys():
         "recognition_guard_target_mode",
         "recognition_guard_missing_year_policy",
         "open_tracker_dialog",
+        "progress_diagnostic_mode",
+        "progress_diagnostic_stalled_rounds",
+        "progress_diagnostic_cooldown_hours",
     ):
         assert key not in persisted
 

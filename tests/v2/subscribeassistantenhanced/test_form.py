@@ -387,8 +387,8 @@ def test_best_version_remaining_days_labels_are_split_by_media_type():
     assert "剧集洗版订阅达到指定天数后自动终止" in HINTS["best_version_tv_remaining_days"]
 
 
-def test_completion_tab_contains_probe_diagnostic_and_site_total_fields():
-    """订阅补全承载低频补搜、无进展诊断和站点集数探测。"""
+def test_completion_tab_contains_paused_probe_and_site_total_fields():
+    """订阅补全只承载暂停补搜和站点集数探测。"""
     conf, model = build_form()
     completion_tab = _tab_content(conf, "订阅补全")
     completion_models = _tab_models(conf, "订阅补全")
@@ -400,16 +400,13 @@ def test_completion_tab_contains_probe_diagnostic_and_site_total_fields():
         "paused_probe_min_pause_days",
         "paused_probe_interval_hours",
         "site_total_probe_enabled",
-        "progress_diagnostic_mode",
-        "progress_diagnostic_stalled_rounds",
-        "progress_diagnostic_cooldown_hours",
     ):
         assert key in completion_models
         assert key not in pause_models
 
     assert "site_total_probe_enabled" not in guard_models
     assert "site_completion_evidence_enabled" in guard_models
-    assert len(completion_tab) == 3
+    assert len(completion_tab) == 2
     assert [
         [
             col["content"][0]["props"].get("model") or col["content"][0]["props"].get("modelvalue")
@@ -418,21 +415,16 @@ def test_completion_tab_contains_probe_diagnostic_and_site_total_fields():
         for row in completion_tab
     ] == [
         ["site_total_probe_enabled"],
-        ["progress_diagnostic_mode", "progress_diagnostic_stalled_rounds", "progress_diagnostic_cooldown_hours"],
         ["paused_probe_reasons", "paused_probe_min_pause_days", "paused_probe_interval_hours"],
     ]
     assert [[col["props"]["md"] for col in row["content"]] for row in completion_tab] == [
         [12],
-        [4, 4, 4],
         [4, 4, 4],
     ]
     assert model["paused_probe_reasons"] == ["no_download"]
     assert model["paused_probe_min_pause_days"] == 14
     assert model["paused_probe_interval_hours"] == 72
     assert model["site_total_probe_enabled"] is False
-    assert model["progress_diagnostic_mode"] == "off"
-    assert model["progress_diagnostic_stalled_rounds"] == 3
-    assert model["progress_diagnostic_cooldown_hours"] == 24
 
 
 def test_paused_probe_labels_hints_and_interval_select_are_human_readable():
@@ -465,20 +457,6 @@ def test_paused_probe_labels_hints_and_interval_select_are_human_readable():
                     if field["props"].get("model") == "paused_probe_interval_hours")
     assert interval["component"] == "VSelect"
     assert interval["props"]["items"] == SELECT_ITEMS["paused_probe_interval_hours"]
-
-
-def test_progress_diagnostic_labels_and_hints_describe_readonly_scope():
-    """无进展诊断模式当前只提供通知，为后续纠正能力保留扩展口。"""
-    assert LABELS["progress_diagnostic_mode"] == "无进展诊断模式"
-    assert LABELS["progress_diagnostic_stalled_rounds"] == "连续无进展轮数"
-    assert LABELS["progress_diagnostic_cooldown_hours"] == "诊断冷却（小时）"
-    assert HINTS["progress_diagnostic_mode"] == "订阅长期无进展时的诊断处理方式"
-    assert HINTS["progress_diagnostic_stalled_rounds"] == "连续无进展多少轮后处理，0 表示不处理"
-    assert HINTS["progress_diagnostic_cooldown_hours"] == "同一订阅诊断提醒的最小间隔"
-    assert SELECT_ITEMS["progress_diagnostic_mode"] == [
-        {"title": "关闭", "value": "off"},
-        {"title": "仅通知", "value": "notify"},
-    ]
 
 
 def test_site_total_probe_label_and_hint_belong_to_completion_tab():

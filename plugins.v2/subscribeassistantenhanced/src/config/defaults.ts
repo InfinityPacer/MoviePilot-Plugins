@@ -88,12 +88,6 @@ export interface SaeConfig {
   paused_probe_min_pause_days: number
   /** 补搜间隔（小时） */
   paused_probe_interval_hours: number
-  /** 无进展诊断模式 */
-  progress_diagnostic_mode: string
-  /** 连续无进展轮数 */
-  progress_diagnostic_stalled_rounds: number
-  /** 诊断冷却（小时） */
-  progress_diagnostic_cooldown_hours: number
   /** 洗版类型 */
   best_version_type: string
   /** 电影洗版时限（天） */
@@ -196,9 +190,6 @@ export const configDefaults: SaeConfig = {
   ],
   "paused_probe_min_pause_days": 14,
   "paused_probe_interval_hours": 72,
-  "progress_diagnostic_mode": "off",
-  "progress_diagnostic_stalled_rounds": 3,
-  "progress_diagnostic_cooldown_hours": 24,
   "best_version_type": "no",
   "best_version_movie_remaining_days": 0,
   "best_version_tv_remaining_days": 0,

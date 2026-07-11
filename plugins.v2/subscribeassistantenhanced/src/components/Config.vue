@@ -141,14 +141,6 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   completion: [
     { titleKey: 'section.siteProbe', keys: ['site_total_probe_enabled'] },
     {
-      titleKey: 'section.diagnostic',
-      keys: [
-        'progress_diagnostic_mode',
-        'progress_diagnostic_stalled_rounds',
-        'progress_diagnostic_cooldown_hours',
-      ],
-    },
-    {
       titleKey: 'section.pausedProbe',
       keys: [
         'paused_probe_reasons',

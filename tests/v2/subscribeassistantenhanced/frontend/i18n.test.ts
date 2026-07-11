@@ -51,8 +51,8 @@ describe('SAE i18n adapter', () => {
     expect(groups).toEqual(source)
   })
 
-  it('covers all 67 field labels, hints, and option titles in every locale', () => {
-    expect(fields).toHaveLength(67)
+  it('covers all 64 field labels, hints, and option titles in every locale', () => {
+    expect(fields).toHaveLength(64)
     expect(() => assertTranslationCoverage()).not.toThrow()
 
     for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {

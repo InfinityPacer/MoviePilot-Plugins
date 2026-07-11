@@ -24,7 +24,6 @@ export function numberFieldUnit(key: ConfigKey, locale: SupportedLocale = 'zh-CN
   if (key === 'cadence_multiplier') return units.multiplier
   if (key === 'download_progress_threshold') return units.percent
   if (key === 'download_retry_limit') return units.count
-  if (key === 'progress_diagnostic_stalled_rounds') return units.round
   if (key === 'recognition_guard_cache_maxsize') return units.item
   if (key === 'recognition_guard_notify_interval') return units.second
   if (key.endsWith('_minutes')) return units.minute

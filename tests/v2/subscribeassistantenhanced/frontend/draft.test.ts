@@ -72,8 +72,8 @@ describe('configuration draft contract', () => {
 
     const payload = buildSavePayload()
 
-    expect(editableFields).toHaveLength(67)
-    expect(changedCount.value).toBe(67)
+    expect(editableFields).toHaveLength(64)
+    expect(changedCount.value).toBe(64)
     expect(changedKeys.value).toEqual(editableFields.map(field => field.key))
     expect(Object.keys(payload)).toEqual(Object.keys(configDefaults))
     expect(payload).not.toHaveProperty('open_tracker_dialog')

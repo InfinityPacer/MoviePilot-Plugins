@@ -2,7 +2,7 @@
 
 ## 设计目标
 
-订阅助手（增强版）在 MoviePilot 订阅体系之上提供完成前观察、剧集待定、上映/播出暂停、下载待定、洗版编排、订阅清理、识别增强、站点证据和进度诊断能力。插件架构以订阅生命周期为主线，将状态归属、证据来源、资源清理和用户通知拆分为独立领域，避免入口逻辑直接组合复杂副作用。
+订阅助手（增强版）在 MoviePilot 订阅体系之上提供完成前观察、剧集待定、上映/播出暂停、下载待定、洗版编排、订阅清理、识别增强和站点证据能力。插件架构以订阅生命周期为主线，将状态归属、证据来源、资源清理和用户通知拆分为独立领域，避免入口逻辑直接组合复杂副作用。
 
 架构约束：
 
@@ -22,7 +22,7 @@ flowchart TD
     Entry --> BestVersion[BestVersionOrchestrator / BestVersionConverter / PriorityManager]
     Entry --> Cleanup[SubscriptionCleanup / TorrentCleanup]
     Entry --> Recognition[RecognitionGuard]
-    Entry --> Evidence[CompletionEvidencePipeline / SiteEvidence / ProgressDiagnostic]
+    Entry --> Evidence[CompletionEvidencePipeline / SiteEvidence]
 
     Lifecycle --> Pause[PauseManager]
     Lifecycle --> PendingJudge[PendingJudge]
@@ -226,7 +226,6 @@ flowchart LR
 - `RecognitionGuard`：识别增强、候选准入和审计。
 - `CompletionEvidencePipeline`：聚合 TMDB、站点证据、波动和本地完成事实。
 - `SiteEvidence`：站点总集数和剧集证据。
-- `ProgressDiagnostic`：长期无进展诊断。
 - 完成快照与快照清理。
 
 这些模块提供判定输入或诊断信息，不直接写 `state`、`pause_reason`、`pending_sources` 或 `download_pending`。
@@ -296,7 +295,7 @@ flowchart TD
 - 洗版优先级和分集优先级。
 - 转移历史、文件删除和种子删除。
 - 识别增强审计和通知限频。
-- 站点证据、完成快照和进度诊断。
+- 站点证据和完成快照。
 - 底层 `shared.update.update_subscribe` 工具调用。
 
 判断标准：不改变 `state=N/R/P/S`，不持有或释放 `pause_reason`，不持有或释放 `pending_sources`，不创建或释放 `download_pending`，也不触发状态变化派生的补搜、恢复保护或状态通知。

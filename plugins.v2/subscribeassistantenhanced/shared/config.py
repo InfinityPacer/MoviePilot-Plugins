@@ -437,24 +437,6 @@ class PluginConfig:
         """同一订阅主动补搜的最小间隔，运行时不低于 24 小时。"""
         return max(self.get_int("paused_probe_interval_hours", 72), 24)
 
-    # ---- 无进展诊断 ----
-
-    @property
-    def progress_diagnostic_mode(self) -> str:
-        """无进展诊断模式：off=关闭，notify=仅发送诊断通知。"""
-        val = self.get_str("progress_diagnostic_mode", "off").strip().lower()
-        return val if val in ("off", "notify") else "off"
-
-    @property
-    def progress_diagnostic_stalled_rounds(self) -> int:
-        """连续无进展轮数阈值：缺失集数连续 N 轮巡检未减少后发出诊断通知；0=不处理。"""
-        return self.get_int("progress_diagnostic_stalled_rounds", 3)
-
-    @property
-    def progress_diagnostic_cooldown_hours(self) -> int:
-        """同一订阅两次诊断通知的最小间隔小时数，避免反复打扰。"""
-        return self.get_int("progress_diagnostic_cooldown_hours", 24)
-
     # ---- 订阅洗版 ----
 
     @property
