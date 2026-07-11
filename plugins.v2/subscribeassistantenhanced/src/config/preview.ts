@@ -1,4 +1,5 @@
 import type { BooleanConfigKey, SaeConfig } from './defaults'
+import { t, type LocaleSource, type TranslationParams } from './i18n'
 import { normalizeSaeConfig } from './values'
 
 /** 配置保存前可见的潜在运行与数据影响。 */
@@ -26,39 +27,46 @@ function value(config: SaeConfig, key: keyof SaeConfig): string {
 }
 
 /** 根据当前草稿生成影响预览，不承诺定时任务或破坏性动作一定执行。 */
-export function buildImpactPreview(config: SaeConfig): PreviewItem[] {
+export function buildImpactPreview(config: SaeConfig, locale: LocaleSource = 'zh-CN'): PreviewItem[] {
   const normalized = normalizeSaeConfig(config)
   const items: PreviewItem[] = []
+  const add = (key: string, tone: PreviewItem['tone'], params: TranslationParams = {}) => {
+    items.push({
+      title: t(locale, `preview.${key}.title`, params),
+      detail: t(locale, `preview.${key}.detail`, params),
+      tone,
+    })
+  }
   if (!enabled(normalized, 'enabled')) {
-    items.push({ title: '插件未启用', detail: '保存后不会注册订阅助手定时任务。', tone: 'info' })
+    add('disabled', 'info')
   }
   if (enabled(normalized, 'reset_task')) {
-    items.push({ title: '重置数据', detail: '保存后会清空插件任务数据并自动复位。', tone: 'error' })
+    add('reset', 'error')
   }
   if (enabled(normalized, 'backfill_best_version_now')) {
-    items.push({ title: '立即扫描存量并回填', detail: '保存后会扫描存量分集洗版订阅并回填媒体库已有集。', tone: 'warning' })
+    add('backfillNow', 'warning')
   }
   if (enabled(normalized, 'enabled')) {
-    items.push({ title: '通用巡检可能运行', detail: `周期 ${value(normalized, 'auto_check_interval_minutes')} 分钟。`, tone: 'success' })
-    items.push({ title: '元数据检查可能运行', detail: `周期 ${value(normalized, 'meta_check_interval_hours')} 小时。`, tone: 'success' })
-    if (enabled(normalized, 'onlyonce')) items.push({ title: '立即运行一次', detail: '保存后约 3 秒触发一次全量巡检。', tone: 'warning' })
+    add('general', 'success', { value: value(normalized, 'auto_check_interval_minutes') })
+    add('metadata', 'success', { value: value(normalized, 'meta_check_interval_hours') })
+    if (enabled(normalized, 'onlyonce')) add('runOnce', 'warning')
     if (enabled(normalized, 'pending_download_enabled') || enabled(normalized, 'download_monitor_enabled')) {
-      items.push({ title: '下载任务检查可能运行', detail: `周期 ${value(normalized, 'download_check_interval_minutes')} 分钟。`, tone: 'success' })
+      add('downloadCheck', 'success', { value: value(normalized, 'download_check_interval_minutes') })
     }
     if (value(normalized, 'best_version_type') !== 'no') {
-      items.push({ title: '可能自动创建洗版订阅', detail: '普通订阅完成后，符合当前洗版范围的媒体可能自动创建洗版订阅。', tone: 'warning' })
+      add('bestVersion', 'warning')
       if (value(normalized, 'best_version_cron').trim()) {
-        items.push({ title: '洗版订阅检查可能运行', detail: `CRON ${value(normalized, 'best_version_cron')}。`, tone: 'warning' })
+        add('bestVersionCheck', 'warning', { value: value(normalized, 'best_version_cron') })
       }
     }
     if (enabled(normalized, 'verify_enabled')) {
-      items.push({ title: '自动纠错可能运行', detail: `周期 ${value(normalized, 'verify_interval_hours')} 小时。`, tone: 'warning' })
+      add('verify', 'warning', { value: value(normalized, 'verify_interval_hours') })
     }
     if (enabled(normalized, 'download_monitor_enabled')) {
-      items.push({ title: '可能删除下载器任务', detail: '下载停滞、Tracker 关键字或手动删种场景可能触发删种处理。', tone: 'error' })
+      add('removeTorrent', 'error')
     }
     if (value(normalized, 'subscription_cleanup_history_type') !== 'no') {
-      items.push({ title: '可能清理整理记录或文件', detail: '订阅清理范围已启用，请确认清理场景。', tone: 'error' })
+      add('cleanup', 'error')
     }
     const actions = normalized.no_download_actions
     // 后端仅将 0 视为该媒体类型禁用，负数仍保留原有运行时语义。
@@ -70,22 +78,22 @@ export function buildImpactPreview(config: SaeConfig): PreviewItem[] {
         || (tvNoDownloadEnabled && action === tvAction),
       )
     if (hasEnabledMediaAction('pause_movie', 'pause_tv')) {
-      items.push({ title: '可能暂停订阅', detail: '无下载策略命中后，电影或剧集订阅可能被暂停。', tone: 'warning' })
+      add('pause', 'warning')
     }
     if (hasEnabledMediaAction('complete_movie', 'complete_tv')) {
-      items.push({ title: '可能完成订阅', detail: '无下载策略命中后，电影或剧集订阅可能被标记完成并移除。', tone: 'warning' })
+      add('complete', 'warning')
     }
     if (hasEnabledMediaAction('delete_movie', 'delete_tv')) {
-      items.push({ title: '可能删除订阅', detail: '无下载策略命中后，电影或剧集订阅可能被直接删除。', tone: 'error' })
+      add('delete', 'error')
     }
     if (enabled(normalized, 'best_version_episode_to_full')) {
-      items.push({ title: '可能从分集洗版转为全集洗版', detail: '订阅目标集满足后，分集洗版可能切换为全集洗版。', tone: 'warning' })
+      add('episodeToFull', 'warning')
     }
     const recognitionMode = value(normalized, 'recognition_guard_mode').trim().toLowerCase()
     if (recognitionMode === 'audit') {
-      items.push({ title: '识别增强可能记录候选风险', detail: '审计模式可能记录判定与通知，但不会过滤或移除候选。', tone: 'info' })
+      add('audit', 'info')
     } else if (['loose', 'balanced', 'strict'].includes(recognitionMode)) {
-      items.push({ title: '识别增强可能过滤候选', detail: '当前模式和生效的自定义策略覆盖可能过滤或移除候选。', tone: 'warning' })
+      add('filter', 'warning')
     }
   }
   return items

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useTheme } from 'vuetify'
 
 import saeLogo from '../assets/sae-logo.svg'
 import { loadSummary, type PluginApi, type SummaryPayload } from '../config/api'
 import type { ConfigKey, NumberConfigKey, SaeConfig } from '../config/defaults'
 import { useConfigDraft } from '../config/draft'
 import { fields, groups, type FieldMeta, type GroupKey } from '../config/fields'
+import { localizeFields, localizeGroups, normalizeLocale, t } from '../config/i18n'
 import { buildImpactPreview, type PreviewItem } from '../config/preview'
 import { normalizeFiniteNumber } from '../config/values'
 
@@ -28,31 +30,46 @@ const emit = defineEmits<{
 const README_URL =
   'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistantenhanced/README.md'
 const { draft, changedCount, buildSavePayload } = useConfigDraft(props.initialConfig)
-const renderedFields = fields.filter(field => !field.legacyUiKey && !field.dialogOnly)
-const fieldsByKey = new Map(renderedFields.map(field => [field.key, field]))
-const trackerField = fields.find(
+const instance = getCurrentInstance()
+const locale = computed(() => normalizeLocale(instance?.appContext.config.globalProperties.$i18n?.locale))
+const localizedGroups = computed(() => localizeGroups(locale.value, groups))
+const localizedFields = computed(() => localizeFields(locale.value, fields))
+const fieldsByKey = computed(() => new Map(
+  localizedFields.value
+    .filter(field => !field.legacyUiKey && !field.dialogOnly)
+    .map(field => [field.key, field]),
+))
+const trackerField = computed(() => localizedFields.value.find(
   field => field.key === 'default_tracker_response' && field.dialogOnly,
-)!
+)!)
 const activeGroup = ref<GroupKey>('global')
-const impactItems = computed(() => buildImpactPreview(draft))
+const impactItems = computed(() => buildImpactPreview(draft, locale.value))
 const runtimeSummary = ref<SummaryPayload | null>(null)
 const summaryState = ref<'loading' | 'available' | 'unavailable'>('loading')
 // 对话框开关只控制当前界面，持久化的旧版触发字段始终保持 false。
 const trackerDialogOpen = ref(false)
+const yamlDialogOpen = ref(false)
+const mobileGroupSheet = ref(false)
+const configHeaderSentinel = ref<HTMLElement | null>(null)
+const fieldSurfaceHeading = ref<HTMLElement | null>(null)
+const headerScrolled = ref(false)
+const theme = useTheme()
+const aceTheme = computed(() => theme.current.value.dark ? 'github_dark' : 'github')
+let headerObserver: IntersectionObserver | undefined
 
 interface SectionDefinition {
-  /** 当前业务分组内的稳定章节名称。 */
-  title: string
+  /** 当前业务分组内的稳定章节翻译键。 */
+  titleKey: string
   /** 章节覆盖的配置键，顺序同时决定表单展示顺序。 */
   keys: ConfigKey[]
 }
 
 const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   global: [
-    { title: '运行状态', keys: ['enabled', 'notify'] },
-    { title: '一次性动作', keys: ['onlyonce', 'reset_task'] },
+    { titleKey: 'section.running', keys: ['enabled', 'notify'] },
+    { titleKey: 'section.oneTime', keys: ['onlyonce', 'reset_task'] },
     {
-      title: '公共周期',
+      titleKey: 'section.schedule',
       keys: [
         'auto_check_interval_minutes',
         'download_check_interval_minutes',
@@ -63,7 +80,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   ],
   cleanup: [
     {
-      title: '下载任务处理',
+      titleKey: 'section.download',
       keys: [
         'download_monitor_enabled',
         'manual_delete_listen',
@@ -73,7 +90,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
       ],
     },
     {
-      title: '超时与重试',
+      titleKey: 'section.timeout',
       keys: [
         'download_timeout_minutes',
         'download_progress_threshold',
@@ -83,38 +100,38 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
       ],
     },
     {
-      title: '订阅记录清理',
+      titleKey: 'section.cleanup',
       keys: ['subscription_cleanup_history_type', 'subscription_cleanup_history_scenes'],
     },
   ],
   pending: [
     {
-      title: '待定策略',
+      titleKey: 'section.pending',
       keys: ['pending_enhanced_enabled', 'pending_download_enabled'],
     },
     {
-      title: '剧集判定',
+      titleKey: 'section.tvDecision',
       keys: ['auto_tv_pending_days', 'auto_tv_pending_episodes', 'pending_use_volatility'],
     },
   ],
   pause: [
     {
-      title: '自动暂停',
+      titleKey: 'section.autoPause',
       keys: ['pause_enhanced_enabled', 'auto_pause_users'],
     },
     {
-      title: '上映与播出窗口',
+      titleKey: 'section.airing',
       keys: ['airing_pause_days', 'movie_air_pause_days', 'tv_air_pause_days'],
     },
     {
-      title: '无下载处理',
+      titleKey: 'section.noDownload',
       keys: ['movie_no_download_days', 'tv_no_download_days', 'no_download_actions'],
     },
   ],
   completion: [
-    { title: '站点集数探测', keys: ['site_total_probe_enabled'] },
+    { titleKey: 'section.siteProbe', keys: ['site_total_probe_enabled'] },
     {
-      title: '无进展诊断',
+      titleKey: 'section.diagnostic',
       keys: [
         'progress_diagnostic_mode',
         'progress_diagnostic_stalled_rounds',
@@ -122,7 +139,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
       ],
     },
     {
-      title: '暂停订阅补搜',
+      titleKey: 'section.pausedProbe',
       keys: [
         'paused_probe_reasons',
         'paused_probe_min_pause_days',
@@ -132,7 +149,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   ],
   bestVersion: [
     {
-      title: '洗版范围',
+      titleKey: 'section.bestVersionScope',
       keys: [
         'best_version_type',
         'best_version_movie_remaining_days',
@@ -140,7 +157,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
       ],
     },
     {
-      title: '转换与回填',
+      titleKey: 'section.backfill',
       keys: [
         'best_version_episode_to_full',
         'best_version_backfill_enabled',
@@ -150,7 +167,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   ],
   guard: [
     {
-      title: '守卫信号',
+      titleKey: 'section.guard',
       keys: [
         'completion_guard_mode',
         'site_completion_evidence_enabled',
@@ -159,7 +176,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
       ],
     },
     {
-      title: '播出节奏',
+      titleKey: 'section.cadence',
       keys: [
         'cadence_enabled',
         'cadence_multiplier',
@@ -169,7 +186,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
       ],
     },
     {
-      title: '纠错与释放',
+      titleKey: 'section.correction',
       keys: [
         'verify_enabled',
         'verify_interval_hours',
@@ -181,7 +198,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   ],
   recognition: [
     {
-      title: '识别策略',
+      titleKey: 'section.recognition',
       keys: [
         'recognition_guard_mode',
         'recognition_guard_notify',
@@ -190,7 +207,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
         'recognition_guard_cache_maxsize',
       ],
     },
-    { title: '自定义规则', keys: ['recognition_guard_custom_config'] },
+    { titleKey: 'section.custom', keys: ['recognition_guard_custom_config'] },
   ],
 }
 
@@ -202,29 +219,64 @@ const impactToneIcons: Record<PreviewItem['tone'], string> = {
 }
 
 const activeGroupMeta = computed(
-  () => groups.find(group => group.key === activeGroup.value) ?? groups[0]!,
+  () => localizedGroups.value.find(group => group.key === activeGroup.value) ?? localizedGroups.value[0]!,
 )
 const activeSections = computed(() =>
   sectionDefinitions[activeGroup.value].map(section => ({
     ...section,
+    title: t(locale.value, section.titleKey),
     fields: section.keys
-      .map(key => fieldsByKey.get(key))
+      .map(key => fieldsByKey.value.get(key))
       .filter((field): field is FieldMeta => Boolean(field)),
   })),
 )
 const summaryDomains = computed(() => Object.entries(runtimeSummary.value?.domains ?? {}))
+const domainTranslationKeys: Record<string, string> = {
+  '完结守卫模式': 'domain.completionGuard',
+  '待定增强': 'domain.pending',
+  '暂停优化': 'domain.pause',
+  '自动洗版': 'domain.bestVersion',
+  '下载管理': 'domain.download',
+  '完成后验证': 'domain.verify',
+  '站点集数探测': 'domain.siteTotal',
+  '站点完结信号': 'domain.siteCompletion',
+  '识别增强': 'domain.recognition',
+}
 
 onMounted(() => {
   void loadSummary(props.api).then(payload => {
     runtimeSummary.value = payload
     summaryState.value = payload ? 'available' : 'unavailable'
   })
+
+  const scrollRoot = configHeaderSentinel.value?.closest('.v-card-text') ?? null
+  headerObserver = new IntersectionObserver(
+    ([entry]) => {
+      headerScrolled.value = !entry?.isIntersecting
+    },
+    { root: scrollRoot, threshold: 1 },
+  )
+  if (configHeaderSentinel.value) headerObserver.observe(configHeaderSentinel.value)
 })
 
-/** 按概览契约显示布尔状态，字符串模式保持后端原值。 */
+onBeforeUnmount(() => headerObserver?.disconnect())
+
+/** 按概览契约本地化布尔状态和已知模式，未知字符串保持后端原值。 */
 function formatDomainStatus(value: boolean | string): string {
-  if (typeof value === 'boolean') return value ? '启用' : '关闭'
+  if (typeof value === 'boolean') return t(locale.value, value ? 'config.enabled' : 'config.off')
+  const modeFields: ConfigKey[] = ['completion_guard_mode', 'recognition_guard_mode', 'best_version_type']
+  for (const key of modeFields) {
+    const option = localizedFields.value.find(field => field.key === key)?.options
+      ?.find(item => String(item.value) === value)
+    if (option) return option.title
+  }
   return value
+}
+
+/** 后端概览保持稳定中文键，展示层按 Host locale 翻译。 */
+function formatDomainName(name: string): string {
+  const key = domainTranslationKeys[name]
+  return key ? t(locale.value, key) : name
 }
 
 /** 使用稳定图标区分开关状态与模式值，不推断额外运行健康度。 */
@@ -260,10 +312,20 @@ function fieldUnit(field: FieldMeta): string | undefined {
   return field.label.match(/（([^）]+)）/)?.[1]
 }
 
-/** 动态字段只在列表值边界执行多选包含判断。 */
-function isOptionSelected(field: FieldMeta, value: string | number): boolean {
-  const selected = draft[field.key]
-  return Array.isArray(selected) && selected.includes(String(value))
+/** 短且不超过四项的互斥选项使用分段控件，其余交给选择器。 */
+function useSegmentedControl(field: FieldMeta): boolean {
+  return field.kind === 'select'
+    && Boolean(field.options?.length)
+    && field.options!.length <= 4
+    && field.options!.every(option => option.title.length <= 8)
+}
+
+/** 移动端分组切换后收起导航，并将当前分组标题带回可视区域。 */
+async function selectMobileGroup(group: GroupKey): Promise<void> {
+  activeGroup.value = group
+  mobileGroupSheet.value = false
+  await nextTick()
+  fieldSurfaceHeading.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 /** 保存完整配置，并确保弹窗触发位始终按关闭状态持久化。 */
@@ -275,90 +337,88 @@ function saveConfig(): void {
 <template>
   <section class="sae-config">
     <form class="sae-config__form" @submit.prevent="saveConfig">
-      <header class="sae-config-header">
+      <div ref="configHeaderSentinel" class="sae-config-header-sentinel" aria-hidden="true" />
+      <header :class="['sae-config-header', { 'sae-config-header--scrolled': headerScrolled }]">
         <div class="sae-config-header__brand">
           <img :src="saeLogo" alt="" class="sae-config-header__logo" />
           <div class="sae-config-header__identity">
             <div class="sae-config-header__crumbs">
               <span>MoviePilot</span>
               <VIcon icon="mdi-chevron-right" size="14" />
-              <span>插件</span>
+              <span>{{ t(locale, 'config.plugin') }}</span>
               <VIcon icon="mdi-chevron-right" size="14" />
             </div>
             <div class="sae-config-header__title-row">
-              <h1 class="sae-config-header__title">订阅助手（增强版）</h1>
+              <h1 class="sae-config-header__title">{{ t(locale, 'config.title') }}</h1>
               <VChip color="primary" size="x-small" variant="tonal">BETA</VChip>
             </div>
           </div>
         </div>
 
         <div class="sae-config-header__actions">
-          <span class="sae-config-header__change-state">
-            <span class="sae-config-header__change-dot" />
-            {{ changedCount ? `已修改 ${changedCount} 项` : '暂无修改' }}
+          <span v-if="changedCount > 0" class="sae-config-header__change-state">
+            <VIcon color="success" icon="mdi-check-circle" size="16" />
+            {{ t(locale, 'config.changedCount', { count: changedCount }) }}
           </span>
           <VBtn
-            aria-label="保存更改"
+            :aria-label="t(locale, 'config.save')"
             class="sae-config-header__save"
             color="primary"
             type="submit"
             variant="flat"
           >
             <VIcon icon="mdi-content-save" start />
-            保存更改
+            {{ t(locale, 'config.save') }}
           </VBtn>
           <VBtn
-            aria-label="关闭配置"
+            :aria-label="t(locale, 'config.close')"
             class="sae-config-header__close"
             type="button"
             variant="outlined"
             @click="emit('close')"
           >
             <VIcon icon="mdi-close" start />
-            <span class="sae-config-header__close-label">关闭</span>
+            <span class="sae-config-header__close-label">{{ t(locale, 'config.close') }}</span>
           </VBtn>
         </div>
       </header>
 
       <div class="sae-config__body">
-        <VAlert
-          class="sae-config-warning"
-          density="compact"
-          icon="mdi-alert-outline"
-          type="warning"
-          variant="tonal"
-        >
-          高级功能：部分操作会影响订阅状态、下载任务和媒体文件，请谨慎修改配置。
-        </VAlert>
-
         <div class="sae-config-layout">
           <div class="sae-mobile-group-selector">
-            <VTabs
-              v-model="activeGroup"
-              aria-label="选择配置分组"
-              class="sae-mobile-group-tabs"
-              density="compact"
+            <VBtn
+              :aria-expanded="mobileGroupSheet"
+              aria-haspopup="dialog"
+              class="sae-mobile-group-trigger"
+              type="button"
+              variant="outlined"
+              @click="mobileGroupSheet = true"
             >
-              <VTab v-for="group in groups" :key="group.key" :value="group.key">
-                <VIcon :icon="group.icon" size="17" start />
-                {{ group.title }}
-              </VTab>
-            </VTabs>
+              <VIcon :icon="activeGroupMeta.icon" size="19" start />
+              <span>{{ activeGroupMeta.title }}</span>
+              <VSpacer />
+              <VIcon icon="mdi-chevron-up" size="18" />
+            </VBtn>
             <VBtn
               :href="README_URL"
-              aria-label="查看插件 README"
-              icon="mdi-help-circle-outline"
+              :aria-label="t(locale, 'config.help')"
+              class="sae-mobile-help"
+              icon
               rel="noopener noreferrer"
+              size="small"
               target="_blank"
-              variant="outlined"
-            />
+              variant="text"
+            >
+              <VIcon icon="mdi-help-circle-outline" size="18" />
+              <VTooltip activator="parent" :text="t(locale, 'config.help')" />
+            </VBtn>
           </div>
 
-          <nav class="sae-group-nav" aria-label="配置分组">
-            <div class="sae-group-nav__heading">插件设置</div>
+          <nav class="sae-group-nav" :aria-label="t(locale, 'config.selectGroup')">
+            <div class="sae-group-nav__heading">{{ t(locale, 'config.settings') }}</div>
             <VList class="sae-group-nav__list" density="compact" nav>
               <VListItem
-                v-for="group in groups"
+                v-for="group in localizedGroups"
                 :key="group.key"
                 :active="activeGroup === group.key"
                 :prepend-icon="group.icon"
@@ -371,17 +431,18 @@ function saveConfig(): void {
             <VBtn
               :href="README_URL"
               class="sae-group-nav__help"
+              append-icon="mdi-open-in-new"
               prepend-icon="mdi-help-circle-outline"
               rel="noopener noreferrer"
               target="_blank"
               variant="text"
             >
-              插件帮助
+              {{ t(locale, 'config.help') }}
             </VBtn>
           </nav>
 
           <main class="sae-field-surface">
-            <div class="sae-field-surface__heading">
+            <div ref="fieldSurfaceHeading" class="sae-field-surface__heading">
               <div class="sae-field-surface__heading-copy">
                 <VIcon :icon="activeGroupMeta.icon" color="primary" size="22" />
                 <div>
@@ -418,7 +479,7 @@ function saveConfig(): void {
                       hide-details
                     />
                     <VBtnToggle
-                      v-else-if="field.kind === 'select'"
+                      v-else-if="useSegmentedControl(field)"
                       v-model="draft[field.key]"
                       :aria-label="field.label"
                       class="sae-choice-group"
@@ -434,34 +495,26 @@ function saveConfig(): void {
                         {{ option.title }}
                       </VBtn>
                     </VBtnToggle>
-                    <VBtnToggle
-                      v-else-if="field.kind === 'multi-select'"
+                    <VSelect
+                      v-else-if="field.kind === 'select' || field.kind === 'multi-select'"
                       v-model="draft[field.key]"
                       :aria-label="field.label"
-                      class="sae-choice-group sae-choice-group--multiple"
-                      color="primary"
-                      multiple
+                      chips
+                      closable-chips
+                      density="compact"
+                      hide-details
+                      item-title="title"
+                      item-value="value"
+                      :items="field.options"
+                      :multiple="field.kind === 'multi-select'"
                       variant="outlined"
-                    >
-                      <VBtn
-                        v-for="option in field.options"
-                        :key="String(option.value)"
-                        :value="option.value"
-                      >
-                        <VIcon
-                          :icon="isOptionSelected(field, option.value) ? 'mdi-check-circle' : 'mdi-circle-outline'"
-                          size="15"
-                          start
-                        />
-                        {{ option.title }}
-                      </VBtn>
-                    </VBtnToggle>
+                    />
                     <div
                       v-else-if="field.kind === 'number'"
                       class="sae-number-stepper"
                     >
                       <VBtn
-                        :aria-label="`减小${field.label}`"
+                        :aria-label="t(locale, 'config.decrease', { label: field.label })"
                         icon
                         type="button"
                         variant="text"
@@ -481,7 +534,7 @@ function saveConfig(): void {
                         @update:model-value="updateNumber(field.key as NumberConfigKey, $event)"
                       />
                       <VBtn
-                        :aria-label="`增大${field.label}`"
+                        :aria-label="t(locale, 'config.increase', { label: field.label })"
                         icon
                         type="button"
                         variant="text"
@@ -493,8 +546,17 @@ function saveConfig(): void {
                         {{ fieldUnit(field) }}
                       </span>
                     </div>
+                    <VCronField
+                      v-else-if="field.kind === 'cron'"
+                      v-model="draft[field.key]"
+                      :aria-label="field.label"
+                      density="compact"
+                      hide-details
+                      :placeholder="t(locale, 'config.cronPlaceholder')"
+                      variant="outlined"
+                    />
                     <VTextField
-                      v-else-if="field.kind === 'text' || field.kind === 'cron'"
+                      v-else-if="field.kind === 'text'"
                       :id="`sae-field-${field.key}`"
                       v-model="draft[field.key]"
                       :aria-label="field.label"
@@ -502,16 +564,17 @@ function saveConfig(): void {
                       hide-details
                       variant="outlined"
                     />
-                    <VTextarea
+                    <VBtn
                       v-else-if="field.kind === 'textarea'"
-                      :id="`sae-field-${field.key}`"
-                      v-model="draft[field.key]"
                       :aria-label="field.label"
-                      auto-grow
-                      hide-details
-                      rows="7"
-                      variant="outlined"
-                    />
+                      block
+                      prepend-icon="mdi-code-braces"
+                      type="button"
+                      variant="tonal"
+                      @click="yamlDialogOpen = true"
+                    >
+                      {{ t(locale, 'config.editYaml') }}
+                    </VBtn>
                   </div>
                 </div>
               </div>
@@ -526,14 +589,14 @@ function saveConfig(): void {
                 </div>
               </div>
               <VBtn
-                :aria-label="`编辑${trackerField.label}`"
+                :aria-label="t(locale, 'config.editLabel', { label: trackerField.label })"
                 color="primary"
                 prepend-icon="mdi-pencil-outline"
                 type="button"
                 variant="tonal"
                 @click="trackerDialogOpen = true"
               >
-                编辑
+                {{ t(locale, 'config.edit') }}
               </VBtn>
             </section>
           </main>
@@ -541,7 +604,11 @@ function saveConfig(): void {
           <aside class="sae-impact-preview">
             <div class="sae-impact-preview__title">
               <VIcon color="primary" icon="mdi-eye-outline" size="20" />
-              <h2>配置影响预览</h2>
+              <h2>{{ t(locale, 'config.preview') }}</h2>
+              <span v-if="changedCount > 0" class="sae-impact-preview__draft-state">
+                <VIcon icon="mdi-pencil-outline" size="14" />
+                {{ t(locale, 'config.unsaved') }}
+              </span>
             </div>
             <div class="sae-impact-preview__group">
               <VIcon :icon="activeGroupMeta.icon" size="22" />
@@ -561,27 +628,27 @@ function saveConfig(): void {
               </li>
             </ul>
 
-            <section aria-label="运行概况" class="sae-runtime-summary">
+            <section :aria-label="t(locale, 'config.runtime')" class="sae-runtime-summary">
               <div class="sae-runtime-summary__title">
                 <VIcon color="primary" icon="mdi-chart-box-outline" size="19" />
-                <h3>运行概况</h3>
+                <h3>{{ t(locale, 'config.runtime') }}</h3>
               </div>
 
               <div v-if="summaryState === 'loading'" class="sae-runtime-summary__state">
                 <VProgressCircular color="primary" indeterminate size="18" width="2" />
-                <span>正在读取运行概况</span>
+                <span>{{ t(locale, 'config.runtimeLoading') }}</span>
               </div>
 
               <template v-else-if="summaryState === 'available' && runtimeSummary">
                 <div class="sae-runtime-summary__metrics">
                   <div class="sae-runtime-summary__row">
                     <VIcon icon="mdi-timer-sand" size="18" />
-                    <span>待定订阅</span>
+                    <span>{{ t(locale, 'config.pendingCount') }}</span>
                     <strong>{{ runtimeSummary.pending_count }}</strong>
                   </div>
                   <div class="sae-runtime-summary__row">
                     <VIcon icon="mdi-download-network-outline" size="18" />
-                    <span>监控下载任务</span>
+                    <span>{{ t(locale, 'config.monitoredCount') }}</span>
                     <strong>{{ runtimeSummary.monitored_torrents }}</strong>
                   </div>
                 </div>
@@ -592,25 +659,32 @@ function saveConfig(): void {
                     class="sae-runtime-summary__row"
                   >
                     <VIcon :color="domainColor(status)" :icon="domainIcon(status)" size="18" />
-                    <span>{{ name }}</span>
+                    <span>{{ formatDomainName(name) }}</span>
                     <strong>{{ formatDomainStatus(status) }}</strong>
                   </div>
                 </div>
               </template>
 
-              <p v-else class="sae-runtime-summary__unavailable">运行概况暂不可用</p>
+              <p v-else class="sae-runtime-summary__unavailable">{{ t(locale, 'config.runtimeUnavailable') }}</p>
             </section>
           </aside>
         </div>
       </div>
 
       <div class="sae-mobile-savebar">
-        <span>
-          <span class="sae-config-header__change-dot" />
-          {{ changedCount ? `已修改 ${changedCount} 项` : '暂无修改' }}
+        <span v-if="changedCount > 0" class="sae-mobile-savebar__state">
+          <VIcon color="success" icon="mdi-check-circle" size="16" />
+          {{ t(locale, 'config.changedCount', { count: changedCount }) }}
         </span>
-        <VBtn color="primary" prepend-icon="mdi-content-save" type="submit" variant="flat">
-          保存更改
+        <VSpacer />
+        <VBtn
+          color="primary"
+          :disabled="changedCount === 0"
+          prepend-icon="mdi-content-save"
+          type="submit"
+          variant="flat"
+        >
+          {{ t(locale, 'config.save') }}
         </VBtn>
       </div>
     </form>
@@ -625,14 +699,14 @@ function saveConfig(): void {
         <VCardTitle class="sae-tracker-dialog__title">
           <span>{{ trackerField.label }}</span>
           <VBtn
-            :aria-label="`关闭${trackerField.label}`"
+              :aria-label="`${t(locale, 'config.close')} ${trackerField.label}`"
             icon
             size="small"
             variant="text"
             @click="trackerDialogOpen = false"
           >
             <VIcon icon="mdi-close" />
-            <VTooltip activator="parent" text="关闭" />
+            <VTooltip activator="parent" :text="t(locale, 'config.close')" />
           </VBtn>
         </VCardTitle>
         <VCardText>
@@ -649,8 +723,54 @@ function saveConfig(): void {
         <VCardActions class="sae-tracker-dialog__actions">
           <VSpacer />
           <VBtn color="primary" prepend-icon="mdi-check" @click="trackerDialogOpen = false">
-            完成
+            {{ t(locale, 'config.done') }}
           </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VBottomSheet v-model="mobileGroupSheet" class="sae-mobile-group-sheet">
+      <VCard>
+        <VCardTitle>{{ t(locale, 'config.selectGroup') }}</VCardTitle>
+        <VList lines="two" nav>
+          <VListItem
+            v-for="group in localizedGroups"
+            :key="group.key"
+            :active="activeGroup === group.key"
+            :prepend-icon="group.icon"
+            :subtitle="group.summary"
+            :title="group.title"
+            color="primary"
+            @click="selectMobileGroup(group.key)"
+          >
+            <template #append>
+              <VIcon v-if="activeGroup === group.key" icon="mdi-check" />
+            </template>
+          </VListItem>
+        </VList>
+      </VCard>
+    </VBottomSheet>
+
+    <VDialog v-model="yamlDialogOpen" max-width="900" scrollable width="calc(100% - 24px)">
+      <VCard>
+        <VCardTitle class="sae-tracker-dialog__title">
+          <span>{{ t(locale, 'config.yamlTitle') }}</span>
+          <VBtn :aria-label="t(locale, 'config.close')" icon size="small" variant="text" @click="yamlDialogOpen = false">
+            <VIcon icon="mdi-close" />
+          </VBtn>
+        </VCardTitle>
+        <VCardText class="sae-yaml-dialog__content">
+          <VAceEditor
+            v-model:value="draft.recognition_guard_custom_config"
+            :theme="aceTheme"
+            lang="yaml"
+            :options="{ fontSize: 14, showPrintMargin: false, tabSize: 2, useSoftTabs: true }"
+            class="sae-yaml-editor"
+          />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn color="primary" prepend-icon="mdi-check" @click="yamlDialogOpen = false">{{ t(locale, 'config.done') }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
@@ -674,6 +794,12 @@ function saveConfig(): void {
   min-inline-size: 0;
 }
 
+.sae-config-header-sentinel {
+  block-size: 1px;
+  margin-block-end: -1px;
+  pointer-events: none;
+}
+
 .sae-field-section,
 .sae-impact-preview,
 .sae-mobile-savebar {
@@ -695,10 +821,29 @@ function saveConfig(): void {
   min-block-size: 72px;
   padding: 10px 16px;
   border-block-end: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  background: var(--app-grouped-list-background);
-  backdrop-filter: var(--app-grouped-list-backdrop-filter);
-  box-shadow: var(--app-surface-shadow);
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
   gap: 16px;
+}
+
+.sae-config-header--scrolled {
+  --sae-header-background: var(--app-grouped-list-background);
+  --sae-header-backdrop-filter: var(--app-grouped-list-backdrop-filter);
+
+  background: var(--sae-header-background);
+  backdrop-filter: var(--sae-header-backdrop-filter);
+  box-shadow: var(--app-surface-shadow);
+}
+
+:global(html[data-theme='transparent'] .sae-config-header--scrolled) {
+  --sae-header-background: rgba(var(--v-theme-surface), var(--transparent-opacity-heavy, 0.5));
+  --sae-header-backdrop-filter: blur(var(--transparent-blur-heavy, 16px));
+}
+
+:global(html[data-theme='transparent'].transparent-blur-disabled .sae-config-header--scrolled) {
+  --sae-header-background: rgba(var(--v-theme-surface), 0.92);
+  --sae-header-backdrop-filter: none;
 }
 
 .sae-config-header__brand {
@@ -766,15 +911,6 @@ function saveConfig(): void {
   gap: 7px;
 }
 
-.sae-config-header__change-dot {
-  display: inline-block;
-  flex: 0 0 7px;
-  block-size: 7px;
-  inline-size: 7px;
-  border-radius: 50%;
-  background: rgb(var(--v-theme-success));
-}
-
 .sae-config-header__actions :deep(.v-btn) {
   min-inline-size: 96px;
   block-size: 40px;
@@ -784,11 +920,6 @@ function saveConfig(): void {
 .sae-config__body {
   min-inline-size: 0;
   padding: 12px;
-}
-
-.sae-config-warning {
-  font-size: 0.8125rem;
-  letter-spacing: 0;
 }
 
 .sae-config-layout {
@@ -813,18 +944,27 @@ function saveConfig(): void {
   grid-template-columns: minmax(0, 1fr) 48px;
 }
 
-.sae-mobile-group-tabs {
+.sae-mobile-group-trigger {
+  justify-content: flex-start;
   min-inline-size: 0;
-  overflow: hidden;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.14);
-  border-radius: var(--app-control-radius);
+  block-size: 42px;
+  padding-inline: 12px;
+  text-transform: none;
 }
 
-.sae-mobile-group-tabs :deep(.v-tab) {
-  min-inline-size: auto;
-  padding-inline: 12px;
-  font-size: 0.75rem;
+.sae-mobile-group-trigger :deep(.v-btn__content) {
+  min-inline-size: 0;
+  inline-size: 100%;
+  justify-content: flex-start;
+  font-size: 0.8125rem;
+  font-weight: 600;
   letter-spacing: 0;
+}
+
+.sae-mobile-help {
+  align-self: center;
+  block-size: 36px;
+  inline-size: 36px;
 }
 
 .sae-group-nav {
@@ -849,17 +989,21 @@ function saveConfig(): void {
 
 .sae-group-nav__list :deep(.v-list-item) {
   position: relative;
-  min-block-size: 43px;
-  padding-inline: 10px;
-  margin-block: 2px;
+  min-block-size: 50px;
+  padding-inline: 12px;
+  margin-block: 4px;
 }
 
 .sae-group-nav__list :deep(.v-list-item-title) {
   overflow-wrap: anywhere;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.875rem;
+  font-weight: 600;
   letter-spacing: 0;
-  line-height: 1.1rem;
+  line-height: 1.2rem;
+}
+
+.sae-group-nav__list :deep(.v-list-item__prepend > .v-icon) {
+  font-size: 1.25rem;
 }
 
 .sae-group-nav__list :deep(.v-list-item--active) {
@@ -1006,10 +1150,6 @@ function saveConfig(): void {
   letter-spacing: 0;
 }
 
-.sae-choice-group--multiple :deep(.v-btn) {
-  flex: 0 1 auto;
-}
-
 .sae-number-stepper {
   display: grid;
   align-items: center;
@@ -1115,6 +1255,24 @@ function saveConfig(): void {
   align-items: flex-start;
   min-inline-size: 0;
   gap: 8px;
+}
+
+.sae-impact-preview__title {
+  align-items: center;
+}
+
+.sae-impact-preview__draft-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  margin-inline-start: auto;
+  border-radius: var(--app-control-radius);
+  background: rgba(var(--v-theme-warning), 0.12);
+  color: rgb(var(--v-theme-warning));
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  gap: 3px;
 }
 
 .sae-impact-preview__group {
@@ -1257,6 +1415,24 @@ function saveConfig(): void {
   gap: 12px;
 }
 
+.sae-mobile-savebar__state {
+  color: rgb(var(--v-theme-success));
+}
+
+.sae-yaml-dialog__content {
+  min-block-size: min(60dvh, 560px);
+  padding: 0 !important;
+}
+
+.sae-yaml-editor {
+  block-size: min(60dvh, 560px);
+  inline-size: 100%;
+}
+
+.sae-mobile-group-sheet :deep(.v-bottom-sheet__content) {
+  max-block-size: min(82dvh, 680px);
+}
+
 @container (width <= 480px) {
   .sae-config-header {
     min-block-size: 64px;
@@ -1310,6 +1486,16 @@ function saveConfig(): void {
 }
 
 @container (width < 720px) {
+  .sae-config-header__save {
+    display: none;
+  }
+
+  .sae-config-header__actions :deep(.sae-config-header__close) {
+    min-inline-size: 40px;
+    block-size: 40px;
+    padding-inline: 0;
+  }
+
   .sae-field-row {
     gap: 10px;
     grid-template-columns: minmax(0, 1fr);
@@ -1353,7 +1539,7 @@ function saveConfig(): void {
     display: flex;
     align-self: start;
     flex-direction: column;
-    block-size: clamp(420px, calc(100dvh - 150px), 720px);
+    block-size: clamp(480px, calc(100dvh - 150px), 760px);
     padding-block-end: 2px;
     border-inline-end: 1px solid rgba(var(--v-theme-on-surface), 0.1);
     padding-inline-end: 10px;

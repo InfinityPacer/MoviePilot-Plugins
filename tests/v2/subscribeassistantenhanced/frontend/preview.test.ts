@@ -112,6 +112,13 @@ describe('enabled plugin preview matrix', () => {
   it.each(cases)('%s returns the exact title set', (_name, overrides, expected) => {
     expect(previewTitles(overrides)).toEqual(expected)
   })
+
+  it('renders schedule hints without trailing punctuation', () => {
+    expect(previewItems({ enabled: true }).slice(0, 2)).toEqual([
+      { title: '通用巡检可能运行', detail: '周期 30 分钟', tone: 'success' },
+      { title: '元数据检查可能运行', detail: '周期 3 小时', tone: 'success' },
+    ])
+  })
 })
 
 describe('automatic wash impact preview', () => {
@@ -165,7 +172,7 @@ describe('automatic wash impact preview', () => {
 
     expect(creation).toEqual({
       title: '可能自动创建洗版订阅',
-      detail: '普通订阅完成后，符合当前洗版范围的媒体可能自动创建洗版订阅。',
+      detail: '普通订阅完成后，符合当前洗版范围的媒体可能自动创建洗版订阅',
       tone: 'warning',
     })
   })
@@ -273,7 +280,7 @@ describe('enabled operational risk preview matrix', () => {
 
     expect(audit).toEqual({
       title: '识别增强可能记录候选风险',
-      detail: '审计模式可能记录判定与通知，但不会过滤或移除候选。',
+      detail: '审计模式可能记录判定与通知，但不会过滤或移除候选',
       tone: 'info',
     })
   })
@@ -285,7 +292,7 @@ describe('enabled operational risk preview matrix', () => {
 
       expect(filtering).toEqual({
         title: '识别增强可能过滤候选',
-        detail: '当前模式和生效的自定义策略覆盖可能过滤或移除候选。',
+        detail: '当前模式和生效的自定义策略覆盖可能过滤或移除候选',
         tone: 'warning',
       })
     },
@@ -328,5 +335,22 @@ describe('backend-equivalent boolean parsing', () => {
 
   it.each(falseValues)('%s keeps scheduled previews disabled', (_name, enabled) => {
     expect(previewTitles({ enabled })).toEqual(['插件未启用'])
+  })
+})
+
+describe('localized preview copy', () => {
+  it('renders Traditional Chinese and English without changing config values', () => {
+    const config = { ...configDefaults, enabled: true } as SaeConfig
+
+    expect(buildImpactPreview(config, 'zh-TW')[0]).toEqual({
+      title: '通用巡檢可能執行',
+      detail: '週期 30 分鐘',
+      tone: 'success',
+    })
+    expect(buildImpactPreview(config, 'en-US')[0]).toEqual({
+      title: 'General inspection may run',
+      detail: 'Every 30 minutes',
+      tone: 'success',
+    })
   })
 })
