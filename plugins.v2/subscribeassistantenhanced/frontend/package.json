@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "dev": "vite build --watch",
     "test": "vitest run --root ../../.. ../../../tests/v2/subscribeassistantenhanced/frontend",
     "typecheck": "vue-tsc --noEmit"
   },

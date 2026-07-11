@@ -57,6 +57,8 @@ flowchart TD
 
 前端在 `frontend/` 目录执行 `yarn build`，构建会清空并重建 `frontend/dist/`。Python `get_form()` 继续提供初始配置模型，Vue 草稿按同一稳定配置键生成完整保存 payload，最终仍由主程序插件配置接口持久化并触发插件重新初始化。
 
+本地开发可改用 `yarn dev` 持续构建。通过 `PLUGIN_LOCAL_REPO_PATHS` 开发插件并启用 `DEV` 或 `PLUGIN_AUTO_RELOAD` 时，MoviePilot 会同步新的构建产物；刷新页面即可查看修改。
+
 ## 入口层
 
 入口层包含：

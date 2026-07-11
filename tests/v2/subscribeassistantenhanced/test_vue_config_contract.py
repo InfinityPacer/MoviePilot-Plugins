@@ -19,6 +19,7 @@ from subscribeassistantenhanced.shared.config import PluginConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 README_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/README.md"
+FRONTEND_PACKAGE_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/frontend/package.json"
 DEFAULTS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/frontend/src/config/defaults.ts"
 FIELDS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/frontend/src/config/fields.ts"
 
@@ -169,6 +170,12 @@ def test_render_mode_uses_vue_assets():
     plugin = SubscribeAssistantEnhanced()
 
     assert plugin.get_render_mode() == ("vue", "frontend/dist/assets")
+
+
+def test_frontend_package_exposes_watch_build_script():
+    package = json.loads(FRONTEND_PACKAGE_PATH.read_text(encoding="utf-8"))
+
+    assert package.get("scripts", {}).get("dev") == "vite build --watch"
 
 
 def test_summary_api_uses_bear_auth_and_coarse_payload_shape():
