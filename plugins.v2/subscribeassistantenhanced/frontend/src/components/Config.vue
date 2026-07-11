@@ -365,9 +365,9 @@ function saveConfig(): void {
             {{ t(locale, 'config.changedCount', { count: changedCount }) }}
           </span>
           <VBtn
+            v-if="changedCount > 0"
             class="sae-config-header__save"
             color="primary"
-            :disabled="changedCount === 0"
             type="submit"
             variant="flat"
           >
@@ -1432,12 +1432,12 @@ function saveConfig(): void {
 .sae-mobile-save-dock {
   position: sticky;
   z-index: 20;
-  inset-block-end: 12px;
+  inset-block-end: calc(12px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-block-size: 64px;
-  padding-block: 10px calc(10px + env(safe-area-inset-bottom));
+  padding-block: 10px;
   padding-inline: 14px;
   margin-inline: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
@@ -1530,8 +1530,9 @@ function saveConfig(): void {
   }
 
   .sae-field-row {
-    gap: 10px;
-    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.9fr);
   }
 
   .sae-field-row--switch {
@@ -1542,6 +1543,93 @@ function saveConfig(): void {
     align-self: center;
   }
 
+}
+
+@container (width <= 30rem) {
+  .sae-field-row {
+    align-items: center;
+    padding-block: 0.625rem;
+    column-gap: 0.75rem;
+    row-gap: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(8.5rem, 10rem);
+  }
+
+  .sae-field-row__copy {
+    display: contents;
+  }
+
+  .sae-field-row__label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .sae-field-row__copy p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin-block-start: 1px;
+    line-height: 0.9375rem;
+  }
+
+  .sae-field-control {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    inline-size: 100%;
+  }
+
+  .sae-field-row--switch .sae-field-control {
+    justify-self: end;
+    inline-size: auto;
+  }
+
+  .sae-field-control :deep(.v-field) {
+    min-block-size: 1.75rem;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .sae-field-control :deep(.v-field__outline) {
+    display: none;
+  }
+
+  .sae-field-control :deep(.v-field__input) {
+    min-block-size: 1.75rem;
+    padding-block: 0;
+    padding-inline: 0;
+  }
+
+  .sae-field-control :deep(.v-field__append-inner) {
+    padding-block-start: 0.25rem;
+    padding-inline-start: 0.25rem;
+  }
+
+  .sae-field-control :deep(.v-select__selection) {
+    justify-content: flex-end;
+  }
+
+  .sae-number-stepper {
+    min-block-size: 1.75rem;
+    border: 0;
+    border-radius: 0;
+    grid-template-columns: minmax(2.625rem, 1fr) auto;
+  }
+
+  .sae-number-stepper :deep(.v-btn) {
+    display: none;
+  }
+
+  .sae-number-stepper :deep(.v-field__input),
+  .sae-number-stepper :deep(input) {
+    min-block-size: 1.75rem;
+    text-align: end;
+  }
+
+  .sae-number-stepper__unit {
+    min-inline-size: auto;
+    padding-inline-end: 0;
+    border-inline-start: 0;
+  }
 }
 
 @container (width >= 720px) {

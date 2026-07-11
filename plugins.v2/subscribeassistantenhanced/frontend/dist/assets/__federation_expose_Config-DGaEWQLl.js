@@ -1575,7 +1575,7 @@ function displayFieldLabel(field) {
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode,unref:_unref,resolveComponent:_resolveComponent,createVNode:_createVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,normalizeClass:_normalizeClass,renderList:_renderList,Fragment:_Fragment,createBlock:_createBlock,createSlots:_createSlots,withModifiers:_withModifiers} = await importShared('vue');
+const {createElementVNode:_createElementVNode,unref:_unref,resolveComponent:_resolveComponent,createVNode:_createVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,createBlock:_createBlock,normalizeClass:_normalizeClass,renderList:_renderList,Fragment:_Fragment,createSlots:_createSlots,withModifiers:_withModifiers} = await importShared('vue');
 
 const _hoisted_1 = { class: "sae-config" };
 const _hoisted_2 = { class: "sae-config-header__brand" };
@@ -2019,10 +2019,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }),
                 _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.changedCount", { count: _unref(changedCount) })), 1)
               ])) : _createCommentVNode("", true),
-              _createVNode(_component_VBtn, {
+              _unref(changedCount) > 0 ? (_openBlock(), _createBlock(_component_VBtn, {
+                key: 1,
                 class: "sae-config-header__save",
                 color: "primary",
-                disabled: _unref(changedCount) === 0,
                 type: "submit",
                 variant: "flat"
               }, {
@@ -2034,7 +2034,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.save")), 1)
                 ]),
                 _: 1
-              }, 8, ["disabled"]),
+              })) : _createCommentVNode("", true),
               _createVNode(_component_VBtn, {
                 "aria-label": _unref(t)(locale.value, "config.close"),
                 class: "sae-config-header__close",
@@ -2640,6 +2640,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-549d4042"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-9a15436f"]]);
 
 export { Config as default };

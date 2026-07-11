@@ -4,7 +4,7 @@
         "description": "多场景管理订阅，实现订阅全生命周期管理。",
         "labels": "订阅",
         "version": "0.6.0",
-        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced-v2.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">2.14.1",
