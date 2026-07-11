@@ -144,7 +144,7 @@ def _site_complete_total(site_total=12, now=None, **kwargs):
     return SiteEvidence(**defaults)
 
 
-def _handler(subscribe, store, *, config=None, now=None):
+def _handler(subscribe, store, *, config=None, now=None, resolve_missing_fn=None):
     subscribe_oper = MagicMock()
     subscribe_oper.get.return_value = subscribe
     return SiteEpisodesRefreshHandler(
@@ -152,6 +152,8 @@ def _handler(subscribe, store, *, config=None, now=None):
         store=store,
         subscribe_oper=subscribe_oper,
         now_fn=lambda: now or _now(),
+        resolve_missing_fn=resolve_missing_fn or MagicMock(return_value=(False, {})),
+        mediainfo_from_dict=lambda data: SimpleNamespace(**data),
     )
 
 
@@ -449,28 +451,59 @@ def test_applied_marker_can_be_cleared():
     assert store.read_applied(subscribe) is None
 
 
-def test_applied_marker_clears_when_subscribe_total_changes():
+def test_same_applied_total_does_not_renew_lease_but_higher_total_does():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(total_episode=10)
+    store.mark_applied(subscribe, applied_total=12, applied_base_total=10, reason="first", now=_now())
+
+    store.mark_applied(
+        subscribe,
+        applied_total=12,
+        applied_base_total=10,
+        reason="same",
+        now=_now() + timedelta(hours=5),
+    )
+
+    assert store.read_applied(subscribe).applied_at == _now().isoformat()
+
+    store.mark_applied(
+        subscribe,
+        applied_total=13,
+        applied_base_total=10,
+        reason="higher",
+        now=_now() + timedelta(hours=5),
+    )
+
+    assert store.read_applied(subscribe).applied_total == 13
+    assert store.read_applied(subscribe).applied_at == (_now() + timedelta(hours=5)).isoformat()
+
+
+def test_applied_marker_survives_subscribe_total_rollback():
     store = SiteEvidenceStore(_task_manager())
     subscribe = _sub(total_episode=12)
     store.mark_applied(subscribe, applied_total=12, applied_base_total=10, reason="site_total_ahead", now=_now())
 
     subscribe.total_episode = 10
 
-    assert store.read_applied(subscribe) is None
-    subscribe.total_episode = 12
-    assert store.read_applied(subscribe) is None
+    assert store.read_applied(subscribe).applied_total == 12
 
 
 def test_applied_marker_clears_when_manual_total_takes_over():
     store = SiteEvidenceStore(_task_manager())
     subscribe = _sub(total_episode=12)
+    store.save_snapshot(subscribe, _site_total_ahead(site_total=12, current_total=10))
     store.mark_applied(subscribe, applied_total=12, applied_base_total=10, reason="site_total_ahead", now=_now())
 
     subscribe.manual_total_episode = True
+    data = SubscribeEpisodesRefreshEventData(current_total_episode=10, subscribe_id=1, season=1)
+    _handler(subscribe, store).handle_refresh(data)
 
     assert store.read_applied(subscribe) is None
+    assert store.read_snapshot(subscribe) is None
     subscribe.manual_total_episode = False
-    assert store.read_applied(subscribe) is None
+    second = SubscribeEpisodesRefreshEventData(current_total_episode=10, subscribe_id=1, season=1)
+    _handler(subscribe, store).handle_refresh(second)
+    assert second.updated is False
 
 
 def test_snapshot_ignores_row_with_stale_identity():
@@ -489,6 +522,16 @@ def test_snapshot_ignores_row_with_stale_episode_group_identity():
     store.save_snapshot(stale_subscribe, SiteEvidence.no_evidence(stale_subscribe, now=_now()))
 
     assert store.read_snapshot(subscribe) is None
+
+
+def test_applied_marker_clears_when_douban_identity_changes():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(id=7, tmdbid=100, doubanid="douban-a", total_episode=12)
+    store.mark_applied(subscribe, applied_total=12, applied_base_total=10, reason="site_total_ahead")
+
+    subscribe.doubanid = "douban-b"
+
+    assert store.read_applied(subscribe) is None
 
 
 def test_applied_marker_ignores_row_with_stale_identity():
@@ -567,9 +610,9 @@ def test_refresh_handler_expands_event_total_from_site_evidence():
     assert marker.applied_base_total == 85
 
 
-def test_refresh_handler_does_not_replay_applied_site_total_ahead_after_tmdb_decrease():
+def test_refresh_handler_replays_applied_site_total_before_minimum_lease():
     store = SiteEvidenceStore(_task_manager())
-    subscribe = _sub(total_episode=90)
+    subscribe = _sub(total_episode=85)
     store.save_snapshot(subscribe, _site_total_ahead(site_total=90, current_total=85))
     store.mark_applied(subscribe, applied_total=90, applied_base_total=85, reason="site_total_ahead", now=_now())
     handler = _handler(subscribe, store)
@@ -577,10 +620,173 @@ def test_refresh_handler_does_not_replay_applied_site_total_ahead_after_tmdb_dec
 
     handler.handle_refresh(data)
 
+    assert data.updated is True
+    assert data.total_episode == 90
+    assert store.read_applied(subscribe).applied_total == 90
+
+
+def test_refresh_handler_releases_satisfied_lease_at_six_hours():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(total_episode=85)
+    store.mark_applied(subscribe, applied_total=90, applied_base_total=85, reason="site_total_ahead", now=_now())
+    resolve_missing = MagicMock(return_value=(True, {}))
+    handler = _handler(
+        subscribe,
+        store,
+        now=_now() + timedelta(hours=6),
+        resolve_missing_fn=resolve_missing,
+    )
+    data = SubscribeEpisodesRefreshEventData(
+        current_total_episode=85,
+        subscribe_id=1,
+        season=1,
+        mediainfo=SimpleNamespace(type="电视剧"),
+    )
+
+    handler.handle_refresh(data)
+
     assert data.updated is False
-    assert data.total_episode is None
-    assert store.read_snapshot(subscribe).kind == "no_evidence"
-    assert store.read_applied(subscribe) is None
+    assert store.read_applied(subscribe).applied_total == 90
+    assert resolve_missing.call_args.kwargs["subscribe"].total_episode == 90
+
+    second = SubscribeEpisodesRefreshEventData(
+        current_total_episode=85,
+        subscribe_id=1,
+        season=1,
+        mediainfo=SimpleNamespace(type="电视剧"),
+    )
+    handler.handle_refresh(second)
+    assert second.updated is False
+
+
+def test_refresh_handler_keeps_missing_lease_between_six_and_twenty_four_hours():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(total_episode=85)
+    store.mark_applied(subscribe, applied_total=90, applied_base_total=85, reason="site_total_ahead", now=_now())
+    resolve_missing = MagicMock(return_value=(False, {100: {1: SimpleNamespace(episodes=[90])}}))
+    handler = _handler(
+        subscribe,
+        store,
+        now=_now() + timedelta(hours=12),
+        resolve_missing_fn=resolve_missing,
+    )
+    data = SubscribeEpisodesRefreshEventData(
+        current_total_episode=85,
+        subscribe_id=1,
+        season=1,
+        mediainfo=SimpleNamespace(type="电视剧"),
+    )
+
+    handler.handle_refresh(data)
+
+    assert data.updated is True
+    assert data.total_episode == 90
+    assert store.read_applied(subscribe).applied_total == 90
+
+
+def test_refresh_handler_forces_release_at_twenty_four_hours():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(total_episode=85)
+    store.mark_applied(subscribe, applied_total=90, applied_base_total=85, reason="site_total_ahead", now=_now())
+    resolve_missing = MagicMock(return_value=(False, {}))
+    handler = _handler(
+        subscribe,
+        store,
+        now=_now() + timedelta(hours=24),
+        resolve_missing_fn=resolve_missing,
+    )
+    data = SubscribeEpisodesRefreshEventData(current_total_episode=85, subscribe_id=1, season=1)
+
+    handler.handle_refresh(data)
+
+    assert data.updated is False
+    assert store.read_applied(subscribe).applied_total == 90
+    resolve_missing.assert_not_called()
+
+    second = SubscribeEpisodesRefreshEventData(current_total_episode=85, subscribe_id=1, season=1)
+    handler.handle_refresh(second)
+    assert second.updated is False
+
+
+def test_refresh_handler_starts_new_lease_for_higher_candidate_after_timeout():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(total_episode=10)
+    store.mark_applied(subscribe, applied_total=12, applied_base_total=10, reason="first", now=_now())
+    higher_at = _now() + timedelta(hours=24)
+    store.save_snapshot(
+        subscribe,
+        _site_total_ahead(site_total=13, current_total=10, now=higher_at),
+    )
+    data = SubscribeEpisodesRefreshEventData(current_total_episode=10, subscribe_id=1, season=1)
+
+    _handler(subscribe, store, now=higher_at).handle_refresh(data)
+
+    assert data.updated is True
+    assert data.total_episode == 13
+    marker = store.read_applied(subscribe)
+    assert marker.applied_total == 13
+    assert marker.applied_at == higher_at.isoformat()
+
+
+def test_refresh_handler_keeps_lease_when_mediainfo_adapter_raises():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(total_episode=85)
+    store.mark_applied(subscribe, applied_total=90, applied_base_total=85, reason="site_total_ahead", now=_now())
+    subscribe_oper = MagicMock()
+    subscribe_oper.get.return_value = subscribe
+    handler = SiteEpisodesRefreshHandler(
+        config=_cfg(site_total_probe_enabled=True),
+        store=store,
+        subscribe_oper=subscribe_oper,
+        resolve_missing_fn=MagicMock(return_value=(True, {})),
+        mediainfo_from_dict=MagicMock(side_effect=ValueError("invalid mediainfo")),
+        now_fn=lambda: _now() + timedelta(hours=12),
+    )
+    data = SubscribeEpisodesRefreshEventData(
+        current_total_episode=85,
+        subscribe_id=1,
+        season=1,
+        mediainfo={"invalid": True},
+    )
+
+    handler.handle_refresh(data)
+
+    assert data.updated is True
+    assert data.total_episode == 90
+
+
+def test_refresh_handler_replays_marker_when_snapshot_is_no_evidence():
+    store = SiteEvidenceStore(_task_manager())
+    subscribe = _sub(total_episode=85)
+    store.mark_applied(subscribe, applied_total=90, applied_base_total=85, reason="site_total_ahead", now=_now())
+    store.save_snapshot(subscribe, SiteEvidence.no_evidence(subscribe, _now()))
+    data = SubscribeEpisodesRefreshEventData(current_total_episode=85, subscribe_id=1, season=1)
+
+    _handler(subscribe, store).handle_refresh(data)
+
+    assert data.updated is True
+    assert data.total_episode == 90
+
+
+def test_refresh_handler_releases_invalid_or_future_marker_time():
+    for applied_at in ("invalid", (_now() + timedelta(minutes=1)).isoformat()):
+        store = SiteEvidenceStore(_task_manager())
+        subscribe = _sub(total_episode=85)
+        store.mark_applied(subscribe, applied_total=90, applied_base_total=85, reason="site_total_ahead", now=_now())
+        marker = store.read_applied(subscribe)
+        marker.applied_at = applied_at
+        # 直接覆盖测试持久化解析边界，生产入口只会写合法 UTC 时间。
+        sid = str(subscribe.id)
+        store._task.update("site_evidence", lambda data: {
+            **data,
+            sid: {**data[sid], "applied": marker.to_dict()},
+        })
+        data = SubscribeEpisodesRefreshEventData(current_total_episode=85, subscribe_id=1, season=1)
+
+        _handler(subscribe, store).handle_refresh(data)
+
+        assert data.updated is False
+        assert store.read_applied(subscribe) is None
 
 
 def test_refresh_handler_keeps_site_confirmed_target_when_tmdb_temporarily_decreases():

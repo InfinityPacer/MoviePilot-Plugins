@@ -96,6 +96,41 @@ def test_target_satisfied_resolver_is_wired_to_guard_and_events():
     assert plugin._event_proxy._modules["resolve_missing_fn"].__self__ is plugin
     assert plugin._event_proxy._modules["resolve_missing_fn"].__func__ is plugin._resolve_subscribe_missing.__func__
 
+    site_refresh = plugin._modules["site_refresh"]
+    assert site_refresh._resolve_missing_fn.__self__ is plugin
+    assert site_refresh._resolve_missing_fn.__func__ is plugin._resolve_subscribe_missing.__func__
+    assert site_refresh._mediainfo_from_dict is plugin._mediainfo_from_dict
+
+
+def test_disabling_site_total_probe_bulk_clears_all_leases_without_refresh_event():
+    """关闭探测的初始化路径必须清除所有租约和快照，重新开启不能复活。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"site_total_probe_enabled": True})
+    store = plugin._modules["site_refresh"]._store
+    first = _sub(id=101, total_episode=6)
+    second = _sub(id=102, total_episode=8)
+    from subscribeassistantenhanced.engine.site import SiteEvidence
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 7, 11, tzinfo=timezone.utc)
+    for subscribe in (first, second):
+        store.save_snapshot(subscribe, SiteEvidence.no_evidence(subscribe, now))
+        store.mark_applied(
+            subscribe,
+            applied_total=subscribe.total_episode,
+            applied_base_total=1,
+            reason="site_total_ahead",
+            now=now,
+        )
+
+    plugin.init_plugin({"site_total_probe_enabled": False})
+    disabled_store = plugin._modules["site_refresh"]._store
+
+    assert disabled_store.read_applied(first) is None
+    assert disabled_store.read_applied(second) is None
+    assert disabled_store.read_snapshot(first) is None
+    assert disabled_store.read_snapshot(second) is None
+
 
 def test_tmdb_episodes_queries_special_season_zero():
     """特别季 S0 是合法 TMDB 季号，必须继续查询季内剧集。"""

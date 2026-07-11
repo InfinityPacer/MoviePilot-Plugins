@@ -88,7 +88,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced-v2.png"
     # 插件版本
-    plugin_version = "0.6.2"
+    plugin_version = "0.6.3"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -317,6 +317,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         )
 
         site_store = SiteEvidenceStore(tm)
+        if not cfg.site_total_probe_enabled:
+            site_store.clear_all_leases()
         completion_pipeline = CompletionEvidencePipeline(
             tmdb_episodes_fn=self._tmdb_episodes,
             volatility_tracker=volatility,
@@ -332,6 +334,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             config=cfg,
             store=site_store,
             subscribe_oper=self._subscribe_oper,
+            resolve_missing_fn=self._resolve_subscribe_missing,
+            mediainfo_from_dict=self._mediainfo_from_dict,
         )
 
         airing_checker = AiringPauseChecker(

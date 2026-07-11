@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import copy
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -24,6 +25,8 @@ from ..shared.task import TaskDataManager
 
 SITE_EVIDENCE_KEY = "site_evidence"
 SITE_EVIDENCE_TTL_HOURS = 24
+SITE_APPLIED_MIN_HOURS = 6
+SITE_APPLIED_MAX_HOURS = 24
 _COMPLETE_HINT_RE = re.compile(
     r"\b(?:complete|completed|end|ended)\b|完结|全集|全\s*\d+\s*集",
     re.IGNORECASE,
@@ -215,7 +218,7 @@ class SiteEvidenceStore:
         sid = str(getattr(subscribe, "id", ""))
         row = (self._task.read(SITE_EVIDENCE_KEY) or {}).get(sid) or {}
         if not _row_identity_matches(row, subscribe):
-            self._clear_applied_by_id(sid)
+            self._clear_lease_by_id(sid)
             return None
         marker = SiteAppliedMarker.from_dict(row.get("applied") or {})
         if marker and not _applied_marker_matches_subscribe(marker, subscribe):
@@ -227,12 +230,17 @@ class SiteEvidenceStore:
                      now: Optional[datetime] = None) -> None:
         """记录订阅目标已被站点证据向上扩展。"""
         sid = str(getattr(subscribe, "id", ""))
-        marker = SiteAppliedMarker.now(applied_total, applied_base_total, reason, now=now)
 
         def update(data: dict) -> dict:
             row = data.get(sid) or {}
             if row and not _row_identity_matches(row, subscribe):
                 row = {}
+            current = SiteAppliedMarker.from_dict(row.get("applied") or {})
+            if current and _safe_int(current.applied_total) == _safe_int(applied_total):
+                row["identity"] = _identity(subscribe)
+                data[sid] = row
+                return data
+            marker = SiteAppliedMarker.now(applied_total, applied_base_total, reason, now=now)
             row["identity"] = _identity(subscribe)
             row["applied"] = marker.to_dict()
             data[sid] = row
@@ -243,6 +251,10 @@ class SiteEvidenceStore:
     def clear_applied(self, subscribe) -> None:
         """清除订阅站点扩集应用标记，保留当前证据快照。"""
         self._clear_applied_by_id(str(getattr(subscribe, "id", "")))
+
+    def clear_lease(self, subscribe) -> None:
+        """终止订阅站点扩集租约并移除旧证据，避免状态切回后复活。"""
+        self._clear_lease_by_id(str(getattr(subscribe, "id", "")))
 
     def _clear_applied_by_id(self, sid: str) -> None:
         """按订阅 ID 清除站点扩集应用标记。"""
@@ -255,56 +267,110 @@ class SiteEvidenceStore:
 
         self._task.update(SITE_EVIDENCE_KEY, update)
 
+    def _clear_lease_by_id(self, sid: str) -> None:
+        """按订阅 ID 同时移除应用标记与证据快照。"""
+        def update(data: dict) -> dict:
+            row = data.get(sid) or {}
+            row.pop("applied", None)
+            row.pop("snapshot", None)
+            if row:
+                data[sid] = row
+            else:
+                data.pop(sid, None)
+            return data
+
+        self._task.update(SITE_EVIDENCE_KEY, update)
+
+    def clear_all_leases(self) -> None:
+        """批量终止全部站点扩集租约及其证据，防止重新开启后复活。"""
+        def update(data: dict) -> dict:
+            for sid, stored in list(data.items()):
+                row = stored if isinstance(stored, dict) else {}
+                row.pop("applied", None)
+                row.pop("snapshot", None)
+                if row:
+                    data[sid] = row
+                else:
+                    data.pop(sid, None)
+            return data
+
+        self._task.update(SITE_EVIDENCE_KEY, update)
+
 
 class SiteEpisodesRefreshHandler:
     """在主程序发起集数刷新时消费当前站点证据，不直接写订阅表。"""
 
     def __init__(self, *, config, store: SiteEvidenceStore, subscribe_oper,
+                 resolve_missing_fn: Optional[Callable] = None,
+                 mediainfo_from_dict: Optional[Callable] = None,
                  now_fn: Optional[Callable[[], datetime]] = None):
         self._config = config
         self._store = store
         self._subscribe_oper = subscribe_oper
+        self._resolve_missing_fn = resolve_missing_fn
+        self._mediainfo_from_dict = mediainfo_from_dict
         self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
 
     def handle_refresh(self, data: SubscribeEpisodesRefreshEventData) -> None:
         """按订阅当前站点快照向上覆盖事件 total；跳过回落和完成写库。"""
         if not getattr(self._config, "site_total_probe_enabled", False):
+            self._store.clear_all_leases()
             return
         subscribe = self._subscribe_oper.get(data.subscribe_id) if (
             self._subscribe_oper and data.subscribe_id
         ) else None
-        if not _eligible_site_evidence_subscribe(subscribe):
-            return
         if not _event_identity_matches(data, subscribe):
             detail(f"信号引擎(S)：{format_subscribe(subscribe)} 集数刷新事件身份不匹配，跳过站点证据消费")
             return
-
+        now = self._now_fn()
+        applied = self._store.read_applied(subscribe)
+        if not _eligible_site_evidence_subscribe(subscribe):
+            self._store.clear_lease(subscribe)
+            return
+        current_total = data.current_total_episode or 0
+        live_total = _safe_int(getattr(subscribe, "total_episode", None)) or 0
         evidence = self._store.read_snapshot(subscribe)
+
+        if applied:
+            applied_total = _safe_int(applied.applied_total) or 0
+            age = _applied_marker_age(applied, now)
+            if current_total >= applied_total:
+                self._store.clear_lease(subscribe)
+                return
+            if _has_high_confidence_tmdb_completion(data.mediainfo, subscribe, as_of=_as_date(now)):
+                self._store.clear_lease(subscribe)
+                return
+            if evidence and not evidence.is_expired(now):
+                site_total = evidence.site_candidate_total or 0
+                if evidence.kind == "site_total_ahead" and site_total > applied_total:
+                    self._store.mark_applied(
+                        subscribe, site_total, current_total, evidence.reason, now=now,
+                    )
+                    self._apply_total(data, site_total, evidence.reason)
+                    return
+                if evidence.complete_hint and evidence.match_level == "strict" and 0 < site_total < applied_total:
+                    self._store.clear_lease(subscribe)
+                    return
+            if age is None:
+                self._store.clear_lease(subscribe)
+                return
+            if age >= timedelta(hours=SITE_APPLIED_MAX_HOURS):
+                return
+            if age < timedelta(hours=SITE_APPLIED_MIN_HOURS):
+                self._apply_total(data, applied_total, applied.applied_reason)
+                return
+            if self._lease_target_satisfied(subscribe, applied_total, data.mediainfo):
+                return
+            self._apply_total(data, applied_total, applied.applied_reason)
+            return
+
         if not evidence:
             return
-        now = self._now_fn()
         if evidence.is_expired(now):
             self._log_diagnostic(subscribe, evidence, "站点证据已过期")
             return
 
         site_total = evidence.site_candidate_total or 0
-        current_total = data.current_total_episode or 0
-        live_total = _safe_int(getattr(subscribe, "total_episode", None)) or 0
-        applied = self._store.read_applied(subscribe)
-        if applied and evidence.kind == "site_total_ahead":
-            applied_total = _safe_int(applied.applied_total) or 0
-            if live_total == applied_total and site_total <= applied_total:
-                if current_total and current_total < applied_total:
-                    self._store.save_snapshot(subscribe, SiteEvidence.no_evidence(subscribe, now))
-                    self._store.clear_applied(subscribe)
-                    self._log_diagnostic(
-                        subscribe,
-                        evidence,
-                        "主程序本次识别到的 TMDB 当前季总集数低于已应用站点扩集，等待下一轮站点证据采样",
-                    )
-                    return
-                if current_total >= applied_total:
-                    self._store.clear_applied(subscribe)
         if current_total > site_total:
             self._log_diagnostic(subscribe, evidence, "主程序本次识别到的 TMDB 当前季总集数已大于站点证据")
             return
@@ -313,17 +379,14 @@ class SiteEpisodesRefreshHandler:
             return
         if _has_high_confidence_tmdb_completion(data.mediainfo, subscribe, as_of=_as_date(now)):
             self._log_diagnostic(subscribe, evidence, "事件携带的 TMDB 完结信号成立，停止使用站点证据向上覆盖")
+            self._store.clear_lease(subscribe)
             return
         if evidence.kind not in ("site_total_ahead", "site_complete_total"):
             self._log_diagnostic(subscribe, evidence, "站点证据不是可消费集数信号")
             return
         if site_total <= current_total:
             return
-
-        data.updated = True
-        data.total_episode = site_total
-        data.source = "站点集数探测"
-        data.reason = evidence.reason
+        self._apply_total(data, site_total, evidence.reason)
         if site_total > live_total:
             self._store.mark_applied(
                 subscribe,
@@ -336,6 +399,37 @@ class SiteEpisodesRefreshHandler:
             f"信号引擎(S)：{format_subscribe(subscribe)} 站点证据扩展主程序本次识别到的 TMDB 当前季总集数 "
             f"{current_total} -> {site_total}，原因={evidence.reason}"
         )
+
+    @staticmethod
+    def _apply_total(data: SubscribeEpisodesRefreshEventData, total_episode: int, reason: str) -> None:
+        """把有效租约目标写入当前刷新事件，不直接修改订阅表。"""
+        data.updated = True
+        data.total_episode = total_episode
+        data.source = "站点集数探测"
+        data.reason = reason
+
+    def _lease_target_satisfied(self, subscribe, applied_total: int, mediainfo) -> bool:
+        """按主程序公共缺集口径判断租约目标是否已经产生下载或入库事实。"""
+        if not self._resolve_missing_fn or mediainfo is None:
+            return False
+        try:
+            if isinstance(mediainfo, dict):
+                if not self._mediainfo_from_dict:
+                    return False
+                mediainfo = self._mediainfo_from_dict(mediainfo)
+            if mediainfo is None:
+                return False
+            snapshot = copy.copy(subscribe)
+            snapshot.total_episode = applied_total
+            satisfied, _ = self._resolve_missing_fn(
+                subscribe=snapshot,
+                mediainfo=mediainfo,
+                best_version_accept_downloaded=bool(getattr(subscribe, "best_version", False)),
+            )
+            return bool(satisfied)
+        except Exception as err:
+            logger.warning(f"信号引擎(S)：{format_subscribe(subscribe)} 租约消费事实查询失败：{err}")
+            return False
 
     @staticmethod
     def _log_diagnostic(subscribe, evidence: SiteEvidence, message: str) -> None:
@@ -600,6 +694,7 @@ def _sample_titles(context) -> list[str]:
 def _identity(subscribe) -> dict:
     return {
         "tmdbid": getattr(subscribe, "tmdbid", None),
+        "doubanid": _normalize_id(getattr(subscribe, "doubanid", None)),
         "season": getattr(subscribe, "season", None),
         "episode_group": _normalize_text(getattr(subscribe, "episode_group", None)),
         "type": getattr(subscribe, "type", None),
@@ -611,8 +706,16 @@ def _row_identity_matches(row: dict, subscribe) -> bool:
     if not isinstance(identity, dict):
         return False
     expected_episode_group = _normalize_text(getattr(subscribe, "episode_group", None))
+    stored_tmdbid = _safe_int(identity.get("tmdbid"))
+    current_tmdbid = _safe_int(getattr(subscribe, "tmdbid", None))
+    stored_doubanid = _normalize_id(identity.get("doubanid"))
+    current_doubanid = _normalize_id(getattr(subscribe, "doubanid", None))
+    douban_matches = stored_doubanid == current_doubanid
+    if "doubanid" not in identity:
+        douban_matches = bool(stored_tmdbid and stored_tmdbid == current_tmdbid)
     return (
-        _safe_int(identity.get("tmdbid")) == _safe_int(getattr(subscribe, "tmdbid", None))
+        stored_tmdbid == current_tmdbid
+        and douban_matches
         and _safe_int(identity.get("season")) == _safe_int(getattr(subscribe, "season", None))
         and _normalize_text(identity.get("episode_group")) == expected_episode_group
         and str(identity.get("type") or "") == str(getattr(subscribe, "type", "") or "")
@@ -620,10 +723,21 @@ def _row_identity_matches(row: dict, subscribe) -> bool:
 
 
 def _applied_marker_matches_subscribe(marker: SiteAppliedMarker, subscribe) -> bool:
-    """应用标记必须仍等于订阅当前目标；手动总集数接管后不再保留。"""
-    if bool(getattr(subscribe, "manual_total_episode", False)):
-        return False
-    return _safe_int(getattr(subscribe, "total_episode", None)) == _safe_int(marker.applied_total)
+    """应用标记必须包含有效的正数目标，人工接管由 handler 统一终止整条租约。"""
+    return bool(_safe_int(marker.applied_total))
+
+
+def _applied_marker_age(marker: SiteAppliedMarker, now: datetime) -> Optional[timedelta]:
+    """解析 UTC 租约年龄；非法或未来时间不视为有效租约。"""
+    try:
+        applied_at = datetime.fromisoformat(marker.applied_at)
+    except (TypeError, ValueError):
+        return None
+    if applied_at.tzinfo is None:
+        applied_at = applied_at.replace(tzinfo=timezone.utc)
+    normalized_now = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    age = normalized_now.astimezone(timezone.utc) - applied_at.astimezone(timezone.utc)
+    return age if age >= timedelta(0) else None
 
 
 def _site_evidence_scan_enabled(config) -> bool:
