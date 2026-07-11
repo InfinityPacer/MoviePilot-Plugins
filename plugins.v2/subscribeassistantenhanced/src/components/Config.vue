@@ -56,6 +56,8 @@ const headerScrolled = ref(false)
 const theme = useTheme()
 const aceTheme = computed(() => theme.current.value.dark ? 'github_dark' : 'github')
 let headerObserver: IntersectionObserver | undefined
+let configScrollRoot: HTMLElement | null = null
+let scrollIdleTimer: number | undefined
 
 interface SectionDefinition {
   /** 当前业务分组内的稳定章节翻译键。 */
@@ -243,13 +245,25 @@ const domainTranslationKeys: Record<string, string> = {
   '识别增强': 'domain.recognition',
 }
 
+function handleConfigScroll(): void {
+  if (!configScrollRoot) return
+  configScrollRoot.classList.add('sae-config-scroll-root--active')
+  window.clearTimeout(scrollIdleTimer)
+  scrollIdleTimer = window.setTimeout(() => {
+    configScrollRoot?.classList.remove('sae-config-scroll-root--active')
+  }, 600)
+}
+
 onMounted(() => {
   void loadSummary(props.api).then(payload => {
     runtimeSummary.value = payload
     summaryState.value = payload ? 'available' : 'unavailable'
   })
 
-  const scrollRoot = configHeaderSentinel.value?.closest('.v-card-text') ?? null
+  const scrollRoot = configHeaderSentinel.value?.closest<HTMLElement>('.v-card-text') ?? null
+  configScrollRoot = scrollRoot
+  scrollRoot?.classList.add('sae-config-scroll-root')
+  scrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })
   headerObserver = new IntersectionObserver(
     ([entry]) => {
       headerScrolled.value = !entry?.isIntersecting
@@ -259,7 +273,12 @@ onMounted(() => {
   if (configHeaderSentinel.value) headerObserver.observe(configHeaderSentinel.value)
 })
 
-onBeforeUnmount(() => headerObserver?.disconnect())
+onBeforeUnmount(() => {
+  headerObserver?.disconnect()
+  window.clearTimeout(scrollIdleTimer)
+  configScrollRoot?.removeEventListener('scroll', handleConfigScroll)
+  configScrollRoot?.classList.remove('sae-config-scroll-root', 'sae-config-scroll-root--active')
+})
 
 /** 按概览契约本地化布尔状态和已知模式，未知字符串保持后端原值。 */
 function formatDomainStatus(value: boolean | string): string {
@@ -312,12 +331,10 @@ function fieldUnit(field: FieldMeta): string | undefined {
   return field.label.match(/（([^）]+)）/)?.[1]
 }
 
-/** 短且不超过四项的互斥选项使用分段控件，其余交给选择器。 */
-function useSegmentedControl(field: FieldMeta): boolean {
-  return field.kind === 'select'
-    && Boolean(field.options?.length)
-    && field.options!.length <= 4
-    && field.options!.every(option => option.title.length <= 8)
+/** 多选摘要仅显示首项和剩余数量，避免可删除标签挤占控件宽度。 */
+function selectionOverflowCount(key: ConfigKey): number {
+  const value = draft[key]
+  return Array.isArray(value) ? Math.max(0, value.length - 1) : 0
 }
 
 /** 移动端分组切换后收起导航，并将当前分组标题带回可视区域。 */
@@ -478,29 +495,10 @@ function saveConfig(): void {
                       density="compact"
                       hide-details
                     />
-                    <VBtnToggle
-                      v-else-if="useSegmentedControl(field)"
-                      v-model="draft[field.key]"
-                      :aria-label="field.label"
-                      class="sae-choice-group"
-                      color="primary"
-                      mandatory
-                      variant="outlined"
-                    >
-                      <VBtn
-                        v-for="option in field.options"
-                        :key="String(option.value)"
-                        :value="option.value"
-                      >
-                        {{ option.title }}
-                      </VBtn>
-                    </VBtnToggle>
                     <VSelect
                       v-else-if="field.kind === 'select' || field.kind === 'multi-select'"
                       v-model="draft[field.key]"
                       :aria-label="field.label"
-                      chips
-                      closable-chips
                       density="compact"
                       hide-details
                       item-title="title"
@@ -508,7 +506,16 @@ function saveConfig(): void {
                       :items="field.options"
                       :multiple="field.kind === 'multi-select'"
                       variant="outlined"
-                    />
+                    >
+                      <template v-if="field.kind === 'multi-select'" #selection="{ item, index }">
+                        <span v-if="index === 0" class="sae-select-summary__primary">
+                          {{ item.title }}
+                        </span>
+                        <span v-else-if="index === 1" class="sae-select-summary__count">
+                          +{{ selectionOverflowCount(field.key) }}
+                        </span>
+                      </template>
+                    </VSelect>
                     <div
                       v-else-if="field.kind === 'number'"
                       class="sae-number-stepper"
@@ -794,6 +801,23 @@ function saveConfig(): void {
   min-inline-size: 0;
 }
 
+:global(.sae-config-scroll-root) {
+  scrollbar-color: transparent transparent;
+}
+
+:global(.sae-config-scroll-root::-webkit-scrollbar-thumb) {
+  background: transparent;
+  transition: background-color 160ms ease;
+}
+
+:global(.sae-config-scroll-root.sae-config-scroll-root--active) {
+  scrollbar-color: rgb(var(--v-theme-perfect-scrollbar-thumb)) transparent;
+}
+
+:global(.sae-config-scroll-root.sae-config-scroll-root--active::-webkit-scrollbar-thumb) {
+  background: rgb(var(--v-theme-perfect-scrollbar-thumb));
+}
+
 .sae-config-header-sentinel {
   block-size: 1px;
   margin-block-end: -1px;
@@ -837,8 +861,8 @@ function saveConfig(): void {
 }
 
 :global(html[data-theme='transparent'] .sae-config-header--scrolled) {
-  --sae-header-background: rgba(var(--v-theme-surface), var(--transparent-opacity-heavy, 0.5));
-  --sae-header-backdrop-filter: blur(var(--transparent-blur-heavy, 16px));
+  --sae-header-background: rgba(var(--v-theme-surface), 0.72);
+  --sae-header-backdrop-filter: blur(24px);
 }
 
 :global(html[data-theme='transparent'].transparent-blur-disabled .sae-config-header--scrolled) {
@@ -1097,7 +1121,7 @@ function saveConfig(): void {
   padding-block: 13px;
   border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   gap: 18px;
-  grid-template-columns: minmax(150px, 0.9fr) minmax(220px, 1.35fr);
+  grid-template-columns: minmax(200px, 1.45fr) minmax(180px, 0.75fr);
 }
 
 .sae-field-row--switch {
@@ -1129,25 +1153,23 @@ function saveConfig(): void {
   max-inline-size: 100%;
 }
 
-.sae-choice-group {
-  display: flex;
-  flex-wrap: wrap;
-  block-size: auto;
-  min-block-size: 38px;
-  inline-size: 100%;
-  overflow: visible;
-  border: 0;
-  gap: 6px;
+.sae-field-control :deep(.v-select__selection) {
+  justify-content: flex-end;
+  margin-inline-start: auto;
+  text-align: end;
 }
 
-.sae-choice-group :deep(.v-btn) {
-  flex: 1 1 auto;
-  min-inline-size: 68px;
-  min-block-size: 36px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.14) !important;
-  border-radius: var(--app-control-radius) !important;
-  font-size: 0.75rem;
-  letter-spacing: 0;
+.sae-select-summary__primary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sae-select-summary__count {
+  flex: 0 0 auto;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  margin-inline-start: 6px;
+  white-space: nowrap;
 }
 
 .sae-number-stepper {

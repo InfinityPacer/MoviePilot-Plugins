@@ -102,7 +102,7 @@ describe('config header actions', () => {
       /\.sae-config-header--scrolled\[data-v-sae-config-test\]\s*\{/,
     )
     expect(compiledStyle.code).toMatch(
-      /html\[data-theme='transparent'\] \.sae-config-header--scrolled\s*\{[\s\S]*?--sae-header-background:\s*rgba\(var\(--v-theme-surface\), var\(--transparent-opacity-heavy, 0\.5\)\);[\s\S]*?--sae-header-backdrop-filter:\s*blur\(var\(--transparent-blur-heavy, 16px\)\);/,
+      /html\[data-theme='transparent'\] \.sae-config-header--scrolled\s*\{[\s\S]*?--sae-header-background:\s*rgba\(var\(--v-theme-surface\), 0\.72\);[\s\S]*?--sae-header-backdrop-filter:\s*blur\(24px\);/,
     )
     expect(compiledStyle.code).toMatch(
       /html\[data-theme='transparent'\]\.transparent-blur-disabled \.sae-config-header--scrolled\s*\{[\s\S]*?--sae-header-background:\s*rgba\(var\(--v-theme-surface\), 0\.92\);[\s\S]*?--sae-header-backdrop-filter:\s*none;/,
@@ -116,6 +116,20 @@ describe('config header actions', () => {
     expect(source).toContain('class="sae-config-header__close-label"')
     expect(source).toMatch(/\.sae-config-header__close-label\s*{[\s\S]*?display:\s*none/)
     expect(source).not.toContain('.sae-config-header__close :deep(.v-btn__content)')
+  })
+
+  it('only reveals the dialog scrollbar while the user is scrolling', () => {
+    expect(source).toContain("scrollRoot?.classList.add('sae-config-scroll-root')")
+    expect(source).toContain("configScrollRoot.classList.add('sae-config-scroll-root--active')")
+    expect(source).toContain("configScrollRoot?.classList.remove('sae-config-scroll-root--active')")
+    expect(source).toContain("scrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })")
+    expect(source).toContain('window.setTimeout(() =>')
+    expect(compiledStyle.code).toMatch(
+      /\.sae-config-scroll-root::-webkit-scrollbar-thumb\s*\{[\s\S]*?background:\s*transparent;/,
+    )
+    expect(compiledStyle.code).toMatch(
+      /\.sae-config-scroll-root\.sae-config-scroll-root--active::-webkit-scrollbar-thumb\s*\{[\s\S]*?background:\s*rgb\(var\(--v-theme-perfect-scrollbar-thumb\)\);/,
+    )
   })
 })
 
@@ -157,11 +171,27 @@ describe('configuration navigation', () => {
 })
 
 describe('configuration controls', () => {
-  it('uses segmented choices only for compact option sets', () => {
-    expect(source).toContain('class="sae-choice-group"')
-    expect(source).toContain('useSegmentedControl(field)')
+  it('uses dropdowns for all single-select and multi-select fields', () => {
     expect(source).toContain('<VSelect')
     expect(source).toContain(':multiple="field.kind === \'multi-select\'"')
+    expect(source).not.toContain('<VBtnToggle')
+    expect(source).not.toContain('useSegmentedControl(field)')
+  })
+
+  it('reserves more desktop width for field guidance than option controls', () => {
+    expect(compiledStyle.code).toContain(
+      'grid-template-columns: minmax(200px, 1.45fr) minmax(180px, 0.75fr);',
+    )
+  })
+
+  it('uses aligned text summaries without removable chips for select controls', () => {
+    expect(source).not.toContain('closable-chips')
+    expect(source).not.toContain(':chips=')
+    expect(source).toContain('<template v-if="field.kind === \'multi-select\'" #selection="{ item, index }">')
+    expect(source).toContain('selectionOverflowCount(field.key)')
+    expect(compiledStyle.code).toMatch(
+      /\.sae-field-control\[data-v-sae-config-test\] \.v-select__selection\s*\{[\s\S]*?justify-content:\s*flex-end;[\s\S]*?text-align:\s*end;/,
+    )
   })
 
   it('reuses Host-native cron and YAML editors', () => {
@@ -178,10 +208,10 @@ describe('configuration controls', () => {
     expect(source).toContain('class="sae-number-stepper"')
   })
 
-  it('inherits the Host control radius for custom selection controls', () => {
+  it('inherits the Host control radius for remaining custom controls', () => {
     const radiusUses = source.match(/border-radius:\s*var\(--app-control-radius\)/g) ?? []
 
-    expect(radiusUses).toHaveLength(3)
+    expect(radiusUses).toHaveLength(2)
   })
 
   it('does not bind visual field headings to composite controls as labels', () => {
