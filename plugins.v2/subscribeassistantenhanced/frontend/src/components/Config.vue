@@ -25,7 +25,11 @@ const emit = defineEmits<{
   close: []
   /** 请求宿主切换插件详情/配置视图。 */
   switch: []
+  /** 请求宿主为多栏配置布局提供足够的横向空间。 */
+  layout: [{ maxWidth: string }]
 }>()
+
+emit('layout', { maxWidth: '68rem' })
 
 const README_URL =
   'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistantenhanced/README.md'

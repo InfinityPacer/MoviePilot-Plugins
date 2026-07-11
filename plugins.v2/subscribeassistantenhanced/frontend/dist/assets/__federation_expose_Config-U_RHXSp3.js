@@ -1668,10 +1668,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     initialConfig: {},
     api: {}
   },
-  emits: ["save", "close", "switch"],
+  emits: ["save", "close", "switch", "layout"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
+    emit("layout", { maxWidth: "68rem" });
     const { draft, changedCount, changedKeys, buildSavePayload } = useConfigDraft(props.initialConfig);
     const instance = getCurrentInstance();
     const locale = computed(() => normalizeLocale(instance?.appContext.config.globalProperties.$i18n?.locale));
@@ -2639,6 +2640,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-1750b67d"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-549d4042"]]);
 
 export { Config as default };
