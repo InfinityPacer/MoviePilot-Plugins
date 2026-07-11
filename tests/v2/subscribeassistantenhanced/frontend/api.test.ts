@@ -4,7 +4,7 @@ import {
   loadSummary,
   type PluginApi,
   type SummaryPayload,
-} from '../../../../plugins.v2/subscribeassistantenhanced/src/config/api'
+} from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/api'
 
 afterEach(() => vi.restoreAllMocks())
 

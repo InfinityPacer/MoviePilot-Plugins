@@ -77,7 +77,6 @@ interface SectionDefinition {
 const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   global: [
     { titleKey: 'section.running', keys: ['enabled', 'notify'] },
-    { titleKey: 'section.oneTime', keys: ['onlyonce', 'reset_task'] },
     {
       titleKey: 'section.schedule',
       keys: [
@@ -87,6 +86,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
         'best_version_cron',
       ],
     },
+    { titleKey: 'section.oneTime', keys: ['onlyonce', 'reset_task'] },
   ],
   cleanup: [
     {

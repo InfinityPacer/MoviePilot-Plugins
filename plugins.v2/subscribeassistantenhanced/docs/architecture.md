@@ -44,6 +44,19 @@ flowchart TD
 
 `SubscribeAssistantEnhanced` 是插件实例和依赖组装根。`EventProxy` 是事件代理，负责把主程序事件转换为插件内部调用。生命周期、待定、暂停、下载、洗版、清理、识别和证据模块通过明确接口协作。
 
+## 前端联邦子工程
+
+插件前端作为独立工程存放在 `frontend/`，与插件根目录的 Python 运行时代码分离：
+
+- `frontend/src/`：Vue 配置页、配置字段契约、本地化和静态资源源码。
+- `frontend/package.json`、`frontend/yarn.lock`：前端依赖和构建命令。
+- `frontend/vite.config.ts`、`frontend/tsconfig.json`：模块联邦构建与类型检查配置。
+- `frontend/dist/assets/`：随插件发布的联邦产物，也是主程序唯一需要读取的前端目录。
+
+插件入口通过 `get_render_mode()` 返回 `("vue", "frontend/dist/assets")`。主程序据此从插件静态文件接口读取 `remoteEntry.js` 并加载 `Config` 暴露组件；该路径是插件目录内的相对路径，不依赖前端源码或 `node_modules` 存在。发布包必须包含 `frontend/dist/assets/`，但不包含本地依赖目录。
+
+前端在 `frontend/` 目录执行 `yarn build`，构建会清空并重建 `frontend/dist/`。Python `get_form()` 继续提供初始配置模型，Vue 草稿按同一稳定配置键生成完整保存 payload，最终仍由主程序插件配置接口持久化并触发插件重新初始化。
+
 ## 入口层
 
 入口层包含：

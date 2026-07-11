@@ -1706,7 +1706,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const sectionDefinitions = {
       global: [
         { titleKey: "section.running", keys: ["enabled", "notify"] },
-        { titleKey: "section.oneTime", keys: ["onlyonce", "reset_task"] },
         {
           titleKey: "section.schedule",
           keys: [
@@ -1715,7 +1714,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             "meta_check_interval_hours",
             "best_version_cron"
           ]
-        }
+        },
+        { titleKey: "section.oneTime", keys: ["onlyonce", "reset_task"] }
       ],
       cleanup: [
         {
@@ -2639,6 +2639,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-4690db6a"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-1750b67d"]]);
 
 export { Config as default };

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 
 import { describe, expect, it } from 'vitest'
 
-import { fields } from '../../../../plugins.v2/subscribeassistantenhanced/src/config/fields'
+import { fields } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/fields'
 
 interface TemplateProp {
   name?: string
@@ -37,7 +37,7 @@ interface CompilerSfcModule {
 }
 
 const pluginPackageUrl = new URL(
-  '../../../../plugins.v2/subscribeassistantenhanced/package.json',
+  '../../../../plugins.v2/subscribeassistantenhanced/frontend/package.json',
   import.meta.url,
 )
 const requireFromPlugin = createRequire(pluginPackageUrl)
@@ -136,6 +136,19 @@ describe('config header actions', () => {
     )
     expect(compiledStyle.code).toMatch(
       /\.sae-config-scroll-root\.sae-config-scroll-root--active::-webkit-scrollbar-thumb\s*\{[\s\S]*?background:\s*rgb\(var\(--v-theme-perfect-scrollbar-thumb\)\);/,
+    )
+  })
+})
+
+describe('global section order', () => {
+  it('shows schedules before one-time actions', () => {
+    const globalSections = source.match(/global:\s*\[([\s\S]*?)\],\s*cleanup:/)?.[1] ?? ''
+
+    expect(globalSections.indexOf("titleKey: 'section.running'")).toBeLessThan(
+      globalSections.indexOf("titleKey: 'section.schedule'"),
+    )
+    expect(globalSections.indexOf("titleKey: 'section.schedule'")).toBeLessThan(
+      globalSections.indexOf("titleKey: 'section.oneTime'"),
     )
   })
 })

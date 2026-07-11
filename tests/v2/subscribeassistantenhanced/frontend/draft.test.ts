@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { configDefaults } from '../../../../plugins.v2/subscribeassistantenhanced/src/config/defaults'
-import { useConfigDraft } from '../../../../plugins.v2/subscribeassistantenhanced/src/config/draft'
-import { fields } from '../../../../plugins.v2/subscribeassistantenhanced/src/config/fields'
+import { configDefaults } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/defaults'
+import { useConfigDraft } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/draft'
+import { fields } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/fields'
 
 describe('configuration draft contract', () => {
   it('tracks representative and Tracker edits, then emits a complete normalized payload', () => {

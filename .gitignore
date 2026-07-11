@@ -169,7 +169,7 @@ cython_debug/
 .idea/
 .vscode/
 
-!plugins.v2/subscribeassistantenhanced/dist/
-plugins.v2/subscribeassistantenhanced/dist/*
-!plugins.v2/subscribeassistantenhanced/dist/assets/
-!plugins.v2/subscribeassistantenhanced/dist/assets/**
+!plugins.v2/subscribeassistantenhanced/frontend/dist/
+plugins.v2/subscribeassistantenhanced/frontend/dist/*
+!plugins.v2/subscribeassistantenhanced/frontend/dist/assets/
+!plugins.v2/subscribeassistantenhanced/frontend/dist/assets/**

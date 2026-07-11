@@ -19,8 +19,8 @@ from subscribeassistantenhanced.shared.config import PluginConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 README_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/README.md"
-DEFAULTS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/src/config/defaults.ts"
-FIELDS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/src/config/fields.ts"
+DEFAULTS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/frontend/src/config/defaults.ts"
+FIELDS_PATH = REPO_ROOT / "plugins.v2/subscribeassistantenhanced/frontend/src/config/fields.ts"
 
 TAB_GROUPS = {
     "订阅清理": "cleanup",
@@ -168,7 +168,7 @@ def _expected_fields(defaults: dict) -> list[dict]:
 def test_render_mode_uses_vue_assets():
     plugin = SubscribeAssistantEnhanced()
 
-    assert plugin.get_render_mode() == ("vue", "dist/assets")
+    assert plugin.get_render_mode() == ("vue", "frontend/dist/assets")
 
 
 def test_summary_api_uses_bear_auth_and_coarse_payload_shape():

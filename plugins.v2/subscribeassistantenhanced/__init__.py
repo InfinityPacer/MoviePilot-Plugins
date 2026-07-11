@@ -1266,7 +1266,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     @staticmethod
     def get_render_mode() -> Tuple[str, str]:
         """使用 Vue 联邦组件渲染配置页，构建产物随插件发布。"""
-        return "vue", "dist/assets"
+        return "vue", "frontend/dist/assets"
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """返回宿主配置接口需要的表单结构和默认模型，Vue Config 使用默认模型初始化。"""

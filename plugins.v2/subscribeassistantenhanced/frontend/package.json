@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "test": "vitest run --root ../.. ../../tests/v2/subscribeassistantenhanced/frontend",
-    "typecheck": "vue-tsc --noEmit",
-    "verify:config": "node scripts/verify-config-contract.mjs"
+    "test": "vitest run --root ../../.. ../../../tests/v2/subscribeassistantenhanced/frontend",
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "vue": "^3.5.13",

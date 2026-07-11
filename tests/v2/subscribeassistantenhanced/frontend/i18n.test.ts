@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { fields, groups } from '../../../../plugins.v2/subscribeassistantenhanced/src/config/fields'
+import { fields, groups } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/fields'
 import {
   assertTranslationCoverage,
   localizeFields,
   localizeGroups,
   normalizeLocale,
   t,
-} from '../../../../plugins.v2/subscribeassistantenhanced/src/config/i18n'
+} from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/i18n'
 
 describe('SAE i18n adapter', () => {
   it('normalizes Host locale values and ref-like values', () => {
