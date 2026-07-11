@@ -79,7 +79,7 @@ describe('normalizeSaeConfig', () => {
     expect(result.paused_probe_reasons).toEqual(['no_download', 'pre_air'])
     expect(result.best_version_cron).toBe(configDefaults.best_version_cron)
     expect(result.default_tracker_response).toBe(configDefaults.default_tracker_response)
-    expect(result.open_tracker_dialog).toBe(false)
+    expect(result).not.toHaveProperty('open_tracker_dialog')
     expect(
       Object.entries(result)
         .filter(([, value]) => typeof value === 'number')

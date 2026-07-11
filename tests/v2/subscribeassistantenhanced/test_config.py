@@ -83,9 +83,6 @@ class PluginConfigDefaultsTest:
     def test_best_version_cron_default(self):
         assert self.cfg.best_version_cron == "0 15 * * *"
 
-    def test_open_tracker_dialog_default_false(self):
-        assert self.cfg.open_tracker_dialog is False
-
     def test_download_timeout_minutes_default(self):
         assert self.cfg.download_timeout_minutes == 120
 

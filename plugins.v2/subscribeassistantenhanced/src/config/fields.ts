@@ -287,15 +287,6 @@ export const fields: FieldMeta[] = [
     "advanced": true
   },
   {
-    "key": "open_tracker_dialog",
-    "label": "打开Tracker配置窗口",
-    "group": "cleanup",
-    "kind": "switch",
-    "hint": "自定义Tracker配置以实现更精准的种子匹配",
-    "legacyUiKey": true,
-    "advanced": true
-  },
-  {
     "key": "delete_record_retention_hours",
     "label": "删除记录保留（小时）",
     "group": "cleanup",
@@ -452,7 +443,7 @@ export const fields: FieldMeta[] = [
     "label": "自定义识别规则",
     "group": "recognition",
     "kind": "textarea",
-    "hint": "使用 YAML 覆盖默认识别策略；仅在内置规则无法满足时编辑，留空则继承当前模式",
+    "hint": "仅在内置规则无法满足时编辑，留空则继承当前模式",
     "risk": "danger"
   },
   {

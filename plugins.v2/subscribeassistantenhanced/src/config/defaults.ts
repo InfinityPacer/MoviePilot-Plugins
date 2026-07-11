@@ -36,8 +36,6 @@ export interface SaeConfig {
   delete_exclude_tags: string
   /** Tracker响应关键字 */
   default_tracker_response: string
-  /** 打开Tracker配置窗口 */
-  open_tracker_dialog: boolean
   /** 删除记录保留（小时） */
   delete_record_retention_hours: number
   /** 清理整理记录范围 */
@@ -54,7 +52,7 @@ export interface SaeConfig {
   recognition_guard_tmdb_recheck_mode: string
   /** 识别增强缓存大小 */
   recognition_guard_cache_maxsize: number
-  /** 识别增强自定义策略 */
+  /** 自定义识别规则 */
   recognition_guard_custom_config: string
   /** 自动待定剧集订阅 */
   pending_enhanced_enabled: boolean
@@ -170,7 +168,6 @@ export const configDefaults: SaeConfig = {
   "download_retry_limit": 3,
   "delete_exclude_tags": "H&R",
   "default_tracker_response": "torrent not registered with this tracker\ntorrent banned",
-  "open_tracker_dialog": false,
   "delete_record_retention_hours": 24,
   "subscription_cleanup_history_type": "no",
   "subscription_cleanup_history_scenes": [],

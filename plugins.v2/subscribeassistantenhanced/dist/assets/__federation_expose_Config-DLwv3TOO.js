@@ -31,7 +31,6 @@ const configDefaults = {
   "download_retry_limit": 3,
   "delete_exclude_tags": "H&R",
   "default_tracker_response": "torrent not registered with this tracker\ntorrent banned",
-  "open_tracker_dialog": false,
   "delete_record_retention_hours": 24,
   "subscription_cleanup_history_type": "no",
   "subscription_cleanup_history_scenes": [],
@@ -126,7 +125,6 @@ function normalizeSaeConfig(input) {
   const entries = Object.keys(configDefaults).map((key) => {
     const defaultValue = configDefaults[key];
     const incoming = source[key];
-    if (key === "open_tracker_dialog") return [key, false];
     if (Array.isArray(defaultValue)) {
       return [key, normalizeStringArray(defaultValue, incoming)];
     }
@@ -146,15 +144,14 @@ function useConfigDraft(initialConfig) {
   const initialSnapshot = normalizeSaeConfig(initialConfig);
   const draft = reactive(structuredClone(initialSnapshot));
   const configKeys = Object.keys(initialSnapshot);
-  const changedCount = computed$1(
-    () => configKeys.reduce((count, key) => {
-      return JSON.stringify(draft[key]) === JSON.stringify(initialSnapshot[key]) ? count : count + 1;
-    }, 0)
+  const changedKeys = computed$1(
+    () => configKeys.filter((key) => JSON.stringify(draft[key]) !== JSON.stringify(initialSnapshot[key]))
   );
+  const changedCount = computed$1(() => changedKeys.value.length);
   function buildSavePayload() {
     return normalizeSaeConfig(draft);
   }
-  return { draft, changedCount, buildSavePayload };
+  return { draft, changedCount, changedKeys, buildSavePayload };
 }
 
 const groups = [
@@ -381,15 +378,6 @@ const fields = [
     "advanced": true
   },
   {
-    "key": "open_tracker_dialog",
-    "label": "打开Tracker配置窗口",
-    "group": "cleanup",
-    "kind": "switch",
-    "hint": "自定义Tracker配置以实现更精准的种子匹配",
-    "legacyUiKey": true,
-    "advanced": true
-  },
-  {
     "key": "delete_record_retention_hours",
     "label": "删除记录保留（小时）",
     "group": "cleanup",
@@ -546,7 +534,7 @@ const fields = [
     "label": "自定义识别规则",
     "group": "recognition",
     "kind": "textarea",
-    "hint": "使用 YAML 覆盖默认识别策略；仅在内置规则无法满足时编辑，留空则继承当前模式",
+    "hint": "仅在内置规则无法满足时编辑，留空则继承当前模式",
     "risk": "danger"
   },
   {
@@ -998,6 +986,8 @@ function normalizeLocale(source) {
 const messages = {
   "zh-CN": {
     "config.changedCount": "{count} 项待保存",
+    "config.changes": "本次修改",
+    "config.moreChanges": "另有 {count} 项",
     "config.save": "保存修改",
     "config.close": "关闭",
     "config.cadence": "运行节奏",
@@ -1024,7 +1014,7 @@ const messages = {
     "config.runtimeLoading": "正在读取运行概况",
     "config.runtimeUnavailable": "运行概况暂不可用",
     "config.pendingCount": "待定订阅",
-    "config.monitoredCount": "监控下载任务",
+    "config.monitoredCount": "下载任务",
     "config.enabled": "启用",
     "config.off": "关闭",
     "config.cronPlaceholder": "5 位 CRON 表达式",
@@ -1062,6 +1052,8 @@ const messages = {
   },
   "zh-TW": {
     "config.changedCount": "{count} 項待儲存",
+    "config.changes": "本次修改",
+    "config.moreChanges": "另有 {count} 項",
     "config.save": "儲存修改",
     "config.close": "關閉",
     "config.cadence": "執行節奏",
@@ -1088,7 +1080,7 @@ const messages = {
     "config.runtimeLoading": "正在讀取執行概況",
     "config.runtimeUnavailable": "執行概況暫不可用",
     "config.pendingCount": "待定訂閱",
-    "config.monitoredCount": "監控下載任務",
+    "config.monitoredCount": "下載任務",
     "config.enabled": "啟用",
     "config.off": "關閉",
     "config.cronPlaceholder": "5 位 CRON 表示式",
@@ -1126,6 +1118,8 @@ const messages = {
   },
   "en-US": {
     "config.changedCount": "{count} to save",
+    "config.changes": "Changes",
+    "config.moreChanges": "{count} more",
     "config.save": "Save changes",
     "config.close": "Close",
     "config.cadence": "Run cadence",
@@ -1152,7 +1146,7 @@ const messages = {
     "config.runtimeLoading": "Loading runtime summary",
     "config.runtimeUnavailable": "Runtime summary unavailable",
     "config.pendingCount": "Pending subscriptions",
-    "config.monitoredCount": "Monitored downloads",
+    "config.monitoredCount": "Downloads",
     "config.enabled": "Enabled",
     "config.off": "Off",
     "config.cronPlaceholder": "5-field CRON expression",
@@ -1224,7 +1218,6 @@ const englishFields = {
   download_retry_limit: ["Consecutive timeout limit", "Keep the torrent and notify after N consecutive low-progress timeouts"],
   delete_exclude_tags: ["Excluded tags", "Comma-separated tags that must not be processed"],
   default_tracker_response: ["Tracker response keywords", "One keyword per line; case-insensitive regular expressions are supported"],
-  open_tracker_dialog: ["Open Tracker settings", "Customize Tracker rules for more accurate torrent matching"],
   delete_record_retention_hours: ["Removal history retention (hours)", "Periodically remove deletion records older than N hours"],
   subscription_cleanup_history_type: ["Cleanup media scope", "Media types whose old transfer records and files are removed before download"],
   subscription_cleanup_history_scenes: ["Cleanup trigger scenarios", "Choose which subscription download scenarios trigger cleanup"],
@@ -1233,7 +1226,7 @@ const englishFields = {
   recognition_guard_notify_interval: ["Notification rate limit (seconds)", "Minimum interval for the same subscription, action, and reason"],
   recognition_guard_tmdb_recheck_mode: ["Secondary recognition", "Control when secondary recognition is performed"],
   recognition_guard_cache_maxsize: ["Recognition cache size", "Cache secondary recognition results to avoid duplicate requests"],
-  recognition_guard_custom_config: ["Custom recognition rules", "Override the default recognition policy with YAML only when built-in rules are insufficient; leave empty to inherit the current mode"],
+  recognition_guard_custom_config: ["Custom recognition rules", "Edit only when built-in rules are insufficient; leave empty to inherit the current mode"],
   pending_enhanced_enabled: ["Automatically pend TV subscriptions", "Mark TV subscriptions pending to avoid completing them too early"],
   pending_download_enabled: ["Pend active downloads", "Keep subscriptions pending while downloads are in progress"],
   auto_tv_pending_days: ["TV pending days", "Keep pending before the release date plus N days; 0 disables this rule"],
@@ -1551,7 +1544,7 @@ function localizeFields(localeSource, source = fields) {
     const english = englishFields[field.key];
     if (!english) throw new Error(`Missing field translation: ${field.key}`);
     const label = locale === "zh-CN" ? field.label : locale === "zh-TW" ? toTraditional(field.label) : english[0];
-    const hint = field.hint ? locale === "zh-CN" ? field.hint : locale === "zh-TW" ? toTraditional(field.hint) : english[1] : void 0;
+    const hint = field.hint ? locale === "zh-CN" ? field.hint : locale === "zh-TW" ? field.key === "recognition_guard_custom_config" ? "僅在內建規則無法滿足時編輯，留空則繼承目前模式" : toTraditional(field.hint) : english[1] : void 0;
     if (!label.trim() || field.hint && !hint?.trim()) throw new Error(`Empty field translation: ${field.key}`);
     return {
       ...field,
@@ -1639,75 +1632,76 @@ const _hoisted_9 = {
   key: 0,
   class: "sae-config-header__change-state"
 };
-const _hoisted_10 = { class: "sae-config-header__close-label" };
-const _hoisted_11 = { class: "sae-config__body" };
-const _hoisted_12 = { class: "sae-config-layout" };
-const _hoisted_13 = { class: "sae-mobile-group-selector" };
-const _hoisted_14 = ["aria-label"];
-const _hoisted_15 = { class: "sae-group-nav__heading" };
-const _hoisted_16 = { class: "sae-field-surface" };
-const _hoisted_17 = { class: "sae-field-surface__heading-copy" };
-const _hoisted_18 = { class: "sae-field-section__rows" };
-const _hoisted_19 = { class: "sae-field-row__copy" };
-const _hoisted_20 = { class: "sae-field-row__label" };
-const _hoisted_21 = { key: 0 };
-const _hoisted_22 = { class: "sae-field-control" };
-const _hoisted_23 = {
+const _hoisted_10 = { class: "sae-config__body" };
+const _hoisted_11 = { class: "sae-config-layout" };
+const _hoisted_12 = ["aria-label"];
+const _hoisted_13 = { class: "sae-group-nav__heading" };
+const _hoisted_14 = { class: "sae-field-surface" };
+const _hoisted_15 = { class: "sae-field-surface__heading-copy" };
+const _hoisted_16 = { class: "sae-field-surface__mobile-actions" };
+const _hoisted_17 = { class: "sae-field-section__rows" };
+const _hoisted_18 = { class: "sae-field-row__copy" };
+const _hoisted_19 = { class: "sae-field-row__label" };
+const _hoisted_20 = { key: 0 };
+const _hoisted_21 = { class: "sae-field-control" };
+const _hoisted_22 = {
   key: 0,
   class: "sae-select-summary__primary"
 };
-const _hoisted_24 = {
+const _hoisted_23 = {
   key: 1,
   class: "sae-select-summary__count"
 };
-const _hoisted_25 = {
+const _hoisted_24 = {
   key: 2,
   class: "sae-number-stepper"
 };
-const _hoisted_26 = {
+const _hoisted_25 = {
   key: 0,
   class: "sae-number-stepper__unit"
 };
-const _hoisted_27 = {
+const _hoisted_26 = {
   key: 0,
   class: "sae-field-section sae-tracker-entry"
 };
-const _hoisted_28 = { class: "sae-tracker-entry__copy" };
-const _hoisted_29 = {
+const _hoisted_27 = { class: "sae-tracker-entry__copy" };
+const _hoisted_28 = {
   key: 1,
   class: "sae-field-section sae-tracker-entry"
 };
-const _hoisted_30 = { class: "sae-tracker-entry__copy" };
-const _hoisted_31 = { class: "sae-impact-preview" };
-const _hoisted_32 = { class: "sae-impact-preview__title" };
+const _hoisted_29 = { class: "sae-tracker-entry__copy" };
+const _hoisted_30 = { class: "sae-impact-preview" };
+const _hoisted_31 = { class: "sae-impact-preview__title sae-summary-section__title" };
+const _hoisted_32 = { class: "sae-impact-preview__list" };
 const _hoisted_33 = {
   key: 0,
-  class: "sae-impact-preview__draft-state"
+  class: "sae-change-summary"
 };
-const _hoisted_34 = { class: "sae-impact-preview__list" };
-const _hoisted_35 = ["aria-label"];
-const _hoisted_36 = { class: "sae-runtime-summary__title" };
-const _hoisted_37 = {
+const _hoisted_34 = { class: "sae-change-summary__title sae-summary-section__title" };
+const _hoisted_35 = { key: 0 };
+const _hoisted_36 = ["aria-label"];
+const _hoisted_37 = { class: "sae-runtime-summary__title sae-summary-section__title" };
+const _hoisted_38 = {
   key: 0,
   class: "sae-runtime-summary__state"
 };
-const _hoisted_38 = {
+const _hoisted_39 = {
   key: 1,
   class: "sae-runtime-summary__metrics"
 };
-const _hoisted_39 = { class: "sae-runtime-summary__row" };
 const _hoisted_40 = { class: "sae-runtime-summary__row" };
 const _hoisted_41 = { class: "sae-runtime-summary__row" };
-const _hoisted_42 = {
+const _hoisted_42 = { class: "sae-runtime-summary__row" };
+const _hoisted_43 = {
   key: 2,
   class: "sae-runtime-summary__unavailable"
 };
-const _hoisted_43 = { class: "sae-mobile-savebar" };
 const _hoisted_44 = {
   key: 0,
-  class: "sae-mobile-savebar__state"
+  class: "sae-mobile-save-dock"
 };
-const {computed,getCurrentInstance,nextTick,onBeforeUnmount,onMounted,ref} = await importShared('vue');
+const _hoisted_45 = { class: "sae-mobile-save-dock__state" };
+const {computed,getCurrentInstance,onBeforeUnmount,onMounted,ref} = await importShared('vue');
 
 const {useTheme} = await importShared('vuetify');
 const README_URL = "https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistantenhanced/README.md";
@@ -1721,7 +1715,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
-    const { draft, changedCount, buildSavePayload } = useConfigDraft(props.initialConfig);
+    const { draft, changedCount, changedKeys, buildSavePayload } = useConfigDraft(props.initialConfig);
     const instance = getCurrentInstance();
     const locale = computed(() => normalizeLocale(instance?.appContext.config.globalProperties.$i18n?.locale));
     const localizedGroups = computed(() => localizeGroups(locale.value, groups));
@@ -1735,6 +1729,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const yamlField = computed(() => localizedFields.value.find(
       (field) => field.key === "recognition_guard_custom_config"
     ));
+    const changedItems = computed(() => changedKeys.value.slice(0, 3).map((key) => localizedFields.value.find((field) => field.key === key)).filter((field) => Boolean(field)));
+    const hiddenChangedCount = computed(() => Math.max(0, changedKeys.value.length - changedItems.value.length));
     const activeGroup = ref("global");
     const runtimeSummary = ref(null);
     const summaryState = ref("loading");
@@ -1748,6 +1744,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const aceTheme = computed(() => theme.current.value.dark ? "github_dark" : "github");
     let headerObserver;
     let configScrollRoot = null;
+    let fieldScrollRoot = null;
     let scrollIdleTimer;
     const sectionDefinitions = {
       global: [
@@ -1934,12 +1931,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         total: values.length
       };
     });
-    function handleConfigScroll() {
-      if (!configScrollRoot) return;
-      configScrollRoot.classList.add("sae-config-scroll-root--active");
+    function handleConfigScroll(event) {
+      const scrollRoot = event.currentTarget;
+      if (!scrollRoot) return;
+      scrollRoot.classList.add("sae-config-scroll-root--active");
       window.clearTimeout(scrollIdleTimer);
       scrollIdleTimer = window.setTimeout(() => {
-        configScrollRoot?.classList.remove("sae-config-scroll-root--active");
+        scrollRoot.classList.remove("sae-config-scroll-root--active");
       }, 600);
     }
     onMounted(() => {
@@ -1949,8 +1947,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       });
       const scrollRoot = configHeaderSentinel.value?.closest(".v-card-text") ?? null;
       configScrollRoot = scrollRoot;
+      fieldScrollRoot = fieldSurfaceHeading.value?.closest(".sae-field-surface") ?? null;
       scrollRoot?.classList.add("sae-config-scroll-root");
+      fieldScrollRoot?.classList.add("sae-config-scroll-root");
       scrollRoot?.addEventListener("scroll", handleConfigScroll, { passive: true });
+      fieldScrollRoot?.addEventListener("scroll", handleConfigScroll, { passive: true });
       headerObserver = new IntersectionObserver(
         ([entry]) => {
           headerScrolled.value = !entry?.isIntersecting;
@@ -1963,7 +1964,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       headerObserver?.disconnect();
       window.clearTimeout(scrollIdleTimer);
       configScrollRoot?.removeEventListener("scroll", handleConfigScroll);
+      fieldScrollRoot?.removeEventListener("scroll", handleConfigScroll);
       configScrollRoot?.classList.remove("sae-config-scroll-root", "sae-config-scroll-root--active");
+      fieldScrollRoot?.classList.remove("sae-config-scroll-root", "sae-config-scroll-root--active");
     });
     function updateNumber(key, incoming) {
       draft[key] = normalizeFiniteNumber(draft[key], incoming);
@@ -1981,11 +1984,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const value = draft[key];
       return Array.isArray(value) ? Math.max(0, value.length - 1) : 0;
     }
-    async function selectMobileGroup(group) {
+    function selectMobileGroup(group) {
       activeGroup.value = group;
       mobileGroupSheet.value = false;
-      await nextTick();
-      fieldSurfaceHeading.value?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
     function saveConfig() {
       emit("save", buildSavePayload());
@@ -1994,15 +1995,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const _component_VIcon = _resolveComponent("VIcon");
       const _component_VChip = _resolveComponent("VChip");
       const _component_VBtn = _resolveComponent("VBtn");
-      const _component_VSpacer = _resolveComponent("VSpacer");
-      const _component_VTooltip = _resolveComponent("VTooltip");
       const _component_VListItem = _resolveComponent("VListItem");
       const _component_VList = _resolveComponent("VList");
+      const _component_VTooltip = _resolveComponent("VTooltip");
       const _component_VSwitch = _resolveComponent("VSwitch");
       const _component_VSelect = _resolveComponent("VSelect");
       const _component_VTextField = _resolveComponent("VTextField");
       const _component_VCronField = _resolveComponent("VCronField");
       const _component_VProgressCircular = _resolveComponent("VProgressCircular");
+      const _component_VSpacer = _resolveComponent("VSpacer");
       const _component_VCardTitle = _resolveComponent("VCardTitle");
       const _component_VTextarea = _resolveComponent("VTextarea");
       const _component_VCardText = _resolveComponent("VCardText");
@@ -2063,15 +2064,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_9, [
                 _createVNode(_component_VIcon, {
                   color: "warning",
-                  icon: "mdi-pencil-outline",
-                  size: "16"
+                  icon: "mdi-circle",
+                  size: "8"
                 }),
                 _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.changedCount", { count: _unref(changedCount) })), 1)
               ])) : _createCommentVNode("", true),
               _createVNode(_component_VBtn, {
-                "aria-label": _unref(t)(locale.value, "config.save"),
                 class: "sae-config-header__save",
                 color: "primary",
+                disabled: _unref(changedCount) === 0,
                 type: "submit",
                 variant: "flat"
               }, {
@@ -2083,79 +2084,29 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.save")), 1)
                 ]),
                 _: 1
-              }, 8, ["aria-label"]),
+              }, 8, ["disabled"]),
               _createVNode(_component_VBtn, {
                 "aria-label": _unref(t)(locale.value, "config.close"),
                 class: "sae-config-header__close",
-                type: "button",
-                variant: "outlined",
+                icon: "",
+                size: "small",
+                variant: "text",
                 onClick: _cache[0] || (_cache[0] = ($event) => emit("close"))
               }, {
                 default: _withCtx(() => [
-                  _createVNode(_component_VIcon, {
-                    icon: "mdi-close",
-                    start: ""
-                  }),
-                  _createElementVNode("span", _hoisted_10, _toDisplayString(_unref(t)(locale.value, "config.close")), 1)
+                  _createVNode(_component_VIcon, { icon: "mdi-close" })
                 ]),
                 _: 1
               }, 8, ["aria-label"])
             ])
           ], 2),
-          _createElementVNode("div", _hoisted_11, [
-            _createElementVNode("div", _hoisted_12, [
-              _createElementVNode("div", _hoisted_13, [
-                _createVNode(_component_VBtn, {
-                  "aria-expanded": mobileGroupSheet.value,
-                  "aria-haspopup": "dialog",
-                  class: "sae-mobile-group-trigger",
-                  type: "button",
-                  variant: "outlined",
-                  onClick: _cache[1] || (_cache[1] = ($event) => mobileGroupSheet.value = true)
-                }, {
-                  default: _withCtx(() => [
-                    _createVNode(_component_VIcon, {
-                      icon: "mdi-view-list-outline",
-                      size: "19",
-                      start: ""
-                    }),
-                    _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.selectGroup")), 1),
-                    _createVNode(_component_VSpacer),
-                    _createVNode(_component_VIcon, {
-                      icon: "mdi-chevron-up",
-                      size: "18"
-                    })
-                  ]),
-                  _: 1
-                }, 8, ["aria-expanded"]),
-                _createVNode(_component_VBtn, {
-                  href: README_URL,
-                  "aria-label": _unref(t)(locale.value, "config.help"),
-                  class: "sae-mobile-help",
-                  icon: "",
-                  rel: "noopener noreferrer",
-                  size: "small",
-                  target: "_blank",
-                  variant: "text"
-                }, {
-                  default: _withCtx(() => [
-                    _createVNode(_component_VIcon, {
-                      icon: "mdi-help-circle-outline",
-                      size: "18"
-                    }),
-                    _createVNode(_component_VTooltip, {
-                      activator: "parent",
-                      text: _unref(t)(locale.value, "config.help")
-                    }, null, 8, ["text"])
-                  ]),
-                  _: 1
-                }, 8, ["aria-label"])
-              ]),
+          _createElementVNode("div", _hoisted_10, [
+            _createElementVNode("div", _hoisted_11, [
               _createElementVNode("nav", {
                 class: "sae-group-nav",
                 "aria-label": _unref(t)(locale.value, "config.selectGroup")
               }, [
-                _createElementVNode("div", _hoisted_15, _toDisplayString(_unref(t)(locale.value, "config.settings")), 1),
+                _createElementVNode("div", _hoisted_13, _toDisplayString(_unref(t)(locale.value, "config.settings")), 1),
                 _createVNode(_component_VList, {
                   class: "sae-group-nav__list",
                   density: "compact",
@@ -2190,14 +2141,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   ]),
                   _: 1
                 })
-              ], 8, _hoisted_14),
-              _createElementVNode("main", _hoisted_16, [
+              ], 8, _hoisted_12),
+              _createElementVNode("main", _hoisted_14, [
                 _createElementVNode("div", {
                   ref_key: "fieldSurfaceHeading",
                   ref: fieldSurfaceHeading,
                   class: "sae-field-surface__heading"
                 }, [
-                  _createElementVNode("div", _hoisted_17, [
+                  _createElementVNode("div", _hoisted_15, [
                     _createVNode(_component_VIcon, {
                       icon: activeGroupMeta.value.icon,
                       color: "primary",
@@ -2207,6 +2158,53 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("h2", null, _toDisplayString(activeGroupMeta.value.title), 1),
                       _createElementVNode("p", null, _toDisplayString(activeGroupMeta.value.summary), 1)
                     ])
+                  ]),
+                  _createElementVNode("div", _hoisted_16, [
+                    _createVNode(_component_VBtn, {
+                      "aria-expanded": mobileGroupSheet.value,
+                      "aria-label": _unref(t)(locale.value, "config.selectGroup"),
+                      "aria-haspopup": "dialog",
+                      class: "sae-mobile-group-action",
+                      icon: "",
+                      size: "small",
+                      type: "button",
+                      variant: "tonal",
+                      onClick: _cache[1] || (_cache[1] = ($event) => mobileGroupSheet.value = true)
+                    }, {
+                      default: _withCtx(() => [
+                        _createVNode(_component_VIcon, {
+                          icon: "mdi-view-list-outline",
+                          size: "18"
+                        }),
+                        _createVNode(_component_VTooltip, {
+                          activator: "parent",
+                          text: _unref(t)(locale.value, "config.selectGroup")
+                        }, null, 8, ["text"])
+                      ]),
+                      _: 1
+                    }, 8, ["aria-expanded", "aria-label"]),
+                    _createVNode(_component_VBtn, {
+                      href: README_URL,
+                      "aria-label": _unref(t)(locale.value, "config.help"),
+                      class: "sae-mobile-help",
+                      icon: "",
+                      rel: "noopener noreferrer",
+                      size: "small",
+                      target: "_blank",
+                      variant: "text"
+                    }, {
+                      default: _withCtx(() => [
+                        _createVNode(_component_VIcon, {
+                          icon: "mdi-help-circle-outline",
+                          size: "18"
+                        }),
+                        _createVNode(_component_VTooltip, {
+                          activator: "parent",
+                          text: _unref(t)(locale.value, "config.help")
+                        }, null, 8, ["text"])
+                      ]),
+                      _: 1
+                    }, 8, ["aria-label"])
                   ])
                 ], 512),
                 (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(activeSections.value, (section, sectionIndex) => {
@@ -2215,17 +2213,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     class: "sae-field-section"
                   }, [
                     _createElementVNode("h3", null, _toDisplayString(sectionIndex + 1) + ". " + _toDisplayString(section.title), 1),
-                    _createElementVNode("div", _hoisted_18, [
+                    _createElementVNode("div", _hoisted_17, [
                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(section.fields, (field) => {
                         return _openBlock(), _createElementBlock("div", {
                           key: field.key,
                           class: _normalizeClass(["sae-field-row", { "sae-field-row--switch": field.kind === "switch" }])
                         }, [
-                          _createElementVNode("div", _hoisted_19, [
-                            _createElementVNode("div", _hoisted_20, _toDisplayString(_unref(displayFieldLabel)(field)), 1),
-                            field.hint ? (_openBlock(), _createElementBlock("p", _hoisted_21, _toDisplayString(field.hint), 1)) : _createCommentVNode("", true)
+                          _createElementVNode("div", _hoisted_18, [
+                            _createElementVNode("div", _hoisted_19, _toDisplayString(_unref(displayFieldLabel)(field)), 1),
+                            field.hint ? (_openBlock(), _createElementBlock("p", _hoisted_20, _toDisplayString(field.hint), 1)) : _createCommentVNode("", true)
                           ]),
-                          _createElementVNode("div", _hoisted_22, [
+                          _createElementVNode("div", _hoisted_21, [
                             field.kind === "switch" ? (_openBlock(), _createBlock(_component_VSwitch, {
                               key: 0,
                               id: `sae-field-${field.key}`,
@@ -2251,11 +2249,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                               field.kind === "multi-select" ? {
                                 name: "selection",
                                 fn: _withCtx(({ item, index }) => [
-                                  index === 0 ? (_openBlock(), _createElementBlock("span", _hoisted_23, _toDisplayString(item.title), 1)) : index === 1 ? (_openBlock(), _createElementBlock("span", _hoisted_24, " +" + _toDisplayString(selectionOverflowCount(field.key)), 1)) : _createCommentVNode("", true)
+                                  index === 0 ? (_openBlock(), _createElementBlock("span", _hoisted_22, _toDisplayString(item.title), 1)) : index === 1 ? (_openBlock(), _createElementBlock("span", _hoisted_23, " +" + _toDisplayString(selectionOverflowCount(field.key)), 1)) : _createCommentVNode("", true)
                                 ]),
                                 key: "0"
                               } : void 0
-                            ]), 1032, ["modelValue", "onUpdate:modelValue", "aria-label", "items", "multiple"])) : field.kind === "number" ? (_openBlock(), _createElementBlock("div", _hoisted_25, [
+                            ]), 1032, ["modelValue", "onUpdate:modelValue", "aria-label", "items", "multiple"])) : field.kind === "number" ? (_openBlock(), _createElementBlock("div", _hoisted_24, [
                               _createVNode(_component_VBtn, {
                                 "aria-label": _unref(t)(locale.value, "config.decrease", { label: field.label }),
                                 icon: "",
@@ -2291,13 +2289,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                 ]),
                                 _: 1
                               }, 8, ["aria-label", "onClick"]),
-                              fieldUnit(field) ? (_openBlock(), _createElementBlock("span", _hoisted_26, _toDisplayString(fieldUnit(field)), 1)) : _createCommentVNode("", true)
+                              fieldUnit(field) ? (_openBlock(), _createElementBlock("span", _hoisted_25, _toDisplayString(fieldUnit(field)), 1)) : _createCommentVNode("", true)
                             ])) : field.kind === "cron" ? (_openBlock(), _createBlock(_component_VCronField, {
                               key: 3,
                               modelValue: _unref(draft)[field.key],
                               "onUpdate:modelValue": ($event) => _unref(draft)[field.key] = $event,
                               "aria-label": field.label,
                               class: "sae-text-control",
+                              clearable: false,
                               density: "compact",
                               "hide-details": "",
                               placeholder: _unref(t)(locale.value, "config.cronPlaceholder"),
@@ -2319,8 +2318,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     ])
                   ]);
                 }), 128)),
-                activeGroup.value === "cleanup" ? (_openBlock(), _createElementBlock("section", _hoisted_27, [
-                  _createElementVNode("div", _hoisted_28, [
+                activeGroup.value === "cleanup" ? (_openBlock(), _createElementBlock("section", _hoisted_26, [
+                  _createElementVNode("div", _hoisted_27, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-message-text-outline",
@@ -2345,8 +2344,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _: 1
                   }, 8, ["aria-label"])
                 ])) : _createCommentVNode("", true),
-                activeGroup.value === "recognition" ? (_openBlock(), _createElementBlock("section", _hoisted_29, [
-                  _createElementVNode("div", _hoisted_30, [
+                activeGroup.value === "recognition" ? (_openBlock(), _createElementBlock("section", _hoisted_28, [
+                  _createElementVNode("div", _hoisted_29, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-code-braces",
@@ -2372,23 +2371,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   }, 8, ["aria-label"])
                 ])) : _createCommentVNode("", true)
               ]),
-              _createElementVNode("aside", _hoisted_31, [
-                _createElementVNode("div", _hoisted_32, [
+              _createElementVNode("aside", _hoisted_30, [
+                _createElementVNode("div", _hoisted_31, [
                   _createVNode(_component_VIcon, {
                     color: "primary",
                     icon: "mdi-clock-outline",
                     size: "20"
                   }),
-                  _createElementVNode("h2", null, _toDisplayString(_unref(t)(locale.value, "config.cadence")), 1),
-                  _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_33, [
-                    _createVNode(_component_VIcon, {
-                      icon: "mdi-pencil-outline",
-                      size: "14"
-                    }),
-                    _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.unsaved")), 1)
-                  ])) : _createCommentVNode("", true)
+                  _createElementVNode("h2", null, _toDisplayString(_unref(t)(locale.value, "config.cadence")), 1)
                 ]),
-                _createElementVNode("ul", _hoisted_34, [
+                _createElementVNode("ul", _hoisted_32, [
                   (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(cadenceSummary.value, (item) => {
                     return _openBlock(), _createElementBlock("li", {
                       key: item.title,
@@ -2403,11 +2395,36 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     ]);
                   }), 128))
                 ]),
+                changedItems.value.length ? (_openBlock(), _createElementBlock("section", _hoisted_33, [
+                  _createElementVNode("div", _hoisted_34, [
+                    _createVNode(_component_VIcon, {
+                      color: "warning",
+                      icon: "mdi-format-list-checks",
+                      size: "19"
+                    }),
+                    _createElementVNode("h3", null, _toDisplayString(_unref(t)(locale.value, "config.changes")), 1)
+                  ]),
+                  _createElementVNode("ul", null, [
+                    (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(changedItems.value, (item) => {
+                      return _openBlock(), _createElementBlock("li", {
+                        key: item.key
+                      }, [
+                        _createVNode(_component_VIcon, {
+                          color: "warning",
+                          icon: "mdi-circle",
+                          size: "6"
+                        }),
+                        _createElementVNode("span", null, _toDisplayString(_unref(displayFieldLabel)(item)), 1)
+                      ]);
+                    }), 128))
+                  ]),
+                  hiddenChangedCount.value > 0 ? (_openBlock(), _createElementBlock("p", _hoisted_35, _toDisplayString(_unref(t)(locale.value, "config.moreChanges", { count: hiddenChangedCount.value })), 1)) : _createCommentVNode("", true)
+                ])) : _createCommentVNode("", true),
                 _createElementVNode("section", {
                   "aria-label": _unref(t)(locale.value, "config.runtime"),
                   class: "sae-runtime-summary"
                 }, [
-                  _createElementVNode("div", _hoisted_36, [
+                  _createElementVNode("div", _hoisted_37, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-chart-box-outline",
@@ -2415,7 +2432,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     }),
                     _createElementVNode("h3", null, _toDisplayString(_unref(t)(locale.value, "config.runtime")), 1)
                   ]),
-                  summaryState.value === "loading" ? (_openBlock(), _createElementBlock("div", _hoisted_37, [
+                  summaryState.value === "loading" ? (_openBlock(), _createElementBlock("div", _hoisted_38, [
                     _createVNode(_component_VProgressCircular, {
                       color: "primary",
                       indeterminate: "",
@@ -2423,8 +2440,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       width: "2"
                     }),
                     _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.runtimeLoading")), 1)
-                  ])) : summaryState.value === "available" && runtimeSummary.value ? (_openBlock(), _createElementBlock("div", _hoisted_38, [
-                    _createElementVNode("div", _hoisted_39, [
+                  ])) : summaryState.value === "available" && runtimeSummary.value ? (_openBlock(), _createElementBlock("div", _hoisted_39, [
+                    _createElementVNode("div", _hoisted_40, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-timer-sand",
                         size: "18"
@@ -2432,7 +2449,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.pendingCount")), 1),
                       _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.pending_count), 1)
                     ]),
-                    _createElementVNode("div", _hoisted_40, [
+                    _createElementVNode("div", _hoisted_41, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-download-network-outline",
                         size: "18"
@@ -2440,7 +2457,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.monitoredCount")), 1),
                       _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.monitored_torrents), 1)
                     ]),
-                    _createElementVNode("div", _hoisted_41, [
+                    _createElementVNode("div", _hoisted_42, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-toggle-switch-outline",
                         size: "18"
@@ -2448,34 +2465,38 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.activeDomains")), 1),
                       _createElementVNode("strong", null, _toDisplayString(activeDomainCount.value.active) + " / " + _toDisplayString(activeDomainCount.value.total), 1)
                     ])
-                  ])) : (_openBlock(), _createElementBlock("p", _hoisted_42, _toDisplayString(_unref(t)(locale.value, "config.runtimeUnavailable")), 1))
-                ], 8, _hoisted_35)
+                  ])) : (_openBlock(), _createElementBlock("p", _hoisted_43, _toDisplayString(_unref(t)(locale.value, "config.runtimeUnavailable")), 1))
+                ], 8, _hoisted_36)
               ])
             ])
           ]),
-          _createElementVNode("div", _hoisted_43, [
-            _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_44, [
+          _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("div", _hoisted_44, [
+            _createElementVNode("span", _hoisted_45, [
               _createVNode(_component_VIcon, {
                 color: "warning",
-                icon: "mdi-pencil-outline",
-                size: "16"
+                icon: "mdi-circle",
+                size: "8"
               }),
               _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.changedCount", { count: _unref(changedCount) })), 1)
-            ])) : _createCommentVNode("", true),
+            ]),
             _createVNode(_component_VSpacer),
             _createVNode(_component_VBtn, {
+              class: "sae-mobile-save-dock__save",
               color: "primary",
               disabled: _unref(changedCount) === 0,
-              "prepend-icon": "mdi-content-save",
               type: "submit",
               variant: "flat"
             }, {
               default: _withCtx(() => [
-                _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.save")), 1)
+                _createVNode(_component_VIcon, {
+                  icon: "mdi-content-save",
+                  start: ""
+                }),
+                _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.save")), 1)
               ]),
               _: 1
             }, 8, ["disabled"])
-          ])
+          ])) : _createCommentVNode("", true)
         ], 32),
         _createVNode(_component_VDialog, {
           modelValue: trackerDialogOpen.value,
@@ -2669,6 +2690,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f7e835a4"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-aa1912a1"]]);
 
 export { Config as default };

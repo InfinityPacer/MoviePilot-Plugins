@@ -100,7 +100,7 @@ def test_recognition_guard_missing_fields_are_persisted_off_on_init():
         assert key not in persisted
 
 
-def test_recognition_guard_upgrade_persistence_drops_forbidden_legacy_keys():
+def test_upgrade_persistence_drops_retired_config_keys():
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
 
@@ -111,6 +111,7 @@ def test_recognition_guard_upgrade_persistence_drops_forbidden_legacy_keys():
         "recognition_guard_keyword_config": "hard_block:\n  - legacy\n",
         "recognition_guard_target_mode": "animation",
         "recognition_guard_missing_year_policy": "block",
+        "open_tracker_dialog": True,
     })
 
     persisted = plugin.update_config.call_args.args[0]
@@ -120,6 +121,7 @@ def test_recognition_guard_upgrade_persistence_drops_forbidden_legacy_keys():
         "recognition_guard_keyword_config",
         "recognition_guard_target_mode",
         "recognition_guard_missing_year_policy",
+        "open_tracker_dialog",
     ):
         assert key not in persisted
 
@@ -178,7 +180,7 @@ def test_recognition_guard_readme_documents_public_contract_only():
         "| 识别增强通知限频（秒） | `recognition_guard_notify_interval` | int | `3600` |",
         "| 识别增强二次识别 | `recognition_guard_tmdb_recheck_mode` | enum | `balanced_strict` |",
         "| 识别增强缓存大小 | `recognition_guard_cache_maxsize` | int | `100000` |",
-        "| 识别增强自定义策略 | `recognition_guard_custom_config` | YAML | 内置说明模板 |",
+        "| 自定义识别规则 | `recognition_guard_custom_config` | YAML | 内置说明模板 |",
     }
     for row in expected_rows:
         assert row in readme

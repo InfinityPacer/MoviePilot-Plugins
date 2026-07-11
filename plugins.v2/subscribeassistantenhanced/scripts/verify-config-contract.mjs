@@ -80,16 +80,12 @@ for (const field of fields) {
 }
 
 const byKey = new Map(fields.map(field => [field.key, field]))
-const trackerTrigger = byKey.get('open_tracker_dialog')
 const trackerResponse = byKey.get('default_tracker_response')
-if (trackerTrigger?.group !== 'cleanup' || trackerTrigger.legacyUiKey !== true || trackerTrigger.advanced !== true || trackerTrigger.dialogOnly) {
-  throw new Error('open_tracker_dialog must be the cleanup legacy UI key')
-}
 if (trackerResponse?.group !== 'cleanup' || trackerResponse.dialogOnly !== true || trackerResponse.advanced !== true || trackerResponse.legacyUiKey) {
   throw new Error('default_tracker_response must be the cleanup dialog-only field')
 }
-if (fields.some(field => field.key !== 'open_tracker_dialog' && field.legacyUiKey)) {
-  throw new Error('Only open_tracker_dialog may be a legacy UI key')
+if (fields.some(field => field.legacyUiKey)) {
+  throw new Error('Legacy UI keys are not allowed')
 }
 if (fields.some(field => field.key !== 'default_tracker_response' && field.dialogOnly)) {
   throw new Error('Only default_tracker_response may be dialog-only')

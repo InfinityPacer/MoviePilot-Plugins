@@ -32,6 +32,8 @@ export function normalizeLocale(source: LocaleSource): SupportedLocale {
 const messages: Record<SupportedLocale, Record<string, string>> = {
   'zh-CN': {
     'config.changedCount': '{count} 项待保存',
+    'config.changes': '本次修改',
+    'config.moreChanges': '另有 {count} 项',
     'config.save': '保存修改',
     'config.close': '关闭',
     'config.cadence': '运行节奏',
@@ -56,7 +58,7 @@ const messages: Record<SupportedLocale, Record<string, string>> = {
     'config.runtimeLoading': '正在读取运行概况',
     'config.runtimeUnavailable': '运行概况暂不可用',
     'config.pendingCount': '待定订阅',
-    'config.monitoredCount': '监控下载任务',
+    'config.monitoredCount': '下载任务',
     'config.enabled': '启用',
     'config.off': '关闭',
     'config.cronPlaceholder': '5 位 CRON 表达式',
@@ -88,6 +90,8 @@ const messages: Record<SupportedLocale, Record<string, string>> = {
   },
   'zh-TW': {
     'config.changedCount': '{count} 項待儲存',
+    'config.changes': '本次修改',
+    'config.moreChanges': '另有 {count} 項',
     'config.save': '儲存修改',
     'config.close': '關閉',
     'config.cadence': '執行節奏',
@@ -106,7 +110,7 @@ const messages: Record<SupportedLocale, Record<string, string>> = {
     'config.yamlTitle': '自訂識別規則',
     'config.runtime': '執行概況', 'config.runtimeLoading': '正在讀取執行概況',
     'config.runtimeUnavailable': '執行概況暫不可用', 'config.pendingCount': '待定訂閱',
-    'config.monitoredCount': '監控下載任務', 'config.enabled': '啟用', 'config.off': '關閉',
+    'config.monitoredCount': '下載任務', 'config.enabled': '啟用', 'config.off': '關閉',
     'config.cronPlaceholder': '5 位 CRON 表示式',
     'config.title': '訂閱助手（增強版）',
     'domain.completionGuard': '完結守衛模式', 'domain.pending': '待定增強', 'domain.pause': '暫停最佳化',
@@ -123,6 +127,8 @@ const messages: Record<SupportedLocale, Record<string, string>> = {
   },
   'en-US': {
     'config.changedCount': '{count} to save',
+    'config.changes': 'Changes',
+    'config.moreChanges': '{count} more',
     'config.save': 'Save changes',
     'config.close': 'Close',
     'config.cadence': 'Run cadence',
@@ -141,7 +147,7 @@ const messages: Record<SupportedLocale, Record<string, string>> = {
     'config.yamlTitle': 'Custom recognition rules',
     'config.runtime': 'Runtime summary', 'config.runtimeLoading': 'Loading runtime summary',
     'config.runtimeUnavailable': 'Runtime summary unavailable', 'config.pendingCount': 'Pending subscriptions',
-    'config.monitoredCount': 'Monitored downloads', 'config.enabled': 'Enabled', 'config.off': 'Off',
+    'config.monitoredCount': 'Downloads', 'config.enabled': 'Enabled', 'config.off': 'Off',
     'config.cronPlaceholder': '5-field CRON expression',
     'config.title': 'Subscribe Assistant (Enhanced)',
     'domain.completionGuard': 'Completion guard mode', 'domain.pending': 'Pending enhancement', 'domain.pause': 'Pause optimization',
@@ -200,7 +206,6 @@ const englishFields: Record<ConfigKey, EnglishFieldText> = {
   download_retry_limit: ['Consecutive timeout limit', 'Keep the torrent and notify after N consecutive low-progress timeouts'],
   delete_exclude_tags: ['Excluded tags', 'Comma-separated tags that must not be processed'],
   default_tracker_response: ['Tracker response keywords', 'One keyword per line; case-insensitive regular expressions are supported'],
-  open_tracker_dialog: ['Open Tracker settings', 'Customize Tracker rules for more accurate torrent matching'],
   delete_record_retention_hours: ['Removal history retention (hours)', 'Periodically remove deletion records older than N hours'],
   subscription_cleanup_history_type: ['Cleanup media scope', 'Media types whose old transfer records and files are removed before download'],
   subscription_cleanup_history_scenes: ['Cleanup trigger scenarios', 'Choose which subscription download scenarios trigger cleanup'],
@@ -209,7 +214,7 @@ const englishFields: Record<ConfigKey, EnglishFieldText> = {
   recognition_guard_notify_interval: ['Notification rate limit (seconds)', 'Minimum interval for the same subscription, action, and reason'],
   recognition_guard_tmdb_recheck_mode: ['Secondary recognition', 'Control when secondary recognition is performed'],
   recognition_guard_cache_maxsize: ['Recognition cache size', 'Cache secondary recognition results to avoid duplicate requests'],
-  recognition_guard_custom_config: ['Custom recognition rules', 'Override the default recognition policy with YAML only when built-in rules are insufficient; leave empty to inherit the current mode'],
+  recognition_guard_custom_config: ['Custom recognition rules', 'Edit only when built-in rules are insufficient; leave empty to inherit the current mode'],
   pending_enhanced_enabled: ['Automatically pend TV subscriptions', 'Mark TV subscriptions pending to avoid completing them too early'],
   pending_download_enabled: ['Pend active downloads', 'Keep subscriptions pending while downloads are in progress'],
   auto_tv_pending_days: ['TV pending days', 'Keep pending before the release date plus N days; 0 disables this rule'],
@@ -347,7 +352,9 @@ export function localizeFields(localeSource: LocaleSource, source: readonly Fiel
       ? locale === 'zh-CN'
         ? field.hint
         : locale === 'zh-TW'
-          ? toTraditional(field.hint)
+          ? field.key === 'recognition_guard_custom_config'
+            ? '僅在內建規則無法滿足時編輯，留空則繼承目前模式'
+            : toTraditional(field.hint)
           : english[1]
       : undefined
     if (!label.trim() || (field.hint && !hint?.trim())) throw new Error(`Empty field translation: ${field.key}`)

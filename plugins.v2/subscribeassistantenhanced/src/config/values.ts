@@ -55,7 +55,6 @@ export function normalizeSaeConfig(input: unknown): SaeConfig {
     const defaultValue = configDefaults[key]
     const incoming = source[key]
 
-    if (key === 'open_tracker_dialog') return [key, false]
     if (Array.isArray(defaultValue)) {
       return [key, normalizeStringArray(defaultValue, incoming)]
     }

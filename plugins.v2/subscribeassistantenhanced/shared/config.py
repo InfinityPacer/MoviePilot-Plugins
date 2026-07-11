@@ -267,11 +267,6 @@ class PluginConfig:
         return self.get_non_empty_str("default_tracker_response", DEFAULT_TRACKER_RESPONSE)
 
     @property
-    def open_tracker_dialog(self) -> bool:
-        """打开 Tracker 配置弹窗：仅控制表单弹窗开合的 UI 状态，不参与业务逻辑。"""
-        return self.get_bool("open_tracker_dialog", False)
-
-    @property
     def delete_record_retention_hours(self) -> int:
         """删除指纹保留期（小时）：超过则定时清理，避免长期屏蔽同源资源。"""
         return self.get_int("delete_record_retention_hours", 24)

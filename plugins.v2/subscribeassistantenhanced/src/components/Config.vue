@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useTheme } from 'vuetify'
 
 import saeLogo from '../assets/sae-logo.svg'
@@ -29,7 +29,7 @@ const emit = defineEmits<{
 
 const README_URL =
   'https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistantenhanced/README.md'
-const { draft, changedCount, buildSavePayload } = useConfigDraft(props.initialConfig)
+const { draft, changedCount, changedKeys, buildSavePayload } = useConfigDraft(props.initialConfig)
 const instance = getCurrentInstance()
 const locale = computed(() => normalizeLocale(instance?.appContext.config.globalProperties.$i18n?.locale))
 const localizedGroups = computed(() => localizeGroups(locale.value, groups))
@@ -45,6 +45,11 @@ const trackerField = computed(() => localizedFields.value.find(
 const yamlField = computed(() => localizedFields.value.find(
   field => field.key === 'recognition_guard_custom_config',
 )!)
+const changedItems = computed(() => changedKeys.value
+  .slice(0, 3)
+  .map(key => localizedFields.value.find(field => field.key === key))
+  .filter((field): field is FieldMeta => Boolean(field)))
+const hiddenChangedCount = computed(() => Math.max(0, changedKeys.value.length - changedItems.value.length))
 const activeGroup = ref<GroupKey>('global')
 const runtimeSummary = ref<SummaryPayload | null>(null)
 const summaryState = ref<'loading' | 'available' | 'unavailable'>('loading')
@@ -59,6 +64,7 @@ const theme = useTheme()
 const aceTheme = computed(() => theme.current.value.dark ? 'github_dark' : 'github')
 let headerObserver: IntersectionObserver | undefined
 let configScrollRoot: HTMLElement | null = null
+let fieldScrollRoot: HTMLElement | null = null
 let scrollIdleTimer: number | undefined
 
 interface SectionDefinition {
@@ -257,12 +263,13 @@ const activeDomainCount = computed(() => {
   }
 })
 
-function handleConfigScroll(): void {
-  if (!configScrollRoot) return
-  configScrollRoot.classList.add('sae-config-scroll-root--active')
+function handleConfigScroll(event: Event): void {
+  const scrollRoot = event.currentTarget as HTMLElement | null
+  if (!scrollRoot) return
+  scrollRoot.classList.add('sae-config-scroll-root--active')
   window.clearTimeout(scrollIdleTimer)
   scrollIdleTimer = window.setTimeout(() => {
-    configScrollRoot?.classList.remove('sae-config-scroll-root--active')
+    scrollRoot.classList.remove('sae-config-scroll-root--active')
   }, 600)
 }
 
@@ -274,8 +281,11 @@ onMounted(() => {
 
   const scrollRoot = configHeaderSentinel.value?.closest<HTMLElement>('.v-card-text') ?? null
   configScrollRoot = scrollRoot
+  fieldScrollRoot = fieldSurfaceHeading.value?.closest<HTMLElement>('.sae-field-surface') ?? null
   scrollRoot?.classList.add('sae-config-scroll-root')
+  fieldScrollRoot?.classList.add('sae-config-scroll-root')
   scrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })
+  fieldScrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })
   headerObserver = new IntersectionObserver(
     ([entry]) => {
       headerScrolled.value = !entry?.isIntersecting
@@ -289,7 +299,9 @@ onBeforeUnmount(() => {
   headerObserver?.disconnect()
   window.clearTimeout(scrollIdleTimer)
   configScrollRoot?.removeEventListener('scroll', handleConfigScroll)
+  fieldScrollRoot?.removeEventListener('scroll', handleConfigScroll)
   configScrollRoot?.classList.remove('sae-config-scroll-root', 'sae-config-scroll-root--active')
+  fieldScrollRoot?.classList.remove('sae-config-scroll-root', 'sae-config-scroll-root--active')
 })
 
 /** 数值字段只接受有限 number，避免动态输入污染完整保存 payload。 */
@@ -318,12 +330,10 @@ function selectionOverflowCount(key: ConfigKey): number {
   return Array.isArray(value) ? Math.max(0, value.length - 1) : 0
 }
 
-/** 移动端分组切换后收起导航，并将当前分组标题带回可视区域。 */
-async function selectMobileGroup(group: GroupKey): Promise<void> {
+/** 移动端分组切换只更新内容并收起导航，保留用户当前阅读位置。 */
+function selectMobileGroup(group: GroupKey): void {
   activeGroup.value = group
   mobileGroupSheet.value = false
-  await nextTick()
-  fieldSurfaceHeading.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 /** 保存完整配置，并确保弹窗触发位始终按关闭状态持久化。 */
@@ -355,13 +365,13 @@ function saveConfig(): void {
 
         <div class="sae-config-header__actions">
           <span v-if="changedCount > 0" class="sae-config-header__change-state">
-            <VIcon color="warning" icon="mdi-pencil-outline" size="16" />
+            <VIcon color="warning" icon="mdi-circle" size="8" />
             {{ t(locale, 'config.changedCount', { count: changedCount }) }}
           </span>
           <VBtn
-            :aria-label="t(locale, 'config.save')"
             class="sae-config-header__save"
             color="primary"
+            :disabled="changedCount === 0"
             type="submit"
             variant="flat"
           >
@@ -371,47 +381,18 @@ function saveConfig(): void {
           <VBtn
             :aria-label="t(locale, 'config.close')"
             class="sae-config-header__close"
-            type="button"
-            variant="outlined"
+            icon
+            size="small"
+            variant="text"
             @click="emit('close')"
           >
-            <VIcon icon="mdi-close" start />
-            <span class="sae-config-header__close-label">{{ t(locale, 'config.close') }}</span>
+            <VIcon icon="mdi-close" />
           </VBtn>
         </div>
       </header>
 
       <div class="sae-config__body">
         <div class="sae-config-layout">
-          <div class="sae-mobile-group-selector">
-            <VBtn
-              :aria-expanded="mobileGroupSheet"
-              aria-haspopup="dialog"
-              class="sae-mobile-group-trigger"
-              type="button"
-              variant="outlined"
-              @click="mobileGroupSheet = true"
-            >
-              <VIcon icon="mdi-view-list-outline" size="19" start />
-              <span>{{ t(locale, 'config.selectGroup') }}</span>
-              <VSpacer />
-              <VIcon icon="mdi-chevron-up" size="18" />
-            </VBtn>
-            <VBtn
-              :href="README_URL"
-              :aria-label="t(locale, 'config.help')"
-              class="sae-mobile-help"
-              icon
-              rel="noopener noreferrer"
-              size="small"
-              target="_blank"
-              variant="text"
-            >
-              <VIcon icon="mdi-help-circle-outline" size="18" />
-              <VTooltip activator="parent" :text="t(locale, 'config.help')" />
-            </VBtn>
-          </div>
-
           <nav class="sae-group-nav" :aria-label="t(locale, 'config.selectGroup')">
             <div class="sae-group-nav__heading">{{ t(locale, 'config.settings') }}</div>
             <VList class="sae-group-nav__list" density="compact" nav>
@@ -447,6 +428,35 @@ function saveConfig(): void {
                   <h2>{{ activeGroupMeta.title }}</h2>
                   <p>{{ activeGroupMeta.summary }}</p>
                 </div>
+              </div>
+              <div class="sae-field-surface__mobile-actions">
+                <VBtn
+                  :aria-expanded="mobileGroupSheet"
+                  :aria-label="t(locale, 'config.selectGroup')"
+                  aria-haspopup="dialog"
+                  class="sae-mobile-group-action"
+                  icon
+                  size="small"
+                  type="button"
+                  variant="tonal"
+                  @click="mobileGroupSheet = true"
+                >
+                  <VIcon icon="mdi-view-list-outline" size="18" />
+                  <VTooltip activator="parent" :text="t(locale, 'config.selectGroup')" />
+                </VBtn>
+                <VBtn
+                  :href="README_URL"
+                  :aria-label="t(locale, 'config.help')"
+                  class="sae-mobile-help"
+                  icon
+                  rel="noopener noreferrer"
+                  size="small"
+                  target="_blank"
+                  variant="text"
+                >
+                  <VIcon icon="mdi-help-circle-outline" size="18" />
+                  <VTooltip activator="parent" :text="t(locale, 'config.help')" />
+                </VBtn>
               </div>
             </div>
 
@@ -539,6 +549,7 @@ function saveConfig(): void {
                       v-model="draft[field.key]"
                       :aria-label="field.label"
                       class="sae-text-control"
+                      :clearable="false"
                       density="compact"
                       hide-details
                       :placeholder="t(locale, 'config.cronPlaceholder')"
@@ -601,13 +612,9 @@ function saveConfig(): void {
           </main>
 
           <aside class="sae-impact-preview">
-            <div class="sae-impact-preview__title">
+            <div class="sae-impact-preview__title sae-summary-section__title">
               <VIcon color="primary" icon="mdi-clock-outline" size="20" />
               <h2>{{ t(locale, 'config.cadence') }}</h2>
-              <span v-if="changedCount > 0" class="sae-impact-preview__draft-state">
-                <VIcon icon="mdi-pencil-outline" size="14" />
-                {{ t(locale, 'config.unsaved') }}
-              </span>
             </div>
             <ul class="sae-impact-preview__list">
               <li v-for="item in cadenceSummary" :key="item.title" class="sae-impact-preview__item">
@@ -617,8 +624,24 @@ function saveConfig(): void {
               </li>
             </ul>
 
+            <section v-if="changedItems.length" class="sae-change-summary">
+              <div class="sae-change-summary__title sae-summary-section__title">
+                <VIcon color="warning" icon="mdi-format-list-checks" size="19" />
+                <h3>{{ t(locale, 'config.changes') }}</h3>
+              </div>
+              <ul>
+                <li v-for="item in changedItems" :key="item.key">
+                  <VIcon color="warning" icon="mdi-circle" size="6" />
+                  <span>{{ displayFieldLabel(item) }}</span>
+                </li>
+              </ul>
+              <p v-if="hiddenChangedCount > 0">
+                {{ t(locale, 'config.moreChanges', { count: hiddenChangedCount }) }}
+              </p>
+            </section>
+
             <section :aria-label="t(locale, 'config.runtime')" class="sae-runtime-summary">
-              <div class="sae-runtime-summary__title">
+              <div class="sae-runtime-summary__title sae-summary-section__title">
                 <VIcon color="primary" icon="mdi-chart-box-outline" size="19" />
                 <h3>{{ t(locale, 'config.runtime') }}</h3>
               </div>
@@ -654,19 +677,20 @@ function saveConfig(): void {
         </div>
       </div>
 
-      <div class="sae-mobile-savebar">
-        <span v-if="changedCount > 0" class="sae-mobile-savebar__state">
-          <VIcon color="warning" icon="mdi-pencil-outline" size="16" />
+      <div v-if="changedCount > 0" class="sae-mobile-save-dock">
+        <span class="sae-mobile-save-dock__state">
+          <VIcon color="warning" icon="mdi-circle" size="8" />
           {{ t(locale, 'config.changedCount', { count: changedCount }) }}
         </span>
         <VSpacer />
         <VBtn
+          class="sae-mobile-save-dock__save"
           color="primary"
           :disabled="changedCount === 0"
-          prepend-icon="mdi-content-save"
           type="submit"
           variant="flat"
         >
+          <VIcon icon="mdi-content-save" start />
           {{ t(locale, 'config.save') }}
         </VBtn>
       </div>
@@ -801,8 +825,7 @@ function saveConfig(): void {
 }
 
 .sae-field-section,
-.sae-impact-preview,
-.sae-mobile-savebar {
+.sae-impact-preview {
   border: var(--app-surface-border);
   border-radius: var(--app-surface-radius);
   backdrop-filter: var(--app-grouped-list-backdrop-filter);
@@ -901,36 +924,25 @@ function saveConfig(): void {
   gap: 8px;
 }
 
-.sae-config-header__change-state,
-.sae-mobile-savebar > span {
+.sae-config-header__change-state {
   display: inline-flex;
   align-items: center;
-  color: rgba(var(--v-theme-on-surface), 0.66);
-  font-size: 0.75rem;
-  white-space: nowrap;
-  gap: 7px;
-}
-
-.sae-config-header__change-state {
   color: rgb(var(--v-theme-warning));
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  gap: 8px;
 }
 
-.sae-config-header__actions :deep(.v-btn) {
-  min-inline-size: 96px;
-  block-size: 40px;
+.sae-config-header__save {
+  min-inline-size: 128px;
   font-weight: 600;
 }
 
-.sae-config-header__close :deep(.v-btn__content) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  block-size: 100%;
-  inline-size: 100%;
-}
-
-.sae-config-header__close :deep(.v-icon) {
-  margin: 0 !important;
+.sae-config-header__close {
+  flex: 0 0 40px;
+  block-size: 40px;
+  inline-size: 40px;
 }
 
 .sae-config__body {
@@ -941,46 +953,12 @@ function saveConfig(): void {
 .sae-config-layout {
   display: grid;
   min-inline-size: 0;
-  padding-block-end: calc(70px + env(safe-area-inset-bottom));
   margin-block-start: 12px;
   gap: 12px;
   grid-template-areas:
-    'selector'
     'content'
     'preview';
   grid-template-columns: minmax(0, 1fr);
-}
-
-.sae-mobile-group-selector {
-  display: grid;
-  align-items: stretch;
-  min-inline-size: 0;
-  gap: 8px;
-  grid-area: selector;
-  grid-template-columns: minmax(0, 1fr) 48px;
-}
-
-.sae-mobile-group-trigger {
-  justify-content: flex-start;
-  min-inline-size: 0;
-  block-size: 42px;
-  padding-inline: 12px;
-  text-transform: none;
-}
-
-.sae-mobile-group-trigger :deep(.v-btn__content) {
-  min-inline-size: 0;
-  inline-size: 100%;
-  justify-content: flex-start;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-.sae-mobile-help {
-  align-self: center;
-  block-size: 36px;
-  inline-size: 36px;
 }
 
 .sae-group-nav {
@@ -1063,6 +1041,19 @@ function saveConfig(): void {
   align-items: flex-start;
   min-inline-size: 0;
   gap: 9px;
+}
+
+.sae-field-surface__mobile-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.sae-mobile-group-action,
+.sae-mobile-help {
+  block-size: 36px;
+  inline-size: 36px;
 }
 
 .sae-field-surface h2,
@@ -1274,31 +1265,17 @@ function saveConfig(): void {
   gap: 8px;
 }
 
-.sae-impact-preview__draft-state {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 6px;
-  margin-inline-start: auto;
-  border-radius: var(--app-control-radius);
-  background: rgba(var(--v-theme-warning), 0.12);
-  color: rgb(var(--v-theme-warning));
-  font-size: 0.6875rem;
-  font-weight: 600;
-  white-space: nowrap;
-  gap: 3px;
-}
-
 .sae-impact-preview strong {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   letter-spacing: 0;
-  line-height: 1.1rem;
+  line-height: 1.25rem;
 }
 
 .sae-impact-preview__list {
   padding: 0;
-  margin: 0;
+  margin: 10px 0 0;
   list-style: none;
 }
 
@@ -1309,18 +1286,23 @@ function saveConfig(): void {
   display: grid;
   align-items: start;
   min-inline-size: 0;
-  gap: 8px;
-  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
 }
 
 .sae-impact-preview__item {
   align-items: center;
   padding-block: 10px;
-  grid-template-columns: 18px minmax(0, 1fr) minmax(0, auto);
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, auto);
 }
 
-.sae-impact-preview__item + .sae-impact-preview__item {
-  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.09);
+.sae-impact-preview__item > .v-icon,
+.sae-runtime-summary__row > .v-icon {
+  justify-self: center;
+  color: rgba(var(--v-theme-on-surface), 0.54);
 }
 
 .sae-impact-preview__item > span,
@@ -1333,22 +1315,37 @@ function saveConfig(): void {
   text-align: end;
 }
 
-.sae-runtime-summary {
-  padding-block-start: 13px;
-  margin-block-start: 12px;
+.sae-runtime-summary,
+.sae-change-summary {
+  padding-block-start: 16px;
+  margin-block-start: 16px;
   border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
 }
 
-.sae-runtime-summary__title {
+.sae-summary-section__title {
+  display: grid;
   align-items: center;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
 }
 
-.sae-runtime-summary__title h3 {
+.sae-summary-section__title > .v-icon {
+  block-size: 28px;
+  inline-size: 28px;
+  border-radius: var(--app-control-radius);
+  background: rgba(var(--v-theme-primary), 0.1);
+}
+
+.sae-change-summary .sae-summary-section__title > .v-icon {
+  background: rgba(var(--v-theme-warning), 0.12);
+}
+
+.sae-summary-section__title h3 {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: 1rem;
   font-weight: 600;
   letter-spacing: 0;
-  line-height: 1.1rem;
+  line-height: 1.25rem;
 }
 
 .sae-runtime-summary__state,
@@ -1356,9 +1353,9 @@ function saveConfig(): void {
   align-items: center;
   padding-block: 7px;
   color: rgba(var(--v-theme-on-surface), 0.7);
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   letter-spacing: 0;
-  line-height: 1.05rem;
+  line-height: 1.25rem;
 }
 
 .sae-runtime-summary__state {
@@ -1366,11 +1363,11 @@ function saveConfig(): void {
 }
 
 .sae-runtime-summary__metrics {
-  margin-block-start: 6px;
+  margin-block-start: 10px;
 }
 
 .sae-runtime-summary__row {
-  grid-template-columns: 20px minmax(0, 1fr) minmax(0, auto);
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, auto);
 }
 
 .sae-runtime-summary__row span,
@@ -1387,6 +1384,35 @@ function saveConfig(): void {
 
 .sae-runtime-summary__unavailable {
   margin-block-start: 9px;
+}
+
+.sae-change-summary ul {
+  padding: 0;
+  margin: 8px 0 0;
+  list-style: none;
+}
+
+.sae-change-summary li {
+  display: grid;
+  align-items: center;
+  min-inline-size: 0;
+  padding-block: 6px;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  gap: 8px;
+  grid-template-columns: 12px minmax(0, 1fr);
+}
+
+.sae-change-summary li span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.sae-change-summary > p {
+  margin: 4px 0 0 20px;
+  color: rgb(var(--v-theme-warning));
+  font-size: 0.75rem;
 }
 
 .sae-tracker-dialog__title {
@@ -1407,22 +1433,48 @@ function saveConfig(): void {
   flex-wrap: wrap;
 }
 
-.sae-mobile-savebar {
+.sae-mobile-save-dock {
   position: sticky;
-  z-index: 5;
-  inset-block-end: 0;
+  z-index: 20;
+  inset-block-end: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-block: 8px calc(8px + env(safe-area-inset-bottom));
-  padding-inline: 12px;
-  margin-block-start: calc(-60px - env(safe-area-inset-bottom));
-  border-radius: 0;
+  min-block-size: 64px;
+  padding-block: 10px calc(10px + env(safe-area-inset-bottom));
+  padding-inline: 14px;
+  margin-inline: 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: var(--app-surface-radius);
+  background: rgba(var(--v-theme-surface), 0.94);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 -8px 24px rgba(var(--v-theme-on-surface), 0.06);
   gap: 12px;
 }
 
-.sae-mobile-savebar__state {
+.sae-mobile-save-dock__state {
+  display: inline-flex;
+  align-items: center;
   color: rgb(var(--v-theme-warning));
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  gap: 8px;
+}
+
+.sae-mobile-save-dock__save {
+  min-inline-size: 128px;
+  font-weight: 600;
+}
+
+:global(html[data-theme='transparent'] .sae-mobile-save-dock) {
+  background: rgba(var(--v-theme-surface), 0.92);
+  backdrop-filter: blur(24px);
+}
+
+:global(html[data-theme='transparent'].transparent-blur-disabled .sae-mobile-save-dock) {
+  background: rgba(var(--v-theme-surface), 0.98);
+  backdrop-filter: none;
 }
 
 .sae-yaml-dialog__content {
@@ -1452,9 +1504,7 @@ function saveConfig(): void {
     inline-size: 34px;
   }
 
-  .sae-config-header__crumbs,
-  .sae-config-header__change-state,
-  .sae-config-header__close-label {
+  .sae-config-header__crumbs {
     display: none;
   }
 
@@ -1465,20 +1515,6 @@ function saveConfig(): void {
 
   .sae-config-header__title-row {
     gap: 5px;
-  }
-
-  .sae-config-header__actions {
-    gap: 4px;
-  }
-
-  .sae-config-header__actions :deep(.v-btn) {
-    min-inline-size: 42px;
-    block-size: 38px;
-    padding-inline: 10px;
-  }
-
-  .sae-config-header__save :deep(.v-btn__prepend) {
-    display: none;
   }
 
   .sae-tracker-entry {
@@ -1492,14 +1528,9 @@ function saveConfig(): void {
 }
 
 @container (width < 720px) {
+  .sae-config-header__change-state,
   .sae-config-header__save {
     display: none;
-  }
-
-  .sae-config-header__actions :deep(.sae-config-header__close) {
-    min-inline-size: 40px;
-    block-size: 40px;
-    padding-inline: 0;
   }
 
   .sae-field-row {
@@ -1531,8 +1562,8 @@ function saveConfig(): void {
     grid-template-columns: 168px minmax(0, 1fr);
   }
 
-  .sae-mobile-group-selector,
-  .sae-mobile-savebar {
+  .sae-field-surface__mobile-actions,
+  .sae-mobile-save-dock {
     display: none;
   }
 
@@ -1554,15 +1585,50 @@ function saveConfig(): void {
 }
 
 @container (width >= 880px) {
+  .sae-config__form {
+    display: grid;
+    overflow: hidden;
+    block-size: min(90dvh, 820px);
+    grid-template-rows: 1px auto minmax(0, 1fr);
+  }
+
+  .sae-config__body,
   .sae-config-layout {
-    align-items: start;
+    min-block-size: 0;
+    block-size: 100%;
+  }
+
+  .sae-config__body {
+    overflow: hidden;
+  }
+
+  .sae-config-layout {
+    align-items: stretch;
     grid-template-areas: 'navigation content preview';
-    grid-template-columns: 168px minmax(0, 1fr) 220px;
+    grid-template-columns: 168px minmax(0, 1fr) 232px;
+  }
+
+  .sae-group-nav {
+    position: static;
+    overflow: hidden;
+    block-size: 100%;
   }
 
   .sae-impact-preview {
-    position: sticky;
-    inset-block-start: 86px;
+    position: static;
+    overflow: hidden;
+    block-size: 100%;
+  }
+
+  .sae-field-surface {
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-block-size: 0;
+    padding-inline-end: 4px;
+  }
+
+  .sae-impact-preview {
+    align-self: stretch;
   }
 }
 </style>

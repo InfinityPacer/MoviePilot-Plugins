@@ -6,7 +6,7 @@ conf 结构：[switch_row, period_row, VTabs, VWindow, *footer]，VTabs/VWindow 
 """
 from ..shared.config import PluginConfig
 from .components import (ace_editor_field, alert_row, cron_field, field_for, multi_select_field,
-                         select_field, switch_col, tabs, textarea_field)
+                         select_field, switch_col, tabs)
 
 # 各配置键的中文显示名（与 README 配置项名保持一致）
 LABELS = {
@@ -31,7 +31,6 @@ LABELS = {
     "delete_record_retention_hours": "删除记录保留（小时）",
     "delete_exclude_tags": "排除标签",
     "default_tracker_response": "Tracker响应关键字",
-    "open_tracker_dialog": "打开Tracker配置窗口",
     "auto_check_interval_minutes": "通用巡检周期（分钟）",
     "subscription_cleanup_history_type": "清理整理记录范围",
     "subscription_cleanup_history_scenes": "清理整理记录场景",
@@ -41,7 +40,7 @@ LABELS = {
     "recognition_guard_notify_interval": "识别增强通知限频（秒）",
     "recognition_guard_tmdb_recheck_mode": "识别增强二次识别",
     "recognition_guard_cache_maxsize": "识别增强缓存大小",
-    "recognition_guard_custom_config": "识别增强自定义策略",
+    "recognition_guard_custom_config": "自定义识别规则",
     # 订阅待定
     "pending_enhanced_enabled": "自动待定剧集订阅",
     "pending_download_enabled": "自动待定下载中订阅",
@@ -113,7 +112,6 @@ HINTS = {
     "delete_record_retention_hours": "定时清理N小时前的删除记录",
     "delete_exclude_tags": "需要排除的标签，多个标签用逗号分隔",
     "default_tracker_response": "每一行一个关键字，忽略大小写，支持正则表达式匹配",
-    "open_tracker_dialog": "自定义Tracker配置以实现更精准的种子匹配",
     "subscription_cleanup_history_type": "订阅下载前清理旧整理记录、源文件和入库前目标文件的媒体类型范围（破坏性）",
     "subscription_cleanup_history_scenes": "选择普通订阅、洗版订阅或分集洗版下载时触发订阅清理",
     # 识别增强
@@ -122,7 +120,7 @@ HINTS = {
     "recognition_guard_notify_interval": "同订阅同动作同原因的通知限频秒数",
     "recognition_guard_tmdb_recheck_mode": "控制二次识别触发范围",
     "recognition_guard_cache_maxsize": "缓存二次识别结果，避免重复识别",
-    "recognition_guard_custom_config": "YAML 策略覆盖；清空表示无自定义覆盖",
+    "recognition_guard_custom_config": "仅在内置规则无法满足时编辑，留空则继承当前模式",
     # 订阅待定
     "pending_enhanced_enabled": "自动标记订阅剧集为待定状态，避免提前完成订阅",
     "pending_download_enabled": "存在进行中下载时自动标记待定，避免提前完成订阅",
@@ -184,7 +182,7 @@ PERIODS = [
 TABS = [
     ("订阅清理", [
         ["download_monitor_enabled", "manual_delete_listen", "tracker_response_listen"],
-        ["open_tracker_dialog", "auto_search_when_delete", "skip_deletion"],
+        ["auto_search_when_delete", "skip_deletion"],
         [("subscription_cleanup_history_type", 4), ("subscription_cleanup_history_scenes", 8)],
         ["download_timeout_minutes", "download_progress_threshold", "download_retry_limit"],
         ["delete_record_retention_hours", "delete_exclude_tags"],
@@ -363,40 +361,10 @@ def _row(cols: list) -> dict:
     return {"component": "VRow", "content": cols}
 
 
-def _tracker_dialog() -> dict:
-    """「打开Tracker配置窗口」开关弹出的 Tracker 配置弹窗，内含多行关键字文本框（每行一个，支持正则）。
-
-    Tracker 关键字不内联在表单，而是放进 open_tracker_dialog 控制的弹窗里。
-    """
-    key = "default_tracker_response"
-    return {
-        "component": "VDialog",
-        "props": {
-            "model": "open_tracker_dialog",
-            "max-width": "65rem",
-            "overlay-class": "v-dialog--scrollable v-overlay--scroll-blocked",
-            "content-class": "v-card v-card--density-default v-card--variant-elevated rounded-t",
-        },
-        "content": [{
-            "component": "VCard",
-            "props": {"title": "自定义Tracker配置"},
-            "content": [
-                {"component": "VDialogCloseBtn", "props": {"model": "open_tracker_dialog"}},
-                {"component": "VCardText", "content": [
-                    {"component": "VRow", "content": [
-                        textarea_field(key, LABELS.get(key, key), HINTS.get(key, ""), md=12, rows=10),
-                    ]},
-                ]},
-            ],
-        }],
-    }
-
-
 def _tab_windows(defaults: dict) -> list:
     """按 TABS 的行布局构建各 Tab 页：每个 Tab 是若干 VRow，行内列顺序即字段顺序。
 
-    行内每项为字段键，或 (字段键, md) 指定该列宽度，缺省 md 为 FIELD_MD；
-    「订阅清理」页额外挂一个由 open_tracker_dialog 控制的 Tracker 关键字弹窗。
+    行内每项为字段键，或 (字段键, md) 指定该列宽度，缺省 md 为 FIELD_MD。
     """
     windows = []
     for title, rows in TABS:
@@ -407,8 +375,6 @@ def _tab_windows(defaults: dict) -> list:
                 key, md = item if isinstance(item, tuple) else (item, FIELD_MD)
                 cols.append(_field(key, defaults, md))
             win_rows.append(_row(cols))
-        if title == "订阅清理":
-            win_rows.append(_tracker_dialog())
         windows.append(win_rows)
     return windows
 

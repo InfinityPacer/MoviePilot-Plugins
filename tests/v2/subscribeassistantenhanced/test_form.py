@@ -540,17 +540,13 @@ def test_subscription_cleanup_fields_live_in_cleanup_tab():
     assert [col["props"]["md"] for col in cleanup_history_cols] == [4, 8]
 
 
-def test_tracker_keywords_in_dialog_as_textarea():
-    """Tracker 关键字置于「打开Tracker配置窗口」开关弹出的 VDialog 内，为多行 VTextarea。"""
+def test_form_does_not_expose_retired_tracker_dialog_state():
+    """旧 Form 不再暴露仅用于控制弹窗开关的持久化字段。"""
     import json
-    conf, _model = build_form()
-    # 「订阅清理」页（conf[4] = VWindow，第 1 个 VWindowItem）含一个绑定 open_tracker_dialog 的 VDialog。
-    cleanup_tab = _tab_content(conf, "订阅清理")
-    dialog = next(el for el in cleanup_tab if el["component"] == "VDialog")
-    assert dialog["props"]["model"] == "open_tracker_dialog"
-    flat_dialog = json.dumps(dialog, ensure_ascii=False)
-    assert '"VTextarea"' in flat_dialog
-    assert '"default_tracker_response"' in flat_dialog
+    conf, model = build_form()
+
+    assert "open_tracker_dialog" not in model
+    assert "open_tracker_dialog" not in json.dumps(conf, ensure_ascii=False)
 
 
 def test_completion_signal_hints_explain_behavior_and_scope():

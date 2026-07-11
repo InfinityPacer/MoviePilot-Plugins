@@ -154,15 +154,12 @@ def _expected_fields(defaults: dict) -> list[dict]:
             field["options"] = SELECT_ITEMS[key]
         if key in MULTI_ITEMS:
             field["options"] = MULTI_ITEMS[key]
-        if key == "open_tracker_dialog":
-            field["legacyUiKey"] = True
-            field["advanced"] = True
         if key == "default_tracker_response":
             field["dialogOnly"] = True
             field["advanced"] = True
         if key in DANGER_KEYS:
             field["risk"] = "danger"
-        elif key != "open_tracker_dialog" and any(marker in key for marker in ADVANCED_MARKERS):
+        elif any(marker in key for marker in ADVANCED_MARKERS):
             field["advanced"] = True
         expected.append(field)
     return expected

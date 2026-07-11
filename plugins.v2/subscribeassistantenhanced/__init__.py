@@ -189,14 +189,15 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """规范化需要持久安全默认值的配置，避免旧空值覆盖表单默认 model。"""
         raw = dict(config or {})
         changed = False
-        forbidden_recognition_keys = {
+        retired_config_keys = {
             "recognition_guard_enabled",
             "recognition_guard_active",
             "recognition_guard_keyword_config",
             "recognition_guard_target_mode",
             "recognition_guard_missing_year_policy",
+            "open_tracker_dialog",
         }
-        for key in forbidden_recognition_keys:
+        for key in retired_config_keys:
             if key in raw:
                 raw.pop(key, None)
                 changed = True

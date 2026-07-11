@@ -139,7 +139,6 @@
 | 下载超时自动删除 | `download_monitor_enabled` | bool | `true` | 订阅下载超时将自动删除种子 | 关闭后不处理超时、Tracker 和手动删种；下载待定仍可释放 |
 | 监听手动删除种子 | `manual_delete_listen` | bool | `true` | 监听下载器侧手动删种 | 连续确认种子不存在后才按手动删除处理 |
 | 监听Tracker响应关键字 | `tracker_response_listen` | bool | `true` | Tracker 返回内容包含关键字时删种 | 关键字来自「Tracker响应关键字」 |
-| 打开Tracker配置窗口 | `open_tracker_dialog` | bool | `false` | 打开 Tracker 关键字弹窗 | 仅控制表单弹窗，不参与业务逻辑 |
 | 删除后触发搜索补全 | `auto_search_when_delete` | bool | `true` | 删种后触发订阅补搜 | 关闭后只记录删除并解除下载待定 |
 | 跳过近期删除资源 | `skip_deletion` | bool | `true` | 资源选择时跳过近期删除资源 | 内部按资源删除指纹匹配 |
 | 下载超时时间（分钟） | `download_timeout_minutes` | int（分钟） | `120` | 进度观察窗口长度 | 不是总下载时长上限 |
@@ -227,7 +226,7 @@
 | 识别增强通知限频（秒） | `recognition_guard_notify_interval` | int | `3600` | 同订阅、同动作、同原因的通知限频 | 最小 60 秒 |
 | 识别增强二次识别 | `recognition_guard_tmdb_recheck_mode` | enum | `balanced_strict` | 控制是否对候选做二次识别复核 | 可选 `off` / `all` / `strict` / `balanced_strict` |
 | 识别增强缓存大小 | `recognition_guard_cache_maxsize` | int | `100000` | 二次识别结果缓存数量 | 最小 100 条 |
-| 识别增强自定义策略 | `recognition_guard_custom_config` | YAML | 内置说明模板 | 覆盖动作、空候选保护和关键词分组 | 支持 actions / empty_pool / keywords |
+| 自定义识别规则 | `recognition_guard_custom_config` | YAML | 内置说明模板 | 覆盖动作、空候选保护和关键词分组 | 支持 actions / empty_pool / keywords |
 
 ## 深入说明
 

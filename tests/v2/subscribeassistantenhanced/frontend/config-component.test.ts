@@ -68,37 +68,41 @@ describe('config header actions', () => {
     expect(descriptor.template?.ast).toBeDefined()
   })
 
-  it.each([
-    ['sae-config-header__save', 'mdi-content-save'],
-    ['sae-config-header__close', 'mdi-close'],
-  ] as const)('%s renders an explicit %s icon', (className, expectedIcon) => {
+  it.each(['sae-config-header__save', 'sae-mobile-save-dock__save'])(
+    'renders an explicit save icon in %s',
+    className => {
     const template = descriptor.template?.ast
     expect(template).toBeDefined()
 
     const button = findElements(template!, 'VBtn').find(
       node => staticAttribute(node, 'class') === className,
     )
-    expect(button, `未找到 class="${className}" 的 VBtn`).toBeDefined()
+    expect(button, `未找到 class="${className}" 的保存 VBtn`).toBeDefined()
 
     const icon = button?.children?.find(child => child.tag === 'VIcon')
     expect(icon, `${className} 缺少显式 VIcon 子节点`).toBeDefined()
-    expect(staticAttribute(icon, 'icon')).toBe(expectedIcon)
-  })
+    expect(staticAttribute(icon, 'icon')).toBe('mdi-content-save')
+    },
+  )
 
   it('uses the approved sticky command-bar hierarchy', () => {
-    expect(source).toMatch(/\.sae-config-header\s*{[\s\S]*?position:\s*sticky/)
-    expect(source).toMatch(/\.sae-config-header\s*{[\s\S]*?background:\s*transparent/)
-    expect(source).toMatch(/\.sae-config-header--scrolled\s*{[\s\S]*?background:\s*var\(--sae-header-background\)/)
-    expect(source).toMatch(/\.sae-config-header--scrolled\s*{[\s\S]*?backdrop-filter:\s*var\(--sae-header-backdrop-filter\)/)
-    expect(source).toContain('v-if="changedCount > 0"')
-    expect(source).toContain('class="sae-config-header__change-state"')
-    expect(source).toContain(":aria-label=\"t(locale, 'config.save')\"")
+    expect(compiledStyle.code).toMatch(/\.sae-config-header\[data-v-sae-config-test\]\s*\{[^}]*position:\s*sticky;/)
+    expect(compiledStyle.code).toMatch(/\.sae-config-header\[data-v-sae-config-test\]\s*\{[^}]*background:\s*transparent;/)
+    expect(compiledStyle.code).toMatch(/\.sae-config-header--scrolled\[data-v-sae-config-test\]\s*\{[^}]*background:\s*var\(--sae-header-background\);/)
+    expect(compiledStyle.code).toMatch(/\.sae-config-header--scrolled\[data-v-sae-config-test\]\s*\{[^}]*backdrop-filter:\s*var\(--sae-header-backdrop-filter\);/)
+    expect(source).not.toContain('<VDialogCloseBtn')
+    expect(source).toContain('class="sae-config-header__close"')
     expect(source).toContain(":aria-label=\"t(locale, 'config.close')\"")
+    expect(source).toMatch(/class="sae-config-header__actions"[\s\S]*?class="sae-config-header__close"/)
+    expect(source).toContain('class="sae-config-header__change-state"')
+    expect(source).toContain('class="sae-config-header__save"')
+    expect(source).toContain('class="sae-mobile-save-dock"')
   })
 
   it('uses warning semantics for pending unsaved changes', () => {
-    expect(source).toContain('<VIcon color="warning" icon="mdi-pencil-outline" size="16" />')
+    expect(source).toContain('<VIcon color="warning" icon="mdi-circle" size="8" />')
     expect(source).not.toContain('<VIcon color="success" icon="mdi-check-circle" size="16" />')
+    expect(source).not.toContain('<VIcon color="warning" icon="mdi-pencil-outline" size="16" />')
     expect(source).toContain("t(locale, 'config.changedCount', { count: changedCount })")
   })
 
@@ -118,25 +122,14 @@ describe('config header actions', () => {
     )
   })
 
-  it('keeps the close icon visible when only its mobile label is hidden', () => {
-    expect(source).toContain('class="sae-config-header__close-label"')
-    expect(source).toMatch(/\.sae-config-header__close-label\s*{[\s\S]*?display:\s*none/)
-  })
-
-  it('centers the mobile close glyph inside its icon button', () => {
-    expect(compiledStyle.code).toMatch(
-      /\.sae-config-header__close\[data-v-sae-config-test\] \.v-btn__content\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*center;/,
-    )
-    expect(compiledStyle.code).toMatch(
-      /\.sae-config-header__close\[data-v-sae-config-test\] \.v-icon\s*\{[\s\S]*?margin:\s*0 !important;/,
-    )
-  })
-
   it('only reveals the dialog scrollbar while the user is scrolling', () => {
     expect(source).toContain("scrollRoot?.classList.add('sae-config-scroll-root')")
-    expect(source).toContain("configScrollRoot.classList.add('sae-config-scroll-root--active')")
-    expect(source).toContain("configScrollRoot?.classList.remove('sae-config-scroll-root--active')")
+    expect(source).toContain("fieldScrollRoot?.classList.add('sae-config-scroll-root')")
+    expect(source).toContain("scrollRoot.classList.add('sae-config-scroll-root--active')")
+    expect(source).toContain("scrollRoot.classList.remove('sae-config-scroll-root--active')")
     expect(source).toContain("scrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })")
+    expect(source).toContain("fieldScrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })")
+    expect(source).toContain("fieldScrollRoot?.removeEventListener('scroll', handleConfigScroll)")
     expect(source).toContain('window.setTimeout(() =>')
     expect(compiledStyle.code).toMatch(
       /\.sae-config-scroll-root::-webkit-scrollbar-thumb\s*\{[\s\S]*?background:\s*transparent;/,
@@ -177,12 +170,13 @@ describe('configuration navigation', () => {
   it('uses a bottom sheet instead of horizontally scrolling mobile tabs', () => {
     expect(source).toContain('<VBottomSheet v-model="mobileGroupSheet"')
     expect(source).toContain('selectMobileGroup(group.key)')
-    expect(source).toContain('class="sae-mobile-group-trigger"')
+    expect(source).not.toContain('scrollIntoView')
+    expect(source).toContain('class="sae-mobile-group-action"')
     expect(source).not.toContain('<VTabs')
+    expect(source).toContain('class="sae-field-surface__mobile-actions"')
     expect(source).toContain('class="sae-mobile-help"')
     expect(source).toContain('<VIcon icon="mdi-help-circle-outline" size="18" />')
-    expect(source).toContain("{{ t(locale, 'config.selectGroup') }}")
-    expect(source).not.toContain('{{ activeGroupMeta.title }}\n                <VIcon icon="mdi-chevron-up"')
+    expect(source).not.toContain('class="sae-mobile-group-selector"')
   })
 })
 
@@ -219,6 +213,7 @@ describe('configuration controls', () => {
 
   it('reuses Host-native cron and YAML editors', () => {
     expect(source).toContain('<VCronField')
+    expect(source).toContain(':clearable="false"')
     expect(source).toContain('<VAceEditor')
     expect(source).toContain('lang="yaml"')
     expect(source).not.toContain('mode="yaml"')
@@ -281,9 +276,19 @@ describe('configuration summary', () => {
   })
 
   it('keeps the schedule summary draft-aware', () => {
-    expect(source).toContain('v-if="changedCount > 0" class="sae-impact-preview__draft-state"')
-    expect(source).toContain('mdi-pencil-outline')
-    expect(source).toContain("t(locale, 'config.unsaved')")
+    expect(source).not.toContain('sae-impact-preview__draft-state')
+    expect(source).toContain('v-if="changedItems.length" class="sae-change-summary"')
+    expect(source).toContain('v-for="item in changedItems"')
+    expect(source).toContain("t(locale, 'config.moreChanges', { count: hiddenChangedCount })")
+  })
+
+  it('uses one compact typography scale across the summary rail', () => {
+    expect(compiledStyle.code).toMatch(/\.sae-impact-preview__item\[data-v-sae-config-test\]\s*\{[^}]*font-size:\s*0\.875rem;/)
+    expect(compiledStyle.code).toMatch(/\.sae-runtime-summary__row\[data-v-sae-config-test\]\s*\{[^}]*font-size:\s*0\.875rem;/)
+    expect(compiledStyle.code).toMatch(/\.sae-impact-preview strong\[data-v-sae-config-test\]\s*\{[^}]*font-size:\s*0\.875rem;/)
+    expect(compiledStyle.code).toMatch(/\.sae-summary-section__title h3\[data-v-sae-config-test\]\s*\{[^}]*font-size:\s*1rem;/)
+    expect(compiledStyle.code).toMatch(/\.sae-impact-preview__item\[data-v-sae-config-test\]\s*\{[^}]*grid-template-columns:\s*28px minmax\(0, 1fr\) minmax\(0, auto\);/)
+    expect(compiledStyle.code).not.toMatch(/\.sae-impact-preview__item \+ \.sae-impact-preview__item/)
   })
 
   it('condenses runtime status instead of listing every domain', () => {
@@ -300,12 +305,24 @@ describe('configuration summary', () => {
   })
 })
 
-describe('mobile command bar', () => {
-  it('keeps save as a single mobile-only bottom action', () => {
+describe('responsive command bar', () => {
+  it('uses desktop header actions and a mobile-only save dock', () => {
     expect(source).toContain(':disabled="changedCount === 0"')
-    expect(source).toMatch(/@container \(width < 720px\)[\s\S]*?\.sae-config-header__save\s*{[\s\S]*?display:\s*none/)
-    expect(source).toContain('v-if="changedCount > 0" class="sae-mobile-savebar__state"')
+    expect(source).toContain('v-if="changedCount > 0" class="sae-mobile-save-dock"')
+    expect(source).toMatch(/@container \(width < 720px\)\s*\{[\s\S]*?\.sae-config-header__change-state,[\s\S]*?\.sae-config-header__save\s*\{[^}]*display:\s*none;/)
+    expect(source).toMatch(/@container \(width >= 720px\)\s*\{[\s\S]*?\.sae-mobile-save-dock\s*\{[^}]*display:\s*none;/)
     expect(source).not.toContain("'暂无修改'")
+  })
+
+  it('keeps the mobile header sticky while using the compact save dock', () => {
+    expect(compiledStyle.code).toMatch(/\.sae-config-header\[data-v-sae-config-test\]\s*\{[^}]*position:\s*sticky;/)
+    expect(source).not.toMatch(/@container \(width < 720px\)\s*\{[\s\S]*?\.sae-config-header\s*\{[^}]*position:\s*relative;/)
+  })
+
+  it('keeps only the desktop center pane scrollable at wide widths', () => {
+    expect(source).toMatch(/@container \(width >= 880px\)\s*\{[\s\S]*?\.sae-field-surface\s*\{[^}]*overflow-y:\s*auto;/)
+    expect(source).toMatch(/@container \(width >= 880px\)\s*\{[\s\S]*?\.sae-group-nav\s*\{[^}]*overflow:\s*hidden;/)
+    expect(source).toMatch(/@container \(width >= 880px\)\s*\{[\s\S]*?\.sae-impact-preview\s*\{[^}]*overflow:\s*hidden;/)
   })
 })
 
