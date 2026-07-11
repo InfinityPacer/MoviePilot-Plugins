@@ -24,7 +24,10 @@ from ..shared.task import TaskDataManager
 
 SITE_EVIDENCE_KEY = "site_evidence"
 SITE_EVIDENCE_TTL_HOURS = 24
-_COMPLETE_HINT_RE = re.compile(r"\b(?:complete|completed|end|ended)\b|完结|全集", re.IGNORECASE)
+_COMPLETE_HINT_RE = re.compile(
+    r"\b(?:complete|completed|end|ended)\b|完结|全集|全\s*\d+\s*集",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -123,7 +126,11 @@ class SiteAppliedMarker:
 
 
 def classify_site_contexts(subscribe, contexts: list, now: datetime) -> SiteEvidence:
-    """把缓存 Context 归一为当前订阅的站点证据快照。"""
+    """把缓存 Context 归一为当前订阅的站点证据快照。
+
+    当前目标内的普通单集资源不能否决同身份、同季的更高集数证据；只有标题明确
+    表示全集或完结时，较低完成证据才与扩集证据构成真实冲突。
+    """
     if not contexts:
         return SiteEvidence.no_evidence(subscribe, now)
 
@@ -144,7 +151,14 @@ def classify_site_contexts(subscribe, contexts: list, now: datetime) -> SiteEvid
         return SiteEvidence.no_evidence(subscribe, now)
 
     kinds = {evidence.kind for evidence in evidence_list}
-    if "site_total_ahead" in kinds and len(kinds) > 1:
+    explicit_completion = any(
+        evidence.kind != "site_total_ahead" and evidence.complete_hint
+        for evidence in evidence_list
+    ) or any(
+        evidence.match_level == "strict" and evidence.complete_hint
+        for evidence in conflict_list
+    )
+    if "site_total_ahead" in kinds and explicit_completion:
         return _build_evidence(
             subscribe, contexts[0], now,
             kind="site_conflict",

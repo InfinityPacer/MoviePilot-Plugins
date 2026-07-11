@@ -344,7 +344,35 @@ def test_context_without_episode_total_or_complete_hint_returns_no_evidence():
     assert evidence.confidence == "none"
 
 
-def test_mixed_site_total_ahead_and_complete_total_becomes_conflict():
+def test_incidental_current_total_does_not_mask_larger_strict_candidate():
+    evidence = classify_site_contexts(
+        _sub(total_episode=1),
+        [
+            _ctx(title="测试剧 S01E01", episodes=[1], site_total=1),
+            _ctx(title="测试剧 S01E01-E06", episodes=[1, 2, 3, 4, 5, 6]),
+        ],
+        now=_now(),
+    )
+
+    assert evidence.kind == "site_total_ahead"
+    assert evidence.site_candidate_total == 6
+
+
+def test_incidental_current_total_does_not_mask_larger_candidate_regardless_of_order():
+    evidence = classify_site_contexts(
+        _sub(total_episode=1),
+        [
+            _ctx(title="测试剧 S01E01-E06", episodes=[1, 2, 3, 4, 5, 6]),
+            _ctx(title="测试剧 S01E01", episodes=[1], site_total=1),
+        ],
+        now=_now(),
+    )
+
+    assert evidence.kind == "site_total_ahead"
+    assert evidence.site_candidate_total == 6
+
+
+def test_explicit_complete_total_and_site_total_ahead_becomes_conflict():
     evidence = classify_site_contexts(
         _sub(total_episode=12),
         [
@@ -356,6 +384,17 @@ def test_mixed_site_total_ahead_and_complete_total_becomes_conflict():
 
     assert evidence.kind == "site_conflict"
     assert "扩集与当前目标完成证据" in evidence.reason
+
+
+def test_lower_explicit_complete_total_and_site_total_ahead_becomes_conflict_regardless_of_order():
+    complete = _ctx(title="测试剧 全 10 集", site_total=10)
+    ahead = _ctx(title="测试剧 S01E13", episodes=[13])
+
+    for contexts in ([complete, ahead], [ahead, complete]):
+        evidence = classify_site_contexts(_sub(total_episode=12), contexts, now=_now())
+
+        assert evidence.kind == "site_conflict"
+        assert "扩集与当前目标完成证据" in evidence.reason
 
 
 def test_complete_total_wins_over_complete_pack_regardless_of_order():
