@@ -8,7 +8,7 @@ import type { ConfigKey, NumberConfigKey, SaeConfig } from '../config/defaults'
 import { useConfigDraft } from '../config/draft'
 import { fields, groups, type FieldMeta, type GroupKey } from '../config/fields'
 import { localizeFields, localizeGroups, normalizeLocale, t } from '../config/i18n'
-import { buildImpactPreview, type PreviewItem } from '../config/preview'
+import { displayFieldLabel, numberFieldUnit } from '../config/presentation'
 import { normalizeFiniteNumber } from '../config/values'
 
 const props = defineProps<{
@@ -42,8 +42,10 @@ const fieldsByKey = computed(() => new Map(
 const trackerField = computed(() => localizedFields.value.find(
   field => field.key === 'default_tracker_response' && field.dialogOnly,
 )!)
+const yamlField = computed(() => localizedFields.value.find(
+  field => field.key === 'recognition_guard_custom_config',
+)!)
 const activeGroup = ref<GroupKey>('global')
-const impactItems = computed(() => buildImpactPreview(draft, locale.value))
 const runtimeSummary = ref<SummaryPayload | null>(null)
 const summaryState = ref<'loading' | 'available' | 'unavailable'>('loading')
 // 对话框开关只控制当前界面，持久化的旧版触发字段始终保持 false。
@@ -213,13 +215,6 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   ],
 }
 
-const impactToneIcons: Record<PreviewItem['tone'], string> = {
-  info: 'mdi-information-outline',
-  success: 'mdi-check-circle-outline',
-  warning: 'mdi-alert-outline',
-  error: 'mdi-alert-circle-outline',
-}
-
 const activeGroupMeta = computed(
   () => localizedGroups.value.find(group => group.key === activeGroup.value) ?? localizedGroups.value[0]!,
 )
@@ -229,21 +224,38 @@ const activeSections = computed(() =>
     title: t(locale.value, section.titleKey),
     fields: section.keys
       .map(key => fieldsByKey.value.get(key))
-      .filter((field): field is FieldMeta => Boolean(field)),
-  })),
+      .filter((field): field is FieldMeta => Boolean(field) && field?.kind !== 'textarea'),
+  })).filter(section => section.fields.length > 0),
 )
-const summaryDomains = computed(() => Object.entries(runtimeSummary.value?.domains ?? {}))
-const domainTranslationKeys: Record<string, string> = {
-  '完结守卫模式': 'domain.completionGuard',
-  '待定增强': 'domain.pending',
-  '暂停优化': 'domain.pause',
-  '自动洗版': 'domain.bestVersion',
-  '下载管理': 'domain.download',
-  '完成后验证': 'domain.verify',
-  '站点集数探测': 'domain.siteTotal',
-  '站点完结信号': 'domain.siteCompletion',
-  '识别增强': 'domain.recognition',
-}
+const cadenceSummary = computed(() => [
+  {
+    icon: 'mdi-radar',
+    title: t(locale.value, 'config.generalInspection'),
+    value: t(locale.value, 'config.everyMinutes', { value: draft.auto_check_interval_minutes }),
+  },
+  {
+    icon: 'mdi-download-network-outline',
+    title: t(locale.value, 'config.downloadInspection'),
+    value: t(locale.value, 'config.everyMinutes', { value: draft.download_check_interval_minutes }),
+  },
+  {
+    icon: 'mdi-database-search-outline',
+    title: t(locale.value, 'config.metadataInspection'),
+    value: t(locale.value, 'config.everyHours', { value: draft.meta_check_interval_hours }),
+  },
+  {
+    icon: 'mdi-auto-fix',
+    title: t(locale.value, 'config.bestVersionInspection'),
+    value: draft.best_version_cron || t(locale.value, 'config.notScheduled'),
+  },
+])
+const activeDomainCount = computed(() => {
+  const values = Object.values(runtimeSummary.value?.domains ?? {})
+  return {
+    active: values.filter(value => value === true || (typeof value === 'string' && !['off', 'no'].includes(value))).length,
+    total: values.length,
+  }
+})
 
 function handleConfigScroll(): void {
   if (!configScrollRoot) return
@@ -280,36 +292,6 @@ onBeforeUnmount(() => {
   configScrollRoot?.classList.remove('sae-config-scroll-root', 'sae-config-scroll-root--active')
 })
 
-/** 按概览契约本地化布尔状态和已知模式，未知字符串保持后端原值。 */
-function formatDomainStatus(value: boolean | string): string {
-  if (typeof value === 'boolean') return t(locale.value, value ? 'config.enabled' : 'config.off')
-  const modeFields: ConfigKey[] = ['completion_guard_mode', 'recognition_guard_mode', 'best_version_type']
-  for (const key of modeFields) {
-    const option = localizedFields.value.find(field => field.key === key)?.options
-      ?.find(item => String(item.value) === value)
-    if (option) return option.title
-  }
-  return value
-}
-
-/** 后端概览保持稳定中文键，展示层按 Host locale 翻译。 */
-function formatDomainName(name: string): string {
-  const key = domainTranslationKeys[name]
-  return key ? t(locale.value, key) : name
-}
-
-/** 使用稳定图标区分开关状态与模式值，不推断额外运行健康度。 */
-function domainIcon(value: boolean | string): string {
-  if (typeof value !== 'boolean') return 'mdi-tune-variant'
-  return value ? 'mdi-check-circle-outline' : 'mdi-minus-circle-outline'
-}
-
-/** 概览状态只使用 Vuetify 语义色。 */
-function domainColor(value: boolean | string): 'info' | 'success' | undefined {
-  if (typeof value !== 'boolean') return 'info'
-  return value ? 'success' : undefined
-}
-
 /** 数值字段只接受有限 number，避免动态输入污染完整保存 payload。 */
 function updateNumber(key: NumberConfigKey, incoming: unknown): void {
   draft[key] = normalizeFiniteNumber(draft[key], incoming)
@@ -327,8 +309,7 @@ function stepNumber(key: NumberConfigKey, direction: -1 | 1): void {
 
 /** 从字段名称提取紧凑单位，百分比字段补充业务单位。 */
 function fieldUnit(field: FieldMeta): string | undefined {
-  if (field.key === 'download_progress_threshold') return '%'
-  return field.label.match(/（([^）]+)）/)?.[1]
+  return numberFieldUnit(field.key, locale.value)
 }
 
 /** 多选摘要仅显示首项和剩余数量，避免可删除标签挤占控件宽度。 */
@@ -374,7 +355,7 @@ function saveConfig(): void {
 
         <div class="sae-config-header__actions">
           <span v-if="changedCount > 0" class="sae-config-header__change-state">
-            <VIcon color="success" icon="mdi-check-circle" size="16" />
+            <VIcon color="warning" icon="mdi-pencil-outline" size="16" />
             {{ t(locale, 'config.changedCount', { count: changedCount }) }}
           </span>
           <VBtn
@@ -411,8 +392,8 @@ function saveConfig(): void {
               variant="outlined"
               @click="mobileGroupSheet = true"
             >
-              <VIcon :icon="activeGroupMeta.icon" size="19" start />
-              <span>{{ activeGroupMeta.title }}</span>
+              <VIcon icon="mdi-view-list-outline" size="19" start />
+              <span>{{ t(locale, 'config.selectGroup') }}</span>
               <VSpacer />
               <VIcon icon="mdi-chevron-up" size="18" />
             </VBtn>
@@ -482,7 +463,7 @@ function saveConfig(): void {
                   :class="['sae-field-row', { 'sae-field-row--switch': field.kind === 'switch' }]"
                 >
                   <div class="sae-field-row__copy">
-                    <div class="sae-field-row__label">{{ field.label }}</div>
+                    <div class="sae-field-row__label">{{ displayFieldLabel(field) }}</div>
                     <p v-if="field.hint">{{ field.hint }}</p>
                   </div>
                   <div class="sae-field-control">
@@ -557,6 +538,7 @@ function saveConfig(): void {
                       v-else-if="field.kind === 'cron'"
                       v-model="draft[field.key]"
                       :aria-label="field.label"
+                      class="sae-text-control"
                       density="compact"
                       hide-details
                       :placeholder="t(locale, 'config.cronPlaceholder')"
@@ -567,21 +549,11 @@ function saveConfig(): void {
                       :id="`sae-field-${field.key}`"
                       v-model="draft[field.key]"
                       :aria-label="field.label"
+                      class="sae-text-control"
                       density="compact"
                       hide-details
                       variant="outlined"
                     />
-                    <VBtn
-                      v-else-if="field.kind === 'textarea'"
-                      :aria-label="field.label"
-                      block
-                      prepend-icon="mdi-code-braces"
-                      type="button"
-                      variant="tonal"
-                      @click="yamlDialogOpen = true"
-                    >
-                      {{ t(locale, 'config.editYaml') }}
-                    </VBtn>
                   </div>
                 </div>
               </div>
@@ -606,32 +578,42 @@ function saveConfig(): void {
                 {{ t(locale, 'config.edit') }}
               </VBtn>
             </section>
+
+            <section v-if="activeGroup === 'recognition'" class="sae-field-section sae-tracker-entry">
+              <div class="sae-tracker-entry__copy">
+                <VIcon color="primary" icon="mdi-code-braces" size="22" />
+                <div>
+                  <strong>{{ yamlField.label }}</strong>
+                  <p>{{ yamlField.hint }}</p>
+                </div>
+              </div>
+              <VBtn
+                :aria-label="t(locale, 'config.editLabel', { label: yamlField.label })"
+                color="primary"
+                prepend-icon="mdi-pencil-outline"
+                type="button"
+                variant="tonal"
+                @click="yamlDialogOpen = true"
+              >
+                {{ t(locale, 'config.edit') }}
+              </VBtn>
+            </section>
           </main>
 
           <aside class="sae-impact-preview">
             <div class="sae-impact-preview__title">
-              <VIcon color="primary" icon="mdi-eye-outline" size="20" />
-              <h2>{{ t(locale, 'config.preview') }}</h2>
+              <VIcon color="primary" icon="mdi-clock-outline" size="20" />
+              <h2>{{ t(locale, 'config.cadence') }}</h2>
               <span v-if="changedCount > 0" class="sae-impact-preview__draft-state">
                 <VIcon icon="mdi-pencil-outline" size="14" />
                 {{ t(locale, 'config.unsaved') }}
               </span>
             </div>
-            <div class="sae-impact-preview__group">
-              <VIcon :icon="activeGroupMeta.icon" size="22" />
-              <div>
-                <strong>{{ activeGroupMeta.title }}</strong>
-                <p>{{ activeGroupMeta.summary }}</p>
-              </div>
-            </div>
-
             <ul class="sae-impact-preview__list">
-              <li v-for="item in impactItems" :key="item.title" class="sae-impact-preview__item">
-                <VIcon :color="item.tone" :icon="impactToneIcons[item.tone]" size="20" />
-                <div>
-                  <strong>{{ item.title }}</strong>
-                  <p>{{ item.detail }}</p>
-                </div>
+              <li v-for="item in cadenceSummary" :key="item.title" class="sae-impact-preview__item">
+                <VIcon :icon="item.icon" size="18" />
+                <span>{{ item.title }}</span>
+                <strong>{{ item.value }}</strong>
               </li>
             </ul>
 
@@ -658,16 +640,10 @@ function saveConfig(): void {
                     <span>{{ t(locale, 'config.monitoredCount') }}</span>
                     <strong>{{ runtimeSummary.monitored_torrents }}</strong>
                   </div>
-                </div>
-                <div class="sae-runtime-summary__domains">
-                  <div
-                    v-for="[name, status] in summaryDomains"
-                    :key="name"
-                    class="sae-runtime-summary__row"
-                  >
-                    <VIcon :color="domainColor(status)" :icon="domainIcon(status)" size="18" />
-                    <span>{{ formatDomainName(name) }}</span>
-                    <strong>{{ formatDomainStatus(status) }}</strong>
+                  <div class="sae-runtime-summary__row">
+                    <VIcon icon="mdi-toggle-switch-outline" size="18" />
+                    <span>{{ t(locale, 'config.activeDomains') }}</span>
+                    <strong>{{ activeDomainCount.active }} / {{ activeDomainCount.total }}</strong>
                   </div>
                 </div>
               </template>
@@ -680,7 +656,7 @@ function saveConfig(): void {
 
       <div class="sae-mobile-savebar">
         <span v-if="changedCount > 0" class="sae-mobile-savebar__state">
-          <VIcon color="success" icon="mdi-check-circle" size="16" />
+          <VIcon color="warning" icon="mdi-pencil-outline" size="16" />
           {{ t(locale, 'config.changedCount', { count: changedCount }) }}
         </span>
         <VSpacer />
@@ -935,10 +911,26 @@ function saveConfig(): void {
   gap: 7px;
 }
 
+.sae-config-header__change-state {
+  color: rgb(var(--v-theme-warning));
+}
+
 .sae-config-header__actions :deep(.v-btn) {
   min-inline-size: 96px;
   block-size: 40px;
   font-weight: 600;
+}
+
+.sae-config-header__close :deep(.v-btn__content) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: 100%;
+  inline-size: 100%;
+}
+
+.sae-config-header__close :deep(.v-icon) {
+  margin: 0 !important;
 }
 
 .sae-config__body {
@@ -1159,6 +1151,10 @@ function saveConfig(): void {
   text-align: end;
 }
 
+.sae-text-control :deep(input) {
+  text-align: end;
+}
+
 .sae-select-summary__primary {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1271,16 +1267,11 @@ function saveConfig(): void {
   grid-area: preview;
 }
 
-.sae-impact-preview__title,
-.sae-impact-preview__group {
+.sae-impact-preview__title {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   min-inline-size: 0;
   gap: 8px;
-}
-
-.sae-impact-preview__title {
-  align-items: center;
 }
 
 .sae-impact-preview__draft-state {
@@ -1295,16 +1286,6 @@ function saveConfig(): void {
   font-weight: 600;
   white-space: nowrap;
   gap: 3px;
-}
-
-.sae-impact-preview__group {
-  padding-block: 13px;
-  margin-block: 12px;
-  border-block: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-}
-
-.sae-impact-preview__group > div {
-  min-inline-size: 0;
 }
 
 .sae-impact-preview strong {
@@ -1333,15 +1314,23 @@ function saveConfig(): void {
 }
 
 .sae-impact-preview__item {
+  align-items: center;
   padding-block: 10px;
+  grid-template-columns: 18px minmax(0, 1fr) minmax(0, auto);
 }
 
 .sae-impact-preview__item + .sae-impact-preview__item {
   border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.09);
 }
 
-.sae-impact-preview__item > div {
+.sae-impact-preview__item > span,
+.sae-impact-preview__item > strong {
   min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.sae-impact-preview__item > strong {
+  text-align: end;
 }
 
 .sae-runtime-summary {
@@ -1376,13 +1365,8 @@ function saveConfig(): void {
   margin-block-start: 6px;
 }
 
-.sae-runtime-summary__metrics,
-.sae-runtime-summary__domains {
+.sae-runtime-summary__metrics {
   margin-block-start: 6px;
-}
-
-.sae-runtime-summary__domains {
-  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.09);
 }
 
 .sae-runtime-summary__row {
@@ -1438,7 +1422,7 @@ function saveConfig(): void {
 }
 
 .sae-mobile-savebar__state {
-  color: rgb(var(--v-theme-success));
+  color: rgb(var(--v-theme-warning));
 }
 
 .sae-yaml-dialog__content {
@@ -1531,9 +1515,6 @@ function saveConfig(): void {
     align-self: center;
   }
 
-  .sae-impact-preview__group {
-    margin-block: 10px;
-  }
 }
 
 @container (width >= 720px) {

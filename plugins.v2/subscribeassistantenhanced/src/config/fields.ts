@@ -449,10 +449,10 @@ export const fields: FieldMeta[] = [
   },
   {
     "key": "recognition_guard_custom_config",
-    "label": "识别增强自定义策略",
+    "label": "自定义识别规则",
     "group": "recognition",
     "kind": "textarea",
-    "hint": "YAML 策略覆盖；清空表示无自定义覆盖",
+    "hint": "使用 YAML 覆盖默认识别策略；仅在内置规则无法满足时编辑，留空则继承当前模式",
     "risk": "danger"
   },
   {

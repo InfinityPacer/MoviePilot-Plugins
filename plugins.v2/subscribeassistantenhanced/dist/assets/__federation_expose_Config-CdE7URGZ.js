@@ -543,10 +543,10 @@ const fields = [
   },
   {
     "key": "recognition_guard_custom_config",
-    "label": "识别增强自定义策略",
+    "label": "自定义识别规则",
     "group": "recognition",
     "kind": "textarea",
-    "hint": "YAML 策略覆盖；清空表示无自定义覆盖",
+    "hint": "使用 YAML 覆盖默认识别策略；仅在内置规则无法满足时编辑，留空则继承当前模式",
     "risk": "danger"
   },
   {
@@ -997,10 +997,18 @@ function normalizeLocale(source) {
 }
 const messages = {
   "zh-CN": {
-    "config.changedCount": "已修改 {count} 项",
+    "config.changedCount": "{count} 项待保存",
     "config.save": "保存修改",
     "config.close": "关闭",
-    "config.preview": "配置预览",
+    "config.cadence": "运行节奏",
+    "config.generalInspection": "通用巡检",
+    "config.downloadInspection": "下载检查",
+    "config.metadataInspection": "元数据检查",
+    "config.bestVersionInspection": "洗版检查",
+    "config.everyMinutes": "每 {value} 分钟",
+    "config.everyHours": "每 {value} 小时",
+    "config.notScheduled": "未设置",
+    "config.activeDomains": "已启用能力",
     "config.help": "插件帮助",
     "config.plugin": "插件",
     "config.settings": "插件设置",
@@ -1011,8 +1019,7 @@ const messages = {
     "config.decrease": "减小{label}",
     "config.increase": "增大{label}",
     "config.editLabel": "编辑{label}",
-    "config.editYaml": "编辑 YAML 策略",
-    "config.yamlTitle": "识别增强自定义策略",
+    "config.yamlTitle": "自定义识别规则",
     "config.runtime": "运行概况",
     "config.runtimeLoading": "正在读取运行概况",
     "config.runtimeUnavailable": "运行概况暂不可用",
@@ -1051,49 +1058,21 @@ const messages = {
     "section.cadence": "播出节奏",
     "section.correction": "纠错与释放",
     "section.recognition": "识别策略",
-    "section.custom": "自定义规则",
-    "preview.disabled.title": "插件未启用",
-    "preview.disabled.detail": "保存后不会注册订阅助手定时任务",
-    "preview.reset.title": "重置数据",
-    "preview.reset.detail": "保存后会清空插件任务数据并自动复位",
-    "preview.backfillNow.title": "立即扫描存量并回填",
-    "preview.backfillNow.detail": "保存后会扫描存量分集洗版订阅并回填媒体库已有集",
-    "preview.general.title": "通用巡检可能运行",
-    "preview.general.detail": "周期 {value} 分钟",
-    "preview.metadata.title": "元数据检查可能运行",
-    "preview.metadata.detail": "周期 {value} 小时",
-    "preview.runOnce.title": "立即运行一次",
-    "preview.runOnce.detail": "保存后约 3 秒触发一次全量巡检",
-    "preview.downloadCheck.title": "下载任务检查可能运行",
-    "preview.downloadCheck.detail": "周期 {value} 分钟",
-    "preview.bestVersion.title": "可能自动创建洗版订阅",
-    "preview.bestVersion.detail": "普通订阅完成后，符合当前洗版范围的媒体可能自动创建洗版订阅",
-    "preview.bestVersionCheck.title": "洗版订阅检查可能运行",
-    "preview.bestVersionCheck.detail": "CRON {value}",
-    "preview.verify.title": "自动纠错可能运行",
-    "preview.verify.detail": "周期 {value} 小时",
-    "preview.removeTorrent.title": "可能删除下载器任务",
-    "preview.removeTorrent.detail": "下载停滞、Tracker 关键字或手动删种场景可能触发删种处理",
-    "preview.cleanup.title": "可能清理整理记录或文件",
-    "preview.cleanup.detail": "订阅清理范围已启用，请确认清理场景",
-    "preview.pause.title": "可能暂停订阅",
-    "preview.pause.detail": "无下载策略命中后，电影或剧集订阅可能被暂停",
-    "preview.complete.title": "可能完成订阅",
-    "preview.complete.detail": "无下载策略命中后，电影或剧集订阅可能被标记完成并移除",
-    "preview.delete.title": "可能删除订阅",
-    "preview.delete.detail": "无下载策略命中后，电影或剧集订阅可能被直接删除",
-    "preview.episodeToFull.title": "可能从分集洗版转为全集洗版",
-    "preview.episodeToFull.detail": "订阅目标集满足后，分集洗版可能切换为全集洗版",
-    "preview.audit.title": "识别增强可能记录候选风险",
-    "preview.audit.detail": "审计模式可能记录判定与通知，但不会过滤或移除候选",
-    "preview.filter.title": "识别增强可能过滤候选",
-    "preview.filter.detail": "当前模式和生效的自定义策略覆盖可能过滤或移除候选"
+    "section.custom": "自定义规则"
   },
   "zh-TW": {
-    "config.changedCount": "已修改 {count} 項",
+    "config.changedCount": "{count} 項待儲存",
     "config.save": "儲存修改",
     "config.close": "關閉",
-    "config.preview": "設定預覽",
+    "config.cadence": "執行節奏",
+    "config.generalInspection": "通用巡檢",
+    "config.downloadInspection": "下載檢查",
+    "config.metadataInspection": "元資料檢查",
+    "config.bestVersionInspection": "洗版檢查",
+    "config.everyMinutes": "每 {value} 分鐘",
+    "config.everyHours": "每 {value} 小時",
+    "config.notScheduled": "未設定",
+    "config.activeDomains": "已啟用能力",
     "config.help": "外掛說明",
     "config.plugin": "外掛",
     "config.settings": "外掛設定",
@@ -1104,8 +1083,7 @@ const messages = {
     "config.decrease": "減少{label}",
     "config.increase": "增加{label}",
     "config.editLabel": "編輯{label}",
-    "config.editYaml": "編輯 YAML 策略",
-    "config.yamlTitle": "識別增強自訂策略",
+    "config.yamlTitle": "自訂識別規則",
     "config.runtime": "執行概況",
     "config.runtimeLoading": "正在讀取執行概況",
     "config.runtimeUnavailable": "執行概況暫不可用",
@@ -1144,49 +1122,21 @@ const messages = {
     "section.cadence": "播出節奏",
     "section.correction": "修正與釋放",
     "section.recognition": "識別策略",
-    "section.custom": "自訂規則",
-    "preview.disabled.title": "外掛未啟用",
-    "preview.disabled.detail": "儲存後不會註冊訂閱助手排程任務",
-    "preview.reset.title": "重設資料",
-    "preview.reset.detail": "儲存後會清除外掛任務資料並自動複位",
-    "preview.backfillNow.title": "立即掃描既有並回填",
-    "preview.backfillNow.detail": "儲存後會掃描既有分集洗版訂閱並回填媒體庫已有集",
-    "preview.general.title": "通用巡檢可能執行",
-    "preview.general.detail": "週期 {value} 分鐘",
-    "preview.metadata.title": "元資料檢查可能執行",
-    "preview.metadata.detail": "週期 {value} 小時",
-    "preview.runOnce.title": "立即執行一次",
-    "preview.runOnce.detail": "儲存後約 3 秒觸發一次全量巡檢",
-    "preview.downloadCheck.title": "下載任務檢查可能執行",
-    "preview.downloadCheck.detail": "週期 {value} 分鐘",
-    "preview.bestVersion.title": "可能自動建立洗版訂閱",
-    "preview.bestVersion.detail": "普通訂閱完成後，符合目前洗版範圍的媒體可能自動建立洗版訂閱",
-    "preview.bestVersionCheck.title": "洗版訂閱檢查可能執行",
-    "preview.bestVersionCheck.detail": "CRON {value}",
-    "preview.verify.title": "自動修正可能執行",
-    "preview.verify.detail": "週期 {value} 小時",
-    "preview.removeTorrent.title": "可能刪除下載器任務",
-    "preview.removeTorrent.detail": "下載停滯、Tracker 關鍵字或手動刪除種子可能觸發處理",
-    "preview.cleanup.title": "可能清理整理記錄或檔案",
-    "preview.cleanup.detail": "訂閱清理範圍已啟用，請確認清理情境",
-    "preview.pause.title": "可能暫停訂閱",
-    "preview.pause.detail": "無下載策略命中後，電影或影集訂閱可能被暫停",
-    "preview.complete.title": "可能完成訂閱",
-    "preview.complete.detail": "無下載策略命中後，電影或影集訂閱可能被標記完成並移除",
-    "preview.delete.title": "可能刪除訂閱",
-    "preview.delete.detail": "無下載策略命中後，電影或影集訂閱可能被直接刪除",
-    "preview.episodeToFull.title": "可能從分集洗版轉為全集洗版",
-    "preview.episodeToFull.detail": "訂閱目標集符合後，分集洗版可能切換為全集洗版",
-    "preview.audit.title": "識別增強可能記錄候選風險",
-    "preview.audit.detail": "稽核模式可能記錄判定與通知，但不會過濾或移除候選",
-    "preview.filter.title": "識別增強可能過濾候選",
-    "preview.filter.detail": "目前模式和生效的自訂策略可能過濾或移除候選"
+    "section.custom": "自訂規則"
   },
   "en-US": {
-    "config.changedCount": "{count} changes",
+    "config.changedCount": "{count} to save",
     "config.save": "Save changes",
     "config.close": "Close",
-    "config.preview": "Configuration preview",
+    "config.cadence": "Run cadence",
+    "config.generalInspection": "General inspection",
+    "config.downloadInspection": "Download checks",
+    "config.metadataInspection": "Metadata checks",
+    "config.bestVersionInspection": "Best-version checks",
+    "config.everyMinutes": "Every {value} min",
+    "config.everyHours": "Every {value} hr",
+    "config.notScheduled": "Not set",
+    "config.activeDomains": "Active capabilities",
     "config.help": "Plugin help",
     "config.plugin": "Plugins",
     "config.settings": "Plugin settings",
@@ -1197,8 +1147,7 @@ const messages = {
     "config.decrease": "Decrease {label}",
     "config.increase": "Increase {label}",
     "config.editLabel": "Edit {label}",
-    "config.editYaml": "Edit YAML policy",
-    "config.yamlTitle": "Custom recognition policy",
+    "config.yamlTitle": "Custom recognition rules",
     "config.runtime": "Runtime summary",
     "config.runtimeLoading": "Loading runtime summary",
     "config.runtimeUnavailable": "Runtime summary unavailable",
@@ -1237,43 +1186,7 @@ const messages = {
     "section.cadence": "Airing cadence",
     "section.correction": "Correction and release",
     "section.recognition": "Recognition policy",
-    "section.custom": "Custom rules",
-    "preview.disabled.title": "Plugin disabled",
-    "preview.disabled.detail": "Saving will not register scheduled assistant tasks",
-    "preview.reset.title": "Reset data",
-    "preview.reset.detail": "Saving clears plugin task data and resets this action",
-    "preview.backfillNow.title": "Scan and backfill now",
-    "preview.backfillNow.detail": "Saving scans existing episode upgrades and backfills library episodes",
-    "preview.general.title": "General inspection may run",
-    "preview.general.detail": "Every {value} minutes",
-    "preview.metadata.title": "Metadata checks may run",
-    "preview.metadata.detail": "Every {value} hours",
-    "preview.runOnce.title": "Run once now",
-    "preview.runOnce.detail": "Saving starts one full inspection after about 3 seconds",
-    "preview.downloadCheck.title": "Download checks may run",
-    "preview.downloadCheck.detail": "Every {value} minutes",
-    "preview.bestVersion.title": "May create best-version subscriptions",
-    "preview.bestVersion.detail": "Completed standard subscriptions may create upgrades within the selected scope",
-    "preview.bestVersionCheck.title": "Best-version checks may run",
-    "preview.bestVersionCheck.detail": "CRON {value}",
-    "preview.verify.title": "Automatic correction may run",
-    "preview.verify.detail": "Every {value} hours",
-    "preview.removeTorrent.title": "May remove download tasks",
-    "preview.removeTorrent.detail": "Stalled downloads, Tracker keywords, or manual removals may trigger torrent removal",
-    "preview.cleanup.title": "May remove transfer records or files",
-    "preview.cleanup.detail": "Subscription cleanup is enabled; verify the selected scenarios",
-    "preview.pause.title": "May pause subscriptions",
-    "preview.pause.detail": "No-download policies may pause movie or TV subscriptions",
-    "preview.complete.title": "May complete subscriptions",
-    "preview.complete.detail": "No-download policies may complete and remove movie or TV subscriptions",
-    "preview.delete.title": "May delete subscriptions",
-    "preview.delete.detail": "No-download policies may directly delete movie or TV subscriptions",
-    "preview.episodeToFull.title": "May convert episode upgrades to full season",
-    "preview.episodeToFull.detail": "Episode upgrades may switch to a full season after reaching the target",
-    "preview.audit.title": "Recognition may record candidate risks",
-    "preview.audit.detail": "Audit mode records decisions and notifications without filtering candidates",
-    "preview.filter.title": "Recognition may filter candidates",
-    "preview.filter.detail": "The selected mode and active custom policy may filter or remove candidates"
+    "section.custom": "Custom rules"
   }
 };
 function t(localeSource, key, params = {}) {
@@ -1320,7 +1233,7 @@ const englishFields = {
   recognition_guard_notify_interval: ["Notification rate limit (seconds)", "Minimum interval for the same subscription, action, and reason"],
   recognition_guard_tmdb_recheck_mode: ["Secondary recognition", "Control when secondary recognition is performed"],
   recognition_guard_cache_maxsize: ["Recognition cache size", "Cache secondary recognition results to avoid duplicate requests"],
-  recognition_guard_custom_config: ["Custom recognition policy", "YAML policy overrides; clear the value to use no custom overrides"],
+  recognition_guard_custom_config: ["Custom recognition rules", "Override the default recognition policy with YAML only when built-in rules are insufficient; leave empty to inherit the current mode"],
   pending_enhanced_enabled: ["Automatically pend TV subscriptions", "Mark TV subscriptions pending to avoid completing them too early"],
   pending_download_enabled: ["Pend active downloads", "Keep subscriptions pending while downloads are in progress"],
   auto_tv_pending_days: ["TV pending days", "Keep pending before the release date plus N days; 0 disables this rule"],
@@ -1652,84 +1565,62 @@ function localizeFields(localeSource, source = fields) {
   });
 }
 
-function enabled(config, key) {
-  const current = config[key];
-  if (typeof current === "string") {
-    return ["true", "on", "yes", "1", "guard"].includes(current.trim().toLowerCase());
+const unitLabels = {
+  "zh-CN": {
+    count: "次",
+    day: "天",
+    episode: "集",
+    hour: "小时",
+    item: "条",
+    minute: "分钟",
+    multiplier: "倍",
+    percent: "%",
+    round: "轮",
+    second: "秒"
+  },
+  "zh-TW": {
+    count: "次",
+    day: "天",
+    episode: "集",
+    hour: "小時",
+    item: "條",
+    minute: "分鐘",
+    multiplier: "倍",
+    percent: "%",
+    round: "輪",
+    second: "秒"
+  },
+  "en-US": {
+    count: "x",
+    day: "d",
+    episode: "ep",
+    hour: "hr",
+    item: "items",
+    minute: "min",
+    multiplier: "x",
+    percent: "%",
+    round: "rounds",
+    second: "sec"
   }
-  if (typeof current === "number") return current !== 0;
-  return current === true;
+};
+function numberFieldUnit(key, locale = "zh-CN") {
+  const units = unitLabels[locale];
+  if (key === "cadence_min_episodes") return units.episode;
+  if (key === "cadence_multiplier") return units.multiplier;
+  if (key === "download_progress_threshold") return units.percent;
+  if (key === "download_retry_limit") return units.count;
+  if (key === "progress_diagnostic_stalled_rounds") return units.round;
+  if (key === "recognition_guard_cache_maxsize") return units.item;
+  if (key === "recognition_guard_notify_interval") return units.second;
+  if (key.endsWith("_minutes")) return units.minute;
+  if (key.endsWith("_hours")) return units.hour;
+  if (key.endsWith("_days")) return units.day;
+  if (key.endsWith("_episodes")) return units.episode;
+  return void 0;
 }
-function value(config, key) {
-  return String(config[key] ?? "");
-}
-function buildImpactPreview(config, locale = "zh-CN") {
-  const normalized = normalizeSaeConfig(config);
-  const items = [];
-  const add = (key, tone, params = {}) => {
-    items.push({
-      title: t(locale, `preview.${key}.title`, params),
-      detail: t(locale, `preview.${key}.detail`, params),
-      tone
-    });
-  };
-  if (!enabled(normalized, "enabled")) {
-    add("disabled", "info");
-  }
-  if (enabled(normalized, "reset_task")) {
-    add("reset", "error");
-  }
-  if (enabled(normalized, "backfill_best_version_now")) {
-    add("backfillNow", "warning");
-  }
-  if (enabled(normalized, "enabled")) {
-    add("general", "success", { value: value(normalized, "auto_check_interval_minutes") });
-    add("metadata", "success", { value: value(normalized, "meta_check_interval_hours") });
-    if (enabled(normalized, "onlyonce")) add("runOnce", "warning");
-    if (enabled(normalized, "pending_download_enabled") || enabled(normalized, "download_monitor_enabled")) {
-      add("downloadCheck", "success", { value: value(normalized, "download_check_interval_minutes") });
-    }
-    if (value(normalized, "best_version_type") !== "no") {
-      add("bestVersion", "warning");
-      if (value(normalized, "best_version_cron").trim()) {
-        add("bestVersionCheck", "warning", { value: value(normalized, "best_version_cron") });
-      }
-    }
-    if (enabled(normalized, "verify_enabled")) {
-      add("verify", "warning", { value: value(normalized, "verify_interval_hours") });
-    }
-    if (enabled(normalized, "download_monitor_enabled")) {
-      add("removeTorrent", "error");
-    }
-    if (value(normalized, "subscription_cleanup_history_type") !== "no") {
-      add("cleanup", "error");
-    }
-    const actions = normalized.no_download_actions;
-    const movieNoDownloadEnabled = normalized.movie_no_download_days !== 0;
-    const tvNoDownloadEnabled = normalized.tv_no_download_days !== 0;
-    const hasEnabledMediaAction = (movieAction, tvAction) => actions.some(
-      (action) => movieNoDownloadEnabled && action === movieAction || tvNoDownloadEnabled && action === tvAction
-    );
-    if (hasEnabledMediaAction("pause_movie", "pause_tv")) {
-      add("pause", "warning");
-    }
-    if (hasEnabledMediaAction("complete_movie", "complete_tv")) {
-      add("complete", "warning");
-    }
-    if (hasEnabledMediaAction("delete_movie", "delete_tv")) {
-      add("delete", "error");
-    }
-    if (enabled(normalized, "best_version_episode_to_full")) {
-      add("episodeToFull", "warning");
-    }
-    const recognitionMode = value(normalized, "recognition_guard_mode").trim().toLowerCase();
-    if (recognitionMode === "audit") {
-      add("audit", "info");
-    } else if (["loose", "balanced", "strict"].includes(recognitionMode)) {
-      add("filter", "warning");
-    }
-  }
-  return items;
+function displayFieldLabel(field) {
+  if (field.kind !== "number") return field.label;
+  return field.label.replace(/\s*[（(][^）)]+[）)]\s*/g, "").trim();
 }
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -1782,30 +1673,37 @@ const _hoisted_27 = {
   class: "sae-field-section sae-tracker-entry"
 };
 const _hoisted_28 = { class: "sae-tracker-entry__copy" };
-const _hoisted_29 = { class: "sae-impact-preview" };
-const _hoisted_30 = { class: "sae-impact-preview__title" };
-const _hoisted_31 = {
+const _hoisted_29 = {
+  key: 1,
+  class: "sae-field-section sae-tracker-entry"
+};
+const _hoisted_30 = { class: "sae-tracker-entry__copy" };
+const _hoisted_31 = { class: "sae-impact-preview" };
+const _hoisted_32 = { class: "sae-impact-preview__title" };
+const _hoisted_33 = {
   key: 0,
   class: "sae-impact-preview__draft-state"
 };
-const _hoisted_32 = { class: "sae-impact-preview__group" };
-const _hoisted_33 = { class: "sae-impact-preview__list" };
-const _hoisted_34 = ["aria-label"];
-const _hoisted_35 = { class: "sae-runtime-summary__title" };
-const _hoisted_36 = {
+const _hoisted_34 = { class: "sae-impact-preview__list" };
+const _hoisted_35 = ["aria-label"];
+const _hoisted_36 = { class: "sae-runtime-summary__title" };
+const _hoisted_37 = {
   key: 0,
   class: "sae-runtime-summary__state"
 };
-const _hoisted_37 = { class: "sae-runtime-summary__metrics" };
-const _hoisted_38 = { class: "sae-runtime-summary__row" };
+const _hoisted_38 = {
+  key: 1,
+  class: "sae-runtime-summary__metrics"
+};
 const _hoisted_39 = { class: "sae-runtime-summary__row" };
-const _hoisted_40 = { class: "sae-runtime-summary__domains" };
-const _hoisted_41 = {
+const _hoisted_40 = { class: "sae-runtime-summary__row" };
+const _hoisted_41 = { class: "sae-runtime-summary__row" };
+const _hoisted_42 = {
   key: 2,
   class: "sae-runtime-summary__unavailable"
 };
-const _hoisted_42 = { class: "sae-mobile-savebar" };
-const _hoisted_43 = {
+const _hoisted_43 = { class: "sae-mobile-savebar" };
+const _hoisted_44 = {
   key: 0,
   class: "sae-mobile-savebar__state"
 };
@@ -1834,8 +1732,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const trackerField = computed(() => localizedFields.value.find(
       (field) => field.key === "default_tracker_response" && field.dialogOnly
     ));
+    const yamlField = computed(() => localizedFields.value.find(
+      (field) => field.key === "recognition_guard_custom_config"
+    ));
     const activeGroup = ref("global");
-    const impactItems = computed(() => buildImpactPreview(draft, locale.value));
     const runtimeSummary = ref(null);
     const summaryState = ref("loading");
     const trackerDialogOpen = ref(false);
@@ -1995,12 +1895,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         { titleKey: "section.custom", keys: ["recognition_guard_custom_config"] }
       ]
     };
-    const impactToneIcons = {
-      info: "mdi-information-outline",
-      success: "mdi-check-circle-outline",
-      warning: "mdi-alert-outline",
-      error: "mdi-alert-circle-outline"
-    };
     const activeGroupMeta = computed(
       () => localizedGroups.value.find((group) => group.key === activeGroup.value) ?? localizedGroups.value[0]
     );
@@ -2008,21 +1902,38 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => sectionDefinitions[activeGroup.value].map((section) => ({
         ...section,
         title: t(locale.value, section.titleKey),
-        fields: section.keys.map((key) => fieldsByKey.value.get(key)).filter((field) => Boolean(field))
-      }))
+        fields: section.keys.map((key) => fieldsByKey.value.get(key)).filter((field) => Boolean(field) && field?.kind !== "textarea")
+      })).filter((section) => section.fields.length > 0)
     );
-    const summaryDomains = computed(() => Object.entries(runtimeSummary.value?.domains ?? {}));
-    const domainTranslationKeys = {
-      "完结守卫模式": "domain.completionGuard",
-      "待定增强": "domain.pending",
-      "暂停优化": "domain.pause",
-      "自动洗版": "domain.bestVersion",
-      "下载管理": "domain.download",
-      "完成后验证": "domain.verify",
-      "站点集数探测": "domain.siteTotal",
-      "站点完结信号": "domain.siteCompletion",
-      "识别增强": "domain.recognition"
-    };
+    const cadenceSummary = computed(() => [
+      {
+        icon: "mdi-radar",
+        title: t(locale.value, "config.generalInspection"),
+        value: t(locale.value, "config.everyMinutes", { value: draft.auto_check_interval_minutes })
+      },
+      {
+        icon: "mdi-download-network-outline",
+        title: t(locale.value, "config.downloadInspection"),
+        value: t(locale.value, "config.everyMinutes", { value: draft.download_check_interval_minutes })
+      },
+      {
+        icon: "mdi-database-search-outline",
+        title: t(locale.value, "config.metadataInspection"),
+        value: t(locale.value, "config.everyHours", { value: draft.meta_check_interval_hours })
+      },
+      {
+        icon: "mdi-auto-fix",
+        title: t(locale.value, "config.bestVersionInspection"),
+        value: draft.best_version_cron || t(locale.value, "config.notScheduled")
+      }
+    ]);
+    const activeDomainCount = computed(() => {
+      const values = Object.values(runtimeSummary.value?.domains ?? {});
+      return {
+        active: values.filter((value) => value === true || typeof value === "string" && !["off", "no"].includes(value)).length,
+        total: values.length
+      };
+    });
     function handleConfigScroll() {
       if (!configScrollRoot) return;
       configScrollRoot.classList.add("sae-config-scroll-root--active");
@@ -2054,27 +1965,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       configScrollRoot?.removeEventListener("scroll", handleConfigScroll);
       configScrollRoot?.classList.remove("sae-config-scroll-root", "sae-config-scroll-root--active");
     });
-    function formatDomainStatus(value) {
-      if (typeof value === "boolean") return t(locale.value, value ? "config.enabled" : "config.off");
-      const modeFields = ["completion_guard_mode", "recognition_guard_mode", "best_version_type"];
-      for (const key of modeFields) {
-        const option = localizedFields.value.find((field) => field.key === key)?.options?.find((item) => String(item.value) === value);
-        if (option) return option.title;
-      }
-      return value;
-    }
-    function formatDomainName(name) {
-      const key = domainTranslationKeys[name];
-      return key ? t(locale.value, key) : name;
-    }
-    function domainIcon(value) {
-      if (typeof value !== "boolean") return "mdi-tune-variant";
-      return value ? "mdi-check-circle-outline" : "mdi-minus-circle-outline";
-    }
-    function domainColor(value) {
-      if (typeof value !== "boolean") return "info";
-      return value ? "success" : void 0;
-    }
     function updateNumber(key, incoming) {
       draft[key] = normalizeFiniteNumber(draft[key], incoming);
     }
@@ -2085,8 +1975,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       updateNumber(key, draft[key] + numberStep(key) * direction);
     }
     function fieldUnit(field) {
-      if (field.key === "download_progress_threshold") return "%";
-      return field.label.match(/（([^）]+)）/)?.[1];
+      return numberFieldUnit(field.key, locale.value);
     }
     function selectionOverflowCount(key) {
       const value = draft[key];
@@ -2173,8 +2062,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createElementVNode("div", _hoisted_8, [
               _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_9, [
                 _createVNode(_component_VIcon, {
-                  color: "success",
-                  icon: "mdi-check-circle",
+                  color: "warning",
+                  icon: "mdi-pencil-outline",
                   size: "16"
                 }),
                 _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.changedCount", { count: _unref(changedCount) })), 1)
@@ -2226,11 +2115,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }, {
                   default: _withCtx(() => [
                     _createVNode(_component_VIcon, {
-                      icon: activeGroupMeta.value.icon,
+                      icon: "mdi-view-list-outline",
                       size: "19",
                       start: ""
-                    }, null, 8, ["icon"]),
-                    _createElementVNode("span", null, _toDisplayString(activeGroupMeta.value.title), 1),
+                    }),
+                    _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.selectGroup")), 1),
                     _createVNode(_component_VSpacer),
                     _createVNode(_component_VIcon, {
                       icon: "mdi-chevron-up",
@@ -2333,7 +2222,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           class: _normalizeClass(["sae-field-row", { "sae-field-row--switch": field.kind === "switch" }])
                         }, [
                           _createElementVNode("div", _hoisted_19, [
-                            _createElementVNode("div", _hoisted_20, _toDisplayString(field.label), 1),
+                            _createElementVNode("div", _hoisted_20, _toDisplayString(_unref(displayFieldLabel)(field)), 1),
                             field.hint ? (_openBlock(), _createElementBlock("p", _hoisted_21, _toDisplayString(field.hint), 1)) : _createCommentVNode("", true)
                           ]),
                           _createElementVNode("div", _hoisted_22, [
@@ -2408,6 +2297,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                               modelValue: _unref(draft)[field.key],
                               "onUpdate:modelValue": ($event) => _unref(draft)[field.key] = $event,
                               "aria-label": field.label,
+                              class: "sae-text-control",
                               density: "compact",
                               "hide-details": "",
                               placeholder: _unref(t)(locale.value, "config.cronPlaceholder"),
@@ -2418,23 +2308,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                               modelValue: _unref(draft)[field.key],
                               "onUpdate:modelValue": ($event) => _unref(draft)[field.key] = $event,
                               "aria-label": field.label,
+                              class: "sae-text-control",
                               density: "compact",
                               "hide-details": "",
                               variant: "outlined"
-                            }, null, 8, ["id", "modelValue", "onUpdate:modelValue", "aria-label"])) : field.kind === "textarea" ? (_openBlock(), _createBlock(_component_VBtn, {
-                              key: 5,
-                              "aria-label": field.label,
-                              block: "",
-                              "prepend-icon": "mdi-code-braces",
-                              type: "button",
-                              variant: "tonal",
-                              onClick: _cache[2] || (_cache[2] = ($event) => yamlDialogOpen.value = true)
-                            }, {
-                              default: _withCtx(() => [
-                                _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.editYaml")), 1)
-                              ]),
-                              _: 1
-                            }, 8, ["aria-label"])) : _createCommentVNode("", true)
+                            }, null, 8, ["id", "modelValue", "onUpdate:modelValue", "aria-label"])) : _createCommentVNode("", true)
                           ])
                         ], 2);
                       }), 128))
@@ -2459,7 +2337,33 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     "prepend-icon": "mdi-pencil-outline",
                     type: "button",
                     variant: "tonal",
-                    onClick: _cache[3] || (_cache[3] = ($event) => trackerDialogOpen.value = true)
+                    onClick: _cache[2] || (_cache[2] = ($event) => trackerDialogOpen.value = true)
+                  }, {
+                    default: _withCtx(() => [
+                      _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.edit")), 1)
+                    ]),
+                    _: 1
+                  }, 8, ["aria-label"])
+                ])) : _createCommentVNode("", true),
+                activeGroup.value === "recognition" ? (_openBlock(), _createElementBlock("section", _hoisted_29, [
+                  _createElementVNode("div", _hoisted_30, [
+                    _createVNode(_component_VIcon, {
+                      color: "primary",
+                      icon: "mdi-code-braces",
+                      size: "22"
+                    }),
+                    _createElementVNode("div", null, [
+                      _createElementVNode("strong", null, _toDisplayString(yamlField.value.label), 1),
+                      _createElementVNode("p", null, _toDisplayString(yamlField.value.hint), 1)
+                    ])
+                  ]),
+                  _createVNode(_component_VBtn, {
+                    "aria-label": _unref(t)(locale.value, "config.editLabel", { label: yamlField.value.label }),
+                    color: "primary",
+                    "prepend-icon": "mdi-pencil-outline",
+                    type: "button",
+                    variant: "tonal",
+                    onClick: _cache[3] || (_cache[3] = ($event) => yamlDialogOpen.value = true)
                   }, {
                     default: _withCtx(() => [
                       _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.edit")), 1)
@@ -2468,15 +2372,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   }, 8, ["aria-label"])
                 ])) : _createCommentVNode("", true)
               ]),
-              _createElementVNode("aside", _hoisted_29, [
-                _createElementVNode("div", _hoisted_30, [
+              _createElementVNode("aside", _hoisted_31, [
+                _createElementVNode("div", _hoisted_32, [
                   _createVNode(_component_VIcon, {
                     color: "primary",
-                    icon: "mdi-eye-outline",
+                    icon: "mdi-clock-outline",
                     size: "20"
                   }),
-                  _createElementVNode("h2", null, _toDisplayString(_unref(t)(locale.value, "config.preview")), 1),
-                  _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_31, [
+                  _createElementVNode("h2", null, _toDisplayString(_unref(t)(locale.value, "config.cadence")), 1),
+                  _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_33, [
                     _createVNode(_component_VIcon, {
                       icon: "mdi-pencil-outline",
                       size: "14"
@@ -2484,31 +2388,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.unsaved")), 1)
                   ])) : _createCommentVNode("", true)
                 ]),
-                _createElementVNode("div", _hoisted_32, [
-                  _createVNode(_component_VIcon, {
-                    icon: activeGroupMeta.value.icon,
-                    size: "22"
-                  }, null, 8, ["icon"]),
-                  _createElementVNode("div", null, [
-                    _createElementVNode("strong", null, _toDisplayString(activeGroupMeta.value.title), 1),
-                    _createElementVNode("p", null, _toDisplayString(activeGroupMeta.value.summary), 1)
-                  ])
-                ]),
-                _createElementVNode("ul", _hoisted_33, [
-                  (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(impactItems.value, (item) => {
+                _createElementVNode("ul", _hoisted_34, [
+                  (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(cadenceSummary.value, (item) => {
                     return _openBlock(), _createElementBlock("li", {
                       key: item.title,
                       class: "sae-impact-preview__item"
                     }, [
                       _createVNode(_component_VIcon, {
-                        color: item.tone,
-                        icon: impactToneIcons[item.tone],
-                        size: "20"
-                      }, null, 8, ["color", "icon"]),
-                      _createElementVNode("div", null, [
-                        _createElementVNode("strong", null, _toDisplayString(item.title), 1),
-                        _createElementVNode("p", null, _toDisplayString(item.detail), 1)
-                      ])
+                        icon: item.icon,
+                        size: "18"
+                      }, null, 8, ["icon"]),
+                      _createElementVNode("span", null, _toDisplayString(item.title), 1),
+                      _createElementVNode("strong", null, _toDisplayString(item.value), 1)
                     ]);
                   }), 128))
                 ]),
@@ -2516,7 +2407,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   "aria-label": _unref(t)(locale.value, "config.runtime"),
                   class: "sae-runtime-summary"
                 }, [
-                  _createElementVNode("div", _hoisted_35, [
+                  _createElementVNode("div", _hoisted_36, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-chart-box-outline",
@@ -2524,7 +2415,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     }),
                     _createElementVNode("h3", null, _toDisplayString(_unref(t)(locale.value, "config.runtime")), 1)
                   ]),
-                  summaryState.value === "loading" ? (_openBlock(), _createElementBlock("div", _hoisted_36, [
+                  summaryState.value === "loading" ? (_openBlock(), _createElementBlock("div", _hoisted_37, [
                     _createVNode(_component_VProgressCircular, {
                       color: "primary",
                       indeterminate: "",
@@ -2532,51 +2423,41 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       width: "2"
                     }),
                     _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.runtimeLoading")), 1)
-                  ])) : summaryState.value === "available" && runtimeSummary.value ? (_openBlock(), _createElementBlock(_Fragment, { key: 1 }, [
-                    _createElementVNode("div", _hoisted_37, [
-                      _createElementVNode("div", _hoisted_38, [
-                        _createVNode(_component_VIcon, {
-                          icon: "mdi-timer-sand",
-                          size: "18"
-                        }),
-                        _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.pendingCount")), 1),
-                        _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.pending_count), 1)
-                      ]),
-                      _createElementVNode("div", _hoisted_39, [
-                        _createVNode(_component_VIcon, {
-                          icon: "mdi-download-network-outline",
-                          size: "18"
-                        }),
-                        _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.monitoredCount")), 1),
-                        _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.monitored_torrents), 1)
-                      ])
+                  ])) : summaryState.value === "available" && runtimeSummary.value ? (_openBlock(), _createElementBlock("div", _hoisted_38, [
+                    _createElementVNode("div", _hoisted_39, [
+                      _createVNode(_component_VIcon, {
+                        icon: "mdi-timer-sand",
+                        size: "18"
+                      }),
+                      _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.pendingCount")), 1),
+                      _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.pending_count), 1)
                     ]),
                     _createElementVNode("div", _hoisted_40, [
-                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(summaryDomains.value, ([name, status]) => {
-                        return _openBlock(), _createElementBlock("div", {
-                          key: name,
-                          class: "sae-runtime-summary__row"
-                        }, [
-                          _createVNode(_component_VIcon, {
-                            color: domainColor(status),
-                            icon: domainIcon(status),
-                            size: "18"
-                          }, null, 8, ["color", "icon"]),
-                          _createElementVNode("span", null, _toDisplayString(formatDomainName(name)), 1),
-                          _createElementVNode("strong", null, _toDisplayString(formatDomainStatus(status)), 1)
-                        ]);
-                      }), 128))
+                      _createVNode(_component_VIcon, {
+                        icon: "mdi-download-network-outline",
+                        size: "18"
+                      }),
+                      _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.monitoredCount")), 1),
+                      _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.monitored_torrents), 1)
+                    ]),
+                    _createElementVNode("div", _hoisted_41, [
+                      _createVNode(_component_VIcon, {
+                        icon: "mdi-toggle-switch-outline",
+                        size: "18"
+                      }),
+                      _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.activeDomains")), 1),
+                      _createElementVNode("strong", null, _toDisplayString(activeDomainCount.value.active) + " / " + _toDisplayString(activeDomainCount.value.total), 1)
                     ])
-                  ], 64)) : (_openBlock(), _createElementBlock("p", _hoisted_41, _toDisplayString(_unref(t)(locale.value, "config.runtimeUnavailable")), 1))
-                ], 8, _hoisted_34)
+                  ])) : (_openBlock(), _createElementBlock("p", _hoisted_42, _toDisplayString(_unref(t)(locale.value, "config.runtimeUnavailable")), 1))
+                ], 8, _hoisted_35)
               ])
             ])
           ]),
-          _createElementVNode("div", _hoisted_42, [
-            _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_43, [
+          _createElementVNode("div", _hoisted_43, [
+            _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_44, [
               _createVNode(_component_VIcon, {
-                color: "success",
-                icon: "mdi-check-circle",
+                color: "warning",
+                icon: "mdi-pencil-outline",
                 size: "16"
               }),
               _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.changedCount", { count: _unref(changedCount) })), 1)
@@ -2788,6 +2669,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f8b26e7b"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f7e835a4"]]);
 
 export { Config as default };

@@ -25,9 +25,9 @@ describe('SAE i18n adapter', () => {
   })
 
   it('translates stable UI keys and interpolates named parameters', () => {
-    expect(t('zh-CN', 'config.changedCount', { count: 3 })).toBe('已修改 3 项')
-    expect(t('zh-TW', 'config.changedCount', { count: 3 })).toBe('已修改 3 項')
-    expect(t('en-US', 'config.changedCount', { count: 3 })).toBe('3 changes')
+    expect(t('zh-CN', 'config.changedCount', { count: 3 })).toBe('3 项待保存')
+    expect(t('zh-TW', 'config.changedCount', { count: 3 })).toBe('3 項待儲存')
+    expect(t('en-US', 'config.changedCount', { count: 3 })).toBe('3 to save')
     expect(() => t('en-US', 'config.missing')).toThrow(/Missing translation key/)
   })
 

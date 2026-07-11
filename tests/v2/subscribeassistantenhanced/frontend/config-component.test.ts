@@ -96,6 +96,12 @@ describe('config header actions', () => {
     expect(source).toContain(":aria-label=\"t(locale, 'config.close')\"")
   })
 
+  it('uses warning semantics for pending unsaved changes', () => {
+    expect(source).toContain('<VIcon color="warning" icon="mdi-pencil-outline" size="16" />')
+    expect(source).not.toContain('<VIcon color="success" icon="mdi-check-circle" size="16" />')
+    expect(source).toContain("t(locale, 'config.changedCount', { count: changedCount })")
+  })
+
   it('keeps the scrolled header legible across transparent-theme blur modes', () => {
     expect(compiledStyle.errors).toEqual([])
     expect(compiledStyle.code).toMatch(
@@ -115,7 +121,15 @@ describe('config header actions', () => {
   it('keeps the close icon visible when only its mobile label is hidden', () => {
     expect(source).toContain('class="sae-config-header__close-label"')
     expect(source).toMatch(/\.sae-config-header__close-label\s*{[\s\S]*?display:\s*none/)
-    expect(source).not.toContain('.sae-config-header__close :deep(.v-btn__content)')
+  })
+
+  it('centers the mobile close glyph inside its icon button', () => {
+    expect(compiledStyle.code).toMatch(
+      /\.sae-config-header__close\[data-v-sae-config-test\] \.v-btn__content\s*\{[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*center;/,
+    )
+    expect(compiledStyle.code).toMatch(
+      /\.sae-config-header__close\[data-v-sae-config-test\] \.v-icon\s*\{[\s\S]*?margin:\s*0 !important;/,
+    )
   })
 
   it('only reveals the dialog scrollbar while the user is scrolling', () => {
@@ -167,6 +181,8 @@ describe('configuration navigation', () => {
     expect(source).not.toContain('<VTabs')
     expect(source).toContain('class="sae-mobile-help"')
     expect(source).toContain('<VIcon icon="mdi-help-circle-outline" size="18" />')
+    expect(source).toContain("{{ t(locale, 'config.selectGroup') }}")
+    expect(source).not.toContain('{{ activeGroupMeta.title }}\n                <VIcon icon="mdi-chevron-up"')
   })
 })
 
@@ -191,6 +207,13 @@ describe('configuration controls', () => {
     expect(source).toContain('selectionOverflowCount(field.key)')
     expect(compiledStyle.code).toMatch(
       /\.sae-field-control\[data-v-sae-config-test\] \.v-select__selection\s*\{[\s\S]*?justify-content:\s*flex-end;[\s\S]*?text-align:\s*end;/,
+    )
+  })
+
+  it('right-aligns text and CRON values with the other field controls', () => {
+    expect(source).toContain('class="sae-text-control"')
+    expect(compiledStyle.code).toMatch(
+      /\.sae-text-control\[data-v-sae-config-test\] input\s*\{[\s\S]*?text-align:\s*end;/,
     )
   })
 
@@ -224,10 +247,18 @@ describe('configuration controls', () => {
     expect(source).toContain("emit('save', buildSavePayload())")
   })
 
+  it('renders custom recognition rules as a dedicated edit entry', () => {
+    expect(source).toContain("activeGroup === 'recognition'")
+    expect(source).toContain('class="sae-field-section sae-tracker-entry"')
+    expect(source).toContain('yamlField.label')
+    expect(source).toContain('yamlField.hint')
+    expect(source).not.toContain("v-else-if=\"field.kind === 'textarea'\"")
+  })
+
   it('assigns every directly rendered field to exactly one visual section', () => {
     const sectionSource = source.slice(
       source.indexOf('const sectionDefinitions'),
-      source.indexOf('const impactToneIcons'),
+      source.indexOf('const activeGroupMeta'),
     )
     const sectionKeys = [...sectionSource.matchAll(/'([a-z][a-z0-9_]*)'/g)].map(match => match[1])
     const expectedKeys = fields
@@ -240,19 +271,32 @@ describe('configuration controls', () => {
   })
 })
 
-describe('configuration preview', () => {
-  it('labels the panel as a draft-aware configuration preview', () => {
-    expect(source).toContain("<h2>{{ t(locale, 'config.preview') }}</h2>")
+describe('configuration summary', () => {
+  it('shows factual schedule values instead of speculative impact copy', () => {
+    expect(source).toContain("<h2>{{ t(locale, 'config.cadence') }}</h2>")
+    expect(source).toContain('v-for="item in cadenceSummary"')
+    expect(source).not.toContain('impactItems')
+    expect(source).not.toContain('impactToneIcons')
+    expect(source).not.toContain('可能运行')
+  })
+
+  it('keeps the schedule summary draft-aware', () => {
     expect(source).toContain('v-if="changedCount > 0" class="sae-impact-preview__draft-state"')
     expect(source).toContain('mdi-pencil-outline')
     expect(source).toContain("t(locale, 'config.unsaved')")
   })
 
-  it('localizes fields, groups, sections, preview, and runtime copy from the Host locale', () => {
+  it('condenses runtime status instead of listing every domain', () => {
+    expect(source).toContain('activeDomainCount')
+    expect(source).toContain("t(locale, 'config.activeDomains')")
+    expect(source).not.toContain('v-for="[name, status] in summaryDomains"')
+  })
+
+  it('localizes fields, groups, sections, cadence, and runtime copy from the Host locale', () => {
     expect(source).toContain('normalizeLocale(instance?.appContext.config.globalProperties.$i18n?.locale)')
     expect(source).toContain('localizeGroups(locale.value, groups)')
     expect(source).toContain('localizeFields(locale.value, fields)')
-    expect(source).toContain('buildImpactPreview(draft, locale.value)')
+    expect(source).toContain('cadenceSummary')
   })
 })
 
