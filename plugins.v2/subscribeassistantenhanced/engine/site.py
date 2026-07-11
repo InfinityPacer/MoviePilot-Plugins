@@ -329,7 +329,6 @@ class SiteEpisodesRefreshHandler:
             return
         current_total = data.current_total_episode or 0
         live_total = _safe_int(getattr(subscribe, "total_episode", None)) or 0
-        evidence = self._store.read_snapshot(subscribe)
 
         if applied:
             applied_total = _safe_int(applied.applied_total) or 0
@@ -340,6 +339,7 @@ class SiteEpisodesRefreshHandler:
             if _has_high_confidence_tmdb_completion(data.mediainfo, subscribe, as_of=_as_date(now)):
                 self._store.clear_lease(subscribe)
                 return
+            evidence = self._store.read_snapshot(subscribe)
             if evidence and not evidence.is_expired(now):
                 site_total = evidence.site_candidate_total or 0
                 if evidence.kind == "site_total_ahead" and site_total > applied_total:
@@ -364,6 +364,7 @@ class SiteEpisodesRefreshHandler:
             self._apply_total(data, applied_total, applied.applied_reason)
             return
 
+        evidence = self._store.read_snapshot(subscribe)
         if not evidence:
             return
         if evidence.is_expired(now):
