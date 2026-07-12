@@ -834,6 +834,23 @@ def test_refresh_handler_skips_when_config_disabled():
     assert store.read_applied(subscribe) is None
 
 
+def test_refresh_handler_skips_create_event_without_subscribe():
+    store = SiteEvidenceStore(_task_manager())
+    handler = _handler(None, store)
+    data = SubscribeEpisodesRefreshEventData(
+        current_total_episode=12,
+        subscribe_id=None,
+        tmdbid=312849,
+        season=1,
+        scene="create",
+    )
+
+    handler.handle_refresh(data)
+
+    assert data.updated is False
+    assert data.total_episode is None
+
+
 def test_refresh_handler_skips_when_event_identity_mismatches():
     store = SiteEvidenceStore(_task_manager())
     subscribe = _sub(total_episode=10, season=1)

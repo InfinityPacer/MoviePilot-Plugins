@@ -319,6 +319,12 @@ class SiteEpisodesRefreshHandler:
         subscribe = self._subscribe_oper.get(data.subscribe_id) if (
             self._subscribe_oper and data.subscribe_id
         ) else None
+        if subscribe is None:
+            detail(
+                f"信号引擎(S)：订阅不可用（id={data.subscribe_id}, scene={data.scene}, "
+                f"tmdbid={data.tmdbid}, season={data.season}），跳过站点证据消费"
+            )
+            return
         if not _event_identity_matches(data, subscribe):
             detail(f"信号引擎(S)：{format_subscribe(subscribe)} 集数刷新事件身份不匹配，跳过站点证据消费")
             return
