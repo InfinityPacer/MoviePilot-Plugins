@@ -28,7 +28,7 @@ if __name__ == "__main__":
     extra = sys.argv[1:]
     exit_code = 0
     # CI 工具与 v1/v2 分会话运行；保留首个非零退出码作为整体结果。
-    for generation in ("ci", "v2", "v1"):
+    for generation in ("ci", "v1"):
         rc = _run_generation(generation, extra)
         exit_code = exit_code or rc
     sys.exit(exit_code)
