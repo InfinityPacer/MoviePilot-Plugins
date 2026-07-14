@@ -1123,6 +1123,7 @@ def test_run_meta_check_keeps_airing_gap_when_current_check_is_inconclusive():
         first_air_date=None,
     ))
     plugin._tmdb_episodes = MagicMock(return_value=[])
+    plugin._tmdb_chain.tmdb_episodes = MagicMock(return_value=[])
 
     pause_manager = plugin._modules["pause_manager"]
     next_air_date = (date.today() + timedelta(days=7)).isoformat()
@@ -1987,6 +1988,7 @@ def test_external_plugin_data_reset_restores_p_but_keeps_s_untouched():
     plugin._task_manager._save = plugin.save_data
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.side_effect = lambda **kwargs: [pending] if kwargs.get("state") == "P" else [paused]
+    plugin._recognize_mediainfo = MagicMock(return_value=None)
     plugin._modules["pending_state"]._subscribe_oper = plugin._subscribe_oper
 
     plugin.run_pending_state_reconcile()
