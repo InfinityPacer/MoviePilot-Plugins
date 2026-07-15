@@ -23,7 +23,12 @@ jobs:
     if: >-
       github.event.sender.type != 'Bot' &&
       (
-        github.event_name == 'pull_request' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login == github.repository_owner &&
+          github.actor == github.repository_owner
+        ) ||
         (
           github.event_name == 'issue_comment' &&
           github.event.issue.pull_request != null &&
@@ -38,7 +43,7 @@ jobs:
 
     steps:
       - name: Run PR Review
-        uses: docker://ghcr.io/infinitypacer/pr-review-runner:latest
+        uses: docker://ghcr.io/infinitypacer/pr-review-runner:0.0.1@sha256:08683a59dc210dca9f4f7e444d4578cad0ad9fb5cac498b23293a5647e2e51ce
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
