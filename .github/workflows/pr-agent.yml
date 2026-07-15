@@ -1,7 +1,8 @@
 name: PR-Agent
 
 on:
-  pull_request:
+  pull_request_target:
+    # Fork 审查需要目标仓库凭据；该 job 仅通过 GitHub API 读取 PR 内容，不 checkout 或执行 PR 分支代码。
     types:
       - opened
       - reopened
@@ -24,10 +25,8 @@ jobs:
       github.event.sender.type != 'Bot' &&
       (
         (
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          github.event.pull_request.user.login == github.repository_owner &&
-          github.actor == github.repository_owner
+          github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository
         ) ||
         (
           github.event_name == 'issue_comment' &&
@@ -37,18 +36,18 @@ jobs:
       )
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - name: Run PR Review
-        uses: docker://ghcr.io/infinitypacer/pr-review-runner:0.0.1@sha256:08683a59dc210dca9f4f7e444d4578cad0ad9fb5cac498b23293a5647e2e51ce
+        uses: docker://ghcr.io/infinitypacer/pr-review-runner:latest
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
           OPENAI.API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          PRR_AUTO_REVIEW_SCOPE: all
+          PRR_AUTO_REVIEW_SCOPE: forks
           PRR_ALLOWED_ASSOCIATIONS: '["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR"]'
           PRR_DISABLED_COMMANDS: '["/improve"]'
           PRR_SKIP_LABEL: skip pr-agent
