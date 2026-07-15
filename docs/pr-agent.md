@@ -1,12 +1,12 @@
 # PR-Agent 使用说明
 
-本仓库通过 GitHub Actions 运行 PR-Agent，帮助贡献者维护 PR 摘要、获取代码审查结果和提出 PR 相关问题。
+本仓库通过 PR Review Runner 运行 PR-Agent，帮助贡献者维护 PR 摘要、获取代码审查结果和提出 PR 相关问题。
 
 ## 自动执行
 
-仅来自 fork 的 PR 会自动执行 PR-Agent。同仓 PR 不会自动运行，但符合条件的贡献者仍可通过评论命令手动执行。
+当前验证阶段会自动处理同仓 PR，用于确认新的 runner 集成可以在本 PR 中完整发布中文审查结果。合入前会在同一个 PR 中恢复为仅自动处理 fork PR。
 
-fork PR 在以下场景会自动处理：
+自动处理会在以下场景运行：
 
 - 打开或重新打开 PR。
 - 将草稿 PR 标记为可审查。
@@ -25,9 +25,11 @@ PR 带有 `skip pr-agent` 标签，或标题以 `[Auto]`、`Auto` 开头时，�
 /ask 这次改动有没有遗漏权限校验？
 ```
 
-- `/describe`：更新 PR Body 内按语言显示的 `PR-Agent 摘要` 或 `PR-Agent Summary`，并保留贡献者原有的 PR 描述。
+- `/describe`：更新 PR Body 内的 `PR-Agent 摘要`，并保留贡献者原有的 PR 描述。
 - `/review`：发起一次代码审查。
 - `/ask ...`：就当前 PR 提问，回复会发布在普通 PR 评论中。
+
+本仓库禁用 `/improve` 及其等价别名。其他命令是否可用由 runner 所包含的 PR-Agent 能力决定。
 
 手工命令仅允许以下 GitHub 身份关联的用户使用：`OWNER`、`MEMBER`、`COLLABORATOR`、`CONTRIBUTOR`、`FIRST_TIME_CONTRIBUTOR`。
 
@@ -35,16 +37,12 @@ PR 带有 `skip pr-agent` 标签，或标题以 `[Auto]`、`Auto` 开头时，�
 
 ## 审查结果
 
-`/describe` 的结果位于 PR Body 中按语言显示的 `PR-Agent 摘要` 或 `PR-Agent Summary` 区域，用于概览本次变更。
+本仓库固定使用中文生成 PR-Agent 内容。`/describe` 的结果位于 PR Body 的 `PR-Agent 摘要` 区域，用于概览本次变更。
 
-`/review` 和自动审查会通过原生 GitHub Review 发布，结果位于 Review 页签，标题固定为 `PR-Agent Code Review`。审查摘要包含可点击的 `文件:行号` 链接；可定位到本次变更的具体问题会在对应代码行以行内评论呈现，无法行内定位的问题仍通过摘要中的链接呈现。
+`/review` 和自动审查会通过原生 GitHub Review 发布，结果位于 Review 页签，标题固定为 `PR-Agent Code Review`。可定位到本次变更的问题会在对应代码行以行内评论呈现，并使用 high、medium 或 low 风险标识。
 
-审查不会额外创建专用的摘要评论。未发现需要处理的问题时，Review 会显示：
-
-> 本次变更无需提出审查意见，暂无其他反馈。
+Review 摘要会自然概括本次变更和整体审查结论，不会复制行内评论。未发现需要处理的问题时，摘要会概括变更并自然说明暂无其他反馈。审查不会额外创建专用的 issue comment 摘要。
 
 ## 安全边界
 
-workflow 使用固定 digest 的 PR-Agent 容器镜像，不使用浮动标签。自动审查通过 `pull_request_target` 在目标仓库上下文中读取 PR 信息，但不会 checkout 或执行 PR 分支代码。
-
-权限保持最小化：只授予读取仓库内容所需的 `contents: read`，以及更新 PR Body、发布 Review 和回复 PR 评论所需的写权限；不会向仓库推送代码或创建提交。
+workflow 不会 checkout 或执行 PR 分支代码。权限保持最小化：只授予读取仓库内容所需的 `contents: read`，以及更新 PR Body、发布 Review 和回复 PR 评论所需的写权限；不会向仓库推送代码或创建提交。
