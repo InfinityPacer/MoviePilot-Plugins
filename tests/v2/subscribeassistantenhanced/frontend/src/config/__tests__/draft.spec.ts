@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { configDefaults } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/defaults'
-import { useConfigDraft } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/draft'
-import { fields } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/fields'
+import { configDefaults } from '@/config/defaults'
+import { useConfigDraft } from '@/config/draft'
+import { fields } from '@/config/fields'
 
 describe('configuration draft contract', () => {
   it('tracks representative and Tracker edits, then emits a complete normalized payload', () => {
@@ -72,8 +72,7 @@ describe('configuration draft contract', () => {
 
     const payload = buildSavePayload()
 
-    expect(editableFields).toHaveLength(64)
-    expect(changedCount.value).toBe(64)
+    expect(changedCount.value).toBe(editableFields.length)
     expect(changedKeys.value).toEqual(editableFields.map(field => field.key))
     expect(Object.keys(payload)).toEqual(Object.keys(configDefaults))
     expect(payload).not.toHaveProperty('open_tracker_dialog')

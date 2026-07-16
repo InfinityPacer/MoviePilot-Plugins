@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { configDefaults } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/defaults'
+import { configDefaults } from '@/config/defaults'
 import {
   normalizeFiniteNumber,
   normalizeSaeConfig,
-} from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/values'
+} from '@/config/values'
 
 describe('normalizeFiniteNumber', () => {
   it('将整数字符串转换为 number', () => {

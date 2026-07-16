@@ -100,7 +100,7 @@ export const fields: FieldMeta[] = [
     "label": "重置数据",
     "group": "global",
     "kind": "switch",
-    "hint": "将重置所有待定/暂停/监控等任务数据，执行后自动复位",
+    "hint": "保存后将重置所有待定/暂停/监控等任务数据，执行后自动复位",
     "risk": "danger"
   },
   {

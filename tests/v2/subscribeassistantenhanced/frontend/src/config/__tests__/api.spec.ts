@@ -1,12 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   loadSummary,
   type PluginApi,
   type SummaryPayload,
-} from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/api'
-
-afterEach(() => vi.restoreAllMocks())
+} from '@/config/api'
 
 describe('summary API helper', () => {
   it('returns null without requesting when the host API is omitted', async () => {

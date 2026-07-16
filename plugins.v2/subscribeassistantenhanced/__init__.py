@@ -86,9 +86,9 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件描述
     plugin_desc = "多场景管理订阅，实现订阅全生命周期管理。"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced-v2.png"
+    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.6.4"
+    plugin_version = "0.6.5"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"

@@ -12,7 +12,24 @@
     "lib": ["ESNext", "DOM"],
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@tests/*": ["../../../tests/v2/subscribeassistantenhanced/frontend/*"],
+      "@testing-library/*": ["node_modules/@testing-library/*"],
+      "msw/*": ["node_modules/msw/*"],
+      "vitest": ["node_modules/vitest"],
+      "vue": ["node_modules/vue"],
+      "vuetify": ["node_modules/vuetify"],
+      "vuetify/components": ["node_modules/vuetify/lib/components/index.d.mts"],
+      "vuetify/directives": ["node_modules/vuetify/lib/directives/index.d.mts"]
+    },
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "vite.config.ts",
+    "../../../tests/v2/subscribeassistantenhanced/frontend/**/*.ts"
+  ]
 }

@@ -2,7 +2,7 @@
 import { computed, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useTheme } from 'vuetify'
 
-import saeLogo from '../assets/sae-logo.svg'
+import saeLogo from '../assets/sae-logo.png'
 import { loadSummary, type PluginApi, type SummaryPayload } from '../config/api'
 import type { ConfigKey, NumberConfigKey, SaeConfig } from '../config/defaults'
 import { useConfigDraft } from '../config/draft'
@@ -23,8 +23,6 @@ const emit = defineEmits<{
   save: [SaeConfig]
   /** 请求宿主关闭配置界面。 */
   close: []
-  /** 请求宿主切换插件详情/配置视图。 */
-  switch: []
   /** 请求宿主为多栏配置布局提供足够的横向空间。 */
   layout: [{ maxWidth: string }]
 }>()
@@ -336,6 +334,21 @@ function selectMobileGroup(group: GroupKey): void {
 function saveConfig(): void {
   emit('save', buildSavePayload())
 }
+
+/** 一次性命令互斥，避免同一次保存同时执行全量巡检和数据重置。 */
+function handleOneTimeAction(key: ConfigKey, enabled: unknown): void {
+  if (enabled !== true) return
+  if (key === 'onlyonce') draft.reset_task = false
+  if (key === 'reset_task') draft.onlyonce = false
+}
+
+/** 桌面命令随当前草稿一并保存，关闭时机由宿主的保存结果统一控制。 */
+function runOnce(): void {
+  handleOneTimeAction('onlyonce', true)
+  const payload = buildSavePayload()
+  payload.onlyonce = true
+  emit('save', payload)
+}
 </script>
 
 <template>
@@ -360,14 +373,20 @@ function saveConfig(): void {
         </div>
 
         <div class="sae-config-header__actions">
-          <span v-if="changedCount > 0" class="sae-config-header__change-state">
-            <VIcon color="warning" icon="mdi-circle" size="8" />
-            {{ t(locale, 'config.changedCount', { count: changedCount }) }}
-          </span>
           <VBtn
-            v-if="changedCount > 0"
+            class="sae-config-header__run"
+            color="primary"
+            type="button"
+            variant="tonal"
+            @click="runOnce"
+          >
+            <VIcon icon="mdi-play" start />
+            {{ t(locale, 'config.runOnce') }}
+          </VBtn>
+          <VBtn
             class="sae-config-header__save"
             color="primary"
+            :disabled="changedCount === 0"
             type="submit"
             variant="flat"
           >
@@ -375,10 +394,21 @@ function saveConfig(): void {
             {{ t(locale, 'config.save') }}
           </VBtn>
           <VBtn
+            class="sae-config-header__close-action"
+            color="default"
+            type="button"
+            variant="outlined"
+            @click="emit('close')"
+          >
+            <VIcon icon="mdi-close" start />
+            {{ t(locale, 'config.close') }}
+          </VBtn>
+          <VBtn
             :aria-label="t(locale, 'config.close')"
-            class="sae-config-header__close"
+            class="sae-config-header__close-icon"
             icon
             size="small"
+            type="button"
             variant="text"
             @click="emit('close')"
           >
@@ -403,17 +433,22 @@ function saveConfig(): void {
                 @click="activeGroup = group.key"
               />
             </VList>
-            <VBtn
-              :href="README_URL"
-              class="sae-group-nav__help"
-              append-icon="mdi-open-in-new"
-              prepend-icon="mdi-help-circle-outline"
-              rel="noopener noreferrer"
-              target="_blank"
-              variant="text"
-            >
-              {{ t(locale, 'config.help') }}
-            </VBtn>
+            <section class="sae-group-nav__help">
+              <strong class="sae-group-nav__help-title">{{ t(locale, 'config.aboutPlugin') }}</strong>
+              <p>{{ t(locale, 'config.aboutDescription') }}</p>
+              <VBtn
+                :href="README_URL"
+                append-icon="mdi-open-in-new"
+                class="sae-group-nav__help-link"
+                color="primary"
+                rel="noopener noreferrer"
+                size="small"
+                target="_blank"
+                variant="text"
+              >
+                {{ t(locale, 'config.viewDocs') }}
+              </VBtn>
+            </section>
           </nav>
 
           <main class="sae-field-surface">
@@ -466,21 +501,45 @@ function saveConfig(): void {
                 <div
                   v-for="field in section.fields"
                   :key="field.key"
-                  :class="['sae-field-row', { 'sae-field-row--switch': field.kind === 'switch' }]"
+                  :class="[
+                    'sae-field-row',
+                    {
+                      'sae-field-row--mobile-only': field.key === 'onlyonce',
+                      'sae-field-row--switch': field.kind === 'switch',
+                    },
+                  ]"
                 >
                   <div class="sae-field-row__copy">
-                    <div class="sae-field-row__label">{{ displayFieldLabel(field) }}</div>
+                    <div class="sae-field-row__label">
+                      <VIcon
+                        v-if="field.key === 'reset_task'"
+                        color="error"
+                        icon="mdi-alert-outline"
+                        size="16"
+                      />
+                      <span>{{ displayFieldLabel(field) }}</span>
+                    </div>
                     <p v-if="field.hint">{{ field.hint }}</p>
                   </div>
                   <div class="sae-field-control">
+                    <VCheckbox
+                      v-if="field.key === 'reset_task'"
+                      id="sae-field-reset_task"
+                      v-model="draft.reset_task"
+                      :aria-label="field.label"
+                      density="compact"
+                      hide-details
+                      @update:model-value="handleOneTimeAction('reset_task', $event)"
+                    />
                     <VSwitch
-                      v-if="field.kind === 'switch'"
+                      v-else-if="field.kind === 'switch'"
                       :id="`sae-field-${field.key}`"
                       v-model="draft[field.key]"
                       :aria-label="field.label"
                       color="primary"
                       density="compact"
                       hide-details
+                      @update:model-value="handleOneTimeAction(field.key, $event)"
                     />
                     <VSelect
                       v-else-if="field.kind === 'select' || field.kind === 'multi-select'"
@@ -674,10 +733,6 @@ function saveConfig(): void {
       </div>
 
       <div v-if="changedCount > 0" class="sae-mobile-save-dock">
-        <span class="sae-mobile-save-dock__state">
-          <VIcon color="warning" icon="mdi-circle" size="8" />
-          {{ t(locale, 'config.changedCount', { count: changedCount }) }}
-        </span>
         <VSpacer />
         <VBtn
           class="sae-mobile-save-dock__save"
@@ -920,22 +975,52 @@ function saveConfig(): void {
   gap: 8px;
 }
 
-.sae-config-header__change-state {
-  display: inline-flex;
-  align-items: center;
-  color: rgb(var(--v-theme-warning));
-  font-size: 0.8125rem;
+.sae-config-header__run {
+  min-inline-size: 112px;
   font-weight: 600;
-  white-space: nowrap;
-  gap: 8px;
 }
 
 .sae-config-header__save {
-  min-inline-size: 128px;
+  min-inline-size: 120px;
   font-weight: 600;
 }
 
-.sae-config-header__close {
+.sae-config-header__close-action {
+  min-inline-size: 96px;
+  color: rgba(var(--v-theme-on-surface), 0.78);
+  font-weight: 600;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sae-config-header__close-action:hover {
+    color: rgb(var(--v-theme-on-surface));
+  }
+}
+
+.sae-config-header__close-action:focus-visible {
+  color: rgb(var(--v-theme-on-surface));
+  outline: 2px solid rgba(var(--v-theme-primary), 0.58);
+  outline-offset: 2px;
+}
+
+.sae-config-header__close-action:active {
+  background-color: rgba(var(--v-theme-on-surface), 0.04);
+  color: rgb(var(--v-theme-on-surface));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sae-config-header__close-action,
+  .sae-config-header__close-action :deep(.v-btn__overlay) {
+    transition: none;
+  }
+
+  .sae-config-header__close-action :deep(.v-ripple__container) {
+    display: none;
+  }
+}
+
+.sae-config-header__close-icon {
   flex: 0 0 40px;
   block-size: 40px;
   inline-size: 40px;
@@ -971,6 +1056,9 @@ function saveConfig(): void {
 }
 
 .sae-group-nav > .sae-group-nav__list.v-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
   padding: 0 4px;
   backdrop-filter: none;
   background: transparent;
@@ -1012,10 +1100,33 @@ function saveConfig(): void {
 }
 
 .sae-group-nav__help {
-  justify-content: flex-start;
-  margin-block-start: auto;
+  flex: 0 0 auto;
+  padding: 12px;
+  margin-block-start: 10px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  color: rgba(var(--v-theme-on-surface), 0.72);
+  border-radius: var(--app-control-radius);
+  background: rgba(var(--v-theme-on-surface), 0.025);
+}
+
+.sae-group-nav__help-title {
+  display: block;
+  font-size: 0.8125rem;
+  line-height: 1.1rem;
+}
+
+.sae-group-nav__help p {
+  margin: 6px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.sae-group-nav__help-link {
+  min-inline-size: 0;
+  min-block-size: 28px;
+  padding-inline: 0;
+  margin-block-start: 7px;
+  font-size: 0.75rem;
 }
 
 .sae-field-surface {
@@ -1112,11 +1223,13 @@ function saveConfig(): void {
 }
 
 .sae-field-row__label {
-  display: block;
+  display: flex;
+  align-items: center;
   color: rgb(var(--v-theme-on-surface));
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.15rem;
+  gap: 6px;
 }
 
 .sae-field-row__copy p {
@@ -1448,16 +1561,6 @@ function saveConfig(): void {
   gap: 12px;
 }
 
-.sae-mobile-save-dock__state {
-  display: inline-flex;
-  align-items: center;
-  color: rgb(var(--v-theme-warning));
-  font-size: 0.8125rem;
-  font-weight: 600;
-  white-space: nowrap;
-  gap: 8px;
-}
-
 .sae-mobile-save-dock__save {
   min-inline-size: 128px;
   font-weight: 600;
@@ -1524,8 +1627,10 @@ function saveConfig(): void {
 }
 
 @container (width < 720px) {
-  .sae-config-header__change-state,
-  .sae-config-header__save {
+  .sae-config-header__run,
+  .sae-config-header__save,
+  .sae-config-header__close-action,
+  .sae-change-summary {
     display: none;
   }
 
@@ -1638,7 +1743,7 @@ function saveConfig(): void {
   }
 
   .sae-config-layout {
-    padding-block-end: 0;
+    padding-block-end: 14px;
     gap: 14px;
     grid-template-areas:
       'navigation content'
@@ -1646,6 +1751,8 @@ function saveConfig(): void {
     grid-template-columns: 168px minmax(0, 1fr);
   }
 
+  .sae-config-header__close-icon,
+  .sae-field-row--mobile-only,
   .sae-field-surface__mobile-actions,
   .sae-mobile-save-dock {
     display: none;

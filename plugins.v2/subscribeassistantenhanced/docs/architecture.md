@@ -46,18 +46,72 @@ flowchart TD
 
 ## 前端联邦子工程
 
-插件前端作为独立工程存放在 `frontend/`，与插件根目录的 Python 运行时代码分离：
+插件前端是位于 `frontend/` 的独立 Vue 子工程，与 Python 运行时代码分离：
 
-- `frontend/src/`：Vue 配置页、配置字段契约、本地化和静态资源源码。
-- `frontend/package.json`、`frontend/yarn.lock`：前端依赖和构建命令。
-- `frontend/vite.config.ts`、`frontend/tsconfig.json`：模块联邦构建与类型检查配置。
-- `frontend/dist/assets/`：随插件发布的联邦产物，也是主程序唯一需要读取的前端目录。
+```text
+frontend/
+├── src/
+│   ├── components/Config.vue
+│   ├── config/
+│   └── assets/
+├── dist/assets/
+├── package.json
+├── yarn.lock
+├── tsconfig.json
+└── vite.config.ts
+```
 
-插件入口通过 `get_render_mode()` 返回 `("vue", "frontend/dist/assets")`。主程序据此从插件静态文件接口读取 `remoteEntry.js` 并加载 `Config` 暴露组件；该路径是插件目录内的相对路径，不依赖前端源码或 `node_modules` 存在。发布包必须包含 `frontend/dist/assets/`，但不包含本地依赖目录。
+- `src/components/Config.vue` 负责配置页布局、用户交互和 Host 事件。
+- `src/config/` 负责稳定配置键、默认值、草稿、保存 payload、字段元数据、本地化、运行概况 API 和展示规则。
+- `src/assets/` 保存前端品牌资源；品牌图在联邦构建中内联，避免按宿主根路径解析。
+- `dist/assets/` 是随插件发布的唯一前端运行产物，包含 `remoteEntry.js`、暴露组件和依赖入口。
 
-前端在 `frontend/` 目录执行 `yarn build`，构建会清空并重建 `frontend/dist/`。Python `get_form()` 继续提供初始配置模型，Vue 草稿按同一稳定配置键生成完整保存 payload，最终仍由主程序插件配置接口持久化并触发插件重新初始化。
+插件入口通过 `get_render_mode()` 返回 `("vue", "frontend/dist/assets")`。MoviePilot 从插件静态文件接口加载 `remoteEntry.js`，再挂载模块联邦暴露的 `Config` 组件。发布包包含 `frontend/dist/assets/`，不依赖源码和 `node_modules` 才能运行。
 
-本地开发可改用 `yarn dev` 持续构建。通过 `PLUGIN_LOCAL_REPO_PATHS` 开发插件并启用 `DEV` 或 `PLUGIN_AUTO_RELOAD` 时，MoviePilot 会同步新的构建产物；刷新页面即可查看修改。
+生产构建执行 `yarn build`，会清空并重建 `frontend/dist/`。测试模式只启用 Vue 编译，不启用模块联邦和构建产物清理插件，使组件测试直接覆盖源码。`yarn dev` 使用 Vite watch 持续生成生产形态的联邦产物。
+
+本地插件仓通过 `PLUGIN_LOCAL_REPO_PATHS` 接入 MoviePilot，`PLUGIN_AUTO_RELOAD=true` 负责同步构建产物并热加载插件。`DEV=true` 只用于暂停定时任务，不承担源码或联邦产物同步。
+
+### Host 契约
+
+`Config` 只依赖 Host 提供的输入和事件，不直接持久化插件配置：
+
+- `initialConfig`：Host 传入的动态配置；草稿层按稳定配置契约规范化。
+- `api`：Host 注入的已认证 API 客户端，用于读取运行概况。
+- `save`：提交包含全部稳定配置键的规范化 payload；一次性动作随本次保存提交并自动复位。
+- `close`：请求 Host 直接关闭配置页，不在插件内部实现未保存修改确认。
+- `layout`：请求 Host 使用 `68rem` 的配置页最大宽度。
+
+桌面端“运行一次”提交 `onlyonce=true` 的完整保存 payload，保存成功后的关闭由 Host 统一处理。移动端保留表单内的一次性开关，并由保存动作提交。重置数据同样是保存触发的一次性命令。
+
+### 前端测试架构
+
+前端测试镜像源码责任域，但物理存放在仓库根测试目录，避免测试、fixture 和测试依赖进入插件运行时副本：
+
+```text
+tests/v2/subscribeassistantenhanced/frontend/
+├── setup.ts
+├── src/
+│   ├── components/__tests__/Config.spec.ts
+│   └── config/__tests__/*.spec.ts
+└── support/
+    ├── factories/config.ts
+    ├── host.ts
+    ├── msw/server.ts
+    └── render.ts
+```
+
+- `setup.ts` 注册 jest-dom、浏览器观察器垫片、统一 cleanup 和 MSW 生命周期；未声明网络请求直接失败。
+- `support/render.ts` 使用真实 Vue 与 Vuetify 挂载组件，只替换 Host 才提供的 CRON 和 YAML 编辑器，并注入 Host 语言契约。
+- `support/host.ts` 提供 Host API 与运行概况测试替身。
+- `support/factories/` 为每个用例创建独立的完整配置，避免共享可变状态。
+- `src/config/__tests__/` 验证规范化、草稿、API、本地化和展示等纯逻辑契约。
+- `Config.spec.ts` 只通过可见 DOM、accessible name、用户操作、emits、Host API 和挂载生命周期验证组件行为。
+- Python 的 `test_vue_config_contract.py` 负责校验 Python Form 与 TypeScript 配置键、默认值和字段元数据的跨语言一致性。
+
+Vitest 使用 jsdom、Testing Library、Vue Test Utils、MSW 和 V8 coverage。全局覆盖率门槛为分支 80%、函数 85%、行和语句 85%；纳入覆盖率的每个核心文件至少达到分支 75%、函数、行和语句 80%。`Config.vue` 的样式、容器查询、hover/focus、桌面与移动布局、联邦远程加载和 Host 保存关闭流程由真实 Chrome 验证。
+
+前端 CI 仅在 SAE 前端源码、前端测试或工作流变化时运行，使用 Node 24 依次执行 frozen lockfile 安装、`yarn typecheck`、`yarn test:coverage` 和生产构建，并校验提交的 `dist/` 与源码构建结果一致。
 
 ## 入口层
 

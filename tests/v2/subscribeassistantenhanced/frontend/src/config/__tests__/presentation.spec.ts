@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { fields } from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/fields'
+import { fields } from '@/config/fields'
 import {
   displayFieldLabel,
   numberFieldUnit,
-} from '../../../../plugins.v2/subscribeassistantenhanced/frontend/src/config/presentation'
+} from '@/config/presentation'
 
 describe('number field presentation', () => {
   it('gives every number stepper an explicit unit', () => {

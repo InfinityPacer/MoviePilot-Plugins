@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 
-const saeLogo = "data:image/svg+xml,%3csvg%20width='96'%20height='96'%20viewBox='0%200%2096%2096'%20fill='none'%20xmlns='http://www.w3.org/2000/svg'%20role='img'%20aria-label='SubscribeAssistantEnhanced'%3e%3crect%20x='6'%20y='6'%20width='84'%20height='84'%20rx='24'%20fill='url(%23g)'/%3e%3cpath%20d='M24%2066V34c0-4.5%205.5-6.7%208.7-3.5L48%2045.8l15.3-15.3C66.5%2027.3%2072%2029.5%2072%2034v32'%20stroke='white'%20stroke-width='9'%20stroke-linecap='round'%20stroke-linejoin='round'/%3e%3cpath%20d='M38%2053l10%2010%2010-10'%20stroke='white'%20stroke-width='9'%20stroke-linecap='round'%20stroke-linejoin='round'/%3e%3cdefs%3e%3clinearGradient%20id='g'%20x1='18'%20y1='12'%20x2='84'%20y2='88'%20gradientUnits='userSpaceOnUse'%3e%3cstop%20stop-color='%232F64FF'/%3e%3cstop%20offset='1'%20stop-color='%232147E8'/%3e%3c/linearGradient%3e%3c/defs%3e%3c/svg%3e";
+const saeLogo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAA5BklEQVR42u19abRtV1XmN9fe59x7X5uQ5CWh6ETaF6BKaRTFeqFRKMWiMZcqRdRB0SgSpBELRznG5TqGAgOqBtHEhBAQhEFhriAgaoUCkifSKO0AEoiIikAC6d7L6+85e8+vfuxurrnWPu9eCiwcxWWEvJx37jl77zXXXLP5vm8C3/v53s/3fv7//ZHv7MdT1tYgAMKFAK4DcMEN4Lfr06/fD15wQ3wPudfszwaAVffa6gb0aasIq5nPf/k6aP9uA8DGBhQAVtvXu8+8fj+4vg6urUEuuAGy0f7O1VdDRYC1NcgN5tr2m/d3r+/fH127rq+DgPBfkU1Rrl5lsbZ2bfm9/fXt+VldZbG6ygKgfNd6AILy8gMo1g9K1b127RrLr9yC/VrggXWtD6ToPUTkLhCo1gDZXkCAKLQQoGrMPTAEoAYABRAAKqDE4D4CBKE+o6rlMDUQAEQQWNR7WReHIM37UTSfUasKAUKwRGLG5usBYUDAeaDcpopNEEEBoICixk4GPRMSbhIGanMxAYHnQyBQ+cZsrpVI+1+BdxEJe1T1kKocFkFBISHYR8pKCDyqittJCQRVCpwlkN2qvEUpx1VZhkJuEZGbqPolFNPP7D0HX1pfl1l321evsnjaBvTb5RW+LQbQXJTUAHD1Gqen7sDjRfSJqjigxP2XJgEizVqiXUSy+TOk/e/uasS91r6X5ve6fVBz+Dy0n68Eggz/3f+uNO9VmO83nyNivgut0bH5POmuR5pf0fYzpTMycx/d+7vPprkGCCDBvK7u8zncvxKYzWck5Mt1JX8lAe886/zymvX1ZoOtrrLYaJ/5/zMDWFtjePnLQRHhq5556+7zVs58dpDiWWWBB4YAzCpgXtdQst/vCkpzo9I/OYIgpPUj3WVxMACzMN1CRAbRvWbe3yxm87nR51P6T+5+R0SgJARCZXMFlECAQgCKZgUp0j4waY3DbEIRQiDt7xMize+z+XySAhF2n9RehCghkOZSm7sXdldHhKIoJghF567qz6vg9UdPHPrDN77xnKPdGqyvi/6LG4Dd9W98bvXcyaR46bTE988qYFZVCkAFCAwIzSK3BwUBinSPob+EflHMAkaL2Z4G3U6m313BeRj3u83upIlUYIwv/33W6OC/m+53us/rPXO7xsZDwX9e9zzaD7cnPNunpUpCREmGyWQpFBOgmuuXa9aXXHb55FJA+H/jDb4lA1g7wHL9oFS//4xT99uza3LJ0jQ8YV4D87qqQITmhJbejrsd3xtBbxBwO73ZCon77EJidJ/D9gE171dzN0wMgP3vdotGpEbSP43WH2t3XdGiGe/Rfhntd8MttsTHg7Uw5ozMHG9EczZYT9OcSMqyWC4mU2Bez687ebJ+9hvesPL3a2ssu+PhO2oA3Re98QXznwzz8EdLk3DWyVlVCRAQJNBsD8rgruEWL7vjMrtf/QOLdm78efTxgtijwBwTHI6Y6DvN8aNwMUFrtDRbmsLYQCTd7f0Tpo3h2++mJF4G3cL398P++4dnokpAl5aWyqqqbpnP6+dcddXyu78VTxC+lcW/6pnV85ZYvrcI4awTm/NKBCVCG96IWfjuwYk3NRlcentW0OxSxfBPH8xFD4TtdzDZzdHDpHmA9vuFUcCJKGgziw8XzEWGOBh59x619+eCSo3+LI0HyV2DxM+L1hh6zxCCSChPbW7WyrBvsrT0rmc9Z/bijQ2pD6yx/I54gGvXWD56Xao3/PLsBTumk0s2Z5W2bip0uxt9sGUCsD7QarbAsBOZRPpKfwYiCta8a++OEuva4XYO/RkdHQzGUzCNGyAuzjCfJ5k4I2c0YP7vBuMYjhTvAbW9j97jdIbfGQ+BWlVFhNOlaXHi+OYL3/TG5Uu2cxzIds781z27eu6eleKKzXldKbUIIsIkqIKJ7jPBXXcDzgXnHnJnRAiZTMA9uN7FWkODc5/iAi97TX26SPd+Makoe8OTbLwRfx4yMYE4o49iInH32RkxnVF1noHsrosUqafTaVnNZs9+w5VLV23VCGSr0f5Vz5w/dmk5vK8iSWoQiIjZmWLcONrzDebshf2329lJrm8Wme1TszUAm1EMcYX0nqY7RgZ3bAySaQwSpZV95N54L5HBwJRmqUWSIDWKA/ozfzjvZSS4tZmJPTKiWMp5Ex8jKcmiCBpCgVk1e/ybr1z5wFZiAjldng8AFxzBGSdOVNcXZXHevKpURELnhaKHaN2xCKh0LthE9IJoO6iP9rvo3j9oQXxGJx7BXpOkC2EjcRlJ90xqiTGX74pYXHBNsFmPDAUge3R2xZ/hGpn1lnDBKXsjEZCqxWQSSL25xuQH73UObgGARXWChUHgBTdA1tdFjxyfX7GyXJ43q+Z1t/j9xYuNnodgRtCW5MTsYLtIfvf3Lrv5n7YLr2S0+BTJVAyZnvvW6zB1+zQBJ43BsAvQ7MK1xqiZLCWOSfzfynC2J+59uHbtNwDbM98+J0bP1QfZtIFoCKGq5lVZTs7nbPZ76+uiN9yweJPL6Vz/m395/sTppPyzk/OqEqBMF57JjQ273SyiSW9sStgHN+4IsGmYGnOlO1+jQMp+t4zUFWwgyPjztDvYu9Kcc882RfPBHfsz3sY2khhd90ZlbMSg9xpdxD+cr97bKNl/jnQxWPNatbS8VAo2L3r97y2/Y/VqFhtPyx8FYVGrdW2NoRK8XAFCKIjSOQ5nvLOn+BaYT6P8vpG8O++smyHNBqzTpYsxyDiI0uThucC0M2Zxu1yYjdR7zyNx7NB7CpEkK+kWn22Hl76+0aan/Q43KWDnJbT1Ejl/o/2xCalVeWqTa0+4mEv7r4+rEKc1gLUDLNfXRe/5jeqnV8ryoafmlQqkQBScYXCXcZeuvwmVfHxgS7uaeZjqHrTN0ePswRR4TBNFCdRkci7DBo+uVsj+PLYpKs3RYI2BkTEO+TvjTeDqH+xrIp0HZZTyaa5AJgFKaZ8TkyMEvaeLDK6YzWZaTJYffJcTmz+1vi56YA3F1j3Ahe21CF/YrMWwS0WQXKYvjqQPvYmmIS7iZyYal/zvI0rfmDSLsCCzQCaChsu7SUCVJohlVBkkGMc55hhTvx9F3H3SpHypm6eN+HP1DDIqO0dHZB9j5dJtUEr9lWZJoVuKAbru0pXP2rxgUobPts0s6aN+EXPuStyha28kcU2Zps5YBG3bt3RpUBKpR55B+rSIZGSpPuhEdE2uaQOmx0n0uIY+BMD+KBFTAaRNOenik0zw6+8nSgmJNAvoPaokcVhvFE0KzRCgRcEHvfnS5S/mOoch3fzNa9Op/MSO5TIArJvFN/6sy6ttFE6m1TeTQkV1cjHuJFNqNUG4+Q4xQSXcOSjDcUK/u9Kz1i9uXH+Q7OLbiD3e1fHfd80btYvvFo1JPs/oWFUfZ7jrj47NNhDUPv6wAbfWoZwWp47rk9FA8sJpj4Dr2g1aV/gPSqDL+OOKnUQRODNlT7QxgE2FhixAjNG4zzDn+XD2Dm4uihdoDcJjA+hawcN7bACordGqNRd2qaAYLyfx7xPGE3QLJ/3fdXm85I60pL7f3nMYdrMSSXxj70XpWuSZ1jcJUQLlCh47dgyIh3UJhFc9k7tlUv39pCz3VZxTGoyNsWhxbtLl6nCVPy64UIztNlsZayqC2qdv7Hv/tlBkI2vApaMc0qq0h8BMd1Ky2Um3+6WF/ajYsq4taHXviY8MGuPPFq7gCjy2VExftUxXMrovKkMxFa1nt+zcu3KfN75ajrbJKrMeYGO1+e8izL6/KOWcmhXbNs4QDbfRLm1HDamVdos9WCuTQCcN4mJwiEQBm0/3pEfmDAspyRMZPAZNbcAGoKZaJxLl70PTKi4Bi8E6wHoU+uC4PTKirIYGqSTjz8J0B3uMmUi0seLSmY2b+muVmnNSynMO3Ta7d4dkHj0Crr+leWq18B7TshDtNyiHapNJY/oIWNIgC4xTFdvaTIIhn5e719SnPq7qOLxEh7YR1ymUDOZAovZtXOTKBYKNnxzyctemtlfAtFfQnfM5FFQf7SexlD2mUq9lvbCvjqoqi+lElpZ5NwC45ZbrZDwGuLB9cVKeH0JzRbQPJbRu1pZk7UKEtFyZuChJARR2t2n0gDlUEQnXY5fBsxgYlm+udC5ffI+2/T0RZo4M9nk6x/AANj5o4yLNBZNid2r8HblqoSYecrjPqHLReuPBQ8DEVOZzRBgCgKBn2zXOGsCFgzntjtxk9yBb1yVRNy7Tu3cLTwt0yJx96IMrGwClBZ9ocaku9ckhihntNls2tqXhONtg1IPwsQySxpO/QmaRTWNwNCKfOYEpIsqmvGk/Yui5aIxbIAHMZrgrMhaQRY8oMaXZxeLQDDbVgsfj8XRgS4lq8FFxh0hgXiCTXL83MNKUcXOwMbfQ8Bg+E5gl9zQYTwTvsnAvDI0aiYI942hM0Ga7kKPgUsSpb39MiQWGZLqYmZpI95hUR6pAYwZAUQGKNDYW9GCLBBHLYSdH5VrxHb8MnLt7CiFuwozi/rx3iXaj9MFnvBsl07I1ZWEPKx+KKXETaIFXyuEcbQWIMEeKSLT6afGpgaqj4w3QN5VM3cMUWmwgzLb13HIQZls2AAFOdg9EGJc2I0KKMVnm0kEZihsQuN2bpmp9uNGlc9oeO5LmzsmC9bUBjiB1nDnTe4y41Bufz5JC0eHg36bGgag9LQYuZ0u/piAkMSpIAVAZI4vb2CjquNqlcMbUeZ4uUA0h3/nNGkAIIQwwOjEABckje1w5M2pSyMACiixcYthT0/FUzDeBai6oa0WYAtMlly4RMZ+g6/ePACf8kxpIIS5g9AEk8rtuIJlItq/QB5A0gJSeD5EBi1iMn/veIYBMm249RE3ylR0f2Krkm0H5GEC1IdXZnZ9JPZDpyvU+a2QNkl0pghCIqiJOHgfOv6fg/HsINmcBN39FcfutwHQFqLV9FBKndYg8jCBKWxvSTWQ8sMWWvI2kWYpvXgk7tk+LxHEex+ISvKdjjPix1xNdTu+MDCRNHA5BRhbdXH+3V3TkxCpHcULiO/sSUy2Yghh9TZGOh2cfrLZ18aIATp0EJsvAT/9iiR94lKCcNL8w3wQO/kWND/xZjaWVHCjCXo9EZWJE+XMG4u0ifBhXPGq94voMzph6N2zjBYnMNRMUMjVKGUMdIQaZSYyk9seb3Yd1nY8DRwwgJGRFyaZiLuUS167yyFmyR64IAAnE8aOCu99H8FPPKHDu3Zr313Xz++US8LinFLjpq4rPf4rYsTtAFQ55bICjYgAXg+WPklBcopEAWqIyjVh/YqL0JLWUOI9oQ4C6Bubz5p2hAEIhUM27646/OPAZDXJJCMkcvXDewfcgQrGFLOC6zlpUoSxGLSve+R75K0kv3pIzaIzj1Engh38i4LE/IyhLoK7ah9NWJ+oKKArg4f++xOc+XaE2lbe+GkFPwmCKvI2um0nJGYbwGZ/NuRzcpWhiCCguI+k8/LHjxHQK7DtHEArgjsPE4SPEykpHTHVQgp5xpEPWRUTGkDOCPiYQxyRagP3KewAdUiwRD682XTVTtafjAkStW8SBWyiAE8eIH3lCwOMuatDDWktipSE0379jNxAmQK3Dd0A8K5hxz6A3lpZ+K3DwTYn4ivCAFvr00S++OCBrvJNFGoDJ5inBjz+mxGMvDDjv3AYafugw8VcfqfGn761QAygKSTCRaVchxTOkBBrjBowxigCFhG8hBjAAyOF85DiD1/S81XoIMRGJAKdOEne/X8BjfyZA6/ZICEgQtYjQOo3WQyYDymMJOztuy8pRrSIu80Swrh7Q0tcB0sohLZC1xyMYWEj7wfNK8MxfKPGYAyG6l33nCC560gQPuG/Aqy6do6ob3YB8c4xJ148YJ6TA8ChcQLgNSFjrgy2PXkcBFF0NX1IhB2bOWgJVTfzQ44YChwScJpdBXPP2xROJYd5d69nD1yL6lWSaPEm3cvASSgPmIIcCSw/AQN9fAIhjx4Ffenqz+FVF1PXQHFIVzOfEg/YXeOoTJzhxqnnklBTbkNx/tjcx9EMSLmG7dqdmug1eQOHXYKiBpouPNEfNBYvt6lcVceY5Ad/3gJZSuAV6qox05ygOeWxqDshUHtNS8NhOkoikYg0h73ni+z52HHjGz3aL37j4EOJCV9GKPlz4IwF79wIzYyCkA4Aaw1XTdIIp+g5Io7Rq2pZwto4KRp1pWPiumcTEj9Qy6dKmZoFqFew9S7C8YjSCgHG0qEMKabTjmZIjMg0Rj/ylZACpjEvAENdC5mCJA4Q7vs6iAI4cJS56coGf/ImAuh4C2qxRgzhjL3Du2YLZ3Bw5jqk8/Bsp09o8f4tt7Itv7ectLXPvlg2gqjQiLkQYPRMf+HQjrdNLwnpVEpOl1v2r21O+vZlJOWEeCn3axQGdLAJX/eMoWTXb+7fUq46X4MEXdh0CceedxFP/4wQXPalAXbMPYhN3aHtZAiwtt3V/p2eATMd02DUc91xO1AIAZpXcvq06gEjsCuHYturLoCbgs3i9XNNElduWp1ArLxPVu2NEbAiNm6yqxpBrbbKOyURQFAJVRkJOfYFLMvItQIIujjxht/NL4PBh4Ak/XuBnL2p2vogs2vrm9iUu2oj3fCYQJDLsa29XKTZCCcxn2+gFlJO4/98VNOg6XEyqhTGtmxlyBqMAP+UKiIkLxMOkxdHCTdAWCqCqgBNHiaIEzjgD2L03YDIBNjeb1OvQoRohCJZXxEjOxGSOUQQR8yXjsgQOHwEe+5gSz3xGibrWBkef2/kjRiFgWjKGL3nT6RyM8SdSRlJornPrvYAI0mVr2h6TZqPvdmeoza1E0mwitgCfeHgvaV6TyAuIAaQUBXD8OLBzl+DCRwb8wEMD7nZ3wa5dbRWuAg4fVnz5H4i/+Zjis59r3PN0qanQITBm7lCy3MOoxMtm8e88AvzoIws85xcLqNKeYNENSZRSxw9amXYjPRB1rDwszJe5/b+l4K4tG0A1B3Ti3I2MIHeZIlni1q2pXrmzqVvEEIAjdwKf/jhxvwcIzr9b46qtN2vgYYM19s2O0FTaHvqIEk96SsA557i4QRsXfdbZBc46G3jEI4Drr1e87W1z3HQzsWt3aFI0WyWUHAbRHAn94hMP/cGA5z2r6N8sQdJdH5FiY48jndhEgqiWbMyQTWFlHE3dvb55Sg9vOQhUNQYpMi5QyjRnHkqqSAImy5qxKdl8Drz58gp//KY5rvgfFW67le1Z7sESsT4QhNjcFDz5ogme9Zxm8auq2dX2HrSlfdV1888FFwhe9rIpHvygAkeOEVJ03yUJPgGGo2DP/CNHgQc/qMALnluiCK0AhF/8LRKymdQ0pNEQ0Bh21xmTEintPPepMhyloSy2ngaWS+5vZICEx5U2xmDQLmXhQPpQZkQezTMKATh6BLj568BZ+wIO36m4+euaHoRi0k8QoQBOngKefFGBxz9BmkWvgSIMJeRoDaV5PYTGQHbvBi6+eIKHXCA4coQoiraWoRyUQDplT/NZRQkcPUbc776CFz2vwNK0WaiknpE9CxaYgog7cpjJUDjKZWAW9TB4n7F0NJ8G1upq+CnDNULpSBxFnza4z2yOLohDkjoJvI5fKIETJ4EfemSBx/24NE0ku1in+QmhMZbJhPjV502w/wEFjh1rjEoj5G2crRQlcPw4ca97Brzk+SV2rKDN9WXxzZ3m5gcVsVhJRLLyd4wUxzyotCPPdE2lnq6m2zAArUwPn46lCs+JG/hwvaKVjBE/4kaGlRpQK+Yornhvd7MAdSU448yAp64WJrjmArebPnwJzUNZXgZ+7eIS9/6+gCNHOewUkQiPWLQe5653LfDSi0vs2Y0+189+U/vQ00uSBZeW39XqF5hMGcseH+Gc0bY8QCgxKHM57Rq60opnuMLUxnOQ5+wjGAOWSAp/ltAsxI8+SrBnN6B1634Tl8vTnr9dn37HDuBFF5e4+90KnDjZegIOhaYiACc3ibPPErz0+QXOPKNbfMknde3RVhTjDz4b7eeKaUgbWGLYQl4Mw9dsuurpXLepEeR7/bSiD5HuDxwDR2JendO2ieOFGNSYtFUz+gF1DezYJXjYIwoTlY8sdhv8Kce9QRcT7N0LvPSFBc49J+D4CSJ0AtJCnJoRe/cIfv3iEuecbdx+5nv7uOY48MpLK1xzbd22hvPPGGBSL8nt/BSCx/TPtOohkqCht34EIG1CeM6aJn1xr/iREizj6tbQnYi6eJkoFqa3MJsT550H7DuneUsIvmI04AEkNI2YIix2xZ0R3OUuwEteMMGZewM258R0IqhqYGVZ8KLnlbjruYjr+x5Y2l7PyZPA714yw/sOznHNwapFvKe6cEMlULJC1cpxVLN2hTC6VrV4EO0gXbNlA5hrGBaDqfpGisBh1LCJVbcGzrtGamF03b5Y6SK3ViJNiff880MTyGm+1NrXFo4AH/6o4p+/2pzVi0KEzgjOPw/4jRdOsLIC3Hp7jSDAS361xL3vKagqf+b7ur5gNgde9QdzXP8lxdl3CS6mGLuvtLfgd3RssxItPGQoPceGMxhC2A4xJIR8kySJSJkaBVz7deiTj5/MdFJt8W6WKC9Xbc7s8aOrqbrddjvwilfP8bWv19i5I+Dnf67EYw4MTRpLcvNGcPe7AS974QTvfG+Fxz+mwH2/X/q2bq6sOwyPIF59xRwf/6zizL0Bx04wuh8RB6+3wyIS6RfE2C/fwjakEZh+Rm8YlDhg3w4krCgMqUwY4fxAS/gwnPWRwA4Z8SNmSqVpEJQvmEAMwDFTVlZt8IWf+rTia18nzjm76cn/4VsqFIXgwKPcYuZSRAXudQ/Bi583bUq12j4TOHFHDLGPiOCSq+b48Mebxa/VHWNkIrIkuQ1gEUmSQsojEoiM1wSwgLm0BUQQEulDyzrt0ptBCYwucMlQw6JWq+Rx7IsuO1H2XpzwzytiMmn4BApgeYl4w1vm+PinibKUFoqWDw67oK2um8WXkYyi84IhAJe/pcL7/7rGmXsFlXJgUdP17XPpmiCluzs1Mk2CQolBuE4tpI+9WqRRtZ0soO4HNDVBheXpD5IqOf0cGtQQXQnY3ghPiwDzZ2QWwrXAAIow6AYpCRSC6RJw2VUVPv8FRVGaGIIpFrHLnUWQ6+70i18UwFVvr/Fn769x5h7pH7ShCGRCBomcg7qijsjYscueL2iP15zmMGRrzymMNoNcDcAu/tiQBzrRBGSp0MwWAiya2Ou6MaMr0EvPZUFaTiaujYwlNB2p114xx5f/sYFl1bUBj3DrKvvaLv7b3l3jHX9ZYe+eZuRZjuiZ9sMt4mhotce8BKs0Bpf4IfEMmmFdqVE2L8vtpIFB48CEiLTwBtDHAFXyokaJqqYXlXAVrJQJLIks3zDMgaMxQBcNR4qdbQRe10BZNMOsXnNZja98tTkOhvN6pJnj0odagbIQvOMva7z1T2ucsSfEok0uC/LagjF6WJxPkzZrisWi4ZVRshJ8jHQWbBawrSMgFB40SYOnYyRqlOafErdUkyBHTP97UbGWDnFEI5ggzr+O9MOCxLMAQNQKTCfAnUdrvPqyCrfe3uzkJKW0xmD+3BnRNQdr/OFGjd27PJKXyVl/usp0xEEQy4Z2MPwoXc6Jv+bRTbrdXkAIIVb4trIv/S5lNkAT2xgik4EQXl8PrmtF5mLkeOQKk90peQx9hLAd/q6qgeVlwe2HiVdcUuHQYbRwscXrVddAWQqu/Qhx6Zsr7NwpPc6R7nhgRv51cSkYkefLw+/dwIicUogFs5JDPMf8pYziATQ3dqXDxNnWrLhTvtMFECajYchUcj0RmpCMB3D8wggWJZLPPcUrVSESt661yQz++aYKr7l8jhMn0PYA8u2EZvGBv/54hUveNMPySrMVNPPw6YZLns4DKF3J3f7PxQ79a0Y+1hd/hmc2HCWTqe7cVilYmer+KFIJdToF0JS0kU7WyD2UlBkrUVoWTQITczg4dzLIpg+StNFAJmNMVQ3s3iX44j8oXvH7FWabQBBJ8Hm1Nov/yc8qXvW6OcpJ0wtQr6HkwS+S72uM9e6GY0QiQEqktxB5YN9GSj+7j4kYqq0bQK2JVGvWZTGlfotDz3R1gt5bhDT4QZapkxmnYs/BfgjP4hA+6l6SCQdgXgM7dwCfvbHGpW+qoUoEGVBFVdWc+df/HfHKKyosTQVlMQR93X3RS9/L0FFFBn4eH38D4inu9Uty9iey9XSeQ2Lp+e4KZvU2JGJyM2n6mzSDCfzAQ41EjIwiZrurUppl/vxye7qdyupg3JCBxTpC7WaLI1SPtZf4GqoaOGOP4EMfr1Ep8aL/UmI6lbYqSnzuRuJ3L6ugaKL/Sk14xu48ThHQ6iahJbRHcericMILmclqUKa6C31DIOUymjqCbIccqjbVi+SxjNiROjmzlJSABFeXLRtnWqAJrUNGMPYLDlo1dKoktjRDpxCAWQ3s3EF85FM1vnEb8ehHCnbvCvjCl4nrPlqjamOAfvGjYMsrk8becYTzmrB4Y9i9Ias6yftkImlECImfh/abWLdBDw9yVjpEAfEsHbHatW44kpOESc7JfAF21I2Lm/nXa/Aye5KkMaFjTafRNtsp4oKdO4iv3ky8/u0KsoaIYHm5WfyasZoYMlDvARTVikEEWcx5TNTE4ils3Xi4WNqum26em1aUV3GT7dDDa8rR/iwKOVGivDIRE/kY6Rs9XfTWCDy6kWFGEZQjCtuUNFPIlWm9TN3Qt8mpeaR5OymYToHp1I6LG0bMx9IyjHUTknSOCwuxthuojrmsI2JVnhdI85cpfjN669aJIbXqXFmkGn+uUNbxB607jAWhB60gsdO7kva2RGpZ3SIKUhk0JnzzuA8tMtJEchBjr/bVxyqGom1TShGXGRGRIFV+DrErwMhp4q2EgORQwLYLOdJhzb4uwHTCM7ahEjZkB2miITH9y5Qv+2CRaQygTDS/U3+ozKuQJlPDXY9UJFX7amMO9fgE5Ae8UTqChkSSNmLAmH072oNe1RThxGr/5USnxuxhONTVhwsSl7louII6Ugz097c5lzu2gweohwGOYzPvB9Ck+LEl4iDkFtESDM06yyuM2TiLxr7ktnwyF4jsyahdikrje3uwpUgyzyfSHOhxp4KTJxvSqUgjdrFrZzMsIhJ8xOK0NqEbeqWwXmRyRIeAi7UKosBamwbfNoJA7unaqJ625IUaMYIWtvMAkwkAMtYOwuiOoZsoPtrmpO3VM6sDEIk9eBVSI7nlPVkIglObxN3PD3j6T5dYXgLe+8E5PvxZxa5dnZZhq8xJMzTboZVGdZYRayr3bXDmFc5Gh1f76X4Aqu1kAbOqYQjH55nE+ldRpG/q9W2OpB6ZYrp05HgdQDPtoN5zLMgUcuJ4wwRzyeoJ23aD9q5WorJ1ZyVBGnWTHcuC9RdMce5ZzbU8/MHLuOSPZnjntRXO2Bswr9r7DZLIxo2IeiYDo9DNQLbi2HZEjTDbao64mQa5BQGWl8I2mkGQI3GxQrIcAK/MHbcgu3KsmJEtGTKpLw1J+oDs4AyrRSgiPtcZxRp2swfUycHRHHW2yJJAskVw4hTxb84Fzj1LUFWKqmrc66/9whQ/9agJ7rhTezjdoJPI00SB6aTR6M80estmknlOJUycetpo3f20R0ARQm+9rfmpn6WTpChxl3CovDEZnpx6wPxkb2RqCKlCXo4c4ytollvPvJR7FmkkRnK9gZjdegg4eUqxvDRsDFXgpc+c4MQm8YFPVA0msI6zhvE6UNowoNcGsFnACFsYmRHz4BA4V9W2iCGamVyRn4Wbm3Lh82ELCGGkLoIFBMcM1crn7WQK2EgGWTPV1YkGSfkB1OlYF203wHQquPUw8QdvryESWnjW0Ln7redM8OiHTXDoWMMjbGRfxko0GFcvx8B+jmoJYxlSsvhM1qHv72yZGEIP2ZK80LLdN4y1IcQ2gjD0zv22zY1+S4dYDDPyFsmuxHh5SSXGrGGYeYe5EbL+XmsCy8vEu6+r8LqNCkVLYQ9tpFwUwG89e4IfvqDA7Ue0F4DcSiEgypQMokptTSE3UsYLdEWaTgNGc1vEkLrO8NU6CBjzQIW4o+emWdGNhueoCWXRNHTt6dTVeQ/ADI4+5jra2XuQRSmVRF5OKTjrTMHbr6nw5vfUTWdQWy9MYDoh1p9b4qH3L3H0JE/PV01UT1MkNs1wCPXP22M23LjczjuUxTa5gQnKNNIK4AIpU0bDIvtJmBzr97uq4miZZDhKesFpkYwHiOvmzBgXgXzODzg9MSbaw0pgXgG7dhBXvqPC26+pG3CpDnDyHSvAK54/xf57FThygqeljqe8SGZnGfaZlNFd8Abqj7ROVgdhuwYQATtpRscxVs1ItGvyo1XshI2U/0831IlYPIiFmenQnnFnRrZHDSUHIA3xNScK55IOeujkas7YQ1z2x3O8+zpFWYaoOLRzBXjlr07wwHuUmM/RVxnHXEISBHNcvi7NcIyBaoYtLNuEhRcTZNi/kmHssEfqJoQQxEyY5PUkgpEkkIkicUkPBub09ySdRp6ybjKAjExgGCOcGEnhdLyJXTuA//6WCv/7Y9pgBWo2nAQlzj9H8JvPnAxda+Rb1x6GxmyL3B+uVhDCDiAY+tC2Xb053yYxxMqr5wcaDaPV6EEgkZgjE8IoMkWPUFjZWIlVusX7GDEj6SUrkD/I00iPsNVIYEqieCDnrZhMHbMBJntxx5UV4nfeOMdff0YxKaXVCWx249LUnL8i4+1gX1k1M3+yEvXRKNuxtHiAxG9PIQR2EnV+Hh3twOQFTpscDfeGYkQB1BVbOpb0jFofD/aDEsNiWlfcjXQjXMWcmQQ8X9kXYdTOR4yC3M4TNAIV5USxduUcn/piix0wRkDitOolGknFDAQbOA0GdQMr48xnmBETYScDsLSdSiBCKu7Uz+dxo019cJgbMWvdrO3ZNwodxBl7BY9+ZInZjHj4vytx/3sHM10krdcnYJPE7Q2NG4IReDOqqI0NrTaeCxA3E9Ht1vY4KAsBRfGyy2a4/ssNfLwxgng2UO7U6ps/HNH6y4yht+lxHK9JVgE9hG30Aqp5Q56IgYjMRple+y4qVUbj0CTFGRomzy/9pxKPf3SBc+7S7CDV2LszF0czjR/QjXHVdGBT3BBidqiTjQskO84lN8Wzwd9PSuDUpuI3LpvhkhdPcZ+7NXjD4jS5Vv7ZSuraPWQw1gs3Wz7u2SiBeV3LtphBIqkQdI7VSmcgahor2ShUiMNHmwUO5jtUifP3NYtP9cScmJ6OBXXuTo79n27STN8/xtvnpOt8g4iuQJV4DTMbsK4b4ecjJxUvvmSGr92Cvk6Qy2jEkV/7mMupk0IkJshqPG4vArmKKdyZXTOvtwEL7wQiBldvSR8pXNzPrx0TlqiVKCfAbYcUt97BZOS61hzAFSNpEnKDh61ESwEcOQZ88gbFyjLbhy/x3APfDs6omtZ+uqn4DIRpPaE1guUpcNsRxUt+f4ZbDjFPPUNMHR/TWOhgbwovfOhrJGK8xgBl0/Z57tmBfdvWCFJb9JH8ICWF6fglfMGQ0MRC0Qgofehjjahy92BEOvZuuv6dPJ04+pjlFwxi04IrN2rccSexNImJFHaad8pdHAonyhSEQiNkkdURNp9S1cDOFcE/3qx40WtnOHK84x9yXC3UaACqYHQKWaoPkJ39nB5ddZhtjxrGtHzay7QsACQMA44l0tynUfBYWgL+4oOKm77BBmpdcaHOnSeg9PwDxkOsikJw2f+s8L6PVti9S1AzRjRrDq6e82JIYw9Eujvm4ZuswmYas4rYvRO48Ws1fv3SGY6fbEbFLUC8me6r9DlxlH0Rkf5XDqAbDaY01PM7N4vD2/IAtSKld/P0aJR4jlB8dmpbP2jElIjXvG6Om75JTCahN47cWVm0vP6u7tDtJpseFQVw5UaFP/1Ahd07G3UvX4OIhBUkVjwDFo+CoTiVVHjZXEn4AFUN7N0t+JsvVvivl89QVQO4FH66N+OJocwMqU/L75ItJ8NXFAEItdheMyjhoEu2G+VbxYlIgSsWKYlaiUkJ3PQN4rdfW+Gag3Wr22MUStqaAEAcPU7MK+n1gb5+SxOnlEUzdrYoBK//kxpXX1Nh7y5pZWG6xlUMRLXdv9jNixkeQQPqZObstyN0DI2bdlCt9OiqM/cEfOjzNf7b6+cgBEGafkJneEdPNZkCPfwtYlRzYCJ1BS4DdEmEuSQmhmxpcKQfGqWIIDixi5QBjB6JGTBnsR7wQdRs5gYdO0Fc8dYKH/yI4ImPLfCjDytQFu3OL5rFfNufz9tdE7Cyg7j24xXu930lfuxhgqPHiHd9gPiTD9TYs3vY+Z6I5kYiZqaDSEIwjspEjL0gI1ArB54gU4h2VQNn7Bb85d9WWFoSvPyXJpi243Hf9eEKN369xo4lGcb0ZLCMfXXU4yEN3yFbOONiiZg8KjjYQWt5MDfd9E0ir3bZ49N8IUWanR4CsGeP4B+/Brzm9RX+4jrFDz5IsO9swbHjwIc/VeNzXyJWlpsmS+chXvuWChvvExw+Chw5TuxaGSJecKwySTOEmY6NFEu6EWnen1CzMnVNekIMmmqhVo0RvOcjFb56K/Gw+zfgkvd9osJ0kk4LQ+77vesfQRJ5kIkAKGRkOswiyHI6MdPU0aOld0rXuVm6Ek/hjIIuBaZTYDIV/N1XiM99iZDQHBVlCexYEdQ6IONDAayUwDfvaGKlnTukB5qM6EtkahJiB7YMs41zSluZSi5H8PdKGM0EO9to6BJ+5u8rfOwGIBTE7h3NkVB3GYWbfQzD+RMXmUb6wYjH6biaEGpFvQ1mkPkL5/YSaJXh3Hsp0xSsIQl6NdIlZtM8WVoyEzlpH6rBEBIoSsYNkwjzR0P2sL1zOmnWmIipprBJRxwBmR2WnS31G56BHe5cayM9u3OleZ61sll8m9oyT3hUchgR4+IYMd7Wzw5m05PgdgyAUR88cXkSoX00O/CIjr7sPENIIWD0Q6ct4DcD8mymd8aETXUKIWqHXPnh1m1ERcsy5kCFH8Ph99U/y4Egk5Z2cmQKe+OtmJmoxgFvkXQfERNkPbQg4k5mgIKh2EYvQKETKxHfI21F8mjVpDgnCdU51cGVeEYP7bh3mmEUzrNofAzhNFNaxOkO0DXerb4ByOEM94UX5ulx1vmKZGDzTrkgGrLNFF5Npx/QdRLH0MW0KDjJk3UXzQvIawUL7tq7nKhY7ahPjjOQ0sgwis0bGhYckZGNpc7Q4g+0j/KYD9Y4+PCYUOHg4BjmGyKhtDEZGTc+po2Z0XhGkYk58iYRK90zg1tl64aZCmNFI/skDlLFaR/0whLbSQMFN3kuLawqFZGVgrUP2+MJU7k4PxCBSeoY0dGYL4yQY1KRdAHeguBN8piFRaKYkWYw4wGPWboW3c71SF46jUTjvSKeu3VZ/ZE1AjvkYAxzHZkPlT0CJMw1M7MpOzIumrHLtFXKWAGbGfGGBHdg25nOG0iyiMz01m3A6eTjmKdx54+pFKGT6Bq7dNCf6cxpIYsT04imr5oov6OqiWOAjHVa4ReKQ6WTeuy0BnBdFwRW1S31ZNKe+hnpk84jkAk7RTppsojrj9T95nawyc/p5GHEsYkzLaNYqGqEN5InV8a1Dp/v05/JGCdlZhcjoq2LA8OmGLHO3Uv7hTIy2TzRUkq+t1mpQoDppLi5WeTrxg1g3w29FuzNdQ2wXX9xuz3bFGpn3IkwI2+G04yHZ4J380xXL1YB7wVysjRRLm+FrSSms7tdRfdn33lmJMxklpGL4h+agdturG4mqqOLEun4X0ysrImPBMmGFKGiKMMhANi370KOGsD+/c3vTibL/zSrNysJRdlDH7uHEoZeMyB5tTqJhSG46IgSPyRiJJB0/o3M6OIIs82SfsElFowEM8RKOpDIqDxLXNnkSEDo6wKRzHvChGI8AIIegyCLeWFG6aRdfUJC2JxvzoTh6wCwsR+n5yqtrnF6xp2z66WY3qeuTilC05u0TGClS498D93k7jRzY9WkeKO4PEqWGBHLprvagyBB+kQpEZlONdHhehbJraTHVHokykjQl+NV2gygm6UsYgDz9pkyrT4OkrTGpHrhi6h8qTJZCfPZqS/deOOO/Tgo1Wm7gaurLDbWZVaDnwwFSIjG6ZAFTDgxJu9KnXy8RrJqiOjPi5qxhKWkWcVwnlYPf5hw6mbqMFYPTXX2M8xzWZA1cFFrPK+/qOQA7+oh/TRda/Pb3vDMp2pWOJ1N26MInE7wtzgo1erVLE5rALfsbz5GVd7Tzb1gBvblO26RPLoXl+oWEDnSg4FgtztbwQR42nP8FYM4YxATGwyTxZNOXnY+b0oA4YIFHP+HcRNIJDlCrBpZ5KmYMRJaiWPJAj3iY0NM5iROy0ElCETIDwLALdenHj9JAw+uN02Dup5eszk7dTgU5RmqFSEiPS8vQRuISwkttMxygcQBMBhJnalLOvtgkw7wIF6tJC6IxO55qCeIk36hj0WYBoLi6haxFmAeJkcjGKVwFUs/7SujoRAJnYiM5q2dYIY4ocreJmVS1LNTJ/bslP8FAAcz5aBMcUC4ejWLt1wmt0uQdxfTEto0q1zQlzJbc0w+ydCc4hGyZvHpYNE5LT/xQEhGnxtNLAkyTEB1zJ9Fu1ojQYz8+2GIlxag0U3zSgtlrjk0QHUWjHeJNfXEWRAT2FxEDdZiaRkV+ecfefXOm1ZXWWBddGvEkI0WyLAZLt3cnCsggeJ4/C0rqJ8qbiZz5CZXeaiY5sikkpZOI1RM9x2RerkbvNiPCk9VynWBe1c3aUNGBbBiBk80C4mM+IXqQDA9vT56LhIdh/EREiIsY9SnkJjLmAnrBVpjucRrtzzBPAkGN6T++V87+a6lleUnbZ46WUNCkevpx8MeGHfbJJ4QElcOB/XR4cxjiiIizZCEXK+errIWs2U7rVwJ5to5QLGt5qF4FlOmzj8ojTEb7ffa/l56nhkeH4bPsWeK5MAmDpya01Fof68ulnYV1ebx675wxa5HY40ht/u3oA9AKafht+fzqlYUVDZCr9bt0gASc8Mf6Ll3HBOViBm4gzgjs8ITfhStDe40Cfr8MGuHw3eBo2a9g68RDA2nHKaZkIj4DEeRT0RjzMjXRRqDzM1Z6iDxXZQoAahnuiTyGwCwesP4Rh81gI0NqVdXEd706qVPbZ6avXZpZVqSTYAYpXTdhVPy06toXxvQQ8l7DeGkX3jjkiOaOTNpliVvMi1ARQANpIY5pHhtVY2WlzfSuQST9C9KJ3N9BmGmaZR29KLuJRZMm2ecKlJZh6UdRTWbveEzl+/8OFpPvu0joLuV1VUE7EcxPbJ5XTFZeuRsdrJGCEVcQ5cEjpyMl8+IISITRUdAj0zgaVMvkZQy3Y9qSUbexL17j8AVjPQoGJeTB8ZUfASM79Q4SGPc60umsvbVQI6xo4YWsSSIJq3DdGeh1eaNurny8Icc3TixcfWqRmqV2zsChPv3gxvrMpvN+fRZNT8k5bRQVU0BoUxUNSx1POolMBd5Iyr2MCPyoEiHItvcWqMUjy4tdYggRxTxnx0VfSQejsnMcQJZoJpGZj1W1K8HM0JymfkDDqU5vFFVwkSg1Ymp6H++8Y1ydP/+VS5a/C14gDgg/JkXnvixSTl5P4FpXc9VQggesRLRwzy1Oce2lRw0zAWCXSMnM0LPD1Qe6/zFIxMYy7P7QQtReTvVEI69hAz6g2Zgc4wOGjo8NDI5VuRKLLzTPjMrhs24DT1My6FKKCHFNOjsxFO+cOWed62exvVvSyRqY0PqA2ss3/HaHR+azWY/JwGbUkxCTdYQMxZerI5+yiD2jJyBbWNSSHH0q6gOwNERM0Q65Co7lbubIEKnfZQ5amDn74yyoKwquGX9Mp7e3a1YJFGH/Ji89j2SE5FGsvFVQilFORGdHfuVL1y5510H1lhuZfG37AG6nwNrLA+uS/Xki48cKJeW3xPKyZ755skKIiUciYFResYI9xcdCcw3XrhASDkaUoVhJpDYopKrz6v1KpFWkAxwbHHTuTMpYFIMY9ykkUw2wNi5JPMPBG7Q8NA7GzCWduhPnzqzKsrlEsBc6s1fuP6K3W9/6HM+MfnklQ+bY8tDcLf50xnB6os2H8yJvLWYTB5y6sTJNilou4aZB+M7bMoUexf362Ot3Zi5I1GJOSJUSEZlI2H05ti/bWiWqJ+kIE66nvtQG2i1DKyB0eX5NJsji2IVNygjhYFDqRBwsrK70Pn8azo79vNffP1dDnZrs5313LYB2JjgCRfftmd5suvSolx6hhKYz0/U0qgZhGTmPTKy8yaP6IgldADSnF6hjRtkBLsHU91DZo6RFa0SxI0kyaBwOQoMZUQIlQUMHUZ94DyjR8R1kWy8r1QAGiYrJaSEcP5O0aMvvP7ys7564ADLgwe3t/jfsgEAwNoaw3pbXXrKi04+gWX5ymJS/tu6AqrZCUKkZjseoj/BRVKmrm34uB2ZSLjCYvbFzSJIQacDlZz5lCrTvJIo9RuMQ80uj/CJGFEDFacyEqPe0rk5FIcIhi1CKIAQyh0BRQGdz74YUP/OFy7f8dZmR7LAFs/8b5sB2DrBxobUz3nOJybf3PPgpyvl+SEUDy0mAVUFVPNTULDubkf7EJiDljADKWx7ekJtYZBsUA9CEfZBW2je1jwaleaPwqZtLYRpXyuRThcz/YZIiMFE8L2lCWXAPnZ/Jz0kd9BxYj8YSdheb/f7g7yuDHZH6TIMQfuuvvwrrUwKRCCFFMsIZQnWCtb1ZwB9+6Gjhy795lvPP441Brwcp031voMGEB8J3Wc+9TdnP1LXfNK84k8SfMBkabmQVnmsrlLYmMXFRToENMyjYJCyDtSRK5vWuR67h6iLnZY6TEgTNw/IAJoiNFHfaWxdXW88YbgPodH06STuzAeJHQ3DeBAq58cVCDeS4aNA8cdf3Fe+v6vpbzXN+xcxgN4bXI2w8TRzUWsMT5zhflJX+2fz6iEUnhuA+1B1F6W4qa7qIEVAEaRWYJ8AnNe8FYKiCFLXte5VyJkiUAG+yYB5VYEi3FEWcraSMq9wh4JHgyCEAIWE3bXilEIrJaQMzeOulecS4ZAIplQer5QoSlBC2FnVIFX3SpBvBAGVFEK0rmUJovuC4GYhahDSjgFYEcE+CeEbmzNuFkIpJii1xrlKFJNCDlNw52xOEaAoAs5TsKDyeCiL22ZzhkDopMQ+kjsIOQnVW1RDkIA7KOGfA8ovLJX83H1/bOlG+0wPHLi2PHjwwjrKTb/LfmR1lcWBNZb43g++XR4WqyxG5qd+t3iAvFdYW4PccAGkgyNdCOj6Ori6GhehOrSq7Vzt3w+ur7evm/fb19fWIDeY39nYD+a6XxtXQ1efthE29q9Gf9+jZF8Orj7NXVPzf4pVhFV/resgVjfCKlY7+ETzXgBYg6zeAMm9DnttVw9MN7TffWD/dQJcCOA6HMSFinXwu3m3f+/nez/f+/nX/PN/AH8vHOlN0RtOAAAAAElFTkSuQmCC";
 
 async function loadSummary(api) {
   if (!api) return null;
@@ -188,7 +188,7 @@ const fields = [
     "label": "重置数据",
     "group": "global",
     "kind": "switch",
-    "hint": "将重置所有待定/暂停/监控等任务数据，执行后自动复位",
+    "hint": "保存后将重置所有待定/暂停/监控等任务数据，执行后自动复位",
     "risk": "danger"
   },
   {
@@ -949,9 +949,9 @@ function normalizeLocale(source) {
 }
 const messages = {
   "zh-CN": {
-    "config.changedCount": "{count} 项待保存",
     "config.changes": "本次修改",
     "config.moreChanges": "另有 {count} 项",
+    "config.runOnce": "运行一次",
     "config.save": "保存修改",
     "config.close": "关闭",
     "config.cadence": "运行节奏",
@@ -964,10 +964,12 @@ const messages = {
     "config.notScheduled": "未设置",
     "config.activeDomains": "已启用能力",
     "config.help": "插件帮助",
+    "config.aboutPlugin": "关于插件",
+    "config.aboutDescription": "多场景管理订阅，实现订阅全生命周期管理",
+    "config.viewDocs": "查看文档",
     "config.plugin": "插件",
     "config.settings": "插件设置",
     "config.selectGroup": "选择配置分组",
-    "config.unsaved": "未保存",
     "config.done": "完成",
     "config.edit": "编辑",
     "config.decrease": "减小{label}",
@@ -1014,9 +1016,9 @@ const messages = {
     "section.custom": "自定义规则"
   },
   "zh-TW": {
-    "config.changedCount": "{count} 項待儲存",
     "config.changes": "本次修改",
     "config.moreChanges": "另有 {count} 項",
+    "config.runOnce": "執行一次",
     "config.save": "儲存修改",
     "config.close": "關閉",
     "config.cadence": "執行節奏",
@@ -1029,10 +1031,12 @@ const messages = {
     "config.notScheduled": "未設定",
     "config.activeDomains": "已啟用能力",
     "config.help": "外掛說明",
+    "config.aboutPlugin": "關於外掛",
+    "config.aboutDescription": "多場景管理訂閱，實現訂閱全生命週期管理",
+    "config.viewDocs": "查看文件",
     "config.plugin": "外掛",
     "config.settings": "外掛設定",
     "config.selectGroup": "選擇設定分組",
-    "config.unsaved": "尚未儲存",
     "config.done": "完成",
     "config.edit": "編輯",
     "config.decrease": "減少{label}",
@@ -1079,9 +1083,9 @@ const messages = {
     "section.custom": "自訂規則"
   },
   "en-US": {
-    "config.changedCount": "{count} to save",
     "config.changes": "Changes",
     "config.moreChanges": "{count} more",
+    "config.runOnce": "Run once",
     "config.save": "Save changes",
     "config.close": "Close",
     "config.cadence": "Run cadence",
@@ -1094,10 +1098,12 @@ const messages = {
     "config.notScheduled": "Not set",
     "config.activeDomains": "Active capabilities",
     "config.help": "Plugin help",
+    "config.aboutPlugin": "About plugin",
+    "config.aboutDescription": "Manage subscriptions across scenarios and throughout their lifecycle",
+    "config.viewDocs": "View docs",
     "config.plugin": "Plugins",
     "config.settings": "Plugin settings",
     "config.selectGroup": "Select settings group",
-    "config.unsaved": "Unsaved",
     "config.done": "Done",
     "config.edit": "Edit",
     "config.decrease": "Decrease {label}",
@@ -1164,7 +1170,7 @@ const englishFields = {
   enabled: ["Enable plugin", "Activate the plugin and register its scheduled tasks"],
   notify: ["Send notifications", "Send notifications when relevant events occur"],
   onlyonce: ["Run once now", "Run a full inspection after saving, then reset automatically"],
-  reset_task: ["Reset data", "Reset all pending, paused, and monitored task data, then reset automatically"],
+  reset_task: ["Reset data", "Reset all pending, paused, and monitored task data after saving, then reset automatically"],
   auto_check_interval_minutes: ["General check interval (minutes)", "Interval for site sampling, pending release, no-download handling, and cleanup"],
   download_check_interval_minutes: ["Download check interval (minutes)", "How often download task status is checked"],
   meta_check_interval_hours: ["Metadata check interval (hours)", "How often subscription metadata is reviewed"],
@@ -1575,7 +1581,7 @@ function displayFieldLabel(field) {
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode,unref:_unref,resolveComponent:_resolveComponent,createVNode:_createVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,createBlock:_createBlock,normalizeClass:_normalizeClass,renderList:_renderList,Fragment:_Fragment,createSlots:_createSlots,withModifiers:_withModifiers} = await importShared('vue');
+const {createElementVNode:_createElementVNode,unref:_unref,resolveComponent:_resolveComponent,createVNode:_createVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,normalizeClass:_normalizeClass,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createSlots:_createSlots,withModifiers:_withModifiers} = await importShared('vue');
 
 const _hoisted_1 = { class: "sae-config" };
 const _hoisted_2 = { class: "sae-config-header__brand" };
@@ -1585,79 +1591,76 @@ const _hoisted_5 = { class: "sae-config-header__crumbs" };
 const _hoisted_6 = { class: "sae-config-header__title-row" };
 const _hoisted_7 = { class: "sae-config-header__title" };
 const _hoisted_8 = { class: "sae-config-header__actions" };
-const _hoisted_9 = {
-  key: 0,
-  class: "sae-config-header__change-state"
-};
-const _hoisted_10 = { class: "sae-config__body" };
-const _hoisted_11 = { class: "sae-config-layout" };
-const _hoisted_12 = ["aria-label"];
-const _hoisted_13 = { class: "sae-group-nav__heading" };
-const _hoisted_14 = { class: "sae-field-surface" };
-const _hoisted_15 = { class: "sae-field-surface__heading-copy" };
-const _hoisted_16 = { class: "sae-field-surface__mobile-actions" };
-const _hoisted_17 = { class: "sae-field-section__rows" };
-const _hoisted_18 = { class: "sae-field-row__copy" };
-const _hoisted_19 = { class: "sae-field-row__label" };
-const _hoisted_20 = { key: 0 };
-const _hoisted_21 = { class: "sae-field-control" };
-const _hoisted_22 = {
+const _hoisted_9 = { class: "sae-config__body" };
+const _hoisted_10 = { class: "sae-config-layout" };
+const _hoisted_11 = ["aria-label"];
+const _hoisted_12 = { class: "sae-group-nav__heading" };
+const _hoisted_13 = { class: "sae-group-nav__help" };
+const _hoisted_14 = { class: "sae-group-nav__help-title" };
+const _hoisted_15 = { class: "sae-field-surface" };
+const _hoisted_16 = { class: "sae-field-surface__heading-copy" };
+const _hoisted_17 = { class: "sae-field-surface__mobile-actions" };
+const _hoisted_18 = { class: "sae-field-section__rows" };
+const _hoisted_19 = { class: "sae-field-row__copy" };
+const _hoisted_20 = { class: "sae-field-row__label" };
+const _hoisted_21 = { key: 0 };
+const _hoisted_22 = { class: "sae-field-control" };
+const _hoisted_23 = {
   key: 0,
   class: "sae-select-summary__primary"
 };
-const _hoisted_23 = {
+const _hoisted_24 = {
   key: 1,
   class: "sae-select-summary__count"
 };
-const _hoisted_24 = {
-  key: 2,
-  class: "sae-number-stepper"
-};
 const _hoisted_25 = {
-  key: 0,
-  class: "sae-number-stepper__unit"
+  key: 3,
+  class: "sae-number-stepper"
 };
 const _hoisted_26 = {
   key: 0,
+  class: "sae-number-stepper__unit"
+};
+const _hoisted_27 = {
+  key: 0,
   class: "sae-field-section sae-tracker-entry"
 };
-const _hoisted_27 = { class: "sae-tracker-entry__copy" };
-const _hoisted_28 = {
+const _hoisted_28 = { class: "sae-tracker-entry__copy" };
+const _hoisted_29 = {
   key: 1,
   class: "sae-field-section sae-tracker-entry"
 };
-const _hoisted_29 = { class: "sae-tracker-entry__copy" };
-const _hoisted_30 = { class: "sae-impact-preview" };
-const _hoisted_31 = { class: "sae-impact-preview__title sae-summary-section__title" };
-const _hoisted_32 = { class: "sae-impact-preview__list" };
-const _hoisted_33 = {
+const _hoisted_30 = { class: "sae-tracker-entry__copy" };
+const _hoisted_31 = { class: "sae-impact-preview" };
+const _hoisted_32 = { class: "sae-impact-preview__title sae-summary-section__title" };
+const _hoisted_33 = { class: "sae-impact-preview__list" };
+const _hoisted_34 = {
   key: 0,
   class: "sae-change-summary"
 };
-const _hoisted_34 = { class: "sae-change-summary__title sae-summary-section__title" };
-const _hoisted_35 = { key: 0 };
-const _hoisted_36 = ["aria-label"];
-const _hoisted_37 = { class: "sae-runtime-summary__title sae-summary-section__title" };
-const _hoisted_38 = {
+const _hoisted_35 = { class: "sae-change-summary__title sae-summary-section__title" };
+const _hoisted_36 = { key: 0 };
+const _hoisted_37 = ["aria-label"];
+const _hoisted_38 = { class: "sae-runtime-summary__title sae-summary-section__title" };
+const _hoisted_39 = {
   key: 0,
   class: "sae-runtime-summary__state"
 };
-const _hoisted_39 = {
+const _hoisted_40 = {
   key: 1,
   class: "sae-runtime-summary__metrics"
 };
-const _hoisted_40 = { class: "sae-runtime-summary__row" };
 const _hoisted_41 = { class: "sae-runtime-summary__row" };
 const _hoisted_42 = { class: "sae-runtime-summary__row" };
-const _hoisted_43 = {
+const _hoisted_43 = { class: "sae-runtime-summary__row" };
+const _hoisted_44 = {
   key: 2,
   class: "sae-runtime-summary__unavailable"
 };
-const _hoisted_44 = {
+const _hoisted_45 = {
   key: 0,
   class: "sae-mobile-save-dock"
 };
-const _hoisted_45 = { class: "sae-mobile-save-dock__state" };
 const {computed,getCurrentInstance,onBeforeUnmount,onMounted,ref} = await importShared('vue');
 
 const {useTheme} = await importShared('vuetify');
@@ -1668,7 +1671,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     initialConfig: {},
     api: {}
   },
-  emits: ["save", "close", "switch", "layout"],
+  emits: ["save", "close", "layout"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
@@ -1941,6 +1944,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function saveConfig() {
       emit("save", buildSavePayload());
     }
+    function handleOneTimeAction(key, enabled) {
+      if (enabled !== true) return;
+      if (key === "onlyonce") draft.reset_task = false;
+      if (key === "reset_task") draft.onlyonce = false;
+    }
+    function runOnce() {
+      handleOneTimeAction("onlyonce", true);
+      const payload = buildSavePayload();
+      payload.onlyonce = true;
+      emit("save", payload);
+    }
     return (_ctx, _cache) => {
       const _component_VIcon = _resolveComponent("VIcon");
       const _component_VChip = _resolveComponent("VChip");
@@ -1948,6 +1962,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const _component_VListItem = _resolveComponent("VListItem");
       const _component_VList = _resolveComponent("VList");
       const _component_VTooltip = _resolveComponent("VTooltip");
+      const _component_VCheckbox = _resolveComponent("VCheckbox");
       const _component_VSwitch = _resolveComponent("VSwitch");
       const _component_VSelect = _resolveComponent("VSelect");
       const _component_VTextField = _resolveComponent("VTextField");
@@ -1984,7 +1999,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               }, null, 8, _hoisted_3),
               _createElementVNode("div", _hoisted_4, [
                 _createElementVNode("div", _hoisted_5, [
-                  _cache[13] || (_cache[13] = _createElementVNode("span", null, "MoviePilot", -1)),
+                  _cache[16] || (_cache[16] = _createElementVNode("span", null, "MoviePilot", -1)),
                   _createVNode(_component_VIcon, {
                     icon: "mdi-chevron-right",
                     size: "14"
@@ -2002,7 +2017,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     size: "x-small",
                     variant: "tonal"
                   }, {
-                    default: _withCtx(() => [..._cache[14] || (_cache[14] = [
+                    default: _withCtx(() => [..._cache[17] || (_cache[17] = [
                       _createTextVNode("BETA", -1)
                     ])]),
                     _: 1
@@ -2011,18 +2026,26 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               ])
             ]),
             _createElementVNode("div", _hoisted_8, [
-              _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("span", _hoisted_9, [
-                _createVNode(_component_VIcon, {
-                  color: "warning",
-                  icon: "mdi-circle",
-                  size: "8"
-                }),
-                _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.changedCount", { count: _unref(changedCount) })), 1)
-              ])) : _createCommentVNode("", true),
-              _unref(changedCount) > 0 ? (_openBlock(), _createBlock(_component_VBtn, {
-                key: 1,
+              _createVNode(_component_VBtn, {
+                class: "sae-config-header__run",
+                color: "primary",
+                type: "button",
+                variant: "tonal",
+                onClick: runOnce
+              }, {
+                default: _withCtx(() => [
+                  _createVNode(_component_VIcon, {
+                    icon: "mdi-play",
+                    start: ""
+                  }),
+                  _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.runOnce")), 1)
+                ]),
+                _: 1
+              }),
+              _createVNode(_component_VBtn, {
                 class: "sae-config-header__save",
                 color: "primary",
+                disabled: _unref(changedCount) === 0,
                 type: "submit",
                 variant: "flat"
               }, {
@@ -2034,14 +2057,31 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.save")), 1)
                 ]),
                 _: 1
-              })) : _createCommentVNode("", true),
+              }, 8, ["disabled"]),
+              _createVNode(_component_VBtn, {
+                class: "sae-config-header__close-action",
+                color: "default",
+                type: "button",
+                variant: "outlined",
+                onClick: _cache[0] || (_cache[0] = ($event) => emit("close"))
+              }, {
+                default: _withCtx(() => [
+                  _createVNode(_component_VIcon, {
+                    icon: "mdi-close",
+                    start: ""
+                  }),
+                  _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.close")), 1)
+                ]),
+                _: 1
+              }),
               _createVNode(_component_VBtn, {
                 "aria-label": _unref(t)(locale.value, "config.close"),
-                class: "sae-config-header__close",
+                class: "sae-config-header__close-icon",
                 icon: "",
                 size: "small",
+                type: "button",
                 variant: "text",
-                onClick: _cache[0] || (_cache[0] = ($event) => emit("close"))
+                onClick: _cache[1] || (_cache[1] = ($event) => emit("close"))
               }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VIcon, { icon: "mdi-close" })
@@ -2050,13 +2090,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               }, 8, ["aria-label"])
             ])
           ], 2),
-          _createElementVNode("div", _hoisted_10, [
-            _createElementVNode("div", _hoisted_11, [
+          _createElementVNode("div", _hoisted_9, [
+            _createElementVNode("div", _hoisted_10, [
               _createElementVNode("nav", {
                 class: "sae-group-nav",
                 "aria-label": _unref(t)(locale.value, "config.selectGroup")
               }, [
-                _createElementVNode("div", _hoisted_13, _toDisplayString(_unref(t)(locale.value, "config.settings")), 1),
+                _createElementVNode("div", _hoisted_12, _toDisplayString(_unref(t)(locale.value, "config.settings")), 1),
                 _createVNode(_component_VList, {
                   class: "sae-group-nav__list",
                   density: "compact",
@@ -2077,28 +2117,33 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   ]),
                   _: 1
                 }),
-                _createVNode(_component_VBtn, {
-                  href: README_URL,
-                  class: "sae-group-nav__help",
-                  "append-icon": "mdi-open-in-new",
-                  "prepend-icon": "mdi-help-circle-outline",
-                  rel: "noopener noreferrer",
-                  target: "_blank",
-                  variant: "text"
-                }, {
-                  default: _withCtx(() => [
-                    _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.help")), 1)
-                  ]),
-                  _: 1
-                })
-              ], 8, _hoisted_12),
-              _createElementVNode("main", _hoisted_14, [
+                _createElementVNode("section", _hoisted_13, [
+                  _createElementVNode("strong", _hoisted_14, _toDisplayString(_unref(t)(locale.value, "config.aboutPlugin")), 1),
+                  _createElementVNode("p", null, _toDisplayString(_unref(t)(locale.value, "config.aboutDescription")), 1),
+                  _createVNode(_component_VBtn, {
+                    href: README_URL,
+                    "append-icon": "mdi-open-in-new",
+                    class: "sae-group-nav__help-link",
+                    color: "primary",
+                    rel: "noopener noreferrer",
+                    size: "small",
+                    target: "_blank",
+                    variant: "text"
+                  }, {
+                    default: _withCtx(() => [
+                      _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.viewDocs")), 1)
+                    ]),
+                    _: 1
+                  })
+                ])
+              ], 8, _hoisted_11),
+              _createElementVNode("main", _hoisted_15, [
                 _createElementVNode("div", {
                   ref_key: "fieldSurfaceHeading",
                   ref: fieldSurfaceHeading,
                   class: "sae-field-surface__heading"
                 }, [
-                  _createElementVNode("div", _hoisted_15, [
+                  _createElementVNode("div", _hoisted_16, [
                     _createVNode(_component_VIcon, {
                       icon: activeGroupMeta.value.icon,
                       color: "primary",
@@ -2109,7 +2154,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("p", null, _toDisplayString(activeGroupMeta.value.summary), 1)
                     ])
                   ]),
-                  _createElementVNode("div", _hoisted_16, [
+                  _createElementVNode("div", _hoisted_17, [
                     _createVNode(_component_VBtn, {
                       "aria-expanded": mobileGroupSheet.value,
                       "aria-label": _unref(t)(locale.value, "config.selectGroup"),
@@ -2119,7 +2164,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       size: "small",
                       type: "button",
                       variant: "tonal",
-                      onClick: _cache[1] || (_cache[1] = ($event) => mobileGroupSheet.value = true)
+                      onClick: _cache[2] || (_cache[2] = ($event) => mobileGroupSheet.value = true)
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_VIcon, {
@@ -2163,28 +2208,53 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     class: "sae-field-section"
                   }, [
                     _createElementVNode("h3", null, _toDisplayString(sectionIndex + 1) + ". " + _toDisplayString(section.title), 1),
-                    _createElementVNode("div", _hoisted_17, [
+                    _createElementVNode("div", _hoisted_18, [
                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(section.fields, (field) => {
                         return _openBlock(), _createElementBlock("div", {
                           key: field.key,
-                          class: _normalizeClass(["sae-field-row", { "sae-field-row--switch": field.kind === "switch" }])
+                          class: _normalizeClass([
+                            "sae-field-row",
+                            {
+                              "sae-field-row--mobile-only": field.key === "onlyonce",
+                              "sae-field-row--switch": field.kind === "switch"
+                            }
+                          ])
                         }, [
-                          _createElementVNode("div", _hoisted_18, [
-                            _createElementVNode("div", _hoisted_19, _toDisplayString(_unref(displayFieldLabel)(field)), 1),
-                            field.hint ? (_openBlock(), _createElementBlock("p", _hoisted_20, _toDisplayString(field.hint), 1)) : _createCommentVNode("", true)
+                          _createElementVNode("div", _hoisted_19, [
+                            _createElementVNode("div", _hoisted_20, [
+                              field.key === "reset_task" ? (_openBlock(), _createBlock(_component_VIcon, {
+                                key: 0,
+                                color: "error",
+                                icon: "mdi-alert-outline",
+                                size: "16"
+                              })) : _createCommentVNode("", true),
+                              _createElementVNode("span", null, _toDisplayString(_unref(displayFieldLabel)(field)), 1)
+                            ]),
+                            field.hint ? (_openBlock(), _createElementBlock("p", _hoisted_21, _toDisplayString(field.hint), 1)) : _createCommentVNode("", true)
                           ]),
-                          _createElementVNode("div", _hoisted_21, [
-                            field.kind === "switch" ? (_openBlock(), _createBlock(_component_VSwitch, {
+                          _createElementVNode("div", _hoisted_22, [
+                            field.key === "reset_task" ? (_openBlock(), _createBlock(_component_VCheckbox, {
                               key: 0,
+                              id: "sae-field-reset_task",
+                              modelValue: _unref(draft).reset_task,
+                              "onUpdate:modelValue": [
+                                _cache[3] || (_cache[3] = ($event) => _unref(draft).reset_task = $event),
+                                _cache[4] || (_cache[4] = ($event) => handleOneTimeAction("reset_task", $event))
+                              ],
+                              "aria-label": field.label,
+                              density: "compact",
+                              "hide-details": ""
+                            }, null, 8, ["modelValue", "aria-label"])) : field.kind === "switch" ? (_openBlock(), _createBlock(_component_VSwitch, {
+                              key: 1,
                               id: `sae-field-${field.key}`,
                               modelValue: _unref(draft)[field.key],
-                              "onUpdate:modelValue": ($event) => _unref(draft)[field.key] = $event,
+                              "onUpdate:modelValue": [($event) => _unref(draft)[field.key] = $event, ($event) => handleOneTimeAction(field.key, $event)],
                               "aria-label": field.label,
                               color: "primary",
                               density: "compact",
                               "hide-details": ""
                             }, null, 8, ["id", "modelValue", "onUpdate:modelValue", "aria-label"])) : field.kind === "select" || field.kind === "multi-select" ? (_openBlock(), _createBlock(_component_VSelect, {
-                              key: 1,
+                              key: 2,
                               modelValue: _unref(draft)[field.key],
                               "onUpdate:modelValue": ($event) => _unref(draft)[field.key] = $event,
                               "aria-label": field.label,
@@ -2199,11 +2269,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                               field.kind === "multi-select" ? {
                                 name: "selection",
                                 fn: _withCtx(({ item, index }) => [
-                                  index === 0 ? (_openBlock(), _createElementBlock("span", _hoisted_22, _toDisplayString(item.title), 1)) : index === 1 ? (_openBlock(), _createElementBlock("span", _hoisted_23, " +" + _toDisplayString(selectionOverflowCount(field.key)), 1)) : _createCommentVNode("", true)
+                                  index === 0 ? (_openBlock(), _createElementBlock("span", _hoisted_23, _toDisplayString(item.title), 1)) : index === 1 ? (_openBlock(), _createElementBlock("span", _hoisted_24, " +" + _toDisplayString(selectionOverflowCount(field.key)), 1)) : _createCommentVNode("", true)
                                 ]),
                                 key: "0"
                               } : void 0
-                            ]), 1032, ["modelValue", "onUpdate:modelValue", "aria-label", "items", "multiple"])) : field.kind === "number" ? (_openBlock(), _createElementBlock("div", _hoisted_24, [
+                            ]), 1032, ["modelValue", "onUpdate:modelValue", "aria-label", "items", "multiple"])) : field.kind === "number" ? (_openBlock(), _createElementBlock("div", _hoisted_25, [
                               _createVNode(_component_VBtn, {
                                 "aria-label": _unref(t)(locale.value, "config.decrease", { label: field.label }),
                                 icon: "",
@@ -2239,9 +2309,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                 ]),
                                 _: 1
                               }, 8, ["aria-label", "onClick"]),
-                              fieldUnit(field) ? (_openBlock(), _createElementBlock("span", _hoisted_25, _toDisplayString(fieldUnit(field)), 1)) : _createCommentVNode("", true)
+                              fieldUnit(field) ? (_openBlock(), _createElementBlock("span", _hoisted_26, _toDisplayString(fieldUnit(field)), 1)) : _createCommentVNode("", true)
                             ])) : field.kind === "cron" ? (_openBlock(), _createBlock(_component_VCronField, {
-                              key: 3,
+                              key: 4,
                               modelValue: _unref(draft)[field.key],
                               "onUpdate:modelValue": ($event) => _unref(draft)[field.key] = $event,
                               "aria-label": field.label,
@@ -2252,7 +2322,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                               placeholder: _unref(t)(locale.value, "config.cronPlaceholder"),
                               variant: "outlined"
                             }, null, 8, ["modelValue", "onUpdate:modelValue", "aria-label", "placeholder"])) : field.kind === "text" ? (_openBlock(), _createBlock(_component_VTextField, {
-                              key: 4,
+                              key: 5,
                               id: `sae-field-${field.key}`,
                               modelValue: _unref(draft)[field.key],
                               "onUpdate:modelValue": ($event) => _unref(draft)[field.key] = $event,
@@ -2268,8 +2338,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     ])
                   ]);
                 }), 128)),
-                activeGroup.value === "cleanup" ? (_openBlock(), _createElementBlock("section", _hoisted_26, [
-                  _createElementVNode("div", _hoisted_27, [
+                activeGroup.value === "cleanup" ? (_openBlock(), _createElementBlock("section", _hoisted_27, [
+                  _createElementVNode("div", _hoisted_28, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-message-text-outline",
@@ -2286,7 +2356,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     "prepend-icon": "mdi-pencil-outline",
                     type: "button",
                     variant: "tonal",
-                    onClick: _cache[2] || (_cache[2] = ($event) => trackerDialogOpen.value = true)
+                    onClick: _cache[5] || (_cache[5] = ($event) => trackerDialogOpen.value = true)
                   }, {
                     default: _withCtx(() => [
                       _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.edit")), 1)
@@ -2294,8 +2364,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _: 1
                   }, 8, ["aria-label"])
                 ])) : _createCommentVNode("", true),
-                activeGroup.value === "recognition" ? (_openBlock(), _createElementBlock("section", _hoisted_28, [
-                  _createElementVNode("div", _hoisted_29, [
+                activeGroup.value === "recognition" ? (_openBlock(), _createElementBlock("section", _hoisted_29, [
+                  _createElementVNode("div", _hoisted_30, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-code-braces",
@@ -2312,7 +2382,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     "prepend-icon": "mdi-pencil-outline",
                     type: "button",
                     variant: "tonal",
-                    onClick: _cache[3] || (_cache[3] = ($event) => yamlDialogOpen.value = true)
+                    onClick: _cache[6] || (_cache[6] = ($event) => yamlDialogOpen.value = true)
                   }, {
                     default: _withCtx(() => [
                       _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.edit")), 1)
@@ -2321,8 +2391,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   }, 8, ["aria-label"])
                 ])) : _createCommentVNode("", true)
               ]),
-              _createElementVNode("aside", _hoisted_30, [
-                _createElementVNode("div", _hoisted_31, [
+              _createElementVNode("aside", _hoisted_31, [
+                _createElementVNode("div", _hoisted_32, [
                   _createVNode(_component_VIcon, {
                     color: "primary",
                     icon: "mdi-clock-outline",
@@ -2330,7 +2400,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   }),
                   _createElementVNode("h2", null, _toDisplayString(_unref(t)(locale.value, "config.cadence")), 1)
                 ]),
-                _createElementVNode("ul", _hoisted_32, [
+                _createElementVNode("ul", _hoisted_33, [
                   (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(cadenceSummary.value, (item) => {
                     return _openBlock(), _createElementBlock("li", {
                       key: item.title,
@@ -2345,8 +2415,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     ]);
                   }), 128))
                 ]),
-                changedItems.value.length ? (_openBlock(), _createElementBlock("section", _hoisted_33, [
-                  _createElementVNode("div", _hoisted_34, [
+                changedItems.value.length ? (_openBlock(), _createElementBlock("section", _hoisted_34, [
+                  _createElementVNode("div", _hoisted_35, [
                     _createVNode(_component_VIcon, {
                       color: "warning",
                       icon: "mdi-format-list-checks",
@@ -2368,13 +2438,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       ]);
                     }), 128))
                   ]),
-                  hiddenChangedCount.value > 0 ? (_openBlock(), _createElementBlock("p", _hoisted_35, _toDisplayString(_unref(t)(locale.value, "config.moreChanges", { count: hiddenChangedCount.value })), 1)) : _createCommentVNode("", true)
+                  hiddenChangedCount.value > 0 ? (_openBlock(), _createElementBlock("p", _hoisted_36, _toDisplayString(_unref(t)(locale.value, "config.moreChanges", { count: hiddenChangedCount.value })), 1)) : _createCommentVNode("", true)
                 ])) : _createCommentVNode("", true),
                 _createElementVNode("section", {
                   "aria-label": _unref(t)(locale.value, "config.runtime"),
                   class: "sae-runtime-summary"
                 }, [
-                  _createElementVNode("div", _hoisted_37, [
+                  _createElementVNode("div", _hoisted_38, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-chart-box-outline",
@@ -2382,7 +2452,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     }),
                     _createElementVNode("h3", null, _toDisplayString(_unref(t)(locale.value, "config.runtime")), 1)
                   ]),
-                  summaryState.value === "loading" ? (_openBlock(), _createElementBlock("div", _hoisted_38, [
+                  summaryState.value === "loading" ? (_openBlock(), _createElementBlock("div", _hoisted_39, [
                     _createVNode(_component_VProgressCircular, {
                       color: "primary",
                       indeterminate: "",
@@ -2390,8 +2460,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       width: "2"
                     }),
                     _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.runtimeLoading")), 1)
-                  ])) : summaryState.value === "available" && runtimeSummary.value ? (_openBlock(), _createElementBlock("div", _hoisted_39, [
-                    _createElementVNode("div", _hoisted_40, [
+                  ])) : summaryState.value === "available" && runtimeSummary.value ? (_openBlock(), _createElementBlock("div", _hoisted_40, [
+                    _createElementVNode("div", _hoisted_41, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-timer-sand",
                         size: "18"
@@ -2399,7 +2469,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.pendingCount")), 1),
                       _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.pending_count), 1)
                     ]),
-                    _createElementVNode("div", _hoisted_41, [
+                    _createElementVNode("div", _hoisted_42, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-download-network-outline",
                         size: "18"
@@ -2407,7 +2477,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.monitoredCount")), 1),
                       _createElementVNode("strong", null, _toDisplayString(runtimeSummary.value.monitored_torrents), 1)
                     ]),
-                    _createElementVNode("div", _hoisted_42, [
+                    _createElementVNode("div", _hoisted_43, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-toggle-switch-outline",
                         size: "18"
@@ -2415,20 +2485,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("span", null, _toDisplayString(_unref(t)(locale.value, "config.activeDomains")), 1),
                       _createElementVNode("strong", null, _toDisplayString(activeDomainCount.value.active) + " / " + _toDisplayString(activeDomainCount.value.total), 1)
                     ])
-                  ])) : (_openBlock(), _createElementBlock("p", _hoisted_43, _toDisplayString(_unref(t)(locale.value, "config.runtimeUnavailable")), 1))
-                ], 8, _hoisted_36)
+                  ])) : (_openBlock(), _createElementBlock("p", _hoisted_44, _toDisplayString(_unref(t)(locale.value, "config.runtimeUnavailable")), 1))
+                ], 8, _hoisted_37)
               ])
             ])
           ]),
-          _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("div", _hoisted_44, [
-            _createElementVNode("span", _hoisted_45, [
-              _createVNode(_component_VIcon, {
-                color: "warning",
-                icon: "mdi-circle",
-                size: "8"
-              }),
-              _createTextVNode(" " + _toDisplayString(_unref(t)(locale.value, "config.changedCount", { count: _unref(changedCount) })), 1)
-            ]),
+          _unref(changedCount) > 0 ? (_openBlock(), _createElementBlock("div", _hoisted_45, [
             _createVNode(_component_VSpacer),
             _createVNode(_component_VBtn, {
               class: "sae-mobile-save-dock__save",
@@ -2450,7 +2512,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         ], 32),
         _createVNode(_component_VDialog, {
           modelValue: trackerDialogOpen.value,
-          "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => trackerDialogOpen.value = $event),
+          "onUpdate:modelValue": _cache[10] || (_cache[10] = ($event) => trackerDialogOpen.value = $event),
           "max-width": "720",
           scrollable: "",
           width: "calc(100% - 24px)"
@@ -2466,7 +2528,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       icon: "",
                       size: "small",
                       variant: "text",
-                      onClick: _cache[4] || (_cache[4] = ($event) => trackerDialogOpen.value = false)
+                      onClick: _cache[7] || (_cache[7] = ($event) => trackerDialogOpen.value = false)
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_VIcon, { icon: "mdi-close" }),
@@ -2484,7 +2546,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   default: _withCtx(() => [
                     _createVNode(_component_VTextarea, {
                       modelValue: _unref(draft).default_tracker_response,
-                      "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => _unref(draft).default_tracker_response = $event),
+                      "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => _unref(draft).default_tracker_response = $event),
                       "aria-label": trackerField.value.label,
                       hint: trackerField.value.hint,
                       label: trackerField.value.label,
@@ -2501,7 +2563,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _createVNode(_component_VBtn, {
                       color: "primary",
                       "prepend-icon": "mdi-check",
-                      onClick: _cache[6] || (_cache[6] = ($event) => trackerDialogOpen.value = false)
+                      onClick: _cache[9] || (_cache[9] = ($event) => trackerDialogOpen.value = false)
                     }, {
                       default: _withCtx(() => [
                         _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.done")), 1)
@@ -2519,7 +2581,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         }, 8, ["modelValue"]),
         _createVNode(_component_VBottomSheet, {
           modelValue: mobileGroupSheet.value,
-          "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => mobileGroupSheet.value = $event),
+          "onUpdate:modelValue": _cache[11] || (_cache[11] = ($event) => mobileGroupSheet.value = $event),
           class: "sae-mobile-group-sheet"
         }, {
           default: _withCtx(() => [
@@ -2566,7 +2628,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         }, 8, ["modelValue"]),
         _createVNode(_component_VDialog, {
           modelValue: yamlDialogOpen.value,
-          "onUpdate:modelValue": _cache[12] || (_cache[12] = ($event) => yamlDialogOpen.value = $event),
+          "onUpdate:modelValue": _cache[15] || (_cache[15] = ($event) => yamlDialogOpen.value = $event),
           "max-width": "900",
           scrollable: "",
           width: "calc(100% - 24px)"
@@ -2582,7 +2644,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       icon: "",
                       size: "small",
                       variant: "text",
-                      onClick: _cache[9] || (_cache[9] = ($event) => yamlDialogOpen.value = false)
+                      onClick: _cache[12] || (_cache[12] = ($event) => yamlDialogOpen.value = false)
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_VIcon, { icon: "mdi-close" })
@@ -2596,7 +2658,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   default: _withCtx(() => [
                     _createVNode(_component_VAceEditor, {
                       value: _unref(draft).recognition_guard_custom_config,
-                      "onUpdate:value": _cache[10] || (_cache[10] = ($event) => _unref(draft).recognition_guard_custom_config = $event),
+                      "onUpdate:value": _cache[13] || (_cache[13] = ($event) => _unref(draft).recognition_guard_custom_config = $event),
                       theme: aceTheme.value,
                       lang: "yaml",
                       options: { fontSize: 14, showPrintMargin: false, tabSize: 2, useSoftTabs: true },
@@ -2611,7 +2673,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _createVNode(_component_VBtn, {
                       color: "primary",
                       "prepend-icon": "mdi-check",
-                      onClick: _cache[11] || (_cache[11] = ($event) => yamlDialogOpen.value = false)
+                      onClick: _cache[14] || (_cache[14] = ($event) => yamlDialogOpen.value = false)
                     }, {
                       default: _withCtx(() => [
                         _createTextVNode(_toDisplayString(_unref(t)(locale.value, "config.done")), 1)
@@ -2640,6 +2702,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-9a15436f"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-4ce61814"]]);
 
 export { Config as default };
