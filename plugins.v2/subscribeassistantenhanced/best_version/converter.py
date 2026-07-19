@@ -19,14 +19,15 @@ class BestVersionConverter:
     """
 
     def __init__(self, subscribe_oper=None, clear_tasks_fn=None, send_event_fn=None,
-                 notify_fn=None, restore_fn=None, format_desc_fn=None,
+                 notify_fn=None, restore_fn=None, snapshot_fn=None, format_desc_fn=None,
                  plugin_name: str = "订阅助手（增强版）"):
-        """注入订阅写库、任务清理、事件、通知和失败恢复依赖。"""
+        """注入订阅写库、任务清理、事件、通知、完成快照和失败恢复依赖。"""
         self._subscribe_oper = subscribe_oper
         self._clear_tasks = clear_tasks_fn
         self._send_event = send_event_fn
         self._notify = notify_fn
         self._restore = restore_fn
+        self._snapshot = snapshot_fn
         self._format_desc = format_desc_fn
         self._plugin_name = plugin_name
 
@@ -39,6 +40,14 @@ class BestVersionConverter:
         subscribe_dict = subscribe.to_dict()
         subscribe_desc = self._format_subscribe_desc(subscribe, mediainfo)
         full_payload = self._build_full_payload(subscribe_dict)
+
+        try:
+            if self._snapshot:
+                self._snapshot(subscribe=subscribe, mediainfo=mediainfo, scope=None)
+        except Exception as err:
+            logger.error(f"{subscribe_desc} 原因=登记完成快照失败，处理=停止转全集处理，错误={err}")
+            self._notify_failure(subscribe_desc, str(err), mediainfo=mediainfo)
+            return False
 
         try:
             self._subscribe_oper.add_history(**subscribe_dict)
@@ -80,6 +89,7 @@ class BestVersionConverter:
         payload["best_version_full"] = 1
         payload["username"] = self._plugin_name
         payload["state"] = "N"
+        payload["manual_total_episode"] = 0
         return payload
 
     def _format_subscribe_desc(self, subscribe, mediainfo) -> str:

@@ -3,7 +3,7 @@ import time
 import json
 from datetime import date, timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 from packaging.specifiers import SpecifierSet
@@ -2644,13 +2644,14 @@ class TestPeriodicJobs:
 
         result = plugin._rebuild_subscribe_from_snapshot(
             {"tmdbid": 100, "season": 1, "episode_group_id": "eg-1"},
-            {"name": "测试", "start_episode": 13},
+            {"name": "测试", "start_episode": 13, "manual_total_episode": 92},
         )
 
         assert result is True
         assert oper.call[0] is mediainfo
         assert oper.call[1]["season"] == 1
         assert oper.call[1]["episode_group"] == "eg-1"
+        assert oper.call[1]["manual_total_episode"] == 0
 
     def test_snapshot_rebuild_sends_subscribe_added_event(self):
         """H 重建成功后应补发 SubscribeAdded，触发主程序订阅创建链路。"""
@@ -2670,8 +2671,8 @@ class TestPeriodicJobs:
         plugin._send_subscribe_added.assert_called_once()
         assert plugin._send_subscribe_added.call_args.args[0] == 88
 
-    def test_completion_verify_keeps_existing_episode_best_version_subscription(self):
-        """同身份分集洗版订阅已存在时，完成快照应失效而不是删除重建。"""
+    def test_completion_verify_keeps_snapshot_for_lagging_episode_best_version_subscription(self):
+        """同身份分集洗版订阅未覆盖最新总集数时保留快照，不删除重建。"""
         snap = {
             "tmdbid": 100,
             "season": 1,
@@ -2697,10 +2698,10 @@ class TestPeriodicJobs:
 
         plugin._modules["verifier"]._subscribe_oper.delete.assert_not_called()
         plugin._modules["verifier"]._rebuild_subscribe.assert_not_called()
-        assert data_store["snapshots"]["list"] == []
+        assert data_store["snapshots"]["list"] == [snap]
 
-    def test_completion_verify_keeps_existing_normal_subscription(self):
-        """同身份普通订阅已存在时，完成快照应失效而不是重复重建。"""
+    def test_completion_verify_keeps_snapshot_for_lagging_normal_subscription(self):
+        """同身份普通订阅未覆盖最新总集数时保留快照，不重复重建。"""
         snap = {
             "tmdbid": 100,
             "season": 1,
@@ -2726,7 +2727,7 @@ class TestPeriodicJobs:
 
         plugin._modules["verifier"]._subscribe_oper.delete.assert_not_called()
         plugin._modules["verifier"]._rebuild_subscribe.assert_not_called()
-        assert data_store["snapshots"]["list"] == []
+        assert data_store["snapshots"]["list"] == [snap]
 
     def test_completion_verify_replaces_existing_full_best_version_subscription(self):
         """同身份真正洗版订阅已存在时，完成快照可删除旧订阅并按新增集重建。"""
@@ -2780,7 +2781,15 @@ class TestPeriodicJobs:
         plugin._modules["verifier"]._tmdb_fn = MagicMock(return_value=[object()] * 2)
         plugin._modules["verifier"]._subscribe_oper = MagicMock()
         plugin._modules["verifier"]._subscribe_oper.list.return_value = [
-            _sub(id=8, tmdbid=100, season=None, type=MediaType.MOVIE, best_version=1, best_version_full=0)
+            _sub(
+                id=8,
+                tmdbid=100,
+                season=None,
+                type=MediaType.MOVIE,
+                total_episode=1,
+                best_version=1,
+                best_version_full=0,
+            )
         ]
         plugin._modules["verifier"]._rebuild_subscribe = MagicMock(return_value=True)
         plugin._modules["verifier"]._notify = MagicMock()
@@ -2791,6 +2800,32 @@ class TestPeriodicJobs:
         plugin._modules["verifier"]._rebuild_subscribe.assert_called_once()
         assert plugin._modules["verifier"]._notify.call_args.args[0].endswith("已移除旧洗版订阅并重建订阅")
         assert data_store["snapshots"]["list"] == []
+
+    def test_restore_subscribe_from_snapshot_unlocks_manual_total_episode(self):
+        """转换失败恢复分集洗版订阅时，不继承旧订阅的手动总集数锁定。"""
+        from app.db.models import Subscribe
+
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.get.return_value = object()
+        plugin._send_subscribe_added = MagicMock()
+
+        with patch.object(Subscribe, "create", autospec=True) as create:
+            result = plugin._restore_subscribe_from_snapshot(
+                {
+                    "id": 7,
+                    "name": "测试剧",
+                    "tmdbid": 100,
+                    "season": 1,
+                    "manual_total_episode": 92,
+                },
+                _mediainfo(),
+            )
+
+        assert result is True
+        restored = create.call_args.args[0]
+        assert restored.manual_total_episode == 0
 
     def test_pending_release_active_guard_veto_uses_pending_judge_not_orphan_cleanup(self, monkeypatch):
         """活跃 guard_veto P 必须交给 PendingJudge，不绕过证据流水线释放。"""

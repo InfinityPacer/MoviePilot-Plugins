@@ -88,7 +88,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.6.5"
+    plugin_version = "0.6.6"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -257,6 +257,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             send_event_fn=eventmanager.send_event,
             notify_fn=self._notify_subscribe,
             restore_fn=self._restore_subscribe_from_snapshot,
+            snapshot_fn=verifier.snapshot,
             format_desc_fn=lambda subscribe, mediainfo: self._format_subscribe_desc(subscribe, mediainfo),
             plugin_name=self.plugin_name,
         )
@@ -1457,6 +1458,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         payload = dict(config)
         payload["season"] = snap.get("season")
         payload["episode_group"] = snap.get("episode_group_id")
+        payload["manual_total_episode"] = 0
         try:
             subscribe_id, _ = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
             if subscribe_id:
@@ -1617,6 +1619,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 for key, value in (subscribe_dict or {}).items()
                 if hasattr(Subscribe, key)
             }
+            restore_payload["manual_total_episode"] = 0
             restored = Subscribe(**restore_payload)
             restored.create(self._subscribe_oper._db)
             sid = restore_payload.get("id")

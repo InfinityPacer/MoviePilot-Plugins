@@ -38,6 +38,7 @@ class TestBuildPayload:
         payload = orch.build_payload(_sub(episode_group="eg-abc"))
         assert payload["episode_group"] == "eg-abc"
         assert payload["best_version"] == 1
+        assert payload["manual_total_episode"] == 0
 
     def test_includes_subscribe_fields(self):
         orch = BestVersionOrchestrator(priority_manager=MagicMock(spec=PriorityManager))
@@ -110,6 +111,7 @@ class TestStartBestVersion:
         _args, kwargs = oper.add.call_args
         assert kwargs["best_version"] == 1 and kwargs["season"] == 1
         assert kwargs["best_version_full"] == 1
+        assert kwargs["manual_total_episode"] == 0
         assert kwargs["filter"] == "r"
         assert kwargs["filter_groups"] == ["g1"]
 

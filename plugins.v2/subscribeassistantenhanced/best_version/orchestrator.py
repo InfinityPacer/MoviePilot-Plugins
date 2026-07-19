@@ -46,6 +46,7 @@ class BestVersionOrchestrator:
         }
         payload = {key: value for key, value in payload.items() if value is not None}
         payload["best_version"] = 1
+        payload["manual_total_episode"] = 0
         return payload
 
     def start_best_version(self, subscribe, mediainfo):
@@ -97,6 +98,8 @@ class BestVersionOrchestrator:
         else:
             payload["current_priority"] = self._movie_current_priority(subscribe)
         payload = {key: value for key, value in payload.items() if value is not None}
+        # 插件创建的订阅始终重新跟随 TMDB 总集数，不继承已完成订阅的手动锁定状态。
+        payload["manual_total_episode"] = 0
         sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
         if sid:
             mode_label = "洗版"

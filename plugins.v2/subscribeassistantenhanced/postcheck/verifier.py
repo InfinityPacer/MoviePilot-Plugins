@@ -108,19 +108,26 @@ class CompletionVerifier:
         removed_full_best_version = False
 
         existing = self._subscribe_oper.list()
-        for sub in (existing or []):
+        matched = [
+            sub for sub in (existing or [])
             if (
                 sub.tmdbid == tmdbid
                 and sub.season == season
                 and sub.episode_group == episode_group_id
-            ):
-                if is_full_best_version_subscribe(sub):
-                    logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
-                    _merge_missing_config_from_subscribe(config, sub)
-                    self._subscribe_oper.delete(sub.id)
-                    removed_full_best_version = True
-                else:
-                    return True
+            )
+        ]
+        if any((sub.total_episode or 0) >= current_total for sub in matched):
+            return True
+
+        # 普通或分集洗版订阅由现有订阅流程继续处理；目标范围尚未覆盖时不能消费完成快照。
+        if any(not is_full_best_version_subscribe(sub) for sub in matched):
+            return False
+
+        for sub in matched:
+            logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
+            _merge_missing_config_from_subscribe(config, sub)
+            self._subscribe_oper.delete(sub.id)
+            removed_full_best_version = True
 
         old_total = snap.get("total_at_completion", 0)
         config["start_episode"] = old_total + 1
