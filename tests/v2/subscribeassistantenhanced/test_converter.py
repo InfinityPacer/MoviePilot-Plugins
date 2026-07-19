@@ -53,8 +53,9 @@ class TestConvertToFull:
             username="user",
             state="R",
             current_priority=50,
+            episode_priority={"1": 100, "2": 50},
             manual_total_episode=92,
-            note=[1],
+            note=[1, 2],
         )
         media = _mediainfo()
 
@@ -71,8 +72,10 @@ class TestConvertToFull:
         assert add_payload["state"] == "N"
         assert add_payload["username"] == "订阅助手（增强版）"
         assert add_payload["manual_total_episode"] == 0
+        assert add_payload["note"] == [1, 2]
+        assert add_payload["current_priority"] == 50
+        assert add_payload["episode_priority"] == {"1": 100, "2": 50}
         assert "id" not in add_payload
-        assert "current_priority" not in add_payload
         snapshot.assert_called_once_with(subscribe=sub, mediainfo=media, scope=None)
         assert call_order == ["snapshot", "delete"]
         send_event.assert_called_once()

@@ -6,8 +6,7 @@ from app.schemas.types import EventType
 
 DROP_REBUILT_FIELDS = {
     "id", "name", "year", "type", "tmdbid", "imdbid", "tvdbid", "doubanid", "bangumiid",
-    "poster", "backdrop", "vote", "description", "date", "last_update", "note", "current_priority",
-    "episode_priority",
+    "poster", "backdrop", "vote", "description", "date", "last_update",
 }
 
 
