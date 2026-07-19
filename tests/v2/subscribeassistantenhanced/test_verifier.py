@@ -16,7 +16,8 @@ def _sub(tmdbid=100, season=1, episode_group=None, total=12, best_version=0, bes
     )
 
 
-def _verifier(store=None, tmdb_fn=None, retention_days=90, rebuild_fn=None):
+def _verifier(store=None, tmdb_fn=None, retention_days=90, rebuild_fn=None,
+              subscribe_image_fn=None):
     store = store if store is not None else {}
     oper = MagicMock()
     oper.list.return_value = []
@@ -29,6 +30,7 @@ def _verifier(store=None, tmdb_fn=None, retention_days=90, rebuild_fn=None):
         retention_days=retention_days,
         notify_fn=notify,
         rebuild_subscribe_fn=rebuild_fn,
+        get_subscribe_image_fn=subscribe_image_fn,
     )
     v._store = store
     v._oper = oper
@@ -51,6 +53,26 @@ class TestSnapshot:
         assert snaps[0]["subscribe_config"]["filter_groups"] == ["group1"]
         assert snaps[0]["subscribe_config"]["best_version"] == 1
         assert snaps[0]["subscribe_config"]["best_version_full"] == 1
+
+    def test_saves_media_image_for_later_rebuild_notification(self):
+        """完成快照保存媒体图片，供未来增集重建通知继续使用。"""
+        store = {}
+        v = _verifier(store)
+        media = SimpleNamespace(get_message_image=lambda: "media.jpg")
+
+        v.snapshot(_sub(), media, SeasonScope(source="main_season"))
+
+        assert store["snapshots"]["list"][0]["subscribe_image"] == "media.jpg"
+
+    def test_snapshot_falls_back_to_subscribe_image(self):
+        """完成快照优先使用订阅记录图片。"""
+        store = {}
+        v = _verifier(store, subscribe_image_fn=lambda _subscribe: "subscribe.jpg")
+        media = SimpleNamespace(get_message_image=lambda: "media.jpg")
+
+        v.snapshot(_sub(), media, SeasonScope(source="main_season"))
+
+        assert store["snapshots"]["list"][0]["subscribe_image"] == "subscribe.jpg"
 
     def test_dedup_by_key(self):
         """同 (tmdbid, season, episode_group_id) 幂等去重。"""
@@ -97,6 +119,7 @@ class TestVerifyAll:
         store = {"snapshots": {"list": [{
             "tmdbid": 100, "season": 1, "episode_group_id": None,
             "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_image": "subscribe.jpg",
             "subscribe_config": {"name": "测试剧", "season": 1},
         }]}}
         rebuild = MagicMock(return_value=True)
@@ -107,6 +130,7 @@ class TestVerifyAll:
         assert len(store["snapshots"]["list"]) == 0
         v._notify_mock.assert_called_once()
         assert v._notify_mock.call_args.args[0] == "测试剧 S1 检测到新增集数（12→15），已自动重建订阅"
+        assert v._notify_mock.call_args.kwargs["image"] == "subscribe.jpg"
         assert "action" not in v._notify_mock.call_args.kwargs
         assert "reason" not in v._notify_mock.call_args.kwargs
 

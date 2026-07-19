@@ -19,6 +19,7 @@ class BestVersionConverter:
 
     def __init__(self, subscribe_oper=None, clear_tasks_fn=None, send_event_fn=None,
                  notify_fn=None, restore_fn=None, snapshot_fn=None, format_desc_fn=None,
+                 notification_image_fn=None,
                  plugin_name: str = "订阅助手（增强版）"):
         """注入订阅写库、任务清理、事件、通知、完成快照和失败恢复依赖。"""
         self._subscribe_oper = subscribe_oper
@@ -28,6 +29,7 @@ class BestVersionConverter:
         self._restore = restore_fn
         self._snapshot = snapshot_fn
         self._format_desc = format_desc_fn
+        self._notification_image = notification_image_fn
         self._plugin_name = plugin_name
 
     def convert_to_full(self, subscribe, mediainfo=None) -> bool:
@@ -45,7 +47,7 @@ class BestVersionConverter:
                 self._snapshot(subscribe=subscribe, mediainfo=mediainfo, scope=None)
         except Exception as err:
             logger.error(f"{subscribe_desc} 原因=登记完成快照失败，处理=停止转全集处理，错误={err}")
-            self._notify_failure(subscribe_desc, str(err), mediainfo=mediainfo)
+            self._notify_failure(subscribe, subscribe_desc, str(err), mediainfo=mediainfo)
             return False
 
         try:
@@ -56,7 +58,7 @@ class BestVersionConverter:
         except Exception as err:
             self._remove_history_snapshot(subscribe_dict)
             logger.error(f"{subscribe_desc} 原因=删除分集洗版订阅失败，处理=停止转全集处理，错误={err}")
-            self._notify_failure(subscribe_desc, str(err), mediainfo=mediainfo)
+            self._notify_failure(subscribe, subscribe_desc, str(err), mediainfo=mediainfo)
             return False
 
         try:
@@ -67,7 +69,7 @@ class BestVersionConverter:
         if new_sid:
             logger.info(f"{subscribe_desc} 原因=分集洗版集数已符合目标集数，处理=已转为全集洗版订阅 (ID: {new_sid})")
             self._send_subscribe_added(new_sid, mediainfo)
-            self._notify_success(subscribe_desc, mediainfo)
+            self._notify_success(subscribe, subscribe_desc, mediainfo)
             return True
 
         restored = self._restore(subscribe_dict, mediainfo) if self._restore else False
@@ -76,7 +78,7 @@ class BestVersionConverter:
             f"错误信息={err_msg}，分集订阅重建状态={restored}"
         )
         restore_text = "分集洗版订阅已尝试重建" if restored else "分集洗版订阅重建失败，请手动检查"
-        self._notify_failure(subscribe_desc, f"{err_msg}\n{restore_text}", mediainfo=mediainfo)
+        self._notify_failure(subscribe, subscribe_desc, f"{err_msg}\n{restore_text}", mediainfo=mediainfo)
         return False
 
     def _build_full_payload(self, subscribe_dict: dict) -> dict:
@@ -109,19 +111,18 @@ class BestVersionConverter:
             "mediainfo": media_payload,
         })
 
-    def _notify_success(self, subscribe_desc: str, mediainfo):
+    def _notify_success(self, subscribe, subscribe_desc: str, mediainfo):
         """发送转全集成功通知。"""
         if not self._notify:
             return
         self._notify(
             f"{subscribe_desc} 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅",
             score=mediainfo.vote_average,
-            user=self._plugin_name,
-            image=mediainfo.get_message_image(),
+            image=self._resolve_notification_image(subscribe, mediainfo),
             link="#/subscribe/tv?tab=mysub",
         )
 
-    def _notify_failure(self, subscribe_desc: str, text: str, mediainfo=None):
+    def _notify_failure(self, subscribe, subscribe_desc: str, text: str, mediainfo=None):
         """发送转全集失败通知。"""
         if not self._notify:
             return
@@ -130,8 +131,14 @@ class BestVersionConverter:
             text=text,
             follow_up="请检查订阅状态",
             diagnostic=True,
-            image=mediainfo.get_message_image() if mediainfo else None,
+            image=self._resolve_notification_image(subscribe, mediainfo),
         )
+
+    def _resolve_notification_image(self, subscribe, mediainfo=None):
+        """解析转全集通知图片；未注入统一解析器时沿用媒体图片。"""
+        if self._notification_image:
+            return self._notification_image(subscribe, mediainfo)
+        return mediainfo.get_message_image() if mediainfo else None
 
     def _remove_history_snapshot(self, subscribe_dict: dict):
         """删除刚写入的完成历史，避免删除失败后同时存在活动订阅和完成记录。"""

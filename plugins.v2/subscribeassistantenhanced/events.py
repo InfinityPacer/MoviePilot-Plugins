@@ -293,9 +293,20 @@ class EventProxy:
             subscribe = SimpleNamespace(**subscribe_info)
         detail(f"订阅完成事件：{format_subscribe_label(subscribe, subscribe_id)}")
 
+        mediainfo_from_dict = self.get("mediainfo_from_dict")
+        mediainfo = None
+        if mediainfo_from_dict:
+            try:
+                mediainfo = mediainfo_from_dict(data.get("mediainfo"))
+            except Exception:
+                logger.warning(
+                    f"订阅完成事件：{format_subscribe_label(subscribe, subscribe_id)} "
+                    "媒体信息解析失败，按无媒体信息继续保存快照并清理任务"
+                )
+
         verifier = self.get("verifier")
         if subscribe and verifier:
-            verifier.snapshot(subscribe=subscribe, mediainfo=None, scope=None)
+            verifier.snapshot(subscribe=subscribe, mediainfo=mediainfo, scope=None)
 
         task_manager = self.get("task_manager")
         if subscribe_id and task_manager:
@@ -306,12 +317,9 @@ class EventProxy:
 
         # 自动洗版创建（按开关；mediainfo 由事件重建，洗版编排判断是否新建洗版订阅）
         orchestrator = self.get("orchestrator")
-        mediainfo_from_dict = self.get("mediainfo_from_dict")
-        if orchestrator and mediainfo_from_dict:
-            mediainfo = mediainfo_from_dict(data.get("mediainfo"))
-            if mediainfo:
-                detail(f"订阅完成：{format_subscribe(subscribe)} 检查是否需要自动创建洗版订阅")
-                orchestrator.start_best_version(subscribe, mediainfo)
+        if orchestrator and mediainfo:
+            detail(f"订阅完成：{format_subscribe(subscribe)} 检查是否需要自动创建洗版订阅")
+            orchestrator.start_best_version(subscribe, mediainfo)
 
     def on_transfer_intercept(self, event):
         """TransferIntercept → 订阅清理目标文件删除。"""
@@ -532,6 +540,7 @@ class EventProxy:
             if external else
             f"{format_subscribe(subscribe)} 检测到下载任务，已恢复暂停订阅"
         )
+        notification_image_fn = self.get("notification_image_fn")
         notify_fn(
             title,
             reason=self._pause_reason_label(reason),
@@ -541,6 +550,7 @@ class EventProxy:
                 if external else
                 "48小时内不会因同一原因再次自动暂停"
             ),
+            image=notification_image_fn(subscribe) if notification_image_fn else None,
         )
 
     @staticmethod

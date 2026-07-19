@@ -41,6 +41,8 @@ def _sub(**kwargs):
         filter_groups=[],
         save_path=None,
         sites=None,
+        backdrop="",
+        poster="",
         date=None,
         last_update=None,
     )
@@ -82,7 +84,21 @@ def test_release_metadata_requires_main_program_newer_than_2_14_1():
 def test_converter_is_wired():
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({})
-    assert plugin._modules.get("converter") is not None
+    converter = plugin._modules.get("converter")
+    assert converter is not None
+    assert converter._notification_image.__self__ is plugin
+    assert converter._notification_image.__func__ is plugin._resolve_notification_image.__func__
+
+
+def test_orchestrator_uses_shared_notification_image_resolver():
+    """自动洗版通知与状态通知共用订阅图片优先策略。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+
+    orchestrator = plugin._modules["orchestrator"]
+
+    assert orchestrator._notification_image.__self__ is plugin
+    assert orchestrator._notification_image.__func__ is plugin._resolve_notification_image.__func__
 
 
 def test_target_satisfied_resolver_is_wired_to_guard_and_events():
@@ -2088,10 +2104,13 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
         sub, [1, 2, 3], scene="plugin_backfill<订阅助手（增强版）>"
     )
     plugin.post_message.assert_called_once()
-    assert plugin.post_message.call_args.kwargs["title"] == "洗版订阅下载事实回填"
+    assert plugin.post_message.call_args.kwargs["title"] == "洗版下载事实回填完成"
     assert "扫描 1 个订阅" in plugin.post_message.call_args.kwargs["text"]
     assert "成功回填 1 个" in plugin.post_message.call_args.kwargs["text"]
     assert "累计补写 3 集" in plugin.post_message.call_args.kwargs["text"]
+    assert plugin.post_message.call_args.kwargs["text"].endswith("来源：订阅助手（增强版）")
+    assert plugin.post_message.call_args.kwargs["image"] is None
+    assert plugin.post_message.call_args.kwargs["disable_web_page_preview"] is True
     plugin.update_config.assert_called_once()
     assert plugin.update_config.call_args.args[0]["backfill_best_version_now"] is False
 
@@ -2115,6 +2134,45 @@ def test_status_notification_uses_ordered_single_line_fields(monkeypatch):
     assert kwargs["image"] == "poster.jpg"
 
 
+def test_status_notification_falls_back_to_subscribe_image():
+    """媒体识别结果缺图时仍使用订阅卡片图片。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"notify": True})
+    plugin.post_message = MagicMock()
+    media = _mediainfo()
+    media.get_message_image = lambda: ""
+
+    plugin._send_subscribe_status_notification(
+        _sub(backdrop="https://image.tmdb.org/t/p/original/backdrop.jpg"),
+        "播出满足订阅暂停，已标记暂停",
+        mediainfo=media,
+    )
+
+    kwargs = plugin.post_message.call_args.kwargs
+    assert kwargs["image"] == "https://image.tmdb.org/t/p/w500/backdrop.jpg"
+    assert "来源：" not in (kwargs["text"] or "")
+    assert "disable_web_page_preview" not in kwargs
+
+
+def test_best_version_notification_without_image_has_single_plugin_source():
+    """缺图洗版成功通知仅通过来源字段标识插件，不伪装成订阅用户。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"notify": True, "best_version_type": "all"})
+    plugin.post_message = MagicMock()
+    orchestrator = plugin._modules["orchestrator"]
+    orchestrator._subscribe_oper = MagicMock()
+    orchestrator._subscribe_oper.add.return_value = (8, "")
+    media = _mediainfo()
+    media.get_message_image = lambda: ""
+
+    orchestrator.start_best_version(_sub(best_version=0), media)
+
+    kwargs = plugin.post_message.call_args.kwargs
+    assert "用户：" not in kwargs["text"]
+    assert kwargs["text"].count("来源：订阅助手（增强版）") == 1
+    assert kwargs["image"] is None
+
+
 def test_no_download_notification_does_not_repeat_title_action():
     """无下载通知标题已包含处理结果，正文只保留判断依据。"""
     plugin = SubscribeAssistantEnhanced()
@@ -2134,8 +2192,8 @@ def test_no_download_notification_does_not_repeat_title_action():
     assert "处理：" not in kwargs["text"]
 
 
-def test_diagnostic_notification_uses_ordered_multiline_fields():
-    """诊断类订阅通知按统一字段顺序输出多行正文，缺失字段不生成空行。"""
+def test_diagnostic_notification_without_image_uses_text_source():
+    """无图诊断通知保持纯文本，并补充插件来源和关闭网页预览。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"notify": True})
     plugin.post_message = MagicMock()
@@ -2150,9 +2208,23 @@ def test_diagnostic_notification_uses_ordered_multiline_fields():
     kwargs = plugin.post_message.call_args.kwargs
     assert kwargs["text"] == (
         "低进度删除 3/3 次\n"
-        "后续：请手动判断"
+        "后续：请手动判断\n\n"
+        "来源：订阅助手（增强版）"
     )
-    assert kwargs["image"] == plugin.plugin_icon
+    assert kwargs["image"] is None
+    assert kwargs["disable_web_page_preview"] is True
+
+
+def test_notification_source_uses_runtime_plugin_name():
+    """无图来源跟随运行时插件名称，不固化显示文案。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.plugin_name = "自定义订阅助手"
+    plugin.init_plugin({"notify": True})
+    plugin.post_message = MagicMock()
+
+    plugin._notify_subscribe("测试通知")
+
+    assert plugin.post_message.call_args.kwargs["text"] == "来源：自定义订阅助手"
 
 
 def test_backfill_best_version_now_skips_full_best_version_before_detection(monkeypatch):

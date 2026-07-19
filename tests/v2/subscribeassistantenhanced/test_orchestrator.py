@@ -108,6 +108,7 @@ class TestStartBestVersion:
         notify.assert_called_once()
         assert notify.call_args.args[0].endswith("已添加洗版订阅")
         assert "reason" not in notify.call_args.kwargs
+        assert "user" not in notify.call_args.kwargs
         _args, kwargs = oper.add.call_args
         assert kwargs["best_version"] == 1 and kwargs["season"] == 1
         assert kwargs["best_version_full"] == 1
@@ -138,6 +139,7 @@ class TestStartBestVersion:
         assert notify.call_args.kwargs["follow_up"] == "请检查订阅创建错误"
         assert notify.call_args.kwargs["diagnostic"] is True
         assert notify.call_args.kwargs["image"] == "poster.jpg"
+        assert "user" not in notify.call_args.kwargs
 
     def test_skips_when_already_best_version(self):
         oper = MagicMock()

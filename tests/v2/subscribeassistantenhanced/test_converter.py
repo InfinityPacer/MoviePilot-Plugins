@@ -82,6 +82,7 @@ class TestConvertToFull:
         assert send_event.call_args.args[1]["subscribe_id"] == 9
         notify.assert_called_once()
         assert notify.call_args.args[0] == "测试剧 S1 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅"
+        assert "user" not in notify.call_args.kwargs
         assert "reason" not in notify.call_args.kwargs
 
     def test_failure_keeps_original(self):

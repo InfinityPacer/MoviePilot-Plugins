@@ -17,7 +17,8 @@ class CompletionVerifier:
                  subscribe_oper=None,
                  retention_days: int = 180,
                  notify_fn: Optional[Callable] = None,
-                 rebuild_subscribe_fn: Optional[Callable] = None):
+                 rebuild_subscribe_fn: Optional[Callable] = None,
+                 get_subscribe_image_fn: Optional[Callable] = None):
         """注入完成快照存储、集数查询、订阅查询和真实订阅重建能力。"""
         self._read = task_data_read
         self._update = task_data_update
@@ -26,6 +27,7 @@ class CompletionVerifier:
         self._retention_seconds = retention_days * 86400
         self._notify = notify_fn
         self._rebuild_subscribe = rebuild_subscribe_fn
+        self._get_subscribe_image = get_subscribe_image_fn
 
     def snapshot(self, subscribe, mediainfo, scope: Optional[SeasonScope]):
         """保存完成快照，同一季同一剧集组只保留最新记录。"""
@@ -43,6 +45,11 @@ class CompletionVerifier:
             "completed_at": time.time(),
             "subscribe_config": _extract_config(subscribe),
         }
+        image = self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
+        if not image and mediainfo:
+            image = mediainfo.get_message_image()
+        if image:
+            snap["subscribe_image"] = image
 
         def updater(data: dict) -> dict:
             snapshots = data.get("list", [])
@@ -141,6 +148,7 @@ class CompletionVerifier:
             action_text = "已移除旧洗版订阅并重建订阅" if removed_full_best_version else "已自动重建订阅"
             self._notify(
                 f"{name}{season_text} 检测到新增集数（{old_total}→{current_total}），{action_text}",
+                image=snap.get("subscribe_image"),
             )
         return True
 

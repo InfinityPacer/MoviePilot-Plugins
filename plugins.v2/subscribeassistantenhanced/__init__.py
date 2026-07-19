@@ -88,7 +88,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.6.7"
+    plugin_version = "0.6.8"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -244,6 +244,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             retention_days=cfg.verify_retention_days,
             notify_fn=self._notify_subscribe,
             rebuild_subscribe_fn=self._rebuild_subscribe_from_snapshot,
+            get_subscribe_image_fn=self._get_subscribe_image,
         )
         priority_manager = PriorityManager(
             tm.read,
@@ -259,6 +260,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             restore_fn=self._restore_subscribe_from_snapshot,
             snapshot_fn=verifier.snapshot,
             format_desc_fn=lambda subscribe, mediainfo: self._format_subscribe_desc(subscribe, mediainfo),
+            notification_image_fn=self._resolve_notification_image,
             plugin_name=self.plugin_name,
         )
         pending_refresh = PendingRefresh()
@@ -423,6 +425,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             notify_fn=self._notify_subscribe,
             related_downloads_fn=self._related_download_histories,
             best_version_type=cfg.best_version_type,
+            notification_image_fn=self._resolve_notification_image,
             plugin_name=self.plugin_name,
         )
         subscription_cleanup = SubscriptionCleanup(
@@ -454,6 +457,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_oper=self._subscribe_oper,
             post_message=self.post_message,
             notify_fn=self._notify_subscribe,
+            notification_image_fn=self._resolve_notification_image,
             plugin_name=self.plugin_name,
             deletes_store=deletes_store if cfg.download_monitor_enabled else None,
             skip_deletion=cfg.skip_deletion,
@@ -675,7 +679,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
         )
         self._notify_subscribe(
-            "洗版订阅下载事实回填",
+            "洗版下载事实回填完成",
             action=(
                 f"扫描 {results['scanned']} 个订阅，成功回填 {results['updated']} 个，"
                 f"跳过 {results['skipped']} 个，累计补写 {results['filled_episodes']} 集"
@@ -759,7 +763,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     self._notify_subscribe(
                         f"{format_subscribe(subscribe)} {mode_label}超过时限"
                         f"（{self._best_version_timeout_days(subscribe)}天），已标记洗版优先级为完成",
-                        image=mediainfo.get_message_image(),
+                        image=self._resolve_notification_image(subscribe, mediainfo),
                     )
                     continue
                 if (
@@ -1641,7 +1645,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             score=mediainfo.vote_average,
             user=subscribe.username,
             reason=reason or "上映后超期且无下载",
-            image=mediainfo.get_message_image(),
+            image=self._resolve_notification_image(subscribe, mediainfo),
             link="#/subscribe/tv?tab=mysub" if subscribe.type == "电视剧" else "#/subscribe/movie?tab=mysub",
         )
 
@@ -1656,7 +1660,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             score=mediainfo.vote_average if mediainfo else None,
             user=subscribe.username,
             reason=detail,
-            image=mediainfo.get_message_image() if mediainfo else None,
+            image=self._resolve_notification_image(subscribe, mediainfo),
             link="#/subscribe/tv?tab=mysub" if media_type == "电视剧" else "#/subscribe/movie?tab=mysub",
         )
 
@@ -1682,8 +1686,23 @@ class SubscribeAssistantEnhanced(_PluginBase):
             follow_up=follow_up if follow_up is not None else next_step,
             diagnostic=diagnostic,
         )
-        image = image or self.plugin_icon
-        self.post_message(mtype=NotificationType.Subscribe, title=title, text=text, image=image, link=link)
+        message_options = {}
+        if not image:
+            text = self._append_notification_source(text)
+            message_options["disable_web_page_preview"] = True
+        self.post_message(
+            mtype=NotificationType.Subscribe,
+            title=title,
+            text=text,
+            image=image or None,
+            link=link,
+            **message_options,
+        )
+
+    def _append_notification_source(self, text: Optional[str]) -> str:
+        """无图消息追加插件来源，便于在通知转发和多插件场景中识别发送方。"""
+        source = f"来源：{self.plugin_name}"
+        return f"{text}\n\n{source}" if text else source
 
     @staticmethod
     def _format_notification_text(text=None, score=None, user=None, reason=None,
@@ -1717,3 +1736,10 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if subscribe.poster:
             return subscribe.poster.replace("original", "w500")
         return ""
+
+    def _resolve_notification_image(self, subscribe=None, mediainfo=None):
+        """解析媒体通知图片，优先保持订阅卡片当前展示图片。"""
+        subscribe_image = self._get_subscribe_image(subscribe) if subscribe else ""
+        if subscribe_image:
+            return subscribe_image
+        return mediainfo.get_message_image() if mediainfo else None

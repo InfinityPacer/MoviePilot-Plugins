@@ -30,7 +30,13 @@ def _sub(**kwargs):
 
 def _mi(**kwargs):
     """构造完整 MediaInfo 替身，默认包含事件处理会读取的固定字段。"""
-    defaults = dict(type="tv", next_episode_to_air=None, release_date=None, first_air_date=None)
+    defaults = dict(
+        type="tv",
+        next_episode_to_air=None,
+        release_date=None,
+        first_air_date=None,
+        get_message_image=lambda: "media.jpg",
+    )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
 
@@ -127,6 +133,7 @@ class TestEventOrdering:
             download_monitor=monitor,
             lifecycle=lifecycle,
             notify_fn=notify,
+            notification_image_fn=lambda _subscribe: "subscribe.jpg",
         )
         proxy.on_download_added(SimpleNamespace(event_data={
             "source": 'Subscribe|{"id": 1}', "hash": "h1", "episodes": [1, 2], "downloader": "qb",
@@ -140,6 +147,7 @@ class TestEventOrdering:
         assert "已恢复暂停订阅" in notify.call_args.args[0]
         assert notify.call_args.kwargs["reason"] == "无下载暂停"
         assert notify.call_args.kwargs["follow_up"] == "48小时内不会因同一原因再次自动暂停"
+        assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_download_added_external_result_uses_external_notification(self):
         """外部暂停归属由 lifecycle 处理，事件层只按结果生成外部恢复通知。"""
@@ -153,7 +161,12 @@ class TestEventOrdering:
             reason="external",
         )
         notify = MagicMock()
-        proxy = EventProxy(subscribe_oper=oper, lifecycle=lifecycle, notify_fn=notify)
+        proxy = EventProxy(
+            subscribe_oper=oper,
+            lifecycle=lifecycle,
+            notify_fn=notify,
+            notification_image_fn=lambda _subscribe: "subscribe.jpg",
+        )
 
         proxy.on_download_added(SimpleNamespace(event_data={
             "source": 'Subscribe|{"id": 1}', "hash": "h1",
@@ -163,6 +176,7 @@ class TestEventOrdering:
         notify.assert_called_once()
         assert "已恢复外部暂停订阅" in notify.call_args.args[0]
         assert notify.call_args.kwargs["follow_up"] == "用户再次手动暂停仍会立即生效"
+        assert notify.call_args.kwargs["image"] == "subscribe.jpg"
 
     def test_download_added_only_notifies_when_lifecycle_changes(self):
         """source 无法解析不进 lifecycle；已解析订阅是否恢复由 lifecycle 结果决定。"""
@@ -758,10 +772,16 @@ class TestSubscribeLifecycle:
         tm.clear_tasks.side_effect = lambda _sid: order.append("clear")
         verifier = MagicMock()
         verifier.snapshot.side_effect = lambda **_kwargs: order.append("snapshot")
+        mediainfo = _mi()
         sub = _sub(id=5, tmdbid=100, season=1)
         oper = MagicMock()
         oper.get.return_value = sub
-        proxy = EventProxy(task_manager=tm, verifier=verifier, subscribe_oper=oper)
+        proxy = EventProxy(
+            task_manager=tm,
+            verifier=verifier,
+            subscribe_oper=oper,
+            mediainfo_from_dict=lambda _data: mediainfo,
+        )
         proxy.on_subscribe_complete(SimpleNamespace(event_data={
             "subscribe_id": 5,
             "subscribe_info": {"tmdbid": 100, "season": 1},
@@ -771,6 +791,7 @@ class TestSubscribeLifecycle:
         assert order == ["snapshot", "clear"]
         _, kwargs = verifier.snapshot.call_args
         assert kwargs.get("subscribe") is sub
+        assert kwargs.get("mediainfo") is mediainfo
 
     def test_complete_without_subscribe_snapshot_still_clears_instance_state(self):
         """完成事件缺少订阅快照时仍按 ID 清理实例状态。"""
@@ -785,6 +806,32 @@ class TestSubscribeLifecycle:
 
         task_manager.clear_tasks.assert_called_once_with(5)
         verifier.snapshot.assert_not_called()
+
+    def test_complete_media_parse_failure_still_snapshots_and_clears_tasks(self):
+        """完成事件媒体补充解析失败时，快照与任务清理仍必须继续。"""
+        order = []
+        task_manager = MagicMock()
+        task_manager.clear_tasks.side_effect = lambda _sid: order.append("clear")
+        verifier = MagicMock()
+        verifier.snapshot.side_effect = lambda **_kwargs: order.append("snapshot")
+        subscribe = _sub(id=5)
+        subscribe_oper = MagicMock()
+        subscribe_oper.get.return_value = subscribe
+
+        proxy = EventProxy(
+            task_manager=task_manager,
+            verifier=verifier,
+            subscribe_oper=subscribe_oper,
+            mediainfo_from_dict=MagicMock(side_effect=ValueError("invalid media payload")),
+        )
+
+        proxy.on_subscribe_complete(SimpleNamespace(event_data={
+            "subscribe_id": 5,
+            "mediainfo": {"broken": True},
+        }))
+
+        assert order == ["snapshot", "clear"]
+        assert verifier.snapshot.call_args.kwargs["mediainfo"] is None
 
     def test_complete_triggers_best_version_creation(self):
         """SubscribeComplete → 委托洗版编排创建洗版订阅（mediainfo 由事件重建）。"""

@@ -22,6 +22,7 @@ class BestVersionOrchestrator:
                  notify_fn: Optional[Callable] = None,
                  related_downloads_fn: Optional[Callable] = None,
                  best_version_type: str = "no",
+                 notification_image_fn: Optional[Callable] = None,
                  plugin_name: str = "订阅助手（增强版）"):
         """注入洗版编排依赖与自动洗版范围。"""
         self._priority = priority_manager
@@ -30,6 +31,7 @@ class BestVersionOrchestrator:
         self._notify = notify_fn
         self._related_downloads = related_downloads_fn
         self._best_version_type = best_version_type
+        self._notification_image = notification_image_fn
         self._plugin_name = plugin_name
 
     def build_payload(self, subscribe) -> dict:
@@ -70,7 +72,7 @@ class BestVersionOrchestrator:
             if self._notify:
                 self._notify(
                     f"{format_subscribe_desc(subscribe)} 已达顶档，跳过洗版订阅",
-                    image=mediainfo.get_message_image(),
+                    image=self._resolve_notification_image(subscribe, mediainfo),
                     link="#/subscribe/movie?tab=mysub",
                 )
             return None
@@ -113,8 +115,7 @@ class BestVersionOrchestrator:
                 self._notify(
                     f"{format_subscribe_desc(subscribe)} 已添加{mode_label}订阅",
                     score=mediainfo.vote_average,
-                    user=self._plugin_name,
-                    image=mediainfo.get_message_image(),
+                    image=self._resolve_notification_image(subscribe, mediainfo),
                     link="#/subscribe/movie?tab=mysub" if is_movie else "#/subscribe/tv?tab=mysub",
                 )
         elif self._notify:
@@ -127,9 +128,15 @@ class BestVersionOrchestrator:
                 reason=err_msg,
                 follow_up="请检查订阅创建错误",
                 diagnostic=True,
-                image=mediainfo.get_message_image(),
+                image=self._resolve_notification_image(subscribe, mediainfo),
             )
         return sid
+
+    def _resolve_notification_image(self, subscribe, mediainfo):
+        """解析洗版通知图片；未注入统一解析器时沿用媒体图片。"""
+        if self._notification_image:
+            return self._notification_image(subscribe, mediainfo)
+        return mediainfo.get_message_image()
 
     @staticmethod
     def _mode_label(subscribe) -> str:
