@@ -48,9 +48,7 @@ function normalizeStringArray(defaultValue: string[], incoming: unknown): string
 /** Host 配置来自动态 JSON；这里只接受稳定键并按默认值类型重建完整持久化契约。 */
 export function normalizeSaeConfig(input: unknown): SaeConfig {
   const source =
-    input !== null && typeof input === 'object' && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {}
+    input !== null && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {}
   const entries = (Object.keys(configDefaults) as ConfigKey[]).map(key => {
     const defaultValue = configDefaults[key]
     const incoming = source[key]

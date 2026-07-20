@@ -54,9 +54,8 @@ describe('configuration draft contract', () => {
 
       if (field.kind === 'multi-select') {
         const candidates = optionValues?.map(String) ?? []
-        draftValues[field.key] = JSON.stringify(current) === JSON.stringify([candidates[0]])
-          ? [candidates[1]]
-          : [candidates[0]]
+        draftValues[field.key] =
+          JSON.stringify(current) === JSON.stringify([candidates[0]]) ? [candidates[1]] : [candidates[0]]
       } else if (optionValues?.length) {
         draftValues[field.key] = optionValues.find(value => value !== current)
       } else if (typeof current === 'boolean') {

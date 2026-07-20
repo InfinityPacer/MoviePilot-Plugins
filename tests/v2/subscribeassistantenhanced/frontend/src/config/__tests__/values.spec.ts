@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { configDefaults } from '@/config/defaults'
-import {
-  normalizeFiniteNumber,
-  normalizeSaeConfig,
-} from '@/config/values'
+import { normalizeFiniteNumber, normalizeSaeConfig } from '@/config/values'
 
 describe('normalizeFiniteNumber', () => {
   it('将整数字符串转换为 number', () => {
@@ -65,15 +62,11 @@ describe('normalizeSaeConfig', () => {
     expect(result.onlyonce).toBe(true)
     expect(result.reset_task).toBe(true)
     expect(result.auto_check_interval_minutes).toBe(45)
-    expect(result.download_check_interval_minutes).toBe(
-      configDefaults.download_check_interval_minutes,
-    )
+    expect(result.download_check_interval_minutes).toBe(configDefaults.download_check_interval_minutes)
     expect(result.meta_check_interval_hours).toBe(configDefaults.meta_check_interval_hours)
     expect(result.download_timeout_minutes).toBe(configDefaults.download_timeout_minutes)
     expect(result.cadence_multiplier).toBe(3.75)
-    expect(result.best_version_movie_remaining_days).toBe(
-      configDefaults.best_version_movie_remaining_days,
-    )
+    expect(result.best_version_movie_remaining_days).toBe(configDefaults.best_version_movie_remaining_days)
     expect(result.subscription_cleanup_history_scenes).toEqual(['normal', 'best_version'])
     expect(result.no_download_actions).toEqual(['pause_movie', 'delete_tv'])
     expect(result.paused_probe_reasons).toEqual(['no_download', 'pre_air'])
@@ -91,12 +84,8 @@ describe('normalizeSaeConfig', () => {
   it('缺失列表字段使用独立的默认数组', () => {
     const result = normalizeSaeConfig({})
 
-    expect(result.subscription_cleanup_history_scenes).toEqual(
-      configDefaults.subscription_cleanup_history_scenes,
-    )
-    expect(result.subscription_cleanup_history_scenes).not.toBe(
-      configDefaults.subscription_cleanup_history_scenes,
-    )
+    expect(result.subscription_cleanup_history_scenes).toEqual(configDefaults.subscription_cleanup_history_scenes)
+    expect(result.subscription_cleanup_history_scenes).not.toBe(configDefaults.subscription_cleanup_history_scenes)
     expect(result.no_download_actions).not.toBe(configDefaults.no_download_actions)
     expect(result.paused_probe_reasons).not.toBe(configDefaults.paused_probe_reasons)
   })

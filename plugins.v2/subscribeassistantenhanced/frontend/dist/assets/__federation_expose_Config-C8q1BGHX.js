@@ -55,9 +55,7 @@ const configDefaults = {
   "tv_no_download_days": 180,
   "no_download_actions": [],
   "site_total_probe_enabled": false,
-  "paused_probe_reasons": [
-    "no_download"
-  ],
+  "paused_probe_reasons": ["no_download"],
   "paused_probe_min_pause_days": 14,
   "paused_probe_interval_hours": 72,
   "best_version_type": "no",
@@ -154,13 +152,40 @@ function useConfigDraft(initialConfig) {
 
 const groups = [
   { key: "global", title: "全局运行", icon: "mdi-tune-variant", summary: "插件开关、通知、一次性动作与公共周期" },
-  { key: "cleanup", title: "订阅清理", icon: "mdi-delete-sweep-outline", summary: "下载监控、删种、Tracker 与整理记录清理", highRisk: true },
+  {
+    key: "cleanup",
+    title: "订阅清理",
+    icon: "mdi-delete-sweep-outline",
+    summary: "下载监控、删种、Tracker 与整理记录清理",
+    highRisk: true
+  },
   { key: "pending", title: "订阅待定", icon: "mdi-timer-sand", summary: "下载中与剧集目标未稳定时保持待定" },
-  { key: "pause", title: "订阅暂停", icon: "mdi-pause-circle-outline", summary: "按用户、上映播出窗口和无下载策略暂停订阅" },
+  {
+    key: "pause",
+    title: "订阅暂停",
+    icon: "mdi-pause-circle-outline",
+    summary: "按用户、上映播出窗口和无下载策略暂停订阅"
+  },
   { key: "completion", title: "订阅补全", icon: "mdi-radar", summary: "站点集数探测与暂停订阅补搜" },
-  { key: "bestVersion", title: "订阅洗版", icon: "mdi-auto-fix", summary: "洗版范围、时限、回填和分集转全集", highRisk: true },
-  { key: "guard", title: "完结信号", icon: "mdi-shield-check-outline", summary: "完结守卫、站点证据、波动节奏和自动纠错" },
-  { key: "recognition", title: "识别增强", icon: "mdi-account-search-outline", summary: "候选准入、通知、二次识别和自定义策略" }
+  {
+    key: "bestVersion",
+    title: "订阅洗版",
+    icon: "mdi-auto-fix",
+    summary: "洗版范围、时限、回填和分集转全集",
+    highRisk: true
+  },
+  {
+    key: "guard",
+    title: "完结信号",
+    icon: "mdi-shield-check-outline",
+    summary: "完结守卫、站点证据、波动节奏和自动纠错"
+  },
+  {
+    key: "recognition",
+    title: "识别增强",
+    icon: "mdi-account-search-outline",
+    summary: "候选准入、通知、二次识别和自定义策略"
+  }
 ];
 const fields = [
   {
@@ -1162,84 +1187,234 @@ function t(localeSource, key, params = {}) {
   const locale = normalizeLocale(localeSource);
   const template = messages[locale][key] ?? messages["zh-CN"][key];
   if (!template) throw new Error(`Missing translation key: ${key}`);
-  return template.replace(/\{(\w+)\}/g, (match, name) => Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match);
+  return template.replace(
+    /\{(\w+)\}/g,
+    (match, name) => Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+  );
 }
 const groupTranslations = {
-  global: { tw: ["全域執行", "外掛開關、通知、單次操作與共用週期"], en: ["General", "Plugin state, notifications, one-time actions, and shared schedules"] },
-  cleanup: { tw: ["訂閱清理", "下載監控、刪除種子、Tracker 與整理記錄清理"], en: ["Cleanup", "Download monitoring, torrent removal, Tracker rules, and history cleanup"] },
-  pending: { tw: ["訂閱待定", "下載中或集數目標尚未穩定時保持待定"], en: ["Pending", "Keep subscriptions pending while downloads or episode targets are unsettled"] },
-  pause: { tw: ["訂閱暫停", "依使用者、播出窗口與無下載策略暫停訂閱"], en: ["Pause", "Pause subscriptions by user, release window, or no-download policy"] },
-  completion: { tw: ["訂閱補全", "站點集數探測與暫停訂閱補搜"], en: ["Completion", "Site episode probes and paused subscription searches"] },
-  bestVersion: { tw: ["訂閱洗版", "洗版範圍、時限、回填與分集轉全集"], en: ["Best version", "Upgrade scope, time limits, backfill, and episode-to-season conversion"] },
-  guard: { tw: ["完結訊號", "完結守衛、站點證據、波動節奏與自動修正"], en: ["Completion guard", "Completion checks, site evidence, cadence, and automatic correction"] },
-  recognition: { tw: ["識別增強", "候選准入、通知、二次識別與自訂策略"], en: ["Recognition", "Candidate checks, notifications, re-identification, and custom policies"] }
+  global: {
+    tw: ["全域執行", "外掛開關、通知、單次操作與共用週期"],
+    en: ["General", "Plugin state, notifications, one-time actions, and shared schedules"]
+  },
+  cleanup: {
+    tw: ["訂閱清理", "下載監控、刪除種子、Tracker 與整理記錄清理"],
+    en: ["Cleanup", "Download monitoring, torrent removal, Tracker rules, and history cleanup"]
+  },
+  pending: {
+    tw: ["訂閱待定", "下載中或集數目標尚未穩定時保持待定"],
+    en: ["Pending", "Keep subscriptions pending while downloads or episode targets are unsettled"]
+  },
+  pause: {
+    tw: ["訂閱暫停", "依使用者、播出窗口與無下載策略暫停訂閱"],
+    en: ["Pause", "Pause subscriptions by user, release window, or no-download policy"]
+  },
+  completion: {
+    tw: ["訂閱補全", "站點集數探測與暫停訂閱補搜"],
+    en: ["Completion", "Site episode probes and paused subscription searches"]
+  },
+  bestVersion: {
+    tw: ["訂閱洗版", "洗版範圍、時限、回填與分集轉全集"],
+    en: ["Best version", "Upgrade scope, time limits, backfill, and episode-to-season conversion"]
+  },
+  guard: {
+    tw: ["完結訊號", "完結守衛、站點證據、波動節奏與自動修正"],
+    en: ["Completion guard", "Completion checks, site evidence, cadence, and automatic correction"]
+  },
+  recognition: {
+    tw: ["識別增強", "候選准入、通知、二次識別與自訂策略"],
+    en: ["Recognition", "Candidate checks, notifications, re-identification, and custom policies"]
+  }
 };
 const englishFields = {
   enabled: ["Enable plugin", "Activate the plugin and register its scheduled tasks"],
   notify: ["Send notifications", "Send notifications when relevant events occur"],
   onlyonce: ["Run once now", "Run a full inspection after saving, then reset automatically"],
-  reset_task: ["Reset data", "Reset all pending, paused, and monitored task data after saving, then reset automatically"],
-  auto_check_interval_minutes: ["General check interval (minutes)", "Interval for site sampling, pending release, no-download handling, and cleanup"],
+  reset_task: [
+    "Reset data",
+    "Reset all pending, paused, and monitored task data after saving, then reset automatically"
+  ],
+  auto_check_interval_minutes: [
+    "General check interval (minutes)",
+    "Interval for site sampling, pending release, no-download handling, and cleanup"
+  ],
   download_check_interval_minutes: ["Download check interval (minutes)", "How often download task status is checked"],
   meta_check_interval_hours: ["Metadata check interval (hours)", "How often subscription metadata is reviewed"],
   best_version_cron: ["Best-version schedule", "CRON schedule for best-version checks, for example 0 15 * * *"],
   download_monitor_enabled: ["Remove stalled downloads", "Automatically remove subscription torrents that time out"],
   manual_delete_listen: ["Watch manual torrent removal", "Record torrents manually removed by the user"],
-  tracker_response_listen: ["Watch Tracker response keywords", "Remove torrents when a configured Tracker response keyword matches"],
+  tracker_response_listen: [
+    "Watch Tracker response keywords",
+    "Remove torrents when a configured Tracker response keyword matches"
+  ],
   auto_search_when_delete: ["Search after removal", "Trigger a completion search after removing a torrent"],
   skip_deletion: ["Skip recently removed releases", "Avoid downloading recently removed torrents again"],
-  download_timeout_minutes: ["Download timeout (minutes)", "Observation window used to detect downloads with insufficient progress"],
-  download_progress_threshold: ["Download progress threshold", "Remove only when progress increases by less than N% during the timeout window"],
-  download_queue_grace_multiplier: ["Download queue grace multiplier", "Allow N additional timeout windows while the downloader explicitly reports the task as queued; 0 disables the grace period"],
-  download_retry_limit: ["Consecutive timeout limit", "Keep the torrent and notify after N consecutive low-progress timeouts"],
+  download_timeout_minutes: [
+    "Download timeout (minutes)",
+    "Observation window used to detect downloads with insufficient progress"
+  ],
+  download_progress_threshold: [
+    "Download progress threshold",
+    "Remove only when progress increases by less than N% during the timeout window"
+  ],
+  download_queue_grace_multiplier: [
+    "Download queue grace multiplier",
+    "Allow N additional timeout windows while the downloader explicitly reports the task as queued; 0 disables the grace period"
+  ],
+  download_retry_limit: [
+    "Consecutive timeout limit",
+    "Keep the torrent and notify after N consecutive low-progress timeouts"
+  ],
   delete_exclude_tags: ["Excluded tags", "Comma-separated tags that must not be processed"],
-  default_tracker_response: ["Tracker response keywords", "One keyword per line; case-insensitive regular expressions are supported"],
-  delete_record_retention_hours: ["Removal history retention (hours)", "Periodically remove deletion records older than N hours"],
-  subscription_cleanup_history_type: ["Cleanup media scope", "Media types whose old transfer records and files are removed before download"],
-  subscription_cleanup_history_scenes: ["Cleanup trigger scenarios", "Choose which subscription download scenarios trigger cleanup"],
-  recognition_guard_mode: ["Recognition mode", "Review whether a candidate matches the subscription target before automatic download"],
+  default_tracker_response: [
+    "Tracker response keywords",
+    "One keyword per line; case-insensitive regular expressions are supported"
+  ],
+  delete_record_retention_hours: [
+    "Removal history retention (hours)",
+    "Periodically remove deletion records older than N hours"
+  ],
+  subscription_cleanup_history_type: [
+    "Cleanup media scope",
+    "Media types whose old transfer records and files are removed before download"
+  ],
+  subscription_cleanup_history_scenes: [
+    "Cleanup trigger scenarios",
+    "Choose which subscription download scenarios trigger cleanup"
+  ],
+  recognition_guard_mode: [
+    "Recognition mode",
+    "Review whether a candidate matches the subscription target before automatic download"
+  ],
   recognition_guard_notify: ["Recognition notifications", "Control recognition messages without affecting audit logs"],
-  recognition_guard_notify_interval: ["Notification rate limit (seconds)", "Minimum interval for the same subscription, action, and reason"],
+  recognition_guard_notify_interval: [
+    "Notification rate limit (seconds)",
+    "Minimum interval for the same subscription, action, and reason"
+  ],
   recognition_guard_tmdb_recheck_mode: ["Secondary recognition", "Control when secondary recognition is performed"],
-  recognition_guard_cache_maxsize: ["Recognition cache size", "Cache secondary recognition results to avoid duplicate requests"],
-  recognition_guard_custom_config: ["Custom recognition rules", "Edit only when built-in rules are insufficient; leave empty to inherit the current mode"],
-  pending_enhanced_enabled: ["Automatically pend TV subscriptions", "Mark TV subscriptions pending to avoid completing them too early"],
+  recognition_guard_cache_maxsize: [
+    "Recognition cache size",
+    "Cache secondary recognition results to avoid duplicate requests"
+  ],
+  recognition_guard_custom_config: [
+    "Custom recognition rules",
+    "Edit only when built-in rules are insufficient; leave empty to inherit the current mode"
+  ],
+  pending_enhanced_enabled: [
+    "Automatically pend TV subscriptions",
+    "Mark TV subscriptions pending to avoid completing them too early"
+  ],
   pending_download_enabled: ["Pend active downloads", "Keep subscriptions pending while downloads are in progress"],
   auto_tv_pending_days: ["TV pending days", "Keep pending before the release date plus N days; 0 disables this rule"],
-  auto_tv_pending_episodes: ["TV pending episode count", "Keep pending when the episode count is at or below this value; 0 disables this rule"],
-  pending_use_volatility: ["Use change rate for pending", "Pend early when the total episode count changes near completion"],
+  auto_tv_pending_episodes: [
+    "TV pending episode count",
+    "Keep pending when the episode count is at or below this value; 0 disables this rule"
+  ],
+  pending_use_volatility: [
+    "Use change rate for pending",
+    "Pend early when the total episode count changes near completion"
+  ],
   pause_enhanced_enabled: ["Automatically pause subscriptions", "Pause subscriptions to avoid unnecessary requests"],
-  auto_pause_users: ["Auto-pause users (comma-separated)", "Pause new subscriptions from listed users; leave empty to disable"],
-  airing_pause_days: ["Upcoming episode pause days", "Pause when the next episode is more than N days away; 0 disables this rule"],
-  movie_air_pause_days: ["Movie release pause days", "Pause until N days before the movie release date; 0 disables this rule"],
+  auto_pause_users: [
+    "Auto-pause users (comma-separated)",
+    "Pause new subscriptions from listed users; leave empty to disable"
+  ],
+  airing_pause_days: [
+    "Upcoming episode pause days",
+    "Pause when the next episode is more than N days away; 0 disables this rule"
+  ],
+  movie_air_pause_days: [
+    "Movie release pause days",
+    "Pause until N days before the movie release date; 0 disables this rule"
+  ],
   tv_air_pause_days: ["TV premiere pause days", "Pause until N days before the TV premiere date; 0 disables this rule"],
-  movie_no_download_days: ["Movie no-download days", "Apply the selected policy when no movie download occurs within N days; 0 disables it"],
-  tv_no_download_days: ["TV no-download days", "Apply the selected policy when no TV download occurs within N days; 0 disables it"],
+  movie_no_download_days: [
+    "Movie no-download days",
+    "Apply the selected policy when no movie download occurs within N days; 0 disables it"
+  ],
+  tv_no_download_days: [
+    "TV no-download days",
+    "Apply the selected policy when no TV download occurs within N days; 0 disables it"
+  ],
   no_download_actions: ["No-download actions", "Choose the actions to apply when no download is found"],
-  site_total_probe_enabled: ["Probe site episode totals", "Use cached site releases to detect an incomplete episode target"],
+  site_total_probe_enabled: [
+    "Probe site episode totals",
+    "Use cached site releases to detect an incomplete episode target"
+  ],
   paused_probe_reasons: ["Paused search scenarios", "Choose pause reasons that allow low-frequency searches"],
-  paused_probe_min_pause_days: ["Search after N paused days", "Start searching after this many paused days; 0 disables it"],
-  paused_probe_interval_hours: ["Search interval (hours)", "Minimum interval between two searches for the same subscription"],
-  best_version_type: ["Best-version type", "Select media types for automatic upgrades; Off disables creation and checks"],
-  best_version_movie_remaining_days: ["Movie upgrade time limit (days)", "Stop movie upgrade subscriptions after this period; 0 means unlimited"],
-  best_version_tv_remaining_days: ["TV upgrade time limit (days)", "Stop TV upgrade subscriptions after this period; 0 means unlimited"],
-  best_version_episode_to_full: ["Convert episodes to full season", "Switch from episode upgrades to a full-season upgrade when the target is met"],
-  best_version_backfill_enabled: ["Backfill existing episodes", "Backfill library episodes when creating or converting an episode upgrade"],
-  backfill_best_version_now: ["Scan and backfill now", "Backfill existing episode-upgrade subscriptions after saving, then reset automatically"],
-  completion_guard_mode: ["Completion guard mode", "Choose the review strength used before completion; Balanced is the default"],
-  site_completion_evidence_enabled: ["Use site completion evidence", "Use site release titles as supporting completion evidence"],
+  paused_probe_min_pause_days: [
+    "Search after N paused days",
+    "Start searching after this many paused days; 0 disables it"
+  ],
+  paused_probe_interval_hours: [
+    "Search interval (hours)",
+    "Minimum interval between two searches for the same subscription"
+  ],
+  best_version_type: [
+    "Best-version type",
+    "Select media types for automatic upgrades; Off disables creation and checks"
+  ],
+  best_version_movie_remaining_days: [
+    "Movie upgrade time limit (days)",
+    "Stop movie upgrade subscriptions after this period; 0 means unlimited"
+  ],
+  best_version_tv_remaining_days: [
+    "TV upgrade time limit (days)",
+    "Stop TV upgrade subscriptions after this period; 0 means unlimited"
+  ],
+  best_version_episode_to_full: [
+    "Convert episodes to full season",
+    "Switch from episode upgrades to a full-season upgrade when the target is met"
+  ],
+  best_version_backfill_enabled: [
+    "Backfill existing episodes",
+    "Backfill library episodes when creating or converting an episode upgrade"
+  ],
+  backfill_best_version_now: [
+    "Scan and backfill now",
+    "Backfill existing episode-upgrade subscriptions after saving, then reset automatically"
+  ],
+  completion_guard_mode: [
+    "Completion guard mode",
+    "Choose the review strength used before completion; Balanced is the default"
+  ],
+  site_completion_evidence_enabled: [
+    "Use site completion evidence",
+    "Use site release titles as supporting completion evidence"
+  ],
   volatility_enabled: ["Episode-count change signal", "Treat recent total episode count changes as unstable"],
   volatility_window_days: ["Change-rate window (days)", "Number of days used to measure total episode count changes"],
-  cadence_enabled: ["Airing cadence signal", "Estimate the waiting period from airing intervals without directly marking completion"],
+  cadence_enabled: [
+    "Airing cadence signal",
+    "Estimate the waiting period from airing intervals without directly marking completion"
+  ],
   cadence_multiplier: ["Cadence window multiplier", "Increase the estimated waiting period; higher values wait longer"],
-  cadence_min_window_days: ["Minimum cadence window (days)", "The estimated waiting period cannot be shorter than this value"],
-  cadence_min_episodes: ["Minimum episodes for cadence", "Calculate airing intervals only after this many episodes have aired"],
+  cadence_min_window_days: [
+    "Minimum cadence window (days)",
+    "The estimated waiting period cannot be shorter than this value"
+  ],
+  cadence_min_episodes: [
+    "Minimum episodes for cadence",
+    "Calculate airing intervals only after this many episodes have aired"
+  ],
   season_cooldown_days: ["Season cooldown (days)", "Continue observing for this many days after the last episode airs"],
-  verify_enabled: ["Automatic correction", "Recheck completed episode counts and rebuild subscriptions when the count increases"],
+  verify_enabled: [
+    "Automatic correction",
+    "Recheck completed episode counts and rebuild subscriptions when the count increases"
+  ],
   verify_interval_hours: ["Correction interval (hours)", "Interval for rechecking episode counts after completion"],
-  verify_retention_days: ["Snapshot retention (days)", "Retain completion snapshots for this many days; default is 180"],
-  timeout_release_days: ["Pre-completion observation days", "Maximum number of days allowed for pre-completion observation"],
-  timeout_cadence_acceleration: ["Accelerate release by cadence", "Shorten the observation period after the cadence waiting window ends"]
+  verify_retention_days: [
+    "Snapshot retention (days)",
+    "Retain completion snapshots for this many days; default is 180"
+  ],
+  timeout_release_days: [
+    "Pre-completion observation days",
+    "Maximum number of days allowed for pre-completion observation"
+  ],
+  timeout_cadence_acceleration: [
+    "Accelerate release by cadence",
+    "Shorten the observation period after the cadence waiting window ends"
+  ]
 };
 const traditionalPhrases = [
   ["插件", "外掛"],
@@ -1494,7 +1669,8 @@ function localizedOptionTitle(locale, field, value, source) {
   if (locale === "zh-CN") return source;
   if (locale === "zh-TW") return toTraditional(source);
   if (typeof value === "number") {
-    if (field.key === "auto_check_interval_minutes" || field.key === "download_check_interval_minutes") return `${value} minutes`;
+    if (field.key === "auto_check_interval_minutes" || field.key === "download_check_interval_minutes")
+      return `${value} minutes`;
     if (field.key === "meta_check_interval_hours") return `${value} hours`;
     return String(value);
   }
@@ -1586,7 +1762,20 @@ function numberFieldUnit(key, locale = "zh-CN") {
 }
 function displayFieldLabel(field) {
   if (field.kind !== "number") return field.label;
-  return field.label.replace(/\s*[（(][^）)]+[）)]\s*/g, "").trim();
+  let label = field.label;
+  for (const [opening, closing] of [
+    ["（", "）"],
+    ["(", ")"]
+  ]) {
+    let start = label.indexOf(opening);
+    while (start >= 0) {
+      const end = label.indexOf(closing, start + opening.length);
+      if (end < 0) break;
+      label = `${label.slice(0, start)}${label.slice(end + closing.length)}`;
+      start = label.indexOf(opening);
+    }
+  }
+  return label.trim();
 }
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -1691,16 +1880,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const locale = computed(() => normalizeLocale(instance?.appContext.config.globalProperties.$i18n?.locale));
     const localizedGroups = computed(() => localizeGroups(locale.value, groups));
     const localizedFields = computed(() => localizeFields(locale.value, fields));
-    const fieldsByKey = computed(() => new Map(
-      localizedFields.value.filter((field) => !field.legacyUiKey && !field.dialogOnly).map((field) => [field.key, field])
-    ));
-    const trackerField = computed(() => localizedFields.value.find(
-      (field) => field.key === "default_tracker_response" && field.dialogOnly
-    ));
-    const yamlField = computed(() => localizedFields.value.find(
-      (field) => field.key === "recognition_guard_custom_config"
-    ));
-    const changedItems = computed(() => changedKeys.value.slice(0, 3).map((key) => localizedFields.value.find((field) => field.key === key)).filter((field) => Boolean(field)));
+    const fieldsByKey = computed(
+      () => new Map(
+        localizedFields.value.filter((field) => !field.legacyUiKey && !field.dialogOnly).map((field) => [field.key, field])
+      )
+    );
+    const trackerField = computed(
+      () => localizedFields.value.find((field) => field.key === "default_tracker_response" && field.dialogOnly)
+    );
+    const yamlField = computed(() => localizedFields.value.find((field) => field.key === "recognition_guard_custom_config"));
+    const changedItems = computed(
+      () => changedKeys.value.slice(0, 3).map((key) => localizedFields.value.find((field) => field.key === key)).filter((field) => Boolean(field))
+    );
     const hiddenChangedCount = computed(() => Math.max(0, changedKeys.value.length - changedItems.value.length));
     const activeGroup = ref("global");
     const runtimeSummary = ref(null);
@@ -1786,29 +1977,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         { titleKey: "section.siteProbe", keys: ["site_total_probe_enabled"] },
         {
           titleKey: "section.pausedProbe",
-          keys: [
-            "paused_probe_reasons",
-            "paused_probe_min_pause_days",
-            "paused_probe_interval_hours"
-          ]
+          keys: ["paused_probe_reasons", "paused_probe_min_pause_days", "paused_probe_interval_hours"]
         }
       ],
       bestVersion: [
         {
           titleKey: "section.bestVersionScope",
-          keys: [
-            "best_version_type",
-            "best_version_movie_remaining_days",
-            "best_version_tv_remaining_days"
-          ]
+          keys: ["best_version_type", "best_version_movie_remaining_days", "best_version_tv_remaining_days"]
         },
         {
           titleKey: "section.backfill",
-          keys: [
-            "best_version_episode_to_full",
-            "best_version_backfill_enabled",
-            "backfill_best_version_now"
-          ]
+          keys: ["best_version_episode_to_full", "best_version_backfill_enabled", "backfill_best_version_now"]
         }
       ],
       guard: [
@@ -2713,6 +2892,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a840fd50"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-9b738b9d"]]);
 
 export { Config as default };

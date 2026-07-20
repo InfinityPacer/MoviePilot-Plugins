@@ -1,9 +1,9 @@
-import { type ConfigKey } from './defaults'
+import { type ConfigKey } from "./defaults"
 
 /** Vue 字段对应的 Vuetify 控件类别。 */
-export type FieldKind = 'switch' | 'number' | 'text' | 'select' | 'multi-select' | 'cron' | 'textarea'
+export type FieldKind = "switch" | "number" | "text" | "select" | "multi-select" | "cron" | "textarea"
 /** 配置项对订阅生命周期和数据的影响等级。 */
-export type RiskLevel = 'none' | 'notice' | 'danger'
+export type RiskLevel = "none" | "notice" | "danger"
 
 /** 下拉或多选项的展示值与持久化值。 */
 export interface FieldOption {
@@ -15,14 +15,7 @@ export interface FieldOption {
 
 /** 配置页业务分组键。 */
 export type GroupKey =
-  | 'global'
-  | 'cleanup'
-  | 'pending'
-  | 'pause'
-  | 'completion'
-  | 'bestVersion'
-  | 'guard'
-  | 'recognition'
+  "global" | "cleanup" | "pending" | "pause" | "completion" | "bestVersion" | "guard" | "recognition"
 
 /** 单个配置字段的渲染与风险元数据。 */
 export interface FieldMeta {
@@ -63,14 +56,41 @@ export interface GroupMeta {
 }
 
 export const groups: GroupMeta[] = [
-  { key: 'global', title: '全局运行', icon: 'mdi-tune-variant', summary: '插件开关、通知、一次性动作与公共周期' },
-  { key: 'cleanup', title: '订阅清理', icon: 'mdi-delete-sweep-outline', summary: '下载监控、删种、Tracker 与整理记录清理', highRisk: true },
-  { key: 'pending', title: '订阅待定', icon: 'mdi-timer-sand', summary: '下载中与剧集目标未稳定时保持待定' },
-  { key: 'pause', title: '订阅暂停', icon: 'mdi-pause-circle-outline', summary: '按用户、上映播出窗口和无下载策略暂停订阅' },
-  { key: 'completion', title: '订阅补全', icon: 'mdi-radar', summary: '站点集数探测与暂停订阅补搜' },
-  { key: 'bestVersion', title: '订阅洗版', icon: 'mdi-auto-fix', summary: '洗版范围、时限、回填和分集转全集', highRisk: true },
-  { key: 'guard', title: '完结信号', icon: 'mdi-shield-check-outline', summary: '完结守卫、站点证据、波动节奏和自动纠错' },
-  { key: 'recognition', title: '识别增强', icon: 'mdi-account-search-outline', summary: '候选准入、通知、二次识别和自定义策略' },
+  { key: "global", title: "全局运行", icon: "mdi-tune-variant", summary: "插件开关、通知、一次性动作与公共周期" },
+  {
+    key: "cleanup",
+    title: "订阅清理",
+    icon: "mdi-delete-sweep-outline",
+    summary: "下载监控、删种、Tracker 与整理记录清理",
+    highRisk: true
+  },
+  { key: "pending", title: "订阅待定", icon: "mdi-timer-sand", summary: "下载中与剧集目标未稳定时保持待定" },
+  {
+    key: "pause",
+    title: "订阅暂停",
+    icon: "mdi-pause-circle-outline",
+    summary: "按用户、上映播出窗口和无下载策略暂停订阅"
+  },
+  { key: "completion", title: "订阅补全", icon: "mdi-radar", summary: "站点集数探测与暂停订阅补搜" },
+  {
+    key: "bestVersion",
+    title: "订阅洗版",
+    icon: "mdi-auto-fix",
+    summary: "洗版范围、时限、回填和分集转全集",
+    highRisk: true
+  },
+  {
+    key: "guard",
+    title: "完结信号",
+    icon: "mdi-shield-check-outline",
+    summary: "完结守卫、站点证据、波动节奏和自动纠错"
+  },
+  {
+    key: "recognition",
+    title: "识别增强",
+    icon: "mdi-account-search-outline",
+    summary: "候选准入、通知、二次识别和自定义策略"
+  }
 ]
 
 export const fields: FieldMeta[] = [

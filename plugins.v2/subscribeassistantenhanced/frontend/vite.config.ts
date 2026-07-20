@@ -1,5 +1,3 @@
-/// <reference types="vitest/config" />
-
 import { fileURLToPath } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
@@ -7,9 +5,9 @@ import federation from '@originjs/vite-plugin-federation'
 import { defineConfig, normalizePath, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
 
-const TEST_ROOT = normalizePath(fileURLToPath(
-  new URL('../../../tests/v2/subscribeassistantenhanced/frontend', import.meta.url),
-))
+const TEST_ROOT = normalizePath(
+  fileURLToPath(new URL('../../../tests/v2/subscribeassistantenhanced/frontend', import.meta.url)),
+)
 const REPOSITORY_ROOT = normalizePath(fileURLToPath(new URL('../../..', import.meta.url)))
 
 const isTestMode = (mode: string): boolean => mode === 'test' || process.env.VITEST === 'true'
@@ -29,7 +27,10 @@ function cleanFederationAssets(): Plugin {
       const remoteEntry = bundle['assets/remoteEntry.js']
       if (remoteEntry?.type === 'chunk') {
         // 规范化生成器空白，确保重复构建通过仓库检查。
-        remoteEntry.code = remoteEntry.code.replace(/[ \t]+$/gm, '')
+        remoteEntry.code = remoteEntry.code
+          .split('\n')
+          .map(line => line.trimEnd())
+          .join('\n')
       }
     },
   }

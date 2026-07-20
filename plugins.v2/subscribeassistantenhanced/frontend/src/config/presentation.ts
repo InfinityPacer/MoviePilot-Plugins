@@ -4,16 +4,40 @@ import type { SupportedLocale } from './i18n'
 
 const unitLabels: Record<SupportedLocale, Record<string, string>> = {
   'zh-CN': {
-    count: '次', day: '天', episode: '集', hour: '小时', item: '条', minute: '分钟',
-    multiplier: '倍', percent: '%', round: '轮', second: '秒',
+    count: '次',
+    day: '天',
+    episode: '集',
+    hour: '小时',
+    item: '条',
+    minute: '分钟',
+    multiplier: '倍',
+    percent: '%',
+    round: '轮',
+    second: '秒',
   },
   'zh-TW': {
-    count: '次', day: '天', episode: '集', hour: '小時', item: '條', minute: '分鐘',
-    multiplier: '倍', percent: '%', round: '輪', second: '秒',
+    count: '次',
+    day: '天',
+    episode: '集',
+    hour: '小時',
+    item: '條',
+    minute: '分鐘',
+    multiplier: '倍',
+    percent: '%',
+    round: '輪',
+    second: '秒',
   },
   'en-US': {
-    count: 'x', day: 'd', episode: 'ep', hour: 'hr', item: 'items', minute: 'min',
-    multiplier: 'x', percent: '%', round: 'rounds', second: 'sec',
+    count: 'x',
+    day: 'd',
+    episode: 'ep',
+    hour: 'hr',
+    item: 'items',
+    minute: 'min',
+    multiplier: 'x',
+    percent: '%',
+    round: 'rounds',
+    second: 'sec',
   },
 }
 
@@ -37,5 +61,18 @@ export function numberFieldUnit(key: ConfigKey, locale: SupportedLocale = 'zh-CN
 /** 数字字段的单位由步进器展示，标题只保留业务名称。 */
 export function displayFieldLabel(field: FieldMeta): string {
   if (field.kind !== 'number') return field.label
-  return field.label.replace(/\s*[（(][^）)]+[）)]\s*/g, '').trim()
+  let label = field.label
+  for (const [opening, closing] of [
+    ['（', '）'],
+    ['(', ')'],
+  ] as const) {
+    let start = label.indexOf(opening)
+    while (start >= 0) {
+      const end = label.indexOf(closing, start + opening.length)
+      if (end < 0) break
+      label = `${label.slice(0, start)}${label.slice(end + closing.length)}`
+      start = label.indexOf(opening)
+    }
+  }
+  return label.trim()
 }

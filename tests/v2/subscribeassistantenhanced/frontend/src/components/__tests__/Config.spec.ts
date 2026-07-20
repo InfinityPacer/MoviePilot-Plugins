@@ -86,10 +86,12 @@ describe('SubscribeAssistantEnhanced config', () => {
     await user.click(headerButton('sae-config-header__run'))
 
     expect(events.save).toHaveBeenCalledOnce()
-    expect(events.save).toHaveBeenCalledWith(expect.objectContaining({
-      onlyonce: true,
-      reset_task: false,
-    }))
+    expect(events.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onlyonce: true,
+        reset_task: false,
+      }),
+    )
     expect(events.close).not.toHaveBeenCalled()
   })
 
@@ -115,12 +117,9 @@ describe('SubscribeAssistantEnhanced config', () => {
       await waitFor(() => {
         expect(screen.getByRole('heading', { name: group.title })).toBeInTheDocument()
       })
-      for (const field of localizedFields.filter(item => (
-        item.group === group.key
-        && !item.legacyUiKey
-        && !item.dialogOnly
-        && item.kind !== 'textarea'
-      ))) {
+      for (const field of localizedFields.filter(
+        item => item.group === group.key && !item.legacyUiKey && !item.dialogOnly && item.kind !== 'textarea',
+      )) {
         expect(
           screen.queryAllByLabelText(field.label, { exact: true }).length,
           `${group.key}/${field.key}`,
@@ -135,11 +134,17 @@ describe('SubscribeAssistantEnhanced config', () => {
 
     await user.click(within(navigation).getByText('订阅清理'))
     await user.click(screen.getByRole('button', { name: '编辑Tracker响应关键字' }))
-    const tracker = await screen.findByRole('textbox', { name: 'Tracker响应关键字' })
+    const tracker = await screen.findByRole('textbox', {
+      name: 'Tracker响应关键字',
+    })
     const trackerDialog = tracker.closest<HTMLElement>('[role="dialog"]') as HTMLElement
     await user.clear(tracker)
     await user.type(tracker, 'tracker failure')
-    await user.click(within(trackerDialog).getByRole('button', { name: '关闭 Tracker响应关键字' }))
+    await user.click(
+      within(trackerDialog).getByRole('button', {
+        name: '关闭 Tracker响应关键字',
+      }),
+    )
 
     await user.click(within(navigation).getByText('识别增强'))
     await user.click(screen.getByRole('button', { name: '编辑自定义识别规则' }))
@@ -150,10 +155,12 @@ describe('SubscribeAssistantEnhanced config', () => {
     await user.click(within(yamlDialog).getByRole('button', { name: '关闭' }))
     await user.click(headerButton('sae-config-header__save'))
 
-    expect(events.save).toHaveBeenCalledWith(expect.objectContaining({
-      default_tracker_response: 'tracker failure',
-      recognition_guard_custom_config: 'rules: enabled',
-    }))
+    expect(events.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        default_tracker_response: 'tracker failure',
+        recognition_guard_custom_config: 'rules: enabled',
+      }),
+    )
   })
 
   it('updates number and text controls while keeping multi-select summaries compact', async () => {
@@ -165,7 +172,9 @@ describe('SubscribeAssistantEnhanced config', () => {
     const navigation = document.querySelector<HTMLElement>('.sae-group-nav__list') as HTMLElement
 
     await user.click(within(navigation).getByText('订阅清理'))
-    const timeout = screen.getByRole('spinbutton', { name: '下载超时时间（分钟）' })
+    const timeout = screen.getByRole('spinbutton', {
+      name: '下载超时时间（分钟）',
+    })
     await user.click(screen.getByRole('button', { name: '减小下载超时时间（分钟）' }))
     expect(timeout).toHaveValue(119)
     await user.click(screen.getByRole('button', { name: '增大下载超时时间（分钟）' }))
@@ -200,7 +209,11 @@ describe('SubscribeAssistantEnhanced config', () => {
     const header = document.querySelector<HTMLElement>('.sae-config-header')
     expect(header).not.toBeNull()
     expect(within(header as HTMLElement).getByRole('button', { name: 'Run once' })).toBeInTheDocument()
-    expect(within(header as HTMLElement).getByRole('button', { name: 'Save changes' })).toBeInTheDocument()
+    expect(
+      within(header as HTMLElement).getByRole('button', {
+        name: 'Save changes',
+      }),
+    ).toBeInTheDocument()
     expect(within(header as HTMLElement).getAllByRole('button', { name: 'Close' })).toHaveLength(2)
   })
 
@@ -224,25 +237,27 @@ describe('SubscribeAssistantEnhanced config', () => {
     const disconnect = vi.fn()
     const observerCallbacks: IntersectionObserverCallback[] = []
     const removeEventListener = vi.spyOn(HTMLElement.prototype, 'removeEventListener')
-    vi.stubGlobal('IntersectionObserver', class {
-      constructor(callback: IntersectionObserverCallback) {
-        observerCallbacks.push(callback)
-      }
-      disconnect = disconnect
-      observe() {}
-      takeRecords() { return [] }
-      unobserve() {}
-    })
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          observerCallbacks.push(callback)
+        }
+        disconnect = disconnect
+        observe() {}
+        takeRecords() {
+          return []
+        }
+        unobserve() {}
+      },
+    )
     const { unmount } = await renderConfig()
     const fieldSurface = document.querySelector<HTMLElement>('.sae-field-surface') as HTMLElement
     const header = document.querySelector<HTMLElement>('.sae-config-header') as HTMLElement
 
     await fireEvent.scroll(fieldSurface)
     expect(fieldSurface).toHaveClass('sae-config-scroll-root--active')
-    observerCallbacks.at(-1)?.(
-      [{ isIntersecting: false } as IntersectionObserverEntry],
-      {} as IntersectionObserver,
-    )
+    observerCallbacks.at(-1)?.([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver)
     await waitFor(() => expect(header).toHaveClass('sae-config-header--scrolled'))
 
     unmount()

@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { fields, groups } from '@/config/fields'
-import {
-  assertTranslationCoverage,
-  localizeFields,
-  localizeGroups,
-  normalizeLocale,
-  t,
-} from '@/config/i18n'
+import { assertTranslationCoverage, localizeFields, localizeGroups, normalizeLocale, t } from '@/config/i18n'
 
 describe('SAE i18n adapter', () => {
   it('normalizes Host locale values and ref-like values', () => {
@@ -56,9 +50,7 @@ describe('SAE i18n adapter', () => {
       expect(localized).toHaveLength(fields.length)
       expect(localized.every(field => field.label.trim())).toBe(true)
       expect(localized.filter(field => field.hint).length).toBe(fields.filter(field => field.hint).length)
-      expect(
-        localized.every(field => field.options?.every(option => option.title.trim()) ?? true),
-      ).toBe(true)
+      expect(localized.every(field => field.options?.every(option => option.title.trim()) ?? true)).toBe(true)
     }
 
     const traditional = localizeFields('zh-TW', fields)
@@ -70,17 +62,20 @@ describe('SAE i18n adapter', () => {
     expect(traditionalText).not.toMatch(/[后会将处为与发过这则无设选线响应种从开进间数长现还较达实复对内样并当]/)
     expect(traditional.find(field => field.key === 'enabled')?.label).toBe('啟用外掛')
     expect(english.find(field => field.key === 'enabled')?.label).toBe('Enable plugin')
-    expect(
-      english.find(field => field.key === 'completion_guard_mode')?.options?.map(option => option.title),
-    ).toEqual(['Off', 'Strict', 'Balanced', 'Relaxed'])
-    expect(
-      localizeFields('zh-CN', fields).find(field => field.key === 'recognition_guard_custom_config')?.hint,
-    ).toBe('仅在内置规则无法满足时编辑，留空则继承当前模式')
-    expect(
-      traditional.find(field => field.key === 'recognition_guard_custom_config')?.hint,
-    ).toBe('僅在內建規則無法滿足時編輯，留空則繼承目前模式')
-    expect(
-      english.find(field => field.key === 'recognition_guard_custom_config')?.hint,
-    ).toBe('Edit only when built-in rules are insufficient; leave empty to inherit the current mode')
+    expect(english.find(field => field.key === 'completion_guard_mode')?.options?.map(option => option.title)).toEqual([
+      'Off',
+      'Strict',
+      'Balanced',
+      'Relaxed',
+    ])
+    expect(localizeFields('zh-CN', fields).find(field => field.key === 'recognition_guard_custom_config')?.hint).toBe(
+      '仅在内置规则无法满足时编辑，留空则继承当前模式',
+    )
+    expect(traditional.find(field => field.key === 'recognition_guard_custom_config')?.hint).toBe(
+      '僅在內建規則無法滿足時編輯，留空則繼承目前模式',
+    )
+    expect(english.find(field => field.key === 'recognition_guard_custom_config')?.hint).toBe(
+      'Edit only when built-in rules are insufficient; leave empty to inherit the current mode',
+    )
   })
 })

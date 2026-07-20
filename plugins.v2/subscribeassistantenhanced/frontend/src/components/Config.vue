@@ -36,21 +36,22 @@ const instance = getCurrentInstance()
 const locale = computed(() => normalizeLocale(instance?.appContext.config.globalProperties.$i18n?.locale))
 const localizedGroups = computed(() => localizeGroups(locale.value, groups))
 const localizedFields = computed(() => localizeFields(locale.value, fields))
-const fieldsByKey = computed(() => new Map(
-  localizedFields.value
-    .filter(field => !field.legacyUiKey && !field.dialogOnly)
-    .map(field => [field.key, field]),
-))
-const trackerField = computed(() => localizedFields.value.find(
-  field => field.key === 'default_tracker_response' && field.dialogOnly,
-)!)
-const yamlField = computed(() => localizedFields.value.find(
-  field => field.key === 'recognition_guard_custom_config',
-)!)
-const changedItems = computed(() => changedKeys.value
-  .slice(0, 3)
-  .map(key => localizedFields.value.find(field => field.key === key))
-  .filter((field): field is FieldMeta => Boolean(field)))
+const fieldsByKey = computed(
+  () =>
+    new Map(
+      localizedFields.value.filter(field => !field.legacyUiKey && !field.dialogOnly).map(field => [field.key, field]),
+    ),
+)
+const trackerField = computed(() =>
+  localizedFields.value.find(field => field.key === 'default_tracker_response' && field.dialogOnly)!,
+)
+const yamlField = computed(() => localizedFields.value.find(field => field.key === 'recognition_guard_custom_config')!)
+const changedItems = computed(() =>
+  changedKeys.value
+    .slice(0, 3)
+    .map(key => localizedFields.value.find(field => field.key === key))
+    .filter((field): field is FieldMeta => Boolean(field)),
+)
 const hiddenChangedCount = computed(() => Math.max(0, changedKeys.value.length - changedItems.value.length))
 const activeGroup = ref<GroupKey>('global')
 const runtimeSummary = ref<SummaryPayload | null>(null)
@@ -63,7 +64,7 @@ const configHeaderSentinel = ref<HTMLElement | null>(null)
 const fieldSurfaceHeading = ref<HTMLElement | null>(null)
 const headerScrolled = ref(false)
 const theme = useTheme()
-const aceTheme = computed(() => theme.current.value.dark ? 'github_dark' : 'github')
+const aceTheme = computed(() => (theme.current.value.dark ? 'github_dark' : 'github'))
 let headerObserver: IntersectionObserver | undefined
 let configScrollRoot: HTMLElement | null = null
 let fieldScrollRoot: HTMLElement | null = null
@@ -145,29 +146,17 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
     { titleKey: 'section.siteProbe', keys: ['site_total_probe_enabled'] },
     {
       titleKey: 'section.pausedProbe',
-      keys: [
-        'paused_probe_reasons',
-        'paused_probe_min_pause_days',
-        'paused_probe_interval_hours',
-      ],
+      keys: ['paused_probe_reasons', 'paused_probe_min_pause_days', 'paused_probe_interval_hours'],
     },
   ],
   bestVersion: [
     {
       titleKey: 'section.bestVersionScope',
-      keys: [
-        'best_version_type',
-        'best_version_movie_remaining_days',
-        'best_version_tv_remaining_days',
-      ],
+      keys: ['best_version_type', 'best_version_movie_remaining_days', 'best_version_tv_remaining_days'],
     },
     {
       titleKey: 'section.backfill',
-      keys: [
-        'best_version_episode_to_full',
-        'best_version_backfill_enabled',
-        'backfill_best_version_now',
-      ],
+      keys: ['best_version_episode_to_full', 'best_version_backfill_enabled', 'backfill_best_version_now'],
     },
   ],
   guard: [
@@ -220,13 +209,15 @@ const activeGroupMeta = computed(
   () => localizedGroups.value.find(group => group.key === activeGroup.value) ?? localizedGroups.value[0]!,
 )
 const activeSections = computed(() =>
-  sectionDefinitions[activeGroup.value].map(section => ({
-    ...section,
-    title: t(locale.value, section.titleKey),
-    fields: section.keys
-      .map(key => fieldsByKey.value.get(key))
-      .filter((field): field is FieldMeta => Boolean(field) && field?.kind !== 'textarea'),
-  })).filter(section => section.fields.length > 0),
+  sectionDefinitions[activeGroup.value]
+    .map(section => ({
+      ...section,
+      title: t(locale.value, section.titleKey),
+      fields: section.keys
+        .map(key => fieldsByKey.value.get(key))
+        .filter((field): field is FieldMeta => Boolean(field) && field?.kind !== 'textarea'),
+    }))
+    .filter(section => section.fields.length > 0),
 )
 const cadenceSummary = computed(() => [
   {
@@ -253,7 +244,8 @@ const cadenceSummary = computed(() => [
 const activeDomainCount = computed(() => {
   const values = Object.values(runtimeSummary.value?.domains ?? {})
   return {
-    active: values.filter(value => value === true || (typeof value === 'string' && !['off', 'no'].includes(value))).length,
+    active: values.filter(value => value === true || (typeof value === 'string' && !['off', 'no'].includes(value)))
+      .length,
     total: values.length,
   }
 })
@@ -374,13 +366,7 @@ function runOnce(): void {
         </div>
 
         <div class="sae-config-header__actions">
-          <VBtn
-            class="sae-config-header__run"
-            color="primary"
-            type="button"
-            variant="tonal"
-            @click="runOnce"
-          >
+          <VBtn class="sae-config-header__run" color="primary" type="button" variant="tonal" @click="runOnce">
             <VIcon icon="mdi-play" start />
             {{ t(locale, 'config.runOnce') }}
           </VBtn>
@@ -492,11 +478,7 @@ function runOnce(): void {
               </div>
             </div>
 
-            <section
-              v-for="(section, sectionIndex) in activeSections"
-              :key="section.title"
-              class="sae-field-section"
-            >
+            <section v-for="(section, sectionIndex) in activeSections" :key="section.title" class="sae-field-section">
               <h3>{{ sectionIndex + 1 }}. {{ section.title }}</h3>
               <div class="sae-field-section__rows">
                 <div
@@ -512,12 +494,7 @@ function runOnce(): void {
                 >
                   <div class="sae-field-row__copy">
                     <div class="sae-field-row__label">
-                      <VIcon
-                        v-if="field.key === 'reset_task'"
-                        color="error"
-                        icon="mdi-alert-outline"
-                        size="16"
-                      />
+                      <VIcon v-if="field.key === 'reset_task'" color="error" icon="mdi-alert-outline" size="16" />
                       <span>{{ displayFieldLabel(field) }}</span>
                     </div>
                     <p v-if="field.hint">{{ field.hint }}</p>
@@ -563,10 +540,7 @@ function runOnce(): void {
                         </span>
                       </template>
                     </VSelect>
-                    <div
-                      v-else-if="field.kind === 'number'"
-                      class="sae-number-stepper"
-                    >
+                    <div v-else-if="field.kind === 'number'" class="sae-number-stepper">
                       <VBtn
                         :aria-label="t(locale, 'config.decrease', { label: field.label })"
                         icon
@@ -748,17 +722,12 @@ function runOnce(): void {
       </div>
     </form>
 
-    <VDialog
-      v-model="trackerDialogOpen"
-      max-width="720"
-      scrollable
-      width="calc(100% - 24px)"
-    >
+    <VDialog v-model="trackerDialogOpen" max-width="720" scrollable width="calc(100% - 24px)">
       <VCard>
         <VCardTitle class="sae-tracker-dialog__title">
           <span>{{ trackerField.label }}</span>
           <VBtn
-              :aria-label="`${t(locale, 'config.close')} ${trackerField.label}`"
+            :aria-label="`${t(locale, 'config.close')} ${trackerField.label}`"
             icon
             size="small"
             variant="text"
@@ -814,7 +783,13 @@ function runOnce(): void {
       <VCard>
         <VCardTitle class="sae-tracker-dialog__title">
           <span>{{ t(locale, 'config.yamlTitle') }}</span>
-          <VBtn :aria-label="t(locale, 'config.close')" icon size="small" variant="text" @click="yamlDialogOpen = false">
+          <VBtn
+            :aria-label="t(locale, 'config.close')"
+            icon
+            size="small"
+            variant="text"
+            @click="yamlDialogOpen = false"
+          >
             <VIcon icon="mdi-close" />
           </VBtn>
         </VCardTitle>
@@ -829,7 +804,9 @@ function runOnce(): void {
         </VCardText>
         <VCardActions>
           <VSpacer />
-          <VBtn color="primary" prepend-icon="mdi-check" @click="yamlDialogOpen = false">{{ t(locale, 'config.done') }}</VBtn>
+          <VBtn color="primary" prepend-icon="mdi-check" @click="yamlDialogOpen = false">{{
+            t(locale, 'config.done')
+          }}</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
@@ -990,7 +967,9 @@ function runOnce(): void {
   min-inline-size: 96px;
   color: rgba(var(--v-theme-on-surface), 0.78);
   font-weight: 600;
-  transition: background-color 180ms ease, color 180ms ease;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1648,7 +1627,6 @@ function runOnce(): void {
   .sae-field-row--switch .sae-field-control {
     align-self: center;
   }
-
 }
 
 @container (width <= 30rem) {

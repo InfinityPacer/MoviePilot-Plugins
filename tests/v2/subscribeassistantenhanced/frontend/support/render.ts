@@ -25,11 +25,12 @@ const CronFieldStub = defineComponent({
   },
   emits: ['update:modelValue'],
   setup(props, { attrs, emit }) {
-    return () => h('input', {
-      ...attrs,
-      value: props.modelValue,
-      onInput: (event: Event) => emit('update:modelValue', (event.target as HTMLInputElement).value),
-    })
+    return () =>
+      h('input', {
+        ...attrs,
+        value: props.modelValue,
+        onInput: (event: Event) => emit('update:modelValue', (event.target as HTMLInputElement).value),
+      })
   },
 })
 
@@ -41,22 +42,19 @@ const AceEditorStub = defineComponent({
   },
   emits: ['update:value'],
   setup(props, { attrs, emit }) {
-    return () => h('textarea', {
-      ...attrs,
-      'aria-label': 'YAML',
-      value: props.value,
-      onInput: (event: Event) => emit('update:value', (event.target as HTMLTextAreaElement).value),
-    })
+    return () =>
+      h('textarea', {
+        ...attrs,
+        'aria-label': 'YAML',
+        value: props.value,
+        onInput: (event: Event) => emit('update:value', (event.target as HTMLTextAreaElement).value),
+      })
   },
 })
 
 /** 使用真实 Vuetify 与最小 Host 契约渲染联邦配置组件。 */
 export function renderWithHost(component: Component, options: RenderWithHostOptions = {}) {
-  const {
-    global: globalOptions,
-    locale = 'zh-CN',
-    ...renderOptions
-  } = options
+  const { global: globalOptions, locale = 'zh-CN', ...renderOptions } = options
   const localeRef = ref(locale)
   const vuetify = createVuetify({ components, directives })
   // Vuetify 在插件安装阶段注入自身全局属性，挂载配置只需补充 Host 语言契约。

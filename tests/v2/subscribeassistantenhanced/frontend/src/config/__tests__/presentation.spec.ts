@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { fields } from '@/config/fields'
-import {
-  displayFieldLabel,
-  numberFieldUnit,
-} from '@/config/presentation'
+import { displayFieldLabel, numberFieldUnit } from '@/config/presentation'
 
 describe('number field presentation', () => {
   it('gives every number stepper an explicit unit', () => {
@@ -22,7 +19,9 @@ describe('number field presentation', () => {
     const numberFields = fields.filter(field => field.kind === 'number')
 
     for (const field of numberFields) {
-      expect(displayFieldLabel(field)).not.toMatch(/[（(][^）)]+[）)]/)
+      const label = displayFieldLabel(field)
+      expect(label).not.toContain('（')
+      expect(label).not.toContain('(')
     }
   })
 

@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  loadSummary,
-  type PluginApi,
-  type SummaryPayload,
-} from '@/config/api'
+import { loadSummary, type PluginApi, type SummaryPayload } from '@/config/api'
 
 describe('summary API helper', () => {
   it('returns null without requesting when the host API is omitted', async () => {
