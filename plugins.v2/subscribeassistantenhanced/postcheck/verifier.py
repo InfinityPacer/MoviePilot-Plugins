@@ -132,12 +132,13 @@ class CompletionVerifier:
 
         for sub in matched:
             logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
-            _merge_missing_config_from_subscribe(config, sub)
             self._subscribe_oper.delete(sub.id)
             removed_full_best_version = True
 
         old_total = snap.get("total_at_completion", 0)
         config["start_episode"] = old_total + 1
+        config["total_episode"] = current_total
+        config["lack_episode"] = current_total - old_total
         if not self._rebuild_subscribe or not self._rebuild_subscribe(snap, config):
             return False
 
@@ -181,39 +182,24 @@ def _extract_config(subscribe) -> dict:
     """提取订阅配置用于重建。"""
     values = {
         "name": subscribe.name,
+        "year": subscribe.year,
         "tmdbid": subscribe.tmdbid,
         "season": subscribe.season,
         "episode_group": subscribe.episode_group,
         "type": subscribe.type,
+        "keyword": subscribe.keyword,
         "save_path": subscribe.save_path,
         "sites": subscribe.sites,
+        "downloader": subscribe.downloader,
         "filter": subscribe.filter,
         "filter_groups": subscribe.filter_groups,
-        "best_version": subscribe.best_version,
-        "best_version_full": subscribe.best_version_full,
+        "include": subscribe.include,
+        "exclude": subscribe.exclude,
+        "quality": subscribe.quality,
+        "resolution": subscribe.resolution,
+        "effect": subscribe.effect,
+        "search_imdbid": subscribe.search_imdbid,
+        "custom_words": subscribe.custom_words,
+        "media_category": subscribe.media_category,
     }
     return {field: value for field, value in values.items() if value is not None}
-
-
-def _merge_missing_config_from_subscribe(config: dict, subscribe) -> None:
-    """删除旧订阅前补齐快照缺失配置，避免旧快照重建时丢失订阅模式。"""
-    mode_values = {
-        "type": subscribe.type,
-        "best_version": subscribe.best_version,
-        "best_version_full": subscribe.best_version_full,
-    }
-    for field, value in mode_values.items():
-        if value is not None:
-            config[field] = value
-
-    optional_values = {
-        "save_path": subscribe.save_path,
-        "sites": subscribe.sites,
-        "filter": subscribe.filter,
-        "filter_groups": subscribe.filter_groups,
-    }
-    for field, value in optional_values.items():
-        if field in config:
-            continue
-        if value is not None:
-            config[field] = value

@@ -11,8 +11,11 @@ def _sub(tmdbid=100, season=1, episode_group=None, total=12, best_version=0, bes
     return SimpleNamespace(
         id=1, tmdbid=tmdbid, season=season, episode_group=episode_group,
         total_episode=total, best_version=best_version, best_version_full=best_version_full,
-        name="测试剧", type="电视剧", save_path="/media",
-        sites="site1", filter="rule1", filter_groups=["group1"],
+        name="测试剧", year="2026", type="电视剧", keyword="测试关键字",
+        save_path="/media", sites="site1", downloader="qbittorrent",
+        filter="rule1", filter_groups=["group1"], include="包含", exclude="排除",
+        quality="WEB-DL", resolution="1080p", effect="杜比视界",
+        search_imdbid=1, custom_words="自定义识别词", media_category="国漫",
     )
 
 
@@ -51,8 +54,19 @@ class TestSnapshot:
         assert snaps[0]["total_at_completion"] == 12
         assert snaps[0]["subscribe_config"]["filter"] == "rule1"
         assert snaps[0]["subscribe_config"]["filter_groups"] == ["group1"]
-        assert snaps[0]["subscribe_config"]["best_version"] == 1
-        assert snaps[0]["subscribe_config"]["best_version_full"] == 1
+        assert "best_version" not in snaps[0]["subscribe_config"]
+        assert "best_version_full" not in snaps[0]["subscribe_config"]
+        assert snaps[0]["subscribe_config"]["year"] == "2026"
+        assert snaps[0]["subscribe_config"]["keyword"] == "测试关键字"
+        assert snaps[0]["subscribe_config"]["quality"] == "WEB-DL"
+        assert snaps[0]["subscribe_config"]["resolution"] == "1080p"
+        assert snaps[0]["subscribe_config"]["effect"] == "杜比视界"
+        assert snaps[0]["subscribe_config"]["include"] == "包含"
+        assert snaps[0]["subscribe_config"]["exclude"] == "排除"
+        assert snaps[0]["subscribe_config"]["downloader"] == "qbittorrent"
+        assert snaps[0]["subscribe_config"]["search_imdbid"] == 1
+        assert snaps[0]["subscribe_config"]["custom_words"] == "自定义识别词"
+        assert snaps[0]["subscribe_config"]["media_category"] == "国漫"
 
     def test_saves_media_image_for_later_rebuild_notification(self):
         """完成快照保存媒体图片，供未来增集重建通知继续使用。"""
@@ -225,6 +239,13 @@ class TestVerifyAll:
         v.verify_all()
         v._oper.delete.assert_called_once_with(99)
         rebuild.assert_called_once()
+        rebuild_config = rebuild.call_args.args[1]
+        assert rebuild_config == {
+            "name": "测试",
+            "start_episode": 13,
+            "total_episode": 15,
+            "lack_episode": 3,
+        }
         assert v._notify_mock.call_args.args[0] == "测试 S1 检测到新增集数（12→15），已移除旧洗版订阅并重建订阅"
 
     def test_rebuild_does_not_touch_different_episode_group(self):

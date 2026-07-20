@@ -51,7 +51,10 @@ def _sub(sid=1, season=1, episode_group=None, best_version=0, state="R",
         name="测试剧", total_episode=total_episode, lack_episode=0,
         episode_priority={}, current_priority=0,
         start_episode=1, best_version_full=0,
-        save_path=None, sites=None, filter=None, filter_groups=[],
+        keyword=None, save_path=None, sites=None, downloader=None,
+        filter=None, filter_groups=[], include=None, exclude=None,
+        quality=None, resolution=None, effect=None, search_imdbid=0,
+        custom_words=None, media_category=None,
         year=None, username="", date=None, last_update=None,
     )
     defaults.update(kw)

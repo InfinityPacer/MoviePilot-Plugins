@@ -86,7 +86,7 @@ class TestConvertToFull:
         assert "reason" not in notify.call_args.kwargs
 
     def test_failure_keeps_original(self):
-        """删除分集订阅失败时不得创建全集洗版，并通知失败。"""
+        """删除分集订阅失败时保留活动订阅和已写历史，不做不精确回滚。"""
         oper = MagicMock()
         oper.delete.side_effect = RuntimeError("DB error")
         oper.remove_history = MagicMock()
@@ -100,9 +100,39 @@ class TestConvertToFull:
         sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
         assert conv.convert_to_full(sub, _mediainfo()) is False
         oper.add.assert_not_called()
-        oper.remove_history.assert_called_once()
+        oper.remove_history.assert_not_called()
         notify.assert_called_once()
         assert notify.call_args.args[0] == "测试剧 S1 转为全集洗版订阅失败"
+
+    def test_history_failure_stops_before_deleting_active_subscribe(self):
+        """历史写入失败时不得删除仍在运行的分集洗版订阅。"""
+        oper = MagicMock()
+        oper.add_history.side_effect = RuntimeError("history failed")
+        conv = BestVersionConverter(subscribe_oper=oper, notify_fn=MagicMock())
+        sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
+
+        assert conv.convert_to_full(sub, _mediainfo()) is False
+
+        oper.delete.assert_not_called()
+        oper.add.assert_not_called()
+
+    def test_task_cleanup_failure_does_not_interrupt_rebuild(self):
+        """插件任务清理属于尽力操作，失败时仍继续创建全集洗版订阅。"""
+        oper = MagicMock()
+        oper.add.return_value = (9, "")
+        clear_tasks = MagicMock(side_effect=RuntimeError("cleanup failed"))
+        conv = BestVersionConverter(
+            subscribe_oper=oper,
+            clear_tasks_fn=clear_tasks,
+            send_event_fn=MagicMock(),
+            notify_fn=MagicMock(),
+        )
+        sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
+
+        assert conv.convert_to_full(sub, _mediainfo()) is True
+
+        oper.delete.assert_called_once_with(sid=1)
+        oper.add.assert_called_once()
 
     def test_snapshot_failure_stops_before_subscription_replacement(self):
         """完成快照写入失败时不得删除分集订阅，避免转换后失去增集基线。"""
@@ -192,39 +222,3 @@ class TestConvertToFull:
         payload = oper.add.call_args.kwargs
         assert payload["best_version_full"] == 1
         assert payload["username"] == "订阅助手（增强版）"
-
-    def test_remove_history_snapshot_uses_database_fallback(self):
-        """旧订阅删除失败时，没有 remove_history 也应按身份从数据库清理刚写入的历史。"""
-        history = object()
-        query = MagicMock()
-        query.filter.return_value = query
-        query.order_by.return_value.first.return_value = history
-        db = MagicMock()
-        db.query.return_value = query
-        oper = MagicMock()
-        del oper.remove_history
-        oper._db = db
-        conv = BestVersionConverter(subscribe_oper=oper)
-
-        conv._remove_history_snapshot({"tmdbid": 100, "season": 1, "name": "测试剧"})
-
-        db.delete.assert_called_once_with(history)
-        db.commit.assert_called_once()
-
-    def test_remove_history_snapshot_without_identity_uses_name(self):
-        """没有 tmdb/douban 身份时按名称回退清理，覆盖旧数据兼容路径。"""
-        history = object()
-        query = MagicMock()
-        query.filter.return_value = query
-        query.order_by.return_value.first.return_value = history
-        db = MagicMock()
-        db.query.return_value = query
-        oper = MagicMock()
-        del oper.remove_history
-        oper._db = db
-        conv = BestVersionConverter(subscribe_oper=oper)
-
-        conv._remove_history_snapshot({"name": "测试剧", "season": 1})
-
-        db.delete.assert_called_once_with(history)
-        db.commit.assert_called_once()

@@ -52,14 +52,23 @@ class BestVersionConverter:
 
         try:
             self._subscribe_oper.add_history(**subscribe_dict)
-            self._subscribe_oper.delete(sid=sid)
-            if self._clear_tasks:
-                self._clear_tasks(sid)
         except Exception as err:
-            self._remove_history_snapshot(subscribe_dict)
+            logger.error(f"{subscribe_desc} 原因=写入订阅历史失败，处理=停止转全集处理，错误={err}")
+            self._notify_failure(subscribe, subscribe_desc, str(err), mediainfo=mediainfo)
+            return False
+
+        try:
+            self._subscribe_oper.delete(sid=sid)
+        except Exception as err:
             logger.error(f"{subscribe_desc} 原因=删除分集洗版订阅失败，处理=停止转全集处理，错误={err}")
             self._notify_failure(subscribe, subscribe_desc, str(err), mediainfo=mediainfo)
             return False
+
+        if self._clear_tasks:
+            try:
+                self._clear_tasks(sid)
+            except Exception as err:
+                logger.warning(f"{subscribe_desc} 清理旧订阅任务失败，继续创建全集洗版订阅，错误={err}")
 
         try:
             new_sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **full_payload)
@@ -141,32 +150,3 @@ class BestVersionConverter:
         if self._notification_image:
             return self._notification_image(subscribe, mediainfo)
         return mediainfo.get_message_image() if mediainfo else None
-
-    def _remove_history_snapshot(self, subscribe_dict: dict):
-        """删除刚写入的完成历史，避免删除失败后同时存在活动订阅和完成记录。"""
-        remover = getattr(self._subscribe_oper, "remove_history", None)
-        if callable(remover):
-            remover(subscribe_dict)
-            return
-        db = getattr(self._subscribe_oper, "_db", None)
-        if not db:
-            return
-        try:
-            from app.db.models import SubscribeHistory
-            query = db.query(SubscribeHistory)
-            tmdbid = subscribe_dict.get("tmdbid")
-            doubanid = subscribe_dict.get("doubanid")
-            season = subscribe_dict.get("season")
-            if tmdbid:
-                query = query.filter(SubscribeHistory.tmdbid == tmdbid)
-            elif doubanid:
-                query = query.filter(SubscribeHistory.doubanid == doubanid)
-            else:
-                query = query.filter(SubscribeHistory.name == subscribe_dict.get("name"))
-            query = query.filter(SubscribeHistory.season == season)
-            history = query.order_by(SubscribeHistory.id.desc()).first()
-            if history:
-                db.delete(history)
-                db.commit()
-        except Exception as err:
-            logger.warning(f"清理转换完成历史失败: {err}")

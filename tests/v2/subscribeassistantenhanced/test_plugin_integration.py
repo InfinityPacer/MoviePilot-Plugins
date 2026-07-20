@@ -2832,55 +2832,72 @@ class TestPeriodicJobs:
         assert plugin._detect_missing_episodes(sub) == []
         assert captured["totals"] == {2: 8}
 
-    def test_snapshot_rebuild_calls_real_subscribe_add_contract(self):
-        """H 重建适配器必须以 MediaInfo + kwargs 调用主程序 SubscribeOper.add。"""
+    def test_snapshot_rebuild_calls_subscribe_chain_with_default_mode(self):
+        """H 重建由主程序链应用当前默认模式，并保留快照中的媒体专属配置。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
-        mediainfo = _mediainfo()
 
-        class StrictSubscribeOper:
-            """仅接受主程序真实 add 签名的测试替身。"""
+        class StrictSubscribeChain:
+            """记录主程序订阅链收到的重建参数。"""
 
             def __init__(self):
                 self.call = None
 
-            def add(self, *, mediainfo, **kwargs):
-                """记录 MediaInfo 与订阅配置。"""
-                self.call = (mediainfo, kwargs)
+            def add(self, **kwargs):
+                """记录订阅链参数。"""
+                self.call = kwargs
                 return 88, "新增订阅成功"
 
-        oper = StrictSubscribeOper()
-        plugin._subscribe_oper = oper
-        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        chain = StrictSubscribeChain()
+        plugin._subscribe_chain = chain
 
         result = plugin._rebuild_subscribe_from_snapshot(
             {"tmdbid": 100, "season": 1, "episode_group_id": "eg-1"},
-            {"name": "测试", "start_episode": 13, "manual_total_episode": 92},
+            {
+                "name": "测试",
+                "year": "2026",
+                "quality": "WEB-DL",
+                "best_version": 1,
+                "best_version_full": 1,
+                "start_episode": 13,
+                "total_episode": 15,
+                "lack_episode": 3,
+                "manual_total_episode": 92,
+            },
         )
 
         assert result is True
-        assert oper.call[0] is mediainfo
-        assert oper.call[1]["season"] == 1
-        assert oper.call[1]["episode_group"] == "eg-1"
-        assert oper.call[1]["manual_total_episode"] == 0
+        assert chain.call["title"] == "测试"
+        assert chain.call["year"] == "2026"
+        assert chain.call["mtype"] == MediaType.TV
+        assert chain.call["tmdbid"] == 100
+        assert chain.call["season"] == 1
+        assert chain.call["episode_group"] == "eg-1"
+        assert chain.call["quality"] == "WEB-DL"
+        assert chain.call["start_episode"] == 13
+        assert chain.call["total_episode"] == 15
+        assert chain.call["lack_episode"] == 3
+        assert chain.call["manual_total_episode"] == 0
+        assert chain.call["state"] == "N"
+        assert chain.call["message"] is False
+        assert "best_version" not in chain.call
+        assert "best_version_full" not in chain.call
 
-    def test_snapshot_rebuild_sends_subscribe_added_event(self):
-        """H 重建成功后应补发 SubscribeAdded，触发主程序订阅创建链路。"""
+    def test_snapshot_rebuild_does_not_duplicate_subscribe_added_event(self):
+        """主程序订阅链负责新增事件，H 重建不得再次手工发送。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
-        plugin._subscribe_oper = MagicMock()
-        plugin._subscribe_oper.add.return_value = (88, "新增订阅成功")
-        plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+        plugin._subscribe_chain = MagicMock()
+        plugin._subscribe_chain.add.return_value = (88, "新增订阅成功")
         plugin._send_subscribe_added = MagicMock()
 
         result = plugin._rebuild_subscribe_from_snapshot(
             {"tmdbid": 100, "season": 1, "episode_group_id": "eg-1"},
-            {"name": "测试", "start_episode": 13},
+            {"name": "测试", "start_episode": 13, "total_episode": 15, "lack_episode": 3},
         )
 
         assert result is True
-        plugin._send_subscribe_added.assert_called_once()
-        assert plugin._send_subscribe_added.call_args.args[0] == 88
+        plugin._send_subscribe_added.assert_not_called()
 
     def test_completion_verify_keeps_snapshot_for_lagging_episode_best_version_subscription(self):
         """同身份分集洗版订阅未覆盖最新总集数时保留快照，不删除重建。"""
@@ -2968,8 +2985,11 @@ class TestPeriodicJobs:
 
         plugin._modules["verifier"]._subscribe_oper.delete.assert_called_once_with(7)
         plugin._modules["verifier"]._rebuild_subscribe.assert_called_once()
-        assert plugin._modules["verifier"]._rebuild_subscribe.call_args.args[1]["start_episode"] == 13
-        assert plugin._modules["verifier"]._rebuild_subscribe.call_args.args[1]["best_version_full"] == 1
+        rebuild_config = plugin._modules["verifier"]._rebuild_subscribe.call_args.args[1]
+        assert rebuild_config["start_episode"] == 13
+        assert rebuild_config["total_episode"] == 13
+        assert rebuild_config["lack_episode"] == 1
+        assert "best_version_full" not in rebuild_config
         assert plugin._modules["verifier"]._notify.call_args.args[0].endswith("已移除旧洗版订阅并重建订阅")
         assert data_store["snapshots"]["list"] == []
 

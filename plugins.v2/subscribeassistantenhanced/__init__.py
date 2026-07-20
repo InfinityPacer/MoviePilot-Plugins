@@ -1504,29 +1504,34 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return [], sorted(target)
 
     def _rebuild_subscribe_from_snapshot(self, snap: dict, config: dict) -> bool:
-        """把 H 完成快照转换为主程序要求的 MediaInfo + kwargs 订阅新增调用。"""
-        if not self._subscribe_oper:
-            return False
-        probe = SimpleNamespace(
-            name=config.get("name", ""),
-            year=config.get("year"),
-            season=snap.get("season"),
-            type=config.get("type", "电视剧"),
-            tmdbid=snap.get("tmdbid"),
-            episode_group=snap.get("episode_group_id"),
-        )
-        mediainfo = self._recognize_mediainfo(probe)
-        if not mediainfo:
+        """使用当前默认订阅规则和完成快照重建增集订阅。"""
+        if not self._subscribe_chain:
             return False
         payload = dict(config)
-        payload["season"] = snap.get("season")
-        payload["episode_group"] = snap.get("episode_group_id")
+        title = payload.pop("name", "")
+        year = payload.pop("year", None)
+        for field in (
+            "id", "type", "tmdbid", "season", "episode_group",
+            "best_version", "best_version_full",
+        ):
+            payload.pop(field, None)
         payload["manual_total_episode"] = 0
+        payload["state"] = "N"
         try:
-            subscribe_id, _ = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
+            subscribe_id, _ = self._subscribe_chain.add(
+                title=title,
+                year=year,
+                mtype=MediaType.TV,
+                tmdbid=snap.get("tmdbid"),
+                season=snap.get("season"),
+                episode_group=snap.get("episode_group_id"),
+                username=self.plugin_name,
+                message=False,
+                exist_ok=True,
+                **payload,
+            )
             if subscribe_id:
                 logger.info(f"完成后验证：{_format_snapshot_label(snap)} 检测到增集，已重建订阅（新 id={subscribe_id}）")
-                self._send_subscribe_added(subscribe_id, mediainfo)
             return bool(subscribe_id)
         except Exception as err:
             logger.warning(
