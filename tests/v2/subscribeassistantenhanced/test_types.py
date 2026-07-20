@@ -228,10 +228,7 @@ class ProtocolStubTest:
             def backfill_existing(self, subscribe, existing_episodes, scene="plugin_backfill"):
                 return False
 
-            def is_complete(self, subscribe):
-                return False
-
-            def mark_complete(self, subscribe):
+            def mark_full_best_version_complete(self, subscribe):
                 pass
 
         assert isinstance(Dummy(), PriorityManagerProtocol)

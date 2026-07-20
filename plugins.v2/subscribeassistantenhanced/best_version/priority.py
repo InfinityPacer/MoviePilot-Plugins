@@ -66,7 +66,14 @@ class PriorityManager:
         if media_type == MediaType.TV:
             episode_priority = baseline.get("episode_priority", {})
             detail(f"洗版事实：{self._format_subscribe_label(subscribe)} 已恢复到下载前剧集优先级基线")
-            self._update_tv_episode_priority(subscribe, episode_priority, scene="plugin_rollback")
+            current_priority = baseline.get("current_priority", 0) \
+                if is_full_best_version_subscribe(subscribe) else None
+            self._update_tv_episode_priority(
+                subscribe,
+                episode_priority,
+                scene="plugin_rollback",
+                current_priority=current_priority,
+            )
             return
 
         if media_type == MediaType.MOVIE and self._subscribe_oper:
@@ -124,7 +131,18 @@ class PriorityManager:
                 if ep_priority.get(ep_key, 0) == contributed:
                     ep_priority[ep_key] = old_value
             detail(f"洗版事实：{self._format_subscribe_label(subscribe)} 已恢复种子 {torrent_id} 对应集的优先级")
-            self._update_tv_episode_priority(subscribe, ep_priority, scene="plugin_rollback")
+            current_priority = None
+            if is_full_best_version_subscribe(subscribe):
+                current = subscribe.current_priority or 0
+                contributed = baseline.get("contributed_priority", 0)
+                if current == contributed:
+                    current_priority = baseline.get("current_priority_baseline", 0)
+            self._update_tv_episode_priority(
+                subscribe,
+                ep_priority,
+                scene="plugin_rollback",
+                current_priority=current_priority,
+            )
         elif media_type == MediaType.MOVIE and self._subscribe_oper:
             current = subscribe.current_priority or 0
             contributed = baseline.get("contributed_priority", 0)
@@ -159,47 +177,13 @@ class PriorityManager:
         )
         return bool(summary and summary.get("updated"))
 
-    def is_complete(self, subscribe) -> bool:
-        """判断洗版是否完成——所有目标集优先级达标（>=100）。"""
-        ep_priority = subscribe.episode_priority or {}
-        target_episodes = self._target_episodes(subscribe)
-        if not ep_priority or not target_episodes:
-            return False
-        return all(ep_priority.get(str(ep), 0) >= 100 for ep in target_episodes)
-
-    def mark_complete(self, subscribe):
-        """标记洗版完成；TV 交给主程序 backfill 合同写事实，电影写整体优先级。"""
-        if resolve_subscribe_media_type(subscribe) == MediaType.MOVIE:
-            payload = {"current_priority": 100}
-            mode_label = self._mode_label(subscribe)
-            detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 标记{mode_label}完成（priority=100）")
-            if self._subscribe_oper:
-                update_subscribe(self._subscribe_oper, subscribe.id, payload)
-            return
-
-        target_episodes = self._target_episodes(subscribe)
+    def mark_full_best_version_complete(self, subscribe):
+        """将超时的电影或全集洗版标记为完成，仅更新当前模式的资源准入基线。"""
+        payload = {"current_priority": 100}
         mode_label = self._mode_label(subscribe)
         detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 标记{mode_label}完成（priority=100）")
-        if target_episodes:
-            SubscribeChain().backfill_existing_episodes(
-                subscribe,
-                target_episodes,
-                priority=100,
-                scene=self._format_backfill_scene("plugin_complete"),
-            )
-
-    @staticmethod
-    def _target_episodes(subscribe) -> list:
-        """读取订阅目标集范围；范围无效时返回空，避免只凭已有 priority 键误判完成。"""
-        try:
-            start_episode = int(subscribe.start_episode or 1)
-            total_episode = int(subscribe.total_episode or 0)
-        except (TypeError, ValueError):
-            return []
-        start_episode = max(start_episode, 1)
-        if total_episode < start_episode:
-            return []
-        return list(range(start_episode, total_episode + 1))
+        if self._subscribe_oper:
+            update_subscribe(self._subscribe_oper, subscribe.id, payload)
 
     @staticmethod
     def _format_subscribe_label(subscribe) -> str:
@@ -220,10 +204,20 @@ class PriorityManager:
         """读取剧集优先级快照；无按集事实时复用主程序 current_priority 兜底口径。"""
         return SubscribeChain.get_episode_priority(subscribe)
 
-    def _update_tv_episode_priority(self, subscribe, episode_priority: dict, scene: str):
+    def _update_tv_episode_priority(
+            self,
+            subscribe,
+            episode_priority: dict,
+            scene: str,
+            current_priority: Optional[int] = None,
+    ):
         """写回 TV 剧集事实后刷新主程序进度字段。"""
         if not self._subscribe_oper:
             return
-        update_subscribe(self._subscribe_oper, subscribe.id, {"episode_priority": episode_priority})
+        payload = {"episode_priority": episode_priority}
+        if current_priority is not None:
+            payload["current_priority"] = current_priority
+            subscribe.current_priority = current_priority
+        update_subscribe(self._subscribe_oper, subscribe.id, payload)
         subscribe.episode_priority = episode_priority
         SubscribeChain().refresh_subscribe_progress(subscribe, scene=scene)

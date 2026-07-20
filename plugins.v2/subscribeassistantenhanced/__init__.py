@@ -490,6 +490,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscription_cleanup=subscription_cleanup,
             converter=converter,
             best_version_episode_to_full=cfg.best_version_episode_to_full,
+            convert_episode_best_version_to_full_fn=self._convert_episode_best_version_to_full_if_ready,
         )
 
         self._modules = {
@@ -759,7 +760,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             if mediainfo:
                 if is_full_best_version_subscribe(subscribe) and self._best_version_overdue(subscribe):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}超过洗版时限，标记洗版完成并停止洗版")
-                    priority.mark_complete(subscribe)
+                    priority.mark_full_best_version_complete(subscribe)
                     self._notify_subscribe(
                         f"{format_subscribe(subscribe)} {mode_label}超过时限"
                         f"（{self._best_version_timeout_days(subscribe)}天），已标记洗版优先级为完成",
@@ -771,15 +772,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     and converter
                     and is_tv_episode_best_version_subscribe(subscribe)
                 ):
-                    satisfied, _no_exists = self._resolve_subscribe_missing(
+                    self._convert_episode_best_version_to_full_if_ready(
+                        subscribe.id,
                         subscribe,
                         mediainfo,
-                        best_version_accept_downloaded=True,
+                        trigger="洗版巡检",
                     )
-                    if not satisfied:
-                        continue
-                    logger.info(f"洗版巡检：{format_subscribe(subscribe)} 分集洗版目标满足，转为全集洗版")
-                    converter.convert_to_full(subscribe, mediainfo)
                     continue
             else:
                 detail(
@@ -919,11 +917,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
         detail("站点证据采样：开始")
         for subscribe in (self._subscribe_oper.list(state="P,R") or []):
             if (
-                getattr(subscribe, "state", None) in ("P", "R")
+                subscribe.state in ("P", "R")
                 and
                 resolve_subscribe_media_type(subscribe) == MediaType.TV
                 and not is_full_best_version_subscribe(subscribe)
-                and not bool(getattr(subscribe, "manual_total_episode", False))
+                and not bool(subscribe.manual_total_episode)
             ):
                 site_evidence.refresh_subscribe(subscribe)
 
@@ -988,7 +986,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         except Exception:
             return None
 
-    def _related_download_histories(self, subscribe) -> list:
+    def _related_download_histories(self, subscribe, raise_on_error: bool = False) -> list:
         """获取同一订阅完成后的分集下载历史，用于判断是否应自动洗版。"""
         try:
             if subscribe.type == "电影":
@@ -1008,6 +1006,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 )
         except Exception as err:
             logger.warning(f"洗版编排：查询关联下载历史失败，跳过分集洗版判定：{err}")
+            if raise_on_error:
+                raise
             return []
 
         related = []
@@ -1038,6 +1038,65 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     continue
             related.append(history)
         return related
+
+    def _convert_episode_best_version_to_full_if_ready(
+            self,
+            subscribe_id,
+            subscribe=None,
+            mediainfo=None,
+            trigger: str = "洗版巡检",
+    ) -> bool:
+        """在下载待定已释放且媒体库完整覆盖目标范围时，将分集洗版转为全集洗版。"""
+        if not self._config or not self._config.best_version_episode_to_full:
+            return False
+        if not subscribe_id or not self._subscribe_oper:
+            return False
+        subscribe = subscribe or self._subscribe_oper.get(subscribe_id)
+        if not subscribe or not is_tv_episode_best_version_subscribe(subscribe):
+            return False
+
+        try:
+            start_episode = int(subscribe.start_episode or 1)
+            total_episode = int(subscribe.total_episode or 0)
+        except (TypeError, ValueError):
+            return False
+        start_episode = max(start_episode, 1)
+        if total_episode < start_episode:
+            return False
+        target_episodes = set(range(start_episode, total_episode + 1))
+
+        download_monitor = self._modules.get("download_monitor")
+        if download_monitor and download_monitor.has_active_downloads(subscribe.id):
+            detail(f"{trigger}：{format_subscribe(subscribe)} 仍有下载待定，跳过分集转全集")
+            return False
+
+        existing_episodes, missing_episodes = self._detect_episode_coverage(subscribe)
+        if missing_episodes or not target_episodes.issubset(set(existing_episodes)):
+            return False
+
+        try:
+            episode_histories = self._related_download_histories(subscribe, raise_on_error=True)
+        except Exception:
+            return False
+        try:
+            current_priority = int(subscribe.current_priority or 0)
+        except (TypeError, ValueError):
+            current_priority = 0
+        full_priority = 0 if len(episode_histories) > 1 else current_priority
+
+        mediainfo = mediainfo or self._recognize_mediainfo(subscribe)
+        converter = self._modules.get("converter")
+        if not mediainfo or not converter:
+            return False
+        logger.info(
+            f"{trigger}：{format_subscribe(subscribe)} 媒体库已完整覆盖目标范围，"
+            f"分集下载历史={len(episode_histories)}，转为全集洗版"
+        )
+        return converter.convert_to_full(
+            subscribe,
+            mediainfo,
+            current_priority=full_priority,
+        )
 
     @staticmethod
     def _is_full_pack_download(history, total_episode: Optional[int]) -> bool:

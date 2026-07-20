@@ -603,36 +603,10 @@ class EventProxy:
         self._convert_episode_best_version_to_full_if_ready(subscribe_id)
 
     def _convert_episode_best_version_to_full_if_ready(self, subscribe_id):
-        """整理完成后补偿检查当前分集洗版订阅，避免目标集已齐全还要等下一次洗版巡检。"""
-        if not subscribe_id or not self.get("best_version_episode_to_full"):
-            return
-        subscribe_oper = self.get("subscribe_oper")
-        converter = self.get("converter")
-        detect_missing = self.get("detect_missing_episodes_fn")
-        resolve_missing = self.get("resolve_missing_fn")
-        recognize = self.get("recognize_mediainfo_fn")
-        if not (subscribe_oper and converter and recognize):
-            return
-        subscribe = subscribe_oper.get(subscribe_id)
-        if not subscribe or not is_tv_episode_best_version_subscribe(subscribe):
-            return
-        mediainfo = recognize(subscribe)
-        if not mediainfo:
-            return
-        if resolve_missing:
-            satisfied, _ = resolve_missing(
-                subscribe=subscribe,
-                mediainfo=mediainfo,
-                best_version_accept_downloaded=True,
-            )
-        else:
-            if not detect_missing or (subscribe.lack_episode or 0) > 0:
-                return
-            satisfied = not detect_missing(subscribe)
-        if not satisfied:
-            return
-        detail(f"TransferComplete：{format_subscribe(subscribe)} 分集洗版目标满足，立即转为全集洗版")
-        converter.convert_to_full(subscribe, mediainfo)
+        """整理完成后委托共享 readiness 入口补偿检查分集转全集。"""
+        convert = self.get("convert_episode_best_version_to_full_fn")
+        if subscribe_id and convert:
+            convert(subscribe_id, trigger="TransferComplete")
 
     @staticmethod
     def _best_version_mode_label(subscribe) -> str:

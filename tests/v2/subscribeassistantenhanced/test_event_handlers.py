@@ -240,18 +240,13 @@ def test_transfer_complete_clears_pending_then_lifecycle_then_best_version_conve
     monitor.clear_download_pending.side_effect = lambda *_args: call_order.append("clear")
     lifecycle = MagicMock()
     lifecycle.handle_library_updated.side_effect = lambda _subscribe_id: call_order.append("lifecycle")
-    converter = MagicMock()
-    converter.convert_to_full.side_effect = lambda *_args: call_order.append("convert")
-    mediainfo = SimpleNamespace()
+    convert = MagicMock(side_effect=lambda *_args, **_kwargs: call_order.append("convert"))
     proxy = EventProxy(
         subscribe_oper=subscribe_oper,
         task_manager=task_manager,
         download_monitor=monitor,
         lifecycle=lifecycle,
-        converter=converter,
-        best_version_episode_to_full=True,
-        recognize_mediainfo_fn=MagicMock(return_value=mediainfo),
-        resolve_missing_fn=MagicMock(return_value=(True, {})),
+        convert_episode_best_version_to_full_fn=convert,
     )
 
     proxy.on_transfer_complete(SimpleNamespace(event_data={
@@ -263,4 +258,4 @@ def test_transfer_complete_clears_pending_then_lifecycle_then_best_version_conve
     monitor.clear_download_pending.assert_called_once_with(7, "hash1")
     task_manager.clean_torrent_tasks.assert_called_once_with("hash1")
     lifecycle.handle_library_updated.assert_called_once_with(7)
-    converter.convert_to_full.assert_called_once_with(subscribe, mediainfo)
+    convert.assert_called_once_with(7, trigger="TransferComplete")

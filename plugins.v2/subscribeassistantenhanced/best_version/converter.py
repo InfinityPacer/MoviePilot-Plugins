@@ -32,15 +32,15 @@ class BestVersionConverter:
         self._notification_image = notification_image_fn
         self._plugin_name = plugin_name
 
-    def convert_to_full(self, subscribe, mediainfo=None) -> bool:
-        """替换为全集洗版订阅，成功返回 True；失败时尽量恢复分集订阅。"""
+    def convert_to_full(self, subscribe, mediainfo=None, current_priority=None) -> bool:
+        """按指定全集准入基线替换为全集洗版订阅；失败时尽量恢复分集订阅。"""
         sid = subscribe.id
         if not sid or not self._subscribe_oper or not mediainfo:
             return False
 
         subscribe_dict = subscribe.to_dict()
         subscribe_desc = self._format_subscribe_desc(subscribe, mediainfo)
-        full_payload = self._build_full_payload(subscribe_dict)
+        full_payload = self._build_full_payload(subscribe_dict, current_priority=current_priority)
 
         try:
             if self._snapshot:
@@ -81,7 +81,7 @@ class BestVersionConverter:
         self._notify_failure(subscribe, subscribe_desc, f"{err_msg}\n{restore_text}", mediainfo=mediainfo)
         return False
 
-    def _build_full_payload(self, subscribe_dict: dict) -> dict:
+    def _build_full_payload(self, subscribe_dict: dict, current_priority=None) -> dict:
         """从订阅快照构造全集洗版 payload，并保留订阅范围字段。"""
         payload = dict(subscribe_dict or {})
         for field in DROP_REBUILT_FIELDS:
@@ -91,6 +91,8 @@ class BestVersionConverter:
         payload["username"] = self._plugin_name
         payload["state"] = "N"
         payload["manual_total_episode"] = 0
+        if current_priority is not None:
+            payload["current_priority"] = current_priority
         return payload
 
     def _format_subscribe_desc(self, subscribe, mediainfo) -> str:

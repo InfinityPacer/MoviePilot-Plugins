@@ -233,23 +233,155 @@ def test_detect_episode_coverage_preserves_special_season_zero(monkeypatch):
 
 
 def test_episode_to_full_converts_when_current_episodes_covered():
-    sub = _sub(id=5, name="X", best_version=1, best_version_full=0)
+    sub = _sub(id=5, name="X", best_version=1, best_version_full=0, current_priority=82)
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
     plugin._subscribe_oper = MagicMock()
-    plugin._subscribe_oper.list.return_value = [sub]
+    plugin._subscribe_oper.get.return_value = sub
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
-    plugin._resolve_subscribe_missing = MagicMock(return_value=(True, {}))
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+    plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 13)), []))
+    plugin._related_download_histories = MagicMock(return_value=[])
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
-    plugin.run_best_version_check()
+    plugin._convert_episode_best_version_to_full_if_ready(5, trigger="unit")
 
-    conv.convert_to_full.assert_called_once_with(sub, plugin._recognize_mediainfo.return_value)
+    conv.convert_to_full.assert_called_once_with(
+        sub,
+        plugin._recognize_mediainfo.return_value,
+        current_priority=82,
+    )
 
 
-def test_episode_to_full_uses_target_satisfied_resolver_for_any_downloaded_version():
-    """分集洗版巡检按主程序目标满足口径转全集，不要求当前 priority 全部为 100。"""
+def test_episode_to_full_multiple_episode_histories_reset_full_baseline():
+    sub = _sub(id=5, best_version=1, best_version_full=0, current_priority=82)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.get.return_value = sub
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+    plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 13)), []))
+    plugin._related_download_histories = MagicMock(return_value=[object(), object()])
+    converter = plugin._modules["converter"]
+    converter.convert_to_full = MagicMock(return_value=True)
+
+    plugin._convert_episode_best_version_to_full_if_ready(5, trigger="unit")
+
+    converter.convert_to_full.assert_called_once_with(
+        sub,
+        plugin._recognize_mediainfo.return_value,
+        current_priority=0,
+    )
+
+
+def test_episode_to_full_single_episode_history_preserves_full_baseline():
+    sub = _sub(id=5, best_version=1, best_version_full=0, current_priority=82)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.get.return_value = sub
+    plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+    plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 13)), []))
+    plugin._related_download_histories = MagicMock(return_value=[object()])
+    converter = plugin._modules["converter"]
+    converter.convert_to_full = MagicMock(return_value=True)
+
+    plugin._convert_episode_best_version_to_full_if_ready(5, trigger="unit")
+
+    converter.convert_to_full.assert_called_once_with(
+        sub,
+        plugin._recognize_mediainfo.return_value,
+        current_priority=82,
+    )
+
+
+def test_episode_to_full_history_query_failure_skips_conversion():
+    sub = _sub(id=5, best_version=1, best_version_full=0, current_priority=82)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.get.return_value = sub
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+    plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 13)), []))
+    plugin._downloadhistory_oper = MagicMock()
+    plugin._downloadhistory_oper.get_last_by.side_effect = RuntimeError("history unavailable")
+    converter = plugin._modules["converter"]
+    converter.convert_to_full = MagicMock()
+
+    plugin._convert_episode_best_version_to_full_if_ready(5, trigger="unit")
+
+    converter.convert_to_full.assert_not_called()
+
+
+def test_episode_to_full_blocks_active_download_before_library_probe():
+    sub = _sub(id=5, best_version=1, best_version_full=0)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.get.return_value = sub
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=True)
+    plugin._detect_episode_coverage = MagicMock()
+    converter = plugin._modules["converter"]
+    converter.convert_to_full = MagicMock()
+
+    plugin._convert_episode_best_version_to_full_if_ready(5, trigger="unit")
+
+    plugin._detect_episode_coverage.assert_not_called()
+    converter.convert_to_full.assert_not_called()
+
+
+def test_episode_to_full_invalid_target_fails_closed():
+    sub = _sub(id=5, best_version=1, best_version_full=0, start_episode=13, total_episode=12)
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+    plugin._subscribe_oper = MagicMock()
+    plugin._subscribe_oper.get.return_value = sub
+    converter = plugin._modules["converter"]
+    converter.convert_to_full = MagicMock()
+
+    plugin._convert_episode_best_version_to_full_if_ready(5, trigger="unit")
+
+    converter.convert_to_full.assert_not_called()
+
+
+def test_episode_to_full_allows_non_download_pending_states():
+    """剧集待定、完成守卫待定或未知 P 来源都不替代明确的下载待定判断。"""
+    for pending_source in ("pending_judge", "guard_veto", "unknown"):
+        sub = _sub(
+            id=5,
+            state="P",
+            best_version=1,
+            best_version_full=0,
+            current_priority=82,
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.get.return_value = sub
+        plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+        plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+        plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 13)), []))
+        plugin._related_download_histories = MagicMock(return_value=[])
+        plugin._task_manager.read = MagicMock(return_value={
+            "5": {"pending_sources": {pending_source: {}}}
+        })
+        converter = plugin._modules["converter"]
+        converter.convert_to_full = MagicMock(return_value=True)
+
+        plugin._convert_episode_best_version_to_full_if_ready(5, trigger="unit")
+
+        converter.convert_to_full.assert_called_once_with(
+            sub,
+            plugin._recognize_mediainfo.return_value,
+            current_priority=82,
+        )
+
+
+def test_episode_to_full_uses_media_library_coverage_for_any_downloaded_version():
+    """分集转全集依据媒体库实际覆盖，不要求当前 priority 全部为 100。"""
     sub = _sub(
         id=5,
         name="X",
@@ -265,34 +397,43 @@ def test_episode_to_full_uses_target_satisfied_resolver_for_any_downloaded_versi
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=SimpleNamespace(tmdb_id=100, type=None))
-    plugin._resolve_subscribe_missing = MagicMock(return_value=(True, {}))
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+    plugin._detect_episode_coverage = MagicMock(return_value=([1, 2, 3], []))
+    plugin._related_download_histories = MagicMock(return_value=[])
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
     plugin.run_best_version_check()
 
-    plugin._resolve_subscribe_missing.assert_called_once_with(
+    plugin._detect_episode_coverage.assert_called_once_with(sub)
+    conv.convert_to_full.assert_called_once_with(
         sub,
         plugin._recognize_mediainfo.return_value,
-        best_version_accept_downloaded=True,
+        current_priority=0,
     )
-    conv.convert_to_full.assert_called_once_with(sub, plugin._recognize_mediainfo.return_value)
 
 
-def test_episode_to_full_converts_when_main_resolver_reports_target_satisfied():
-    """主程序目标满足查询确认分集目标已下载时，分集洗版升级为全集洗版。"""
+def test_episode_to_full_converts_when_library_covers_target():
+    """媒体库事实确认目标集完整覆盖时，分集洗版升级为全集洗版。"""
     sub = _sub(id=5, name="X", best_version=1, best_version_full=0, note=list(range(1, 13)))
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"best_version_type": "all", "best_version_episode_to_full": True})
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+    plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 13)), []))
+    plugin._related_download_histories = MagicMock(return_value=[])
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
     plugin.run_best_version_check()
 
-    conv.convert_to_full.assert_called_once_with(sub, plugin._recognize_mediainfo.return_value)
+    conv.convert_to_full.assert_called_once_with(
+        sub,
+        plugin._recognize_mediainfo.return_value,
+        current_priority=0,
+    )
 
 
 def test_episode_to_full_skipped_when_missing_episodes():
@@ -302,7 +443,8 @@ def test_episode_to_full_skipped_when_missing_episodes():
     plugin._subscribe_oper = MagicMock()
     plugin._subscribe_oper.list.return_value = [sub]
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
-    plugin._resolve_subscribe_missing = MagicMock(return_value=(False, {100: {1: [3]}}))
+    plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+    plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 12)), [12]))
     conv = plugin._modules["converter"]
     conv.convert_to_full = MagicMock(return_value=True)
 
@@ -420,12 +562,12 @@ def test_best_version_check_marks_overdue_subscription_complete():
         "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
     }.get(key, {}))
     priority = plugin._modules["priority_manager"]
-    priority.mark_complete = MagicMock()
+    priority.mark_full_best_version_complete = MagicMock()
     plugin._notify_subscribe = MagicMock()
 
     plugin.run_best_version_check()
 
-    priority.mark_complete.assert_called_once_with(sub)
+    priority.mark_full_best_version_complete.assert_called_once_with(sub)
     plugin._notify_subscribe.assert_called_once_with(
         "X S1 洗版超过时限（3天），已标记洗版优先级为完成",
         image="poster.jpg",
@@ -451,11 +593,11 @@ def test_best_version_check_uses_movie_remaining_days_for_movie():
         "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
     }.get(key, {}))
     priority = plugin._modules["priority_manager"]
-    priority.mark_complete = MagicMock()
+    priority.mark_full_best_version_complete = MagicMock()
 
     plugin.run_best_version_check()
 
-    priority.mark_complete.assert_called_once_with(sub)
+    priority.mark_full_best_version_complete.assert_called_once_with(sub)
 
 
 def test_best_version_check_does_not_expire_tv_episode_best_version():
@@ -472,15 +614,15 @@ def test_best_version_check_does_not_expire_tv_episode_best_version():
         "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
     }.get(key, {}))
     priority = plugin._modules["priority_manager"]
-    priority.mark_complete = MagicMock()
+    priority.mark_full_best_version_complete = MagicMock()
 
     plugin.run_best_version_check()
 
-    priority.mark_complete.assert_not_called()
+    priority.mark_full_best_version_complete.assert_not_called()
 
 
-def test_full_best_version_check_does_not_mark_complete_without_timeout():
-    """全集洗版不再由插件巡检按优先级达标主动完成，普通完成交还主程序洗版链路。"""
+def test_full_best_version_check_does_not_mark_full_best_version_complete_without_timeout():
+    """全集洗版无超时时不由插件巡检标记完成。"""
     sub = _sub(id=5, name="X", best_version=1, best_version_full=1)
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({"best_version_type": "all", "best_version_tv_remaining_days": 0})
@@ -489,13 +631,12 @@ def test_full_best_version_check_does_not_mark_complete_without_timeout():
     plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
     plugin._resolve_subscribe_missing = MagicMock(return_value=(True, []))
     priority = plugin._modules["priority_manager"]
-    priority.mark_complete = MagicMock()
-    priority.is_complete = MagicMock(return_value=True)
+    priority.mark_full_best_version_complete = MagicMock()
 
     plugin.run_best_version_check()
 
     plugin._resolve_subscribe_missing.assert_not_called()
-    priority.mark_complete.assert_not_called()
+    priority.mark_full_best_version_complete.assert_not_called()
 
 
 def test_best_version_mode_label_uses_wash_label_for_movie_best_version():
@@ -531,11 +672,11 @@ def test_best_version_check_does_not_expire_when_remaining_days_unlimited():
         "hash": {"subscribe_id": 5, "time": now - 10 * 86400},
     })
     priority = plugin._modules["priority_manager"]
-    priority.mark_complete = MagicMock()
+    priority.mark_full_best_version_complete = MagicMock()
 
     plugin.run_best_version_check()
 
-    priority.mark_complete.assert_not_called()
+    priority.mark_full_best_version_complete.assert_not_called()
 
 
 def test_best_version_check_keeps_subscription_with_recent_activity():
@@ -552,11 +693,11 @@ def test_best_version_check_keeps_subscription_with_recent_activity():
         "subscribes": {"5": {"best_version_anchor": now - 10 * 86400}},
     }.get(key, {}))
     priority = plugin._modules["priority_manager"]
-    priority.mark_complete = MagicMock()
+    priority.mark_full_best_version_complete = MagicMock()
 
     plugin.run_best_version_check()
 
-    priority.mark_complete.assert_not_called()
+    priority.mark_full_best_version_complete.assert_not_called()
 
 
 def test_get_state_uses_global_enabled():
@@ -2265,7 +2406,6 @@ def test_full_best_version_existing_library_does_not_complete_via_backfill(monke
     plugin._detect_existing_episodes.assert_not_called()
     subscribe_oper.update.assert_not_called()
     assert sub.episode_priority == {}
-    assert priority_manager.is_complete(sub) is False
 
 
 def test_notify_gate_blocks_when_disabled():
@@ -2486,12 +2626,11 @@ class TestEventDelegation:
         plugin._task_manager.update("torrents", lambda _data: {"abc": {"subscribe_id": 7}})
         mediainfo = _mediainfo()
         plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
-        plugin._resolve_subscribe_missing = MagicMock(return_value=(True, {}))
+        plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+        plugin._detect_episode_coverage = MagicMock(return_value=(list(range(1, 13)), []))
+        plugin._related_download_histories = MagicMock(return_value=[])
         converter = plugin._modules["converter"]
         converter.convert_to_full = MagicMock(return_value=True)
-        # init_plugin 时注入的是绑定方法；替换 mock 后需同步给事件代理，验证入口 wiring 与事件链路。
-        plugin._event_proxy._modules["resolve_missing_fn"] = plugin._resolve_subscribe_missing
-        plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
         lifecycle = plugin._modules["lifecycle"]
         lifecycle._subscribe_oper = oper
         lifecycle.handle_library_updated = MagicMock(wraps=lifecycle.handle_library_updated)
@@ -2502,7 +2641,7 @@ class TestEventDelegation:
         }))
 
         lifecycle.handle_library_updated.assert_called_once_with(7)
-        converter.convert_to_full.assert_called_once_with(sub, mediainfo)
+        converter.convert_to_full.assert_called_once_with(sub, mediainfo, current_priority=0)
 
     def test_transfer_complete_event_pauses_after_lack_is_refreshed(self):
         """整理完成事件应读取入库后的订阅状态，并在短窗口下立即进入播出暂停。"""
@@ -2571,7 +2710,7 @@ class TestPeriodicJobs:
     """定时巡检：洗版巡检和完成前观察释放（recognize/oper 以 mock 注入）。"""
 
     def test_best_version_check_does_not_mark_full_best_version_complete(self, monkeypatch):
-        """全集洗版普通完成不再由插件巡检主动标记完成。"""
+        """全集洗版普通完成由主程序洗版链路处理。"""
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({"best_version_type": "all"})
         best_sub = _sub(id=1, name="X", best_version=1, best_version_full=1)
@@ -2584,7 +2723,7 @@ class TestPeriodicJobs:
 
         plugin.run_best_version_check()
 
-        priority.mark_complete.assert_not_called()
+        priority.mark_full_best_version_complete.assert_not_called()
 
     def test_best_version_check_skips_complete_check_for_tv_episode_best_version(self):
         """剧集分集洗版不进入电影/全集洗版的时限终止路径。"""
@@ -2596,11 +2735,11 @@ class TestPeriodicJobs:
         plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
         plugin._resolve_subscribe_missing = MagicMock(return_value=(False, []))
         priority = plugin._modules["priority_manager"]
-        priority.mark_complete = MagicMock()
+        priority.mark_full_best_version_complete = MagicMock()
 
         plugin.run_best_version_check()
 
-        priority.mark_complete.assert_not_called()
+        priority.mark_full_best_version_complete.assert_not_called()
 
     def test_best_version_check_keeps_episode_subscription_when_target_not_complete(self):
         """分集洗版目标范围未全达标时，即使已有优先级都是 100 也不能判定洗版完成。"""
@@ -2620,11 +2759,11 @@ class TestPeriodicJobs:
         plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
         plugin._resolve_subscribe_missing = MagicMock(return_value=(False, [3]))
         priority = plugin._modules["priority_manager"]
-        priority.mark_complete = MagicMock()
+        priority.mark_full_best_version_complete = MagicMock()
 
         plugin.run_best_version_check()
 
-        priority.mark_complete.assert_not_called()
+        priority.mark_full_best_version_complete.assert_not_called()
 
     def test_detect_missing_episodes_returns_partial_missing_set(self, monkeypatch):
         """媒体库部分覆盖时，helper 返回缺失集而不是已存在集。"""

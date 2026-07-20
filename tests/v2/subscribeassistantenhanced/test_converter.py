@@ -59,7 +59,7 @@ class TestConvertToFull:
         )
         media = _mediainfo()
 
-        assert conv.convert_to_full(sub, media) is True
+        assert conv.convert_to_full(sub, media, current_priority=0) is True
 
         oper.add_history.assert_called_once_with(**sub.to_dict())
         oper.delete.assert_called_once_with(sid=1)
@@ -73,7 +73,7 @@ class TestConvertToFull:
         assert add_payload["username"] == "订阅助手（增强版）"
         assert add_payload["manual_total_episode"] == 0
         assert add_payload["note"] == [1, 2]
-        assert add_payload["current_priority"] == 50
+        assert add_payload["current_priority"] == 0
         assert add_payload["episode_priority"] == {"1": 100, "2": 50}
         assert "id" not in add_payload
         snapshot.assert_called_once_with(subscribe=sub, mediainfo=media, scope=None)

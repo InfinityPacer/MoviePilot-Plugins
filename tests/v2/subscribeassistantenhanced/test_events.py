@@ -315,7 +315,7 @@ class TestEventOrdering:
         ) == "洗版"
 
     def test_transfer_complete_converts_ready_episode_best_version_to_full(self):
-        """分集洗版整理完成且目标集齐全时，当前订阅立即转全集洗版。"""
+        """整理完成后委托共享入口检查分集转全集。"""
         sub = _sub(
             id=1,
             best_version=1,
@@ -328,25 +328,22 @@ class TestEventOrdering:
         tm.read.return_value = {"abc": {"subscribe_id": 1}}
         oper = MagicMock()
         oper.get.return_value = sub
-        converter = MagicMock()
+        convert = MagicMock()
         proxy = EventProxy(
             task_manager=tm,
             subscribe_oper=oper,
             download_monitor=MagicMock(),
-            converter=converter,
-            best_version_episode_to_full=True,
-            detect_missing_episodes_fn=MagicMock(return_value=[]),
-            recognize_mediainfo_fn=MagicMock(return_value=media),
+            convert_episode_best_version_to_full_fn=convert,
         )
 
         proxy.on_transfer_complete(SimpleNamespace(event_data={
             "download_hash": "abc", "transferinfo": None,
         }))
 
-        converter.convert_to_full.assert_called_once_with(sub, media)
+        convert.assert_called_once_with(1, trigger="TransferComplete")
 
-    def test_transfer_complete_uses_target_satisfied_resolver_for_episode_best_version(self):
-        """分集洗版转全集按主程序目标满足口径判断，允许任意已下载版本满足目标集。"""
+    def test_transfer_complete_does_not_duplicate_readiness_checks(self):
+        """事件层不读取订阅进度，统一委托共享 readiness 入口。"""
         sub = _sub(
             id=1,
             best_version=1,
@@ -361,31 +358,22 @@ class TestEventOrdering:
         tm.read.return_value = {"abc": {"subscribe_id": 1}}
         oper = MagicMock()
         oper.get.return_value = sub
-        converter = MagicMock()
-        resolver = MagicMock(return_value=(True, {}))
+        convert = MagicMock()
         proxy = EventProxy(
             task_manager=tm,
             subscribe_oper=oper,
             download_monitor=MagicMock(),
-            converter=converter,
-            best_version_episode_to_full=True,
-            resolve_missing_fn=resolver,
-            recognize_mediainfo_fn=MagicMock(return_value=media),
+            convert_episode_best_version_to_full_fn=convert,
         )
 
         proxy.on_transfer_complete(SimpleNamespace(event_data={
             "download_hash": "abc", "transferinfo": None,
         }))
 
-        resolver.assert_called_once_with(
-            subscribe=sub,
-            mediainfo=media,
-            best_version_accept_downloaded=True,
-        )
-        converter.convert_to_full.assert_called_once_with(sub, media)
+        convert.assert_called_once_with(1, trigger="TransferComplete")
 
-    def test_transfer_complete_keeps_episode_best_version_when_target_missing(self):
-        """分集洗版整理完成但目标集未齐全时，不提前转全集。"""
+    def test_transfer_complete_delegates_missing_target_decision_to_shared_entry(self):
+        """目标是否缺集不由事件层判断，整理完成后仍委托共享入口。"""
         sub = _sub(
             id=1,
             best_version=1,
@@ -397,42 +385,34 @@ class TestEventOrdering:
         tm.read.return_value = {"abc": {"subscribe_id": 1}}
         oper = MagicMock()
         oper.get.return_value = sub
-        converter = MagicMock()
+        convert = MagicMock()
         proxy = EventProxy(
             task_manager=tm,
             subscribe_oper=oper,
             download_monitor=MagicMock(),
-            converter=converter,
-            best_version_episode_to_full=True,
-            resolve_missing_fn=MagicMock(return_value=(False, {})),
-            detect_missing_episodes_fn=MagicMock(return_value=[2]),
-            recognize_mediainfo_fn=MagicMock(return_value=SimpleNamespace(tmdb_id=100)),
+            convert_episode_best_version_to_full_fn=convert,
         )
 
         proxy.on_transfer_complete(SimpleNamespace(event_data={
             "download_hash": "abc", "transferinfo": None,
         }))
 
-        converter.convert_to_full.assert_not_called()
+        convert.assert_called_once_with(1, trigger="TransferComplete")
 
-    def test_transfer_complete_skips_library_check_when_episodes_still_missing(self):
-        """分集洗版目标集仍有未下载集时，不触发媒体库缺集探测。"""
+    def test_transfer_complete_does_not_call_legacy_missing_probe(self):
+        """媒体库事实由共享转换入口统一读取。"""
         sub = _sub(id=1, best_version=1, best_version_full=0, lack_episode=1, episode_priority={"1": 100})
         tm = MagicMock()
         tm.read.return_value = {"abc": {"subscribe_id": 1}}
         oper = MagicMock()
         oper.get.return_value = sub
         detect_missing = MagicMock(return_value=[])
-        converter = MagicMock()
+        convert = MagicMock()
         proxy = EventProxy(
             task_manager=tm,
             subscribe_oper=oper,
             download_monitor=MagicMock(),
-            converter=converter,
-            best_version_episode_to_full=True,
-            resolve_missing_fn=MagicMock(return_value=(False, {})),
-            detect_missing_episodes_fn=detect_missing,
-            recognize_mediainfo_fn=MagicMock(return_value=SimpleNamespace(tmdb_id=100)),
+            convert_episode_best_version_to_full_fn=convert,
         )
 
         proxy.on_transfer_complete(SimpleNamespace(event_data={
@@ -440,7 +420,7 @@ class TestEventOrdering:
         }))
 
         detect_missing.assert_not_called()
-        converter.convert_to_full.assert_not_called()
+        convert.assert_called_once_with(1, trigger="TransferComplete")
 
     def test_subscribe_complete_triggers_snapshot(self):
         """SubscribeComplete 触发 H snapshot（subscribe 由 subscribe_info 重建）。"""
