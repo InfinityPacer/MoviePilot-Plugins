@@ -13,6 +13,12 @@ QB_COMPLETE_STATES = {
     "forcedUP",
 }
 
+DOWNLOAD_QUEUE_STATES = {
+    "queueddl",
+    "download pending",
+    "download_pending",
+}
+
 
 @dataclass
 class TorrentInfo:
@@ -37,6 +43,11 @@ class TorrentInfo:
     tracker_responses: list = field(default_factory=list)
     completed: bool = False
     completion_time: float = 0.0
+
+    @property
+    def queue_waiting(self) -> bool:
+        """任务是否处于下载器明确排队状态；停滞、暂停和元数据等待不属于排队。"""
+        return str(self.state or "").strip().lower() in DOWNLOAD_QUEUE_STATES
 
 
 class TorrentAdapter:

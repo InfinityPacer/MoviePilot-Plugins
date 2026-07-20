@@ -252,6 +252,11 @@ class PluginConfig:
         return self.get_int("download_progress_threshold", 10)
 
     @property
+    def download_queue_grace_multiplier(self) -> int:
+        """下载排队宽限倍数：明确排队状态可额外抵扣的超时窗口倍数。"""
+        return max(self.get_int("download_queue_grace_multiplier", 2), 0)
+
+    @property
     def download_retry_limit(self) -> int:
         """下载连续超时重试次数：达到上限后保留任务并停止自动删种重试。"""
         return self.get_int("download_retry_limit", 3)

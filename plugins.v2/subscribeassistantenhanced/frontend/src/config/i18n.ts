@@ -210,6 +210,7 @@ const englishFields: Record<ConfigKey, EnglishFieldText> = {
   skip_deletion: ['Skip recently removed releases', 'Avoid downloading recently removed torrents again'],
   download_timeout_minutes: ['Download timeout (minutes)', 'Observation window used to detect downloads with insufficient progress'],
   download_progress_threshold: ['Download progress threshold', 'Remove only when progress increases by less than N% during the timeout window'],
+  download_queue_grace_multiplier: ['Download queue grace multiplier', 'Allow N additional timeout windows while the downloader explicitly reports the task as queued; 0 disables the grace period'],
   download_retry_limit: ['Consecutive timeout limit', 'Keep the torrent and notify after N consecutive low-progress timeouts'],
   delete_exclude_tags: ['Excluded tags', 'Comma-separated tags that must not be processed'],
   default_tracker_response: ['Tracker response keywords', 'One keyword per line; case-insensitive regular expressions are supported'],

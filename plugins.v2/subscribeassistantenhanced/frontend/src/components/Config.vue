@@ -106,6 +106,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
       keys: [
         'download_timeout_minutes',
         'download_progress_threshold',
+        'download_queue_grace_multiplier',
         'download_retry_limit',
         'delete_exclude_tags',
         'delete_record_retention_hours',

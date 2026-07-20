@@ -23,6 +23,7 @@ export function numberFieldUnit(key: ConfigKey, locale: SupportedLocale = 'zh-CN
   if (key === 'cadence_min_episodes') return units.episode
   if (key === 'cadence_multiplier') return units.multiplier
   if (key === 'download_progress_threshold') return units.percent
+  if (key === 'download_queue_grace_multiplier') return units.multiplier
   if (key === 'download_retry_limit') return units.count
   if (key === 'recognition_guard_cache_maxsize') return units.item
   if (key === 'recognition_guard_notify_interval') return units.second

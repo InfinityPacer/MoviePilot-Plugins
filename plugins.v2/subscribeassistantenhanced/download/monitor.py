@@ -20,6 +20,7 @@ class DownloadMonitor:
     def __init__(self, task_data_read: Callable, task_data_update: Callable,
                  timeout_minutes: int = 180,
                  progress_threshold: int = 5,
+                 queue_grace_multiplier: int = 2,
                  retry_limit: int = 3,
                  tracker_keywords: Optional[list] = None,
                  exclude_tags: Optional[list] = None,
@@ -36,6 +37,7 @@ class DownloadMonitor:
         self._update = task_data_update
         self._timeout_seconds = timeout_minutes * 60
         self._progress_threshold = progress_threshold
+        self._queue_grace_multiplier = max(int(queue_grace_multiplier or 0), 0)
         self._retry_limit = retry_limit
         self._tracker_keywords = tracker_keywords or []
         self._exclude_tags = exclude_tags or []
@@ -160,6 +162,8 @@ class DownloadMonitor:
                 "description": description,
                 "baseline_progress": progress,
                 "baseline_at": now,
+                "queue_grace_seconds": 0,
+                "last_timeout_check_at": now,
                 "retry_count": 0,
                 "manual_review_count": 0,
                 "time": now,
@@ -554,8 +558,16 @@ class DownloadMonitor:
             self._clear_timeout_state(subscribe_id, torrent_task)
             return "ok"
 
-        elapsed = time.time() - torrent_task.get("baseline_at", time.time())
-        if elapsed < self._timeout_seconds:
+        queue_grace_seconds = self._observe_queue_grace(torrent_info, torrent_task)
+        _, effective_elapsed = self._timeout_elapsed(torrent_task, queue_grace_seconds)
+        if torrent_info.queue_waiting and self._max_queue_grace_seconds() > 0:
+            detail(
+                f"下载监控：种子 {torrent_info.hash} 处于下载器排队状态，"
+                f"已使用排队宽限 {queue_grace_seconds / 3600:.2f}/"
+                f"{self._max_queue_grace_seconds() / 3600:g} 小时，"
+                f"有效低进度观察 {effective_elapsed / 3600:.2f} 小时"
+            )
+        if effective_elapsed < self._timeout_seconds:
             return "ok"
 
         if self._is_timeout_ignore_active(subscribe_id, torrent_info.hash, torrent_task):
@@ -602,10 +614,14 @@ class DownloadMonitor:
         return data.get(torrent_hash)
 
     def _init_torrent_task(self, info: TorrentInfo):
+        now = time.time()
+
         def updater(data: dict) -> dict:
             data[info.hash] = {
                 "baseline_progress": info.progress,
-                "baseline_at": time.time(),
+                "baseline_at": now,
+                "queue_grace_seconds": 0,
+                "last_timeout_check_at": now,
                 "retry_count": 0,
                 "manual_review_count": 0,
             }
@@ -618,13 +634,68 @@ class DownloadMonitor:
         return diff >= self._progress_threshold
 
     def _refresh_baseline(self, info: TorrentInfo):
+        now = time.time()
+
         def updater(data: dict) -> dict:
             task = data.get(info.hash, {})
             task["baseline_progress"] = info.progress
-            task["baseline_at"] = time.time()
+            task["baseline_at"] = now
+            task["queue_grace_seconds"] = 0
+            task["last_timeout_check_at"] = now
             data[info.hash] = task
             return data
         self._update("torrents", updater)
+
+    def _observe_queue_grace(self, info: TorrentInfo, torrent_task: dict) -> float:
+        """累计本轮低进度周期的排队抵扣时间，并限制在配置的额外宽限内。"""
+        now = time.time()
+        last_checked_at = torrent_task.get("last_timeout_check_at")
+        if last_checked_at is None:
+            last_checked_at = torrent_task.get("baseline_at")
+        try:
+            last_checked_at = float(last_checked_at)
+        except (TypeError, ValueError):
+            last_checked_at = now
+        interval = max(now - last_checked_at, 0)
+        queue_grace_seconds = self._bounded_queue_grace_seconds(torrent_task)
+        if info.queue_waiting:
+            queue_grace_seconds = min(
+                queue_grace_seconds + interval,
+                self._max_queue_grace_seconds(),
+            )
+
+        def updater(data: dict) -> dict:
+            task = data.get(info.hash, {})
+            task["queue_grace_seconds"] = queue_grace_seconds
+            task["last_timeout_check_at"] = now
+            data[info.hash] = task
+            return data
+
+        self._update("torrents", updater)
+        return queue_grace_seconds
+
+    def _max_queue_grace_seconds(self) -> float:
+        """返回单个低进度周期允许抵扣的最大排队时长。"""
+        return self._timeout_seconds * self._queue_grace_multiplier
+
+    def _bounded_queue_grace_seconds(self, torrent_task: dict) -> float:
+        """读取已使用排队宽限；持久化异常值按 0 处理并裁剪到当前配置上限。"""
+        try:
+            queue_grace_seconds = max(float(torrent_task.get("queue_grace_seconds") or 0), 0)
+        except (TypeError, ValueError):
+            queue_grace_seconds = 0
+        return min(queue_grace_seconds, self._max_queue_grace_seconds())
+
+    @staticmethod
+    def _timeout_elapsed(torrent_task: dict, queue_grace_seconds: float) -> tuple[float, float]:
+        """返回自进度基线起的实际时长与扣除有限排队宽限后的有效观察时长。"""
+        now = time.time()
+        try:
+            baseline_at = float(torrent_task.get("baseline_at"))
+        except (TypeError, ValueError):
+            baseline_at = now
+        elapsed = max(now - baseline_at, 0)
+        return elapsed, max(elapsed - queue_grace_seconds, 0)
 
     def _increment_retry(self, torrent_hash: str, current: int):
         def updater(data: dict) -> dict:
@@ -696,10 +767,17 @@ class DownloadMonitor:
         download_hours = max(time.time() - started_at, 0) / 3600
         progress_delta = (torrent_info.progress - torrent_task.get("baseline_progress", 0.0)) * 100
         timeout_hours = self._timeout_seconds / 3600
+        queue_grace_seconds = self._bounded_queue_grace_seconds(torrent_task)
         retry_limit = max(int(self._retry_limit or 1), 1)
+        queue_grace_text = ""
+        if queue_grace_seconds:
+            queue_grace_text = (
+                f"排队宽限 {queue_grace_seconds / 3600:.2f}/"
+                f"{self._max_queue_grace_seconds() / 3600:g} 小时，"
+            )
         return (
             f"订阅种子，下载时长 {download_hours:.2f} 小时，"
-            f"超时窗口 {timeout_hours:g} 小时内进度增长 {progress_delta:.2f}%，"
+            f"{queue_grace_text}超时窗口 {timeout_hours:g} 小时内进度增长 {progress_delta:.2f}%，"
             f"低于 {self._progress_threshold:g}%"
             f"（低进度删除 {timeout_state.get('fail_count', 0)}/{retry_limit} 次）"
         )

@@ -86,6 +86,12 @@ class PluginConfigDefaultsTest:
     def test_download_timeout_minutes_default(self):
         assert self.cfg.download_timeout_minutes == 120
 
+    def test_download_queue_grace_multiplier_default(self):
+        assert self.cfg.download_queue_grace_multiplier == 2
+
+    def test_download_queue_grace_multiplier_negative_disables_grace(self):
+        assert PluginConfig({"download_queue_grace_multiplier": -1}).download_queue_grace_multiplier == 0
+
     def test_download_progress_threshold_default(self):
         assert self.cfg.download_progress_threshold == 10
 

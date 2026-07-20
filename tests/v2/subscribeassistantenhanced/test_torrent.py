@@ -2,6 +2,7 @@
 from types import SimpleNamespace
 
 from qbittorrentapi.torrents import TorrentInfoList
+from transmission_rpc.torrent import Status
 
 from subscribeassistantenhanced.download.torrent import TorrentAdapter, TorrentInfo
 from ..torrent_sdk_fixtures import make_tr_v7_torrent
@@ -24,6 +25,16 @@ class TestTorrentInfoHelpers:
         assert TorrentAdapter.get_tags(info) == ["订阅", "洗版"]
         assert TorrentAdapter.is_completed(info) == (False, 0.0)
         assert TorrentAdapter.progress_percent(info) == 25.0
+
+    def test_queue_waiting_states_are_provider_specific(self):
+        """只识别下载器明确排队状态，停滞、暂停和元数据等待仍参与超时。"""
+        assert TorrentInfo(state="queuedDL").queue_waiting is True
+        assert TorrentInfo(state="download pending").queue_waiting is True
+        assert TorrentInfo(state="download_pending").queue_waiting is True
+        assert TorrentInfo(state=Status.DOWNLOAD_PENDING).queue_waiting is True
+        assert TorrentInfo(state="stalledDL").queue_waiting is False
+        assert TorrentInfo(state="pausedDL").queue_waiting is False
+        assert TorrentInfo(state="metaDL").queue_waiting is False
 
 
 class TestFromQB:

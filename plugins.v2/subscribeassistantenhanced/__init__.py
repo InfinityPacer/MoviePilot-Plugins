@@ -294,6 +294,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             tm.read, tm.update,
             timeout_minutes=cfg.download_timeout_minutes,
             progress_threshold=cfg.download_progress_threshold,
+            queue_grace_multiplier=cfg.download_queue_grace_multiplier,
             retry_limit=cfg.download_retry_limit,
             tracker_keywords=tracker_keywords,
             exclude_tags=exclude_tags,

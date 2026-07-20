@@ -263,6 +263,13 @@ export const fields: FieldMeta[] = [
     "advanced": true
   },
   {
+    "key": "download_queue_grace_multiplier",
+    "label": "下载排队宽限倍数",
+    "group": "cleanup",
+    "kind": "number",
+    "hint": "排队状态额外宽限N个超时窗口，0表示不宽限"
+  },
+  {
     "key": "download_retry_limit",
     "label": "下载连续超时重试次数",
     "group": "cleanup",

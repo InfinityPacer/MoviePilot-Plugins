@@ -28,6 +28,7 @@ const configDefaults = {
   "skip_deletion": true,
   "download_timeout_minutes": 120,
   "download_progress_threshold": 10,
+  "download_queue_grace_multiplier": 2,
   "download_retry_limit": 3,
   "delete_exclude_tags": "H&R",
   "default_tracker_response": "torrent not registered with this tracker\ntorrent banned",
@@ -349,6 +350,13 @@ const fields = [
     "kind": "number",
     "hint": "超时窗口内下载进度增长低于N%时才删除",
     "advanced": true
+  },
+  {
+    "key": "download_queue_grace_multiplier",
+    "label": "下载排队宽限倍数",
+    "group": "cleanup",
+    "kind": "number",
+    "hint": "排队状态额外宽限N个超时窗口，0表示不宽限"
   },
   {
     "key": "download_retry_limit",
@@ -1182,6 +1190,7 @@ const englishFields = {
   skip_deletion: ["Skip recently removed releases", "Avoid downloading recently removed torrents again"],
   download_timeout_minutes: ["Download timeout (minutes)", "Observation window used to detect downloads with insufficient progress"],
   download_progress_threshold: ["Download progress threshold", "Remove only when progress increases by less than N% during the timeout window"],
+  download_queue_grace_multiplier: ["Download queue grace multiplier", "Allow N additional timeout windows while the downloader explicitly reports the task as queued; 0 disables the grace period"],
   download_retry_limit: ["Consecutive timeout limit", "Keep the torrent and notify after N consecutive low-progress timeouts"],
   delete_exclude_tags: ["Excluded tags", "Comma-separated tags that must not be processed"],
   default_tracker_response: ["Tracker response keywords", "One keyword per line; case-insensitive regular expressions are supported"],
@@ -1565,6 +1574,7 @@ function numberFieldUnit(key, locale = "zh-CN") {
   if (key === "cadence_min_episodes") return units.episode;
   if (key === "cadence_multiplier") return units.multiplier;
   if (key === "download_progress_threshold") return units.percent;
+  if (key === "download_queue_grace_multiplier") return units.multiplier;
   if (key === "download_retry_limit") return units.count;
   if (key === "recognition_guard_cache_maxsize") return units.item;
   if (key === "recognition_guard_notify_interval") return units.second;
@@ -1737,6 +1747,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           keys: [
             "download_timeout_minutes",
             "download_progress_threshold",
+            "download_queue_grace_multiplier",
             "download_retry_limit",
             "delete_exclude_tags",
             "delete_record_retention_hours"
@@ -2702,6 +2713,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-4ce61814"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a840fd50"]]);
 
 export { Config as default };

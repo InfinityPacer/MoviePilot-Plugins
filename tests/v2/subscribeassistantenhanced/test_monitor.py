@@ -23,10 +23,10 @@ def _store_mgr(store=None):
     )
 
 
-def _info(hash="h1", progress=0.5, completed=False, tags=None,
+def _info(hash="h1", progress=0.5, completed=False, state="downloading", tags=None,
           tracker_responses=None):
     return TorrentInfo(
-        hash=hash, progress=progress, completed=completed,
+        hash=hash, progress=progress, completed=completed, state=state,
         tags=tags or [], tracker_responses=tracker_responses or [],
     )
 
@@ -275,6 +275,148 @@ class TestCheckTorrent:
         mon = DownloadMonitor(read, update, timeout_minutes=60)
         result = mon.check_torrent(_info(progress=0.5), subscribe_id=1)
         assert result == "ok"
+
+    def test_qb_queue_wait_uses_bounded_grace_then_times_out(self, monkeypatch):
+        """qB 排队只延长当前低进度周期，达到三倍总时长后仍进入删种。"""
+        store = {"torrents": {"h1": {
+            "baseline_progress": 0.0, "baseline_at": 0.0,
+            "subscribe_id": 1, "episodes": [1],
+        }}}
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(
+            read, update, timeout_minutes=60, queue_grace_multiplier=2,
+            retry_limit=3, subscribe_oper=oper,
+        )
+
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 7200.0)
+        assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "ok"
+        assert store["torrents"]["h1"]["queue_grace_seconds"] == 7200
+
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
+        assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "timeout"
+        reason = mon.get_timeout_reason(1, store["torrents"]["h1"], _info(progress=0.0, state="queuedDL"))
+        assert "排队宽限 2.00/2 小时，超时窗口 1 小时内进度增长 0.00%" in reason
+
+    def test_tr_download_pending_uses_same_bounded_grace(self, monkeypatch):
+        """TR download pending 与 qB queuedDL 使用同一有限排队宽限。"""
+        store = {"torrents": {"h1": {
+            "baseline_progress": 0.0, "baseline_at": 0.0,
+            "subscribe_id": 1, "episodes": [1],
+        }}}
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(
+            read, update, timeout_minutes=60, queue_grace_multiplier=2,
+            retry_limit=3, subscribe_oper=oper,
+        )
+
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 7200.0)
+        assert mon.check_torrent(_info(progress=0.0, state="download pending"), 1) == "ok"
+
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
+        assert mon.check_torrent(_info(progress=0.0, state="download pending"), 1) == "timeout"
+
+    def test_repeated_queue_transitions_do_not_reset_grace(self, monkeypatch):
+        """排队状态反复进入只累计有限额度，不重新获得完整宽限。"""
+        store = {"torrents": {"h1": {
+            "baseline_progress": 0.0, "baseline_at": 0.0,
+            "subscribe_id": 1, "episodes": [1],
+        }}}
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(
+            read, update, timeout_minutes=60, queue_grace_multiplier=2,
+            retry_limit=3, subscribe_oper=oper,
+        )
+
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3600.0)
+        assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "ok"
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 5400.0)
+        assert mon.check_torrent(_info(progress=0.0, state="downloading"), 1) == "ok"
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 9000.0)
+        assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "ok"
+        assert store["torrents"]["h1"]["queue_grace_seconds"] == 7200
+
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
+        assert mon.check_torrent(_info(progress=0.0, state="downloading"), 1) == "timeout"
+
+    def test_non_queue_states_do_not_receive_grace(self, monkeypatch):
+        """无做种、元数据等待和用户暂停仍按普通低进度窗口删除。"""
+        for state in ("stalledDL", "metaDL", "pausedDL", "checkingDL"):
+            store = {"torrents": {"h1": {
+                "baseline_progress": 0.0, "baseline_at": 0.0,
+                "subscribe_id": 1, "episodes": [1],
+            }}}
+            read, update, _ = _store_mgr(store)
+            oper = MagicMock()
+            oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+            mon = DownloadMonitor(
+                read, update, timeout_minutes=60, queue_grace_multiplier=2,
+                retry_limit=3, subscribe_oper=oper,
+            )
+            monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
+
+            assert mon.check_torrent(_info(progress=0.0, state=state), 1) == "timeout"
+            assert store["torrents"]["h1"].get("queue_grace_seconds", 0) == 0
+
+    def test_zero_queue_grace_keeps_original_timeout(self, monkeypatch):
+        """排队宽限设为 0 时，明确排队状态仍按原超时窗口删除。"""
+        store = {"torrents": {"h1": {
+            "baseline_progress": 0.0, "baseline_at": 0.0,
+            "subscribe_id": 1, "episodes": [1],
+        }}}
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(
+            read, update, timeout_minutes=60, queue_grace_multiplier=0,
+            retry_limit=3, subscribe_oper=oper,
+        )
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
+
+        assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "timeout"
+        assert store["torrents"]["h1"]["queue_grace_seconds"] == 0
+
+    def test_invalid_persisted_queue_grace_falls_back_to_zero(self, monkeypatch):
+        """旧任务中的异常宽限值不应打断巡检或绕过普通超时。"""
+        store = {"torrents": {"h1": {
+            "baseline_progress": 0.0, "baseline_at": 0.0,
+            "queue_grace_seconds": "invalid",
+            "subscribe_id": 1, "episodes": [1],
+        }}}
+        read, update, _ = _store_mgr(store)
+        oper = MagicMock()
+        oper.get.return_value = SimpleNamespace(id=1, type="电视剧", season=None)
+        mon = DownloadMonitor(
+            read, update, timeout_minutes=60, queue_grace_multiplier=2,
+            retry_limit=3, subscribe_oper=oper,
+        )
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
+
+        assert mon.check_torrent(_info(progress=0.0, state="downloading"), 1) == "timeout"
+        assert store["torrents"]["h1"]["queue_grace_seconds"] == 0
+
+    def test_progress_resets_used_queue_grace(self, monkeypatch):
+        """达到进度阈值后开始新的观察周期，不继承旧排队宽限。"""
+        store = {"torrents": {"h1": {
+            "baseline_progress": 0.0, "baseline_at": 0.0,
+            "queue_grace_seconds": 3600.0,
+            "last_timeout_check_at": 3600.0,
+            "subscribe_id": 1, "episodes": [1],
+        }}}
+        read, update, _ = _store_mgr(store)
+        mon = DownloadMonitor(read, update, timeout_minutes=60, progress_threshold=10)
+        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 5400.0)
+
+        assert mon.check_torrent(_info(progress=0.2, state="queuedDL"), 1) == "ok"
+        task = store["torrents"]["h1"]
+        assert task["baseline_at"] == 5400.0
+        assert task["queue_grace_seconds"] == 0
+        assert task["last_timeout_check_at"] == 5400.0
 
     def test_timeout_after_retries_exhausted(self):
         """低进度超时未达保护上限时直接删种。"""

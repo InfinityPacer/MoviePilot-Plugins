@@ -30,6 +30,8 @@ export interface SaeConfig {
   download_timeout_minutes: number
   /** 下载超时进度阈值 */
   download_progress_threshold: number
+  /** 下载排队宽限倍数 */
+  download_queue_grace_multiplier: number
   /** 下载连续超时重试次数 */
   download_retry_limit: number
   /** 排除标签 */
@@ -159,6 +161,7 @@ export const configDefaults: SaeConfig = {
   "skip_deletion": true,
   "download_timeout_minutes": 120,
   "download_progress_threshold": 10,
+  "download_queue_grace_multiplier": 2,
   "download_retry_limit": 3,
   "delete_exclude_tags": "H&R",
   "default_tracker_response": "torrent not registered with this tracker\ntorrent banned",

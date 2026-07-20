@@ -153,6 +153,7 @@
 | 跳过近期删除资源 | `skip_deletion` | bool | `true` | 资源选择时跳过近期删除资源 | 内部按资源删除指纹匹配 |
 | 下载超时时间（分钟） | `download_timeout_minutes` | int（分钟） | `120` | 进度观察窗口长度 | 不是总下载时长上限 |
 | [下载超时进度阈值](#cfg-download_progress_threshold) | `download_progress_threshold` | int（%） | `10` | 窗口内进度低于阈值视为停滞 | 与重试次数共同决定是否删种 |
+| 下载排队宽限倍数 | `download_queue_grace_multiplier` | int（倍） | `2` | 下载器明确排队时额外宽限 N 个超时窗口 | `0` 表示不宽限；默认最长观察时间为超时窗口的 3 倍 |
 | 下载连续超时重试次数 | `download_retry_limit` | int | `3` | 同一订阅/集数范围允许的连续停滞次数 | 未达上限时自动删种并补搜，达到上限后保留当前种子并提示人工复核 |
 | 删除记录保留（小时） | `delete_record_retention_hours` | int（小时） | `24` | 近期删除记录保留时间 | 到期由删除记录清理任务移除 |
 | 排除标签 | `delete_exclude_tags` | str | `H&R` | 带有这些标签的种子不自动删除 | 多个标签用逗号分隔 |
