@@ -71,14 +71,14 @@ def _mediainfo(**kwargs):
     return media
 
 
-def test_release_metadata_requires_main_program_newer_than_2_14_1():
-    """插件版本门禁要求高于当前 MoviePilot v2.14.1 主程序版本。"""
+def test_release_metadata_requires_supported_main_program_version():
+    """插件版本门禁要求使用具备全集洗版优先级合同的主程序版本。"""
     package = json.loads(Path("package.v2.json").read_text(encoding="utf-8"))
     specifier = SpecifierSet(package["SubscribeAssistantEnhanced"]["system_version"])
 
-    assert package["SubscribeAssistantEnhanced"]["system_version"] == ">2.14.1"
-    assert Version("2.14.1") not in specifier
-    assert Version("2.14.2") in specifier
+    assert package["SubscribeAssistantEnhanced"]["system_version"] == ">=2.14.6"
+    assert Version("2.14.5") not in specifier
+    assert Version("2.14.6") in specifier
 
 
 def test_converter_is_wired():
