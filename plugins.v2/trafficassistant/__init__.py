@@ -16,10 +16,11 @@ from app.db.site_oper import SiteOper
 from app.db.systemconfig_oper import SystemConfigOper
 from app.log import logger
 from app.plugins import _PluginBase
-from app.plugins.trafficassistant.trafficconfig import BaseConfig, TrafficConfig
 from app.scheduler import Scheduler
 from app.schemas import NotificationType
 from app.schemas.types import EventType, SystemConfigKey
+
+from .trafficconfig import BaseConfig, TrafficConfig
 
 lock = threading.Lock()
 
@@ -32,7 +33,7 @@ class TrafficAssistant(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png"
     # 插件版本
-    plugin_version = "1.6"
+    plugin_version = "1.7"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -832,12 +833,23 @@ class TrafficAssistant(_PluginBase):
         return action_performed, action_msg
 
     def __update_brush_sites(self, site_id: int, enable: bool, plugin_id: str) -> [bool, str]:
-        """更新或配置刷流插件站点"""
+        """按刷流插件配置契约更新目标站点的自动刷流状态"""
         plugin_config = self.get_config(plugin_id=plugin_id)
         if not plugin_config:
             action_msg = "刷流站点：获取插件配置失败"
             logger.warning(action_msg)
             return False, action_msg
+
+        tasks = plugin_config.get("tasks")
+        if isinstance(tasks, list):
+            config_needs_update, actions = self.__update_brush_tasks(
+                plugin_config=plugin_config,
+                site_id=site_id,
+                enable=enable,
+            )
+            if config_needs_update:
+                self.update_config(config=plugin_config, plugin_id=plugin_id)
+            return config_needs_update, "，".join(actions)
 
         actions = []
         config_needs_update = False
@@ -864,6 +876,42 @@ class TrafficAssistant(_PluginBase):
             self.update_config(config=plugin_config, plugin_id=plugin_id)
 
         return config_needs_update, "，".join(actions)
+
+    @staticmethod
+    def __update_brush_tasks(plugin_config: dict, site_id: int, enable: bool) -> Tuple[bool, List[str]]:
+        """更新 V5 中目标站点的全部任务，并在启用任务时保证全局开关可用"""
+        matching_tasks = [
+            task for task in plugin_config["tasks"]
+            if isinstance(task, dict) and task.get("site_id") == site_id
+        ]
+        if not matching_tasks:
+            action_msg = "刷流任务：未找到对应站点"
+            logger.warning(action_msg)
+            return False, [action_msg]
+
+        actions = []
+        config_needs_update = False
+        if enable and not plugin_config.get("enabled", False):
+            plugin_config["enabled"] = True
+            actions.append("刷流插件：已启用")
+            config_needs_update = True
+
+        changed_count = 0
+        for task in matching_tasks:
+            if bool(task.get("enabled", True)) != enable:
+                task["enabled"] = enable
+                changed_count += 1
+
+        if changed_count:
+            action = "启用" if enable else "暂停"
+            actions.append(f"刷流任务：已{action} {changed_count} 个")
+            config_needs_update = True
+        else:
+            actions.append("刷流任务：无需调整")
+
+        for action_msg in actions:
+            logger.info(action_msg)
+        return config_needs_update, actions
 
     def __reload_plugin(self, plugin_id: str):
         logger.info(f"准备热加载插件: {plugin_id}")
