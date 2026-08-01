@@ -20,7 +20,7 @@ def _sub(tmdbid=100, season=1, episode_group=None, total=12, best_version=0, bes
 
 
 def _verifier(store=None, tmdb_fn=None, retention_days=90, rebuild_fn=None,
-              subscribe_image_fn=None):
+              subscribe_image_fn=None, validate_rebuild_fn=None):
     store = store if store is not None else {}
     oper = MagicMock()
     oper.list.return_value = []
@@ -33,6 +33,7 @@ def _verifier(store=None, tmdb_fn=None, retention_days=90, rebuild_fn=None,
         retention_days=retention_days,
         notify_fn=notify,
         rebuild_subscribe_fn=rebuild_fn,
+        validate_rebuild_subscribe_fn=validate_rebuild_fn,
         get_subscribe_image_fn=subscribe_image_fn,
     )
     v._store = store
@@ -54,8 +55,8 @@ class TestSnapshot:
         assert snaps[0]["total_at_completion"] == 12
         assert snaps[0]["subscribe_config"]["filter"] == "rule1"
         assert snaps[0]["subscribe_config"]["filter_groups"] == ["group1"]
-        assert "best_version" not in snaps[0]["subscribe_config"]
-        assert "best_version_full" not in snaps[0]["subscribe_config"]
+        assert snaps[0]["subscribe_config"]["best_version"] == 1
+        assert snaps[0]["subscribe_config"]["best_version_full"] == 1
         assert snaps[0]["subscribe_config"]["year"] == "2026"
         assert snaps[0]["subscribe_config"]["keyword"] == "测试关键字"
         assert snaps[0]["subscribe_config"]["quality"] == "WEB-DL"
@@ -150,11 +151,12 @@ class TestVerifyAll:
 
     def test_rebuild_failure_keeps_snapshot_for_retry(self):
         """真实重建失败时必须保留快照，避免丢失后续补救机会。"""
-        store = {"snapshots": {"list": [{
+        snap = {
             "tmdbid": 100, "season": 1, "episode_group_id": None,
             "total_at_completion": 12, "completed_at": time.time(),
             "subscribe_config": {"name": "测试"},
-        }]}}
+        }
+        store = {"snapshots": {"list": [snap]}}
         rebuild = MagicMock(return_value=False)
         v = _verifier(store, tmdb_fn=lambda *a, **kw: [object()] * 15,
                       rebuild_fn=rebuild)
@@ -248,6 +250,118 @@ class TestVerifyAll:
         }
         assert v._notify_mock.call_args.args[0] == "测试 S1 检测到新增集数（12→15），已移除旧洗版订阅并重建订阅"
 
+    def test_deleted_full_subscribe_rebuild_failure_keeps_snapshot(self):
+        """全集洗版删除后重建失败时保留快照，供后续巡检重试。"""
+        snap = {
+            "tmdbid": 100, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "测试"},
+        }
+        store = {"snapshots": {"list": [snap]}}
+        full_subscribe = SimpleNamespace(
+            id=99, tmdbid=100, season=1, episode_group=None,
+            type="电视剧", best_version=1, best_version_full=1,
+            total_episode=15, name="测试剧",
+        )
+        v = _verifier(
+            store,
+            tmdb_fn=lambda *a, **kw: [object()] * 15,
+            rebuild_fn=MagicMock(return_value=False),
+        )
+        v._oper.list.return_value = [full_subscribe]
+
+        v.verify_all()
+
+        v._oper.delete.assert_called_once_with(99)
+        assert store["snapshots"]["list"] == [snap]
+
+    def test_rebuild_exception_keeps_snapshot_and_continues_next_snapshot(self):
+        """单条重建异常不能消费快照，也不能阻断后续快照。"""
+        first = {
+            "tmdbid": 100, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "第一部"},
+        }
+        second = {
+            "tmdbid": 101, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "第二部"},
+        }
+        store = {"snapshots": {"list": [first, second]}}
+        rebuild = MagicMock(side_effect=[RuntimeError("boom"), True])
+        v = _verifier(
+            store,
+            tmdb_fn=lambda *a, **kw: [object()] * 15,
+            rebuild_fn=rebuild,
+        )
+
+        v.verify_all()
+
+        assert [snap["tmdbid"] for snap in store["snapshots"]["list"]] == [100]
+        assert rebuild.call_count == 2
+
+    def test_delete_exception_keeps_snapshot_and_continues_next_snapshot(self):
+        """单条全集洗版删除异常不能阻断其他完成快照的纠错。"""
+        first = {
+            "tmdbid": 100, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "第一部"},
+        }
+        second = {
+            "tmdbid": 101, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "第二部"},
+        }
+        store = {"snapshots": {"list": [first, second]}}
+        first_full = SimpleNamespace(
+            id=99, tmdbid=100, season=1, episode_group=None,
+            type="电视剧", best_version=1, best_version_full=1,
+            total_episode=15, name="第一部",
+        )
+        v = _verifier(
+            store,
+            tmdb_fn=lambda *a, **kw: [object()] * 15,
+            rebuild_fn=MagicMock(return_value=True),
+        )
+        v._oper.list.return_value = [first_full]
+        v._oper.delete.side_effect = RuntimeError("delete failed")
+
+        v.verify_all()
+
+        assert [snap["tmdbid"] for snap in store["snapshots"]["list"]] == [100]
+
+    def test_mixed_full_and_normal_subscribes_rebuilds_after_removing_only_full(self):
+        """同范围混合订阅时只删除全集洗版，并仍执行重建接管校验。"""
+        snap = {
+            "tmdbid": 100, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "测试"},
+        }
+        store = {"snapshots": {"list": [snap]}}
+        full_subscribe = SimpleNamespace(
+            id=99, tmdbid=100, season=1, episode_group=None,
+            type="电视剧", best_version=1, best_version_full=1,
+            total_episode=15, name="测试剧",
+        )
+        normal_subscribe = SimpleNamespace(
+            id=100, tmdbid=100, season=1, episode_group=None,
+            type="电视剧", best_version=0, best_version_full=0,
+            total_episode=15, name="测试剧",
+        )
+        rebuild = MagicMock(return_value=True)
+        v = _verifier(
+            store,
+            tmdb_fn=lambda *a, **kw: [object()] * 15,
+            rebuild_fn=rebuild,
+        )
+        v._oper.list.return_value = [full_subscribe, normal_subscribe]
+
+        v.verify_all()
+
+        v._oper.delete.assert_called_once_with(99)
+        rebuild.assert_called_once()
+        assert store["snapshots"]["list"] == []
+
     def test_rebuild_does_not_touch_different_episode_group(self):
         """同 TMDB 同季但不同剧集组不是同一目标范围。"""
         store = {"snapshots": {"list": [{
@@ -288,20 +402,46 @@ class TestVerifyAll:
 
     def test_covered_active_normal_subscribe_consumes_snapshot(self):
         """已有普通订阅覆盖最新 TMDB 总集数时，完成快照已完成交接。"""
-        store = {"snapshots": {"list": [{
+        snap = {
             "tmdbid": 100, "season": 1, "episode_group_id": None,
             "total_at_completion": 12, "completed_at": time.time(),
             "subscribe_config": {"name": "测试"},
-        }]}}
+        }
+        store = {"snapshots": {"list": [snap]}}
+        existing = SimpleNamespace(
+            id=50, tmdbid=100, season=1, episode_group=None,
+            total_episode=15, best_version=0, best_version_full=0,
+        )
+        validate = MagicMock(return_value=True)
+        v = _verifier(
+            store,
+            tmdb_fn=lambda *a, **kw: [object()] * 15,
+            validate_rebuild_fn=validate,
+        )
+        v._oper.list.return_value = [existing]
+        v.verify_all()
+        v._oper.add.assert_not_called()
+        validate.assert_called_once_with(existing, snap, 15)
+        assert store["snapshots"]["list"] == []
+
+    def test_covered_subscribe_without_validator_keeps_snapshot(self):
+        """校验依赖缺失时必须保留快照，不能退回仅按总集数判断成功。"""
+        snap = {
+            "tmdbid": 100, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "测试"},
+        }
+        store = {"snapshots": {"list": [snap]}}
         existing = SimpleNamespace(
             id=50, tmdbid=100, season=1, episode_group=None,
             total_episode=15, best_version=0, best_version_full=0,
         )
         v = _verifier(store, tmdb_fn=lambda *a, **kw: [object()] * 15)
         v._oper.list.return_value = [existing]
+
         v.verify_all()
-        v._oper.add.assert_not_called()
-        assert store["snapshots"]["list"] == []
+
+        assert store["snapshots"]["list"] == [snap]
 
     def test_lagging_active_normal_subscribe_keeps_snapshot(self):
         """已有普通订阅未覆盖最新 TMDB 总集数时，不得误判纠错成功。"""
@@ -328,8 +468,33 @@ class TestVerifyAll:
         v._oper.delete.assert_not_called()
         assert len(store["snapshots"]["list"]) == 1
 
-    def test_covered_full_best_version_does_not_rebuild_again(self):
-        """已有全集洗版订阅覆盖最新总集数时直接消费快照，不重复删除重建。"""
+    def test_covered_subscribe_with_wrong_resolved_mode_keeps_snapshot(self):
+        """重试轮次不能仅凭集数覆盖消费模式不符的既有订阅。"""
+        snap = {
+            "tmdbid": 100, "season": 1, "episode_group_id": None,
+            "total_at_completion": 12, "completed_at": time.time(),
+            "subscribe_config": {"name": "测试"},
+        }
+        store = {"snapshots": {"list": [snap]}}
+        existing = SimpleNamespace(
+            id=50, tmdbid=100, season=1, episode_group=None,
+            total_episode=15, best_version=0, best_version_full=0,
+        )
+        validate = MagicMock(return_value=False)
+        v = _verifier(
+            store,
+            tmdb_fn=lambda *a, **kw: [object()] * 15,
+            validate_rebuild_fn=validate,
+        )
+        v._oper.list.return_value = [existing]
+
+        v.verify_all()
+
+        validate.assert_called_once_with(existing, snap, 15)
+        assert store["snapshots"]["list"] == [snap]
+
+    def test_covered_full_best_version_is_replaced_for_added_episodes(self):
+        """全集洗版即使总集数已同步，也必须重建才能接管新增集数。"""
         store = {"snapshots": {"list": [{
             "tmdbid": 100, "season": 1, "episode_group_id": None,
             "total_at_completion": 12, "completed_at": time.time(),
@@ -337,6 +502,7 @@ class TestVerifyAll:
         }]}}
         existing = SimpleNamespace(
             id=50, tmdbid=100, season=1, episode_group=None,
+            type="电视剧",
             total_episode=15, best_version=1, best_version_full=1,
         )
         rebuild = MagicMock(return_value=True)
@@ -349,6 +515,6 @@ class TestVerifyAll:
 
         v.verify_all()
 
-        rebuild.assert_not_called()
-        v._oper.delete.assert_not_called()
+        rebuild.assert_called_once()
+        v._oper.delete.assert_called_once_with(50)
         assert store["snapshots"]["list"] == []
