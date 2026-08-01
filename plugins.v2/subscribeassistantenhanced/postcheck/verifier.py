@@ -18,6 +18,7 @@ class CompletionVerifier:
                  retention_days: int = 180,
                  notify_fn: Optional[Callable] = None,
                  rebuild_subscribe_fn: Optional[Callable] = None,
+                 validate_rebuild_subscribe_fn: Optional[Callable] = None,
                  get_subscribe_image_fn: Optional[Callable] = None):
         """注入完成快照存储、集数查询、订阅查询和真实订阅重建能力。"""
         self._read = task_data_read
@@ -27,6 +28,7 @@ class CompletionVerifier:
         self._retention_seconds = retention_days * 86400
         self._notify = notify_fn
         self._rebuild_subscribe = rebuild_subscribe_fn
+        self._validate_rebuild_subscribe = validate_rebuild_subscribe_fn
         self._get_subscribe_image = get_subscribe_image_fn
 
     def snapshot(self, subscribe, mediainfo, scope: Optional[SeasonScope]):
@@ -70,12 +72,19 @@ class CompletionVerifier:
         to_remove = []
 
         for snap in snapshots:
-            current_total = self._fetch_current_total(snap)
-            if current_total is not None and current_total > snap.get("total_at_completion", 0):
-                snap_label = _format_snapshot_label(snap)
-                logger.info(f"完成后验证：{snap_label} 检测到增集 {snap.get('total_at_completion', 0)}→{current_total}，尝试重建订阅")
-                if self._rebuild(snap, current_total):
-                    to_remove.append(snap)
+            try:
+                current_total = self._fetch_current_total(snap)
+                if current_total is not None and current_total > snap.get("total_at_completion", 0):
+                    snap_label = format_snapshot_label(snap)
+                    logger.info(f"完成后验证：{snap_label} 检测到增集 {snap.get('total_at_completion', 0)}→{current_total}，尝试重建订阅")
+                    if self._rebuild(snap, current_total):
+                        to_remove.append(snap)
+            except Exception as err:
+                # 单条快照失败时保留原记录重试，不能阻断同批其他订阅的纠错。
+                logger.warning(
+                    f"完成后验证：{format_snapshot_label(snap)} 处理失败，"
+                    f"已保留快照等待重试，error={err}"
+                )
 
         if to_remove:
             self._remove_snapshots(to_remove)
@@ -123,17 +132,27 @@ class CompletionVerifier:
                 and sub.episode_group == episode_group_id
             )
         ]
-        if any((sub.total_episode or 0) >= current_total for sub in matched):
-            return True
 
-        # 普通或分集洗版订阅由现有订阅流程继续处理；目标范围尚未覆盖时不能消费完成快照。
-        if any(not is_full_best_version_subscribe(sub) for sub in matched):
-            return False
+        full_best_version_subscribes = [
+            sub for sub in matched if is_full_best_version_subscribe(sub)
+        ]
+        if full_best_version_subscribes:
+            for sub in full_best_version_subscribes:
+                logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
+                self._subscribe_oper.delete(sub.id)
+                removed_full_best_version = True
+        else:
+            covered = [sub for sub in matched if (sub.total_episode or 0) >= current_total]
+            if (
+                covered
+                and self._validate_rebuild_subscribe
+                and any(self._validate_rebuild_subscribe(sub, snap, current_total) for sub in covered)
+            ):
+                return True
 
-        for sub in matched:
-            logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
-            self._subscribe_oper.delete(sub.id)
-            removed_full_best_version = True
+            # 普通或分集洗版订阅由现有订阅流程继续处理；目标范围尚未覆盖时不能消费完成快照。
+            if matched:
+                return False
 
         old_total = snap.get("total_at_completion", 0)
         config["start_episode"] = old_total + 1
@@ -168,7 +187,7 @@ def _snap_key(snap: dict) -> tuple:
     return (snap.get("tmdbid"), snap.get("season"), snap.get("episode_group_id"))
 
 
-def _format_snapshot_label(snap: dict) -> str:
+def format_snapshot_label(snap: dict) -> str:
     """格式化完成快照日志标签；配置缺名称时回退到 TMDB/季号。"""
     config = snap.get("subscribe_config") or {}
     name = config.get("name")
@@ -187,6 +206,8 @@ def _extract_config(subscribe) -> dict:
         "season": subscribe.season,
         "episode_group": subscribe.episode_group,
         "type": subscribe.type,
+        "best_version": int(bool(subscribe.best_version)),
+        "best_version_full": int(bool(subscribe.best_version_full)),
         "keyword": subscribe.keyword,
         "save_path": subscribe.save_path,
         "sites": subscribe.sites,

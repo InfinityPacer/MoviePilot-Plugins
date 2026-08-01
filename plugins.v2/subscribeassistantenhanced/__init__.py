@@ -57,7 +57,8 @@ from .shared.subscribe import (
     is_tv_episode_best_version_subscribe,
     resolve_subscribe_media_type,
 )
-from .postcheck.verifier import CompletionVerifier, _format_snapshot_label
+from .postcheck.verifier import CompletionVerifier
+from .postcheck.rebuilder import CompletionSubscribeRebuilder
 from .postcheck.timeout import PendingTimeoutManager
 from .events import EventProxy
 from .shared.media import parse_date
@@ -88,7 +89,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.6.10"
+    plugin_version = "0.6.11"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -237,13 +238,20 @@ class SubscribeAssistantEnhanced(_PluginBase):
             cadence_acceleration=cfg.timeout_cadence_acceleration,
             subscribe_get_fn=self._subscribe_oper.get,
         )
+        completion_rebuilder = CompletionSubscribeRebuilder(
+            subscribe_chain=self._subscribe_chain,
+            subscribe_oper=self._subscribe_oper,
+            default_config_getter=self.systemconfig.get,
+            plugin_name=self.plugin_name,
+        )
         verifier = CompletionVerifier(
             tm.read, tm.update,
             tmdb_episodes_fn=self._tmdb_episodes,
             subscribe_oper=self._subscribe_oper,
             retention_days=cfg.verify_retention_days,
             notify_fn=self._notify_subscribe,
-            rebuild_subscribe_fn=self._rebuild_subscribe_from_snapshot,
+            rebuild_subscribe_fn=completion_rebuilder.rebuild,
+            validate_rebuild_subscribe_fn=completion_rebuilder.validate,
             get_subscribe_image_fn=self._get_subscribe_image,
         )
         priority_manager = PriorityManager(
@@ -497,6 +505,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._modules = {
             "volatility": volatility,
             "timeout_manager": timeout_manager,
+            "completion_rebuilder": completion_rebuilder,
             "verifier": verifier,
             "priority_manager": priority_manager,
             "converter": converter,
@@ -1503,43 +1512,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return sorted(target - missing), sorted(missing)
         except Exception:
             return [], sorted(target)
-
-    def _rebuild_subscribe_from_snapshot(self, snap: dict, config: dict) -> bool:
-        """使用当前默认订阅规则和完成快照重建增集订阅。"""
-        if not self._subscribe_chain:
-            return False
-        payload = dict(config)
-        title = payload.pop("name", "")
-        year = payload.pop("year", None)
-        for field in (
-            "id", "type", "tmdbid", "season", "episode_group",
-            "best_version", "best_version_full",
-        ):
-            payload.pop(field, None)
-        payload["manual_total_episode"] = 0
-        payload["state"] = "N"
-        try:
-            subscribe_id, _ = self._subscribe_chain.add(
-                title=title,
-                year=year,
-                mtype=MediaType.TV,
-                tmdbid=snap.get("tmdbid"),
-                season=snap.get("season"),
-                episode_group=snap.get("episode_group_id"),
-                username=self.plugin_name,
-                message=False,
-                exist_ok=True,
-                **payload,
-            )
-            if subscribe_id:
-                logger.info(f"完成后验证：{_format_snapshot_label(snap)} 检测到增集，已重建订阅（新 id={subscribe_id}）")
-            return bool(subscribe_id)
-        except Exception as err:
-            logger.warning(
-                "订阅助手（增强版）按完成快照重建订阅失败："
-                f"{_format_snapshot_label(snap)}, error={err}"
-            )
-            return False
 
     def _delete_downloader_torrent(self, downloader, torrent_hash):
         """从下载器删除种子（delete_file=True，连源文件一并删）；缺下载器服务或参数时跳过。
