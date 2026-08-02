@@ -61,14 +61,10 @@ const trackerDialogOpen = ref(false)
 const yamlDialogOpen = ref(false)
 const mobileGroupSheet = ref(false)
 const configHeaderSentinel = ref<HTMLElement | null>(null)
-const fieldSurfaceHeading = ref<HTMLElement | null>(null)
 const headerScrolled = ref(false)
 const theme = useTheme()
 const aceTheme = computed(() => (theme.current.value.dark ? 'github_dark' : 'github'))
 let headerObserver: IntersectionObserver | undefined
-let configScrollRoot: HTMLElement | null = null
-let fieldScrollRoot: HTMLElement | null = null
-let scrollIdleTimer: number | undefined
 
 interface SectionDefinition {
   /** 当前业务分组内的稳定章节翻译键。 */
@@ -250,16 +246,6 @@ const activeDomainCount = computed(() => {
   }
 })
 
-function handleConfigScroll(event: Event): void {
-  const scrollRoot = event.currentTarget as HTMLElement | null
-  if (!scrollRoot) return
-  scrollRoot.classList.add('sae-config-scroll-root--active')
-  window.clearTimeout(scrollIdleTimer)
-  scrollIdleTimer = window.setTimeout(() => {
-    scrollRoot.classList.remove('sae-config-scroll-root--active')
-  }, 600)
-}
-
 onMounted(() => {
   void loadSummary(props.api).then(payload => {
     runtimeSummary.value = payload
@@ -267,12 +253,6 @@ onMounted(() => {
   })
 
   const scrollRoot = configHeaderSentinel.value?.closest<HTMLElement>('.v-card-text') ?? null
-  configScrollRoot = scrollRoot
-  fieldScrollRoot = fieldSurfaceHeading.value?.closest<HTMLElement>('.sae-field-surface') ?? null
-  scrollRoot?.classList.add('sae-config-scroll-root')
-  fieldScrollRoot?.classList.add('sae-config-scroll-root')
-  scrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })
-  fieldScrollRoot?.addEventListener('scroll', handleConfigScroll, { passive: true })
   headerObserver = new IntersectionObserver(
     ([entry]) => {
       headerScrolled.value = !entry?.isIntersecting
@@ -284,11 +264,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   headerObserver?.disconnect()
-  window.clearTimeout(scrollIdleTimer)
-  configScrollRoot?.removeEventListener('scroll', handleConfigScroll)
-  fieldScrollRoot?.removeEventListener('scroll', handleConfigScroll)
-  configScrollRoot?.classList.remove('sae-config-scroll-root', 'sae-config-scroll-root--active')
-  fieldScrollRoot?.classList.remove('sae-config-scroll-root', 'sae-config-scroll-root--active')
 })
 
 /** 数值字段只接受有限 number，避免动态输入污染完整保存 payload。 */
@@ -439,7 +414,7 @@ function runOnce(): void {
           </nav>
 
           <main class="sae-field-surface">
-            <div ref="fieldSurfaceHeading" class="sae-field-surface__heading">
+            <div class="sae-field-surface__heading">
               <div class="sae-field-surface__heading-copy">
                 <VIcon :icon="activeGroupMeta.icon" color="primary" size="22" />
                 <div>
@@ -708,6 +683,10 @@ function runOnce(): void {
       </div>
 
       <div v-if="changedCount > 0" class="sae-mobile-save-dock">
+        <span aria-live="polite" class="sae-mobile-save-dock__state">
+          <VIcon color="warning" icon="mdi-circle" size="8" />
+          {{ t(locale, 'config.changedCount', { count: changedCount }) }}
+        </span>
         <VSpacer />
         <VBtn
           class="sae-mobile-save-dock__save"
@@ -828,23 +807,6 @@ function runOnce(): void {
 
 .sae-config__form {
   min-inline-size: 0;
-}
-
-:global(.sae-config-scroll-root) {
-  scrollbar-color: transparent transparent;
-}
-
-:global(.sae-config-scroll-root::-webkit-scrollbar-thumb) {
-  background: transparent;
-  transition: background-color 160ms ease;
-}
-
-:global(.sae-config-scroll-root.sae-config-scroll-root--active) {
-  scrollbar-color: rgb(var(--v-theme-perfect-scrollbar-thumb)) transparent;
-}
-
-:global(.sae-config-scroll-root.sae-config-scroll-root--active::-webkit-scrollbar-thumb) {
-  background: rgb(var(--v-theme-perfect-scrollbar-thumb));
 }
 
 .sae-config-header-sentinel {
@@ -1539,6 +1501,16 @@ function runOnce(): void {
   backdrop-filter: blur(20px);
   box-shadow: 0 -8px 24px rgba(var(--v-theme-on-surface), 0.06);
   gap: 12px;
+}
+
+.sae-mobile-save-dock__state {
+  display: inline-flex;
+  align-items: center;
+  color: rgb(var(--v-theme-warning));
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  gap: 8px;
 }
 
 .sae-mobile-save-dock__save {

@@ -26,6 +26,7 @@ export function normalizeLocale(source: LocaleSource): SupportedLocale {
 
 const messages: Record<SupportedLocale, Record<string, string>> = {
   'zh-CN': {
+    'config.changedCount': '{count} 项待保存',
     'config.changes': '本次修改',
     'config.moreChanges': '另有 {count} 项',
     'config.runOnce': '运行一次',
@@ -93,6 +94,7 @@ const messages: Record<SupportedLocale, Record<string, string>> = {
     'section.custom': '自定义规则',
   },
   'zh-TW': {
+    'config.changedCount': '{count} 項待儲存',
     'config.changes': '本次修改',
     'config.moreChanges': '另有 {count} 項',
     'config.runOnce': '執行一次',
@@ -160,6 +162,7 @@ const messages: Record<SupportedLocale, Record<string, string>> = {
     'section.custom': '自訂規則',
   },
   'en-US': {
+    'config.changedCount': '{count} to save',
     'config.changes': 'Changes',
     'config.moreChanges': '{count} more',
     'config.runOnce': 'Run once',

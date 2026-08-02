@@ -69,7 +69,7 @@ describe('SubscribeAssistantEnhanced config', () => {
     await user.click(notify)
     expect(saveButton).toBeEnabled()
     expect(screen.getByText('本次修改')).toBeInTheDocument()
-    expect(screen.queryByText(/项待保存/)).not.toBeInTheDocument()
+    expect(screen.getByText('1 项待保存')).toBeInTheDocument()
 
     await user.click(saveButton)
 
@@ -233,10 +233,9 @@ describe('SubscribeAssistantEnhanced config', () => {
     expect(document.body).not.toHaveTextContent('private request details')
   })
 
-  it('removes scroll listeners and disconnects observers when unmounted', async () => {
+  it('inherits Host scrollbars and disconnects the header observer when unmounted', async () => {
     const disconnect = vi.fn()
     const observerCallbacks: IntersectionObserverCallback[] = []
-    const removeEventListener = vi.spyOn(HTMLElement.prototype, 'removeEventListener')
     vi.stubGlobal(
       'IntersectionObserver',
       class {
@@ -254,15 +253,16 @@ describe('SubscribeAssistantEnhanced config', () => {
     const { unmount } = await renderConfig()
     const fieldSurface = document.querySelector<HTMLElement>('.sae-field-surface') as HTMLElement
     const header = document.querySelector<HTMLElement>('.sae-config-header') as HTMLElement
+    const removeEventListener = vi.spyOn(fieldSurface, 'removeEventListener')
 
     await fireEvent.scroll(fieldSurface)
-    expect(fieldSurface).toHaveClass('sae-config-scroll-root--active')
+    expect(document.querySelector('.sae-config-scroll-root')).toBeNull()
     observerCallbacks.at(-1)?.([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver)
     await waitFor(() => expect(header).toHaveClass('sae-config-header--scrolled'))
 
     unmount()
 
     expect(disconnect).toHaveBeenCalled()
-    expect(removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function))
+    expect(removeEventListener).not.toHaveBeenCalledWith('scroll', expect.any(Function))
   })
 })
