@@ -341,3 +341,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ![](images/2024-12-28-01-21-56.png)
 ![](images/2024-12-28-01-22-59.png)
 ![](images/2024-12-28-01-23-07.png)
+
+### 30. [Webhook消息推送](plugins.v2/webhooknotify/README.md)
+
+- 接收 Webhook 消息并推送到通知客户端
