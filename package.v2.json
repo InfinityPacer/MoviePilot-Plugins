@@ -295,11 +295,11 @@
         "description": "接收 Webhook 消息并推送到通知客户端。",
         "labels": "通知,工具",
         "version": "1.0",
-        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/customplugin.png",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webhooknotify.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
-            "v1.0": "新增通用 Webhook 通知入口，支持 GET、POST 和消息类型配置。"
+            "v1.0": "新增通用 Webhook 通知入口。"
         },
         "release": true
     },
