@@ -1,13 +1,26 @@
+from secrets import compare_digest
 from typing import Annotated, Any, Dict, List, Optional, Tuple
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Security, status
+from fastapi.security import APIKeyHeader, APIKeyQuery
 from pydantic import BaseModel, Field, model_validator
 
 from app import schemas
-from app.core.security import verify_apitoken
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
+
+
+api_key_header = APIKeyHeader(
+    name="X-API-KEY",
+    auto_error=False,
+    scheme_name="webhooknotify_api_key_header",
+)
+api_key_query = APIKeyQuery(
+    name="apikey",
+    auto_error=False,
+    scheme_name="webhooknotify_api_key_query",
+)
 
 
 class WebhookNotifyPayload(BaseModel):
@@ -35,7 +48,7 @@ class WebhookNotify(_PluginBase):
     plugin_name = "Webhook消息推送"
     plugin_desc = "接收 Webhook 消息并推送到通知客户端。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webhooknotify.png"
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "webhooknotify_"
@@ -45,9 +58,10 @@ class WebhookNotify(_PluginBase):
     _enabled = False
     # MoviePilot 通知渠道按消息类型过滤，默认使用专用的插件分类。
     _notify_type = NotificationType.Plugin
+    _api_key = ""
 
     def init_plugin(self, config: dict = None):
-        """加载插件开关和消息类型；公共 API_TOKEN 不在插件配置中重复保存。"""
+        """加载插件开关、消息类型和可选的独立 API Key。"""
         config = config or {}
         self._enabled = bool(config.get("enabled", False))
         notify_type = config.get("notify_type", NotificationType.Plugin.name)
@@ -56,6 +70,8 @@ class WebhookNotify(_PluginBase):
             if isinstance(notify_type, str)
             else NotificationType.Plugin
         )
+        api_key = config.get("api_key")
+        self._api_key = api_key.strip() if isinstance(api_key, str) else ""
 
     def get_state(self) -> bool:
         """返回 Webhook 接收能力是否启用。"""
@@ -67,27 +83,29 @@ class WebhookNotify(_PluginBase):
         return []
 
     def get_api(self) -> List[Dict[str, Any]]:
-        """注册使用公共 API_TOKEN 认证的入站 Webhook。"""
+        """按独立 Key 配置状态注册对应的入站认证方式。"""
+        use_plugin_key = bool(self._api_key)
+        dependencies = [Depends(self._verify_api_key)] if use_plugin_key else []
         return [
             {
                 "path": "/webhook",
                 "endpoint": self.receive_webhook,
                 "methods": ["POST"],
-                # 插件注册器的默认 apikey 只读取 X-API-KEY/apikey；认证依赖由
-                # receive_webhook 的参数显式声明，以保持 MoviePilot 原生 ?token= 约定。
-                "allow_anonymous": True,
+                "allow_anonymous": use_plugin_key,
+                "dependencies": dependencies.copy(),
                 "response_model": schemas.Response,
                 "summary": "接收 Webhook JSON 通知",
-                "description": "使用 MoviePilot 公共 API_TOKEN 接收 JSON；title 和 body 至少提供一项。",
+                "description": "使用 API Key 接收 JSON；title 和 body 至少提供一项。",
             },
             {
                 "path": "/webhook",
                 "endpoint": self.receive_webhook_get,
                 "methods": ["GET"],
-                "allow_anonymous": True,
+                "allow_anonymous": use_plugin_key,
+                "dependencies": dependencies.copy(),
                 "response_model": schemas.Response,
                 "summary": "接收 Webhook 查询通知",
-                "description": "使用 MoviePilot 公共 API_TOKEN 接收查询参数；title 和 body 至少提供一项。",
+                "description": "使用 API Key 接收查询参数；title 和 body 至少提供一项。",
             },
         ]
 
@@ -142,6 +160,27 @@ class WebhookNotify(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "api_key",
+                                            "label": "APIKEY",
+                                            "type": "password",
+                                            "placeholder": "留空则使用主程序 API Token",
+                                            "clearable": True,
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
                                 "props": {"cols": 12},
                                 "content": [
                                     {
@@ -149,7 +188,7 @@ class WebhookNotify(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "GET/POST /api/v1/plugin/WebhookNotify/webhook?token=API_TOKEN，title 和 body 至少提供一项。",
+                                            "text": "GET/POST /api/v1/plugin/WebhookNotify/webhook，使用 X-API-KEY 或 apikey 认证，title 和 body 至少提供一项。",
                                         },
                                     }
                                 ],
@@ -161,6 +200,7 @@ class WebhookNotify(_PluginBase):
         ], {
             "enabled": False,
             "notify_type": NotificationType.Plugin.name,
+            "api_key": "",
         }
 
     def get_page(self) -> Optional[List[dict]]:
@@ -174,14 +214,12 @@ class WebhookNotify(_PluginBase):
     def receive_webhook(
         self,
         payload: WebhookNotifyPayload,
-        _: Annotated[str, Depends(verify_apitoken)],
     ) -> schemas.Response:
         """接收 POST JSON，并把外部消息交给 MoviePilot 通知链。"""
         return self._post_notification(payload, request_method="POST")
 
     def receive_webhook_get(
         self,
-        _: Annotated[str, Depends(verify_apitoken)],
         title: Annotated[Optional[str], Query(max_length=200)] = None,
         body: Annotated[Optional[str], Query(max_length=10000)] = None,
     ) -> schemas.Response:
@@ -195,6 +233,24 @@ class WebhookNotify(_PluginBase):
             WebhookNotifyPayload(title=title, body=body),
             request_method="GET",
         )
+
+    def _verify_api_key(
+        self,
+        key_query: Annotated[Optional[str], Security(api_key_query)] = None,
+        key_header: Annotated[Optional[str], Security(api_key_header)] = None,
+    ) -> str:
+        """校验插件独立 Key，并与主程序保持相同的凭据读取顺序。"""
+        supplied_key = key_header or key_query
+        if (
+            not supplied_key
+            or not self._api_key
+            or not compare_digest(supplied_key, self._api_key)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API Key 校验不通过",
+            )
+        return supplied_key
 
     def _post_notification(
         self,
