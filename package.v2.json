@@ -294,11 +294,12 @@
         "name": "Webhook消息推送",
         "description": "接收 Webhook 消息并推送到通知客户端。",
         "labels": "通知,工具",
-        "version": "1.0",
+        "version": "1.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webhooknotify.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.1": "新增 APIKEY 认证配置。",
             "v1.0": "新增通用 Webhook 通知入口。"
         },
         "release": true
