@@ -34,7 +34,7 @@ class WebhookNotify(_PluginBase):
 
     plugin_name = "Webhook消息推送"
     plugin_desc = "接收 Webhook 消息并推送到通知客户端。"
-    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/customplugin.png"
+    plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webhooknotify.png"
     plugin_version = "1.0"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
