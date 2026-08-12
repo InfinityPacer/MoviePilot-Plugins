@@ -29,7 +29,7 @@ class PlexMatch(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png"
     # 插件版本
-    plugin_version = "1.2"
+    plugin_version = "1.3"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -398,9 +398,10 @@ class PlexMatch(_PluginBase):
     @staticmethod
     @db_query
     def __list_transfer_histories(db: Optional[Session]) -> list[Type[TransferHistory]]:
-        """获取TMDBID 不为 0 并成功的历史记录列表"""
+        """获取具有有效 TMDB ID 且整理成功的历史记录。"""
         result = db.query(TransferHistory).filter(and_(
-            TransferHistory.tmdbid.is_not(0),
+            TransferHistory.tmdbid.is_not(None),
+            TransferHistory.tmdbid != 0,
             TransferHistory.status)
         ).all()
         return result

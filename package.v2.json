@@ -412,11 +412,12 @@
         "name": "PlexMatch",
         "description": "实现入库时添加 .plexmatch 文件，提高识别准确率。",
         "labels": "Plex,刮削",
-        "version": "1.2",
+        "version": "1.3",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png",
         "author": "InfinityPacer",
         "level": 1,
         "history": {
+            "v1.3": "修复 PostgreSQL 下历史记录查询错误，并保持 SQLite 兼容",
             "v1.2": "MoviePilot V2 版本PlexMatch插件"
         },
         "release": true
