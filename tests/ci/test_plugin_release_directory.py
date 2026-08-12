@@ -1,0 +1,50 @@
+from pathlib import Path
+import subprocess
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SELECTOR = REPO_ROOT / ".github/scripts/select_plugin_release_dir.sh"
+WORKFLOW = REPO_ROOT / ".github/workflows/release.yml"
+
+
+def _select(tmp_path: Path, package_file: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(SELECTOR), package_file, "example"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_release_directory_keeps_v1_and_v2_assets_separate(tmp_path: Path) -> None:
+    (tmp_path / "plugins/example").mkdir(parents=True)
+    (tmp_path / "plugins.v2/example").mkdir(parents=True)
+
+    assert _select(tmp_path, "package.json").stdout.strip() == "plugins/example"
+    assert _select(tmp_path, "package.v2.json").stdout.strip() == "plugins.v2/example"
+
+
+def test_v2_release_directory_does_not_fall_back_to_v1_source(tmp_path: Path) -> None:
+    (tmp_path / "plugins/example").mkdir(parents=True)
+
+    result = _select(tmp_path, "package.v2.json")
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+def test_release_directory_rejects_unknown_package_file(tmp_path: Path) -> None:
+    result = _select(tmp_path, "package.beta.json")
+
+    assert result.returncode == 2
+    assert "Unsupported package file" in result.stderr
+
+
+def test_release_workflow_uses_generation_aware_directory_selector() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'select_plugin_release_dir.sh "$pkg_file" "$plugin_id_lc"' in workflow
+    assert 'git rev-parse -q --verify "refs/tags/$tag"' in workflow
+    assert 'prev_tag="$tag"' in workflow
+    assert 'if [ -d "$dir2" ]; then plugin_dir="$dir2"; fi' not in workflow
