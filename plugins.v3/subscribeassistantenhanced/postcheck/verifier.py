@@ -1,0 +1,245 @@
+"""完成后异步自验证：保存完成快照、检测增集并重建订阅。"""
+import time
+from typing import Callable, Optional
+
+from app.log import logger
+
+from ..engine.types import SeasonScope
+from ..shared.log import detail
+from ..shared.subscribe import (
+    format_subscribe,
+    format_subscribe_label,
+    is_full_best_version_subscribe,
+    subscribe_media_identity,
+    subscribe_tmdb_id,
+)
+
+
+class CompletionVerifier:
+    """完成后定期复查 TMDB，发现增集自动重建订阅。"""
+
+    def __init__(self, task_data_read: Callable, task_data_update: Callable,
+                 tmdb_episodes_fn: Optional[Callable] = None,
+                 subscribe_oper=None,
+                 retention_days: int = 180,
+                 notify_fn: Optional[Callable] = None,
+                 rebuild_subscribe_fn: Optional[Callable] = None,
+                 validate_rebuild_subscribe_fn: Optional[Callable] = None,
+                 get_subscribe_image_fn: Optional[Callable] = None):
+        """注入完成快照存储、集数查询、订阅查询和真实订阅重建能力。"""
+        self._read = task_data_read
+        self._update = task_data_update
+        self._tmdb_fn = tmdb_episodes_fn
+        self._subscribe_oper = subscribe_oper
+        self._retention_seconds = retention_days * 86400
+        self._notify = notify_fn
+        self._rebuild_subscribe = rebuild_subscribe_fn
+        self._validate_rebuild_subscribe = validate_rebuild_subscribe_fn
+        self._get_subscribe_image = get_subscribe_image_fn
+
+    def snapshot(self, subscribe, mediainfo, scope: Optional[SeasonScope]):
+        """保存完成快照，同一季同一剧集组只保留最新记录。"""
+        media_source, media_id = subscribe_media_identity(subscribe)
+        tmdbid = subscribe_tmdb_id(subscribe)
+        if tmdbid is None:
+            return
+        season = subscribe.season
+        episode_group_id = subscribe.episode_group
+        total = subscribe.total_episode
+
+        snap = {
+            "media_source": media_source,
+            "media_id": media_id,
+            "season": season,
+            "episode_group_id": episode_group_id,
+            "scope_source": scope.source if scope else "main_season",
+            "total_at_completion": total,
+            "completed_at": time.time(),
+            "subscribe_config": _extract_config(subscribe),
+        }
+        image = self._get_subscribe_image(subscribe) if self._get_subscribe_image else None
+        if not image and mediainfo:
+            image = mediainfo.get_message_image()
+        if image:
+            snap["subscribe_image"] = image
+
+        def updater(data: dict) -> dict:
+            snapshots = data.get("list", [])
+            key = (media_source, media_id, season, episode_group_id)
+            snapshots = [s for s in snapshots if _snap_key(s) != key]
+            snapshots.append(snap)
+            data["list"] = snapshots
+            return data
+
+        detail(f"完成后验证：{format_subscribe_label(subscribe)} 登记完成快照（完成时总集数={total}）")
+        self._update("snapshots", updater)
+
+    def verify_all(self):
+        """定时复查所有完成快照。"""
+        self.cleanup_expired()
+        data = self._read("snapshots")
+        snapshots = data.get("list", [])
+        to_remove = []
+
+        for snap in snapshots:
+            try:
+                current_total = self._fetch_current_total(snap)
+                if current_total is not None and current_total > snap.get("total_at_completion", 0):
+                    snap_label = format_snapshot_label(snap)
+                    logger.info(f"完成后验证：{snap_label} 检测到增集 {snap.get('total_at_completion', 0)}→{current_total}，尝试重建订阅")
+                    if self._rebuild(snap, current_total):
+                        to_remove.append(snap)
+            except Exception as err:
+                # 单条快照失败时保留原记录重试，不能阻断同批其他订阅的纠错。
+                logger.warning(
+                    f"完成后验证：{format_snapshot_label(snap)} 处理失败，"
+                    f"已保留快照等待重试，error={err}"
+                )
+
+        if to_remove:
+            self._remove_snapshots(to_remove)
+
+    def cleanup_expired(self) -> int:
+        """按用户配置的保留期清理 H 快照，不请求 TMDB。"""
+        data = self._read("snapshots")
+        snapshots = data.get("list", [])
+        now = time.time()
+        expired = [
+            snap for snap in snapshots
+            if now - snap.get("completed_at", now) > self._retention_seconds
+        ]
+        if expired:
+            self._remove_snapshots(expired)
+        return len(expired)
+
+    def _fetch_current_total(self, snap: dict) -> Optional[int]:
+        if not self._tmdb_fn:
+            return None
+        episode_group_id = snap.get("episode_group_id")
+        if episode_group_id:
+            episodes = self._tmdb_fn(int(snap["media_id"]), snap["season"],
+                                      episode_group=episode_group_id)
+        else:
+            episodes = self._tmdb_fn(int(snap["media_id"]), snap["season"])
+        return len(episodes) if episodes else None
+
+    def _rebuild(self, snap: dict, current_total: int) -> bool:
+        """发现增集后清理完成快照并重建订阅；失败时保留快照重试。"""
+        if not self._subscribe_oper:
+            return False
+        media_source = snap["media_source"]
+        media_id = str(snap["media_id"])
+        tmdbid = int(media_id)
+        season = snap["season"]
+        episode_group_id = snap.get("episode_group_id")
+        config = dict(snap.get("subscribe_config", {}))
+        removed_full_best_version = False
+
+        existing = self._subscribe_oper.list()
+        matched = [
+            sub for sub in (existing or [])
+            if (
+                sub.media_source == media_source
+                and str(sub.media_id) == media_id
+                and sub.season == season
+                and sub.episode_group == episode_group_id
+            )
+        ]
+
+        full_best_version_subscribes = [
+            sub for sub in matched if is_full_best_version_subscribe(sub)
+        ]
+        if full_best_version_subscribes:
+            for sub in full_best_version_subscribes:
+                logger.info(f"完成后验证：删除旧洗版订阅 {format_subscribe_label(sub)} 以便重建增集订阅")
+                self._subscribe_oper.delete(sub.id)
+                removed_full_best_version = True
+        else:
+            covered = [sub for sub in matched if (sub.total_episode or 0) >= current_total]
+            if (
+                covered
+                and self._validate_rebuild_subscribe
+                and any(self._validate_rebuild_subscribe(sub, snap, current_total) for sub in covered)
+            ):
+                return True
+
+            # 普通或分集洗版订阅由现有订阅流程继续处理；目标范围尚未覆盖时不能消费完成快照。
+            if matched:
+                return False
+
+        old_total = snap.get("total_at_completion", 0)
+        config["start_episode"] = old_total + 1
+        config["total_episode"] = current_total
+        config["lack_episode"] = current_total - old_total
+        if not self._rebuild_subscribe or not self._rebuild_subscribe(snap, config):
+            return False
+
+        if self._notify:
+            name = config.get("name", f"TMDB {tmdbid}")
+            season = config.get("season", season)
+            season_text = f" S{season}" if season is not None else ""
+            action_text = "已移除旧洗版订阅并重建订阅" if removed_full_best_version else "已自动重建订阅"
+            self._notify(
+                f"{name}{season_text} 检测到新增集数（{old_total}→{current_total}），{action_text}",
+                image=snap.get("subscribe_image"),
+            )
+        return True
+
+    def _remove_snapshots(self, to_remove: list):
+        keys_to_remove = {_snap_key(s) for s in to_remove}
+
+        def updater(data: dict) -> dict:
+            snapshots = data.get("list", [])
+            data["list"] = [s for s in snapshots if _snap_key(s) not in keys_to_remove]
+            return data
+
+        self._update("snapshots", updater)
+
+
+def _snap_key(snap: dict) -> tuple:
+    return (
+        snap.get("media_source"),
+        str(snap.get("media_id") or ""),
+        snap.get("season"),
+        snap.get("episode_group_id"),
+    )
+
+
+def format_snapshot_label(snap: dict) -> str:
+    """格式化完成快照日志标签；配置缺名称时回退到 TMDB/季号。"""
+    config = snap.get("subscribe_config") or {}
+    name = config.get("name")
+    if name:
+        probe = type("SnapshotSubscribe", (), {"name": name, "season": snap.get("season")})()
+        return format_subscribe(probe)
+    return f"{snap.get('media_source')}:{snap.get('media_id')} S{snap.get('season')}"
+
+
+def _extract_config(subscribe) -> dict:
+    """提取订阅配置用于重建。"""
+    values = {
+        "name": subscribe.name,
+        "year": subscribe.year,
+        "media_source": subscribe.media_source,
+        "media_id": subscribe.media_id,
+        "season": subscribe.season,
+        "episode_group": subscribe.episode_group,
+        "type": subscribe.type,
+        "best_version": int(bool(subscribe.best_version)),
+        "best_version_full": int(bool(subscribe.best_version_full)),
+        "keyword": subscribe.keyword,
+        "save_path": subscribe.save_path,
+        "sites": subscribe.sites,
+        "downloader": subscribe.downloader,
+        "filter": subscribe.filter,
+        "filter_groups": subscribe.filter_groups,
+        "include": subscribe.include,
+        "exclude": subscribe.exclude,
+        "quality": subscribe.quality,
+        "resolution": subscribe.resolution,
+        "effect": subscribe.effect,
+        "search_imdbid": subscribe.search_imdbid,
+        "custom_words": subscribe.custom_words,
+        "media_category": subscribe.media_category,
+    }
+    return {field: value for field, value in values.items() if value is not None}

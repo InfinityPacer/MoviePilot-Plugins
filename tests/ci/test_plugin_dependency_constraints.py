@@ -47,10 +47,7 @@ def _plugin_dependency_cases() -> list:
     """收集所有插件依赖中与主程序根依赖同名的约束。"""
     backend_versions = _backend_runtime_versions()
     cases = []
-    requirement_files = [
-        *sorted((REPO_ROOT / "plugins").glob("*/requirements.txt")),
-        *sorted((REPO_ROOT / "plugins.v2").glob("*/requirements.txt")),
-    ]
+    requirement_files = sorted((REPO_ROOT / "plugins.v3").glob("*/requirements.txt"))
     for requirements_file in requirement_files:
         generation = requirements_file.relative_to(REPO_ROOT).parts[0]
         plugin_id = f"{generation}/{requirements_file.parent.name}"

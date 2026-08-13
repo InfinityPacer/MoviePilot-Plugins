@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""校验插件市场版本与插件源码版本一致。
+"""校验可发布到 MoviePilot V3 的插件市场版本与源码版本一致。
 
-Release workflow 依赖 package.json/package.v2.json 生成 tag 和资产名；
-若插件目录内的 plugin_version 不同步，运行时会继续展示旧版本。这里在打包前失败退出，
-避免发布资产与插件自报版本不一致。
+Release workflow 同时处理 V1、V2 兼容实现和 V3 专用实现。旧索引中显式声明
+``v3: false`` 的实现不会再发布；V3 专用实现还必须满足迁移版本和元数据合同。
 """
 
 from __future__ import annotations
 
 import ast
 import json
+import re
 import sys
 import warnings
 from pathlib import Path
@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 
 def _load_package(path: Path) -> dict:
-    """读取 package 文件；文件不存在时返回空字典，便于同一脚本兼容 v1/v2。"""
+    """读取 package 文件；文件不存在时返回空字典。"""
     if not path.exists():
         return {}
     with path.open("r", encoding="utf-8") as file_obj:
@@ -26,9 +26,16 @@ def _load_package(path: Path) -> dict:
 
 
 def _plugin_dir(package_file: Path, plugin_id: str) -> Path | None:
-    """按 package 文件定位对应插件目录，避免 v1/v2 同名插件互相串线。"""
+    """按 package 文件定位对应插件目录，避免不同代际同名插件互相串线。"""
     plugin_id_lc = plugin_id.lower()
-    base_dir = Path("plugins.v2") if package_file.name == "package.v2.json" else Path("plugins")
+    base_dirs = {
+        "package.json": Path("plugins"),
+        "package.v2.json": Path("plugins.v2"),
+        "package.v3.json": Path("plugins.v3"),
+    }
+    base_dir = base_dirs.get(package_file.name)
+    if base_dir is None:
+        return None
     candidate = package_file.parent / base_dir / plugin_id_lc
     return candidate if candidate.is_dir() else None
 
@@ -36,8 +43,73 @@ def _plugin_dir(package_file: Path, plugin_id: str) -> Path | None:
 def _expected_plugin_dir(package_file: Path, plugin_id: str) -> Path:
     """返回 package 条目对应的插件目录，用于缺失目录时输出可定位错误。"""
     plugin_id_lc = plugin_id.lower()
-    base_dir = Path("plugins.v2") if package_file.name == "package.v2.json" else Path("plugins")
+    base_dirs = {
+        "package.json": Path("plugins"),
+        "package.v2.json": Path("plugins.v2"),
+        "package.v3.json": Path("plugins.v3"),
+    }
+    base_dir = base_dirs.get(package_file.name, Path("plugins.v3"))
     return package_file.parent / base_dir / plugin_id_lc
+
+
+def _version_parts(value: object) -> tuple[int, ...] | None:
+    """解析只含数字段的插件版本。"""
+    match = re.fullmatch(r"\d+(?:\.\d+)*", str(value or "").strip())
+    if not match:
+        return None
+    return tuple(int(part) for part in match.group().split("."))
+
+
+def _normalized_version(value: object, width: int = 4) -> tuple[int, ...] | None:
+    """补齐版本段用于大小比较。"""
+    parts = _version_parts(value)
+    if parts is None:
+        return None
+    return parts + (0,) * max(0, width - len(parts))
+
+
+def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
+    """校验 V3 专用实现的系统版本、history 与旧版本迁移规则。"""
+    errors: list[str] = []
+    version = str(metadata.get("version") or "").strip()
+    version_parts = _version_parts(version)
+    if version_parts is None or len(version_parts) < 2:
+        errors.append(f"{path}: {plugin_id} V3 版本必须至少包含主版本和小版本：{version}")
+
+    if metadata.get("system_version") != ">=3.0.0":
+        errors.append(f'{path}: {plugin_id} system_version 必须为 ">=3.0.0"')
+
+    history = metadata.get("history")
+    expected_history_key = f"v{version}"
+    if not isinstance(history, dict) or list(history) != [expected_history_key]:
+        errors.append(f"{path}: {plugin_id} history 必须只保留当前版本 {expected_history_key}")
+    else:
+        expected_changelog = f'MoviePilot V3 版本{metadata.get("name", "")}插件'
+        if history[expected_history_key] != expected_changelog:
+            errors.append(f"{path}: {plugin_id} history 文案必须为 {expected_changelog}")
+
+    legacy_path = path.with_name("package.v2.json")
+    legacy_metadata = _load_package(legacy_path).get(plugin_id)
+    if not isinstance(legacy_metadata, dict):
+        errors.append(f"{path}: {plugin_id} 在 {legacy_path.name} 中没有对应旧版本条目")
+        return errors
+    if legacy_metadata.get("v3") is not False:
+        errors.append(f"{legacy_path}: {plugin_id} 必须声明 v3=false")
+
+    old_version = str(legacy_metadata.get("version") or "").strip()
+    old_parts = _version_parts(old_version)
+    normalized_old = _normalized_version(old_version)
+    normalized_new = _normalized_version(version)
+    if old_parts is None or normalized_old is None or normalized_new is None or version_parts is None:
+        errors.append(f"{path}: {plugin_id} 无法比较版本 {old_version} -> {version}")
+        return errors
+    if version_parts[0] != old_parts[0]:
+        errors.append(f"{path}: {plugin_id} V3 不得提升主版本：{old_version} -> {version}")
+    if version_parts[1] <= (old_parts[1] if len(old_parts) > 1 else 0):
+        errors.append(f"{path}: {plugin_id} V3 必须提升小版本：{old_version} -> {version}")
+    if normalized_new <= normalized_old:
+        errors.append(f"{path}: {plugin_id} V3 版本必须高于旧版本：{old_version} -> {version}")
+    return errors
 
 
 def _plugin_version(init_file: Path) -> str | None:
@@ -60,12 +132,26 @@ def _plugin_version(init_file: Path) -> str | None:
     return None
 
 
+def _is_v3_release_entry(path: Path, metadata: dict) -> bool:
+    """按主程序索引回退规则判断旧代条目是否仍面向 V3 发布。"""
+    if metadata.get("release") is not True or metadata.get("v3") is False:
+        return False
+    if path.name == "package.v2.json":
+        return True
+    if path.name == "package.json":
+        return metadata.get("v3") is True or metadata.get("v2") is True
+    return False
+
+
 def check_package(path: Path) -> list[str]:
-    """校验单个 package 文件，返回所有错误文本。"""
+    """校验单个 package 文件中仍面向 V3 发布的条目。"""
     errors: list[str] = []
     package = _load_package(path)
     for plugin_id, meta in package.items():
-        if not isinstance(meta, dict) or meta.get("release") is not True:
+        if not isinstance(meta, dict):
+            errors.append(f"{path}: {plugin_id} 元数据必须为对象")
+            continue
+        if path.name != "package.v3.json" and not _is_v3_release_entry(path, meta):
             continue
         package_version = str(meta.get("version") or "").strip()
         plugin_dir = _plugin_dir(path, plugin_id)
@@ -85,12 +171,18 @@ def check_package(path: Path) -> list[str]:
                 f"{path}: {plugin_id} 版本不一致，package={package_version}, "
                 f"plugin_version={source_version} ({init_file})"
             )
+        if path.name == "package.v3.json":
+            errors.extend(_check_v3_metadata(path, plugin_id, meta))
     return errors
 
 
 def main() -> int:
     """命令入口：所有 package 均通过时返回 0，否则打印错误并返回 1。"""
-    package_files = [Path(arg) for arg in sys.argv[1:]] or [Path("package.json"), Path("package.v2.json")]
+    package_files = [Path(arg) for arg in sys.argv[1:]] or [
+        Path("package.json"),
+        Path("package.v2.json"),
+        Path("package.v3.json"),
+    ]
     errors: list[str] = []
     for package_file in package_files:
         errors.extend(check_package(package_file))

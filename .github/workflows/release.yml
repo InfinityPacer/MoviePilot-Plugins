@@ -7,6 +7,7 @@ on:
     paths:
       - 'package.json'
       - 'package.v2.json'
+      - 'package.v3.json'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
           sudo apt-get install -y jq zip
 
       - name: Check plugin versions
-        run: python .github/scripts/check_plugin_versions.py package.json package.v2.json
+        run: python .github/scripts/check_plugin_versions.py package.json package.v2.json package.v3.json
 
       - name: Build and release changed plugins
         env:
@@ -44,8 +45,24 @@ jobs:
 
             echo "Processing $pkg_file"
 
-            # Only entries explicitly marked release=true are packaged.
-            mapfile -t entries < <(jq -r 'to_entries | map(select(.value.release == true)) | .[] | "\(.key)|\(.value.version)"' "$pkg_file")
+            case "$pkg_file" in
+              package.json)
+                # Default-index implementations need an explicit V2/V3 opt-in before V3 can load them.
+                entry_filter='select(.value.release == true and .value.v3 != false and (.value.v3 == true or .value.v2 == true))'
+                ;;
+              package.v2.json)
+                # V3 inherits V2 implementations unless the entry explicitly opts out.
+                entry_filter='select(.value.release == true and .value.v3 != false)'
+                ;;
+              package.v3.json)
+                entry_filter='select(.value.release == true)'
+                ;;
+              *)
+                echo "Unsupported package file: $pkg_file" >&2
+                exit 2
+                ;;
+            esac
+            mapfile -t entries < <(jq -r "to_entries | map($entry_filter) | .[] | \"\\(.key)|\\(.value.version)\"" "$pkg_file")
 
             if [ "${#entries[@]}" -eq 0 ]; then
               echo "No plugins with release=true in $pkg_file"
@@ -58,8 +75,8 @@ jobs:
               plugin_id_lc="$(echo "$plugin_id" | tr '[:upper:]' '[:lower:]')"
 
               if ! plugin_dir="$(bash .github/scripts/select_plugin_release_dir.sh "$pkg_file" "$plugin_id_lc")"; then
-                echo "WARN: directory for $plugin_id not found under plugins/ or plugins.v2/, skip."
-                continue
+                echo "Missing plugin directory for $plugin_id in $pkg_file" >&2
+                exit 1
               fi
 
               tag="${plugin_id}_v${plugin_version}"
@@ -119,3 +136,4 @@ jobs:
 
           process_package "package.json"
           process_package "package.v2.json"
+          process_package "package.v3.json"

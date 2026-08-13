@@ -24,16 +24,13 @@ def _load_coverage_module():
     return module
 
 
-def test_quality_config_targets_subscription_plugins() -> None:
-    """A 档覆盖率门禁只默认锁定两个已有稳定覆盖基线的订阅插件。"""
+def test_quality_config_targets_v3_subscription_plugin() -> None:
+    """A 档覆盖率门禁只锁定仍支持 V3 的增强订阅插件。"""
     config = json.loads(QUALITY_CONFIG.read_text(encoding="utf-8"))
 
     targets = {(item["generation"], item["plugin"]) for item in config["coverage"]}
 
-    assert targets == {
-        ("v2", "subscribeassistant"),
-        ("v2", "subscribeassistantenhanced"),
-    }
+    assert targets == {("v3", "subscribeassistantenhanced")}
     for item in config["coverage"]:
         assert item["line"] == 90
         assert item["method"] == 90
@@ -110,10 +107,10 @@ def test_changed_line_coverage_ignores_non_executable_lines() -> None:
     """新增行覆盖率只统计 coverage 认为可执行的新增/变更语句。"""
     module = _load_coverage_module()
     changed_lines = {
-        "plugins.v2/demo/plugin.py": {1, 2, 3, 4},
+        "plugins.v3/demo/plugin.py": {1, 2, 3, 4},
     }
     report_files = {
-        "plugins.v2/demo/plugin.py": {
+        "plugins.v3/demo/plugin.py": {
             "executed_lines": [2],
             "missing_lines": [4],
         }
@@ -136,7 +133,7 @@ def test_changed_line_collection_fails_when_base_ref_is_invalid(monkeypatch) -> 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
 
     try:
-        module.collect_changed_lines("origin/missing", ["plugins.v2/demo"])
+        module.collect_changed_lines("origin/missing", ["plugins.v3/demo"])
     except RuntimeError as err:
         assert "无法计算新增行覆盖率" in str(err)
     else:

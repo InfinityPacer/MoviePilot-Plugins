@@ -1,0 +1,52 @@
+{
+  "name": "moviepilot-plugin-subscribeassistantenhanced",
+  "private": true,
+  "version": "0.5.13",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "format": "prettier --config .prettierrc.json --ignore-path .prettierignore . ../../../tests/v3/subscribeassistantenhanced/frontend --write",
+    "format:check": "prettier --config .prettierrc.json --ignore-path .prettierignore . ../../../tests/v3/subscribeassistantenhanced/frontend --check",
+    "lint": "cd ../../.. && eslint --config plugins.v3/subscribeassistantenhanced/frontend/eslint.config.js plugins.v3/subscribeassistantenhanced/frontend/eslint.config.js plugins.v3/subscribeassistantenhanced/frontend/src plugins.v3/subscribeassistantenhanced/frontend/vite.config.ts tests/v3/subscribeassistantenhanced/frontend --max-warnings=0",
+    "lint:fix": "cd ../../.. && eslint --config plugins.v3/subscribeassistantenhanced/frontend/eslint.config.js plugins.v3/subscribeassistantenhanced/frontend/eslint.config.js plugins.v3/subscribeassistantenhanced/frontend/src plugins.v3/subscribeassistantenhanced/frontend/vite.config.ts tests/v3/subscribeassistantenhanced/frontend --fix",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vuetify": "3.7.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@originjs/vite-plugin-federation": "^1.4.1",
+    "@testing-library/dom": "9.3.4",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/user-event": "14.6.1",
+    "@testing-library/vue": "8.1.0",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "@vitest/coverage-v8": "3.2.7",
+    "@vue/compiler-dom": "3.5.39",
+    "@vue/compiler-sfc": "^3.5.13",
+    "@vue/test-utils": "2.4.11",
+    "eslint": "^10.7.0",
+    "eslint-plugin-sonarjs": "^4.2.0",
+    "eslint-plugin-vue": "^10.9.2",
+    "globals": "^17.3.0",
+    "jsdom": "26.1.0",
+    "msw": "2.15.0",
+    "prettier": "^3.9.5",
+    "typescript": "^5.0.4",
+    "typescript-eslint": "^8.64.0",
+    "vite": "^5.4.11",
+    "vitest": "3.2.7",
+    "vue-eslint-parser": "^10.4.1",
+    "vue-tsc": "^2.0.10"
+  },
+  "packageManager": "yarn@1.22.18",
+  "engines": {
+    "node": ">=20.19"
+  }
+}

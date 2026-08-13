@@ -1,14 +1,7 @@
 {
   "coverage": [
     {
-      "generation": "v2",
-      "plugin": "subscribeassistant",
-      "line": 90,
-      "method": 90,
-      "changed_line": 90
-    },
-    {
-      "generation": "v2",
+      "generation": "v3",
       "plugin": "subscribeassistantenhanced",
       "line": 90,
       "method": 90,
