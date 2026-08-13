@@ -76,6 +76,7 @@
             "v0.1.2": "补齐订阅状态、洗版订阅创建、分集转全集、删种善后与自动纠错重建的通知及事件联动。",
             "v0.1.0": "多场景管理订阅，实现订阅全生命周期管理。"
         },
+        "v3": false,
         "release": true
     },
     "BrushFlowLowFreq": {
@@ -95,6 +96,7 @@
             "v4.0": "站点独立配置项支持配置NexusPHP 站点自动跳过下载提示页",
             "v3.9": "MoviePilot V2 版本站点刷流（低频版）插件"
         },
+        "v3": false,
         "release": true
     },
     "PluginReOrder": {
@@ -212,6 +214,7 @@
             "v1.2": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.1": "MoviePilot V2 版本PlexEdition插件"
         },
+        "v3": false,
         "release": true
     },
     "PlexPersonMeta": {
@@ -231,6 +234,7 @@
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex演职人员刮削插件"
         },
+        "v3": false,
         "release": true
     },
     "TrafficAssistant": {
@@ -406,6 +410,7 @@
             "v1.1": "增加自动洗版以及修复一些细节问题",
             "v1.0": "增加订阅助手插件，支持多场景管理订阅，实现订阅种子删除以及自动待定/暂停/洗版"
         },
+        "v3": false,
         "release": true
     },
     "PlexMatch": {
@@ -420,6 +425,7 @@
             "v1.3": "修复 PostgreSQL 下历史记录查询错误，并保持 SQLite 兼容",
             "v1.2": "MoviePilot V2 版本PlexMatch插件"
         },
+        "v3": false,
         "release": true
     }
 }

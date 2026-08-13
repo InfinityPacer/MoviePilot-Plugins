@@ -11,6 +11,9 @@ case "$(basename "$package_file")" in
   package.v2.json)
     plugin_dir="plugins.v2/${plugin_id}"
     ;;
+  package.v3.json)
+    plugin_dir="plugins.v3/${plugin_id}"
+    ;;
   *)
     echo "Unsupported package file: ${package_file}" >&2
     exit 2

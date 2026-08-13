@@ -17,12 +17,23 @@ def _select(tmp_path: Path, package_file: str) -> subprocess.CompletedProcess[st
     )
 
 
-def test_release_directory_keeps_v1_and_v2_assets_separate(tmp_path: Path) -> None:
+def test_release_directory_selects_each_generation_source(tmp_path: Path) -> None:
     (tmp_path / "plugins/example").mkdir(parents=True)
     (tmp_path / "plugins.v2/example").mkdir(parents=True)
+    (tmp_path / "plugins.v3/example").mkdir(parents=True)
 
     assert _select(tmp_path, "package.json").stdout.strip() == "plugins/example"
     assert _select(tmp_path, "package.v2.json").stdout.strip() == "plugins.v2/example"
+    assert _select(tmp_path, "package.v3.json").stdout.strip() == "plugins.v3/example"
+
+
+def test_v3_release_directory_does_not_fall_back_to_v2_source(tmp_path: Path) -> None:
+    (tmp_path / "plugins.v2/example").mkdir(parents=True)
+
+    result = _select(tmp_path, "package.v3.json")
+
+    assert result.returncode != 0
+    assert result.stdout == ""
 
 
 def test_v2_release_directory_does_not_fall_back_to_v1_source(tmp_path: Path) -> None:
@@ -45,6 +56,12 @@ def test_release_workflow_uses_generation_aware_directory_selector() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert 'select_plugin_release_dir.sh "$pkg_file" "$plugin_id_lc"' in workflow
+    assert 'process_package "package.json"' in workflow
+    assert 'process_package "package.v2.json"' in workflow
+    assert 'process_package "package.v3.json"' in workflow
+    assert ".value.v3 == true or .value.v2 == true" in workflow
+    assert ".value.release == true and .value.v3 != false" in workflow
+    assert "Missing plugin directory" in workflow
     assert 'git rev-parse -q --verify "refs/tags/$tag"' in workflow
     assert 'prev_tag="$tag"' in workflow
     assert 'if [ -d "$dir2" ]; then plugin_dir="$dir2"; fi' not in workflow

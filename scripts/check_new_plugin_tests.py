@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """检查新增插件是否至少提交对应测试目录。
 
-该门禁只约束当前 PR 新增的插件目录，不追溯历史插件；A 档覆盖率仍由
+该门禁只约束当前 PR 新增的 V3 插件目录，不追溯历史插件；A 档覆盖率仍由
 ``plugin_quality.json`` 显式声明。
 """
 
@@ -26,8 +26,7 @@ class NewPlugin:
     @property
     def source_path(self) -> str:
         """插件源码目录。"""
-        base = "plugins.v2" if self.generation == "v2" else "plugins"
-        return f"{base}/{self.plugin}"
+        return f"plugins.v3/{self.plugin}"
 
     @property
     def test_path(self) -> Path:
@@ -75,18 +74,15 @@ def _changed_files(base_ref: str) -> list[str]:
 
 
 def collect_new_plugins(base_ref: str) -> list[NewPlugin]:
-    """从 Git diff 收集当前分支新增的 v1/v2 插件目录。"""
+    """从 Git diff 收集当前分支新增的 V3 插件目录。"""
     plugins: dict[tuple[str, str], NewPlugin] = {}
     for file in _changed_files(base_ref):
         parts = Path(file).parts
         if len(parts) < 2:
             continue
-        if parts[0] == "plugins.v2":
-            generation = "v2"
-        elif parts[0] == "plugins":
-            generation = "v1"
-        else:
+        if parts[0] != "plugins.v3":
             continue
+        generation = "v3"
         plugin = parts[1]
         source_path = f"{parts[0]}/{plugin}"
         if _path_exists_in_ref(base_ref, source_path):

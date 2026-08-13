@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """按插件统计单测覆盖率并执行 A 档插件质量门禁。
 
-插件仓包含多代插件和大量历史插件，仓库级覆盖率会把未测试的历史插件计为 0%，不适合
-作为协作门禁。这里按插件独立运行 pytest 和 coverage，并只对 ``plugin_quality.json``
-声明的插件执行硬阈值，新增插件可先接入 smoke gate，再按维护等级加入覆盖率门禁。
+插件仓保留历史实现，但发布与核心质量门禁只面向 V3。这里按插件独立运行 pytest 和
+coverage，并只对 ``plugin_quality.json`` 声明的 V3 插件执行硬阈值。
 """
 
 from __future__ import annotations
@@ -52,8 +51,7 @@ class CoverageTarget:
     @property
     def source_path(self) -> Path:
         """插件源码目录。"""
-        base = "plugins.v2" if self.generation == "v2" else "plugins"
-        return REPO_ROOT / base / self.plugin
+        return REPO_ROOT / f"plugins.{self.generation}" / self.plugin
 
     @property
     def test_path(self) -> Path:
@@ -274,7 +272,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR, help="coverage JSON 输出目录")
     parser.add_argument("--base-ref", default=os.environ.get("PLUGIN_COVERAGE_BASE_REF"), help="新增行对比基准")
     parser.add_argument("--plugin", action="append", help="只运行指定插件 ID，可重复传入")
-    parser.add_argument("--generation", choices=("v1", "v2"), help="只运行指定代际")
+    parser.add_argument("--generation", choices=("v3",), help="只运行指定代际")
     return parser.parse_args()
 
 

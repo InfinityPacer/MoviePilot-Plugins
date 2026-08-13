@@ -1,0 +1,72 @@
+{
+    "SubscribeAssistantEnhanced": {
+        "name": "订阅助手（增强版）",
+        "description": "多场景管理订阅，实现订阅全生命周期管理。",
+        "labels": "订阅",
+        "version": "0.7",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v0.7": "MoviePilot V3 版本订阅助手（增强版）插件"
+        },
+        "release": true
+    },
+    "BrushFlowLowFreq": {
+        "name": "站点刷流（低频版）",
+        "description": "自动托管刷流，将会提高对应站点的访问频率。（基于官方插件BrushFlow二次开发）",
+        "labels": "站点,刷流,仪表板",
+        "version": "4.5",
+        "icon": "brush.jpg",
+        "author": "jxxghp,InfinityPacer",
+        "level": 2,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v4.5": "MoviePilot V3 版本站点刷流（低频版）插件"
+        },
+        "release": true
+    },
+    "PlexEdition": {
+        "name": "PlexEdition",
+        "description": "根据入库记录修改Edition为电影版本/资源类型/特效信息。",
+        "labels": "Plex",
+        "version": "1.3",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexedition.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v1.3": "MoviePilot V3 版本PlexEdition插件"
+        },
+        "release": true
+    },
+    "PlexPersonMeta": {
+        "name": "Plex演职人员刮削",
+        "description": "实现刮削演职人员中文名称及角色。",
+        "labels": "Plex,刮削",
+        "version": "2.4",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v2.4": "MoviePilot V3 版本Plex演职人员刮削插件"
+        },
+        "release": true
+    },
+    "PlexMatch": {
+        "name": "PlexMatch",
+        "description": "实现入库时添加 .plexmatch 文件，提高识别准确率。",
+        "labels": "Plex,刮削",
+        "version": "1.4",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v1.4": "MoviePilot V3 版本PlexMatch插件"
+        },
+        "release": true
+    }
+}

@@ -1,7 +1,7 @@
 """插件仓单测引导薄壳：定位同级 MoviePilot 后端并入 ``sys.path``，引导逻辑委托主程序 ``app.testing.bootstrap``。
 
 chicken-egg：导入主程序共享引导之前，必须先由本仓定位后端、加入 ``sys.path``——这一步不可消除，
-故每个插件仓只保留这层极薄 shim；隔离 CONFIG_DIR / 建表 / 插件目录注入 / v1·v2 marker 等
+故每个插件仓只保留这层极薄 shim；隔离 CONFIG_DIR / 建表 / 插件目录注入 / v2·v3 marker 等
 实际逻辑均在主程序 ``app/testing`` 维护一处，所有插件仓行为与修复保持一致。
 
 所有引导函数都必须在首次 ``import app.*`` 或导入任一插件包之前调用，否则隔离与路径注入不生效。
@@ -50,6 +50,18 @@ _bootstrap = import_module("app.testing.bootstrap")
 block_real_network = import_module("app.testing.network_guard").block_real_network
 
 
+def _expose_runtime_plugin_namespace(source_dir: Path) -> None:
+    """让 ``app.plugins.<id>`` 绝对导入解析到当前代际的仓库源码。
+
+    MoviePilot 运行时会把已安装插件放在 ``app.plugins`` 命名空间；插件源码内部因此可以使用
+    该绝对导入。单测直接加载市场仓源码时需复现同一命名空间，否则可能误用后端目录中的旧副本。
+    """
+    plugins_package = import_module("app.plugins")
+    source_path = str(source_dir)
+    if source_path not in plugins_package.__path__:
+        plugins_package.__path__.insert(0, source_path)
+
+
 def isolate_config_dir() -> str:
     """隔离 ``CONFIG_DIR`` 到进程私有临时目录（委托主程序共享实现）。"""
     return _bootstrap.isolate_config_dir()
@@ -61,10 +73,12 @@ def prepare_backend() -> None:
 
 
 def prepare_v2_backend() -> None:
-    """v2 插件单测引导：后端 + 本仓 ``plugins.v2/``（委托主程序共享实现）。"""
+    """兼容 V3 的 v2 插件单测引导：V3 后端 + 本仓 ``plugins.v2/``。"""
     _bootstrap.prepare_v2_backend(_PLUGINS_REPO)
+    _expose_runtime_plugin_namespace(_PLUGINS_REPO / "plugins.v2")
 
 
-def prepare_v1_backend() -> None:
-    """v1 插件单测引导：后端 + 本仓 ``plugins/``（委托主程序共享实现，与 v2 互斥）。"""
-    _bootstrap.prepare_v1_backend(_PLUGINS_REPO)
+def prepare_v3_backend() -> None:
+    """V3 专用插件单测引导：V3 后端 + 本仓 ``plugins.v3/``。"""
+    _bootstrap.prepare_v3_backend(_PLUGINS_REPO)
+    _expose_runtime_plugin_namespace(_PLUGINS_REPO / "plugins.v3")
