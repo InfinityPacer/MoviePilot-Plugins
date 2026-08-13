@@ -46,7 +46,11 @@ def _write_fixture(
                     "name": "示例",
                     "version": package_version,
                     "system_version": ">=3.0.0",
-                    "history": history or {f"v{package_version}": "MoviePilot V3 版本示例插件"},
+                    "history": (
+                        history
+                        if history is not None
+                        else {f"v{package_version}": "适配 MoviePilot V3 发布契约"}
+                    ),
                     "release": True,
                 }
             }
@@ -232,14 +236,13 @@ def test_default_index_plugins_all_have_a_v2_compatibility_path() -> None:
     assert missing == []
 
 
-def test_checker_rejects_major_version_increase(tmp_path: Path) -> None:
-    """V3 迁移绝不能提升主版本。"""
+def test_checker_does_not_reapply_migration_version_rules(tmp_path: Path) -> None:
+    """V3 独立发布后不再用旧代版本约束后续版本演进。"""
     _write_fixture(tmp_path, old_version="1.2.3", package_version="2.0", source_version="2.0")
 
     result = _run_checker(tmp_path)
 
-    assert result.returncode == 1
-    assert "不得提升主版本" in result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_checker_requires_legacy_v3_block(tmp_path: Path) -> None:
@@ -253,16 +256,38 @@ def test_checker_requires_legacy_v3_block(tmp_path: Path) -> None:
 
 
 def test_checker_requires_single_current_history_entry(tmp_path: Path) -> None:
-    """V3 history 只允许当前版本一条标准迁移说明。"""
+    """V3 history 只允许当前版本一条发布说明。"""
     _write_fixture(
         tmp_path,
-        history={"v1.3": "MoviePilot V3 版本示例插件", "v1.2.3": "旧记录"},
+        history={"v1.3": "适配 MoviePilot V3 发布契约", "v1.2.3": "旧记录"},
     )
 
     result = _run_checker(tmp_path)
 
     assert result.returncode == 1
     assert "history 必须只保留当前版本" in result.stdout
+
+
+def test_checker_accepts_release_specific_history(tmp_path: Path) -> None:
+    """V3 后续版本应使用描述实际行为变化的发布说明。"""
+    _write_fixture(
+        tmp_path,
+        history={"v1.3": "适配 MoviePilot V3 统一响应封装，避免打开配置页时提示未知错误"},
+    )
+
+    result = _run_checker(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_checker_rejects_blank_current_history(tmp_path: Path) -> None:
+    """当前版本仍必须提供可用于 GitHub Release 的非空说明。"""
+    _write_fixture(tmp_path, history={"v1.3": "  "})
+
+    result = _run_checker(tmp_path)
+
+    assert result.returncode == 1
+    assert "history 当前版本说明不能为空" in result.stdout
 
 
 def test_pre_push_propagates_version_gate_failure(tmp_path: Path) -> None:

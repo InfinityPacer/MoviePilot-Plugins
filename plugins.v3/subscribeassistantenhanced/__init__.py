@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Tuple, Optional
 from apscheduler.triggers.cron import CronTrigger
 
 from app.plugins import _PluginBase
-from app import schemas
 from app.log import logger
 from app.core.event import eventmanager
 from app.core.metainfo import MetaInfo
@@ -91,7 +90,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.7"
+    plugin_version = "0.7.1"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -1344,7 +1343,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
             "auth": "bear",
             "summary": "订阅助手（增强版）概览",
             "description": "返回各业务域启用状态与待定/监控计数",
-            "response_model": schemas.Response[dict],
         }]
 
     def _api_summary(self) -> Dict[str, Any]:

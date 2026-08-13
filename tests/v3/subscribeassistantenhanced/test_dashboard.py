@@ -1,5 +1,8 @@
 """前端入口 smoke：只读概览 API 保留；详情页与仪表盘已下线。"""
-from app import schemas
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.api.response import ResponseAPIRoute
 from subscribeassistantenhanced import SubscribeAssistantEnhanced
 
 
@@ -14,7 +17,24 @@ class TestFrontend:
     def test_get_api_exposes_summary(self):
         apis = self._plugin().get_api()
         route = next(a for a in apis if a["path"] == "/summary")
-        assert route["response_model"] == schemas.Response[dict]
+        assert "response_model" not in route
+
+    def test_summary_uses_main_program_response_wrapper(self):
+        plugin = self._plugin()
+        route = next(a for a in plugin.get_api() if a["path"] == "/summary").copy()
+        route.pop("auth")
+        app = FastAPI()
+        app.router.route_class = ResponseAPIRoute
+        app.add_api_route(**route)
+
+        response = TestClient(app).get("/summary")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "success": True,
+            "message": "",
+            "data": plugin._api_summary(),
+        }
 
     def test_api_summary_shape(self):
         summary = self._plugin()._api_summary()

@@ -60,16 +60,8 @@ def _version_parts(value: object) -> tuple[int, ...] | None:
     return tuple(int(part) for part in match.group().split("."))
 
 
-def _normalized_version(value: object, width: int = 4) -> tuple[int, ...] | None:
-    """补齐版本段用于大小比较。"""
-    parts = _version_parts(value)
-    if parts is None:
-        return None
-    return parts + (0,) * max(0, width - len(parts))
-
-
 def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
-    """校验 V3 专用实现的系统版本、history 与旧版本迁移规则。"""
+    """校验 V3 专用实现长期有效的发布元数据约束。"""
     errors: list[str] = []
     version = str(metadata.get("version") or "").strip()
     version_parts = _version_parts(version)
@@ -83,10 +75,8 @@ def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
     expected_history_key = f"v{version}"
     if not isinstance(history, dict) or list(history) != [expected_history_key]:
         errors.append(f"{path}: {plugin_id} history 必须只保留当前版本 {expected_history_key}")
-    else:
-        expected_changelog = f'MoviePilot V3 版本{metadata.get("name", "")}插件'
-        if history[expected_history_key] != expected_changelog:
-            errors.append(f"{path}: {plugin_id} history 文案必须为 {expected_changelog}")
+    elif not isinstance(history[expected_history_key], str) or not history[expected_history_key].strip():
+        errors.append(f"{path}: {plugin_id} history 当前版本说明不能为空")
 
     legacy_path = path.with_name("package.v2.json")
     legacy_metadata = _load_package(legacy_path).get(plugin_id)
@@ -96,19 +86,6 @@ def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
     if legacy_metadata.get("v3") is not False:
         errors.append(f"{legacy_path}: {plugin_id} 必须声明 v3=false")
 
-    old_version = str(legacy_metadata.get("version") or "").strip()
-    old_parts = _version_parts(old_version)
-    normalized_old = _normalized_version(old_version)
-    normalized_new = _normalized_version(version)
-    if old_parts is None or normalized_old is None or normalized_new is None or version_parts is None:
-        errors.append(f"{path}: {plugin_id} 无法比较版本 {old_version} -> {version}")
-        return errors
-    if version_parts[0] != old_parts[0]:
-        errors.append(f"{path}: {plugin_id} V3 不得提升主版本：{old_version} -> {version}")
-    if version_parts[1] <= (old_parts[1] if len(old_parts) > 1 else 0):
-        errors.append(f"{path}: {plugin_id} V3 必须提升小版本：{old_version} -> {version}")
-    if normalized_new <= normalized_old:
-        errors.append(f"{path}: {plugin_id} V3 版本必须高于旧版本：{old_version} -> {version}")
     return errors
 
 
