@@ -65,3 +65,38 @@ def test_release_workflow_uses_generation_aware_directory_selector() -> None:
     assert 'git rev-parse -q --verify "refs/tags/$tag"' in workflow
     assert 'prev_tag="$tag"' in workflow
     assert 'if [ -d "$dir2" ]; then plugin_dir="$dir2"; fi' not in workflow
+
+
+def test_release_workflow_builds_frontend_before_packaging() -> None:
+    """带前端工程的插件必须构建并校验联邦入口后才能打包。"""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "uses: actions/setup-node@v7" in workflow
+    assert "build_frontend \"$plugin_dir\"" in workflow
+    assert "yarn --frozen-lockfile && yarn build" in workflow
+    assert '[ ! -s "$frontend_dir/dist/assets/remoteEntry.js" ]' in workflow
+    assert 'git check-ignore -q "$frontend_dir/dist/assets/remoteEntry.js"' in workflow
+    assert 'git status --porcelain --untracked-files=all -- "$frontend_dir/dist"' in workflow
+    assert '-x "*/node_modules/*"' in workflow
+
+
+def test_frontend_federation_entries_are_tracked() -> None:
+    """Release 下载失败时会回退 main，V2/V3 联邦入口必须存在于 Git 文件列表。"""
+    missing = []
+    for plugin_generation in ("plugins.v2", "plugins.v3"):
+        for package_path in sorted(
+            REPO_ROOT.glob(f"{plugin_generation}/*/frontend/package.json")
+        ):
+            remote_entry = package_path.parent / "dist/assets/remoteEntry.js"
+            relative_entry = remote_entry.relative_to(REPO_ROOT)
+            result = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", str(relative_entry)],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                missing.append(str(relative_entry))
+
+    assert missing == []

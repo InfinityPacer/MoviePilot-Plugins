@@ -92,9 +92,10 @@ jobs:
       - name: Build distributable
         run: yarn build
 
-      - name: Verify committed distributable
+      - name: Verify distributable
         run: |
-          if [ -n "$(git status --porcelain -- dist)" ]; then
-            git status --short -- dist
+          test -s dist/assets/remoteEntry.js
+          if [ -n "$(git status --porcelain --untracked-files=all -- dist)" ]; then
+            git status --short --untracked-files=all -- dist
             exit 1
           fi

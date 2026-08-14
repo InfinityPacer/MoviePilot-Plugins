@@ -22,6 +22,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -38,6 +43,36 @@ jobs:
 
           # Track processed tags to avoid duplicates across package files.
           : > processed_tags.txt
+
+          build_frontend() {
+            local plugin_dir="$1"
+            local frontend_dir="$plugin_dir/frontend"
+            [ -f "$frontend_dir/package.json" ] || return 0
+
+            if [ ! -f "$frontend_dir/yarn.lock" ]; then
+              echo "Frontend lockfile missing: $frontend_dir/yarn.lock" >&2
+              exit 1
+            fi
+
+            echo "Building frontend in $frontend_dir"
+            (cd "$frontend_dir" && yarn --frozen-lockfile && yarn build)
+
+            if [ ! -s "$frontend_dir/dist/assets/remoteEntry.js" ]; then
+              echo "Frontend federation entry missing: $frontend_dir/dist/assets/remoteEntry.js" >&2
+              exit 1
+            fi
+
+            if git check-ignore -q "$frontend_dir/dist/assets/remoteEntry.js"; then
+              echo "Frontend distributable is ignored by Git: $frontend_dir/dist" >&2
+              exit 1
+            fi
+
+            if [ -n "$(git status --porcelain --untracked-files=all -- "$frontend_dir/dist")" ]; then
+              git status --short --untracked-files=all -- "$frontend_dir/dist"
+              echo "Frontend distributable does not match committed files: $frontend_dir/dist" >&2
+              exit 1
+            fi
+          }
 
           process_package() {
             local pkg_file="$1"
@@ -115,8 +150,9 @@ jobs:
               fi
 
               echo "Packing $plugin_id from $plugin_dir -> $asset"
+              build_frontend "$plugin_dir"
               rm -f "$asset"
-              (cd "$(dirname "$plugin_dir")" && zip -r "$GITHUB_WORKSPACE/$asset" "$(basename "$plugin_dir")" -x "*/__pycache__/*" -x "*.pyc") >/dev/null
+              (cd "$(dirname "$plugin_dir")" && zip -r "$GITHUB_WORKSPACE/$asset" "$(basename "$plugin_dir")" -x "*/__pycache__/*" -x "*.pyc" -x "*/node_modules/*") >/dev/null
 
               # Re-running a version replaces the release asset for that plugin.
               if gh release view "$tag" >/dev/null 2>&1; then
