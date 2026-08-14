@@ -11,6 +11,10 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!plugins.v[23]/*/frontend/dist/
+plugins.v[23]/*/frontend/dist/*
+!plugins.v[23]/*/frontend/dist/assets/
+!plugins.v[23]/*/frontend/dist/assets/**
 downloads/
 eggs/
 .eggs/
@@ -168,8 +172,3 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 .vscode/
-
-!plugins.v2/subscribeassistantenhanced/frontend/dist/
-plugins.v2/subscribeassistantenhanced/frontend/dist/*
-!plugins.v2/subscribeassistantenhanced/frontend/dist/assets/
-!plugins.v2/subscribeassistantenhanced/frontend/dist/assets/**
