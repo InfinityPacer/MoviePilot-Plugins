@@ -24,7 +24,7 @@ class SmartRename(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/smartrename.png"
     # 插件版本
-    plugin_version = "1.5"
+    plugin_version = "1.5.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -319,7 +319,7 @@ class SmartRename(_PluginBase):
             "separator_types": ["audioCodec", "videoCodec", "videoFormat", "edition", "effect",
                                 "resourceType"],
             "custom_separator": "@",
-            "word_replacements": """(?i)(?<=[\W_])BluRay.REMUX(?=[\W_]) => REMUX
+            "word_replacements": r"""(?i)(?<=[\W_])BluRay.REMUX(?=[\W_]) => REMUX
 (?i)(?<=[\W_])HDR.DV(?=[\W_]) => DoVi.HDR
 (?i)(?<=[\W_])DV(?=[\W_]) => DoVi
 (?i)(?<=[\W_])H264(?=[\W_]) => x264
