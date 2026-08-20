@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.schemas.types import MediaType  # noqa: E402
-from subscribeassistant import SubscribeAssistant  # noqa: E402
+from app.plugins.subscribeassistant import SubscribeAssistant  # noqa: E402
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value

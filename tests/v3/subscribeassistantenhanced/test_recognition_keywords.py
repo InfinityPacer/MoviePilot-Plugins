@@ -1,16 +1,16 @@
 """识别增强关键字配置测试。"""
-import subscribeassistantenhanced.recognition as recognition
-from subscribeassistantenhanced.shared.config import DEFAULT_RECOGNITION_GUARD_CUSTOM_CONFIG
-from subscribeassistantenhanced.recognition.guard import RecognitionGuard
-from subscribeassistantenhanced.recognition.keywords import (
+import app.plugins.subscribeassistantenhanced.recognition as recognition
+from app.plugins.subscribeassistantenhanced.shared.config import DEFAULT_RECOGNITION_GUARD_CUSTOM_CONFIG
+from app.plugins.subscribeassistantenhanced.recognition.guard import RecognitionGuard
+from app.plugins.subscribeassistantenhanced.recognition.keywords import (
     load_keyword_groups,
     match_first,
 )
-from subscribeassistantenhanced.recognition.strategy import (
+from app.plugins.subscribeassistantenhanced.recognition.strategy import (
     ACTION_CODES,
     parse_strategy,
 )
-from subscribeassistantenhanced.recognition.types import (
+from app.plugins.subscribeassistantenhanced.recognition.types import (
     ACTION_ALLOW,
     ACTION_BLOCK,
     ACTION_SOFT_BLOCK,

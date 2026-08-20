@@ -11,8 +11,8 @@ from app.core.security import verify_apikey
 from app.schemas.types import NotificationType
 from app.utils.object import ObjectUtils
 
-import webhooknotify
-from webhooknotify import WebhookNotify, WebhookNotifyPayload
+import app.plugins.webhooknotify as webhooknotify
+from app.plugins.webhooknotify import WebhookNotify, WebhookNotifyPayload
 
 
 def _build_test_app(plugin: WebhookNotify) -> FastAPI:

@@ -1,10 +1,7 @@
 """下载器 SDK 字段测试夹具。"""
 from __future__ import annotations
 
-import sys
-import types
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -68,17 +65,6 @@ def make_tr_legacy_torrent(**overrides):
     if not hasattr(torrent, "size_when_done"):
         torrent.size_when_done = torrent.fields.get("size_when_done", torrent.total_size)
     return torrent
-
-
-def install_app_plugin_alias(plugin_id: str) -> None:
-    """让插件内的 app.plugins.<plugin_id> 绝对导入指向本仓 plugins.v2。"""
-    plugin_dir = Path(__file__).resolve().parents[2] / "plugins.v2" / plugin_id
-    module_name = f"app.plugins.{plugin_id}"
-    module = sys.modules.get(module_name)
-    if module is None:
-        module = types.ModuleType(module_name)
-        sys.modules[module_name] = module
-    module.__path__ = [str(plugin_dir)]
 
 
 def force_transmission_plugin(plugin):

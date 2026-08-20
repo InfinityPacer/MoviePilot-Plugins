@@ -4,17 +4,17 @@ from unittest.mock import MagicMock
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.recognition.audit import (
+from app.plugins.subscribeassistantenhanced.recognition.audit import (
     candidate_fingerprint,
     redact_sensitive_text,
     sanitize_candidate_summary,
 )
-from subscribeassistantenhanced.recognition.guard import RecognitionGuard
-from subscribeassistantenhanced.recognition.scope import (
+from app.plugins.subscribeassistantenhanced.recognition.guard import RecognitionGuard
+from app.plugins.subscribeassistantenhanced.recognition.scope import (
     build_target,
     candidate_from_context,
 )
-from subscribeassistantenhanced.recognition.types import (
+from app.plugins.subscribeassistantenhanced.recognition.types import (
     CandidateResource,
     RecognitionRuntime,
     RecognitionSettings,
@@ -1367,7 +1367,7 @@ def test_title_subtitle_meta_build_failure_is_route_failure_and_fail_open(monkey
         runtime=RecognitionRuntime(secondary_recognizer=secondary),
     )
     original_metainfo = __import__(
-        "subscribeassistantenhanced.recognition.guard",
+        "app.plugins.subscribeassistantenhanced.recognition.guard",
         fromlist=["MetaInfo"],
     ).MetaInfo
 
@@ -1376,7 +1376,7 @@ def test_title_subtitle_meta_build_failure_is_route_failure_and_fail_open(monkey
             raise RuntimeError("token=SECRET")
         return original_metainfo(*args, **kwargs)
 
-    monkeypatch.setattr("subscribeassistantenhanced.recognition.guard.MetaInfo", failing_metainfo)
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.recognition.guard.MetaInfo", failing_metainfo)
     context = SimpleNamespace(
         torrent_info=SimpleNamespace(title="The Heart S01E01", description="问心 第1集", site_name="站点"),
         meta_info=SimpleNamespace(year=None, type=None, episode_list=[1], begin_season=1),

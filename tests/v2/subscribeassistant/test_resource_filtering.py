@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
-from subscribeassistant import SubscribeAssistant
-from subscribeassistant.recognition_guard import RecognitionGuardConfig, RecognitionGuardDecision
+from app.plugins.subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant.recognition_guard import RecognitionGuardConfig, RecognitionGuardDecision
 
 
 def make_plugin(**overrides) -> SubscribeAssistant:
@@ -90,7 +90,7 @@ class ResourceFilteringTest:
 
     def test_load_recognition_guard_keyword_config_handles_invalid_yaml(self):
         plugin = make_plugin(_recognition_guard_keyword_config=": bad: yaml")
-        with patch("subscribeassistant.logger.error"):
+        with patch("app.plugins.subscribeassistant.logger.error"):
             result = plugin._SubscribeAssistant__load_recognition_guard_keyword_config()
         assert result["allow"] == []
         assert result["block"] == []
@@ -119,15 +119,15 @@ unknown:
 
     def test_load_recognition_guard_keyword_config_ignores_non_object_yaml(self):
         plugin = make_plugin(_recognition_guard_keyword_config="- allow\n- block")
-        with patch("subscribeassistant.logger.warning") as warning:
+        with patch("app.plugins.subscribeassistant.logger.warning") as warning:
             result = plugin._SubscribeAssistant__load_recognition_guard_keyword_config()
         assert all(value == [] for value in result.values())
         warning.assert_called_once()
 
     def test_load_recognition_guard_keyword_config_handles_unexpected_loader_error(self):
         plugin = make_plugin(_recognition_guard_keyword_config="allow: PROPER")
-        with patch("subscribeassistant.YAML") as yaml_cls, \
-                patch("subscribeassistant.logger.error") as error:
+        with patch("app.plugins.subscribeassistant.YAML") as yaml_cls, \
+                patch("app.plugins.subscribeassistant.logger.error") as error:
             yaml_cls.return_value.load.side_effect = RuntimeError("boom")
             result = plugin._SubscribeAssistant__load_recognition_guard_keyword_config()
         assert all(value == [] for value in result.values())
@@ -149,7 +149,7 @@ unknown:
     def test_recognize_guard_candidate_swallows_exception(self):
         plugin = make_plugin()
         plugin.chain.recognize_media.side_effect = RuntimeError("boom")
-        with patch("subscribeassistant.logger.warning"):
+        with patch("app.plugins.subscribeassistant.logger.warning"):
             assert plugin._SubscribeAssistant__recognize_guard_candidate(SimpleNamespace(title="标题")) is None
 
     def test_recognize_media_returns_none_for_invalid_media_type(self):
@@ -170,7 +170,7 @@ unknown:
 
     def test_handle_recognition_guard_decision_ignores_unobserved(self):
         plugin = make_plugin()
-        with patch("subscribeassistant.logger.info") as info:
+        with patch("app.plugins.subscribeassistant.logger.info") as info:
             plugin._SubscribeAssistant__handle_recognition_guard_decision(
                 make_subscribe(), RecognitionGuardDecision(observed=False), make_context())
         info.assert_not_called()
@@ -178,7 +178,7 @@ unknown:
     def test_handle_recognition_guard_decision_logs_observed_without_blocking(self):
         plugin = make_plugin()
         decision = RecognitionGuardDecision(observed=True, blocked=False, reason="观察原因", candidate_title="候选")
-        with patch("subscribeassistant.logger.info") as info:
+        with patch("app.plugins.subscribeassistant.logger.info") as info:
             plugin._SubscribeAssistant__handle_recognition_guard_decision(
                 make_subscribe(), decision, make_context())
         info.assert_called_once()

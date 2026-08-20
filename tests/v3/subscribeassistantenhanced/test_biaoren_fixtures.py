@@ -6,15 +6,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
-from subscribeassistantenhanced.engine.signals import last_aired_episode
-from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal
-from subscribeassistantenhanced.engine.volatility import VolatilityTracker
-from subscribeassistantenhanced.guard import CompletionGuard
-from subscribeassistantenhanced.pause.airing import AiringPauseChecker
-from subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
-from subscribeassistantenhanced.shared.config import PluginConfig
-from subscribeassistantenhanced.shared.task import TaskDataManager
+from app.plugins.subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
+from app.plugins.subscribeassistantenhanced.engine.signals import last_aired_episode
+from app.plugins.subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal
+from app.plugins.subscribeassistantenhanced.engine.volatility import VolatilityTracker
+from app.plugins.subscribeassistantenhanced.guard import CompletionGuard
+from app.plugins.subscribeassistantenhanced.pause.airing import AiringPauseChecker
+from app.plugins.subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.task import TaskDataManager
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"

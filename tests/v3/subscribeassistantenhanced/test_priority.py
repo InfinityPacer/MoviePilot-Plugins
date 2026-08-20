@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.best_version.priority import PriorityManager
+from app.plugins.subscribeassistantenhanced.best_version.priority import PriorityManager
 
 
 def _sub(sid=1, ep_priority=None, current_priority=0, start_episode=1, total_episode=2, best_version=1,
@@ -72,7 +72,7 @@ class TestRollback:
     def test_rollback_restores_baseline(self):
         mgr = _mgr()
         baseline = {"episode_priority": {"1": 30}, "current_priority": 30}
-        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
             mgr.rollback(_sub(), baseline=baseline)
         chain_cls.return_value.refresh_subscribe_progress.assert_called_once()
         call_payload = mgr._oper.update.call_args[0][1]
@@ -82,7 +82,7 @@ class TestRollback:
     def test_rollback_from_stored_baseline(self):
         store = {"subscribes": {"1": {"priority_baseline": {"episode_priority": {"1": 20}, "current_priority": 20}}}}
         mgr = _mgr(store)
-        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
             mgr.rollback(_sub())
         chain_cls.return_value.refresh_subscribe_progress.assert_called_once()
         assert mgr._oper.update.called
@@ -97,7 +97,7 @@ class TestRollback:
     def test_full_tv_rollback_restores_episode_and_full_baseline(self):
         mgr = _mgr()
         baseline = {"episode_priority": {"1": 30}, "current_priority": 40}
-        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
             mgr.rollback(_sub(best_version_full=1, current_priority=80), baseline=baseline)
         payload = mgr._oper.update.call_args.args[1]
         assert payload == {"episode_priority": {"1": 30}, "current_priority": 40}
@@ -140,7 +140,7 @@ class TestTorrentBaselineRollback:
                                      episodes=[2], contributed_priority=90)
         current = _sub(ep_priority={"1": 80, "2": 90}, current_priority=90)
         with patch(
-                "subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
+                "app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
                 create=True,
         ) as refresh_progress:
             mgr.rollback_torrent(current, "A")
@@ -156,7 +156,7 @@ class TestTorrentBaselineRollback:
         mgr.capture_torrent_baseline(_sub(ep_priority={"1": 0}), "A",
                                      episodes=[1], contributed_priority=80)
         with patch(
-                "subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
+                "app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
                 create=True,
         ) as refresh_progress:
             mgr.rollback_torrent(_sub(ep_priority={"1": 95}), "A")
@@ -192,7 +192,7 @@ class TestTorrentBaselineRollback:
         )
 
         with patch(
-                "subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
+                "app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
                 create=True,
         ) as refresh_progress:
             mgr.rollback_torrent(
@@ -224,7 +224,7 @@ class TestBackfillExisting:
     def test_backfill_sets_100(self):
         mgr = _mgr()
         sub = _sub(ep_priority={"2": 0})
-        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
             chain_cls.return_value.backfill_existing_episodes.return_value = {"updated": True}
             assert mgr.backfill_existing(sub, existing_episodes=[1, 3]) is True
         chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
@@ -248,7 +248,7 @@ class TestBackfillExisting:
         """全集洗版必须等待整季资源，不使用媒体库已有集回填优先级。"""
         mgr = _mgr()
 
-        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
             mgr.backfill_existing(_sub(best_version_full=1), existing_episodes=[1, 2])
 
         mgr._oper.update.assert_not_called()
@@ -256,7 +256,7 @@ class TestBackfillExisting:
 
     def test_backfill_empty_no_op(self):
         mgr = _mgr()
-        with patch("subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
             mgr.backfill_existing(_sub(), existing_episodes=[])
         mgr._oper.update.assert_not_called()
         chain_cls.return_value.backfill_existing_episodes.assert_not_called()

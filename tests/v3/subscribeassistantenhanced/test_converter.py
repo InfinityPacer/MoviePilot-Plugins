@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.best_version.converter import BestVersionConverter
+from app.plugins.subscribeassistantenhanced.best_version.converter import BestVersionConverter
 
 
 class _SubscribeSnapshot(SimpleNamespace):

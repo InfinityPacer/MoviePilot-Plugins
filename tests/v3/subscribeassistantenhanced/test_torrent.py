@@ -5,7 +5,7 @@ from qbittorrentapi.torrents import TorrentInfoList
 from transmission_rpc import Torrent
 from transmission_rpc.torrent import Status
 
-from subscribeassistantenhanced.download.torrent import TorrentAdapter, TorrentInfo
+from app.plugins.subscribeassistantenhanced.download.torrent import TorrentAdapter, TorrentInfo
 
 
 def make_tr_v7_torrent(**overrides):
@@ -117,7 +117,7 @@ class TestFromQB:
 
     def test_qb_positive_completion_on_builds_seeding_time(self, monkeypatch):
         """qB completion_on 为正数时表示完成时间戳，可换算为做种时长。"""
-        monkeypatch.setattr("subscribeassistantenhanced.download.torrent.time.time", lambda: 2000)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.torrent.time.time", lambda: 2000)
         qb = {
             "hash": "done-time", "state": "downloading",
             "completion_on": 1900, "downloaded": 10,

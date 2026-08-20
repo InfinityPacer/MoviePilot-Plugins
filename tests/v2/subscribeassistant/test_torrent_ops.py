@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType, NotificationType
 
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 from ..torrent_sdk_fixtures import make_tr_v7_torrent
 
 TV = MediaType.TV.value
@@ -708,7 +708,7 @@ class TestClearTransferDestHistories:
         assert plugin._SubscribeAssistant__clear_transfer_dest_histories(
             task, SimpleNamespace(tmdb_id=100), Path("/t")) is True
 
-    @patch("subscribeassistant.StorageChain")
+    @patch("app.plugins.subscribeassistant.StorageChain")
     def test_with_histories(self, mock_chain_cls):
         plugin = make_plugin(_notify=True)
         mock_chain = MagicMock()
@@ -802,7 +802,7 @@ class TestWithLockAndUpdateSubscribeTasks:
         plugin.get_data = MagicMock(return_value={})
         method = MagicMock(side_effect=RuntimeError("boom"))
         method.__name__ = "test_method"
-        with patch("subscribeassistant.logger.error") as error:
+        with patch("app.plugins.subscribeassistant.logger.error") as error:
             plugin._SubscribeAssistant__with_lock_and_update_subscribe_tasks(method)
         method.assert_called_once_with({})
         plugin.save_data.assert_not_called()
@@ -829,7 +829,7 @@ class TestWithLockAndUpdateTorrentTasks:
         plugin.get_data = MagicMock(return_value={})
         method = MagicMock(side_effect=ValueError("bad"))
         method.__name__ = "bad_method"
-        with patch("subscribeassistant.logger.error") as error:
+        with patch("app.plugins.subscribeassistant.logger.error") as error:
             plugin._SubscribeAssistant__with_lock_and_update_torrent_tasks(method)
         method.assert_called_once_with({})
         plugin.save_data.assert_not_called()
@@ -931,7 +931,7 @@ class TestHandleResourceDownloadHistoryClear:
                 patch.object(plugin, "_SubscribeAssistant__get_data", return_value=tasks) as get_data, \
                 patch.object(plugin, "_SubscribeAssistant__clear_transfer_src_histories") as clear_histories, \
                 patch.object(plugin, "_SubscribeAssistant__save_data") as save_data, \
-                patch("subscribeassistant.time.sleep"):
+                patch("app.plugins.subscribeassistant.time.sleep"):
             plugin._SubscribeAssistant__handle_resource_download_history_clear(
                 sub, context=SimpleNamespace(torrent_info=SimpleNamespace(title="全集")), episodes=[1, 2])
         plugin.transferhistory_oper.get_by.assert_called_once_with(tmdbid=100, mtype=TV, season=1)
@@ -947,7 +947,7 @@ class TestHandleResourceDownloadHistoryClear:
         with patch.object(plugin, "_SubscribeAssistant__get_data", return_value={}), \
                 patch.object(plugin, "_SubscribeAssistant__clear_transfer_src_histories") as clear_histories, \
                 patch.object(plugin, "_SubscribeAssistant__save_data"), \
-                patch("subscribeassistant.time.sleep"):
+                patch("app.plugins.subscribeassistant.time.sleep"):
             plugin._SubscribeAssistant__handle_resource_download_history_clear(sub)
         plugin.transferhistory_oper.get_by.assert_called_once_with(tmdbid=100, mtype=MOVIE)
         clear_histories.assert_called_once()
@@ -973,8 +973,8 @@ class TestClearTransferSrcHistories:
         plugin._SubscribeAssistant__clear_transfer_src_histories(tasks, sub, [])
         assert tasks == {}
 
-    @patch("subscribeassistant.StorageChain")
-    @patch("subscribeassistant.eventmanager")
+    @patch("app.plugins.subscribeassistant.StorageChain")
+    @patch("app.plugins.subscribeassistant.eventmanager")
     def test_with_histories(self, mock_em, mock_chain_cls):
         plugin = make_plugin(_notify=True)
         mock_chain = MagicMock()

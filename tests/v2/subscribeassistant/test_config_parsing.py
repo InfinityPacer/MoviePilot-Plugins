@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 
 class ConfigParsingTest:
@@ -55,7 +55,7 @@ class ConfigParsingTest:
         assert result == ["动画", "123"]
 
     def test_normalize_keyword_patterns_rejects_unsupported_type(self):
-        with patch("subscribeassistant.logger.warning") as warning:
+        with patch("app.plugins.subscribeassistant.logger.warning") as warning:
             result = SubscribeAssistant._SubscribeAssistant__normalize_keyword_patterns({"bad": "value"})
         assert result == []
         warning.assert_called_once()
@@ -103,11 +103,11 @@ class InitPluginConfigTest:
 
     def test_init_plugin_without_config_only_initializes_runtime_dependencies(self):
         plugin = object.__new__(SubscribeAssistant)
-        with patch("subscribeassistant.TmdbChain") as tmdb_chain, \
-                patch("subscribeassistant.DownloaderHelper") as downloader_helper, \
-                patch("subscribeassistant.DownloadHistoryOper") as downloadhistory_oper, \
-                patch("subscribeassistant.TransferHistoryOper") as transferhistory_oper, \
-                patch("subscribeassistant.SubscribeOper") as subscribe_oper:
+        with patch("app.plugins.subscribeassistant.TmdbChain") as tmdb_chain, \
+                patch("app.plugins.subscribeassistant.DownloaderHelper") as downloader_helper, \
+                patch("app.plugins.subscribeassistant.DownloadHistoryOper") as downloadhistory_oper, \
+                patch("app.plugins.subscribeassistant.TransferHistoryOper") as transferhistory_oper, \
+                patch("app.plugins.subscribeassistant.SubscribeOper") as subscribe_oper:
             plugin.init_plugin(None)
 
         tmdb_chain.assert_called_once()
@@ -170,12 +170,12 @@ class InitPluginConfigTest:
             "auto_pause_tv_no_download_days": "14",
         }
 
-        with patch("subscribeassistant.TmdbChain"), \
-                patch("subscribeassistant.DownloaderHelper"), \
-                patch("subscribeassistant.DownloadHistoryOper"), \
-                patch("subscribeassistant.TransferHistoryOper"), \
-                patch("subscribeassistant.SubscribeOper"), \
-                patch("subscribeassistant.BackgroundScheduler", return_value=scheduler), \
+        with patch("app.plugins.subscribeassistant.TmdbChain"), \
+                patch("app.plugins.subscribeassistant.DownloaderHelper"), \
+                patch("app.plugins.subscribeassistant.DownloadHistoryOper"), \
+                patch("app.plugins.subscribeassistant.TransferHistoryOper"), \
+                patch("app.plugins.subscribeassistant.SubscribeOper"), \
+                patch("app.plugins.subscribeassistant.BackgroundScheduler", return_value=scheduler), \
                 patch.object(plugin, "stop_service") as stop_service, \
                 patch.object(plugin, "update_config") as update_config:
             plugin.init_plugin(config)

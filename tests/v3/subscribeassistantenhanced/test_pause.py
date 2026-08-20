@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.pause.airing import AiringPauseChecker
-from subscribeassistantenhanced.pause.manager import PauseManager
-from subscribeassistantenhanced.pause.nodownload import NoDownloadPolicy
-from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
+from app.plugins.subscribeassistantenhanced.pause.airing import AiringPauseChecker
+from app.plugins.subscribeassistantenhanced.pause.manager import PauseManager
+from app.plugins.subscribeassistantenhanced.pause.nodownload import NoDownloadPolicy
+from app.plugins.subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
 
 
 def _sub(sid=1, state="R", username="", media_type="电视剧"):
@@ -1029,7 +1029,7 @@ class TestPauseManager:
         messages = []
         mgr = self._make_manager(store=store)
         monkeypatch.setattr(time, "time", lambda: 1000.0)
-        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.log_detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.pause.manager.log_detail", messages.append)
 
         assert mgr.pause(_sub(), PauseRecord(reason="no_download", detail="无下载")) is False
 
@@ -1079,7 +1079,7 @@ class TestPauseManager:
         messages = []
         mgr = self._make_manager(notify=notify)
         sub = _sub(state="S")
-        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.log_detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.pause.manager.log_detail", messages.append)
 
         assert mgr.pause(sub, PauseRecord(reason="airing_gap", detail="下一集日期：2026-07-01")) is True
         notify.reset_mock()
@@ -1118,7 +1118,7 @@ class TestPauseManager:
         notify = MagicMock()
         messages = []
         mgr = self._make_manager(notify=notify)
-        monkeypatch.setattr("subscribeassistantenhanced.pause.manager.log_detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.pause.manager.log_detail", messages.append)
 
         assert mgr.resume(_sub(state="S")) is False
 

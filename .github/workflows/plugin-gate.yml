@@ -29,6 +29,7 @@ jobs:
   plugin-test-gate:
     name: Plugin test gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout plugin repository
         uses: actions/checkout@v6
@@ -42,27 +43,30 @@ jobs:
           ref: v3
           path: MoviePilot
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
+          version: '0.12.5'
           python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: MoviePilot/requirements-dev.in
+          enable-cache: true
+          cache-dependency-glob: |
+            MoviePilot/pyproject.toml
+            MoviePilot/uv.lock
 
-      - name: Install backend test dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -r MoviePilot/requirements-dev.in
+      - name: Install backend test environment
+        working-directory: MoviePilot
+        run: uv sync --locked
 
       - name: Run V3 plugin tests
         env:
           MOVIEPILOT_BACKEND_PATH: ${{ github.workspace }}/MoviePilot
         working-directory: MoviePilot-Plugins
-        run: python tests/run.py
+        run: ../MoviePilot/.venv/bin/python tests/run.py
 
   plugin-coverage-gate:
     name: Plugin coverage gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout plugin repository
         uses: actions/checkout@v6
@@ -126,19 +130,21 @@ jobs:
           ref: v3
           path: MoviePilot
 
-      - name: Set up Python
+      - name: Set up uv
         if: steps.coverage-scope.outputs.run == 'true'
-        uses: actions/setup-python@v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
+          version: '0.12.5'
           python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: MoviePilot/requirements-dev.in
+          enable-cache: true
+          cache-dependency-glob: |
+            MoviePilot/pyproject.toml
+            MoviePilot/uv.lock
 
-      - name: Install backend test dependencies
+      - name: Install backend test environment
         if: steps.coverage-scope.outputs.run == 'true'
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -r MoviePilot/requirements-dev.in
+        working-directory: MoviePilot
+        run: uv sync --locked
 
       - name: Run plugin coverage gate
         if: steps.coverage-scope.outputs.run == 'true'
@@ -146,7 +152,7 @@ jobs:
           MOVIEPILOT_BACKEND_PATH: ${{ github.workspace }}/MoviePilot
           PLUGIN_COVERAGE_BASE_REF: origin/main
         working-directory: MoviePilot-Plugins
-        run: python scripts/plugin_coverage.py
+        run: ../MoviePilot/.venv/bin/python scripts/plugin_coverage.py
 
       - name: Upload plugin coverage reports
         if: always() && steps.coverage-scope.outputs.run == 'true'

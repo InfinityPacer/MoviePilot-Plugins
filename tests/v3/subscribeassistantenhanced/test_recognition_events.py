@@ -7,9 +7,9 @@ from app.core.metainfo import MetaInfo
 from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.events import EventProxy
-from subscribeassistantenhanced.recognition.guard import RecognitionGuard
-from subscribeassistantenhanced.recognition.types import RecognitionRuntime, RecognitionSettings
+from app.plugins.subscribeassistantenhanced.events import EventProxy
+from app.plugins.subscribeassistantenhanced.recognition.guard import RecognitionGuard
+from app.plugins.subscribeassistantenhanced.recognition.types import RecognitionRuntime, RecognitionSettings
 
 
 def _ctx(title, episodes=None):

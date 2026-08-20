@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from subscribeassistantenhanced.engine.types import PauseRecord
-from subscribeassistantenhanced.lifecycle import LifecycleResult, SubscribeLifecycleCoordinator
+from app.plugins.subscribeassistantenhanced.engine.types import PauseRecord
+from app.plugins.subscribeassistantenhanced.lifecycle import LifecycleResult, SubscribeLifecycleCoordinator
 
 
 @pytest.fixture

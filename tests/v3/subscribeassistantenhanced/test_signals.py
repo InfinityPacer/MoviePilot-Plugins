@@ -2,12 +2,12 @@
 from types import SimpleNamespace
 from datetime import date, timedelta
 
-from subscribeassistantenhanced.engine.signals import (
+from app.plugins.subscribeassistantenhanced.engine.signals import (
     check_m_signal, check_e_signal, check_i_signal,
     has_scope_finale, has_scope_future_episode, last_aired_episode,
     scope_future_episode,
 )
-from subscribeassistantenhanced.engine.types import SeasonScope
+from app.plugins.subscribeassistantenhanced.engine.types import SeasonScope
 
 
 def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):

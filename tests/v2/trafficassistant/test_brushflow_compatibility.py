@@ -3,8 +3,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from trafficassistant import TrafficAssistant
-from trafficassistant.trafficconfig import TrafficConfig
+from app.plugins.trafficassistant import TrafficAssistant
+from app.plugins.trafficassistant.trafficconfig import TrafficConfig
 
 
 def _update_brush_site(plugin_config: dict, site_id: int, enable: bool):

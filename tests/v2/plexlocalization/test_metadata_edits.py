@@ -11,7 +11,7 @@ _pypinyin.Style = SimpleNamespace(FIRST_LETTER="first_letter")
 _pypinyin.lazy_pinyin = lambda *args, **kwargs: []
 
 with stub_modules({"pypinyin": _pypinyin}):
-    from plexlocalization import PlexLocalization
+    from app.plugins.plexlocalization import PlexLocalization
 
 
 class _Response:
@@ -127,7 +127,7 @@ def test_process_item_reports_failure_when_final_sort_title_differs():
     plugin = _plugin()
     plex = _FakePlex(final_item=_final_item(title_sort=None))
 
-    with patch("plexlocalization.logger.info") as info, patch("plexlocalization.logger.warning") as warning:
+    with patch("app.plugins.plexlocalization.logger.info") as info, patch("app.plugins.plexlocalization.logger.warning") as warning:
         result = plugin._PlexLocalization__process_item(plex=plex, item=_source_item())
 
     assert result is False
@@ -217,7 +217,7 @@ def test_process_item_logs_noop_skip_at_debug_level():
         "Genre": [{"tag": "动画"}],
     }
 
-    with patch("plexlocalization.logger.debug") as debug:
+    with patch("app.plugins.plexlocalization.logger.debug") as debug:
         result = plugin._PlexLocalization__process_item(plex=plex, item=item)
 
     assert result is None
@@ -233,7 +233,7 @@ def test_process_item_logs_http_error_status_code():
     plugin = _plugin()
     plex = _FakePlex(final_item=_final_item(), status_code=500)
 
-    with patch("plexlocalization.logger.warning") as warning:
+    with patch("app.plugins.plexlocalization.logger.warning") as warning:
         result = plugin._PlexLocalization__process_item(plex=plex, item=_source_item())
 
     assert result is False
@@ -275,10 +275,10 @@ def test_init_plugin_defaults_thread_count_to_three():
     plugin = object.__new__(PlexLocalization)
     plugin._scheduler = None
 
-    with patch("plexlocalization.MediaServerHelper"), \
+    with patch("app.plugins.plexlocalization.MediaServerHelper"), \
             patch.object(plugin, "_PlexLocalization__get_tags", return_value={"Action": "动作"}), \
             patch.object(plugin, "stop_service"), \
-            patch("plexlocalization.BackgroundScheduler"), \
+            patch("app.plugins.plexlocalization.BackgroundScheduler"), \
             patch.object(plugin, "update_config"):
         plugin.init_plugin({"tags_json": "{}"})
 
@@ -325,7 +325,7 @@ def test_process_items_batch_isolates_item_exceptions():
                 plugin,
                 "_PlexLocalization__prepare_item_edit",
                 side_effect=[None, RuntimeError("broken item"), None]
-            ) as prepare_item, patch("plexlocalization.logger.error") as error:
+            ) as prepare_item, patch("app.plugins.plexlocalization.logger.error") as error:
         result = plugin._PlexLocalization__process_items_batch(plex=plex, rating_keys=["1", "2", "3"])
 
     assert result == {"updated": 0, "failed": 1, "skipped": 2, "unprocessed": 0}
@@ -341,7 +341,7 @@ def test_process_items_batch_counts_missing_response_items_as_failed():
 
     with patch.object(plugin, "_PlexLocalization__fetch_all_items", return_value=items), \
             patch.object(plugin, "_PlexLocalization__prepare_item_edit", return_value=None), \
-            patch("plexlocalization.logger.warning") as warning:
+            patch("app.plugins.plexlocalization.logger.warning") as warning:
         result = plugin._PlexLocalization__process_items_batch(plex=plex, rating_keys=["1", "2", "3"])
 
     assert result == {"updated": 0, "failed": 1, "skipped": 2, "unprocessed": 0}

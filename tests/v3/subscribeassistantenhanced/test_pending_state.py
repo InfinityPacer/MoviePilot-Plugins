@@ -2,9 +2,9 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.engine.types import PauseRecord
-from subscribeassistantenhanced.pending.state import PendingStateCoordinator
-from subscribeassistantenhanced.pause.manager import PauseManager
+from app.plugins.subscribeassistantenhanced.engine.types import PauseRecord
+from app.plugins.subscribeassistantenhanced.pending.state import PendingStateCoordinator
+from app.plugins.subscribeassistantenhanced.pause.manager import PauseManager
 
 
 def _store_mgr(store=None):

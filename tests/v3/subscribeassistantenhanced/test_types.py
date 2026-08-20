@@ -1,5 +1,5 @@
 """engine/types.py 数据类型与协议桩单测。"""
-from subscribeassistantenhanced.engine.types import (
+from app.plugins.subscribeassistantenhanced.engine.types import (
     CompletionSignal,
     CompletionEvidence,
     CompletionObservationDecision,

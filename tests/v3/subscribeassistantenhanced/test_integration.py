@@ -5,24 +5,24 @@ from unittest.mock import MagicMock
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
-from subscribeassistantenhanced.engine.volatility import VolatilityTracker
-from subscribeassistantenhanced.engine.types import (
+from app.plugins.subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
+from app.plugins.subscribeassistantenhanced.engine.volatility import VolatilityTracker
+from app.plugins.subscribeassistantenhanced.engine.types import (
     CompletionEvidence,
     CompletionObservationDecision,
     CompletionSignal,
     SeasonScope,
 )
-from subscribeassistantenhanced.guard import CompletionGuard
-from subscribeassistantenhanced.pending.judge import PendingJudge
-from subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
-from subscribeassistantenhanced.postcheck.verifier import CompletionVerifier
-from subscribeassistantenhanced.download.monitor import DownloadMonitor
-from subscribeassistantenhanced.download.cleanup import TorrentCleanup
-from subscribeassistantenhanced.pause.manager import PauseManager
-from subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
-from subscribeassistantenhanced.shared.config import PluginConfig
-from subscribeassistantenhanced.shared.task import TaskDataManager
+from app.plugins.subscribeassistantenhanced.guard import CompletionGuard
+from app.plugins.subscribeassistantenhanced.pending.judge import PendingJudge
+from app.plugins.subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
+from app.plugins.subscribeassistantenhanced.postcheck.verifier import CompletionVerifier
+from app.plugins.subscribeassistantenhanced.download.monitor import DownloadMonitor
+from app.plugins.subscribeassistantenhanced.download.cleanup import TorrentCleanup
+from app.plugins.subscribeassistantenhanced.pause.manager import PauseManager
+from app.plugins.subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.task import TaskDataManager
 
 
 def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
@@ -386,7 +386,7 @@ class TestCodexReviewFindings:
             "movie": {"fail_count": 2, "window_start": time.time() - 60},
         }}}
         monitor = DownloadMonitor(tm.read, tm.update, timeout_minutes=60, retry_limit=3)
-        from subscribeassistantenhanced.download.torrent import TorrentInfo
+        from app.plugins.subscribeassistantenhanced.download.torrent import TorrentInfo
         info = TorrentInfo(hash="h1", progress=0.5)
 
         result = monitor.check_torrent(info, subscribe_id=1)

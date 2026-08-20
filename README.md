@@ -6,6 +6,15 @@ MoviePilot三方插件：https://github.com/InfinityPacer/MoviePilot-Plugins
 
 MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jxxghp/MoviePilot
 
+## V3 开发约定
+
+- V3 插件的额外 Python 依赖写入 `plugins.v3/<plugin_id>/pyproject.toml`，版本使用
+  `dynamic = ["version"]`，运行环境声明为 Python 3.12+。
+- 插件不提交 `uv.lock`，也不在代码中直接执行 pip 或 uv；依赖由 MoviePilot 在共享运行环境中统一安装和预检。
+- V1/V2 历史实现继续使用 `requirements.txt`，不追溯迁移。
+- 未声明 `v3:false` 的 V2 实现由 V3 主程序兼容加载；这不表示 V3 插件可运行在 V2 主程序上。
+- 插件测试使用生产命名空间 `app.plugins.<plugin_id>`，避免同一源码以两个模块名重复加载。
+
 ## 插件集合
 
 ![](images/2024-12-28-01-25-20.png)

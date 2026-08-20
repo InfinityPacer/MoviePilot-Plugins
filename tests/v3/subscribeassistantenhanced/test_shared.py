@@ -3,15 +3,15 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.shared.log import truncate_log_value, format_log_title_desc
-from subscribeassistantenhanced.shared.subscribe import (
+from app.plugins.subscribeassistantenhanced.shared.log import truncate_log_value, format_log_title_desc
+from app.plugins.subscribeassistantenhanced.shared.subscribe import (
     format_subscribe, format_subscribe_desc, format_subscribe_label, match_subscribe,
     identity_matches, pending_subscription_episodes, resolve_subscribe_media_type,
     subscribe_from_source, subscribe_identity, is_full_best_version_subscribe,
     is_tv_episode_best_version_subscribe,
 )
-from subscribeassistantenhanced.shared.update import subscribe_update_payload, update_subscribe
-from subscribeassistantenhanced.shared.media import (
+from app.plugins.subscribeassistantenhanced.shared.update import subscribe_update_payload, update_subscribe
+from app.plugins.subscribeassistantenhanced.shared.media import (
     parse_date, is_same_season, get_tv_season_info,
     get_tv_season_air_date,
     count_aired_episodes, last_aired_episode, all_aired,

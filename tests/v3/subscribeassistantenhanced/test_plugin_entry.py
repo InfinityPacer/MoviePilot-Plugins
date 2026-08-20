@@ -12,11 +12,11 @@ from app.plugins import _PluginBase
 from app.schemas.event import PluginDataResetEventData
 from app.schemas.types import ChainEventType, EventType
 
-import subscribeassistantenhanced as plugin_module
-from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.lifecycle import LifecycleResult
-from subscribeassistantenhanced.shared.config import PluginConfig
-from subscribeassistantenhanced.shared.subscribe import subscribe_from_source
+import app.plugins.subscribeassistantenhanced as plugin_module
+from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced.lifecycle import LifecycleResult
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.subscribe import subscribe_from_source
 
 # 12 个事件处理器必须定义在插件类上（主程序按 __qualname__ 首段解析运行实例分发）
 _EVENT_HANDLERS = (

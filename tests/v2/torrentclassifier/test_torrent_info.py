@@ -3,14 +3,11 @@ from unittest.mock import PropertyMock, patch
 
 from ..torrent_sdk_fixtures import (
     force_transmission_plugin,
-    install_app_plugin_alias,
     make_tr_legacy_torrent,
     make_tr_v7_torrent,
 )
 
-install_app_plugin_alias("torrentclassifier")
-
-from torrentclassifier import TorrentClassifier  # noqa: E402
+from app.plugins.torrentclassifier import TorrentClassifier
 
 
 def _call(torrent):

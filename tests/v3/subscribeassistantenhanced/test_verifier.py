@@ -3,8 +3,8 @@ import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.postcheck.verifier import CompletionVerifier
-from subscribeassistantenhanced.engine.types import SeasonScope
+from app.plugins.subscribeassistantenhanced.postcheck.verifier import CompletionVerifier
+from app.plugins.subscribeassistantenhanced.engine.types import SeasonScope
 
 
 def _sub(media_id="100", season=1, episode_group=None, total=12, best_version=0, best_version_full=0):

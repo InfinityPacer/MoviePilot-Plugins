@@ -3,8 +3,8 @@ import re
 from collections import OrderedDict
 from pathlib import Path
 
-from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.form import (
+from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced.form import (
     CRON_FIELDS,
     HINTS,
     LABELS,
@@ -14,7 +14,7 @@ from subscribeassistantenhanced.form import (
     TABS,
     TOP_SWITCHES,
 )
-from subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

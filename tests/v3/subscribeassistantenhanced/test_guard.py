@@ -4,14 +4,14 @@ from unittest.mock import MagicMock, call, patch
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.engine.local import check_l_signal
-from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
-from subscribeassistantenhanced.engine.scope import build_scope
-from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal
-from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.guard import CompletionGuard
-from subscribeassistantenhanced.shared.config import PluginConfig
-from subscribeassistantenhanced.shared.subscribe import pending_subscription_episodes
+from app.plugins.subscribeassistantenhanced.engine.local import check_l_signal
+from app.plugins.subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
+from app.plugins.subscribeassistantenhanced.engine.scope import build_scope
+from app.plugins.subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal
+from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced.guard import CompletionGuard
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.subscribe import pending_subscription_episodes
 
 
 def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):
@@ -411,7 +411,7 @@ class TestCompletionGuard:
     def test_balanced_medium_target_complete_releases_and_clears_token(self, monkeypatch):
         """balanced 接受 L+I 合成的当前目标完成证据，并清理旧完成释放令牌。"""
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.guard.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.guard.detail", messages.append)
         target = _signal(
             completed=True,
             confidence="medium",
@@ -789,7 +789,7 @@ class TestLocalSignal:
             lambda *_args, **_kwargs: [_ep(i) for i in range(1, 13)],
         )
 
-        with patch("subscribeassistantenhanced.engine.local.SubscribeChain", create=True) as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.engine.local.SubscribeChain", create=True) as chain_cls:
             chain_cls.return_value.resolve_subscribe_missing.return_value = (True, {})
             signal = check_l_signal(
                 subscribe,

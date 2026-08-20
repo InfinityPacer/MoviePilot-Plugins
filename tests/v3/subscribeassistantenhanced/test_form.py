@@ -1,9 +1,9 @@
 """form 配置表单单测：聚合契约 + model 键覆盖（不漂移）+ 控件类型。"""
 import re
 
-from subscribeassistantenhanced.form import HINTS, LABELS, MULTI_ITEMS, SELECT_ITEMS, build_form
-from subscribeassistantenhanced.form.components import field_for
-from subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.form import HINTS, LABELS, MULTI_ITEMS, SELECT_ITEMS, build_form
+from app.plugins.subscribeassistantenhanced.form.components import field_for
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
 def _controls_with_model(node):
@@ -147,7 +147,7 @@ class TestGetForm:
     """插件入口 get_form 返回完整表单。"""
 
     def test_plugin_get_form_returns_full_form(self):
-        from subscribeassistantenhanced import SubscribeAssistantEnhanced
+        from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
         conf, model = SubscribeAssistantEnhanced().get_form()
         assert conf and isinstance(model, dict)
         assert model["completion_guard_mode"] == "balanced"
@@ -158,7 +158,7 @@ class TestGetForm:
 
 
 def test_multi_select_field_renders_vselect_multiple():
-    from subscribeassistantenhanced.form.components import multi_select_field
+    from app.plugins.subscribeassistantenhanced.form.components import multi_select_field
     col = multi_select_field("no_download_actions", "无下载处理策略",
                              [{"title": "暂停剧集订阅", "value": "pause_tv"}])
     sel = col["content"][0]
@@ -169,7 +169,7 @@ def test_multi_select_field_renders_vselect_multiple():
 
 
 def test_tabs_renders_vtabs_and_vwindow():
-    from subscribeassistantenhanced.form.components import tabs
+    from app.plugins.subscribeassistantenhanced.form.components import tabs
     out = tabs(["A", "B"], [{"component": "VRow"}, {"component": "VRow"}])
     assert out[0]["component"] == "VTabs"
     assert out[1]["component"] == "VWindow"
@@ -292,7 +292,7 @@ def test_recognition_guard_notify_and_recheck_select_values():
 
 def test_form_model_covers_all_keys_after_restructure():
     """重排后 model 依然覆盖全部 PluginConfig 键，不允许因重排丢失键。"""
-    from subscribeassistantenhanced.shared.config import PluginConfig
+    from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
     _conf, model = build_form()
     for key in PluginConfig({}).declared_keys():
         assert key in model, f"model 缺少 {key}"

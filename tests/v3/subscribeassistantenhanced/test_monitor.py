@@ -3,10 +3,10 @@ import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.download.monitor import DownloadMonitor, TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS
-from subscribeassistantenhanced.download.torrent import TorrentInfo
-from subscribeassistantenhanced.pending.state import PendingStateCoordinator
+from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced.download.monitor import DownloadMonitor, TIMEOUT_MANUAL_REVIEW_IGNORE_HOURS
+from app.plugins.subscribeassistantenhanced.download.torrent import TorrentInfo
+from app.plugins.subscribeassistantenhanced.pending.state import PendingStateCoordinator
 
 
 def test_timeout_manual_review_ignore_hours_is_twenty_four():
@@ -71,7 +71,7 @@ class TestMarkDownloadPending:
             state_coordinator=coordinator,
             pending_hash_grace_seconds=60,
         )
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 100.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 100.0)
         subscribe = SimpleNamespace(id=1, name="测试剧", season=1, state="R")
         oper.get.return_value = SimpleNamespace(id=1, name="测试剧", season=1, state="P")
 
@@ -93,7 +93,7 @@ class TestMarkDownloadPending:
         assert pending[pending_key]["hash"] is None
         assert pending[pending_key]["episodes"] == [1, 2]
 
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 161.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 161.0)
         assert mon.has_active_downloads(1) is False
         assert store["subscribes"]["1"]["state"] == "R"
 
@@ -103,7 +103,7 @@ class TestMarkDownloadPending:
         oper = MagicMock()
         coordinator = PendingStateCoordinator(read, update, subscribe_oper=oper)
         mon = DownloadMonitor(read, update, subscribe_oper=oper, state_coordinator=coordinator)
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 200.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 200.0)
         subscribe = SimpleNamespace(id=1, name="测试剧", season=1, state="R")
         oper.get.return_value = SimpleNamespace(id=1, name="测试剧", season=1, state="P")
         mon.mark_download_started(
@@ -290,11 +290,11 @@ class TestCheckTorrent:
             retry_limit=3, subscribe_oper=oper,
         )
 
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 7200.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 7200.0)
         assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "ok"
         assert store["torrents"]["h1"]["queue_grace_seconds"] == 7200
 
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
         assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "timeout"
         reason = mon.get_timeout_reason(1, store["torrents"]["h1"], _info(progress=0.0, state="queuedDL"))
         assert "排队宽限 2.00/2 小时，超时窗口 1 小时内进度增长 0.00%" in reason
@@ -313,10 +313,10 @@ class TestCheckTorrent:
             retry_limit=3, subscribe_oper=oper,
         )
 
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 7200.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 7200.0)
         assert mon.check_torrent(_info(progress=0.0, state="download pending"), 1) == "ok"
 
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
         assert mon.check_torrent(_info(progress=0.0, state="download pending"), 1) == "timeout"
 
     def test_repeated_queue_transitions_do_not_reset_grace(self, monkeypatch):
@@ -333,15 +333,15 @@ class TestCheckTorrent:
             retry_limit=3, subscribe_oper=oper,
         )
 
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3600.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 3600.0)
         assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "ok"
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 5400.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 5400.0)
         assert mon.check_torrent(_info(progress=0.0, state="downloading"), 1) == "ok"
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 9000.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 9000.0)
         assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "ok"
         assert store["torrents"]["h1"]["queue_grace_seconds"] == 7200
 
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 10801.0)
         assert mon.check_torrent(_info(progress=0.0, state="downloading"), 1) == "timeout"
 
     def test_non_queue_states_do_not_receive_grace(self, monkeypatch):
@@ -358,7 +358,7 @@ class TestCheckTorrent:
                 read, update, timeout_minutes=60, queue_grace_multiplier=2,
                 retry_limit=3, subscribe_oper=oper,
             )
-            monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
+            monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
 
             assert mon.check_torrent(_info(progress=0.0, state=state), 1) == "timeout"
             assert store["torrents"]["h1"].get("queue_grace_seconds", 0) == 0
@@ -376,7 +376,7 @@ class TestCheckTorrent:
             read, update, timeout_minutes=60, queue_grace_multiplier=0,
             retry_limit=3, subscribe_oper=oper,
         )
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
 
         assert mon.check_torrent(_info(progress=0.0, state="queuedDL"), 1) == "timeout"
         assert store["torrents"]["h1"]["queue_grace_seconds"] == 0
@@ -395,7 +395,7 @@ class TestCheckTorrent:
             read, update, timeout_minutes=60, queue_grace_multiplier=2,
             retry_limit=3, subscribe_oper=oper,
         )
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 3601.0)
 
         assert mon.check_torrent(_info(progress=0.0, state="downloading"), 1) == "timeout"
         assert store["torrents"]["h1"]["queue_grace_seconds"] == 0
@@ -410,7 +410,7 @@ class TestCheckTorrent:
         }}}
         read, update, _ = _store_mgr(store)
         mon = DownloadMonitor(read, update, timeout_minutes=60, progress_threshold=10)
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.time.time", lambda: 5400.0)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.time.time", lambda: 5400.0)
 
         assert mon.check_torrent(_info(progress=0.2, state="queuedDL"), 1) == "ok"
         task = store["torrents"]["h1"]
@@ -706,8 +706,8 @@ class TestManualDeleteListen:
         """完成任务日志应带订阅、集数、种子标题内容，并在汇总中展示本地移除数量。"""
         info_messages = []
         detail_messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.logger.info", info_messages.append)
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", detail_messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.logger.info", info_messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.detail", detail_messages.append)
         read, update, store = _store_mgr({
             "torrents": {
                 "h1": {
@@ -776,7 +776,7 @@ class TestManualDeleteListen:
     def test_uncertain_status_summary_breaks_down_reasons(self, monkeypatch):
         """实时状态缺失时按原因汇总，避免把所有跳过都写成下载器状态不确定。"""
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.download.monitor.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.download.monitor.detail", messages.append)
         read, update, _ = _store_mgr({
             "torrents": {
                 "no-present-check": {"hash": "no-present-check", "subscribe_id": 6, "downloader": "qb"},

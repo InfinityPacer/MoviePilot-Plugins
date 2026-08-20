@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 from app.schemas.tmdb import TmdbEpisode
 from app.schemas.types import MediaType
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value
@@ -147,7 +147,7 @@ class TestProcessTvPending:
                 patch.object(self.plugin, "_SubscribeAssistant__update_tv_pending_episodes",
                              return_value=12) as update_episodes, \
                 patch.object(self.plugin, "_SubscribeAssistant__send_subscribe_status_msg") as send_msg, \
-                patch("subscribeassistant.threading.Timer", return_value=timer):
+                patch("app.plugins.subscribeassistant.threading.Timer", return_value=timer):
             self.plugin._SubscribeAssistant__process_tv_pending({}, [(subscribe, mediainfo)])
         timer.start.assert_called_once()
         update_task.assert_called_once_with(subscribe=subscribe, subscribe_task=subscribe_task, pending=True)
@@ -216,7 +216,7 @@ class TestSendSubscribeStatusMsg:
     def test_send_subscribe_status_msg_builds_tv_notification_text(self):
         plugin = make_plugin(_notify=True)
         plugin.post_message = MagicMock()
-        with patch("subscribeassistant.settings", SimpleNamespace(MP_DOMAIN=lambda path: path)):
+        with patch("app.plugins.subscribeassistant.settings", SimpleNamespace(MP_DOMAIN=lambda path: path)):
             plugin._SubscribeAssistant__send_subscribe_status_msg(
                 subscribe=make_subscribe(username="admin"),
                 mediainfo=SimpleNamespace(type=MediaType.TV, vote_average=8.0,
@@ -235,7 +235,7 @@ class TestSendSubscribeStatusMsg:
     def test_send_subscribe_status_msg_uses_movie_link_for_movie_media(self):
         plugin = make_plugin(_notify=True)
         plugin.post_message = MagicMock()
-        with patch("subscribeassistant.settings", SimpleNamespace(MP_DOMAIN=lambda path: path)):
+        with patch("app.plugins.subscribeassistant.settings", SimpleNamespace(MP_DOMAIN=lambda path: path)):
             plugin._SubscribeAssistant__send_subscribe_status_msg(
                 subscribe=make_subscribe(username=None),
                 mediainfo=SimpleNamespace(type=MediaType.MOVIE, vote_average=None,

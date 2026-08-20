@@ -2,7 +2,7 @@
 import time
 from types import SimpleNamespace
 
-from subscribeassistantenhanced.engine.volatility import (
+from app.plugins.subscribeassistantenhanced.engine.volatility import (
     MAX_SAMPLE_HISTORY_SIZE,
     VolatilityTracker,
 )
@@ -19,7 +19,7 @@ class TestVolatilityTracker:
         def save_fn(key, data):
             self.store[key] = data
 
-        from subscribeassistantenhanced.shared.task import TaskDataManager
+        from app.plugins.subscribeassistantenhanced.shared.task import TaskDataManager
         self.task_mgr = TaskDataManager(get_data_fn=get_fn, save_data_fn=save_fn)
         self.tracker = VolatilityTracker(self.task_mgr, window_days=7)
 

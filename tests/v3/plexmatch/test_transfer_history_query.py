@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, String, column, table
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
-import plexmatch
+import app.plugins.plexmatch as plexmatch
 from app.core.event import Event
 from app.schemas.types import EventType, MediaSource, MediaType
 

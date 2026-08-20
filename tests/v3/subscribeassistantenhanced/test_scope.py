@@ -1,8 +1,8 @@
 """engine/scope.py SeasonScope 构建与高风险检测单测。"""
 from types import SimpleNamespace
 
-from subscribeassistantenhanced.engine.scope import build_scope, detect_high_risk
-from subscribeassistantenhanced.engine.types import SeasonScope
+from app.plugins.subscribeassistantenhanced.engine.scope import build_scope, detect_high_risk
+from app.plugins.subscribeassistantenhanced.engine.types import SeasonScope
 
 
 def _ep(num, ep_type="standard", season=1, air_date="2026-01-01"):

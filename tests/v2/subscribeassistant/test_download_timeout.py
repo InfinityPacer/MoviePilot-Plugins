@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
 
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value
@@ -566,7 +566,7 @@ class TestHandleTimeoutSeedDeletion:
         payload = update_args[1] if update_args[1] else update_args[0][1]
         assert payload["note"] == []
 
-    @patch("subscribeassistant.threading.Timer")
+    @patch("app.plugins.subscribeassistant.threading.Timer")
     def test_auto_search_when_delete(self, mock_timer_cls):
         plugin = make_plugin(_auto_search_when_delete=True)
         sub = make_subscribe(type=MOVIE)
@@ -578,7 +578,7 @@ class TestHandleTimeoutSeedDeletion:
         assert sub.id in triggered
         mock_timer_cls.assert_called_once()
 
-    @patch("subscribeassistant.threading.Timer")
+    @patch("app.plugins.subscribeassistant.threading.Timer")
     def test_no_duplicate_search(self, mock_timer_cls):
         plugin = make_plugin(_auto_search_when_delete=True)
         sub = make_subscribe(type=MOVIE)

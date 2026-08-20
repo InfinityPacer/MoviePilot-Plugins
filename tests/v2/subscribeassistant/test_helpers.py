@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 from app.schemas.types import MediaType
 
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value
@@ -550,7 +550,7 @@ class TestSchedulerEntryPoints:
         plugin.best_version_check()
         plugin.subscribe_oper.list.assert_called_once_with(state="N,R,P")
 
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_reset_task(self, mock_chain_cls):
         plugin = make_plugin()
         sub = make_subscribe(state="P")
