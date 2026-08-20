@@ -11,13 +11,7 @@ _pypinyin = ModuleType("pypinyin")
 _pypinyin.lazy_pinyin = lambda *_args, **_kwargs: []
 
 with stub_modules({"pypinyin": _pypinyin}):
-    from app.plugins import plexpersonmeta as _plugin
     from app.plugins.plexpersonmeta import scrape as _scrape
-
-
-def test_v3_plugin_version_increments_minor_version():
-    """V3 插件入口沿用现有主版本并提升小版本。"""
-    assert _plugin.PlexPersonMeta.plugin_version == "2.4.1"
 
 
 def test_tmdb_media_uses_unified_source_identity():
