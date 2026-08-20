@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.engine.types import PauseRecord
-from subscribeassistantenhanced.pause.probe import (
+from app.plugins.subscribeassistantenhanced.engine.types import PauseRecord
+from app.plugins.subscribeassistantenhanced.pause.probe import (
     PROBE_LAST_SCHEDULED_AT,
     PROBE_REASON,
     PROBE_SCHEDULED_RUN_AT,

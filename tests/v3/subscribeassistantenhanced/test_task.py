@@ -1,7 +1,7 @@
 """shared/task.py TaskDataManager 单测。"""
 import threading
 
-from subscribeassistantenhanced.shared.task import TaskDataManager
+from app.plugins.subscribeassistantenhanced.shared.task import TaskDataManager
 
 
 class TaskDataManagerTest:

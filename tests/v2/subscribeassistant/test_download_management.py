@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value

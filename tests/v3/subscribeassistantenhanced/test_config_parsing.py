@@ -1,5 +1,5 @@
 """新增奇偶配置键的默认值与类型解析测试。"""
-from subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
 def test_new_parity_config_defaults():

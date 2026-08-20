@@ -1,6 +1,6 @@
 """识别增强历史样本回放测试。"""
-from subscribeassistantenhanced.recognition.guard import RecognitionGuard
-from subscribeassistantenhanced.recognition.types import RecognitionSettings
+from app.plugins.subscribeassistantenhanced.recognition.guard import RecognitionGuard
+from app.plugins.subscribeassistantenhanced.recognition.types import RecognitionSettings
 
 
 def _guard(mode="balanced", custom_config=""):

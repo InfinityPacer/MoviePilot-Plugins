@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
-from subscribeassistant.recognition_guard import (
+from app.plugins.subscribeassistant.recognition_guard import (
     CachedRecognitionInfo,
     RecognitionGuard,
     RecognitionGuardConfig,
@@ -364,7 +364,7 @@ class RecognitionGuardSecondaryRecognitionTest:
     def test_secondary_recognition_handles_recognizer_error(self):
         recognizer = MagicMock(side_effect=RuntimeError("boom"))
         guard = RecognitionGuard(make_config(tmdb_recheck_mode="all"), recognizer=recognizer)
-        with patch("subscribeassistant.recognition_guard.logger.warning") as warning:
+        with patch("app.plugins.subscribeassistant.recognition_guard.logger.warning") as warning:
             decision = guard.evaluate(make_context(torrent_info=make_torrent(title="目标 识别异常 2024")))
         assert not decision.observed
         warning.assert_called_once()
@@ -406,7 +406,7 @@ class RecognitionGuardHelperTest:
 
     def test_match_patterns_skips_invalid_regex(self):
         guard = RecognitionGuard(make_config())
-        with patch("subscribeassistant.recognition_guard.logger.warning") as warning:
+        with patch("app.plugins.subscribeassistant.recognition_guard.logger.warning") as warning:
             assert guard._match_patterns(["[", "目标"], "目标") == "目标"
         warning.assert_called_once()
 

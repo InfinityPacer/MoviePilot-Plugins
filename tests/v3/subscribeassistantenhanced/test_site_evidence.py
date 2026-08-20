@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from app.schemas.event import SubscribeEpisodesRefreshEventData
 
-from subscribeassistantenhanced.engine.site import (
+from app.plugins.subscribeassistantenhanced.engine.site import (
     SITE_EVIDENCE_TTL_HOURS,
     SiteEvidence,
     SiteEpisodesRefreshHandler,
@@ -13,7 +13,7 @@ from subscribeassistantenhanced.engine.site import (
     SiteEvidenceScanner,
     classify_site_contexts,
 )
-from subscribeassistantenhanced.shared.task import TaskDataManager
+from app.plugins.subscribeassistantenhanced.shared.task import TaskDataManager
 
 
 def _now() -> datetime:

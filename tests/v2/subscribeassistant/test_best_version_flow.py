@@ -12,7 +12,7 @@ from app.db.subscribe_oper import Subscribe
 from app.schemas.mediaserver import NotExistMediaInfo
 from app.schemas.subscribe import Subscribe as SchemaSubscribe
 from app.schemas.types import MediaType
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value
@@ -247,7 +247,7 @@ class TestMarkBestVersionSubscriptionComplete:
     def _call(self, subscribe):
         self.plugin._SubscribeAssistant__mark_best_version_subscription_complete(subscribe)
 
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_tv_uses_main_backfill_contract(self, mock_chain_cls):
         sub = make_subscribe(start_episode=1, total_episode=3)
         self._call(sub)
@@ -276,7 +276,7 @@ class TestRefreshSubscribeProgress:
     def setup_method(self):
         self.plugin = make_plugin()
 
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_delegates_to_main_chain(self, mock_chain_cls):
         sub = make_subscribe()
         mock_chain_cls.return_value.refresh_subscribe_progress.return_value = {"updated": True}

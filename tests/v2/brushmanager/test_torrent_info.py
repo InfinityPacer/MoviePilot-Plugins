@@ -1,7 +1,7 @@
 """BrushManager 种子信息映射测试。"""
 from unittest.mock import PropertyMock, patch
 
-from brushmanager import BrushManager
+from app.plugins.brushmanager import BrushManager
 from ..torrent_sdk_fixtures import force_transmission_plugin, make_tr_legacy_torrent, make_tr_v7_torrent
 
 

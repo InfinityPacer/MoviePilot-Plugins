@@ -1,7 +1,7 @@
 """pending/refresh.py EpisodesRefresh 观察单测。"""
 from types import SimpleNamespace
 
-from subscribeassistantenhanced.pending.refresh import PendingRefresh
+from app.plugins.subscribeassistantenhanced.pending.refresh import PendingRefresh
 
 
 def _event(subscribe_id=1, current_total=12, season=1, mediainfo=None):

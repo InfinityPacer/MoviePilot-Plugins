@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
-import plexedition
+import app.plugins.plexedition as plexedition
 from app.core.event import Event
 from app.schemas.types import EventType, MediaSource, MediaType
 

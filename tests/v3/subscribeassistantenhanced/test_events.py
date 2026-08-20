@@ -6,8 +6,8 @@ import pytest
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.events import EventProxy
-from subscribeassistantenhanced.lifecycle import LifecycleResult
+from app.plugins.subscribeassistantenhanced.events import EventProxy
+from app.plugins.subscribeassistantenhanced.lifecycle import LifecycleResult
 
 
 def _sub(**kwargs):

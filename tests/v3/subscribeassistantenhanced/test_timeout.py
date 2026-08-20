@@ -2,8 +2,8 @@
 import time
 from types import SimpleNamespace
 
-from subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
-from subscribeassistantenhanced.engine.types import (
+from app.plugins.subscribeassistantenhanced.postcheck.timeout import PendingTimeoutManager
+from app.plugins.subscribeassistantenhanced.engine.types import (
     CompletionEvidence,
     CompletionSignal,
     PendingTimeoutManagerProtocol,
@@ -161,7 +161,7 @@ class TestCheckObservation:
 
     def test_l_to_i_low_replaces_observation_without_release(self, monkeypatch):
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time(),
@@ -229,7 +229,7 @@ class TestCheckObservation:
 
     def test_l_plus_i_medium_allows_complete_and_clears_release(self, monkeypatch):
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time(),
@@ -431,7 +431,7 @@ class TestCheckObservation:
 
     def test_hard_veto_replaces_low_and_resets_timer(self, monkeypatch):
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         old_ts = time.time() - 3 * 86400
         store = {
             "blocks": {"1": {
@@ -585,7 +585,7 @@ class TestCheckObservation:
     def test_cadence_acceleration_halves_low_timeout_without_joining_identity(self, monkeypatch):
         """G 只缩短观察超时，不写入完成证据身份。"""
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {"blocks": {"1": {
             "blocked_at": time.time() - 12 * 86400,
             "signals": ["I:all_aired"],
@@ -649,7 +649,7 @@ class TestCheckObservation:
     def test_total_growth_resets_observation_without_release_token(self, monkeypatch):
         """观察期间 TMDB 增集属于明确不放行，释放本轮 guard 但不写放行令牌。"""
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {"blocks": {"1": {
             "blocked_at": time.time() - 25 * 86400,
             "signals": ["I:all_aired"],
@@ -724,7 +724,7 @@ class TestCheckObservation:
 
     def test_no_completion_evidence_timeout_releases_guard_without_token(self, monkeypatch):
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time() - 8 * 86400,
@@ -753,7 +753,7 @@ class TestCheckObservation:
 
     def test_off_mode_releases_guard_and_clears_tokens(self, monkeypatch):
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.postcheck.timeout.detail", messages.append)
         store = {
             "blocks": {"1": {
                 "blocked_at": time.time(),

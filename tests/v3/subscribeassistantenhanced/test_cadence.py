@@ -1,7 +1,7 @@
 """engine/cadence.py G 播出节奏推算单测。"""
 from datetime import date, timedelta
 
-from subscribeassistantenhanced.engine.cadence import check_cadence_expired
+from app.plugins.subscribeassistantenhanced.engine.cadence import check_cadence_expired
 
 
 def _ep(num, air_date):

@@ -1,5 +1,5 @@
 """shared/config.py PluginConfig 单测。"""
-from subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
 class PluginConfigDefaultsTest:

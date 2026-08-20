@@ -14,7 +14,7 @@ _pypinyin.Style = SimpleNamespace(FIRST_LETTER="first_letter")
 _pypinyin.lazy_pinyin = lambda *args, **kwargs: []
 
 with stub_modules({"pypinyin": _pypinyin}):
-    from plexlocalization import PlexLocalization
+    from app.plugins.plexlocalization import PlexLocalization
 
 
 class _Response:
@@ -614,7 +614,7 @@ def test_pending_futures_never_exceed_twice_thread_count():
             "unprocessed": 0,
         }
 
-    with patch("plexlocalization.concurrent.futures.wait", side_effect=recording_wait), \
+    with patch("app.plugins.plexlocalization.concurrent.futures.wait", side_effect=recording_wait), \
             patch.object(plugin, "_PlexLocalization__process_items_batch", side_effect=skip_batch):
         result = plugin._PlexLocalization__process_rating_keys_in_batches(
             plex=plex,
@@ -651,7 +651,7 @@ def test_second_page_failure_skips_all_puts_and_continues_next_service():
                 plugin,
                 "_PlexLocalization__process_rating_keys_in_batches",
                 return_value=completed,
-            ) as process_batches, patch("plexlocalization.logger.warning") as warning:
+            ) as process_batches, patch("app.plugins.plexlocalization.logger.warning") as warning:
         plugin._PlexLocalization__loop_all(
             service_libraries={"first": {1: library}, "second": {1: library}},
             thread_count=3,
@@ -742,7 +742,7 @@ def test_loop_final_log_includes_service_and_discovered_counts():
                 plugin,
                 "_PlexLocalization__process_rating_keys_in_batches",
                 side_effect=process_batches,
-            ), patch("plexlocalization.logger.info") as info:
+            ), patch("app.plugins.plexlocalization.logger.info") as info:
         plugin._PlexLocalization__loop_all(
             service_libraries={"first": {1: _library()}, "second": {1: _library()}},
             thread_count=3,
@@ -769,7 +769,7 @@ def test_stopped_log_preserves_previous_failed_service_count():
                 plugin,
                 "_PlexLocalization__generate_all_rating_keys",
                 side_effect=[([], "failed"), ([], "stopped")],
-            ), patch("plexlocalization.logger.warning") as warning:
+            ), patch("app.plugins.plexlocalization.logger.warning") as warning:
         plugin._PlexLocalization__loop_all(
             service_libraries={"first": {1: _library()}, "second": {1: _library()}},
             thread_count=3,

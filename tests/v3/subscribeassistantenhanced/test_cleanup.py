@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from subscribeassistantenhanced.download.cleanup import TorrentCleanup
+from app.plugins.subscribeassistantenhanced.download.cleanup import TorrentCleanup
 
 
 def _sub(sid=1, best_version=0, **kwargs):
@@ -103,7 +103,7 @@ class TestHandleTorrentDeleted:
             subscribe_oper=subscribe_oper,
         )
 
-        with patch("subscribeassistantenhanced.download.cleanup.SubscribeChain") as chain_cls:
+        with patch("app.plugins.subscribeassistantenhanced.download.cleanup.SubscribeChain") as chain_cls:
             c.handle_torrent_deleted(sub, "h1")
 
         subscribe_oper.update.assert_called_once()

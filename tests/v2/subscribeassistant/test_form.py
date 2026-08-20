@@ -10,7 +10,7 @@ SubscribeAssistant 表单生成与配置解析辅助单测。
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 
 # ---------------------------------------------------------------------------

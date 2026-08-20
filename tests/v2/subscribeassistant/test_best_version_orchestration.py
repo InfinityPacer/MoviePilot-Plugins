@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
 
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value
@@ -152,7 +152,7 @@ class TestProcessEpisodeBestVersionToFull:
                 patch.object(plugin, "_SubscribeAssistant__build_best_version_payload",
                              return_value={"name": "测试剧"}), \
                 patch.object(plugin, "clear_tasks") as clear_tasks, \
-                patch("subscribeassistant.eventmanager.send_event") as send_event:
+                patch("app.plugins.subscribeassistant.eventmanager.send_event") as send_event:
             assert plugin._SubscribeAssistant__convert_episode_best_version_to_full(sub)
         plugin.subscribe_oper.add_history.assert_called_once()
         plugin.subscribe_oper.delete.assert_called_once_with(sid=sub.id)
@@ -185,8 +185,8 @@ class TestProcessEpisodeBestVersionToFull:
         with patch.object(plugin, "_SubscribeAssistant__build_restore_subscribe_payload",
                           return_value=subscribe_dict), \
                 patch.object(plugin, "_SubscribeAssistant__format_subscribe_desc", return_value="测试剧 S01"), \
-                patch("subscribeassistant.Subscribe", return_value=restored), \
-                patch("subscribeassistant.eventmanager.send_event") as send_event:
+                patch("app.plugins.subscribeassistant.Subscribe", return_value=restored), \
+                patch("app.plugins.subscribeassistant.eventmanager.send_event") as send_event:
             assert plugin._SubscribeAssistant__restore_episode_best_version_subscribe(
                 subscribe_dict=subscribe_dict, mediainfo=make_mediainfo())
         restored.create.assert_called_once_with(plugin.subscribe_oper._db)
@@ -199,7 +199,7 @@ class TestProcessEpisodeBestVersionToFull:
         subscribe_dict = make_subscribe(best_version=1, best_version_full=0).to_dict()
         with patch.object(plugin, "_SubscribeAssistant__build_restore_subscribe_payload",
                           return_value=subscribe_dict), \
-                patch("subscribeassistant.Subscribe", return_value=MagicMock()):
+                patch("app.plugins.subscribeassistant.Subscribe", return_value=MagicMock()):
             assert not plugin._SubscribeAssistant__restore_episode_best_version_subscribe(
                 subscribe_dict=subscribe_dict, mediainfo=make_mediainfo())
 
@@ -246,7 +246,7 @@ class TestProcessEpisodeBestVersionToFull:
                 patch.object(plugin, "_SubscribeAssistant__get_subscribe_meta", return_value=SimpleNamespace()), \
                 patch.object(plugin, "_SubscribeAssistant__get_episode_best_version_state_episodes",
                              return_value=[]), \
-                patch("subscribeassistant.DownloadChain", return_value=chain):
+                patch("app.plugins.subscribeassistant.DownloadChain", return_value=chain):
             assert plugin._SubscribeAssistant__is_episode_best_version_target_ready(sub)
         chain.get_no_exists_info.assert_called_once()
 
@@ -261,7 +261,7 @@ class TestProcessEpisodeBestVersionToFull:
                 patch.object(plugin, "_SubscribeAssistant__get_subscribe_meta", return_value=SimpleNamespace()), \
                 patch.object(plugin, "_SubscribeAssistant__get_episode_best_version_state_episodes",
                              return_value=[1]), \
-                patch("subscribeassistant.DownloadChain", return_value=chain):
+                patch("app.plugins.subscribeassistant.DownloadChain", return_value=chain):
             assert plugin._SubscribeAssistant__is_episode_best_version_target_ready(sub)
 
 
@@ -305,7 +305,7 @@ class TestProcessBestVersionComplete:
         plugin.process_best_version_complete([sub])
         plugin.subscribe_oper.update.assert_not_called()
 
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_already_complete(self, mock_chain_cls):
         mock_chain_cls.is_best_version_complete.return_value = True
         plugin = make_plugin(_auto_best_remaining_days=30)
@@ -316,7 +316,7 @@ class TestProcessBestVersionComplete:
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__is_episode_best_version_subscribe",
                   return_value=False)
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__has_pending_subscribe_task", return_value=False)
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_no_date(self, mock_chain_cls, mock_pending, mock_ep):
         mock_chain_cls.is_best_version_complete.return_value = False
         plugin = make_plugin(_auto_best_remaining_days=30)
@@ -327,7 +327,7 @@ class TestProcessBestVersionComplete:
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__is_episode_best_version_subscribe",
                   return_value=False)
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__has_pending_subscribe_task", return_value=False)
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_invalid_date_format(self, mock_chain_cls, mock_pending, mock_ep):
         mock_chain_cls.is_best_version_complete.return_value = False
         plugin = make_plugin(_auto_best_remaining_days=30)
@@ -339,7 +339,7 @@ class TestProcessBestVersionComplete:
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__is_episode_best_version_subscribe",
                   return_value=False)
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__has_pending_subscribe_task", return_value=False)
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_remaining_days_reached(self, mock_chain_cls, mock_pending, mock_ep, mock_mark):
         mock_chain_cls.is_best_version_complete.return_value = False
         plugin = make_plugin(_auto_best_remaining_days=5)
@@ -352,7 +352,7 @@ class TestProcessBestVersionComplete:
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__is_episode_best_version_subscribe",
                   return_value=False)
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__has_pending_subscribe_task", return_value=False)
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_remaining_days_not_reached(self, mock_chain_cls, mock_pending, mock_ep, mock_mark):
         mock_chain_cls.is_best_version_complete.return_value = False
         plugin = make_plugin(_auto_best_remaining_days=30)
@@ -366,7 +366,7 @@ class TestProcessBestVersionComplete:
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__is_episode_best_version_subscribe",
                   return_value=True)
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__has_pending_subscribe_task", return_value=False)
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     def test_episode_best_version_not_ready_skipped(self, mock_chain_cls, mock_pending, mock_ep, mock_ready):
         mock_chain_cls.is_best_version_complete.return_value = False
         plugin = make_plugin(_auto_best_remaining_days=30)
@@ -414,7 +414,7 @@ class TestProcessBestVersion:
         plugin.process_best_version(sub_dict, None)
         plugin.subscribe_oper.add.assert_not_called()
 
-    @patch("subscribeassistant.eventmanager")
+    @patch("app.plugins.subscribeassistant.eventmanager")
     def test_successful_add(self, mock_em):
         plugin = make_plugin(_auto_best_types={MediaType.MOVIE}, _notify=True)
         sub_dict = make_subscribe(type=MOVIE).to_dict()
@@ -478,7 +478,7 @@ class TestDetectExistingEpisodesForSubscribe:
         ok, eps = plugin._SubscribeAssistant__detect_existing_episodes_for_subscribe(sub, mi)
         assert ok is False
 
-    @patch("subscribeassistant.DownloadChain")
+    @patch("app.plugins.subscribeassistant.DownloadChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__recognize_media")
     def test_all_exist(self, mock_rec, mock_chain_cls):
         mi = make_mediainfo()
@@ -492,7 +492,7 @@ class TestDetectExistingEpisodesForSubscribe:
         assert ok is True
         assert eps == [1, 2, 3]
 
-    @patch("subscribeassistant.DownloadChain")
+    @patch("app.plugins.subscribeassistant.DownloadChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__recognize_media")
     def test_some_missing(self, mock_rec, mock_chain_cls):
         mi = make_mediainfo()
@@ -507,7 +507,7 @@ class TestDetectExistingEpisodesForSubscribe:
         assert ok is True
         assert eps == [1, 2]
 
-    @patch("subscribeassistant.DownloadChain")
+    @patch("app.plugins.subscribeassistant.DownloadChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__recognize_media")
     def test_exception(self, mock_rec, mock_chain_cls):
         mi = make_mediainfo()
@@ -520,7 +520,7 @@ class TestDetectExistingEpisodesForSubscribe:
         ok, eps = plugin._SubscribeAssistant__detect_existing_episodes_for_subscribe(sub, mi)
         assert ok is False
 
-    @patch("subscribeassistant.DownloadChain")
+    @patch("app.plugins.subscribeassistant.DownloadChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__recognize_media")
     def test_season_no_exist_none(self, mock_rec, mock_chain_cls):
         """缺失信息未确定，返回空。"""
@@ -558,7 +558,7 @@ class TestBackfillBestVersionEpisodePriority:
         ok, count = plugin._SubscribeAssistant__backfill_best_version_episode_priority(sub)
         assert ok is False
 
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__detect_existing_episodes_for_subscribe",
                   return_value=(True, [1, 2, 3]))
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__should_backfill_priority", return_value=True)
@@ -583,7 +583,7 @@ class TestBackfillBestVersionEpisodePriority:
         )
         plugin.subscribe_oper.update.assert_not_called()
 
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__detect_existing_episodes_for_subscribe",
                   return_value=(True, [1, 2]))
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__should_backfill_priority", return_value=True)
@@ -599,7 +599,7 @@ class TestBackfillBestVersionEpisodePriority:
         assert ok is False
         assert count == 0
 
-    @patch("subscribeassistant.SubscribeChain")
+    @patch("app.plugins.subscribeassistant.SubscribeChain")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__detect_existing_episodes_for_subscribe",
                   return_value=(True, [1]))
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__should_backfill_priority", return_value=True)

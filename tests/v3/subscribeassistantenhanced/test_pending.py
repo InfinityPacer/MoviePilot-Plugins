@@ -3,14 +3,14 @@ from types import SimpleNamespace
 from datetime import date, timedelta
 from unittest.mock import MagicMock
 
-from subscribeassistantenhanced.pending.judge import PendingJudge
-from subscribeassistantenhanced.pending.state import PendingStateCoordinator
-from subscribeassistantenhanced.engine.types import (
+from app.plugins.subscribeassistantenhanced.pending.judge import PendingJudge
+from app.plugins.subscribeassistantenhanced.pending.state import PendingStateCoordinator
+from app.plugins.subscribeassistantenhanced.engine.types import (
     CompletionEvidence,
     CompletionObservationDecision,
     CompletionSignal,
 )
-from subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
 def _ep(num, air_date="2026-01-01"):
@@ -630,7 +630,7 @@ class TestMarkPending:
         messages = []
         j = _judge()
 
-        monkeypatch.setattr("subscribeassistantenhanced.pending.judge.detail", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.pending.judge.detail", messages.append)
 
         j.mark_pending(_sub(state="P"), source="pending_judge", reason="目标总集数近期变化")
 
@@ -742,7 +742,7 @@ class TestExitPending:
             },
         }}}
         j = _judge(store=store)
-        monkeypatch.setattr("subscribeassistantenhanced.pending.judge.logger.info", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.pending.judge.logger.info", messages.append)
 
         j._exit_pending(_sub(state="P"), "待定条件不再满足")
 

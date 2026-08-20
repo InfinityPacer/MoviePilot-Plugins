@@ -2,10 +2,10 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import subscribeassistantenhanced as plugin_module
-from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.form import build_form
-from subscribeassistantenhanced.shared.config import PluginConfig
+import app.plugins.subscribeassistantenhanced as plugin_module
+from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced.form import build_form
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
 README_PATH = Path(__file__).resolve().parents[3] / "plugins.v3" / "subscribeassistantenhanced" / "README.md"

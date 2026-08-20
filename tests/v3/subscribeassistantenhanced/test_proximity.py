@@ -2,7 +2,7 @@
 from datetime import date
 from types import SimpleNamespace
 
-from subscribeassistantenhanced.engine.proximity import assess_completion_proximity
+from app.plugins.subscribeassistantenhanced.engine.proximity import assess_completion_proximity
 
 
 def _ep(num, air_date="2026-01-01"):

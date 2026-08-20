@@ -11,9 +11,9 @@ from packaging.version import Version
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced import SubscribeAssistantEnhanced
-from subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
-from subscribeassistantenhanced.lifecycle import LifecycleResult
+from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced.engine.types import CompletionEvidence, CompletionSignal, PauseRecord
+from app.plugins.subscribeassistantenhanced.lifecycle import LifecycleResult
 
 
 def _sub(**kwargs):
@@ -126,7 +126,7 @@ def test_disabling_site_total_probe_bulk_clears_all_leases_without_refresh_event
     store = plugin._modules["site_refresh"]._store
     first = _sub(id=101, total_episode=6)
     second = _sub(id=102, total_episode=8)
-    from subscribeassistantenhanced.engine.site import SiteEvidence
+    from app.plugins.subscribeassistantenhanced.engine.site import SiteEvidence
     from datetime import datetime, timezone
 
     now = datetime(2026, 7, 11, tzinfo=timezone.utc)
@@ -189,8 +189,8 @@ def test_resolve_subscribe_missing_without_subscribe_chain_fails_closed(monkeypa
     plugin.init_plugin({})
     plugin._subscribe_chain = None
     subscribe_chain_cls = MagicMock()
-    monkeypatch.setattr("subscribeassistantenhanced.SubscribeChain", subscribe_chain_cls)
-    monkeypatch.setattr("subscribeassistantenhanced.logger.warning", warnings.append)
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.SubscribeChain", subscribe_chain_cls)
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.logger.warning", warnings.append)
 
     result = plugin._resolve_subscribe_missing(_sub(), _mediainfo())
 
@@ -457,7 +457,7 @@ def test_episode_to_full_skipped_when_missing_episodes():
 def test_best_version_check_logs_actionable_recognition_failure(monkeypatch):
     """洗版巡检识别失败时给出订阅上下文和用户下一步。"""
     messages = []
-    monkeypatch.setattr("subscribeassistantenhanced.detail", messages.append)
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.detail", messages.append)
     plugin = SubscribeAssistantEnhanced()
     plugin._config = SimpleNamespace(best_version_type="all")
     sub = _sub(id=42, name="识别失败剧", best_version=1, best_version_full=0,
@@ -833,7 +833,7 @@ def test_run_meta_check_releases_existing_pending_when_pending_disabled():
 
 def test_run_meta_check_calls_pause_when_pre_air_condition_holds():
     """活动订阅命中上映前暂停条件时，run_meta_check 调用 pause_manager.pause。"""
-    from subscribeassistantenhanced.engine.types import PauseRecord
+    from app.plugins.subscribeassistantenhanced.engine.types import PauseRecord
 
     sub = _sub(id=3, state="R", name="X", best_version=0, type="电影",
                season=0)
@@ -1230,7 +1230,7 @@ def test_run_meta_check_full_best_version_does_not_resume_airing_gap_record():
 
 def test_run_meta_check_skips_airing_pause_for_new_subscription():
     """N 状态订阅仍在首次搜索阶段，元数据巡检不应用播出暂停冻结搜索。"""
-    from subscribeassistantenhanced.engine.types import PauseRecord
+    from app.plugins.subscribeassistantenhanced.engine.types import PauseRecord
 
     sub = _sub(id=13, state="N", name="X", best_version=0, type="电视剧")
     plugin = SubscribeAssistantEnhanced()
@@ -1780,7 +1780,7 @@ def test_run_meta_check_check_exit_called_for_p_state_sub():
 
 def test_run_meta_check_p_state_allows_pre_air_pause_to_override_pending():
     """插件暂停优先级高于待定，P 状态命中上映暂停时应覆盖为 S。"""
-    from subscribeassistantenhanced.engine.types import PauseRecord
+    from app.plugins.subscribeassistantenhanced.engine.types import PauseRecord
 
     sub = _sub(id=7, state="P", name="X", best_version=0)
     data_store = {
@@ -2012,7 +2012,7 @@ def test_reset_task_restores_plugin_owned_p_and_s_before_clearing_data(monkeypat
         return result
 
     subscribe_oper.list.side_effect = list_subscribes
-    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
 
     data_store = {
         "subscribes": {
@@ -2253,8 +2253,8 @@ def test_backfill_best_version_now_scans_existing_subscriptions_and_resets_flag(
     subscribe_oper.list.return_value = [sub]
     priority_manager = MagicMock()
     priority_manager.can_backfill.return_value = True
-    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
-    monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
     plugin.post_message = MagicMock()
@@ -2396,8 +2396,8 @@ def test_backfill_best_version_now_skips_full_best_version_before_detection(monk
     subscribe_oper.list.return_value = [sub]
     priority_manager = MagicMock()
     priority_manager.can_backfill.return_value = False
-    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
-    monkeypatch.setattr("subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.PriorityManager", MagicMock(return_value=priority_manager))
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
     plugin._detect_existing_episodes = MagicMock(return_value=list(range(1, 13)))
@@ -2413,7 +2413,7 @@ def test_full_best_version_existing_library_does_not_complete_via_backfill(monke
     sub = _sub(id=5, name="X", best_version=1, best_version_full=1, total_episode=3)
     subscribe_oper = MagicMock()
     subscribe_oper.list.return_value = [sub]
-    monkeypatch.setattr("subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
+    monkeypatch.setattr("app.plugins.subscribeassistantenhanced.SubscribeOper", MagicMock(return_value=subscribe_oper))
     plugin = SubscribeAssistantEnhanced()
     plugin.update_config = MagicMock()
     plugin._detect_existing_episodes = MagicMock(return_value=[1, 2, 3])

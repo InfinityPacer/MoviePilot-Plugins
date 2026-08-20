@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from app.schemas.types import MediaType, SystemConfigKey
 
-from subscribeassistantenhanced.postcheck.rebuilder import CompletionSubscribeRebuilder
+from app.plugins.subscribeassistantenhanced.postcheck.rebuilder import CompletionSubscribeRebuilder
 
 
 def _sub(**kwargs):

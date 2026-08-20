@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
 
 # 相对导入本仓薄壳，先定位同级 MoviePilot 后端并加入 ``sys.path``，再复用主程序共享引导。
 from ._bootstrap import (
     block_real_network,  # noqa: F401  导入即注册主程序共享 autouse 网络守卫
+    isolate_config_dir,
     prepare_v2_backend,
     prepare_v3_backend,
 )
@@ -39,11 +43,59 @@ def pytest_configure(config) -> None:
     """收集用例前隔离 CONFIG_DIR、建表并注入对应代际插件目录。"""
     generation = _selected_generation(config)
     if generation == "ci":
+        isolate_config_dir()
         return
     if generation == "v3":
         prepare_v3_backend()
         return
     prepare_v2_backend()
+
+
+@pytest.fixture(autouse=True)
+def configure_plugin_test_services(request):
+    """为插件逻辑测试装配隔离数据库上的配置和 Chain 运行上下文。"""
+    if _selected_generation(request.config) == "ci":
+        yield
+        return
+
+    from app.application.chain.context import (
+        ChainRuntimeContext,
+        configure_chain_runtime_context_provider,
+    )
+    from app.application.chain.data import ChainDataPorts
+    from app.application.configuration import SystemConfigService, configure_system_config
+    from app.db.oper.systemconfig import SystemConfigOper
+
+    port_names = (
+        "site",
+        "subscribe",
+        "workflow",
+        "download_history",
+        "transfer_history",
+        "transfer_pending",
+        "media_server",
+        "download_failure",
+        "user",
+    )
+    data_ports = ChainDataPorts(**{name: MagicMock for name in port_names})
+    context = ChainRuntimeContext(
+        module_manager=MagicMock(),
+        plugin_manager=MagicMock(),
+        event_manager=MagicMock(),
+        message_oper=MagicMock(),
+        message_helper=MagicMock(),
+        file_cache=MagicMock(),
+        async_file_cache=MagicMock(),
+        message_queue_factory=lambda _callback: MagicMock(),
+        module_dispatcher_factory=lambda **_kwargs: MagicMock(),
+        data_ports=data_ports,
+    )
+    configure_system_config(SystemConfigService(repository=SystemConfigOper()))
+    configure_chain_runtime_context_provider(lambda: context)
+    try:
+        yield
+    finally:
+        configure_chain_runtime_context_provider(None)
 
 
 def _report_session_cleanup_error(session, name: str, err: Exception) -> None:

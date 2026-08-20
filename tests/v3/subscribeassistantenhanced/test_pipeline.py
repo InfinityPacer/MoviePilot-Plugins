@@ -5,11 +5,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
-from subscribeassistantenhanced.engine.site import SITE_EVIDENCE_TTL_HOURS, SiteEvidence
-from subscribeassistantenhanced.engine.volatility import VolatilityTracker
-from subscribeassistantenhanced.shared.config import PluginConfig
-from subscribeassistantenhanced.shared.task import TaskDataManager
+from app.plugins.subscribeassistantenhanced.engine.pipeline import CompletionEvidencePipeline
+from app.plugins.subscribeassistantenhanced.engine.site import SITE_EVIDENCE_TTL_HOURS, SiteEvidence
+from app.plugins.subscribeassistantenhanced.engine.volatility import VolatilityTracker
+from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
+from app.plugins.subscribeassistantenhanced.shared.task import TaskDataManager
 
 
 def _ep(num, ep_type="standard", air_date="2026-01-01", season=1):

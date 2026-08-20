@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
-from brushflowlowfreq import BrushFlowLowFreq
+from app.plugins.brushflowlowfreq import BrushFlowLowFreq
 from app.schemas.types import MediaSource, MediaType
 from .torrent_sdk_fixtures import force_transmission_plugin, make_tr_legacy_torrent, make_tr_v7_torrent
 

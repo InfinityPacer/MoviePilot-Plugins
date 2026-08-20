@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 from app.schemas.types import MediaType
 
-from subscribeassistant import SubscribeAssistant
+from app.plugins.subscribeassistant import SubscribeAssistant
 
 TV = MediaType.TV.value
 MOVIE = MediaType.MOVIE.value
@@ -186,7 +186,7 @@ class TestProcessSubscribePauseForUserInner:
         sub = make_subscribe(state="R", username="admin")
         plugin.subscribe_oper.update.side_effect = RuntimeError("db error")
         tasks = {}
-        with patch("subscribeassistant.logger.error") as error:
+        with patch("app.plugins.subscribeassistant.logger.error") as error:
             plugin._SubscribeAssistant__process_subscribe_pause_for_user(tasks, sub)
         assert tasks == {}
         error.assert_called_once()
@@ -295,7 +295,7 @@ class TestProcessSubscribePauseInner:
         sub = make_subscribe()
         with patch.object(SubscribeAssistant, "_SubscribeAssistant__initialize_subscribe_task",
                           side_effect=RuntimeError("boom")), \
-                patch("subscribeassistant.logger.error") as error:
+                patch("app.plugins.subscribeassistant.logger.error") as error:
             plugin._SubscribeAssistant__process_subscribe_pause({}, [sub])
         error.assert_called_once()
 
@@ -496,7 +496,7 @@ class TestProcessSubscribePauseForAiring:
         plugin._SubscribeAssistant__process_subscribe_pause_for_airing({}, sub, mi)
         plugin.subscribe_oper.update.assert_called_once_with(sub.id, {"state": "S"})
 
-    @patch("subscribeassistant.threading.Timer")
+    @patch("app.plugins.subscribeassistant.threading.Timer")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__send_subscribe_status_msg")
     @patch.object(SubscribeAssistant, "_SubscribeAssistant__check_subscribe_pause_for_airing",
                   return_value=(False, "2024-01-01", "上映日期"))

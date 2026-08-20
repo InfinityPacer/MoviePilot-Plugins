@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
-from subscribeassistantenhanced.best_version.priority import PriorityManager
+from app.plugins.subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
+from app.plugins.subscribeassistantenhanced.best_version.priority import PriorityManager
 
 
 def _mediainfo():

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.response import ResponseAPIRoute
-from subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
 
 
 class TestFrontend:

@@ -7,7 +7,7 @@ import pytest
 
 from app.schemas.types import MediaType
 
-from subscribeassistantenhanced.cleanup.subscription import SubscriptionCleanup
+from app.plugins.subscribeassistantenhanced.cleanup.subscription import SubscriptionCleanup
 
 
 def _sub(**kwargs):
@@ -198,7 +198,7 @@ class TestHistoryClear:
     def test_source_history_clear_logs_final_summary(self, monkeypatch):
         """源文件清理完成后输出最终摘要，便于用户确认破坏性动作结果。"""
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.cleanup.subscription.logger.info", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.cleanup.subscription.logger.info", messages.append)
         histories = [
             self._history("1", {"path": "/src/a.mkv"}, {"path": "/dest/a.mkv"}, "/src/a.mkv", "hashA"),
             self._history("2", None, {"path": "/dest/b.mkv"}, "/src/b.mkv", "hashB"),
@@ -218,7 +218,7 @@ class TestHistoryClear:
     def test_dest_history_clear_logs_final_summary(self, monkeypatch):
         """媒体库目标文件清理完成后输出最终摘要，避免只有事前警示。"""
         messages = []
-        monkeypatch.setattr("subscribeassistantenhanced.cleanup.subscription.logger.info", messages.append)
+        monkeypatch.setattr("app.plugins.subscribeassistantenhanced.cleanup.subscription.logger.info", messages.append)
         histories = [
             {"dest_fileitem": {"path": "/dest/a.mkv"}},
             {"dest_fileitem": None},

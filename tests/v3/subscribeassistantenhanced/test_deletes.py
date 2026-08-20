@@ -1,5 +1,5 @@
 """shared/deletes.py DeletesStore 单测：删除指纹的归档与 enclosure/page_url 部分匹配。"""
-from subscribeassistantenhanced.shared.deletes import DeletesStore
+from app.plugins.subscribeassistantenhanced.shared.deletes import DeletesStore
 
 
 def _store_mgr(store=None):

@@ -2,12 +2,10 @@
 from importlib import import_module
 
 from ..torrent_sdk_fixtures import (
-    install_app_plugin_alias,
     make_tr_legacy_torrent,
     make_tr_v7_torrent,
 )
 
-install_app_plugin_alias("hitandrun")
 TorrentHelper = import_module("app.plugins.hitandrun.helper").TorrentHelper
 
 
