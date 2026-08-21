@@ -1,5 +1,6 @@
 """PlexPersonMeta V3 媒体身份与专用数据源边界测试。"""
 
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
 
@@ -11,7 +12,25 @@ _pypinyin = ModuleType("pypinyin")
 _pypinyin.lazy_pinyin = lambda *_args, **_kwargs: []
 
 with stub_modules({"pypinyin": _pypinyin}):
+    from app.plugins.plexpersonmeta import PlexPersonMeta as _plugin
     from app.plugins.plexpersonmeta import scrape as _scrape
+
+
+def test_v3_plugin_uses_stable_sdk_imports():
+    """V3 专用副本不应继续依赖已登记的旧导入兼容层。"""
+    plugin_root = Path(__file__).parents[3] / "plugins.v3" / "plexpersonmeta"
+    source = "\n".join(path.read_text(encoding="utf-8") for path in plugin_root.glob("*.py"))
+
+    assert "from app.core." not in source
+    assert "from app.helper." not in source
+    assert "from app.log import" not in source
+    assert "from app.utils." not in source
+    assert "from app.sdk." in source
+
+    plugin = object.__new__(_plugin)
+    assert _plugin.get_command() == []
+    assert plugin.get_api() == []
+    assert plugin.get_page() == []
 
 
 def test_tmdb_media_uses_unified_source_identity():
@@ -49,6 +68,23 @@ def test_tmdb_media_rejects_non_video_media():
     )
 
     assert result is None
+    helper.chain.recognize_media.assert_not_called()
+
+
+def test_tmdb_media_rejects_invalid_source_id():
+    """统一媒体身份不应把空值、零值或非数字 TMDB ID 送入识别链。"""
+    helper = object.__new__(_scrape.ScrapeHelper)
+    helper.chain = MagicMock()
+
+    for tmdbid in (None, "", "0", "not-a-tmdb-id"):
+        result = _scrape.ScrapeHelper.get_tmdb_media.__wrapped__(
+            helper,
+            tmdbid=tmdbid,
+            title="测试媒体",
+            mtype=MediaType.MOVIE,
+        )
+        assert result is None
+
     helper.chain.recognize_media.assert_not_called()
 
 

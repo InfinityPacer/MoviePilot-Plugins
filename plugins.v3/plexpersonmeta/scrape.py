@@ -8,17 +8,17 @@ import plexapi
 import plexapi.utils
 import pypinyin
 from plexapi.library import LibrarySection
+from zhconv_rs import zhconv as zhconv_convert
 
 from app.chain.mediaserver import MediaServerChain
 from app.chain.tmdb import TmdbChain
-from app.core.context import MediaInfo
-from app.log import logger
+from app.sdk.logging import logger
+from app.sdk.media import MediaInfo
+from app.sdk.utilities import StringUtils
 from app.plugins import PluginChian
-from app.plugins.plexpersonmeta.helper import RatingInfo, cache_backend, cache_with_logging
+from .helper import RatingInfo, cache_backend, cache_with_logging
 from app.schemas import MediaPerson, ServiceInfo
 from app.schemas.types import MediaSource, MediaType
-from app.utils.zhconv import convert as zhconv_convert
-from app.utils.string import StringUtils
 
 lock = threading.Lock()
 
@@ -566,13 +566,17 @@ class ScrapeHelper:
                        mtype: MediaType = MediaType.TV) -> Optional[MediaInfo]:
         """获取TMDB媒体信息"""
         if mtype not in (MediaType.MOVIE, MediaType.TV):
-            logger.info(f"{title} 的媒体类型 {mtype.value} 不支持人物刮削，跳过处理")
+            logger.info(f"{title} 的媒体类型 {getattr(mtype, 'value', mtype)} 不支持人物刮削，跳过处理")
+            return None
+        media_id = str(tmdbid).strip()
+        if not media_id or media_id == "0" or not media_id.isdigit():
+            logger.warning(f"{title} 的 TMDB ID 无效，无法识别媒体信息")
             return None
         try:
             mediainfo = self.chain.recognize_media(
                 mtype=mtype,
                 media_source=MediaSource.TMDB,
-                media_id=str(tmdbid),
+                media_id=media_id,
             )
             return mediainfo
         except Exception as e:

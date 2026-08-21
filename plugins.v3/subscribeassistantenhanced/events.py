@@ -16,8 +16,8 @@
 """
 from types import SimpleNamespace
 
-from app.log import logger
-from app.core.context import MediaInfo
+from app.sdk.logging import logger
+from app.sdk.media import MediaInfo
 from app.schemas.event import SubscribeEpisodesRefreshEventData
 from app.schemas.types import MediaType
 

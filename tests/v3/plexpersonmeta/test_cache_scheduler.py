@@ -11,6 +11,7 @@ _pypinyin = ModuleType("pypinyin")
 _pypinyin.lazy_pinyin = lambda *_args, **_kwargs: []
 
 with stub_modules({"pypinyin": _pypinyin}):
+    from app.plugins.plexpersonmeta import helper as _helper
     from app.plugins.plexpersonmeta import scrape as _scrape
 
 
@@ -37,3 +38,25 @@ def test_clear_cache_clears_the_regions_used_by_cache_decorator():
         call(region="plex_douban_media"),
     ]
     cache_backend.close.assert_not_called()
+
+
+def test_cache_decorator_preserves_none_sentinel_and_hit_semantics():
+    """缓存装饰器仍应缓存限流结果，并在命中时跳过业务函数。"""
+    cache_backend = MagicMock()
+    calls = MagicMock()
+
+    @_helper.cache_with_logging("plex_tmdb_person", "PERSON")
+    def fetch_person():
+        calls()
+        return None
+
+    with patch.object(_helper, "cache_backend", cache_backend):
+        cache_backend.exists.return_value = False
+        assert fetch_person() is None
+
+        cache_backend.exists.return_value = True
+        cache_backend.get.return_value = "None"
+        assert fetch_person() is None
+
+    assert calls.call_count == 1
+    cache_backend.set.assert_called_once()

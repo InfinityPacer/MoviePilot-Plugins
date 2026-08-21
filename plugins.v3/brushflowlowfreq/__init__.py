@@ -9,26 +9,25 @@ from typing import Any, List, Dict, Tuple, Optional, Union, Set
 from urllib.parse import urlparse, parse_qs, unquote, parse_qsl, urlencode, urlunparse
 
 import pytz
-from app.helper.sites import SitesHelper
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app import schemas
 from app.chain.torrents import TorrentsChain
-from app.core.config import settings
-from app.core.context import MediaInfo
-from app.core.metainfo import MetaInfo
-from app.db.site_oper import SiteOper
-from app.db.subscribe_oper import SubscribeOper
-from app.helper.downloader import DownloaderHelper
-from app.log import logger
+from app.sdk.config import settings
+from app.sdk.media import MediaInfo, MetaInfo
+from app.db.oper.site import SiteOper
+from app.db.oper.subscribe import SubscribeOper
+from app.sdk.services import DownloaderHelper
+from app.sdk.network import SitesHelper
+from app.sdk.logging import logger
 from app.modules.qbittorrent import Qbittorrent
 from app.modules.transmission import Transmission
 from app.plugins import _PluginBase
 from app.schemas import NotificationType, TorrentInfo, MediaType, ServiceInfo
 from app.schemas.types import EventType
-from app.utils.http import RequestUtils
-from app.utils.string import StringUtils
+from app.sdk.network import RequestUtils
+from app.sdk.utilities import StringUtils
 
 lock = threading.Lock()
 
@@ -251,7 +250,7 @@ class BrushFlowLowFreq(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "4.5"
+    plugin_version = "4.6"
     # 插件作者
     plugin_author = "jxxghp,InfinityPacer"
     # 作者主页
@@ -422,7 +421,8 @@ class BrushFlowLowFreq(_PluginBase):
         pass
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
+        """该插件不暴露额外的 HTTP API。"""
+        return []
 
     def get_service(self) -> List[Dict[str, Any]]:
         """
@@ -3320,10 +3320,10 @@ class BrushFlowLowFreq(_PluginBase):
                     return None
                 else:
                     if brush_config.up_speed or brush_config.dl_speed:
-                        downloader.change_torrent(hash_string=torrent.hashString,
+                        downloader.change_torrent(hash_string=self.__get_transmission_hash(torrent),
                                                   upload_limit=up_speed,
                                                   download_limit=down_speed)
-                    return torrent.hashString
+                    return self.__get_transmission_hash(torrent)
         return None
 
     def __qb_torrents_reannounce(self, torrent_hashes: List[str]):
@@ -3350,10 +3350,15 @@ class BrushFlowLowFreq(_PluginBase):
         """
         try:
             return torrent.get("hash") if self.downloader_helper.is_downloader("qbittorrent", service=self.service_info) \
-                else torrent.hashString
+                else self.__get_transmission_hash(torrent)
         except Exception as e:
             print(str(e))
             return ""
+
+    @staticmethod
+    def __get_transmission_hash(torrent: Any) -> str:
+        """优先读取 transmission-rpc 的新属性，并兼容旧版对象。"""
+        return getattr(torrent, "hash_string", None) or getattr(torrent, "hashString", "")
 
     def __get_all_hashes(self, torrents):
         """
@@ -3368,7 +3373,7 @@ class BrushFlowLowFreq(_PluginBase):
                 # 根据下载器类型获取Hash值
                 hash_value = torrent.get("hash") if self.downloader_helper.is_downloader("qbittorrent",
                                                                                          service=self.service_info) \
-                    else torrent.hashString
+                    else self.__get_transmission_hash(torrent)
                 if hash_value:
                     all_hashes.append(hash_value)
             return all_hashes
@@ -3493,12 +3498,12 @@ class BrushFlowLowFreq(_PluginBase):
         # TR
         else:
             # ID
-            torrent_id = torrent.hashString
+            torrent_id = self.__get_transmission_hash(torrent)
             # 标题
             torrent_title = torrent.name
-            done_date = getattr(torrent, "date_done", None) or getattr(torrent, "done_date", None)
-            added_date = getattr(torrent, "date_added", None) or getattr(torrent, "added_date", None)
-            active_date = getattr(torrent, "date_active", None) or getattr(torrent, "activity_date", None)
+            done_date = getattr(torrent, "done_date", None) or getattr(torrent, "date_done", None)
+            added_date = getattr(torrent, "added_date", None) or getattr(torrent, "date_added", None)
+            active_date = getattr(torrent, "activity_date", None) or getattr(torrent, "date_active", None)
             # 做种时间
             if (not done_date
                     or done_date.timestamp() < 1):

@@ -8,14 +8,13 @@ import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.core.config import settings
-from app.core.context import MediaInfo
-from app.core.event import Event, eventmanager
-from app.core.meta import MetaBase
-from app.helper.mediaserver import MediaServerHelper
-from app.log import logger
+from app.sdk.config import settings
+from app.sdk.events import Event, eventmanager
+from app.sdk.logging import logger
+from app.sdk.media import MediaInfo, MetaBase
+from app.sdk.services import MediaServerHelper
 from app.plugins import _PluginBase
-from app.plugins.plexpersonmeta.scrape import ScrapeHelper
+from .scrape import ScrapeHelper
 from app.schemas import ServiceInfo
 from app.schemas.types import EventType, NotificationType
 
@@ -30,7 +29,7 @@ class PlexPersonMeta(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png"
     # 插件版本
-    plugin_version = "2.4"
+    plugin_version = "2.5"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -69,20 +68,31 @@ class PlexPersonMeta(_PluginBase):
 
     # endregion
 
-    def init_plugin(self, config: dict = None):
-        self.mediaserver_helper = MediaServerHelper()
-        if not config:
+    def _start_scheduler(self) -> None:
+        """启动当前调度器中的任务，避免重复初始化触发二次 start。"""
+        if not self._scheduler or not self._scheduler.get_jobs():
             return
-        self._enabled = config.get("enabled")
-        self._onlyonce = config.get("onlyonce")
+        self._scheduler.print_jobs()
+        if not self._scheduler.running:
+            self._scheduler.start()
+
+    def init_plugin(self, config: dict = None):
+        # 重复初始化可能来自配置保存、插件重载或停用；先释放上一轮任务。
+        self.stop_service()
+        config = config or {}
+        self._event.clear()
+        self.mediaserver_helper = MediaServerHelper()
+        self._enabled = bool(config.get("enabled"))
+        self._onlyonce = bool(config.get("onlyonce"))
         self._cron = config.get("cron")
-        self._notify = config.get("notify")
-        self._libraries = config.get("libraries", [])
-        self._clear_cache = config.get("clear_cache")
-        self._execute_transfer = config.get("execute_transfer")
+        self._notify = bool(config.get("notify"))
+        self._libraries = config.get("libraries") or []
+        self._clear_cache = bool(config.get("clear_cache"))
+        self._execute_transfer = bool(config.get("execute_transfer"))
+        self._transfer_time = None
         try:
             self._delay = int(config.get("delay", 200))
-        except ValueError:
+        except (TypeError, ValueError):
             self._delay = 200
 
         # 如果开启了入库后运行一次，延迟时间又不填，默认为200s
@@ -120,10 +130,7 @@ class PlexPersonMeta(_PluginBase):
             config["onlyonce"] = False
             self.update_config(config=config)
 
-        # 启动服务
-        if self._scheduler.get_jobs():
-            self._scheduler.print_jobs()
-            self._scheduler.start()
+        self._start_scheduler()
 
     def service_infos(self, name_filters: Optional[List[str]] = None) -> Optional[Dict[str, ServiceInfo]]:
         """
@@ -167,10 +174,10 @@ class PlexPersonMeta(_PluginBase):
 
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
-        pass
+        return []
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
+        return []
 
     def get_service(self) -> List[Dict[str, Any]]:
         """
@@ -192,21 +199,25 @@ class PlexPersonMeta(_PluginBase):
                 "func": self.scrape_library,
                 "kwargs": {}
             }]
+        return []
 
     def stop_service(self):
         """
         退出插件
         """
+        scheduler = self._scheduler
+        self._scheduler = None
+        self._transfer_time = None
+        self._event.set()
         try:
-            if self._scheduler:
-                self._scheduler.remove_all_jobs()
-                if self._scheduler.running:
-                    self._event.set()
-                    self._scheduler.shutdown()
-                    self._event.clear()
-                self._scheduler = None
+            if scheduler:
+                scheduler.remove_all_jobs()
+                if scheduler.running:
+                    scheduler.shutdown()
         except Exception as e:
             logger.info(str(e))
+        finally:
+            self._event.clear()
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
@@ -723,7 +734,7 @@ class PlexPersonMeta(_PluginBase):
         }
 
     def get_page(self) -> List[dict]:
-        pass
+        return []
 
     def __get_service_library_options(self):
         """
@@ -855,10 +866,7 @@ class PlexPersonMeta(_PluginBase):
             name=f"{self.plugin_name}",
         )
 
-        # 启动任务
-        if self._scheduler.get_jobs():
-            self._scheduler.print_jobs()
-            self._scheduler.start()
+        self._start_scheduler()
 
     def __scrape_by_transfer(self):
         """入库后运行一次"""

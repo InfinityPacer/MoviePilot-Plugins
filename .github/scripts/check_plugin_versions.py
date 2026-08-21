@@ -78,11 +78,13 @@ def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
     elif not isinstance(history[expected_history_key], str) or not history[expected_history_key].strip():
         errors.append(f"{path}: {plugin_id} history 当前版本说明不能为空")
 
-    legacy_path = path.with_name("package.v2.json")
-    legacy_metadata = _load_package(legacy_path).get(plugin_id)
-    if not isinstance(legacy_metadata, dict):
-        errors.append(f"{path}: {plugin_id} 在 {legacy_path.name} 中没有对应旧版本条目")
+    legacy = _legacy_metadata(path, plugin_id)
+    if legacy is None:
+        errors.append(
+            f"{path}: {plugin_id} 在 package.v2.json 或 package.json 中没有对应旧版本条目"
+        )
         return errors
+    legacy_path, legacy_metadata = legacy
     if legacy_metadata.get("v3") is not False:
         errors.append(f"{legacy_path}: {plugin_id} 必须声明 v3=false")
 
@@ -106,6 +108,20 @@ def _plugin_version(init_file: Path) -> str | None:
                 value_node = node.value
             if isinstance(value_node, ast.Constant) and isinstance(value_node.value, str):
                 return value_node.value
+    return None
+
+
+def _legacy_metadata(path: Path, plugin_id: str) -> tuple[Path, dict] | None:
+    """查找 V3 专用实现对应的旧索引条目。
+
+    旧实现可能位于 ``plugins.v2``，也可能仍由默认索引的 ``plugins`` 提供；
+    两种目录拓扑都需要通过同名条目的 ``v3: false`` 阻止 V3 回退加载。
+    """
+    for legacy_name in ("package.v2.json", "package.json"):
+        legacy_path = path.with_name(legacy_name)
+        legacy_metadata = _load_package(legacy_path).get(plugin_id)
+        if isinstance(legacy_metadata, dict):
+            return legacy_path, legacy_metadata
     return None
 
 

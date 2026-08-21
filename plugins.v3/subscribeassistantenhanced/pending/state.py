@@ -5,7 +5,7 @@
 import time
 from typing import Callable, Optional
 
-from app.log import logger
+from app.sdk.logging import logger
 
 from ..shared.subscribe import format_subscribe
 from ..shared.update import update_subscribe

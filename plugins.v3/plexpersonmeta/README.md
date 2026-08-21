@@ -4,6 +4,9 @@
 
 ## 版本更新日志
 
+- v2.5
+  - 适配 V3 SDK 导入规范，迁移至 app.sdk 体系
+
 - v2.4
   - MoviePilot V3 版本Plex演职人员刮削插件
 

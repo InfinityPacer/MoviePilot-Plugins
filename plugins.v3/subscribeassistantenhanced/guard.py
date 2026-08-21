@@ -1,7 +1,7 @@
 """完成守卫：处理 CompletionCheck 事件并按证据流水线裁决是否完成。"""
 from typing import Callable
 
-from app.log import logger
+from app.sdk.logging import logger
 from app.schemas.event import SubscribeCompletionCheckEventData
 from app.schemas.types import MediaType
 

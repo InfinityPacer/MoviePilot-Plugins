@@ -255,6 +255,28 @@ def test_checker_requires_legacy_v3_block(tmp_path: Path) -> None:
     assert "必须声明 v3=false" in result.stdout
 
 
+def test_checker_accepts_default_index_as_v3_legacy_source(tmp_path: Path) -> None:
+    """旧实现仍在默认 plugins 目录时，V3 检查应读取 package.json。"""
+    _write_fixture(tmp_path)
+    (tmp_path / "package.v2.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "Example": {
+                    "version": "1.2.3",
+                    "v2": True,
+                    "v3": False,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_checker(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_checker_requires_single_current_history_entry(tmp_path: Path) -> None:
     """V3 history 只允许当前版本一条发布说明。"""
     _write_fixture(

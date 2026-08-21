@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Callable, Optional
 
-from app.log import logger
+from app.sdk.logging import logger
 from app.schemas.event import SubscribeEpisodesRefreshEventData
 from app.schemas.types import MediaSource, MediaType
 

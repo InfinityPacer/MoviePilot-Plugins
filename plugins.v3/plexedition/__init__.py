@@ -9,17 +9,15 @@ import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.core.config import settings
-from app.core.context import MediaInfo
-from app.core.event import Event, eventmanager
-from app.core.meta import MetaAnime, MetaBase, MetaVideo
-from app.core.metainfo import is_anime
-from app.db.transferhistory_oper import TransferHistoryOper
-from app.helper.mediaserver import MediaServerHelper
-from app.log import logger
+from app.db.oper.transferhistory import TransferHistoryOper
 from app.plugins import _PluginBase
 from app.schemas import ServiceInfo
 from app.schemas.types import EventType, MediaSource, MediaType
+from app.sdk.config import settings
+from app.sdk.events import Event, eventmanager
+from app.sdk.logging import logger
+from app.sdk.media import MediaInfo, MetaBase, MetaInfo
+from app.sdk.services import MediaServerHelper
 
 lock = threading.Lock()
 
@@ -32,7 +30,7 @@ class PlexEdition(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexedition.png"
     # 插件版本
-    plugin_version = "1.3"
+    plugin_version = "1.4"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -178,10 +176,11 @@ class PlexEdition(_PluginBase):
         定义远程控制命令
         :return: 命令关键字、事件、描述、附带数据
         """
-        pass
+        return []
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
+        """返回插件动态 API 声明；本插件没有自有 JSON API。"""
+        return []
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
@@ -470,8 +469,9 @@ class PlexEdition(_PluginBase):
             "delay": 200
         }
 
-    def get_page(self) -> List[dict]:
-        pass
+    def get_page(self) -> Optional[List[dict]]:
+        """本插件没有详情页。"""
+        return None
 
     def get_service(self) -> List[Dict[str, Any]]:
         """
@@ -672,7 +672,7 @@ class PlexEdition(_PluginBase):
 
         locked_fields = [field.name for field in item.fields if field.locked]
         if "editionTitle" in locked_fields:
-            logger.debug(f"{item.title}: titleSort is locked, skip")
+            logger.debug(f"{item.title}: editionTitle is locked, skip")
         else:
             file_name = item.locations[0]
             tmdb_id = self.__get_tmdb_id(item)
@@ -692,9 +692,9 @@ class PlexEdition(_PluginBase):
                 history = histories[0]
                 file_name = history.src if history.src else file_name
 
-            is_anime_flag = is_anime(file_name)
-            meta = MetaAnime(file_name, file_name, True) \
-                if is_anime_flag else MetaVideo(file_name, file_name, True)
+            # 统一使用 V3 媒体解析入口，同时强制按影视文件解析，保持旧逻辑不把音频
+            # 文件误判为音乐媒体。
+            meta = MetaInfo(title=file_name, subtitle=file_name, force_video=True)
 
             if not meta.edition:
                 logger.warning(f"{item.title}({item.ratingKey}) can't get edition, can't edit edition")

@@ -1,7 +1,7 @@
 """完成快照订阅重建：解析模式、创建订阅并校验实际接管范围。"""
 from typing import Callable, Tuple
 
-from app.log import logger
+from app.sdk.logging import logger
 from app.schemas.types import MediaType, SystemConfigKey
 
 from .verifier import format_snapshot_label

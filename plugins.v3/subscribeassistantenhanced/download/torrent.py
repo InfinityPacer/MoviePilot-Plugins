@@ -124,7 +124,7 @@ class TorrentAdapter:
             uploaded = int(downloaded * ratio)
         added_date = _get_attr(torrent, "added_date", "addedDate", default=None)
         return TorrentInfo(
-            hash=_get_attr(torrent, "hashString", default=""),
+            hash=_get_attr(torrent, "hash_string", "hashString", default=""),
             title=_get_attr(torrent, "name", default=""),
             state=state,
             progress=progress,

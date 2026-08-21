@@ -8,8 +8,8 @@ import hashlib
 from dataclasses import dataclass
 from typing import Optional
 
-from app.core.cache import Cache
-from app.log import logger
+from app.sdk.cache import Cache
+from app.sdk.logging import logger
 
 # 创建缓存实例
 cache_backend = Cache(maxsize=100000, ttl=60 * 60 * 24 * 3)

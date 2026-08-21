@@ -6,6 +6,7 @@ async function loadSummary(api) {
   if (!api) return null;
   try {
     const response = await api.get("plugin/SubscribeAssistantEnhanced/summary");
+    if (!response.success) return null;
     return response.data;
   } catch {
     console.warn("[SubscribeAssistantEnhanced] summary unavailable");

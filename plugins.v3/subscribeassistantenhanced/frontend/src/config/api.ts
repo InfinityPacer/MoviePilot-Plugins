@@ -26,6 +26,7 @@ export async function loadSummary(api?: PluginApi): Promise<SummaryPayload | nul
   if (!api) return null
   try {
     const response = await api.get<ApiResponse<SummaryPayload>>('plugin/SubscribeAssistantEnhanced/summary')
+    if (!response.success) return null
     return response.data
   } catch {
     console.warn('[SubscribeAssistantEnhanced] summary unavailable')

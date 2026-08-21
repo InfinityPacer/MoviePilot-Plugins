@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
 import app.plugins.plexedition as plexedition
-from app.core.event import Event
+from app.sdk.events import Event
 from app.schemas.types import EventType, MediaSource, MediaType
 
 
@@ -24,10 +24,9 @@ def test_process_item_queries_transfer_history_by_v3_media_identity(monkeypatch)
     plugin.history_oper.get_by_title.return_value = []
     plugin._lock = False
 
-    monkeypatch.setattr(plexedition, "is_anime", lambda _path: False)
     monkeypatch.setattr(
         plexedition,
-        "MetaVideo",
+        "MetaInfo",
         lambda *_args, **_kwargs: SimpleNamespace(edition=None),
     )
 
@@ -42,7 +41,53 @@ def test_process_item_queries_transfer_history_by_v3_media_identity(monkeypatch)
 
 
 def test_v3_plugin_version() -> None:
-    assert plexedition.PlexEdition.plugin_version == "1.3"
+    assert plexedition.PlexEdition.plugin_version == "1.4"
+
+
+def test_v3_plugin_lifecycle_contracts() -> None:
+    """无自有 API 和详情页的 V3 插件应返回显式空值。"""
+    plugin = object.__new__(plexedition.PlexEdition)
+
+    assert plugin.get_command() == []
+    assert plugin.get_api() == []
+    assert plugin.get_page() is None
+
+
+def test_process_item_updates_edition_from_v3_metadata(monkeypatch) -> None:
+    """媒体对象应通过 V3 MetaInfo 解析 Edition，并保留 Plex 更新参数。"""
+    source_path = "/media/Movies/Fight.Club.1999.Remux.mkv"
+    item = SimpleNamespace(
+        type="movie",
+        title="Fight Club",
+        ratingKey="1",
+        editionTitle=None,
+        locations=[source_path],
+        fields=[],
+        guids=[],
+        edit=MagicMock(),
+    )
+    plugin = object.__new__(plexedition.PlexEdition)
+    plugin.history_oper = MagicMock()
+    plugin.history_oper.get_by.return_value = []
+    plugin.history_oper.get_by_title.return_value = []
+    plugin._lock = True
+
+    metadata_parser = MagicMock(return_value=SimpleNamespace(edition="Remux"))
+    monkeypatch.setattr(plexedition, "MetaInfo", metadata_parser)
+
+    plugin._PlexEdition__process_items(item)
+
+    metadata_parser.assert_called_once_with(
+        title=source_path,
+        subtitle=source_path,
+        force_video=True,
+    )
+    item.edit.assert_called_once_with(
+        **{
+            "editionTitle.locked": 1,
+            "editionTitle.value": "Remux",
+        }
+    )
 
 
 def test_transfer_event_ignores_non_movie_media() -> None:

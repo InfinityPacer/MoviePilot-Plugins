@@ -4,16 +4,15 @@ from pathlib import Path
 from typing import Any, List, Dict, Tuple, Optional, Type
 
 import pytz
-from app.core.config import settings
-from app.core.context import MediaInfo
-from app.core.event import eventmanager, Event
-from app.core.meta import MetaBase
 from app.db import db_query
 from app.db.models import TransferHistory
-from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import TransferInfo
 from app.schemas.types import EventType, MediaSource, MediaType
+from app.sdk.config import settings
+from app.sdk.events import eventmanager, Event
+from app.sdk.logging import logger
+from app.sdk.media import MediaInfo, MetaBase
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -29,7 +28,7 @@ class PlexMatch(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png"
     # 插件版本
-    plugin_version = "1.4"
+    plugin_version = "1.5"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -94,10 +93,12 @@ class PlexMatch(_PluginBase):
 
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
-        pass
+        """本插件不注册远程命令。"""
+        return []
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
+        """本插件不暴露自有 HTTP API。"""
+        return []
 
     def get_service(self) -> List[Dict[str, Any]]:
         """
@@ -110,7 +111,7 @@ class PlexMatch(_PluginBase):
             "kwargs": {} # 定时器参数
         }]
         """
-        pass
+        return []
 
     def stop_service(self):
         """
@@ -301,8 +302,9 @@ class PlexMatch(_PluginBase):
             "complete_all": False
         }
 
-    def get_page(self) -> List[dict]:
-        pass
+    def get_page(self) -> Optional[List[dict]]:
+        """本插件没有详情页。"""
+        return None
 
     @eventmanager.register(EventType.TransferComplete)
     def execute_transfer(self, event: Event):

@@ -13,20 +13,23 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Tuple, Optional
 
 from apscheduler.triggers.cron import CronTrigger
+from pydantic import BaseModel
 
 from app.plugins import _PluginBase
-from app.log import logger
-from app.core.event import eventmanager
-from app.core.metainfo import MetaInfo
+from app import schemas
+from app.sdk.config import settings
+from app.sdk.events import eventmanager
+from app.sdk.logging import logger
+from app.sdk.media import MediaInfo, MetaInfo
+from app.sdk.services import DownloaderHelper
 from app.schemas.types import EventType, ChainEventType, MediaType
 from app.chain.storage import StorageChain
 from app.chain.subscribe import SubscribeChain
 from app.chain.tmdb import TmdbChain
 from app.chain.torrents import TorrentsChain
-from app.db.downloadhistory_oper import DownloadHistoryOper
-from app.db.subscribe_oper import SubscribeOper
-from app.db.transferhistory_oper import TransferHistoryOper
-from app.helper.downloader import DownloaderHelper
+from app.db.oper.downloadhistory import DownloadHistoryOper
+from app.db.oper.subscribe import SubscribeOper
+from app.db.oper.transferhistory import TransferHistoryOper
 
 from .engine.types import CompletionSignal, SeasonScope
 from .engine.site import SiteEpisodesRefreshHandler, SiteEvidenceScanner, SiteEvidenceStore
@@ -74,6 +77,14 @@ from .shared.log import detail, truncate_log_value
 from .shared.subscribe import format_subscribe
 
 
+class SummaryPayload(BaseModel):
+    """订阅助手概览接口的业务数据模型。"""
+
+    domains: Dict[str, Any]
+    pending_count: int
+    monitored_torrents: int
+
+
 class SubscribeAssistantEnhanced(_PluginBase):
     """订阅助手增强版——插件入口。
 
@@ -90,7 +101,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.7.2"
+    plugin_version = "0.7.3"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -1338,12 +1349,17 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """暴露只读概览接口：返回各业务域启用状态与待定/监控计数。"""
         return [{
             "path": "/summary",
-            "endpoint": self._api_summary,
+            "endpoint": self._api_summary_response,
             "methods": ["GET"],
             "auth": "bear",
             "summary": "订阅助手（增强版）概览",
             "description": "返回各业务域启用状态与待定/监控计数",
+            "response_model": schemas.Response[SummaryPayload],
         }]
+
+    def _api_summary_response(self) -> schemas.Response[SummaryPayload]:
+        """返回 V3 插件 API 明确声明的统一响应信封。"""
+        return schemas.Response(success=True, data=SummaryPayload(**self._api_summary()))
 
     def _api_summary(self) -> Dict[str, Any]:
         """概览数据：各业务域启用状态 + 待定订阅与监控种子计数。"""
@@ -1410,7 +1426,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """从事件 mediainfo dict 重建 MediaInfo 对象；空数据返回 None。"""
         if not data:
             return None
-        from app.core.context import MediaInfo
         mediainfo = MediaInfo()
         mediainfo.from_dict(data)
         return mediainfo
@@ -1749,7 +1764,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if not self._config or not self._config.notify:
             return
         from app.schemas import NotificationType
-        from app.core.config import settings
         if link and link.startswith("#"):
             link = settings.MP_DOMAIN(link)
         text = self._format_notification_text(

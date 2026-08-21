@@ -6,7 +6,7 @@ from dataclasses import fields
 from hashlib import sha1
 from types import SimpleNamespace
 
-from app.core.metainfo import MetaInfo
+from app.sdk.media import MetaInfo
 
 from .audit import redact_sensitive_text, sanitize_candidate_summary
 from .keywords import load_keyword_groups, match_first

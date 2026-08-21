@@ -6,7 +6,10 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 import app.plugins.plexmatch as plexmatch
-from app.core.event import Event
+from app.schemas import TransferInfo
+from app.schemas.file import FileItem
+from app.sdk.events import Event
+from app.sdk.media import MediaInfo, MetaBase
 from app.schemas.types import EventType, MediaSource, MediaType
 
 
@@ -95,7 +98,56 @@ def _make_plugin() -> plexmatch.PlexMatch:
 
 
 def test_plugin_declares_v3_minor_version() -> None:
-    assert plexmatch.PlexMatch.plugin_version == "1.4"
+    assert plexmatch.PlexMatch.plugin_version == "1.5"
+
+
+def test_plugin_declares_empty_v3_extension_surfaces() -> None:
+    plugin = _make_plugin()
+
+    assert plugin.get_command() == []
+    assert plugin.get_api() == []
+    assert plugin.get_service() == []
+    assert plugin.get_page() is None
+
+
+def test_transfer_event_accepts_v3_media_metadata_and_response_objects(monkeypatch) -> None:
+    plugin = _make_plugin()
+    plugin._enabled = True
+    add_plexmatch = Mock(return_value=True)
+    monkeypatch.setattr(plugin, "_PlexMatch__add_plexmatch_file", add_plexmatch)
+
+    mediainfo = MediaInfo(
+        title="测试剧",
+        year="2026",
+        type=MediaType.TV,
+        media_source=MediaSource.TMDB,
+        media_id="12345",
+    )
+    metadata = MetaBase(title="测试剧")
+    metadata.type = MediaType.TV
+    metadata.begin_season = 1
+    metadata.begin_episode = 1
+    transfer_info = TransferInfo(
+        target_item=FileItem(path="/media/测试剧/Season 1/S01E01.mkv", type="file")
+    )
+
+    plugin.execute_transfer(
+        Event(
+            EventType.TransferComplete,
+            {
+                "mediainfo": mediainfo,
+                "meta": metadata,
+                "transferinfo": transfer_info,
+            },
+        )
+    )
+
+    add_plexmatch.assert_called_once_with(
+        title="测试剧",
+        tmdb_id="12345",
+        file_path="/media/测试剧/Season 1/S01E01.mkv",
+        mtype=MediaType.TV,
+    )
 
 
 def test_history_filter_selects_valid_tmdb_identity_on_postgresql(monkeypatch) -> None:
@@ -165,6 +217,27 @@ def test_add_plexmatch_file_writes_tmdb_hint(tmp_path) -> None:
     assert (media_file.parent / ".plexmatch").read_text(encoding="utf-8") == (
         "tmdbid: 12345 #测试电影 TMDB编号"
     )
+
+
+def test_add_plexmatch_file_keeps_tv_hint_at_series_root(tmp_path) -> None:
+    plugin = _make_plugin()
+    plugin._overwrite = False
+    media_file = tmp_path / "测试剧 (2026)" / "Season 1" / "S01E01.mkv"
+    media_file.parent.mkdir(parents=True)
+    media_file.touch()
+
+    created = plugin._PlexMatch__add_plexmatch_file(
+        title="测试剧",
+        tmdb_id="12345",
+        file_path=str(media_file),
+        mtype=MediaType.TV,
+    )
+
+    assert created is True
+    assert (media_file.parent.parent / ".plexmatch").read_text(encoding="utf-8") == (
+        "tmdbid: 12345 #测试剧 TMDB编号"
+    )
+    assert not (media_file.parent / ".plexmatch").exists()
 
 
 def test_transfer_event_writes_tmdb_media_id(monkeypatch) -> None:
