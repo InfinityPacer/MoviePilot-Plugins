@@ -2,8 +2,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from app.core.context import Context, MediaInfo, TorrentInfo
-from app.core.metainfo import MetaInfo
+from app.sdk.media import Context, MediaInfo, MetaInfo, TorrentInfo
 from app.schemas.event import ResourceDownloadEventData, ResourceSelectionEventData
 from app.schemas.types import MediaType
 

@@ -1,4 +1,7 @@
-"""BrushFlowLowFreq 种子信息与媒体识别合同测试。"""
+"""BrushFlowLowFreq V3 SDK、种子信息与媒体识别合同测试。"""
+import ast
+import warnings
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -17,7 +20,9 @@ class TestTransmissionTorrentInfo:
     """TR 新旧 SDK 字段都应可转换为刷流统计信息。"""
 
     def test_transmission_rpc_v7_fields(self):
-        info = _call(make_tr_v7_torrent())
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            info = _call(make_tr_v7_torrent())
 
         assert info["hash"] == "tr_hash_1"
         assert info["seeding_time"] > 0
@@ -93,4 +98,38 @@ def test_subscribe_recognition_ignores_non_video_media():
 
 
 def test_v3_plugin_version_increments_minor_version():
-    assert BrushFlowLowFreq.plugin_version == "4.5"
+    assert BrushFlowLowFreq.plugin_version == "4.6"
+
+
+def test_v3_plugin_uses_stable_sdk_imports():
+    """V3 专用副本不应继续触发宿主旧导入兼容层。"""
+    source_path = Path(__file__).parents[3] / "plugins.v3/brushflowlowfreq/__init__.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+    imported_modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
+
+    assert {
+        "app.sdk.config",
+        "app.sdk.logging",
+        "app.sdk.media",
+        "app.sdk.network",
+        "app.sdk.services",
+        "app.sdk.utilities",
+    } <= imported_modules
+    assert "app.core.config" not in imported_modules
+    assert "app.core.context" not in imported_modules
+    assert "app.core.metainfo" not in imported_modules
+    assert "app.db.site_oper" not in imported_modules
+    assert "app.db.subscribe_oper" not in imported_modules
+    assert "app.helper.downloader" not in imported_modules
+    assert "app.helper.sites" not in imported_modules
+    assert "app.log" not in imported_modules
+    assert "app.utils.http" not in imported_modules
+    assert "app.utils.string" not in imported_modules
+
+
+def test_v3_plugin_has_no_http_api():
+    assert object.__new__(BrushFlowLowFreq).get_api() == []

@@ -30,6 +30,17 @@ describe('summary API helper', () => {
     expect(result).toBe(payload)
   })
 
+  it('treats an explicit V3 business failure as unavailable', async () => {
+    const get = vi.fn().mockResolvedValue({
+      success: false,
+      message: 'summary unavailable',
+      data: null,
+    })
+    const api: PluginApi = { get }
+
+    await expect(loadSummary(api)).resolves.toBeNull()
+  })
+
   it('returns null and emits only the fixed warning when the request fails', async () => {
     const rawError = {
       message: 'request failed for a private endpoint',

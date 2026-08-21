@@ -3,7 +3,7 @@ import re
 import time
 from typing import Callable, Optional
 
-from app.log import logger
+from app.sdk.logging import logger
 
 from ..engine.types import PauseRecord
 from ..shared.log import detail as log_detail

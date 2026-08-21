@@ -2,7 +2,7 @@
 import time
 from typing import Callable, Optional
 
-from app.log import logger
+from app.sdk.logging import logger
 from app.schemas.types import MediaType
 
 from ..engine.proximity import assess_completion_proximity

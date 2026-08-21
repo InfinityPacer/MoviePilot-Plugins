@@ -1,7 +1,7 @@
 """洗版全流程编排：按配置创建洗版订阅。"""
 from typing import Callable, Optional
 
-from app.log import logger
+from app.sdk.logging import logger
 from app.schemas.types import MediaType
 
 from ..shared.subscribe import (

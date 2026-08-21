@@ -3,7 +3,7 @@ import json
 from typing import List, Optional, Tuple
 
 from app.chain.subscribe import build_subscribe_meta as build_main_subscribe_meta
-from app.log import logger
+from app.sdk.logging import logger
 from app.schemas.types import MediaSource, MediaType
 
 

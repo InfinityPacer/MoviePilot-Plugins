@@ -1,6 +1,6 @@
 """日志摘要工具与诊断级日志开关。
 
-主程序 logger（app.log）已按调用文件名/插件自动标注来源并分文件落盘
+主程序 logger（app.sdk.logging）已按调用文件名/插件自动标注来源并分文件落盘
 （命中 plugins/<plugin> 即写 plugins/<plugin>.log），因此业务日志不再手工加
 插件名/域名前缀，避免与框架自带来源标注重复。本模块只提供：
 - detail：诊断级日志通道，beta 期抬到 info、灰度结束统一降回 debug；
@@ -8,7 +8,7 @@
 """
 from typing import Any
 
-from app.log import logger
+from app.sdk.logging import logger
 
 # Beta 灰度期开关：控制 detail 诊断日志的实际级别。
 # True → 绑定 logger.info（默认日志级别即可见，便于快速排查）；

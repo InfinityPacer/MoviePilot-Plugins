@@ -1,9 +1,10 @@
 """前端入口 smoke：只读概览 API 保留；详情页与仪表盘已下线。"""
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from app.api.response import ResponseAPIRoute
-from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
+from app.plugins.subscribeassistantenhanced import SummaryPayload, SubscribeAssistantEnhanced
+from app.schemas.response import Response
 
 
 class TestFrontend:
@@ -14,17 +15,18 @@ class TestFrontend:
         plugin.init_plugin({})
         return plugin
 
-    def test_get_api_exposes_summary(self):
+    def test_get_api_declares_explicit_v3_envelope(self):
         apis = self._plugin().get_api()
         route = next(a for a in apis if a["path"] == "/summary")
-        assert "response_model" not in route
+        assert route["response_model"] == Response[SummaryPayload]
 
-    def test_summary_uses_main_program_response_wrapper(self):
+    def test_summary_uses_explicit_plugin_response_envelope(self):
         plugin = self._plugin()
         route = next(a for a in plugin.get_api() if a["path"] == "/summary").copy()
         route.pop("auth")
         app = FastAPI()
-        app.router.route_class = ResponseAPIRoute
+        # 动态插件路由使用原生 APIRoute；插件必须自己返回已声明的 envelope。
+        app.router.route_class = APIRoute
         app.add_api_route(**route)
 
         response = TestClient(app).get("/summary")

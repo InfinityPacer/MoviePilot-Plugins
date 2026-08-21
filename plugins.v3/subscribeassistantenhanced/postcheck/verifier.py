@@ -2,7 +2,7 @@
 import time
 from typing import Callable, Optional
 
-from app.log import logger
+from app.sdk.logging import logger
 
 from ..engine.types import SeasonScope
 from ..shared.log import detail

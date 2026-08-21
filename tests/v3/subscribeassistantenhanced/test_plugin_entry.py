@@ -6,8 +6,7 @@ PriorityManager 缺 subscribe_oper 注入会让洗版优先级写入静默 no-op
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from app.core.event import eventmanager
-from app.core.event import Event
+from app.sdk.events import eventmanager, Event
 from app.plugins import _PluginBase
 from app.schemas.event import PluginDataResetEventData
 from app.schemas.types import ChainEventType, EventType

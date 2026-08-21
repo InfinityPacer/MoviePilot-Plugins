@@ -88,6 +88,7 @@
         "author": "InfinityPacer",
         "level": 1,
         "v2": true,
+        "v3": false,
         "history": {
             "v1.6": "增加对MoviePilot V2 版本 SQLite WAL模式的支持",
             "v1.5": "完善了WebDAV客户端连接失败的问题，配置页面增加了hint提示信息",
@@ -159,6 +160,7 @@
         "author": "InfinityPacer",
         "level": 1,
         "v2": true,
+        "v3": false,
         "history": {
             "v1.0": "增加历史记录清理插件，实现一键清理历史记录"
         },
@@ -224,6 +226,7 @@
         "author": "InfinityPacer",
         "level": 1,
         "v2": true,
+        "v3": false,
         "history": {
             "v1.0": "增加历史记录分类刷新插件，实现一键刷新历史记录中的显示分类"
         },

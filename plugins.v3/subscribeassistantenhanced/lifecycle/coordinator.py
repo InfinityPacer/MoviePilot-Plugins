@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from app.log import logger
+from app.sdk.logging import logger
 
 from ..engine.signals import last_aired_episode
 from ..engine.types import PauseRecord
