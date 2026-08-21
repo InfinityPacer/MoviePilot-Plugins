@@ -61,17 +61,6 @@ jobs:
               echo "Frontend federation entry missing: $frontend_dir/dist/assets/remoteEntry.js" >&2
               exit 1
             fi
-
-            if git check-ignore -q "$frontend_dir/dist/assets/remoteEntry.js"; then
-              echo "Frontend distributable is ignored by Git: $frontend_dir/dist" >&2
-              exit 1
-            fi
-
-            if [ -n "$(git status --porcelain --untracked-files=all -- "$frontend_dir/dist")" ]; then
-              git status --short --untracked-files=all -- "$frontend_dir/dist"
-              echo "Frontend distributable does not match committed files: $frontend_dir/dist" >&2
-              exit 1
-            fi
           }
 
           process_package() {

@@ -93,9 +93,4 @@ jobs:
         run: yarn build
 
       - name: Verify distributable
-        run: |
-          test -s dist/assets/remoteEntry.js
-          if [ -n "$(git status --porcelain --untracked-files=all -- dist)" ]; then
-            git status --short --untracked-files=all -- dist
-            exit 1
-          fi
+        run: test -s dist/assets/remoteEntry.js

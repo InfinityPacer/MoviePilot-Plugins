@@ -68,35 +68,42 @@ def test_release_workflow_uses_generation_aware_directory_selector() -> None:
 
 
 def test_release_workflow_builds_frontend_before_packaging() -> None:
-    """带前端工程的插件必须构建并校验联邦入口后才能打包。"""
+    """带前端工程的插件必须在打包前构建并校验联邦入口。"""
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert "uses: actions/setup-node@v7" in workflow
     assert "build_frontend \"$plugin_dir\"" in workflow
     assert "yarn --frozen-lockfile && yarn build" in workflow
     assert '[ ! -s "$frontend_dir/dist/assets/remoteEntry.js" ]' in workflow
-    assert 'git check-ignore -q "$frontend_dir/dist/assets/remoteEntry.js"' in workflow
-    assert 'git status --porcelain --untracked-files=all -- "$frontend_dir/dist"' in workflow
+    assert 'git check-ignore -q "$frontend_dir/dist/assets/remoteEntry.js"' not in workflow
+    assert 'git status --porcelain --untracked-files=all -- "$frontend_dir/dist"' not in workflow
     assert '-x "*/node_modules/*"' in workflow
 
 
-def test_frontend_federation_entries_are_tracked() -> None:
-    """Release 下载失败时会回退 main，V2/V3 联邦入口必须存在于 Git 文件列表。"""
-    missing = []
+def test_frontend_federation_entries_are_generated_and_ignored() -> None:
+    """V2/V3 联邦入口由构建生成，不应作为 Git 源文件提交。"""
+    invalid = []
     for plugin_generation in ("plugins.v2", "plugins.v3"):
         for package_path in sorted(
             REPO_ROOT.glob(f"{plugin_generation}/*/frontend/package.json")
         ):
             remote_entry = package_path.parent / "dist/assets/remoteEntry.js"
             relative_entry = remote_entry.relative_to(REPO_ROOT)
-            result = subprocess.run(
+            tracked = subprocess.run(
                 ["git", "ls-files", "--error-unmatch", str(relative_entry)],
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            if result.returncode != 0:
-                missing.append(str(relative_entry))
+            ignored = subprocess.run(
+                ["git", "check-ignore", "--no-index", "-q", str(relative_entry)],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if tracked.returncode == 0 or ignored.returncode != 0:
+                invalid.append(str(relative_entry))
 
-    assert missing == []
+    assert invalid == []
