@@ -1,5 +1,6 @@
 """分集到全集转换：以替换订阅方式切换为全集洗版。"""
 
+from app.application.subscription.write import add_subscribe as add_subscribe_command
 from app.sdk.logging import logger
 from app.schemas.types import EventType
 
@@ -71,7 +72,12 @@ class BestVersionConverter:
                 logger.warning(f"{subscribe_desc} 清理旧订阅任务失败，继续创建全集洗版订阅，错误={err}")
 
         try:
-            new_sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **full_payload)
+            # V3 Oper 只接收已翻译的 identity/payload；媒体对象写入统一经过订阅应用服务。
+            new_sid, err_msg = add_subscribe_command(
+                mediainfo=mediainfo,
+                subscribe_oper=self._subscribe_oper,
+                **full_payload,
+            )
         except Exception as err:
             new_sid, err_msg = None, str(err)
 

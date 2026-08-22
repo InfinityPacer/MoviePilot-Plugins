@@ -1,7 +1,8 @@
 """best_version/converter.py 分集→全集转换单测。"""
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
+from app.db.oper.subscribe import SubscribeOper
 from app.plugins.subscribeassistantenhanced.best_version.converter import BestVersionConverter
 
 
@@ -16,8 +17,16 @@ class _SubscribeSnapshot(SimpleNamespace):
 def _mediainfo():
     """构造具备通知图片和序列化能力的媒体信息替身。"""
     return SimpleNamespace(
+        media_source="themoviedb",
+        media_id="100",
+        episode_group="eg-1",
+        title="测试剧",
+        year="2026",
         type=SimpleNamespace(value="电视剧"),
+        overview="测试简介",
         vote_average=8.8,
+        get_poster_image=lambda: "poster.jpg",
+        get_backdrop_image=lambda: "backdrop.jpg",
         to_dict=lambda: {"title": "测试剧"},
         get_message_image=lambda: "poster.jpg",
     )
@@ -65,7 +74,7 @@ class TestConvertToFull:
         oper.delete.assert_called_once_with(sid=1)
         clear_tasks.assert_called_once_with(1)
         oper.add.assert_called_once()
-        add_payload = oper.add.call_args.kwargs
+        add_payload = oper.add.call_args.kwargs["payload"]
         assert add_payload["best_version"] == 1
         assert add_payload["best_version_full"] == 1
         assert add_payload["episode_group"] == "eg-1"
@@ -84,6 +93,25 @@ class TestConvertToFull:
         assert notify.call_args.args[0] == "测试剧 S1 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅"
         assert "user" not in notify.call_args.kwargs
         assert "reason" not in notify.call_args.kwargs
+
+    def test_uses_v3_subscribe_oper_signature(self):
+        """分集转全集应通过 V3 订阅应用服务适配 canonical Oper 写入签名。"""
+        oper = create_autospec(SubscribeOper, instance=True)
+        oper.add.return_value = (9, "")
+        conv = BestVersionConverter(
+            subscribe_oper=oper,
+            clear_tasks_fn=MagicMock(),
+            send_event_fn=MagicMock(),
+            notify_fn=MagicMock(),
+        )
+        sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
+
+        assert conv.convert_to_full(sub, _mediainfo()) is True
+
+        oper.add.assert_called_once()
+        _args, kwargs = oper.add.call_args
+        assert set(kwargs) >= {"identity", "payload", "username"}
+        assert "mediainfo" not in kwargs
 
     def test_failure_keeps_original(self):
         """删除分集订阅失败时保留活动订阅和已写历史，不做不精确回滚。"""
@@ -219,6 +247,6 @@ class TestConvertToFull:
 
         assert conv.convert_to_full(sub, _mediainfo()) is True
 
-        payload = oper.add.call_args.kwargs
+        payload = oper.add.call_args.kwargs["payload"]
         assert payload["best_version_full"] == 1
         assert payload["username"] == "订阅助手（增强版）"
