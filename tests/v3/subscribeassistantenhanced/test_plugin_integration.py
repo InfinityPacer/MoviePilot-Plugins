@@ -57,8 +57,14 @@ def _mediainfo(**kwargs):
     """构造插件状态通知使用的 MediaInfo 替身。"""
     defaults = dict(
         tmdb_id=100,
+        media_source="themoviedb",
+        media_id="100",
+        episode_group=None,
+        title="测试",
+        year="2026",
         title_year="测试 (2026)",
         vote_average=8.0,
+        overview="测试简介",
         season_info=[],
         seasons={},
         first_air_date=None,
@@ -68,6 +74,8 @@ def _mediainfo(**kwargs):
     defaults.update(kwargs)
     media = SimpleNamespace(**defaults)
     media.to_dict = lambda: {"tmdb_id": media.tmdb_id}
+    media.get_poster_image = lambda: "poster.jpg"
+    media.get_backdrop_image = lambda: "backdrop.jpg"
     media.get_message_image = lambda: "poster.jpg"
     return media
 

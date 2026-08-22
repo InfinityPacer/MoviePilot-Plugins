@@ -1,6 +1,7 @@
 """洗版全流程编排：按配置创建洗版订阅。"""
 from typing import Callable, Optional
 
+from app.application.subscription.write import add_subscribe as add_subscribe_command
 from app.sdk.logging import logger
 from app.schemas.types import MediaType
 
@@ -103,7 +104,12 @@ class BestVersionOrchestrator:
         payload = {key: value for key, value in payload.items() if value is not None}
         # 插件创建的订阅始终重新跟随 TMDB 总集数，不继承已完成订阅的手动锁定状态。
         payload["manual_total_episode"] = 0
-        sid, err_msg = self._subscribe_oper.add(mediainfo=mediainfo, **payload)
+        # V3 Oper 只接收已翻译的 identity/payload；媒体对象写入统一经过订阅应用服务。
+        sid, err_msg = add_subscribe_command(
+            mediainfo=mediainfo,
+            subscribe_oper=self._subscribe_oper,
+            **payload,
+        )
         if sid:
             mode_label = "洗版"
             logger.info(

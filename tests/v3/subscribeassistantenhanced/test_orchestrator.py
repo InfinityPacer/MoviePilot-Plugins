@@ -1,7 +1,8 @@
 """best_version/orchestrator.py 洗版编排单测。"""
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
+from app.db.oper.subscribe import SubscribeOper
 from app.schemas.types import MediaType
 
 from app.plugins.subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
@@ -11,7 +12,16 @@ from app.plugins.subscribeassistantenhanced.best_version.priority import Priorit
 def _mediainfo():
     """构造洗版通知需要的媒体信息替身。"""
     return SimpleNamespace(
+        media_source="themoviedb",
+        media_id="100",
+        episode_group=None,
+        title="测试剧",
+        year="2026",
+        type=SimpleNamespace(value="电视剧"),
+        overview="测试简介",
         vote_average=8.8,
+        get_poster_image=lambda: "poster.jpg",
+        get_backdrop_image=lambda: "backdrop.jpg",
         get_message_image=lambda: "poster.jpg",
         to_dict=lambda: {"title": "测试剧"},
     )
@@ -112,11 +122,25 @@ class TestStartBestVersion:
         assert "reason" not in notify.call_args.kwargs
         assert "user" not in notify.call_args.kwargs
         _args, kwargs = oper.add.call_args
-        assert kwargs["best_version"] == 1 and kwargs["season"] == 1
-        assert kwargs["best_version_full"] == 1
-        assert kwargs["manual_total_episode"] == 0
-        assert kwargs["filter"] == "r"
-        assert kwargs["filter_groups"] == ["g1"]
+        payload = kwargs["payload"]
+        assert kwargs["identity"]["media_id"] == "100"
+        assert payload["best_version"] == 1 and payload["season"] == 1
+        assert payload["best_version_full"] == 1
+        assert payload["manual_total_episode"] == 0
+        assert payload["filter"] == "r"
+        assert payload["filter_groups"] == ["g1"]
+
+    def test_uses_v3_subscribe_oper_signature(self):
+        """自动洗版应通过 V3 订阅应用服务适配 canonical Oper 写入签名。"""
+        oper = create_autospec(SubscribeOper, instance=True)
+        oper.add.return_value = (5, "")
+
+        assert self._orch(oper).start_best_version(_sub(best_version=0), _mediainfo()) == 5
+
+        oper.add.assert_called_once()
+        _args, kwargs = oper.add.call_args
+        assert set(kwargs) >= {"identity", "payload", "username"}
+        assert "mediainfo" not in kwargs
 
     def test_create_failure_notifies_error_and_image(self):
         """自动创建洗版订阅失败时应推送主程序返回的错误原因。"""
@@ -169,12 +193,12 @@ class TestStartBestVersion:
         oper.add.return_value = (6, "")
         sub = _sub(best_version=0, type=MediaType.MOVIE)
 
-        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, object())
+        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, _mediainfo())
 
         assert sid == 6
         oper.add.assert_called_once()
         _args, kwargs = oper.add.call_args
-        assert "best_version_full" not in kwargs
+        assert "best_version_full" not in kwargs["payload"]
 
     def test_movie_best_version_inherits_movie_current_priority(self):
         """电影自动洗版应继承普通订阅本次完成资源的优先级。"""
@@ -182,11 +206,11 @@ class TestStartBestVersion:
         oper.add.return_value = (6, "")
         sub = _sub(best_version=0, type=MediaType.MOVIE, current_priority=95)
 
-        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, object())
+        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, _mediainfo())
 
         assert sid == 6
         _args, kwargs = oper.add.call_args
-        assert kwargs["current_priority"] == 95
+        assert kwargs["payload"]["current_priority"] == 95
 
     def test_movie_best_version_invalid_current_priority_defaults_to_zero(self):
         """电影完成快照里的异常优先级按未建立质量基线处理。"""
@@ -194,11 +218,11 @@ class TestStartBestVersion:
         oper.add.return_value = (6, "")
         sub = _sub(best_version=0, type=MediaType.MOVIE, current_priority="invalid")
 
-        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, object())
+        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, _mediainfo())
 
         assert sid == 6
         _args, kwargs = oper.add.call_args
-        assert kwargs["current_priority"] == 0
+        assert kwargs["payload"]["current_priority"] == 0
 
     def test_movie_best_version_skips_when_movie_current_priority_is_top(self):
         """电影普通订阅已达顶档时不应再创建洗版订阅，并推送提示。"""
@@ -252,7 +276,7 @@ class TestStartBestVersion:
             oper,
             best_version_type="tv_episode",
             related_downloads_fn=related,
-        ).start_best_version(sub, object())
+        ).start_best_version(sub, _mediainfo())
 
         assert sid is None
         related.assert_called_once_with(sub)
@@ -282,9 +306,9 @@ class TestStartBestVersion:
             oper,
             best_version_type="tv_episode",
             related_downloads_fn=MagicMock(return_value=[object(), object()]),
-        ).start_best_version(sub, object())
+        ).start_best_version(sub, _mediainfo())
 
         assert sid == 7
         oper.add.assert_called_once()
         _args, kwargs = oper.add.call_args
-        assert kwargs["best_version_full"] == 1
+        assert kwargs["payload"]["best_version_full"] == 1
