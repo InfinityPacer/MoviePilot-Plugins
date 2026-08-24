@@ -8,13 +8,12 @@ import plexapi
 import plexapi.utils
 import pypinyin
 from plexapi.library import LibrarySection
-from zhconv_rs import zhconv as zhconv_convert
 
 from app.chain.mediaserver import MediaServerChain
 from app.chain.tmdb import TmdbChain
 from app.sdk.logging import logger
 from app.sdk.media import MediaInfo
-from app.sdk.utilities import StringUtils
+from app.sdk.utilities import StringUtils, convert
 from app.plugins import PluginChian
 from .helper import RatingInfo, cache_backend, cache_with_logging
 from app.schemas import MediaPerson, ServiceInfo
@@ -660,7 +659,7 @@ class ScrapeHelper:
             if also_known_as:
                 for name in also_known_as:
                     if name and StringUtils.is_chinese(name):
-                        return zhconv_convert(name, "zh-hans")
+                        return convert(name, "zh-hans")
         except Exception as err:
             logger.error(f"获取人物中文名失败：{err}")
         return None

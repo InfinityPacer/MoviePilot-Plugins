@@ -5,6 +5,7 @@ from types import ModuleType
 from unittest.mock import MagicMock
 
 from app.schemas.types import MediaSource, MediaType
+from app.sdk.utilities import convert
 from app.testing import stub_modules
 
 
@@ -31,6 +32,11 @@ def test_v3_plugin_uses_stable_sdk_imports():
     assert _plugin.get_command() == []
     assert plugin.get_api() == []
     assert plugin.get_page() == []
+
+
+def test_text_conversion_uses_host_sdk():
+    """人物别名转换应由宿主 SDK 选择兼容当前解释器的实现。"""
+    assert _scrape.convert is convert
 
 
 def test_tmdb_media_uses_unified_source_identity():
