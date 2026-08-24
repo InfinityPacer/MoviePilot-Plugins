@@ -3,13 +3,13 @@
         "name": "订阅助手（增强版）",
         "description": "多场景管理订阅，实现订阅全生命周期管理。",
         "labels": "订阅",
-        "version": "0.7.4",
+        "version": "0.7.5",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
-            "v0.7.4": "修正 V3 自动创建洗版订阅和分集转全集的订阅写入兼容问题"
+            "v0.7.5": "修正完成前观察通知，保留完成证据并说明需要继续观察的具体原因"
         },
         "release": true
     },

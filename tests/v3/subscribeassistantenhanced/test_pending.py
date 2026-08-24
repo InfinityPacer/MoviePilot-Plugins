@@ -591,15 +591,30 @@ class TestMarkPending:
         assert notify.call_args.kwargs["detail"] == "集数不足"
 
     def test_mark_pending_sends_guard_veto_status_notification(self):
-        """完成守卫进入 P 时发送完成前检查通知，并保留集数变化明细。"""
+        """完成守卫进入 P 时发送中性观察通知，并保留具体证据明细。"""
         notify = MagicMock()
         j = _judge(notify=notify)
 
         j.mark_pending(_sub(), source="guard_veto", reason="目标总集数近期变化（12 -> 13）")
 
         notify.assert_called_once()
-        assert "完成前检查未通过，订阅已进入待定" in notify.call_args.args[1]
+        assert "完成证据需观察，订阅已进入待定" in notify.call_args.args[1]
         assert notify.call_args.kwargs["detail"] == "目标总集数近期变化（12 -> 13）"
+
+    def test_mark_pending_keeps_positive_completion_evidence_readable(self):
+        """正向完成证据进入观察时，标题不得把证据描述成检查失败。"""
+        notify = MagicMock()
+        j = _judge(notify=notify)
+        detail = (
+            "订阅目标范围已无待下载集。当前目标范围共 238 集且被标记为高风险，"
+            "当前目标满足不足以排除后续增集，需要继续观察"
+        )
+
+        j.mark_pending(_sub(), source="guard_veto", reason=detail)
+
+        notify.assert_called_once()
+        assert notify.call_args.args[1] == "完成证据需观察，订阅已进入待定"
+        assert notify.call_args.kwargs["detail"] == detail
 
     def test_mark_pending_download_pending_stays_silent(self):
         """下载待定是短窗口内部状态，不发送用户通知。"""

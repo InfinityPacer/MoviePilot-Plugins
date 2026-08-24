@@ -228,7 +228,7 @@ class PendingStateCoordinator:
         """把内部待定原因转成日志中可读的中文名称。"""
         labels = {
             "pending_judge": "剧集信息待确认",
-            "guard_veto": "完成前检查未通过",
+            "guard_veto": "完成前观察",
             "download_pending": "下载还未整理入库",
         }
         return labels.get(source or "", source or "未知原因")
