@@ -31,6 +31,10 @@ def _sub(state="R"):
 class TestPendingStateCoordinator:
     """多来源待定仲裁：任一来源仍活跃时订阅保持 P。"""
 
+    def test_guard_veto_source_label_describes_observation(self):
+        """完成守卫待定来源在日志中应描述为观察，而非检查失败。"""
+        assert PendingStateCoordinator._source_label("guard_veto") == "完成前观察"
+
     def test_mark_active_rejects_missing_subscribe_or_source(self):
         """待定来源缺少订阅或来源名时，不应污染任务状态。"""
         read, update, store = _store_mgr()

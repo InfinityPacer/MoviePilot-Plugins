@@ -106,7 +106,16 @@ class CompletionGuard:
                     f"信号={self._signal_tags(signal)}，按 {self.mode} 模式放行"
                 )
                 return
-            self._record_observation(data, subscribe, signal, evidence)
+            self._record_observation(
+                data,
+                subscribe,
+                signal,
+                evidence,
+                observation_reason=(
+                    "现有证据只能确认当前订阅目标已满足，"
+                    "尚不足以排除后续增集，需要继续观察"
+                ),
+            )
             return
 
         if self._is_medium_i_completion(evidence.i_signal):
@@ -119,14 +128,21 @@ class CompletionGuard:
 
         low_signal = self._low_signal(evidence)
         if low_signal is not None:
-            if self._allow_low_confidence(low_signal):
+            allow_low_confidence, observation_reason = self._low_confidence_policy(low_signal)
+            if allow_low_confidence:
                 self.timeout_manager.clear_release_token(subscribe)
                 detail(
                     f"完成守卫：{format_subscribe(subscribe)} 低置信完结，"
                     f"按 {self.mode} 模式放行"
                 )
                 return
-            self._consume_or_observe(data, subscribe, low_signal, evidence)
+            self._consume_or_observe(
+                data,
+                subscribe,
+                low_signal,
+                evidence,
+                observation_reason=observation_reason,
+            )
             return
 
         self._block_completion(
@@ -195,20 +211,39 @@ class CompletionGuard:
         """把完成信号来源压缩成日志可读的组合标签。"""
         return " + ".join(signal.signals or ["none"]) if signal else "none"
 
-    def _allow_low_confidence(self, signal: CompletionSignal) -> bool:
-        """按守卫模式判断低置信 I/L 是否可立即完成。"""
+    def _low_confidence_policy(self, signal: CompletionSignal) -> tuple[bool, str]:
+        """裁决低置信 I/L 是否可立即完成，并返回同源的观察原因。"""
         if "L:target_satisfied" in signal.signals and (
             signal.scope_total < 3 or signal.scope_high_risk
         ):
-            return False
+            if signal.scope_high_risk:
+                return False, (
+                    f"当前目标范围共 {signal.scope_total} 集且被标记为高风险，"
+                    "当前目标满足不足以排除后续增集，需要继续观察"
+                )
+            return False, (
+                f"当前目标范围仅 {signal.scope_total} 集，"
+                "当前目标满足不足以排除后续增集，需要继续观察"
+            )
         if self.mode == "loose":
-            return True
+            return True, ""
         if self.mode == "balanced":
-            return signal.scope_total >= 3 and not signal.scope_high_risk
-        return False
+            if signal.scope_total >= 3 and not signal.scope_high_risk:
+                return True, ""
+            if signal.scope_high_risk:
+                return False, (
+                    f"当前目标范围共 {signal.scope_total} 集且被标记为高风险，"
+                    "现有完成证据不足以排除后续增集，需要继续观察"
+                )
+            return False, (
+                f"当前目标范围仅 {signal.scope_total} 集，"
+                "现有完成证据样本不足以排除后续增集，需要继续观察"
+            )
+        return False, "现有完成证据不足以排除后续增集，需要继续观察"
 
     def _consume_or_observe(self, data, subscribe, signal: CompletionSignal,
-                            evidence: CompletionEvidence):
+                            evidence: CompletionEvidence,
+                            observation_reason: str):
         """完成证据未获策略直接放行时，消费令牌或进入完成前观察。"""
         total_episode = self._signal_total(signal, evidence, subscribe)
         if self.timeout_manager.consume_release_token(
@@ -216,24 +251,40 @@ class CompletionGuard:
         ):
             detail(f"完成守卫：{format_subscribe(subscribe)} 完成前观察已释放，放行完成")
             return
-        self._record_observation(data, subscribe, signal, evidence, total_episode=total_episode)
+        self._record_observation(
+            data,
+            subscribe,
+            signal,
+            evidence,
+            total_episode=total_episode,
+            observation_reason=observation_reason,
+        )
 
     def _record_observation(self, data, subscribe, signal: CompletionSignal,
-                            evidence: CompletionEvidence, total_episode: int = None):
+                            evidence: CompletionEvidence, total_episode: int = None,
+                            observation_reason: str = ""):
         """写入 guard_veto 观察前清理旧释放令牌，避免过期令牌跨信号放行。"""
         total_episode = total_episode or self._signal_total(signal, evidence, subscribe)
+        notify_reason = self._observation_reason(signal, observation_reason)
         self.timeout_manager.clear_release_token(subscribe)
         logger.info(
-            f"完成守卫：{format_subscribe(subscribe)} 完成证据需观察（{signal.reason}），"
+            f"完成守卫：{format_subscribe(subscribe)} 完成证据需观察（{notify_reason}），"
             "进入完成前观察"
         )
         data.cancel = True
         data.source = "subscribeassistantenhanced"
-        data.reason = signal.reason
-        self.mark_pending_fn(subscribe, source="guard_veto", reason=signal.reason)
+        data.reason = notify_reason
+        self.mark_pending_fn(subscribe, source="guard_veto", reason=notify_reason)
         self.timeout_manager.record_observation(
             subscribe, signal=signal, total_episode=total_episode
         )
+
+    @staticmethod
+    def _observation_reason(signal: CompletionSignal, policy_reason: str) -> str:
+        """组合证据与裁决分支提供的观察原因，不在通知层重复推导策略。"""
+        if signal.completed and policy_reason:
+            return f"{signal.reason or '已命中完成证据'}。{policy_reason}"
+        return signal.reason
 
     @staticmethod
     def _signal_total(signal: CompletionSignal, evidence: CompletionEvidence, subscribe) -> int:

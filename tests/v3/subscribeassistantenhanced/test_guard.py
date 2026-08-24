@@ -104,6 +104,12 @@ class TestCompletionGuard:
     def test_completion_guard_routes_guard_veto_to_lifecycle(self):
         """入口构造的 guard_veto 回调经生命周期协调器登记。"""
         plugin = SubscribeAssistantEnhanced()
+        data_store = {}
+        plugin.get_data = MagicMock(side_effect=lambda key: data_store.get(key, {}))
+        plugin.save_data = MagicMock(
+            side_effect=lambda key, value: data_store.__setitem__(key, value)
+        )
+        plugin.update_config = MagicMock()
         plugin.init_plugin({})
         guard = plugin._modules["guard"]
         lifecycle = plugin._modules["lifecycle"]
@@ -444,7 +450,10 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is True
-        assert event.event_data.reason == "当前目标完成"
+        assert event.event_data.reason == (
+            "当前目标完成。现有证据只能确认当前订阅目标已满足，"
+            "尚不足以排除后续增集，需要继续观察"
+        )
         guard.timeout_manager.consume_release_token.assert_not_called()
         guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.timeout_manager.record_observation.assert_called_once_with(
@@ -528,7 +537,10 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is True
-        assert event.event_data.reason == "订阅目标范围已无待下载集"
+        assert event.event_data.reason == (
+            "订阅目标范围已无待下载集。当前目标范围仅 2 集，"
+            "当前目标满足不足以排除后续增集，需要继续观察"
+        )
         guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.mark_pending_fn.assert_called_once()
         guard.timeout_manager.record_observation.assert_called_once_with(
@@ -552,7 +564,10 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is True
-        assert event.event_data.reason == "订阅目标范围已无待下载集"
+        assert event.event_data.reason == (
+            "订阅目标范围已无待下载集。当前目标范围仅 2 集，"
+            "当前目标满足不足以排除后续增集，需要继续观察"
+        )
         guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=low,
@@ -575,6 +590,15 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is True
+        assert event.event_data.reason == (
+            "订阅目标范围已无待下载集。当前目标范围共 80 集且被标记为高风险，"
+            "当前目标满足不足以排除后续增集，需要继续观察"
+        )
+        guard.mark_pending_fn.assert_called_once_with(
+            event.event_data.subscribe,
+            source="guard_veto",
+            reason=event.event_data.reason,
+        )
         guard.timeout_manager.record_observation.assert_called_once_with(
             event.event_data.subscribe,
             signal=low,
@@ -614,7 +638,10 @@ class TestCompletionGuard:
         guard.handle(event)
 
         assert event.event_data.cancel is True
-        assert event.event_data.reason == "目标范围内所有集已播且未发现后续集"
+        assert event.event_data.reason == (
+            "目标范围内所有集已播且未发现后续集。"
+            "现有完成证据不足以排除后续增集，需要继续观察"
+        )
         guard.timeout_manager.clear_release_token.assert_called_once_with(event.event_data.subscribe)
         guard.mark_pending_fn.assert_called_once()
         guard.timeout_manager.record_observation.assert_called_once_with(

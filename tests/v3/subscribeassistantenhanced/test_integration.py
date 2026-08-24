@@ -236,7 +236,10 @@ class TestBestVersionFlow:
                              cancel=False, reason="", source=""))
         guard.handle(ev)
         assert ev.event_data.cancel is True
-        assert ev.event_data.reason == "订阅目标范围已无待下载集"
+        assert ev.event_data.reason == (
+            "订阅目标范围已无待下载集。当前目标范围仅 2 集，"
+            "当前目标满足不足以排除后续增集，需要继续观察"
+        )
         guard.mark_pending_fn.assert_called_once()
 
     def test_payload_preserves_episode_group(self):

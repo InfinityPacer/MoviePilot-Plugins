@@ -16,7 +16,7 @@ from .state import PendingStateCoordinator
 
 ENTER_TITLES = {
     "pending_judge": "剧集信息待确认，订阅已进入待定",
-    "guard_veto": "完成前检查未通过，订阅已进入待定",
+    "guard_veto": "完成证据需观察，订阅已进入待定",
 }
 
 EXIT_TITLES = {
