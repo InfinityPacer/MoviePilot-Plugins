@@ -94,6 +94,8 @@ jobs:
           cache-dependency-glob: plugins.v3/*/pyproject.toml
 
       - name: Install V3 plugin dependencies
+        env:
+          PYTHONUTF8: '1'
         run: uv run --no-project --python 3.14 python scripts/check_v3_dependency_install.py --python 3.14
 
   plugin-coverage-gate:
