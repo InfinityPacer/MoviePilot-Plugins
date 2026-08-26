@@ -63,6 +63,39 @@ jobs:
         working-directory: MoviePilot-Plugins
         run: ../MoviePilot/.venv/bin/python tests/run.py
 
+  plugin-dependency-install-gate:
+    name: V3 dependency install (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+          - name: Linux arm64
+            os: ubuntu-24.04-arm
+          - name: Windows x64
+            os: windows-latest
+          - name: macOS Intel
+            os: macos-15-intel
+          - name: macOS arm64
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout plugin repository
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.12.5'
+          python-version: '3.14'
+          enable-cache: true
+          cache-dependency-glob: plugins.v3/*/pyproject.toml
+
+      - name: Install V3 plugin dependencies
+        run: uv run --no-project --python 3.14 python scripts/check_v3_dependency_install.py --python 3.14
+
   plugin-coverage-gate:
     name: Plugin coverage gate
     runs-on: ubuntu-latest
