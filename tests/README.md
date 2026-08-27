@@ -68,14 +68,6 @@ autouse 网络守卫等引导逻辑统一在主程序 `app/testing`（`bootstrap
 - 插件不提交 `uv.lock`；MoviePilot 不为每个插件创建独立环境，会在共享环境中统一解析和安装。
 - V1/V2 历史插件继续使用 `requirements.txt`。
 
-PR 门禁会自动发现全部 V3 `pyproject.toml`，在 Python 3.14 的 Linux x64/arm64、Windows x64、
-macOS Intel/ARM runner 中分别创建隔离环境，按宿主的 `uv pip install -r pyproject.toml` 语义真实安装
-并执行 `uv pip check`。本地可执行同一入口：
-
-```bash
-uv run --no-project --python 3.14 python scripts/check_v3_dependency_install.py --python 3.14
-```
-
 ## 覆盖率门禁
 
 插件覆盖率按插件独立统计，不使用全仓聚合覆盖率。历史兼容实现数量多且维护等级不同，
