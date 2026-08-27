@@ -162,7 +162,8 @@ def test_pr_workflow_runs_plugin_coverage_gate() -> None:
     assert "Determine whether coverage gate is required" in workflow
     assert "steps.coverage-scope.outputs.run == 'true'" in workflow
     assert "astral-sh/setup-uv" in workflow
-    assert "version: '0.12.5'" in workflow
+    assert "uses: astral-sh/setup-uv@v10.0.1" in workflow
+    assert "version: '0.12.5'" not in workflow
     assert "MoviePilot/uv.lock" in workflow
     assert "uv sync --locked" in workflow
     assert "../MoviePilot/.venv/bin/python scripts/plugin_coverage.py" in workflow
