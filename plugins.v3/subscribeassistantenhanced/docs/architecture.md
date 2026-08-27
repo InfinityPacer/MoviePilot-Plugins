@@ -95,11 +95,11 @@ frontend/
 - `src/components/Config.vue` 负责配置页布局、用户交互和 Host 事件。
 - `src/config/` 负责稳定配置键、默认值、草稿、保存 payload、字段元数据、本地化、运行概况 API 和展示规则。
 - `src/assets/` 保存前端品牌资源；品牌图在联邦构建中内联，避免按宿主根路径解析。
-- `dist/assets/` 是随插件发布的唯一前端运行产物，包含 `remoteEntry.js`、暴露组件和依赖入口；它由构建生成，不纳入 Git。
+- `dist/assets/` 是随插件发布的唯一前端运行产物，包含 `remoteEntry.js`、暴露组件和依赖入口，并纳入 Git 供 Release 与文件列表安装共同使用。
 
 插件入口通过 `get_render_mode()` 返回 `("vue", "frontend/dist/assets")`。MoviePilot 从插件静态文件接口加载 `remoteEntry.js`，再挂载模块联邦暴露的 `Config` 组件。发布包包含 `frontend/dist/assets/`，不依赖源码和 `node_modules` 才能运行。
 
-生产构建执行 `yarn build`，会清空并重建 `frontend/dist/`。测试模式只启用 Vue 编译，不启用模块联邦和构建产物清理插件，使组件测试直接覆盖源码。`yarn dev` 使用 Vite watch 持续生成生产形态的联邦产物；首次接入本地仓或清理产物后，需要先安装依赖并启动该命令。
+生产构建执行 `yarn build`，会清空并重建 `frontend/dist/`。测试模式只启用 Vue 编译，不启用模块联邦和构建产物清理插件，使组件测试直接覆盖源码。`yarn dev` 使用 Vite watch 持续生成生产形态的联邦产物。
 
 本地插件仓通过 `PLUGIN_LOCAL_REPO_PATHS` 接入 MoviePilot，`PLUGIN_AUTO_RELOAD=true` 负责同步构建产物并热加载插件。`DEV=true` 只用于暂停定时任务，不承担源码或联邦产物同步。
 
@@ -142,7 +142,7 @@ tests/v3/subscribeassistantenhanced/frontend/
 
 Vitest 使用 jsdom、Testing Library、Vue Test Utils、MSW 和 V8 coverage。全局覆盖率门槛为分支 80%、函数 85%、行和语句 85%；纳入覆盖率的每个核心文件至少达到分支 75%、函数、行和语句 80%。`Config.vue` 的样式、容器查询、hover/focus、桌面与移动布局、联邦远程加载和 Host 保存关闭流程由真实 Chrome 验证。
 
-V3 前端 CI 仅在 SAE 前端源码、前端测试或工作流变化时运行，使用 Node 24 依次执行 frozen lockfile 安装、`yarn typecheck`、`yarn test:coverage` 和生产构建，并校验构建生成的 `dist/assets/remoteEntry.js` 存在。插件 Release workflow 在打包前再次现场构建对应前端。`dist/` 是本地和 Release 打包阶段生成的产物，不纳入 Git。
+前端 CI 对 V3 执行格式、lint、类型与单测门禁，并分别重建 V2/V3 产物以校验提交内容与源码一致；插件 Release workflow 在打包前对目标代次执行同样的产物校验。
 
 ## 入口层
 
