@@ -61,6 +61,17 @@ jobs:
               echo "Frontend federation entry missing: $frontend_dir/dist/assets/remoteEntry.js" >&2
               exit 1
             fi
+
+            if git check-ignore -q "$frontend_dir/dist/assets/remoteEntry.js"; then
+              echo "Frontend distributable is ignored by Git: $frontend_dir/dist" >&2
+              exit 1
+            fi
+
+            if [ -n "$(git status --porcelain --untracked-files=all -- "$frontend_dir/dist")" ]; then
+              git status --short --untracked-files=all -- "$frontend_dir/dist"
+              echo "Frontend distributable does not match committed files: $frontend_dir/dist" >&2
+              exit 1
+            fi
           }
 
           process_package() {
@@ -69,24 +80,8 @@ jobs:
 
             echo "Processing $pkg_file"
 
-            case "$pkg_file" in
-              package.json)
-                # Default-index implementations need an explicit V2/V3 opt-in before V3 can load them.
-                entry_filter='select(.value.release == true and .value.v3 != false and (.value.v3 == true or .value.v2 == true))'
-                ;;
-              package.v2.json)
-                # V3 inherits V2 implementations unless the entry explicitly opts out.
-                entry_filter='select(.value.release == true and .value.v3 != false)'
-                ;;
-              package.v3.json)
-                entry_filter='select(.value.release == true)'
-                ;;
-              *)
-                echo "Unsupported package file: $pkg_file" >&2
-                exit 2
-                ;;
-            esac
-            mapfile -t entries < <(jq -r "to_entries | map($entry_filter) | .[] | \"\\(.key)|\\(.value.version)\"" "$pkg_file")
+            # 发布资格由当前代次 manifest 的 release 标记决定，v2/v3 兼容标记只控制宿主加载范围。
+            mapfile -t entries < <(jq -r 'to_entries | map(select(.value.release == true)) | .[] | "\(.key)|\(.value.version)"' "$pkg_file")
 
             if [ "${#entries[@]}" -eq 0 ]; then
               echo "No plugins with release=true in $pkg_file"
@@ -159,6 +154,6 @@ jobs:
             done
           }
 
-          process_package "package.json"
-          process_package "package.v2.json"
           process_package "package.v3.json"
+          process_package "package.v2.json"
+          process_package "package.json"
