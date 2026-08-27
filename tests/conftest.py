@@ -73,6 +73,7 @@ def configure_plugin_test_services(request):
         "download_history",
         "transfer_history",
         "transfer_pending",
+        "transfer_execution",
         "media_server",
         "download_failure",
         "user",
