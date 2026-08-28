@@ -99,6 +99,20 @@ def test_converter_is_wired():
     assert converter._notification_image.__func__ is plugin._resolve_notification_image.__func__
 
 
+def test_subscription_creation_uses_host_transactional_writer():
+    """新增订阅不注入查询 Oper，交由宿主配置的事务 writer 处理。"""
+    plugin = SubscribeAssistantEnhanced()
+    plugin.init_plugin({})
+
+    converter = plugin._modules["converter"]
+    orchestrator = plugin._modules["orchestrator"]
+
+    assert converter._subscribe_oper is plugin._subscribe_oper
+    assert converter._subscribe_history_oper is plugin._subscribe_history_oper
+    assert converter._subscribe_writer is None
+    assert orchestrator._subscribe_writer is None
+
+
 def test_orchestrator_uses_shared_notification_image_resolver():
     """自动洗版通知与状态通知共用订阅图片优先策略。"""
     plugin = SubscribeAssistantEnhanced()
@@ -2330,8 +2344,8 @@ def test_best_version_notification_without_image_has_single_plugin_source():
     plugin.init_plugin({"notify": True, "best_version_type": "all"})
     plugin.post_message = MagicMock()
     orchestrator = plugin._modules["orchestrator"]
-    orchestrator._subscribe_oper = MagicMock()
-    orchestrator._subscribe_oper.add.return_value = (8, "")
+    orchestrator._subscribe_writer = MagicMock()
+    orchestrator._subscribe_writer.add.return_value = (8, "")
     media = _mediainfo()
     media.get_message_image = lambda: ""
 
@@ -3462,6 +3476,7 @@ class TestNoDownloadCheck:
             "no_download_actions": [action],
         })
         plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_history_oper = MagicMock()
         plugin._subscribe_oper.list.return_value = [subscribe]
         plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
         plugin._last_download_date = MagicMock(return_value=None)
@@ -3748,7 +3763,7 @@ class TestNoDownloadCheck:
 
         plugin._recognize_mediainfo.assert_called_once_with(subscribe)
         plugin._last_download_date.assert_called_once_with(subscribe)
-        plugin._subscribe_oper.add_history.assert_called_once_with(**subscribe.to_dict())
+        plugin._subscribe_history_oper.add.assert_called_once_with(subscribe.to_dict())
         plugin._subscribe_oper.delete.assert_called_once_with(25)
 
     def test_overdue_tv_pause_action_preserves_no_download_pause_detail(self):

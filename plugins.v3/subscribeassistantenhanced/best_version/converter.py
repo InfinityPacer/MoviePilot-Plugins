@@ -2,7 +2,6 @@
 
 from app.application.subscription.write import add_subscribe as add_subscribe_command
 from app.sdk.logging import logger
-from app.schemas.types import EventType
 
 
 DROP_REBUILT_FIELDS = {
@@ -18,14 +17,16 @@ class BestVersionConverter:
     需要随 payload 保留，避免绝对季或剧集组范围在转换时丢失。
     """
 
-    def __init__(self, subscribe_oper=None, clear_tasks_fn=None, send_event_fn=None,
+    def __init__(self, subscribe_oper=None, clear_tasks_fn=None,
                  notify_fn=None, restore_fn=None, snapshot_fn=None, format_desc_fn=None,
                  notification_image_fn=None,
-                 plugin_name: str = "订阅助手（增强版）"):
-        """注入订阅写库、任务清理、事件、通知、完成快照和失败恢复依赖。"""
+                 plugin_name: str = "订阅助手（增强版）",
+                 subscribe_history_oper=None, subscribe_writer=None):
+        """注入活动订阅、历史归档、新增订阅及转换副作用依赖。"""
         self._subscribe_oper = subscribe_oper
+        self._subscribe_history_oper = subscribe_history_oper
+        self._subscribe_writer = subscribe_writer
         self._clear_tasks = clear_tasks_fn
-        self._send_event = send_event_fn
         self._notify = notify_fn
         self._restore = restore_fn
         self._snapshot = snapshot_fn
@@ -36,7 +37,7 @@ class BestVersionConverter:
     def convert_to_full(self, subscribe, mediainfo=None, current_priority=None) -> bool:
         """按指定全集准入基线替换为全集洗版订阅；失败时尽量恢复分集订阅。"""
         sid = subscribe.id
-        if not sid or not self._subscribe_oper or not mediainfo:
+        if not sid or not self._subscribe_oper or not self._subscribe_history_oper or not mediainfo:
             return False
 
         subscribe_dict = subscribe.to_dict()
@@ -52,7 +53,7 @@ class BestVersionConverter:
             return False
 
         try:
-            self._subscribe_oper.add_history(**subscribe_dict)
+            self._subscribe_history_oper.add(subscribe_dict)
         except Exception as err:
             logger.error(f"{subscribe_desc} 原因=写入订阅历史失败，处理=停止转全集处理，错误={err}")
             self._notify_failure(subscribe, subscribe_desc, str(err), mediainfo=mediainfo)
@@ -72,10 +73,10 @@ class BestVersionConverter:
                 logger.warning(f"{subscribe_desc} 清理旧订阅任务失败，继续创建全集洗版订阅，错误={err}")
 
         try:
-            # V3 Oper 只接收已翻译的 identity/payload；媒体对象写入统一经过订阅应用服务。
+            # 新增订阅由 Application writer 负责，活动订阅 Oper 不承担跨事务写入。
             new_sid, err_msg = add_subscribe_command(
                 mediainfo=mediainfo,
-                subscribe_oper=self._subscribe_oper,
+                subscribe_oper=self._subscribe_writer,
                 **full_payload,
             )
         except Exception as err:
@@ -83,7 +84,6 @@ class BestVersionConverter:
 
         if new_sid:
             logger.info(f"{subscribe_desc} 原因=分集洗版集数已符合目标集数，处理=已转为全集洗版订阅 (ID: {new_sid})")
-            self._send_subscribe_added(new_sid, mediainfo)
             self._notify_success(subscribe, subscribe_desc, mediainfo)
             return True
 
@@ -116,17 +116,6 @@ class BestVersionConverter:
             return self._format_desc(subscribe, mediainfo)
         season = f" S{subscribe.season}" if subscribe.season is not None else ""
         return f"{subscribe.name}{season}"
-
-    def _send_subscribe_added(self, sid, mediainfo):
-        """全集洗版订阅创建成功后发 SubscribeAdded 事件。"""
-        if not self._send_event:
-            return
-        media_payload = mediainfo.to_dict()
-        self._send_event(EventType.SubscribeAdded, {
-            "subscribe_id": sid,
-            "username": self._plugin_name,
-            "mediainfo": media_payload,
-        })
 
     def _notify_success(self, subscribe, subscribe_desc: str, mediainfo):
         """发送转全集成功通知。"""
