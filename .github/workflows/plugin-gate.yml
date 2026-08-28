@@ -46,6 +46,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
+          version-file: MoviePilot/pyproject.toml
           python-version: '3.14'
           enable-cache: true
           cache-dependency-glob: |
@@ -133,6 +134,7 @@ jobs:
         if: steps.coverage-scope.outputs.run == 'true'
         uses: astral-sh/setup-uv@v10.0.1
         with:
+          version-file: MoviePilot/pyproject.toml
           python-version: '3.14'
           enable-cache: true
           cache-dependency-glob: |
