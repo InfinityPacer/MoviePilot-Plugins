@@ -1,5 +1,6 @@
 """PlexPersonMeta V3 媒体身份与专用数据源边界测试。"""
 
+import json
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
@@ -7,7 +8,6 @@ from unittest.mock import MagicMock
 from app.schemas.types import MediaSource, MediaType
 from app.sdk.utilities import convert
 from app.testing import stub_modules
-
 
 _pypinyin = ModuleType("pypinyin")
 _pypinyin.lazy_pinyin = lambda *_args, **_kwargs: []
@@ -32,6 +32,21 @@ def test_v3_plugin_uses_stable_sdk_imports():
     assert _plugin.get_command() == []
     assert plugin.get_api() == []
     assert plugin.get_page() == []
+
+
+def test_v3_version_history_and_legacy_index_are_consistent():
+    """V3 索引、插件类版本与旧代禁用标记必须保持一致。"""
+    repo_root = Path(__file__).parents[3]
+    package_v3 = json.loads((repo_root / "package.v3.json").read_text(encoding="utf-8"))
+    package_v2 = json.loads((repo_root / "package.v2.json").read_text(encoding="utf-8"))
+    metadata = package_v3["PlexPersonMeta"]
+
+    assert _plugin.plugin_version == "2.7"
+    assert metadata["version"] == _plugin.plugin_version
+    assert list(metadata["history"]) == ["v2.7"]
+    assert metadata["history"]["v2.7"]
+    assert metadata["system_version"] == ">=3.0.0"
+    assert package_v2["PlexPersonMeta"]["v3"] is False
 
 
 def test_text_conversion_uses_host_sdk():

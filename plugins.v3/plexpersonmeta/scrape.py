@@ -9,7 +9,6 @@ import plexapi.utils
 import pypinyin
 from plexapi.library import LibrarySection
 
-from app.chain.mediaserver import MediaServerChain
 from app.chain.tmdb import TmdbChain
 from app.sdk.logging import logger
 from app.sdk.media import MediaInfo
@@ -28,7 +27,6 @@ class ScrapeHelper:
     def __init__(self, config: dict, event: threading.Event, chain: PluginChian,
                  service: ServiceInfo, libraries: dict[int, Any]):
         self.tmdb_chain = TmdbChain()
-        self.mediaserver_chain = MediaServerChain()
         self.chain = chain
         self.event = event
         self.service = service

@@ -4,8 +4,9 @@ import threading
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
+import pytest
+from app.schemas import ServiceInfo
 from app.testing import stub_modules
-
 
 _pypinyin = ModuleType("pypinyin")
 _pypinyin.lazy_pinyin = lambda *_args, **_kwargs: []
@@ -77,3 +78,44 @@ def test_empty_config_resets_previous_state_and_uses_default_delay():
     assert plugin._libraries == []
     assert plugin._transfer_time is None
     assert plugin.get_service() == []
+
+
+def test_service_info_returns_none_when_service_has_no_instance():
+    """未建立运行实例的媒体服务应按未连接处理，而不是调用空对象方法。"""
+    plugin = _plugin_instance()
+    plugin.mediaserver_helper = MagicMock()
+    plugin.mediaserver_helper.get_service.return_value = ServiceInfo(name="plex")
+
+    with patch.object(_plugin, "logger") as logger:
+        assert plugin.service_info(name="plex") is None
+
+    logger.warning.assert_called_once_with("媒体服务器 plex 未连接，请检查配置")
+
+
+@pytest.mark.parametrize(
+    ("method_name", "arguments"),
+    [("scrape_library", ()), ("scrape_library_by_added_time", (0,))],
+)
+def test_scrape_skips_missing_service_without_accessing_service_name(method_name, arguments):
+    """刮削入口在服务查询失败或无实例时应使用稳定的配置名称记录并跳过。"""
+    plugin = _plugin_instance()
+    plugin.mediaserver_helper = MagicMock()
+    plugin.get_config = MagicMock(return_value={})
+
+    with (
+        patch.object(
+            _plugin.PlexPersonMeta,
+            "_PlexPersonMeta__check_plex_media_server",
+            return_value=True,
+        ),
+        patch.object(
+            _plugin.PlexPersonMeta,
+            "_PlexPersonMeta__get_service_libraries",
+            return_value={"plex": {1: MagicMock()}},
+        ),
+        patch.object(plugin, "service_info", return_value=None),
+        patch.object(_plugin, "logger") as logger,
+    ):
+        getattr(plugin, method_name)(*arguments)
+
+    logger.info.assert_any_call("获取媒体服务器 plex 实例失败，跳过处理")
