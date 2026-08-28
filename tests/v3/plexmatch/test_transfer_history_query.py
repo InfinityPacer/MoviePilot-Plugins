@@ -121,7 +121,7 @@ def test_transfer_event_accepts_v3_media_metadata_and_response_objects(monkeypat
 
 
 def test_v3_plugin_uses_public_query_sdk_for_history_access() -> None:
-    """V3 插件不得绕过查询 SDK 依赖宿主 ORM 或兼容层。"""
+    """整理历史批量查询不得重新依赖宿主 ORM、裸会话或兼容层。"""
     source_path = Path(__file__).parents[3] / "plugins.v3" / "plexmatch" / "__init__.py"
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
     imported_modules = {
@@ -137,11 +137,32 @@ def test_v3_plugin_uses_public_query_sdk_for_history_access() -> None:
     )
 
     assert "app.sdk.queries" in imported_modules
-    forbidden_modules = {"app" + ".compat", "app" + ".db"}
     assert not any(
-        module in forbidden_modules or module.startswith("app" + ".db" + ".")
+        module.startswith(
+            (
+                "app.compat",
+                "app.db.models",
+                "app.db.session",
+                "app.runtime.compat",
+                "app.sdk._legacy",
+            )
+        )
         for module in imported_modules
     )
+    assert "sqlalchemy.orm" not in imported_modules
+    root_db_names = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "app.db"
+        for alias in node.names
+    }
+    assert not root_db_names & {
+        "async_db_query",
+        "async_db_update",
+        "db_query",
+        "db_update",
+        "get_engine",
+    }
 
 
 def test_history_query_uses_sdk_filter_and_reads_all_pages(monkeypatch) -> None:

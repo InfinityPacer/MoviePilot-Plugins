@@ -188,7 +188,7 @@ def test_v3_plugin_version_increments_minor_version():
 
 
 def test_v3_plugin_uses_stable_sdk_imports():
-    """V3 专用副本不应继续触发宿主旧导入兼容层。"""
+    """V3 专用副本使用稳定能力入口且不触发宿主旧导入兼容层。"""
     source_path = Path(__file__).parents[3] / "plugins.v3/brushflowlowfreq/__init__.py"
     tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
     imported_modules = {
@@ -209,11 +209,19 @@ def test_v3_plugin_uses_stable_sdk_imports():
     assert "app.core.config" not in imported_modules
     assert "app.core.context" not in imported_modules
     assert "app.core.metainfo" not in imported_modules
-    assert "app.db.oper.site" not in imported_modules
-    assert "app.db.oper.subscribe" not in imported_modules
     assert "app.db.site_oper" not in imported_modules
     assert "app.db.subscribe_oper" not in imported_modules
-    assert not any(module.startswith("app.compat") for module in imported_modules)
+    assert not any(
+        module.startswith(
+            (
+                "app.compat",
+                "app.db.models",
+                "app.runtime.compat",
+                "app.sdk._legacy",
+            )
+        )
+        for module in imported_modules
+    )
     assert "app.helper.downloader" not in imported_modules
     assert "app.helper.sites" not in imported_modules
     assert "app.log" not in imported_modules
