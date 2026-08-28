@@ -2,7 +2,13 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, create_autospec
 
+from app.application.subscription.contract import (
+    SubscriptionIdentity,
+    SubscriptionPatch,
+    SubscriptionWritePort,
+)
 from app.db.oper.subscribe import SubscribeOper
+from app.db.oper.subscribehistory import SubscribeHistoryOper
 from app.plugins.subscribeassistantenhanced.best_version.converter import BestVersionConverter
 
 
@@ -32,22 +38,30 @@ def _mediainfo():
     )
 
 
+def _writer(result=(9, "")):
+    """构造符合正式订阅新增端口的测试替身。"""
+    writer = create_autospec(SubscriptionWritePort, instance=True)
+    writer.add.return_value = result
+    return writer
+
+
 class TestConvertToFull:
 
     def test_success(self):
         """分集转全集应归档、删除分集订阅、创建全集洗版并通知。"""
         oper = MagicMock()
-        oper.add.return_value = (9, "")
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        writer = _writer()
         clear_tasks = MagicMock()
-        send_event = MagicMock()
         notify = MagicMock()
         call_order = []
         snapshot = MagicMock(side_effect=lambda **_kwargs: call_order.append("snapshot"))
         oper.delete.side_effect = lambda **_kwargs: call_order.append("delete")
         conv = BestVersionConverter(
             subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
             clear_tasks_fn=clear_tasks,
-            send_event_fn=send_event,
             notify_fn=notify,
             snapshot_fn=snapshot,
             format_desc_fn=lambda subscribe, mediainfo: f"{subscribe.name} S{subscribe.season}",
@@ -70,11 +84,16 @@ class TestConvertToFull:
 
         assert conv.convert_to_full(sub, media, current_priority=0) is True
 
-        oper.add_history.assert_called_once_with(**sub.to_dict())
+        history_oper.add.assert_called_once_with(sub.to_dict())
         oper.delete.assert_called_once_with(sid=1)
         clear_tasks.assert_called_once_with(1)
-        oper.add.assert_called_once()
-        add_payload = oper.add.call_args.kwargs["payload"]
+        writer.add.assert_called_once()
+        add_identity = writer.add.call_args.kwargs["identity"]
+        add_patch = writer.add.call_args.kwargs["payload"]
+        assert isinstance(add_identity, SubscriptionIdentity)
+        assert add_identity.media_id == "100"
+        assert isinstance(add_patch, SubscriptionPatch)
+        add_payload = add_patch.to_payload()
         assert add_payload["best_version"] == 1
         assert add_payload["best_version_full"] == 1
         assert add_payload["episode_group"] == "eg-1"
@@ -87,47 +106,52 @@ class TestConvertToFull:
         assert "id" not in add_payload
         snapshot.assert_called_once_with(subscribe=sub, mediainfo=media, scope=None)
         assert call_order == ["snapshot", "delete"]
-        send_event.assert_called_once()
-        assert send_event.call_args.args[1]["subscribe_id"] == 9
         notify.assert_called_once()
         assert notify.call_args.args[0] == "测试剧 S1 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅"
         assert "user" not in notify.call_args.kwargs
         assert "reason" not in notify.call_args.kwargs
 
-    def test_uses_v3_subscribe_oper_signature(self):
-        """分集转全集应通过 V3 订阅应用服务适配 canonical Oper 写入签名。"""
+    def test_uses_subscription_writer_contract(self):
+        """分集转全集应通过正式 writer 传递明确身份和字段补丁。"""
         oper = create_autospec(SubscribeOper, instance=True)
-        oper.add.return_value = (9, "")
+        history_oper = create_autospec(SubscribeHistoryOper, instance=True)
+        writer = _writer()
         conv = BestVersionConverter(
             subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
             clear_tasks_fn=MagicMock(),
-            send_event_fn=MagicMock(),
             notify_fn=MagicMock(),
         )
         sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
 
         assert conv.convert_to_full(sub, _mediainfo()) is True
 
-        oper.add.assert_called_once()
-        _args, kwargs = oper.add.call_args
+        writer.add.assert_called_once()
+        _args, kwargs = writer.add.call_args
         assert set(kwargs) >= {"identity", "payload", "username"}
-        assert "mediainfo" not in kwargs
+        assert isinstance(kwargs["identity"], SubscriptionIdentity)
+        assert isinstance(kwargs["payload"], SubscriptionPatch)
 
     def test_failure_keeps_original(self):
         """删除分集订阅失败时保留活动订阅和已写历史，不做不精确回滚。"""
         oper = MagicMock()
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        writer = _writer()
         oper.delete.side_effect = RuntimeError("DB error")
         oper.remove_history = MagicMock()
         notify = MagicMock()
         conv = BestVersionConverter(
             subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
             clear_tasks_fn=MagicMock(),
             notify_fn=notify,
             format_desc_fn=lambda subscribe, mediainfo: "测试剧 S1",
         )
         sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
         assert conv.convert_to_full(sub, _mediainfo()) is False
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
         oper.remove_history.assert_not_called()
         notify.assert_called_once()
         assert notify.call_args.args[0] == "测试剧 S1 转为全集洗版订阅失败"
@@ -135,24 +159,33 @@ class TestConvertToFull:
     def test_history_failure_stops_before_deleting_active_subscribe(self):
         """历史写入失败时不得删除仍在运行的分集洗版订阅。"""
         oper = MagicMock()
-        oper.add_history.side_effect = RuntimeError("history failed")
-        conv = BestVersionConverter(subscribe_oper=oper, notify_fn=MagicMock())
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        history_oper.add.side_effect = RuntimeError("history failed")
+        writer = _writer()
+        conv = BestVersionConverter(
+            subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
+            notify_fn=MagicMock(),
+        )
         sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
 
         assert conv.convert_to_full(sub, _mediainfo()) is False
 
         oper.delete.assert_not_called()
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
 
     def test_task_cleanup_failure_does_not_interrupt_rebuild(self):
         """插件任务清理属于尽力操作，失败时仍继续创建全集洗版订阅。"""
         oper = MagicMock()
-        oper.add.return_value = (9, "")
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        writer = _writer()
         clear_tasks = MagicMock(side_effect=RuntimeError("cleanup failed"))
         conv = BestVersionConverter(
             subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
             clear_tasks_fn=clear_tasks,
-            send_event_fn=MagicMock(),
             notify_fn=MagicMock(),
         )
         sub = _SubscribeSnapshot(id=1, name="测试剧", season=1)
@@ -160,15 +193,19 @@ class TestConvertToFull:
         assert conv.convert_to_full(sub, _mediainfo()) is True
 
         oper.delete.assert_called_once_with(sid=1)
-        oper.add.assert_called_once()
+        writer.add.assert_called_once()
 
     def test_snapshot_failure_stops_before_subscription_replacement(self):
         """完成快照写入失败时不得删除分集订阅，避免转换后失去增集基线。"""
         oper = MagicMock()
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        writer = _writer()
         notify = MagicMock()
         snapshot = MagicMock(side_effect=RuntimeError("snapshot failed"))
         conv = BestVersionConverter(
             subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
             snapshot_fn=snapshot,
             notify_fn=notify,
             format_desc_fn=lambda subscribe, mediainfo: "测试剧 S1",
@@ -177,9 +214,9 @@ class TestConvertToFull:
 
         assert conv.convert_to_full(sub, _mediainfo()) is False
 
-        oper.add_history.assert_not_called()
+        history_oper.add.assert_not_called()
         oper.delete.assert_not_called()
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
         assert notify.call_args.args[0] == "测试剧 S1 转为全集洗版订阅失败"
 
     def test_no_oper_returns_false(self):
@@ -195,11 +232,14 @@ class TestConvertToFull:
     def test_add_failure_restores_old_subscribe_and_notifies(self):
         """创建全集洗版失败时应尝试重建分集订阅并通知人工检查。"""
         oper = MagicMock()
-        oper.add.return_value = (None, "订阅创建失败")
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        writer = _writer((None, "订阅创建失败"))
         restore = MagicMock(return_value=True)
         notify = MagicMock()
         conv = BestVersionConverter(
             subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
             clear_tasks_fn=MagicMock(),
             restore_fn=restore,
             notify_fn=notify,
@@ -222,11 +262,15 @@ class TestConvertToFull:
     def test_add_exception_reports_restore_failure(self):
         """全集订阅创建抛错且恢复失败时，通知应明确要求人工检查。"""
         oper = MagicMock()
-        oper.add.side_effect = RuntimeError("boom")
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        writer = _writer()
+        writer.add.side_effect = RuntimeError("boom")
         restore = MagicMock(return_value=False)
         notify = MagicMock()
         conv = BestVersionConverter(
             subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
             restore_fn=restore,
             notify_fn=notify,
         )
@@ -241,12 +285,17 @@ class TestConvertToFull:
     def test_default_description_and_optional_callbacks(self):
         """未注入格式化、事件和通知回调时仍应完成转换并使用默认订阅描述。"""
         oper = MagicMock()
-        oper.add.return_value = (8, "")
-        conv = BestVersionConverter(subscribe_oper=oper)
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        writer = _writer((8, ""))
+        conv = BestVersionConverter(
+            subscribe_oper=oper,
+            subscribe_history_oper=history_oper,
+            subscribe_writer=writer,
+        )
         sub = _SubscribeSnapshot(id=1, name="测试剧", season=2)
 
         assert conv.convert_to_full(sub, _mediainfo()) is True
 
-        payload = oper.add.call_args.kwargs["payload"]
+        payload = writer.add.call_args.kwargs["payload"].to_payload()
         assert payload["best_version_full"] == 1
         assert payload["username"] == "订阅助手（增强版）"

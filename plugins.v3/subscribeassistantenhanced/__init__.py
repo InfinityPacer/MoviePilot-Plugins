@@ -29,6 +29,7 @@ from app.chain.tmdb import TmdbChain
 from app.chain.torrents import TorrentsChain
 from app.db.oper.downloadhistory import DownloadHistoryOper
 from app.db.oper.subscribe import SubscribeOper
+from app.db.oper.subscribehistory import SubscribeHistoryOper
 from app.db.oper.transferhistory import TransferHistoryOper
 
 from .engine.types import CompletionSignal, SeasonScope
@@ -130,6 +131,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._onlyonce = False
         # DB oper / chain 在 init_plugin 实例化后注入各业务域模块。
         self._subscribe_oper: Optional[SubscribeOper] = None
+        self._subscribe_history_oper: Optional[SubscribeHistoryOper] = None
         self._subscribe_chain: Optional[SubscribeChain] = None
         self._tmdb_chain: Optional[TmdbChain] = None
         self._storage_chain: Optional[StorageChain] = None
@@ -146,6 +148,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
         # 依赖注入：构造即可用且不触发外部网络，供洗版、下载、补搜等业务域写库与查询。
         self._subscribe_oper = SubscribeOper()
+        self._subscribe_history_oper = SubscribeHistoryOper()
         self._subscribe_chain = SubscribeChain()
         self._tmdb_chain = TmdbChain()
         self._storage_chain = StorageChain()
@@ -274,8 +277,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         )
         converter = BestVersionConverter(
             subscribe_oper=self._subscribe_oper,
+            subscribe_history_oper=self._subscribe_history_oper,
             clear_tasks_fn=self._task_manager.clear_tasks,
-            send_event_fn=eventmanager.send_event,
             notify_fn=self._notify_subscribe,
             restore_fn=self._restore_subscribe_from_snapshot,
             snapshot_fn=verifier.snapshot,
@@ -441,8 +444,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
 
         orchestrator = BestVersionOrchestrator(
             priority_manager=priority_manager,
-            subscribe_oper=self._subscribe_oper,
-            send_subscribe_added_fn=self._send_subscribe_added,
             notify_fn=self._notify_subscribe,
             related_downloads_fn=self._related_download_histories,
             best_version_type=cfg.best_version_type,
@@ -1192,7 +1193,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """无下载处理巡检：上映后超期且无下载的订阅按策略暂停、完成或删除。"""
         policy = self._modules.get("no_download_policy")
         lifecycle = self._modules.get("lifecycle")
-        if not policy or not lifecycle or not self._subscribe_oper:
+        if not policy or not lifecycle or not self._subscribe_oper or not self._subscribe_history_oper:
             return
 
         detail("无下载处理巡检：开始")
@@ -1223,7 +1224,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
                     f"原因={decision.reason}，处理=写入完成历史并删除订阅"
                 )
                 payload = subscribe.to_dict()
-                self._subscribe_oper.add_history(**payload)
+                self._subscribe_history_oper.add(payload)
                 self._subscribe_oper.delete(subscribe_id)
             elif action == "delete":
                 logger.info(

@@ -2,7 +2,11 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, create_autospec
 
-from app.db.oper.subscribe import SubscribeOper
+from app.application.subscription.contract import (
+    SubscriptionIdentity,
+    SubscriptionPatch,
+    SubscriptionWritePort,
+)
 from app.schemas.types import MediaType
 
 from app.plugins.subscribeassistantenhanced.best_version.orchestrator import BestVersionOrchestrator
@@ -38,6 +42,13 @@ def _sub(ep_priority=None, episode_group=None, **kwargs):
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
+
+
+def _writer(result=(5, "")):
+    """构造符合正式订阅新增端口的测试替身。"""
+    writer = create_autospec(SubscriptionWritePort, instance=True)
+    writer.add.return_value = result
+    return writer
 
 
 class TestBuildPayload:
@@ -90,24 +101,21 @@ class TestModeLabel:
 class TestStartBestVersion:
     """订阅完成后按洗版类型自动创建洗版订阅。"""
 
-    def _orch(self, oper, best_version_type="all", related_downloads_fn=None):
+    def _orch(self, writer, best_version_type="all", related_downloads_fn=None):
         """构造带自动洗版类型范围的编排器。"""
         return BestVersionOrchestrator(
             priority_manager=MagicMock(spec=PriorityManager),
-            subscribe_oper=oper, best_version_type=best_version_type,
+            subscribe_writer=writer, best_version_type=best_version_type,
             related_downloads_fn=related_downloads_fn)
 
     def test_creates_best_version_when_type_enabled(self):
-        """创建洗版订阅成功时应发 SubscribeAdded 事件并发送订阅通知。"""
-        oper = MagicMock()
-        oper.add.return_value = (5, "")
-        send_event = MagicMock()
+        """创建洗版订阅成功时应由正式 writer 持久化并发送订阅通知。"""
+        writer = _writer()
         notify = MagicMock()
         orch = BestVersionOrchestrator(
             priority_manager=MagicMock(spec=PriorityManager),
-            subscribe_oper=oper,
+            subscribe_writer=writer,
             best_version_type="all",
-            send_subscribe_added_fn=send_event,
             notify_fn=notify,
         )
         sub = _sub(best_version=0, season=1, save_path="/m", sites="s",
@@ -115,41 +123,42 @@ class TestStartBestVersion:
         sid = orch.start_best_version(sub, mediainfo=_mediainfo())
 
         assert sid == 5
-        send_event.assert_called_once()
-        assert send_event.call_args.args[0] == 5
         notify.assert_called_once()
         assert notify.call_args.args[0].endswith("已添加洗版订阅")
         assert "reason" not in notify.call_args.kwargs
         assert "user" not in notify.call_args.kwargs
-        _args, kwargs = oper.add.call_args
-        payload = kwargs["payload"]
-        assert kwargs["identity"]["media_id"] == "100"
+        _args, kwargs = writer.add.call_args
+        identity = kwargs["identity"]
+        patch = kwargs["payload"]
+        assert isinstance(identity, SubscriptionIdentity)
+        assert identity.media_id == "100"
+        assert isinstance(patch, SubscriptionPatch)
+        payload = patch.to_payload()
         assert payload["best_version"] == 1 and payload["season"] == 1
         assert payload["best_version_full"] == 1
         assert payload["manual_total_episode"] == 0
         assert payload["filter"] == "r"
         assert payload["filter_groups"] == ["g1"]
 
-    def test_uses_v3_subscribe_oper_signature(self):
-        """自动洗版应通过 V3 订阅应用服务适配 canonical Oper 写入签名。"""
-        oper = create_autospec(SubscribeOper, instance=True)
-        oper.add.return_value = (5, "")
+    def test_uses_subscription_writer_contract(self):
+        """自动洗版应通过正式 writer 传递明确身份和字段补丁。"""
+        writer = _writer()
 
-        assert self._orch(oper).start_best_version(_sub(best_version=0), _mediainfo()) == 5
+        assert self._orch(writer).start_best_version(_sub(best_version=0), _mediainfo()) == 5
 
-        oper.add.assert_called_once()
-        _args, kwargs = oper.add.call_args
+        writer.add.assert_called_once()
+        _args, kwargs = writer.add.call_args
         assert set(kwargs) >= {"identity", "payload", "username"}
-        assert "mediainfo" not in kwargs
+        assert isinstance(kwargs["identity"], SubscriptionIdentity)
+        assert isinstance(kwargs["payload"], SubscriptionPatch)
 
     def test_create_failure_notifies_error_and_image(self):
         """自动创建洗版订阅失败时应推送主程序返回的错误原因。"""
-        oper = MagicMock()
-        oper.add.return_value = (None, "订阅已存在")
+        writer = _writer((None, "订阅已存在"))
         notify = MagicMock()
         orch = BestVersionOrchestrator(
             priority_manager=MagicMock(spec=PriorityManager),
-            subscribe_oper=oper,
+            subscribe_writer=writer,
             best_version_type="all",
             notify_fn=notify,
         )
@@ -168,69 +177,66 @@ class TestStartBestVersion:
         assert "user" not in notify.call_args.kwargs
 
     def test_skips_when_already_best_version(self):
-        oper = MagicMock()
-        self._orch(oper).start_best_version(_sub(best_version=1), object())
-        oper.add.assert_not_called()
+        writer = _writer()
+        self._orch(writer).start_best_version(_sub(best_version=1), object())
+        writer.add.assert_not_called()
 
     def test_skips_without_mediainfo(self):
-        oper = MagicMock()
-        self._orch(oper).start_best_version(_sub(best_version=0), None)
-        oper.add.assert_not_called()
+        writer = _writer()
+        self._orch(writer).start_best_version(_sub(best_version=0), None)
+        writer.add.assert_not_called()
 
     def test_tv_type_skips_movie_subscription(self):
         """剧集洗版范围不应为电影订阅创建洗版。"""
-        oper = MagicMock()
+        writer = _writer()
         sub = _sub(best_version=0, type="电影")
 
-        sid = self._orch(oper, best_version_type="tv").start_best_version(sub, object())
+        sid = self._orch(writer, best_version_type="tv").start_best_version(sub, object())
 
         assert sid is None
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
 
     def test_movie_type_creates_movie_subscription(self):
         """电影洗版范围应为电影订阅创建洗版。"""
-        oper = MagicMock()
-        oper.add.return_value = (6, "")
+        writer = _writer((6, ""))
         sub = _sub(best_version=0, type=MediaType.MOVIE)
 
-        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, _mediainfo())
+        sid = self._orch(writer, best_version_type="movie").start_best_version(sub, _mediainfo())
 
         assert sid == 6
-        oper.add.assert_called_once()
-        _args, kwargs = oper.add.call_args
-        assert "best_version_full" not in kwargs["payload"]
+        writer.add.assert_called_once()
+        _args, kwargs = writer.add.call_args
+        assert "best_version_full" not in kwargs["payload"].to_payload()
 
     def test_movie_best_version_inherits_movie_current_priority(self):
         """电影自动洗版应继承普通订阅本次完成资源的优先级。"""
-        oper = MagicMock()
-        oper.add.return_value = (6, "")
+        writer = _writer((6, ""))
         sub = _sub(best_version=0, type=MediaType.MOVIE, current_priority=95)
 
-        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, _mediainfo())
+        sid = self._orch(writer, best_version_type="movie").start_best_version(sub, _mediainfo())
 
         assert sid == 6
-        _args, kwargs = oper.add.call_args
-        assert kwargs["payload"]["current_priority"] == 95
+        _args, kwargs = writer.add.call_args
+        assert kwargs["payload"].to_payload()["current_priority"] == 95
 
     def test_movie_best_version_invalid_current_priority_defaults_to_zero(self):
         """电影完成快照里的异常优先级按未建立质量基线处理。"""
-        oper = MagicMock()
-        oper.add.return_value = (6, "")
+        writer = _writer((6, ""))
         sub = _sub(best_version=0, type=MediaType.MOVIE, current_priority="invalid")
 
-        sid = self._orch(oper, best_version_type="movie").start_best_version(sub, _mediainfo())
+        sid = self._orch(writer, best_version_type="movie").start_best_version(sub, _mediainfo())
 
         assert sid == 6
-        _args, kwargs = oper.add.call_args
-        assert kwargs["payload"]["current_priority"] == 0
+        _args, kwargs = writer.add.call_args
+        assert kwargs["payload"].to_payload()["current_priority"] == 0
 
     def test_movie_best_version_skips_when_movie_current_priority_is_top(self):
         """电影普通订阅已达顶档时不应再创建洗版订阅，并推送提示。"""
-        oper = MagicMock()
+        writer = _writer()
         notify = MagicMock()
         orch = BestVersionOrchestrator(
             priority_manager=MagicMock(spec=PriorityManager),
-            subscribe_oper=oper,
+            subscribe_writer=writer,
             best_version_type="movie",
             notify_fn=notify,
         )
@@ -239,7 +245,7 @@ class TestStartBestVersion:
         sid = orch.start_best_version(sub, mediainfo=_mediainfo())
 
         assert sid is None
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
         notify.assert_called_once()
         assert notify.call_args.args[0].endswith("已达顶档，跳过洗版订阅")
         assert "reason" not in notify.call_args.kwargs
@@ -248,67 +254,66 @@ class TestStartBestVersion:
 
     def test_unknown_media_type_skips_all_scope(self):
         """未知媒体类型不能被 all 范围误当成剧集创建洗版。"""
-        oper = MagicMock()
+        writer = _writer()
         sub = _sub(best_version=0, type=MediaType.UNKNOWN)
 
-        sid = self._orch(oper, best_version_type="all").start_best_version(sub, object())
+        sid = self._orch(writer, best_version_type="all").start_best_version(sub, object())
 
         assert sid is None
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
 
     def test_no_type_skips_all_subscriptions(self):
         """关闭洗版类型范围时不应创建任何洗版订阅。"""
-        oper = MagicMock()
+        writer = _writer()
         sub = _sub(best_version=0, type="电影")
 
-        sid = self._orch(oper, best_version_type="no").start_best_version(sub, object())
+        sid = self._orch(writer, best_version_type="no").start_best_version(sub, object())
 
         assert sid is None
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
 
     def test_tv_episode_skips_without_related_episode_downloads(self):
         """分集洗版：没有关联分集下载历史时不自动创建洗版订阅。"""
-        oper = MagicMock()
+        writer = _writer()
         sub = _sub(best_version=0, type="电视剧")
         related = MagicMock(return_value=[])
 
         sid = self._orch(
-            oper,
+            writer,
             best_version_type="tv_episode",
             related_downloads_fn=related,
         ).start_best_version(sub, _mediainfo())
 
         assert sid is None
         related.assert_called_once_with(sub)
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
 
     def test_tv_episode_skips_single_related_episode_download(self):
         """分集洗版：只有 1 条关联下载历史视为合集/单次下载，不自动洗版。"""
-        oper = MagicMock()
+        writer = _writer()
         sub = _sub(best_version=0, type="电视剧")
 
         sid = self._orch(
-            oper,
+            writer,
             best_version_type="tv_episode",
             related_downloads_fn=MagicMock(return_value=[object()]),
         ).start_best_version(sub, object())
 
         assert sid is None
-        oper.add.assert_not_called()
+        writer.add.assert_not_called()
 
     def test_tv_episode_creates_when_multiple_related_episode_downloads(self):
         """分集洗版：存在多条关联分集下载历史时创建洗版订阅。"""
-        oper = MagicMock()
-        oper.add.return_value = (7, "")
+        writer = _writer((7, ""))
         sub = _sub(best_version=0, type="电视剧")
 
         sid = self._orch(
-            oper,
+            writer,
             best_version_type="tv_episode",
             related_downloads_fn=MagicMock(return_value=[object(), object()]),
         ).start_best_version(sub, _mediainfo())
 
         assert sid == 7
-        oper.add.assert_called_once()
-        _args, kwargs = oper.add.call_args
-        assert kwargs["payload"]["best_version_full"] == 1
+        writer.add.assert_called_once()
+        _args, kwargs = writer.add.call_args
+        assert kwargs["payload"].to_payload()["best_version_full"] == 1

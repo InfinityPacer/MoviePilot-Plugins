@@ -18,17 +18,15 @@ class BestVersionOrchestrator:
     """洗版全流程编排器，负责按配置创建洗版订阅。"""
 
     def __init__(self, priority_manager: PriorityManager,
-                 subscribe_oper=None,
-                 send_subscribe_added_fn: Optional[Callable] = None,
                  notify_fn: Optional[Callable] = None,
                  related_downloads_fn: Optional[Callable] = None,
                  best_version_type: str = "no",
                  notification_image_fn: Optional[Callable] = None,
-                 plugin_name: str = "订阅助手（增强版）"):
+                 plugin_name: str = "订阅助手（增强版）",
+                 subscribe_writer=None):
         """注入洗版编排依赖与自动洗版范围。"""
         self._priority = priority_manager
-        self._subscribe_oper = subscribe_oper
-        self._send_subscribe_added = send_subscribe_added_fn
+        self._subscribe_writer = subscribe_writer
         self._notify = notify_fn
         self._related_downloads = related_downloads_fn
         self._best_version_type = best_version_type
@@ -58,7 +56,7 @@ class BestVersionOrchestrator:
 
         分集下载洗版只在历史上存在多次分集下载时创建，避免单次全集包完成后误进入洗版。
         """
-        if not self._subscribe_oper or not mediainfo:
+        if not mediainfo:
             return None
         if subscribe.best_version:
             return None
@@ -104,10 +102,10 @@ class BestVersionOrchestrator:
         payload = {key: value for key, value in payload.items() if value is not None}
         # 插件创建的订阅始终重新跟随 TMDB 总集数，不继承已完成订阅的手动锁定状态。
         payload["manual_total_episode"] = 0
-        # V3 Oper 只接收已翻译的 identity/payload；媒体对象写入统一经过订阅应用服务。
+        # 新增订阅由 Application writer 负责，不复用查询 Oper 作为事务入口。
         sid, err_msg = add_subscribe_command(
             mediainfo=mediainfo,
-            subscribe_oper=self._subscribe_oper,
+            subscribe_oper=self._subscribe_writer,
             **payload,
         )
         if sid:
@@ -116,8 +114,6 @@ class BestVersionOrchestrator:
                 f"洗版编排：{format_subscribe_desc(subscribe)} "
                 f"原因=订阅完成，处理=已创建{mode_label}订阅（id={sid}）"
             )
-            if self._send_subscribe_added:
-                self._send_subscribe_added(sid, mediainfo, username=self._plugin_name)
             if self._notify:
                 self._notify(
                     f"{format_subscribe_desc(subscribe)} 已添加{mode_label}订阅",
