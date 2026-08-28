@@ -17,13 +17,13 @@
         "name": "站点刷流（低频版）",
         "description": "自动托管刷流，将会提高对应站点的访问频率。（基于官方插件BrushFlow二次开发）",
         "labels": "站点,刷流,仪表板",
-        "version": "4.6",
+        "version": "4.7",
         "icon": "brush.jpg",
         "author": "jxxghp,InfinityPacer",
         "level": 2,
         "system_version": ">=3.0.0",
         "history": {
-            "v4.6": "适配 V3 SDK 导入规范，迁移至 app.sdk 体系"
+            "v4.7": "使用公开站点与订阅查询 SDK，完善订阅排除的分页读取与媒体身份匹配。"
         },
         "release": true
     },
@@ -45,13 +45,13 @@
         "name": "Plex演职人员刮削",
         "description": "实现刮削演职人员中文名称及角色。",
         "labels": "Plex,刮削",
-        "version": "2.6",
+        "version": "2.7",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
-            "v2.6": "中文转换改用 MoviePilot 文本 SDK，兼容 Python 3.14t。"
+            "v2.7": "迁移至 MoviePilot V3 app.sdk 稳定接口，并修复媒体服务器实例异常路径。"
         },
         "release": true
     },
@@ -59,13 +59,13 @@
         "name": "PlexMatch",
         "description": "实现入库时添加 .plexmatch 文件，提高识别准确率。",
         "labels": "Plex,刮削",
-        "version": "1.5",
+        "version": "1.6",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
-            "v1.5": "适配 V3 SDK 导入规范，迁移至 app.sdk 体系"
+            "v1.6": "通过统一查询 SDK 读取整理历史，移除对宿主数据库模型与会话的依赖。"
         },
         "release": true
     },

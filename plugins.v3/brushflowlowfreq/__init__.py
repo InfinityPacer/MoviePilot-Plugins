@@ -16,8 +16,7 @@ from app import schemas
 from app.chain.torrents import TorrentsChain
 from app.sdk.config import settings
 from app.sdk.media import MediaInfo, MetaInfo
-from app.db.oper.site import SiteOper
-from app.db.oper.subscribe import SubscribeOper
+from app.sdk.queries import MAX_QUERY_PAGE_SIZE, QueryPageRequest, list_subscriptions
 from app.sdk.services import DownloaderHelper
 from app.sdk.network import SitesHelper
 from app.sdk.logging import logger
@@ -250,7 +249,7 @@ class BrushFlowLowFreq(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "4.6"
+    plugin_version = "4.7"
     # 插件作者
     plugin_author = "jxxghp,InfinityPacer"
     # 作者主页
@@ -264,9 +263,7 @@ class BrushFlowLowFreq(_PluginBase):
 
     # 私有属性
     sites_helper = None
-    site_oper = None
     torrents_chain = None
-    subscribe_oper = None
     downloader_helper = None
     # 刷流配置
     _brush_config = None
@@ -288,9 +285,7 @@ class BrushFlowLowFreq(_PluginBase):
 
     def init_plugin(self, config: dict = None):
         self.sites_helper = SitesHelper()
-        self.site_oper = SiteOper()
         self.torrents_chain = TorrentsChain()
-        self.subscribe_oper = SubscribeOper()
         self.downloader_helper = DownloaderHelper()
         self._task_brush_enable = False
 
@@ -2049,6 +2044,17 @@ class BrushFlowLowFreq(_PluginBase):
 
     # region Brush
 
+    def __get_configured_site(self, site_id: int) -> Optional[dict]:
+        """从正式站点 SDK 返回的活动站点索引中读取配置。"""
+        return next(
+            (
+                site
+                for site in self.sites_helper.get_indexers()
+                if site.get("id") == site_id
+            ),
+            None,
+        )
+
     def brush(self):
         """
         定时刷流，添加下载任务
@@ -2090,7 +2096,7 @@ class BrushFlowLowFreq(_PluginBase):
             # 获取所有站点的信息，并过滤掉不存在的站点
             site_infos = []
             for siteid in brush_config.brushsites:
-                siteinfo = self.site_oper.get(siteid)
+                siteinfo = self.__get_configured_site(siteid)
                 if siteinfo:
                     site_infos.append(siteinfo)
 
@@ -2098,7 +2104,7 @@ class BrushFlowLowFreq(_PluginBase):
             if not brush_config.brush_sequential:
                 random.shuffle(site_infos)
 
-            logger.info(f"即将针对站点 {', '.join(site.name for site in site_infos)} 开始刷流")
+            logger.info(f"即将针对站点 {', '.join(site.get('name') for site in site_infos)} 开始刷流")
 
             # 获取订阅标题
             subscribe_titles = self.__get_subscribe_titles()
@@ -2106,13 +2112,13 @@ class BrushFlowLowFreq(_PluginBase):
             # 处理所有站点
             for site in site_infos:
                 # 如果站点刷流没有正确响应，说明没有通过前置条件，其他站点也不需要继续刷流了
-                if not self.__brush_site_torrents(siteid=site.id, torrent_tasks=torrent_tasks,
+                if not self.__brush_site_torrents(siteid=site.get("id"), torrent_tasks=torrent_tasks,
                                                   statistic_info=statistic_info,
                                                   subscribe_titles=subscribe_titles):
-                    logger.info(f"站点 {site.name} 刷流中途结束，停止后续刷流")
+                    logger.info(f"站点 {site.get('name')} 刷流中途结束，停止后续刷流")
                     break
                 else:
-                    logger.info(f"站点 {site.name} 刷流完成")
+                    logger.info(f"站点 {site.get('name')} 刷流完成")
 
             # 保存数据
             self.save_data("torrents", torrent_tasks)
@@ -2125,21 +2131,21 @@ class BrushFlowLowFreq(_PluginBase):
         """
         针对站点进行刷流
         """
-        siteinfo = self.site_oper.get(siteid)
+        siteinfo = self.__get_configured_site(siteid)
         if not siteinfo:
             logger.warning(f"站点不存在：{siteid}")
             return True
 
-        logger.info(f"开始获取站点 {siteinfo.name} 的新种子 ...")
-        torrents = self.torrents_chain.browse(domain=siteinfo.domain)
+        logger.info(f"开始获取站点 {siteinfo.get('name')} 的新种子 ...")
+        torrents = self.torrents_chain.browse(domain=siteinfo.get("domain"))
         if not torrents:
-            logger.info(f"站点 {siteinfo.name} 没有获取到种子")
+            logger.info(f"站点 {siteinfo.get('name')} 没有获取到种子")
             return True
 
-        brush_config = self.__get_brush_config(sitename=siteinfo.name)
+        brush_config = self.__get_brush_config(sitename=siteinfo.get("name"))
 
         if brush_config.site_hr_active:
-            logger.info(f"站点 {siteinfo.name} 已开启全站H&R选项，所有种子设置为H&R种子")
+            logger.info(f"站点 {siteinfo.get('name')} 已开启全站H&R选项，所有种子设置为H&R种子")
 
         # 排除包含订阅的种子
         if brush_config.except_subscribe:
@@ -2184,8 +2190,8 @@ class BrushFlowLowFreq(_PluginBase):
 
             # 触发刷流下载时间并保存任务信息
             torrent_task = {
-                "site": siteinfo.id,
-                "site_name": siteinfo.name,
+                "site": siteinfo.get("id"),
+                "site_name": siteinfo.get("name"),
                 "title": torrent.title,
                 "size": torrent.size,
                 "pubdate": torrent.pubdate,
@@ -2230,7 +2236,7 @@ class BrushFlowLowFreq(_PluginBase):
             # 统计数据
             torrents_size += torrent.size
             statistic_info["count"] += 1
-            logger.info(f"站点 {siteinfo.name}，新增刷流种子下载：{torrent.title}|{torrent.description}")
+            logger.info(f"站点 {siteinfo.get('name')}，新增刷流种子下载：{torrent.title}|{torrent.description}")
             self.__send_add_message(torrent)
 
         return True
@@ -3810,11 +3816,31 @@ class BrushFlowLowFreq(_PluginBase):
         if not self._subscribe_infos:
             self._subscribe_infos = {}
 
-        subscribes = self.subscribe_oper.list()
+        subscribes = []
+        page_number = 1
+        while True:
+            page = list_subscriptions(
+                page=QueryPageRequest(
+                    page=page_number,
+                    count=MAX_QUERY_PAGE_SIZE,
+                )
+            )
+            subscribes.extend(page.items)
+            if not page.has_next:
+                break
+            page_number += 1
+
         if subscribes:
             # 遍历订阅
             for subscribe in subscribes:
-                media_type = subscribe.type if isinstance(subscribe.type, MediaType) else MediaType(subscribe.type)
+                try:
+                    media_type = (
+                        subscribe.type
+                        if isinstance(subscribe.type, MediaType)
+                        else MediaType(subscribe.type)
+                    )
+                except (TypeError, ValueError):
+                    continue
                 if media_type not in (MediaType.MOVIE, MediaType.TV):
                     continue
 

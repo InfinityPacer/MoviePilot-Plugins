@@ -29,7 +29,7 @@ class PlexPersonMeta(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png"
     # 插件版本
-    plugin_version = "2.6"
+    plugin_version = "2.7"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -163,7 +163,7 @@ class PlexPersonMeta(_PluginBase):
             logger.warning("获取媒体服务器实例失败，请检查配置")
             return None
 
-        if service.instance.is_inactive():
+        if not service.instance or service.instance.is_inactive():
             logger.warning(f"媒体服务器 {name} 未连接，请检查配置")
             return None
 
@@ -896,7 +896,7 @@ class PlexPersonMeta(_PluginBase):
             for service_name, libraries in service_libraries.items():
                 service = self.service_info(name=service_name)
                 if not service or not service.instance:
-                    logger.info(f"获取媒体服务器 {service.name} 实例失败，跳过处理")
+                    logger.info(f"获取媒体服务器 {service_name} 实例失败，跳过处理")
                     continue
                 service_start_time = time.time()
                 scrape_helper = ScrapeHelper(config=plugin_config, event=self._event, chain=self.chain,
@@ -936,7 +936,7 @@ class PlexPersonMeta(_PluginBase):
             for service_name, libraries in service_libraries.items():
                 service = self.service_info(name=service_name)
                 if not service or not service.instance:
-                    logger.info(f"获取媒体服务器 {service.name} 实例失败，跳过处理")
+                    logger.info(f"获取媒体服务器 {service_name} 实例失败，跳过处理")
                     continue
                 service_start_time = time.time()
                 scrape_helper = ScrapeHelper(config=plugin_config, event=self._event, chain=self.chain,

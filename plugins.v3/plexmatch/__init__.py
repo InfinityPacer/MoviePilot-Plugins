@@ -1,21 +1,27 @@
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, List, Dict, Tuple, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytz
-from app.db import db_query
-from app.db.models import TransferHistory
 from app.plugins import _PluginBase
 from app.schemas import TransferInfo
 from app.schemas.types import EventType, MediaSource, MediaType
 from app.sdk.config import settings
-from app.sdk.events import eventmanager, Event
+from app.sdk.events import Event, eventmanager
 from app.sdk.logging import logger
 from app.sdk.media import MediaInfo, MetaBase
+from app.sdk.queries import (
+    MAX_QUERY_PAGE_SIZE,
+    QueryPageRequest,
+    QuerySort,
+    QuerySortDirection,
+    QuerySortField,
+    TransferHistoryFilter,
+    TransferHistorySnapshot,
+    list_transfer_history,
+)
 from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy import and_
-from sqlalchemy.orm import Session
 
 lock = threading.Lock()
 
@@ -28,7 +34,7 @@ class PlexMatch(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png"
     # 插件版本
-    plugin_version = "1.5"
+    plugin_version = "1.6"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -349,17 +355,34 @@ class PlexMatch(_PluginBase):
         """
         补全历史记录
         """
-        histories = self.__list_transfer_histories(db=None)
+        histories = self.__list_transfer_histories()
         if not histories:
             logger.info("没有获取到相关的历史记录，取消补全")
             return
 
+        processed_targets: set[Path] = set()
         for history in histories:
             if self.__check_external_interrupt(service=f"{self.plugin_name}"):
                 return
-            media_type = MediaType(history.type)
-            if media_type not in (MediaType.MOVIE, MediaType.TV):
+            if not history.type or history.type not in (
+                MediaType.MOVIE.value,
+                MediaType.TV.value,
+            ):
                 continue
+            if not history.title or not history.dest:
+                continue
+            media_type = MediaType(history.type)
+            history_path = Path(history.dest)
+            if history_path.exists():
+                plexmatch_file = self.__get_plexmatch_file(
+                    path=history_path,
+                    mtype=media_type,
+                )
+                if plexmatch_file in processed_targets:
+                    continue
+                # 查询按最新记录优先返回；同一剧集根或电影目录只处理一次，
+                # 避免后续旧记录在覆盖模式下回写过期媒体身份。
+                processed_targets.add(plexmatch_file)
             tmdb_id = self.__get_tmdb_id(
                 media_source=history.media_source,
                 media_id=history.media_id,
@@ -397,12 +420,7 @@ class PlexMatch(_PluginBase):
                 logger.warning(f"目标路径 {path} 不存在，跳过处理")
                 return False
 
-            if mtype == MediaType.TV:
-                parent_path = path.parent.parent if path.is_file() else path.parent
-            else:
-                parent_path = path.parent if path.is_file() else path
-
-            plexmatch_file = parent_path / ".plexmatch"
+            plexmatch_file = self.__get_plexmatch_file(path=path, mtype=mtype)
             logger.info(f".plexmatch 文件路径为 {plexmatch_file}")
             if plexmatch_file.exists() and not self._overwrite:
                 logger.info(f".plexmatch 文件已存在且未开启覆盖，跳过处理")
@@ -418,6 +436,15 @@ class PlexMatch(_PluginBase):
             logger.error(f"处理 {keyword} 时发生错误: {e}")
             return False
 
+    @staticmethod
+    def __get_plexmatch_file(path: Path, mtype: MediaType) -> Path:
+        """按 Plex 目录合同定位电影或剧集共享的匹配文件。"""
+        if mtype == MediaType.TV:
+            parent_path = path.parent.parent if path.is_file() else path.parent
+        else:
+            parent_path = path.parent if path.is_file() else path
+        return parent_path / ".plexmatch"
+
     def __check_external_interrupt(self, service: str) -> bool:
         """
         检查是否有外部中断请求，并记录相应的日志信息
@@ -428,15 +455,29 @@ class PlexMatch(_PluginBase):
         return False
 
     @staticmethod
-    @db_query
-    def __list_transfer_histories(db: Optional[Session]) -> list[Type[TransferHistory]]:
-        """获取具有有效 TMDB 媒体身份且整理成功的历史记录。"""
-        result = db.query(TransferHistory).filter(and_(
-            TransferHistory.type.in_([MediaType.MOVIE.value, MediaType.TV.value]),
-            TransferHistory.media_source == MediaSource.TMDB.value,
-            TransferHistory.media_id.is_not(None),
-            TransferHistory.media_id != "",
-            TransferHistory.media_id != "0",
-            TransferHistory.status)
-        ).all()
-        return result
+    def __list_transfer_histories() -> list[TransferHistorySnapshot]:
+        """逐页读取具有有效 TMDB 媒体身份且整理成功的历史记录。"""
+        filters = TransferHistoryFilter(
+            media_types=(MediaType.MOVIE, MediaType.TV),
+            media_sources=(MediaSource.TMDB,),
+            require_media_identity=True,
+            status=True,
+        )
+        histories: list[TransferHistorySnapshot] = []
+        page_number = 1
+        while True:
+            page = list_transfer_history(
+                filters=filters,
+                page=QueryPageRequest(
+                    page=page_number,
+                    count=MAX_QUERY_PAGE_SIZE,
+                    sort=QuerySort(
+                        field=QuerySortField.DATE,
+                        direction=QuerySortDirection.DESC,
+                    ),
+                ),
+            )
+            histories.extend(page.items)
+            if not page.has_next:
+                return histories
+            page_number += 1
