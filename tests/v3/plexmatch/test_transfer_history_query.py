@@ -68,7 +68,7 @@ def _make_plugin() -> plexmatch.PlexMatch:
 
 
 def test_plugin_declares_v3_minor_version() -> None:
-    assert plexmatch.PlexMatch.plugin_version == "1.5"
+    assert plexmatch.PlexMatch.plugin_version == "1.6"
 
 
 def test_plugin_declares_empty_v3_extension_surfaces() -> None:

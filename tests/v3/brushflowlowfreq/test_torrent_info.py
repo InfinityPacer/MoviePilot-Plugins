@@ -184,7 +184,7 @@ def test_subscribe_recognition_skips_unknown_snapshot_media_type():
 
 
 def test_v3_plugin_version_increments_minor_version():
-    assert BrushFlowLowFreq.plugin_version == "4.6"
+    assert BrushFlowLowFreq.plugin_version == "4.7"
 
 
 def test_v3_plugin_uses_stable_sdk_imports():
