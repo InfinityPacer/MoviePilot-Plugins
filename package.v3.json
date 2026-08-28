@@ -17,13 +17,13 @@
         "name": "站点刷流（低频版）",
         "description": "自动托管刷流，将会提高对应站点的访问频率。（基于官方插件BrushFlow二次开发）",
         "labels": "站点,刷流,仪表板",
-        "version": "4.6",
+        "version": "4.7",
         "icon": "brush.jpg",
         "author": "jxxghp,InfinityPacer",
         "level": 2,
         "system_version": ">=3.0.0",
         "history": {
-            "v4.6": "适配 V3 SDK 导入规范，迁移至 app.sdk 体系"
+            "v4.7": "使用公开站点与订阅查询 SDK，完善订阅排除的分页读取与媒体身份匹配。"
         },
         "release": true
     },
