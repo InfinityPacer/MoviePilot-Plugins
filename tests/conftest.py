@@ -62,14 +62,13 @@ def configure_plugin_test_services(request):
         ChainRuntimeContext,
         configure_chain_runtime_context_provider,
     )
-    from app.application.chain.data import ChainDataPorts
+    from app.application.chain.data import configure_chain_data_ports
     from app.application.configuration import SystemConfigService, configure_system_config
     from app.db.oper.systemconfig import SystemConfigOper
 
     port_names = (
         "site",
         "subscribe",
-        "workflow",
         "download_history",
         "transfer_history",
         "transfer_pending",
@@ -78,7 +77,7 @@ def configure_plugin_test_services(request):
         "download_failure",
         "user",
     )
-    data_ports = ChainDataPorts(**{name: MagicMock for name in port_names})
+    configure_chain_data_ports(**{name: MagicMock for name in port_names})
     context = ChainRuntimeContext(
         module_manager=MagicMock(),
         plugin_manager=MagicMock(),
@@ -89,7 +88,6 @@ def configure_plugin_test_services(request):
         async_file_cache=MagicMock(),
         message_queue_factory=lambda _callback: MagicMock(),
         module_dispatcher_factory=lambda **_kwargs: MagicMock(),
-        data_ports=data_ports,
     )
     configure_system_config(SystemConfigService(repository=SystemConfigOper()))
     configure_chain_runtime_context_provider(lambda: context)
