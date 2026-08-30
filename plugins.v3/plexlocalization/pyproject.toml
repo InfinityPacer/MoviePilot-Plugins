@@ -1,0 +1,7 @@
+[project]
+name = "moviepilot-plugin-plexlocalization"
+dynamic = ["version"]
+requires-python = ">=3.12"
+dependencies = [
+    "pypinyin~=0.51.0",
+]
