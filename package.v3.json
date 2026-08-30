@@ -264,5 +264,19 @@
             "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持 H&R 种子标签管理流程。"
         },
         "release": true
+    },
+    "ServiceManager": {
+        "name": "服务管理",
+        "description": "实现自定义服务管理。",
+        "labels": "系统设置",
+        "version": "2.0.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/servicemanager.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持系统服务接管与周期配置流程。"
+        },
+        "release": true
     }
 }
