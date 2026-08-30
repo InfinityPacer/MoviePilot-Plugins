@@ -176,6 +176,7 @@
             "v1.5.1": "修复了刷流事件监听错误的问题",
             "v1.5": "MoviePilot V2 版本H&R助手插件"
         },
+        "v3": false,
         "release": true
     },
     "PlexAutoLanguages": {
@@ -259,6 +260,7 @@
             "v1.5": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.4": "MoviePilot V2 版本站点流量管理插件"
         },
+        "v3": false,
         "release": true
     },
     "AuxiliaryAuth": {
@@ -333,7 +335,8 @@
             "v1.8": "增加网络连通性测试站点",
             "v1.7": "MoviePilot V2 版本自动诊断插件"
         },
-        "release": true
+        "release": true,
+        "v3": false
     },
     "SmartRename": {
         "name": "智能重命名",
