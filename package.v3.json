@@ -222,5 +222,47 @@
             "v3.0.0": "迁移至 MoviePilot V3 稳定接口与浏览器 SDK，保持天气仪表板和通知流程。"
         },
         "release": true
+    },
+    "AutoDiagnosis": {
+        "name": "自动诊断",
+        "description": "自动发起系统健康检查、网络连通性测试以及硬链接检查。",
+        "labels": "系统设置",
+        "version": "2.0.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v2.0.0": "迁移至 MoviePilot V3 稳定 SDK，保持系统健康、网络和硬链接诊断流程。"
+        },
+        "release": true
+    },
+    "TrafficAssistant": {
+        "name": "站点流量管理",
+        "description": "自动管理流量，保障站点分享率。",
+        "labels": "站点,订阅,刷流",
+        "version": "2.0.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png",
+        "author": "InfinityPacer",
+        "level": 2,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持站点流量管理与刷流联动流程。"
+        },
+        "release": true
+    },
+    "HitAndRun": {
+        "name": "H&R助手",
+        "description": "监听下载、订阅、刷流等行为，对H&R种子进行自动标签管理。",
+        "labels": "站点,H&R",
+        "version": "2.0.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/hitandrun.png",
+        "author": "InfinityPacer",
+        "level": 2,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持 H&R 种子标签管理流程。"
+        },
+        "release": true
     }
 }
