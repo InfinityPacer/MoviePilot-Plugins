@@ -372,7 +372,8 @@
             "v1.1": "增加订阅元数据更新服务",
             "v1.0": "增加服务管理插件，实现自定义服务管理"
         },
-        "release": true
+        "release": true,
+        "v3": false
     },
     "SubscribeAssistant": {
         "name": "订阅助手",
