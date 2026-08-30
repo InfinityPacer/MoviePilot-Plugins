@@ -112,7 +112,8 @@
         "history": {
             "v1.1": "MoviePilot V2 版本自定义排序插件"
         },
-        "release": true
+        "release": true,
+        "v3": false
     },
     "WeatherWidget": {
         "name": "天气",
@@ -186,7 +187,8 @@
             "v0.4": "兼容 MoviePilot v2.13.14 的 python-dateutil 运行依赖",
             "v0.3": "MoviePilot V2 版本Plex自动语言插件"
         },
-        "release": true
+        "release": true,
+        "v3": false
     },
     "PlexLocalization": {
         "name": "Plex中文本地化",
@@ -202,7 +204,8 @@
             "v1.8": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.7": "MoviePilot V2 版本Plex中文本地化插件"
         },
-        "release": true
+        "release": true,
+        "v3": false
     },
     "PlexEdition": {
         "name": "PlexEdition",
@@ -267,7 +270,8 @@
             "v1.1": "支持 Plex 辅助认证校验",
             "v1.0": "增加辅助认证插件，支持使用第三方系统进行辅助认证"
         },
-        "release": true
+        "release": true,
+        "v3": false
     },
     "PlexRefreshRecent": {
         "name": "Plex元数据刷新",
