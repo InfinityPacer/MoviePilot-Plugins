@@ -102,7 +102,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.7.5"
+    plugin_version = "0.7.6"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -133,6 +133,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._subscribe_oper: Optional[SubscribeOper] = None
         self._subscribe_history_oper: Optional[SubscribeHistoryOper] = None
         self._subscribe_chain: Optional[SubscribeChain] = None
+        self._subscribe_writer = None
         self._tmdb_chain: Optional[TmdbChain] = None
         self._storage_chain: Optional[StorageChain] = None
         self._transferhistory_oper: Optional[TransferHistoryOper] = None
@@ -150,6 +151,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         self._subscribe_oper = SubscribeOper()
         self._subscribe_history_oper = SubscribeHistoryOper()
         self._subscribe_chain = SubscribeChain()
+        # SubscribeChain 持有宿主组合根装配的短事务 repository，自动新增洗版订阅复用该事务 owner。
+        self._subscribe_writer = self._subscribe_chain.subscription_repository
         self._tmdb_chain = TmdbChain()
         self._storage_chain = StorageChain()
         self._transferhistory_oper = TransferHistoryOper()
@@ -280,11 +283,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             subscribe_history_oper=self._subscribe_history_oper,
             clear_tasks_fn=self._task_manager.clear_tasks,
             notify_fn=self._notify_subscribe,
-            restore_fn=self._restore_subscribe_from_snapshot,
             snapshot_fn=verifier.snapshot,
             format_desc_fn=lambda subscribe, mediainfo: self._format_subscribe_desc(subscribe, mediainfo),
             notification_image_fn=self._resolve_notification_image,
             plugin_name=self.plugin_name,
+            subscription_mutation_scope=self._subscribe_chain.sync_subscription_mutation_scope,
         )
         pending_refresh = PendingRefresh()
         pending_state = PendingStateCoordinator(
@@ -449,6 +452,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
             best_version_type=cfg.best_version_type,
             notification_image_fn=self._resolve_notification_image,
             plugin_name=self.plugin_name,
+            subscribe_writer=self._subscribe_writer,
         )
         subscription_cleanup = SubscriptionCleanup(
             task_data_read=tm.read,
@@ -1691,39 +1695,11 @@ class SubscribeAssistantEnhanced(_PluginBase):
             return None
         return False
 
-    def _send_subscribe_added(self, subscribe_id, mediainfo=None, username=None):
-        """发 SubscribeAdded 事件，让主程序和其他插件感知订阅创建。"""
-        eventmanager.send_event(EventType.SubscribeAdded, {
-            "subscribe_id": subscribe_id,
-            "username": username or self.plugin_name,
-            "mediainfo": mediainfo.to_dict() if mediainfo else {},
-        })
-
     def _format_subscribe_desc(self, subscribe, mediainfo=None) -> str:
         """生成通知标题中的订阅描述，优先使用媒体标题和季号。"""
         title = mediainfo.title_year if mediainfo else subscribe.name
         season = f" S{subscribe.season}" if subscribe.season is not None else ""
         return f"{title}{season}"
-
-    def _restore_subscribe_from_snapshot(self, subscribe_dict: dict, mediainfo=None) -> bool:
-        """根据订阅快照重建分集洗版订阅，并补发 SubscribeAdded 事件。"""
-        try:
-            from app.db.models import Subscribe
-            restore_payload = {
-                key: value
-                for key, value in (subscribe_dict or {}).items()
-                if hasattr(Subscribe, key)
-            }
-            restore_payload["manual_total_episode"] = 0
-            restored = Subscribe(**restore_payload)
-            restored.create(self._subscribe_oper._db)
-            sid = restore_payload.get("id")
-            if sid and self._subscribe_oper.get(sid):
-                self._send_subscribe_added(sid, mediainfo, username=restore_payload.get("username"))
-                return True
-        except Exception as err:
-            logger.error(f"重建分集洗版订阅时发生异常: {err}")
-        return False
 
     def _send_no_download_notification(self, subscribe, mediainfo, action: str,
                                        reason: Optional[str] = None):

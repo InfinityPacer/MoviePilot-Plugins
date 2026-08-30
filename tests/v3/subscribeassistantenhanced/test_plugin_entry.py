@@ -506,7 +506,9 @@ class TestScheduler:
             "pause_enhanced_enabled": True,
             "best_version_type": "tv",
         })
-        names = [service["name"] for service in plugin.get_service()]
+        services = plugin.get_service()
+        names = [service["name"] for service in services]
+        assert len(services) == 5
         assert "下载任务检查" in names
         assert "洗版订阅检查" in names
         assert "下载超时检查" not in names

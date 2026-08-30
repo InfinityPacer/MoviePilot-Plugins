@@ -99,8 +99,8 @@ def test_converter_is_wired():
     assert converter._notification_image.__func__ is plugin._resolve_notification_image.__func__
 
 
-def test_subscription_creation_uses_host_transactional_writer():
-    """新增订阅不注入查询 Oper，交由宿主配置的事务 writer 处理。"""
+def test_subscription_mutations_use_host_transactional_ports():
+    """新增与原地更新分别复用宿主组合根配置的事务端口。"""
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({})
 
@@ -109,8 +109,12 @@ def test_subscription_creation_uses_host_transactional_writer():
 
     assert converter._subscribe_oper is plugin._subscribe_oper
     assert converter._subscribe_history_oper is plugin._subscribe_history_oper
-    assert converter._subscribe_writer is None
-    assert orchestrator._subscribe_writer is None
+    assert plugin._subscribe_writer is plugin._subscribe_chain.subscription_repository
+    assert (
+        converter._subscription_mutation_scope
+        is plugin._subscribe_chain.sync_subscription_mutation_scope
+    )
+    assert orchestrator._subscribe_writer is plugin._subscribe_writer
 
 
 def test_orchestrator_uses_shared_notification_image_resolver():
@@ -3034,33 +3038,6 @@ class TestPeriodicJobs:
         plugin._modules["verifier"]._rebuild_subscribe.assert_called_once()
         assert plugin._modules["verifier"]._notify.call_args.args[0].endswith("已移除旧洗版订阅并重建订阅")
         assert data_store["snapshots"]["list"] == []
-
-    def test_restore_subscribe_from_snapshot_unlocks_manual_total_episode(self):
-        """转换失败恢复分集洗版订阅时，不继承旧订阅的手动总集数锁定。"""
-        from app.db.models import Subscribe
-
-        plugin = SubscribeAssistantEnhanced()
-        plugin.init_plugin({})
-        plugin._subscribe_oper = MagicMock()
-        plugin._subscribe_oper.get.return_value = object()
-        plugin._send_subscribe_added = MagicMock()
-
-        with patch.object(Subscribe, "create", autospec=True) as create:
-            result = plugin._restore_subscribe_from_snapshot(
-                {
-                    "id": 7,
-                    "name": "测试剧",
-                    "media_source": "themoviedb",
-                    "media_id": "100",
-                    "season": 1,
-                    "manual_total_episode": 92,
-                },
-                _mediainfo(),
-            )
-
-        assert result is True
-        restored = create.call_args.args[0]
-        assert restored.manual_total_episode == 0
 
     def test_pending_release_active_guard_veto_uses_pending_judge_not_orphan_cleanup(self, monkeypatch):
         """活跃 guard_veto P 必须交给 PendingJudge，不绕过证据流水线释放。"""

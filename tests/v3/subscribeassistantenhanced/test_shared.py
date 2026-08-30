@@ -3,8 +3,10 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.schemas.types import MediaSource, MediaType
 from app.plugins.subscribeassistantenhanced.shared.log import truncate_log_value, format_log_title_desc
 from app.plugins.subscribeassistantenhanced.shared.subscribe import (
+    build_subscribe_meta,
     format_subscribe, format_subscribe_desc, format_subscribe_label, match_subscribe,
     identity_matches, pending_subscription_episodes, resolve_subscribe_media_type,
     subscribe_from_source, subscribe_identity, is_full_best_version_subscribe,
@@ -66,6 +68,37 @@ class TestFormatLogTitleDesc:
 
 
 # ---------- subscribe.py ----------
+
+class TestBuildSubscribeMeta:
+
+    def test_preserves_subscription_identity_and_special_season(self):
+        subscribe = SimpleNamespace(
+            name="测试剧",
+            year="2026",
+            season=0,
+            type=MediaType.TV.value,
+            media_source=MediaSource.TMDB,
+            media_id="123",
+        )
+
+        meta = build_subscribe_meta(subscribe, failure_context="测试")
+
+        assert meta.title == "测试剧"
+        assert meta.year == "2026"
+        assert meta.begin_season == 0
+        assert meta.type == MediaType.TV
+        assert meta.media_source == MediaSource.TMDB
+        assert meta.media_id == "123"
+
+    def test_rejects_unsupported_media_type(self):
+        subscribe = SimpleNamespace(
+            name="测试",
+            season=None,
+            type=MediaType.UNKNOWN.value,
+        )
+
+        assert build_subscribe_meta(subscribe, failure_context="测试") is None
+
 
 class TestFormatSubscribe:
 
