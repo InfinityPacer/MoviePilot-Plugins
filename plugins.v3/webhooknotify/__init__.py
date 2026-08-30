@@ -44,7 +44,7 @@ class WebhookNotify(_PluginBase):
         "https://raw.githubusercontent.com/InfinityPacer/"
         "MoviePilot-Plugins/main/icons/webhooknotify.png"
     )
-    plugin_version = "2.0.0"
+    plugin_version = "2.0.1"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "webhooknotify_"

@@ -7,13 +7,38 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.adapters.web.security import access as web_security
 from app.plugins.webhooknotify import WebhookNotify, WebhookNotifyPayload
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 from app.schemas.message import Message
 from app.schemas.response import Response
+from app.schemas.token import TokenPayload
 from app.schemas.types import MessageType
 from app.sdk.config import settings
-from app.sdk.security import verify_apikey
+from app.sdk.security import (
+    set_superuser_token_payload_provider,
+    verify_apikey,
+)
+
+
+_TEST_API_TOKEN = "moviepilot-test-token"
+_TEST_PLUGIN_API_KEY = "webhook-plugin-test-key"
+
+
+@pytest.fixture(autouse=True)
+def configure_host_api_credential():
+    """为最小测试应用装配 V3 宿主 API 凭据对应的管理员身份端口。"""
+    set_superuser_token_payload_provider(
+        lambda: TokenPayload(
+            sub=7,
+            username="tester",
+            super_user=True,
+            level=1,
+            purpose="authentication",
+        ),
+    )
+    yield
+    web_security.reset_superuser_token_payload_provider()
 
 
 def _build_test_app(plugin: WebhookNotify) -> FastAPI:
@@ -89,7 +114,7 @@ def test_api_uses_host_api_key_auth_without_plugin_key():
 
 def test_api_uses_plugin_key_dependency_when_configured():
     plugin = WebhookNotify()
-    plugin.init_plugin({"api_key": "plugin-key"})
+    plugin.init_plugin({"api_key": _TEST_PLUGIN_API_KEY})
 
     api_definitions = plugin.get_api()
 
@@ -101,15 +126,15 @@ def test_api_uses_plugin_key_dependency_when_configured():
 @pytest.mark.parametrize(
     "request_kwargs",
     [
-        {"headers": {"X-API-KEY": "moviepilot-key"}},
-        {"params": {"apikey": "moviepilot-key"}},
+        {"headers": {"X-API-KEY": _TEST_API_TOKEN}},
+        {"params": {"apikey": _TEST_API_TOKEN}},
     ],
 )
 def test_host_api_key_auth_accepts_public_api_token(monkeypatch, request_kwargs):
     plugin = WebhookNotify()
     plugin.init_plugin({"enabled": True})
     post_message = _mock_notification_chain(plugin)
-    monkeypatch.setattr(settings, "API_TOKEN", "moviepilot-key")
+    monkeypatch.setattr(settings, "API_TOKEN", _TEST_API_TOKEN)
     client = TestClient(_build_test_app(plugin))
 
     unauthorized = client.post("/webhook", json={"title": "未认证"})
@@ -137,25 +162,25 @@ def test_host_api_key_auth_accepts_public_api_token(monkeypatch, request_kwargs)
 @pytest.mark.parametrize(
     "request_kwargs",
     [
-        {"headers": {"X-API-KEY": "plugin-key"}},
-        {"params": {"apikey": "plugin-key"}},
+        {"headers": {"X-API-KEY": _TEST_PLUGIN_API_KEY}},
+        {"params": {"apikey": _TEST_PLUGIN_API_KEY}},
     ],
 )
 def test_plugin_api_key_replaces_public_api_token(monkeypatch, request_kwargs):
     plugin = WebhookNotify()
-    plugin.init_plugin({"enabled": True, "api_key": "plugin-key"})
+    plugin.init_plugin({"enabled": True, "api_key": _TEST_PLUGIN_API_KEY})
     post_message = _mock_notification_chain(plugin)
-    monkeypatch.setattr(settings, "API_TOKEN", "moviepilot-key")
+    monkeypatch.setattr(settings, "API_TOKEN", _TEST_API_TOKEN)
     client = TestClient(_build_test_app(plugin))
 
     missing = client.post("/webhook", json={"title": "独立认证"})
     public_token = client.post(
         "/webhook",
         json={"title": "公共令牌"},
-        headers={"X-API-KEY": "moviepilot-key"},
+        headers={"X-API-KEY": _TEST_API_TOKEN},
     )
     wrong_header_overrides_query = client.post(
-        "/webhook?apikey=plugin-key",
+        f"/webhook?apikey={_TEST_PLUGIN_API_KEY}",
         json={"title": "错误头"},
         headers={"X-API-KEY": "wrong-key"},
     )
@@ -188,11 +213,11 @@ def test_post_accepts_title_or_body(
     plugin = WebhookNotify()
     plugin.init_plugin({"enabled": True})
     post_message = _mock_notification_chain(plugin)
-    monkeypatch.setattr(settings, "API_TOKEN", "unit-test-token")
+    monkeypatch.setattr(settings, "API_TOKEN", _TEST_API_TOKEN)
     client = TestClient(_build_test_app(plugin))
 
     response = client.post(
-        "/webhook?apikey=unit-test-token",
+        f"/webhook?apikey={_TEST_API_TOKEN}",
         json=payload,
     )
 
@@ -221,9 +246,9 @@ def test_get_accepts_title_or_body(
     plugin = WebhookNotify()
     plugin.init_plugin({"enabled": True})
     post_message = _mock_notification_chain(plugin)
-    monkeypatch.setattr(settings, "API_TOKEN", "unit-test-token")
+    monkeypatch.setattr(settings, "API_TOKEN", _TEST_API_TOKEN)
     client = TestClient(_build_test_app(plugin))
-    params["apikey"] = "unit-test-token"
+    params["apikey"] = _TEST_API_TOKEN
 
     response = client.get("/webhook", params=params)
 
@@ -240,11 +265,11 @@ def test_get_and_post_reject_missing_content(monkeypatch):
     plugin = WebhookNotify()
     plugin.init_plugin({"enabled": True})
     post_message = _mock_notification_chain(plugin)
-    monkeypatch.setattr(settings, "API_TOKEN", "unit-test-token")
+    monkeypatch.setattr(settings, "API_TOKEN", _TEST_API_TOKEN)
     client = TestClient(_build_test_app(plugin))
 
-    post_response = client.post("/webhook?apikey=unit-test-token", json={})
-    get_response = client.get("/webhook?apikey=unit-test-token")
+    post_response = client.post(f"/webhook?apikey={_TEST_API_TOKEN}", json={})
+    get_response = client.get(f"/webhook?apikey={_TEST_API_TOKEN}")
 
     assert post_response.status_code == 422
     assert get_response.status_code == 422
@@ -254,11 +279,11 @@ def test_get_and_post_reject_missing_content(monkeypatch):
 def test_disabled_plugin_returns_service_unavailable(monkeypatch):
     plugin = WebhookNotify()
     post_message = _mock_notification_chain(plugin)
-    monkeypatch.setattr(settings, "API_TOKEN", "unit-test-token")
+    monkeypatch.setattr(settings, "API_TOKEN", _TEST_API_TOKEN)
     client = TestClient(_build_test_app(plugin))
 
     response = client.post(
-        "/webhook?apikey=unit-test-token",
+        f"/webhook?apikey={_TEST_API_TOKEN}",
         json={"title": "标题"},
     )
 
@@ -302,7 +327,7 @@ def test_form_and_lifecycle_defaults():
 
 def test_logging_does_not_include_message_or_key(monkeypatch):
     plugin = WebhookNotify()
-    plugin.init_plugin({"enabled": True, "api_key": "unit-test-token"})
+    plugin.init_plugin({"enabled": True, "api_key": _TEST_PLUGIN_API_KEY})
     _mock_notification_chain(plugin)
     log_info = MagicMock()
     monkeypatch.setattr("app.plugins.webhooknotify.logger.info", log_info)
@@ -319,4 +344,4 @@ def test_logging_does_not_include_message_or_key(monkeypatch):
     )
     assert "敏感标题" not in logged_values
     assert "敏感正文" not in logged_values
-    assert "unit-test-token" not in logged_values
+    assert _TEST_PLUGIN_API_KEY not in logged_values
