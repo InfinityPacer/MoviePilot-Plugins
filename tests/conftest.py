@@ -49,6 +49,10 @@ def pytest_configure(config) -> None:
         prepare_v3_backend()
         return
     prepare_v2_backend()
+    from app.runtime.extensions.plugin.manager import configure_plugin_runtime_factory
+
+    # 旧插件会在模块导入期构造 PluginManager；测试会话只需隔离的对象图，不启动宿主生命周期。
+    configure_plugin_runtime_factory(lambda _manager: MagicMock())
 
 
 @pytest.fixture(autouse=True)
@@ -73,10 +77,17 @@ def configure_plugin_test_services(request):
         message_helper=MagicMock(),
         file_cache=MagicMock(),
         async_file_cache=MagicMock(),
-        message_queue_factory=lambda _callback: MagicMock(),
+        message_queue=MagicMock(),
         module_dispatcher_factory=lambda **_kwargs: MagicMock(),
         site_repository=MagicMock(),
         subscription_repository=MagicMock(),
+        subscription_mutation_scope=MagicMock(),
+        sync_subscription_mutation_scope=MagicMock(),
+        subscription_delete_scope=MagicMock(),
+        sync_subscription_delete_scope=MagicMock(),
+        subscription_completion_scope=MagicMock(),
+        rule_group_mutation_scope=MagicMock(),
+        site_reference_mutation_scope=MagicMock(),
         download_history_repository=MagicMock(),
         transfer_history_repository=MagicMock(),
         transfer_admission_repository=MagicMock(),

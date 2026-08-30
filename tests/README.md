@@ -34,7 +34,7 @@ MOVIEPILOT_BACKEND_PATH=<workspace>/MoviePilot <workspace>/MoviePilot/.venv/bin/
 按 `package.v2.json` 动态选择未声明 `v3:false` 且已有测试、可被 V3 主程序加载的 V2 旧实现。测试目录找不到索引条目时
 失败关闭，兼容名单不写死在 runner。两轨可能存在同名插件包，同一解释器进程混跑会相互覆盖。
 隔离 `CONFIG_DIR`、建表、`app.helper.sites` 垫片、插件目录注入、v2/v3 marker、
-autouse 网络守卫等引导逻辑统一在主程序 `app/testing`（`bootstrap` / `network_guard`）维护一处；
+autouse 网络守卫等引导逻辑统一在主程序 `app/testing`（`bootstrap` / `network`）维护一处；
 本仓 `tests/_bootstrap.py` 仅是「定位后端入 `sys.path`」的薄壳 shim，故后端需为含 `app/testing/bootstrap`
 的较新 MoviePilot。共享 harness（`stub_modules` 等）在 bootstrap 后可直接复用。
 

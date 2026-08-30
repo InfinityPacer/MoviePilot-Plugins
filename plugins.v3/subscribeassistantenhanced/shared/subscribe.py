@@ -2,8 +2,8 @@
 import json
 from typing import List, Optional, Tuple
 
-from app.chain.subscribe import build_subscribe_meta as build_main_subscribe_meta
 from app.sdk.logging import logger
+from app.sdk.media import MetaInfo
 from app.schemas.types import MediaSource, MediaType
 
 
@@ -71,7 +71,13 @@ def build_subscribe_meta(subscribe, failure_context: str):
     if media_type not in (MediaType.MOVIE, MediaType.TV):
         logger.warning(f"{failure_context}：{format_subscribe(subscribe)}，订阅媒体类型无效：{subscribe.type}")
         return None
-    return build_main_subscribe_meta(subscribe)
+    meta = MetaInfo(subscribe.name)
+    meta.year = subscribe.year
+    meta.begin_season = subscribe.season
+    meta.type = media_type
+    meta.media_source = subscribe.media_source
+    meta.media_id = subscribe.media_id
+    return meta
 
 
 def format_subscribe(subscribe) -> str:

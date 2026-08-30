@@ -1,6 +1,6 @@
-"""分集到全集转换：以替换订阅方式切换为全集洗版。"""
+"""分集到全集转换：在原订阅上切换为全集洗版。"""
 
-from app.application.subscription.write import add_subscribe as add_subscribe_command
+from app.application.subscription.mutation import SubscriptionActor
 from app.sdk.logging import logger
 
 
@@ -13,31 +13,31 @@ DROP_REBUILT_FIELDS = {
 class BestVersionConverter:
     """分集洗版升级为全集洗版。
 
-    转换会归档并删除分集订阅，再以同一配置创建全集洗版订阅；episode_group 属于订阅范围约束，
-    需要随 payload 保留，避免绝对季或剧集组范围在转换时丢失。
+    转换会归档原状态，再通过宿主 mutation scope 原地更新订阅；原 ID 和 episode_group
+    等范围约束保持不变，避免已有任务与外部关联失效。
     """
 
     def __init__(self, subscribe_oper=None, clear_tasks_fn=None,
-                 notify_fn=None, restore_fn=None, snapshot_fn=None, format_desc_fn=None,
+                 notify_fn=None, snapshot_fn=None, format_desc_fn=None,
                  notification_image_fn=None,
                  plugin_name: str = "订阅助手（增强版）",
-                 subscribe_history_oper=None, subscribe_writer=None):
-        """注入活动订阅、历史归档、新增订阅及转换副作用依赖。"""
+                 subscribe_history_oper=None, subscription_mutation_scope=None):
+        """注入活动订阅、历史归档、事务修改及转换副作用依赖。"""
         self._subscribe_oper = subscribe_oper
         self._subscribe_history_oper = subscribe_history_oper
-        self._subscribe_writer = subscribe_writer
+        self._subscription_mutation_scope = subscription_mutation_scope
         self._clear_tasks = clear_tasks_fn
         self._notify = notify_fn
-        self._restore = restore_fn
         self._snapshot = snapshot_fn
         self._format_desc = format_desc_fn
         self._notification_image = notification_image_fn
         self._plugin_name = plugin_name
 
     def convert_to_full(self, subscribe, mediainfo=None, current_priority=None) -> bool:
-        """按指定全集准入基线替换为全集洗版订阅；失败时尽量恢复分集订阅。"""
+        """按指定全集准入基线原地切换为全集洗版订阅。"""
         sid = subscribe.id
-        if not sid or not self._subscribe_oper or not self._subscribe_history_oper or not mediainfo:
+        if (not sid or not self._subscribe_oper or not self._subscribe_history_oper
+                or not self._subscription_mutation_scope or not mediainfo):
             return False
 
         subscribe_dict = subscribe.to_dict()
@@ -60,41 +60,31 @@ class BestVersionConverter:
             return False
 
         try:
-            self._subscribe_oper.delete(sid=sid)
+            with self._subscription_mutation_scope() as mutation:
+                change = mutation.update(
+                    sid,
+                    full_payload,
+                    SubscriptionActor(name=self._plugin_name, is_superuser=True),
+                    scene="best_version_full",
+                )
         except Exception as err:
-            logger.error(f"{subscribe_desc} 原因=删除分集洗版订阅失败，处理=停止转全集处理，错误={err}")
+            logger.error(f"{subscribe_desc} 原因=更新全集洗版订阅失败，处理=保留原订阅，错误={err}")
             self._notify_failure(subscribe, subscribe_desc, str(err), mediainfo=mediainfo)
+            return False
+        if not change:
+            logger.error(f"{subscribe_desc} 原因=更新全集洗版订阅失败，处理=保留原订阅")
+            self._notify_failure(subscribe, subscribe_desc, "宿主未返回订阅更新结果", mediainfo=mediainfo)
             return False
 
         if self._clear_tasks:
             try:
                 self._clear_tasks(sid)
             except Exception as err:
-                logger.warning(f"{subscribe_desc} 清理旧订阅任务失败，继续创建全集洗版订阅，错误={err}")
+                logger.warning(f"{subscribe_desc} 清理旧订阅任务失败，全集洗版订阅继续运行，错误={err}")
 
-        try:
-            # 新增订阅由 Application writer 负责，活动订阅 Oper 不承担跨事务写入。
-            new_sid, err_msg = add_subscribe_command(
-                mediainfo=mediainfo,
-                subscribe_oper=self._subscribe_writer,
-                **full_payload,
-            )
-        except Exception as err:
-            new_sid, err_msg = None, str(err)
-
-        if new_sid:
-            logger.info(f"{subscribe_desc} 原因=分集洗版集数已符合目标集数，处理=已转为全集洗版订阅 (ID: {new_sid})")
-            self._notify_success(subscribe, subscribe_desc, mediainfo)
-            return True
-
-        restored = self._restore(subscribe_dict, mediainfo) if self._restore else False
-        logger.error(
-            f"{subscribe_desc} 原因=转为全集洗版订阅失败，处理=尝试重建分集订阅，"
-            f"错误信息={err_msg}，分集订阅重建状态={restored}"
-        )
-        restore_text = "分集洗版订阅已尝试重建" if restored else "分集洗版订阅重建失败，请手动检查"
-        self._notify_failure(subscribe, subscribe_desc, f"{err_msg}\n{restore_text}", mediainfo=mediainfo)
-        return False
+        logger.info(f"{subscribe_desc} 原因=分集洗版集数已符合目标集数，处理=已转为全集洗版订阅 (ID: {sid})")
+        self._notify_success(subscribe, subscribe_desc, mediainfo)
+        return True
 
     def _build_full_payload(self, subscribe_dict: dict, current_priority=None) -> dict:
         """从订阅快照构造全集洗版 payload，并保留订阅范围字段。"""
