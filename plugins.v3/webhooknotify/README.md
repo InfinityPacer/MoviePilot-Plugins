@@ -7,6 +7,8 @@
 
 ## 版本更新日志
 
+- v2.0.1
+  - 对齐 API Key 配置说明与 V3 宿主认证测试合同。
 - v2.0.0
   - 迁移至 MoviePilot V3 稳定接口，保持 Webhook 请求与通知转发行为。
 - v1.1
@@ -34,7 +36,7 @@
 - 请求头：`X-API-KEY: <API_KEY>`
 - 查询参数：`?apikey=<API_KEY>`
 
-配置“APIKEY”后，`API_KEY` 必须使用插件中配置的 Key；留空时使用 MoviePilot 公共 `API_TOKEN`。两种模式使用相同的请求头和查询参数名称。
+配置项 `api_key` 非空后，请求中的 `<API_KEY>` 必须与该配置值一致；留空时使用 MoviePilot 公共 `API_TOKEN`。两种模式使用相同的请求头和查询参数名称。
 
 `POST` 请求头使用 `Content-Type: application/json`，请求体格式如下：
 

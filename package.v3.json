@@ -129,13 +129,13 @@
         "name": "Webhook消息推送",
         "description": "接收 Webhook 消息并推送到通知客户端。",
         "labels": "通知,工具",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webhooknotify.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
-            "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持 Webhook 请求与通知转发行为。"
+            "v2.0.1": "对齐 API Key 配置说明与 V3 宿主认证测试合同。"
         },
         "release": true
     },
