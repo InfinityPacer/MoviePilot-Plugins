@@ -126,7 +126,8 @@
         "history": {
             "v2.0": "MoviePilot V2 版本天气插件，优先使用 CloakBrowser 截图并保留 Playwright 兼容路径"
         },
-        "release": true
+        "release": true,
+        "v3": false
     },
     "BrushManager": {
         "name": "刷流种子整理",
@@ -140,6 +141,7 @@
             "v1.5.1": "兼容新版 Transmission SDK 字段，修正整理统计读取异常",
             "v1.5": "MoviePilot V2 版本刷流种子整理插件"
         },
+        "v3": false,
         "release": true
     },
     "TorrentClassifier": {
@@ -155,6 +157,7 @@
             "v1.5": "优化执行周期输入，需要MoviePilot v2.2.1+",
             "v1.4": "MoviePilot V2 版本种子关键字分类整理插件"
         },
+        "v3": false,
         "release": true
     },
     "HitAndRun": {
