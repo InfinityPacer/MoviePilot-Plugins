@@ -72,6 +72,7 @@ class BestVersionOrchestrator:
             if self._notify:
                 self._notify(
                     f"{format_subscribe_desc(subscribe)} 已达顶档，跳过洗版订阅",
+                    user=subscribe.username,
                     image=self._resolve_notification_image(subscribe, mediainfo),
                     link="#/subscribe/movie?tab=mysub",
                 )
@@ -118,6 +119,7 @@ class BestVersionOrchestrator:
                 self._notify(
                     f"{format_subscribe_desc(subscribe)} 已添加{mode_label}订阅",
                     score=mediainfo.vote_average,
+                    user=subscribe.username,
                     image=self._resolve_notification_image(subscribe, mediainfo),
                     link="#/subscribe/movie?tab=mysub" if is_movie else "#/subscribe/tv?tab=mysub",
                 )
@@ -128,6 +130,7 @@ class BestVersionOrchestrator:
             )
             self._notify(
                 f"{format_subscribe_desc(subscribe)} 添加洗版订阅失败",
+                user=subscribe.username,
                 reason=err_msg,
                 follow_up="请检查订阅创建错误",
                 diagnostic=True,

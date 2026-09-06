@@ -38,7 +38,7 @@ def _sub(ep_priority=None, episode_group=None, **kwargs):
         episode_group=episode_group,
         save_path="/media", sites="site1", filter="rule1", filter_groups=["group1"],
         best_version=1, best_version_full=1, type="电视剧",
-        start_episode=1, total_episode=12, lack_episode=0,
+        start_episode=1, total_episode=12, lack_episode=0, username="tester",
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -126,7 +126,7 @@ class TestStartBestVersion:
         notify.assert_called_once()
         assert notify.call_args.args[0].endswith("已添加洗版订阅")
         assert "reason" not in notify.call_args.kwargs
-        assert "user" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["user"] == "tester"
         _args, kwargs = writer.add.call_args
         identity = kwargs["identity"]
         patch = kwargs["payload"]
@@ -174,7 +174,7 @@ class TestStartBestVersion:
         assert notify.call_args.kwargs["follow_up"] == "请检查订阅创建错误"
         assert notify.call_args.kwargs["diagnostic"] is True
         assert notify.call_args.kwargs["image"] == "poster.jpg"
-        assert "user" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["user"] == "tester"
 
     def test_skips_when_already_best_version(self):
         writer = _writer()
@@ -251,6 +251,7 @@ class TestStartBestVersion:
         assert "reason" not in notify.call_args.kwargs
         assert "follow_up" not in notify.call_args.kwargs
         assert notify.call_args.kwargs["image"] == "poster.jpg"
+        assert notify.call_args.kwargs["user"] == "tester"
 
     def test_unknown_media_type_skips_all_scope(self):
         """未知媒体类型不能被 all 范围误当成剧集创建洗版。"""

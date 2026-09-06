@@ -114,6 +114,7 @@ class BestVersionConverter:
         self._notify(
             f"{subscribe_desc} 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅",
             score=mediainfo.vote_average,
+            user=subscribe.username,
             image=self._resolve_notification_image(subscribe, mediainfo),
             link="#/subscribe/tv?tab=mysub",
         )
@@ -125,6 +126,7 @@ class BestVersionConverter:
         self._notify(
             f"{subscribe_desc} 转为全集洗版订阅失败",
             text=text,
+            user=subscribe.username,
             follow_up="请检查订阅状态",
             diagnostic=True,
             image=self._resolve_notification_image(subscribe, mediainfo),
