@@ -10,6 +10,10 @@ from app.plugins.subscribeassistantenhanced.best_version.converter import BestVe
 class _SubscribeSnapshot(SimpleNamespace):
     """带 to_dict 的订阅快照替身，用于验证分集转全集转换载荷。"""
 
+    def __init__(self, **kwargs):
+        kwargs.setdefault("username", "user")
+        super().__init__(**kwargs)
+
     def to_dict(self):
         """返回订阅快照字典，模拟主程序 Subscribe 对象。"""
         return dict(self.__dict__)
@@ -108,7 +112,7 @@ class TestConvertToFull:
         assert call_order == ["snapshot", "update", "clear_tasks"]
         notify.assert_called_once()
         assert notify.call_args.args[0] == "测试剧 S1 分集洗版集数已符合目标集数，已从分集洗版转为全集洗版订阅"
-        assert "user" not in notify.call_args.kwargs
+        assert notify.call_args.kwargs["user"] == "user"
         assert "reason" not in notify.call_args.kwargs
 
     def test_uses_subscription_mutation_contract(self):
@@ -153,6 +157,7 @@ class TestConvertToFull:
         clear_tasks.assert_not_called()
         notify.assert_called_once()
         assert notify.call_args.args[0] == "测试剧 S1 转为全集洗版订阅失败"
+        assert notify.call_args.kwargs["user"] == "user"
 
     def test_history_failure_stops_before_mutating_active_subscribe(self):
         """历史写入失败时不得修改仍在运行的分集洗版订阅。"""

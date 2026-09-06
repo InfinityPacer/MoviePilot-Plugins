@@ -2353,10 +2353,10 @@ def test_best_version_notification_without_image_has_single_plugin_source():
     media = _mediainfo()
     media.get_message_image = lambda: ""
 
-    orchestrator.start_best_version(_sub(best_version=0), media)
+    orchestrator.start_best_version(_sub(best_version=0, username="tester"), media)
 
     kwargs = plugin.post_message.call_args.kwargs
-    assert "用户：" not in kwargs["text"]
+    assert "用户：tester" in kwargs["text"]
     assert kwargs["text"].count("来源：订阅助手（增强版）") == 1
     assert kwargs["image"] is None
 
