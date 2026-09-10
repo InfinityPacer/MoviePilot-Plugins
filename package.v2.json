@@ -85,11 +85,12 @@
         "name": "站点刷流（低频版）",
         "description": "自动托管刷流，将会提高对应站点的访问频率。（基于官方插件BrushFlow二次开发）",
         "labels": "站点,刷流,仪表板",
-        "version": "4.3.2",
+        "version": "4.3.3",
         "icon": "brush.jpg",
         "author": "jxxghp,InfinityPacer",
         "level": 2,
         "history": {
+            "v4.3.3": "修复种子标题或描述为空时包含/排除规则触发异常的问题",
             "v4.3.2": "兼容新版 Transmission SDK 字段，修正刷流统计读取异常",
             "v4.3.1": "修复了一些细节问题",
             "v4.3": "优化执行周期输入，需要MoviePilot v2.2.1+",
