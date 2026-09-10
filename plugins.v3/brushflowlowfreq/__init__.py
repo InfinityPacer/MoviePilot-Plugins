@@ -249,7 +249,7 @@ class BrushFlowLowFreq(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "4.7"
+    plugin_version = "4.8"
     # 插件作者
     plugin_author = "jxxghp,InfinityPacer"
     # 作者主页
@@ -2353,16 +2353,19 @@ class BrushFlowLowFreq(_PluginBase):
         if brush_config.hr == "yes" and torrent.hit_and_run:
             return False, "存在H&R"
 
+        torrent_title = torrent.title or ""
+        torrent_description = torrent.description or ""
+
         # 包含规则
         if brush_config.include and not (
-                re.search(brush_config.include, torrent.title, re.I) or re.search(brush_config.include,
-                                                                                  torrent.description, re.I)):
+                re.search(brush_config.include, torrent_title, re.I) or re.search(brush_config.include,
+                                                                                  torrent_description, re.I)):
             return False, "不符合包含规则"
 
         # 排除规则
         if brush_config.exclude and (
-                re.search(brush_config.exclude, torrent.title, re.I) or re.search(brush_config.exclude,
-                                                                                  torrent.description, re.I)):
+                re.search(brush_config.exclude, torrent_title, re.I) or re.search(brush_config.exclude,
+                                                                                  torrent_description, re.I)):
             return False, "符合排除规则"
 
         # 种子大小（GB）

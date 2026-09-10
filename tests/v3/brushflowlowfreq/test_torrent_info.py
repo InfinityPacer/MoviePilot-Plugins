@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
-from app.plugins.brushflowlowfreq import BrushFlowLowFreq
+from app.plugins.brushflowlowfreq import BrushConfig, BrushFlowLowFreq
 from app.schemas.types import MediaSource, MediaType
 from app.sdk.queries import QueryPage, SubscriptionSnapshot
 from .torrent_sdk_fixtures import force_transmission_plugin, make_tr_legacy_torrent, make_tr_v7_torrent
@@ -15,6 +15,31 @@ def _call(torrent):
     plugin = force_transmission_plugin(object.__new__(BrushFlowLowFreq))
     with patch.object(BrushFlowLowFreq, "service_info", new_callable=PropertyMock, return_value=object()):
         return plugin._BrushFlowLowFreq__get_torrent_info(torrent)
+
+
+def _make_filter_torrent(**overrides):
+    fields = {
+        "site_name": "测试站点",
+        "title": "其他标题",
+        "description": None,
+        "page_url": None,
+        "downloadvolumefactor": 0,
+        "uploadvolumefactor": 1,
+        "hit_and_run": False,
+        "size": 0,
+        "seeders": 0,
+        "pubdate": None,
+    }
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
+
+
+def _evaluate_filter(config, **torrent_fields):
+    plugin = object.__new__(BrushFlowLowFreq)
+    plugin._brush_config = BrushConfig(config)
+    return plugin._BrushFlowLowFreq__evaluate_conditions_for_brush(
+        _make_filter_torrent(**torrent_fields), {}
+    )
 
 
 class TestTransmissionTorrentInfo:
@@ -183,8 +208,42 @@ def test_subscribe_recognition_skips_unknown_snapshot_media_type():
     plugin.chain.recognize_media.assert_not_called()
 
 
+def test_filter_rules_treat_missing_title_and_description_as_empty_text():
+    assert _evaluate_filter(
+        {"include": "目标"}, title="其他标题", description=None
+    ) == (False, "不符合包含规则")
+    assert _evaluate_filter(
+        {"include": "目标"}, title=None, description="目标描述"
+    ) == (True, None)
+    assert _evaluate_filter(
+        {"exclude": "目标"}, title="其他标题", description=None
+    ) == (True, None)
+
+
+def test_v2_and_v3_filter_sources_normalize_optional_text():
+    for relative_path in (
+        "plugins.v2/brushflowlowfreq/__init__.py",
+        "plugins.v3/brushflowlowfreq/__init__.py",
+    ):
+        source_path = Path(__file__).parents[3] / relative_path
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        method = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "__evaluate_conditions_for_brush"
+        )
+        assignments = {
+            target.id: node.value
+            for node in ast.walk(method)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        assert ast.unparse(assignments["torrent_title"]) == "torrent.title or ''"
+        assert ast.unparse(assignments["torrent_description"]) == "torrent.description or ''"
+
+
 def test_v3_plugin_version_increments_minor_version():
-    assert BrushFlowLowFreq.plugin_version == "4.7"
+    assert BrushFlowLowFreq.plugin_version == "4.8"
 
 
 def test_v3_plugin_uses_stable_sdk_imports():
