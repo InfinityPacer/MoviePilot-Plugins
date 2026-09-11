@@ -298,7 +298,7 @@
         "description": "文件压缩归档，支持独立清单、校验和可选加密。",
         "labels": "文件,归档",
         "version": "0.1.0",
-        "icon": "archivemanager.png",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
