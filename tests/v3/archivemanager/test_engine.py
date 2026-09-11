@@ -14,6 +14,10 @@ from pathlib import Path
 import pytest
 
 
+# 依赖安装不属于插件仓测试门禁；未安装归档后端时只跳过引擎实测。
+pytest.importorskip("py7zr")
+pytest.importorskip("pyzipper")
+
 _ENGINE_PATH = Path(__file__).parents[3] / "plugins.v3" / "archivemanager" / "engine.py"
 _SPEC = importlib.util.spec_from_file_location("archivemanager_engine", _ENGINE_PATH)
 assert _SPEC and _SPEC.loader
