@@ -2,21 +2,28 @@
 
 import copy
 import threading
+import traceback
 from collections import deque
 from functools import partial
 from pathlib import Path
 from uuid import uuid4
 
 from app import schemas
-from app.schemas.types import NotificationType
 from app.plugins import _PluginBase
+from app.schemas.types import NotificationType
 from app.sdk.logging import logger
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, Field, ValidationError
 
 from .capacity import CapacityWait, allowance, fit_batch
 from .catalog import write_catalog
-from .config import NotificationConfig, TaskConfig, overlap, parse_config, validate_paths
+from .config import (
+    NotificationConfig,
+    TaskConfig,
+    overlap,
+    parse_config,
+    validate_paths,
+)
 from .runner import Runner
 from .scanner import Cancelled, partition, scan
 from .store import BatchRow, FileRow, Store, TaskRow
@@ -67,7 +74,7 @@ class ArchiveManager(_PluginBase):
         self._previews: dict[str, dict] = {}
         self._closing = False
 
-    def init_plugin(self, config: dict = None):
+    def init_plugin(self, config: dict | None = None):
         """重载先等待旧工作进程退出；数据库由宿主在此方法返回后建表。"""
         self.stop_service()
         self._stop = threading.Event()
@@ -96,6 +103,19 @@ class ArchiveManager(_PluginBase):
             self.update_config(value)
             self._tasks = parse_config(resolved)
             self._enabled = bool(value.get("enabled", False))
+            logger.info(
+                f"压缩归档配置加载完成：enabled={self._enabled} tasks={len(self._tasks)} "
+                f"scheduled={sum(task.enabled for task in self._tasks)} auto_continue="
+                f"{sum(task.enabled and task.auto_continue for task in self._tasks)}"
+            )
+            for task in self._tasks:
+                logger.info(
+                    f"压缩归档任务配置：task={task.name}({task.id[:6]}) enabled={task.enabled} "
+                    f"source={task.source_dir} output={task.output_dir} manifest={task.manifest_dir} "
+                    f"cron={task.cron} format={task.format} compression={task.compression} "
+                    f"encrypted={task.encryption != 'none'} verify={task.verify} "
+                    f"delete_source={task.delete_source} auto_continue={task.auto_continue}"
+                )
         except (ValueError, OSError, TypeError, KeyError) as exc:
             # Pydantic 的原始错误包含 input_value，不能将可能含密码的输入记录到日志。
             self._config_error = self._safe_error(exc)
@@ -211,15 +231,21 @@ class ArchiveManager(_PluginBase):
             if self._running and self._running["task_id"] == task_id and self._running["kind"] != "preview":
                 if batch_id:
                     raise ValueError("任务正在运行，请结束后再操作指定批次")
+                logger.debug(f"压缩归档任务已在运行，复用作业：task={task.name}({task.id[:6]})")
                 return self._running["job_id"]
             for job in self._queue:
                 if job["task"].id == task_id and job["kind"] != "preview":
                     if batch_id and job["batch_id"] != batch_id:
                         raise ValueError("任务已有排队操作，请完成后再操作指定批次")
+                    logger.debug(f"压缩归档任务已在队列，复用作业：task={task.name}({task.id[:6]})")
                     return job["id"]
             job_id = uuid4().hex
             self._queue.append(
                 {"id": job_id, "kind": "repair" if repair else "run", "task": task, "batch_id": batch_id}
+            )
+            logger.info(
+                f"压缩归档作业入队：job={job_id[:6]} kind={'repair' if repair else 'run'} "
+                f"task={task.name}({task.id[:6]}) batch={batch_id[:6] or '-'} queue={len(self._queue)}"
             )
             self._start_worker()
             return job_id
@@ -276,6 +302,10 @@ class ArchiveManager(_PluginBase):
                     "job_id": job["id"],
                     "kind": job["kind"],
                 }
+                logger.info(
+                    f"压缩归档作业开始：job={job['id'][:6]} kind={job['kind']} "
+                    f"task={task.name}({task.id[:6]}) batch={job['batch_id'][:6] or '-'}"
+                )
             previous_phase = ""
             try:
                 store = self._store()
@@ -285,6 +315,10 @@ class ArchiveManager(_PluginBase):
                     self._phase("manifest_pending", batch["id"])
                     path = write_catalog(batch)
                     store.save(batch["id"], manifest_path=path)
+                    logger.info(
+                        f"压缩归档清单补全完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"batch={batch['id'][:6]} manifest={path}"
+                    )
                     self._notify_event("other", task, "清单已补全", f"批次：{batch.get('batch_name', batch['id'])}")
                 elif job["kind"] == "preview":
                     entries, skipped = scan(task, self._stop)
@@ -305,6 +339,11 @@ class ArchiveManager(_PluginBase):
                             for b in batches[:200]
                         ],
                     }
+                    logger.info(
+                        f"压缩归档预览完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"files={result['file_count']} bytes={result['total_bytes']} "
+                        f"batches={result['batch_count']} skipped={result['skipped_count']}"
+                    )
                     with self._lock:
                         self._previews[job["id"]] = {"status": "complete", "data": result, "message": ""}
                 else:
@@ -318,7 +357,7 @@ class ArchiveManager(_PluginBase):
                         store.set_task_state(task.id, active=task.auto_continue, phase="history", reason="")
                         continue
                     self._execute_cycle(task, store, runner)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  队列边界必须把任意插件错误持久化并继续服务后续作业
                 message = self._safe_error(exc)
                 if task.password:
                     message = message.replace(task.password, "***")
@@ -329,8 +368,16 @@ class ArchiveManager(_PluginBase):
                     self._store().set_task_state(
                         task.id, active=task.auto_continue, phase="waiting_capacity", reason=message
                     )
+                    logger.warning(
+                        f"压缩归档作业等待容量：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"reason={message}"
+                    )
                 elif not isinstance(exc, Cancelled):
-                    logger.error(f"压缩归档任务 {task.id}：{message}")
+                    trace = traceback.format_exc().replace(task.password, "***") if task.password else traceback.format_exc()
+                    logger.error(
+                        f"压缩归档作业失败：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"kind={job['kind']} error_type={type(exc).__name__} error={message}\n{trace[-8000:]}"
+                    )
                     self.save_data("last_error", {"task_id": task.id, "message": message})
                     self._store().set_task_state(
                         task.id, active=task.auto_continue, phase="waiting_retry", reason=message
@@ -338,6 +385,9 @@ class ArchiveManager(_PluginBase):
                     self._notify_event("failure", task, "归档失败", message)
                 else:
                     self._store().set_task_state(task.id, active=False, phase="stopped", reason="已停止")
+                    logger.info(
+                        f"压缩归档作业已停止：job={job['id'][:6]} task={task.name}({task.id[:6]})"
+                    )
                     self._notify_event("other", task, "任务已停止", "归档已停止，已发布成品和清单保留。")
             finally:
                 with self._lock:
@@ -351,7 +401,18 @@ class ArchiveManager(_PluginBase):
         """历史快照优先，容量不足作为可恢复等待而非归档失败。"""
         store.set_task_state(task.id, active=task.auto_continue, reason="")
         completed = 0
-        for batch in store.unfinished(task.id)[: task.max_batches]:
+        unfinished = store.unfinished(task.id)[: task.max_batches]
+        initial_state = store.task_state(task.id)
+        logger.info(
+            f"压缩归档周期开始：task={task.name}({task.id[:6]}) phase={initial_state['phase']} "
+            f"history_remaining={initial_state['history_remaining']} unfinished_batches={len(unfinished)} "
+            f"max_batches={task.max_batches}"
+        )
+        for batch in unfinished:
+            logger.info(
+                f"压缩归档恢复未完成批次：task={task.name}({task.id[:6]}) "
+                f"batch={batch['id'][:6]} status={batch['status']}"
+            )
             self._check_execution_paths(TaskConfig.model_validate({**batch["task"], "password": task.password}))
             self._execute_batch(runner, store, batch, task)
             completed += 1
@@ -359,11 +420,21 @@ class ArchiveManager(_PluginBase):
         capacity = allowance(task, store.local_archives(task.id))
         if state.get("initialized") and not capacity["budget"]:
             store.set_task_state(task.id, phase="waiting_capacity", **capacity)
+            logger.warning(
+                f"压缩归档周期容量受限：task={task.name}({task.id[:6]}) "
+                f"pending_archives={capacity['pending_archives']} pending_bytes={capacity['pending_bytes']} "
+                f"free_bytes={capacity['free_bytes']} budget_bytes={capacity['budget']} reason={capacity['reason']}"
+            )
             return
         self._phase("scanning")
-        entries, _skipped = scan(task, self._stop, stable=True)
+        entries, skipped = scan(task, self._stop, stable=True)
         entries = store.inventory(task.id, entries, task.source_dir, task.public())
         groups = partition(task, entries)
+        logger.info(
+            f"压缩归档扫描完成：task={task.name}({task.id[:6]}) eligible_files={len(entries)} "
+            f"eligible_bytes={sum(entry['size'] for entry in entries)} batches={len(groups)} skipped={skipped} "
+            f"age_days={task.archive_age_days} stability_seconds={task.stability_seconds}"
+        )
         while groups and completed < task.max_batches:
             if self._stop.is_set():
                 raise Cancelled("已停止")
@@ -372,8 +443,18 @@ class ArchiveManager(_PluginBase):
             if selected is None:
                 capacity["reason"] = capacity["reason"] or "剩余容量不足以容纳下一份完整文件，等待空间或调整容量上限"
                 store.set_task_state(task.id, phase="waiting_capacity", **capacity)
+                logger.warning(
+                    f"压缩归档下一批无法容纳：task={task.name}({task.id[:6]}) "
+                    f"group={groups[0]['group']} next_file_bytes={groups[0]['entries'][0]['size']} "
+                    f"budget_bytes={capacity['budget']} reason={capacity['reason']}"
+                )
                 return
             batch = store.create(uuid4().hex, task.public(), selected["entries"], selected["group"])
+            logger.info(
+                f"压缩归档批次已创建：task={task.name}({task.id[:6]}) batch={batch['id'][:6]} "
+                f"name={batch['batch_name']} group={selected['group']} files={len(selected['entries'])} "
+                f"source_bytes={selected['total_bytes']}"
+            )
             self._execute_batch(runner, store, batch, task)
             completed += 1
             remaining = groups[0]["entries"][len(selected["entries"]) :]
@@ -398,6 +479,13 @@ class ArchiveManager(_PluginBase):
                 phase="incremental" if was_history else "idle",
                 **capacity,
             )
+        final_state = store.task_state(task.id)
+        logger.info(
+            f"压缩归档周期结束：task={task.name}({task.id[:6]}) completed_batches={completed} "
+            f"phase={final_state['phase']} history_remaining={final_state['history_remaining']} "
+            f"pending_archives={final_state['pending_archives']} pending_bytes={final_state['pending_bytes']} "
+            f"free_bytes={final_state['free_bytes']}"
+        )
 
     def stop_service(self):
         """同步等待扫描/工作子进程退出后返回，防止卸载后继续写库或删除文件。"""
@@ -409,8 +497,11 @@ class ArchiveManager(_PluginBase):
                     self._previews[job["id"]] = {"status": "failed", "data": None, "message": "已停止"}
             self._queue.clear()
             worker = self._thread
+        if worker and worker.is_alive():
+            logger.info("压缩归档服务停止中：等待当前扫描或归档工作安全退出")
         if worker and worker is not threading.current_thread():
             worker.join()
+            logger.info("压缩归档服务已停止")
 
     @staticmethod
     def get_render_mode():

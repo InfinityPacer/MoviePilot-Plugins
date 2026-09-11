@@ -2,32 +2,30 @@
 
 from __future__ import annotations
 
-import json
 import importlib.util
+import json
 import os
 import stat
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
+from unittest.mock import MagicMock
 
-import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import scoped_session, sessionmaker
-from zoneinfo import ZoneInfo
-
-from app.db.plugin.container import PluginDatabaseHandle
 import app.plugins.archivemanager as manager_module
 import app.plugins.archivemanager.capacity as capacity_module
+import app.plugins.archivemanager.scanner as scanner_module
+import pytest
+from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager import runner as runner_module
-from app.plugins.archivemanager.capacity import CapacityWait
 from app.plugins.archivemanager.capacity import allowance, fit_batch
 from app.plugins.archivemanager.catalog import rebuild_index, write_catalog
 from app.plugins.archivemanager.config import TaskConfig, parse_config
-from app.plugins.archivemanager.runner import Runner
+from app.plugins.archivemanager.runner import Runner, run_engine
 from app.plugins.archivemanager.scanner import Cancelled, identity, partition, scan
-from app.plugins.archivemanager.store import Base, BatchRow, FileRow, Store, TaskRow
-
+from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import scoped_session, sessionmaker
 
 pytestmark = pytest.mark.v3
 requires_archive_backend = pytest.mark.skipif(
@@ -92,6 +90,26 @@ def _entry_at(relative_path: str, size: int, when: datetime) -> dict:
         "size": size,
         "mtime_ns": int(when.timestamp() * 1_000_000_000),
     }
+
+
+def test_engine_process_failure_surfaces_stderr_without_password(monkeypatch) -> None:
+    """子进程异常必须保留退出码和 stderr 线索，同时隐藏经 stdin 传入的密码。"""
+    password = "engine-secret-不应进入日志"
+    process = MagicMock()
+    process.returncode = 17
+    process.communicate.return_value = ("", f"7z backend failed with {password}")
+    process.poll.return_value = 17
+    monkeypatch.setattr(runner_module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+
+    with pytest.raises(RuntimeError) as error:
+        run_engine({"action": "verify", "path": "/archive/example.7z", "password": password}, Event())
+
+    message = str(error.value)
+    assert "action=verify" in message
+    assert "exit=17" in message
+    assert "7z backend failed" in message
+    assert password not in message
+    assert "***" in message
 
 
 def _manifest_batch(task: TaskConfig, *, batch_id: str = "batch-1") -> dict:
@@ -283,7 +301,7 @@ def test_scan_stable_observation_honors_cancellation(tmp_path: Path) -> None:
         scan(task, CancelDuringWait(), stable=True)
 
 
-def test_scan_uses_seven_day_archive_age_threshold(tmp_path: Path) -> None:
+def test_scan_uses_seven_day_archive_age_threshold(tmp_path: Path, monkeypatch) -> None:
     source, output, manifest = _task_dirs(tmp_path)
     _write_age(source / "old-enough.txt", 8)
     _write_age(source / "too-new.txt", 6)
@@ -296,11 +314,19 @@ def test_scan_uses_seven_day_archive_age_threshold(tmp_path: Path) -> None:
         archive_age_days=7,
     )
 
+    log = MagicMock()
+    monkeypatch.setattr(scanner_module, "logger", log)
+
     entries, skipped = scan(task, Event())
 
     assert [entry["relative_path"] for entry in entries] == ["old-enough.txt"]
     assert entries[0]["source_root"] == str(source.resolve())
     assert skipped == 2
+    message = log.info.call_args.args[0]
+    assert "eligible=1" in message
+    assert "too_new=2" in message
+    assert "pattern=0" in message
+    assert "unreadable_or_special=0" in message
 
 
 def test_partition_splits_by_file_count_and_bytes_without_dropping_oversized_files(tmp_path: Path) -> None:
@@ -375,7 +401,7 @@ def test_capacity_allowance_enforces_local_artifact_count_and_bytes(tmp_path: Pa
 
 
 def test_fit_batch_keeps_history_order_and_never_splits_a_file(tmp_path: Path) -> None:
-    task = _task(tmp_path, grouping="none")
+    _task(tmp_path, grouping="none")
     batch = {
         "group": "全部文件",
         "entries": [
@@ -680,6 +706,37 @@ def test_runner_real_engine_completes_archive_and_manifest_chain(store: Store, t
     task.archive_name_template = "changed_{id}"
     Runner(store, Event(), lambda *_: None).execute(final, task)
     assert Path(store.get(batch["id"])["archive_path"]) == archive
+
+
+def test_runner_failure_log_and_persisted_error_hide_password(store: Store, tmp_path: Path, monkeypatch) -> None:
+    """归档事务失败日志保留阶段信息，但密码不能进入日志或数据库错误。"""
+    password = "runner-secret-不应回显"
+    task = _task(
+        tmp_path,
+        id="redacted-log",
+        encryption="aes256",
+        password=password,
+        password_version="3",
+    )
+    batch = _create_batch(store, task, Path(task.source_dir), ["secret.txt"], "redacted-log-batch")
+    log = MagicMock()
+    monkeypatch.setattr(runner_module, "logger", log)
+    monkeypatch.setattr(
+        runner_module,
+        "run_engine",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError(f"backend failed: {password}")),
+    )
+
+    with pytest.raises(RuntimeError, match="backend failed"):
+        Runner(store, Event(), lambda *_args: None).execute(batch, task)
+
+    logged = " ".join(str(call) for call in log.method_calls)
+    final = store.get(batch["id"])
+    assert "saved_status=failed" in logged
+    assert password not in logged
+    assert password not in final["error"]
+    assert "***" in logged
+    assert "***" in final["error"]
 
 
 @requires_archive_backend

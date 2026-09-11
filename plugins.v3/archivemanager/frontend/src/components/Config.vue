@@ -1666,6 +1666,44 @@ onBeforeUnmount(() => {
               </template>
             </section>
           </main>
+
+          <aside class="archive-impact-preview">
+            <div class="archive-impact-preview__title">
+              <VIcon color="primary" icon="mdi-chart-box-outline" size="20" />
+              <h2>运行概览</h2>
+            </div>
+            <ul class="archive-impact-preview__list">
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-file-check-outline" size="18" />
+                <span>已归档文件</span>
+                <strong>{{ formatNumber(summaryValue.archived_files) }}</strong>
+              </li>
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-package-variant-closed" size="18" />
+                <span>归档批次</span>
+                <strong>{{ formatNumber(summaryValue.archive_count) }}</strong>
+              </li>
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-database-arrow-down-outline" size="18" />
+                <span>源文件体积</span>
+                <strong>{{ formatBytes(summaryValue.source_bytes) }}</strong>
+              </li>
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-archive-arrow-down-outline" size="18" />
+                <span>归档体积</span>
+                <strong>{{ formatBytes(summaryValue.archive_bytes) }}</strong>
+              </li>
+            </ul>
+            <section class="archive-runtime-summary">
+              <div class="archive-runtime-summary__title">
+                <VIcon color="primary" icon="mdi-progress-clock" size="19" />
+                <h3>当前状态</h3>
+              </div>
+              <p v-if="summaryValue.running">正在处理：{{ tasksById.get(summaryValue.running.task_id)?.name || summaryValue.running.task_id }}</p>
+              <p v-else-if="queuedTaskNames.length">排队任务：{{ queuedTaskNames.join('、') }}</p>
+              <p v-else>当前没有运行中的归档任务</p>
+            </section>
+          </aside>
         </div>
       </div>
       <div v-if="isDirty" class="archive-mobile-save-dock">
@@ -2052,7 +2090,7 @@ onBeforeUnmount(() => {
   min-block-size: 0;
   min-inline-size: 0;
   gap: 14px;
-  grid-template-columns: 168px minmax(0, 1fr);
+  grid-template-columns: 168px minmax(0, 1fr) 232px;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
@@ -2116,6 +2154,69 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
+}
+.archive-impact-preview {
+  min-inline-size: 0;
+  overflow: auto;
+  padding: 16px;
+  border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  border-radius: var(--app-surface-radius, 8px);
+  background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
+  backdrop-filter: var(--app-grouped-list-backdrop-filter, none);
+  box-shadow: var(--app-surface-shadow, none);
+}
+.archive-impact-preview__title,
+.archive-runtime-summary__title {
+  display: grid;
+  align-items: center;
+  min-inline-size: 0;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+.archive-impact-preview h2,
+.archive-runtime-summary h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.25rem;
+}
+.archive-impact-preview__list {
+  padding: 0;
+  margin: 10px 0 0;
+  list-style: none;
+}
+.archive-impact-preview__item {
+  display: grid;
+  align-items: center;
+  min-inline-size: 0;
+  padding-block: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.82rem;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+.archive-impact-preview__item > .v-icon {
+  justify-self: center;
+  color: rgba(var(--v-theme-on-surface), 0.54);
+}
+.archive-impact-preview__item span,
+.archive-impact-preview__item strong {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.archive-impact-preview__item strong {
+  text-align: end;
+}
+.archive-runtime-summary {
+  padding-block-start: 16px;
+  margin-block-start: 16px;
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+}
+.archive-runtime-summary p {
+  margin: 10px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.76rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
 }
 .archive-main__heading {
   flex: 0 0 auto;
@@ -2259,15 +2360,20 @@ onBeforeUnmount(() => {
 }
 .archive-section {
   min-inline-size: 0;
-  padding: 18px 0;
-  background: transparent;
+  overflow: hidden;
+  padding: 18px 16px;
+  border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  border-radius: var(--app-surface-radius, 8px);
+  background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
+  backdrop-filter: var(--app-grouped-list-backdrop-filter, none);
+  box-shadow: var(--app-surface-shadow, none);
 }
 .archive-overview > .archive-section {
-  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  margin-block-start: 12px;
 }
 .archive-task-layout > .archive-task-detail {
-  border-inline-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  padding-inline-start: 18px;
+  border-inline-start: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  padding-inline-start: 16px;
 }
 .archive-section__header {
   justify-content: space-between;
@@ -2727,6 +2833,9 @@ onBeforeUnmount(() => {
   .archive-workspace {
     grid-template-columns: minmax(0, 1fr);
   }
+  .archive-impact-preview {
+    display: none;
+  }
   .archive-nav {
     display: none;
   }
@@ -2738,8 +2847,8 @@ onBeforeUnmount(() => {
   }
   .archive-task-layout > .archive-task-detail {
     border-inline-start: 0;
-    border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-    padding-inline-start: 0;
+    border-block-start: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+    padding-inline-start: 16px;
   }
   .archive-filter-bar {
     flex-wrap: wrap;

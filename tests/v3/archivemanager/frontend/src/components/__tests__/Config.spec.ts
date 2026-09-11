@@ -18,8 +18,9 @@ describe('ArchiveManager federated config', () => {
     expect(layout).toHaveBeenCalledWith({ maxWidth: '68rem' })
     expect(screen.getByRole('heading', { name: '压缩归档' })).toBeInTheDocument()
     await waitFor(() => expect(get).toHaveBeenCalledWith('plugin/ArchiveManager/summary'))
-    await waitFor(() => expect(screen.getByText('已归档文件').parentElement).toHaveTextContent('15'))
-    await waitFor(() => expect(screen.getByText('归档批次').parentElement).toHaveTextContent('4'))
+    const main = document.querySelector('.archive-main') as HTMLElement
+    await waitFor(() => expect(within(main).getByText('已归档文件').parentElement).toHaveTextContent('15'))
+    await waitFor(() => expect(within(main).getByText('归档批次').parentElement).toHaveTextContent('4'))
   })
 
   it('creates a task, forces verification for source deletion, and emits a complete config', async () => {
@@ -29,7 +30,7 @@ describe('ArchiveManager federated config', () => {
     renderWithHost(Config, { props: { api, initialConfig: createConfig(), onSave: save } })
 
     await user.click(screen.getByText('任务', { exact: true }))
-    expect(screen.queryByText('已归档文件')).not.toBeInTheDocument()
+    expect(document.querySelector('.archive-main')?.textContent).not.toContain('已归档文件')
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
     const editor = screen.getByText('新增归档任务').closest('section') as HTMLElement
     const taskName = within(editor).getByRole('textbox', { name: '任务名称' })

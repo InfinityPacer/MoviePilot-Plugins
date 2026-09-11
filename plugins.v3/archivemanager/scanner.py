@@ -10,6 +10,8 @@ from pathlib import Path
 from threading import Event
 from zoneinfo import ZoneInfo
 
+from app.sdk.logging import logger
+
 from .config import TaskConfig, validate_paths
 
 
@@ -50,6 +52,11 @@ def scan(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[list[d
     root = Path(task.source_dir)
     entries = []
     skipped = 0
+    skipped_patterns = 0
+    skipped_too_new = 0
+    skipped_unreadable = 0
+    skipped_unstable = 0
+    started = time.monotonic()
     for directory, dirs, names in os.walk(root, followlinks=False):
         if stop.is_set():
             raise Cancelled("已停止扫描")
@@ -60,22 +67,28 @@ def scan(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[list[d
             path = Path(directory) / name
             relative = path.relative_to(root).as_posix()
 
-            def matches(pattern):
-                return fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(name, pattern)
-
-            if (task.include_patterns and not any(matches(p) for p in task.include_patterns)) or any(
-                matches(p) for p in task.exclude_patterns
-            ):
+            included = any(
+                fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(name, pattern)
+                for pattern in task.include_patterns
+            )
+            excluded = any(
+                fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(name, pattern)
+                for pattern in task.exclude_patterns
+            )
+            if (task.include_patterns and not included) or excluded:
                 skipped += 1
+                skipped_patterns += 1
                 continue
             try:
                 item = identity(path)
                 if item["mtime_ns"] > cutoff:
                     skipped += 1
+                    skipped_too_new += 1
                     continue
                 entries.append({"relative_path": relative, "source_root": str(root.resolve()), **item})
             except OSError, ValueError:
                 skipped += 1
+                skipped_unreadable += 1
     if stable and entries:
         if stop.wait(task.stability_seconds):
             raise Cancelled("已停止稳定性观察")
@@ -88,9 +101,17 @@ def scan(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[list[d
                     confirmed.append(entry)
                 else:
                     skipped += 1
+                    skipped_unstable += 1
             except OSError, ValueError:
                 skipped += 1
+                skipped_unstable += 1
         entries = confirmed
+    logger.info(
+        f"压缩归档扫描统计：task={task.name}({task.id[:6]}) source={root} stable_check={stable} "
+        f"eligible={len(entries)} skipped={skipped} pattern={skipped_patterns} too_new={skipped_too_new} "
+        f"unreadable_or_special={skipped_unreadable} unstable={skipped_unstable} "
+        f"elapsed_seconds={time.monotonic() - started:.3f}"
+    )
     return sorted(entries, key=lambda item: (item["mtime_ns"], item["relative_path"])), skipped
 
 
