@@ -255,6 +255,16 @@ def test_checker_requires_legacy_v3_block(tmp_path: Path) -> None:
     assert "必须声明 v3=false" in result.stdout
 
 
+def test_checker_accepts_new_v3_only_plugin_without_legacy_entry(tmp_path: Path) -> None:
+    """没有旧代同名实现的新 V3 插件无需伪造兼容条目。"""
+    _write_fixture(tmp_path)
+    (tmp_path / "package.v2.json").unlink()
+
+    result = _run_checker(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_checker_accepts_default_index_as_v3_legacy_source(tmp_path: Path) -> None:
     """旧实现仍在默认 plugins 目录时，V3 检查应读取 package.json。"""
     _write_fixture(tmp_path)

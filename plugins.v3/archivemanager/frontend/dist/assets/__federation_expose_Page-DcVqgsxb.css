@@ -1,0 +1,18 @@
+
+.archive-page[data-v-f3a0025c] {
+  min-inline-size: 0;
+}
+.archive-page__state[data-v-f3a0025c] {
+  display: grid;
+  justify-items: center;
+  min-block-size: 220px;
+  padding: 36px 16px;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  gap: 10px;
+}
+.archive-page__state span[data-v-f3a0025c] {
+  font-size: 0.8rem;
+}
+.archive-page__error[data-v-f3a0025c] {
+  margin: 12px;
+}

@@ -80,9 +80,7 @@ def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
 
     legacy = _legacy_metadata(path, plugin_id)
     if legacy is None:
-        errors.append(
-            f"{path}: {plugin_id} 在 package.v2.json 或 package.json 中没有对应旧版本条目"
-        )
+        # V3-only 新插件可以没有旧代条目；仅当存在旧实现时才需要显式阻断回退。
         return errors
     legacy_path, legacy_metadata = legacy
     if legacy_metadata.get("v3") is not False:

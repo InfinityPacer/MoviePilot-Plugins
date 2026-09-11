@@ -292,5 +292,19 @@
             "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保留自定义占位符分隔符与智能重命名流程。"
         },
         "release": true
+    },
+    "ArchiveManager": {
+        "name": "压缩归档",
+        "description": "文件压缩归档，支持独立清单、校验和可选加密。",
+        "labels": "文件,归档",
+        "version": "0.1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v0.1.0": "新增通用文件分批压缩、可选加密、完整校验与独立归档清单。"
+        },
+        "release": true
     }
 }

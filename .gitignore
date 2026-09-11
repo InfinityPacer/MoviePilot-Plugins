@@ -138,8 +138,8 @@ venv.bak/
 # Local linked worktrees
 .worktrees/
 
-# Node dependencies for plugin frontend builds
-node_modules/
+# Node dependencies and local symlinks for plugin frontend builds
+node_modules
 
 # Spyder project settings
 .spyderproject

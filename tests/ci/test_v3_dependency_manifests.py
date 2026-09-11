@@ -1,4 +1,4 @@
-"""V3 插件依赖清单和宿主安装边界合同。"""
+"""V3 插件使用 uv pyproject.toml 的声明门禁。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ PROCESS_CALLS = {
 
 
 def _pyproject_files() -> list[Path]:
-    """返回 V3 插件提交的现代依赖清单。"""
+    """返回 V3 插件提交的 uv 项目清单。"""
     return sorted(V3_ROOT.glob("*/pyproject.toml"))
 
 
@@ -53,7 +53,7 @@ def _literal_tokens(node: ast.AST) -> set[str]:
 
 
 def test_v3_dependency_manifests_use_pyproject_only() -> None:
-    """V3 运行时只提交现代清单，不携带旧 requirements 或插件锁文件。"""
+    """声明额外依赖的 V3 插件使用 pyproject.toml，不携带旧 requirements 或插件锁文件。"""
     assert _pyproject_files()
     assert list(V3_ROOT.glob("*/requirements.txt")) == []
     assert list(V3_ROOT.glob("*/uv.lock")) == []
@@ -63,16 +63,16 @@ def test_v3_dependency_manifests_use_pyproject_only() -> None:
 def test_v3_pyproject_declares_static_dependencies_only(
         pyproject_path: Path,
 ) -> None:
-    """插件版本不在依赖清单重复维护，依赖必须保持可静态解析。"""
+    """pyproject.toml 的项目元数据和依赖声明必须可静态解析。"""
     document = _load_pyproject(pyproject_path)
     project = document["project"]
 
     assert project["name"] == f"moviepilot-plugin-{pyproject_path.parent.name}"
     assert project.get("dynamic") == ["version"]
     assert "version" not in project
-    assert project.get("requires-python") == ">=3.12"
+    assert project.get("requires-python") == ">=3.14"
 
-    dependencies = project.get("dependencies")
+    dependencies = project.get("dependencies", [])
     assert isinstance(dependencies, list)
     assert all(isinstance(item, str) for item in dependencies)
     for item in dependencies:
