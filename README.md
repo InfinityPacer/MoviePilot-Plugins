@@ -301,29 +301,35 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-08-14-20-27-09.png)
 
+### 25. [压缩归档](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v3/archivemanager/README.md)
+
+- 通用文件分批压缩，支持 7z、ZIP、可选 AES-256 加密和完整读回校验
+- 归档包内提供文件清单与 SHA-256 校验，包外保存独立明文清单和归档摘要
+- 详细配置和恢复步骤请参考[压缩归档 README](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v3/archivemanager/README.md)
+
 -------
 **以下插件仅支持 MoviePilot v2**
 
-### 25. 辅助认证
+### 26. 辅助认证
 
 - 支持使用第三方系统进行辅助认证
 
 ![](images/2024-12-28-01-15-35.png)
 
-### 26. 命令管理
+### 27. 命令管理
 
 - 实现微信、Telegram等客户端的命令管理
 
 ![](images/2024-12-28-01-19-30.png)
 
-### 27. 智能重命名
+### 28. 智能重命名
 
 - 自定义适配多场景重命名
 - 相关细节，请查阅[自定义重命名](https://wiki.movie-pilot.org/zh/advanced)
 
 ![](images/2024-12-28-01-19-13.png)
 
-### 28. 服务管理
+### 29. 服务管理
 
 - 实现自定义服务管理
 - 启用本插件后，默认的系统服务将失效，仅以本插件设置为准
@@ -332,7 +338,7 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 
 ![](images/2024-12-28-01-19-51.png)
 
-### 29. [订阅助手](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistant/README.md)
+### 30. [订阅助手](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistant/README.md)
 
 - 实现多场景管理系统订阅与状态同步
 - 本插件仅支持 TMDB 数据源，相关订阅状态说明，请查阅 [#3330](https://github.com/jxxghp/MoviePilot/pull/3330)、[#6015](https://github.com/jxxghp/MoviePilot/pull/6015)
@@ -342,6 +348,6 @@ MoviePilot环境变量添加本项目地址，具体参见 https://github.com/jx
 ![](images/2024-12-28-01-22-59.png)
 ![](images/2024-12-28-01-23-07.png)
 
-### 30. [Webhook消息推送](plugins.v2/webhooknotify/README.md)
+### 31. [Webhook消息推送](plugins.v2/webhooknotify/README.md)
 
 - 接收 Webhook 消息并推送到通知客户端

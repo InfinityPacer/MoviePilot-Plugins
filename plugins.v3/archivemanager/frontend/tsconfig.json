@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "lib": ["ESNext", "DOM"],
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@tests/*": ["../../../tests/v3/archivemanager/frontend/*"],
+      "@testing-library/*": ["node_modules/@testing-library/*"],
+      "vitest": ["node_modules/vitest"],
+      "vue": ["node_modules/vue"],
+      "vuetify": ["node_modules/vuetify"],
+      "vuetify/components": ["node_modules/vuetify/lib/components/index.d.mts"],
+      "vuetify/directives": ["node_modules/vuetify/lib/directives/index.d.mts"]
+    },
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts", "../../../tests/v3/archivemanager/frontend/**/*.ts"]
+}
