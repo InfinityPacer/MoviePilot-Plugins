@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
 import stat
 import time
@@ -29,6 +30,10 @@ from app.plugins.archivemanager.store import Base, BatchRow, FileRow, Store, Tas
 
 
 pytestmark = pytest.mark.v3
+requires_archive_backend = pytest.mark.skipif(
+    importlib.util.find_spec("py7zr") is None or importlib.util.find_spec("pyzipper") is None,
+    reason="归档后端依赖未安装",
+)
 
 
 def _task_dirs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -640,6 +645,7 @@ def test_rebuild_index_is_independent_and_rejects_corrupt_entries_without_replac
 
 
 @pytest.mark.parametrize("layout", ["directory", "flat"])
+@requires_archive_backend
 def test_runner_real_engine_completes_archive_and_manifest_chain(store: Store, tmp_path: Path, layout: str) -> None:
     task = _task(tmp_path, id="complete", archive_name_template="backup_{date}", archive_layout=layout)
     source = Path(task.source_dir)
@@ -676,6 +682,7 @@ def test_runner_real_engine_completes_archive_and_manifest_chain(store: Store, t
     assert Path(store.get(batch["id"])["archive_path"]) == archive
 
 
+@requires_archive_backend
 def test_runner_human_directory_collision_never_overwrites_another_batch(store: Store, tmp_path: Path) -> None:
     task = _task(tmp_path, batch_name_template="固定批次")
     source = Path(task.source_dir)
@@ -694,6 +701,7 @@ def test_runner_human_directory_collision_never_overwrites_another_batch(store: 
     assert (source / "two.txt").exists()
 
 
+@requires_archive_backend
 def test_runner_failed_manifest_never_deletes_sources(store: Store, tmp_path: Path, monkeypatch) -> None:
     task = _task(tmp_path, id="manifest-failure", delete_source=True)
     source = Path(task.source_dir)
@@ -712,6 +720,7 @@ def test_runner_failed_manifest_never_deletes_sources(store: Store, tmp_path: Pa
     assert Path(final["archive_path"]).is_file()
 
 
+@requires_archive_backend
 def test_runner_interrupted_after_publish_rebuilds_documents_without_rearchiving(store: Store, tmp_path: Path, monkeypatch) -> None:
     task = _task(tmp_path, id="resume")
     source = Path(task.source_dir)
@@ -753,6 +762,7 @@ def test_runner_interrupted_after_publish_rebuilds_documents_without_rearchiving
     assert Path(final["manifest_path"]).is_file()
 
 
+@requires_archive_backend
 def test_runner_source_change_is_recorded_and_not_deleted(store: Store, tmp_path: Path) -> None:
     task = _task(tmp_path, id="changed", delete_source=True)
     source = Path(task.source_dir)
@@ -770,6 +780,7 @@ def test_runner_source_change_is_recorded_and_not_deleted(store: Store, tmp_path
     assert (source / "changed.txt").exists()
 
 
+@requires_archive_backend
 def test_runner_moved_archive_aborts_cleanup_and_keeps_sources(store: Store, tmp_path: Path) -> None:
     task = _task(tmp_path, id="moved", delete_source=True)
     source = Path(task.source_dir)
@@ -789,6 +800,7 @@ def test_runner_moved_archive_aborts_cleanup_and_keeps_sources(store: Store, tmp
     assert final["cleanup"] == {"moved.txt": "deleting"}
 
 
+@requires_archive_backend
 def test_runner_cleanup_records_each_file_state_independently(store: Store, tmp_path: Path) -> None:
     task = _task(tmp_path, id="cleanup", delete_source=True)
     source = Path(task.source_dir)
@@ -829,6 +841,7 @@ def test_runner_rejects_unrelated_partial_staging_file(store: Store, tmp_path: P
     assert (source / "staging.txt").exists()
 
 
+@requires_archive_backend
 def test_runner_fsyncs_archive_before_publishing(store: Store, tmp_path: Path, monkeypatch) -> None:
     task = _task(tmp_path, id="fsync-archive")
     source = Path(task.source_dir)
@@ -856,6 +869,7 @@ def test_runner_fsyncs_archive_before_publishing(store: Store, tmp_path: Path, m
     assert fsync_kinds.count("directory") >= 1
 
 
+@requires_archive_backend
 def test_runner_real_engine_stop_then_retry_completes(store: Store, tmp_path: Path) -> None:
     task = _task(tmp_path, id="stop-retry")
     source = Path(task.source_dir)
