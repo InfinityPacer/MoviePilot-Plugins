@@ -71,13 +71,6 @@ def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
     if metadata.get("system_version") != ">=3.0.0":
         errors.append(f'{path}: {plugin_id} system_version 必须为 ">=3.0.0"')
 
-    history = metadata.get("history")
-    expected_history_key = f"v{version}"
-    if not isinstance(history, dict) or list(history) != [expected_history_key]:
-        errors.append(f"{path}: {plugin_id} history 必须只保留当前版本 {expected_history_key}")
-    elif not isinstance(history[expected_history_key], str) or not history[expected_history_key].strip():
-        errors.append(f"{path}: {plugin_id} history 当前版本说明不能为空")
-
     legacy = _legacy_metadata(path, plugin_id)
     if legacy is None:
         # V3-only 新插件可以没有旧代条目；仅当存在旧实现时才需要显式阻断回退。

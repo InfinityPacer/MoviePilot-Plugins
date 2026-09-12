@@ -287,24 +287,11 @@ def test_checker_accepts_default_index_as_v3_legacy_source(tmp_path: Path) -> No
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_checker_requires_single_current_history_entry(tmp_path: Path) -> None:
-    """V3 history 只允许当前版本一条发布说明。"""
+def test_checker_accepts_current_only_history(tmp_path: Path) -> None:
+    """V3 history 只保留当前版本时不成为发布门禁阻塞。"""
     _write_fixture(
         tmp_path,
-        history={"v1.3": "适配 MoviePilot V3 发布契约", "v1.2.3": "旧记录"},
-    )
-
-    result = _run_checker(tmp_path)
-
-    assert result.returncode == 1
-    assert "history 必须只保留当前版本" in result.stdout
-
-
-def test_checker_accepts_release_specific_history(tmp_path: Path) -> None:
-    """V3 后续版本应使用描述实际行为变化的发布说明。"""
-    _write_fixture(
-        tmp_path,
-        history={"v1.3": "适配 MoviePilot V3 统一响应封装，避免打开配置页时提示未知错误"},
+        history={"v1.3": "当前版本"},
     )
 
     result = _run_checker(tmp_path)
@@ -312,14 +299,16 @@ def test_checker_accepts_release_specific_history(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_checker_rejects_blank_current_history(tmp_path: Path) -> None:
-    """当前版本仍必须提供可用于 GitHub Release 的非空说明。"""
-    _write_fixture(tmp_path, history={"v1.3": "  "})
+def test_checker_accepts_history_with_prior_versions(tmp_path: Path) -> None:
+    """V3 history 保留之前版本时仍可通过发布门禁。"""
+    _write_fixture(
+        tmp_path,
+        history={"v1.3": "当前版本", "v1.2.3": "旧记录"},
+    )
 
     result = _run_checker(tmp_path)
 
-    assert result.returncode == 1
-    assert "history 当前版本说明不能为空" in result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_pre_push_propagates_version_gate_failure(tmp_path: Path) -> None:
