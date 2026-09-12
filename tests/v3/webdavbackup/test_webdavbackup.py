@@ -55,6 +55,28 @@ def test_upload_supports_postgresql_dump_artifact(tmp_path, monkeypatch):
     )
 
 
+def test_upload_includes_plugin_sqlite_backups(tmp_path, monkeypatch):
+    source = tmp_path / "moviepilot_v3.0.0_sqlite_20260820_120001.db"
+    source.write_bytes(b"sqlite snapshot")
+    plugin_source = tmp_path / "plugins" / "DemoPlugin" / "DemoPlugin_v1.2.3_sqlite_20260820_120001.db"
+    plugin_source.parent.mkdir(parents=True)
+    plugin_source.write_bytes(b"plugin snapshot")
+    artifact = SimpleNamespace(name=source.name, path=source)
+    client = MagicMock()
+    client.check.return_value = True
+    plugin = _plugin(client)
+    monkeypatch.setattr(webdavbackup, "create_backup", MagicMock(return_value=artifact))
+
+    _, success = plugin._WebDAVBackup__backup_files_to_webdav()
+
+    assert success is True
+    assert [call.kwargs["remote_path"] for call in client.upload_sync.call_args_list] == [
+        source.name,
+        plugin_source.name,
+    ]
+    assert client.check.call_args_list[1].args == (plugin_source.name,)
+
+
 def test_upload_returns_failure_when_backup_creation_fails(monkeypatch):
     client = MagicMock()
     plugin = _plugin(client)

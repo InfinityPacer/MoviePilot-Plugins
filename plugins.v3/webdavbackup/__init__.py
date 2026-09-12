@@ -20,7 +20,9 @@ from app.sdk.logging import logger
 
 
 _REMOTE_BACKUP_NAME = re.compile(
-    r"^(?P<db_type>sqlite|postgresql)_(?P<timestamp>\d{8}_\d{6})"
+    r"^(?:(?P<target>[0-9A-Za-z][0-9A-Za-z_-]*)_"
+    r"v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?_)?"
+    r"(?P<db_type>sqlite|postgresql)_(?P<timestamp>\d{8}_\d{6})"
     r"(?:_\d+)?(?P<suffix>\.db|\.dump)$"
 )
 
@@ -144,7 +146,7 @@ class WebDAVBackup(_PluginBase):
                         "props": {
                             "type": "info",
                             "variant": "tonal",
-                            "text": "V3 版本上传主程序数据库治理服务生成的 SQLite .db 或 PostgreSQL .dump 一致性备份制品，不复制 user.db*。",
+                            "text": "V3 版本上传主程序及插件数据库治理服务生成的 SQLite .db 或 PostgreSQL .dump 一致性备份制品，不复制 user.db*。",
                         },
                     },
                 ],
@@ -212,7 +214,7 @@ class WebDAVBackup(_PluginBase):
                 self.__notify_user_if_failed(message)
 
     def __backup_files_to_webdav(self) -> Tuple[str, bool]:
-        """上传主程序已校验的备份制品，不重新读取活动数据库文件。"""
+        """上传主程序及插件数据库治理服务生成的已校验备份制品。"""
         try:
             artifact = create_backup()
             source = Path(artifact.path)
@@ -220,18 +222,29 @@ class WebDAVBackup(_PluginBase):
             if Path(file_name).name != file_name or not source.is_file():
                 raise ValueError("主程序返回的数据库备份制品无效")
 
+            sources = [source]
+            plugin_backup_root = source.parent / "plugins"
+            if plugin_backup_root.is_dir():
+                sources.extend(
+                    path
+                    for path in sorted(plugin_backup_root.glob("*/*.db"))
+                    if _REMOTE_BACKUP_NAME.fullmatch(path.name)
+                )
+
             remote_file_path = urljoin(
                 f"{self._hostname.rstrip('/')}/",
                 file_name,
             )
-            logger.info(f"远程备份路径为：{remote_file_path}")
-            self._client.upload_sync(
-                remote_path=file_name,
-                local_path=str(source),
-            )
-            if not self._client.check(file_name):
-                logger.error(f"上传完成但未找到远程备份制品：{file_name}")
-                return remote_file_path, False
+            for backup in sources:
+                backup_name = backup.name
+                logger.info(f"远程备份路径为：{urljoin(f'{self._hostname.rstrip('/')}/', backup_name)}")
+                self._client.upload_sync(
+                    remote_path=backup_name,
+                    local_path=str(backup),
+                )
+                if not self._client.check(backup_name):
+                    logger.error(f"上传完成但未找到远程备份制品：{backup_name}")
+                    return remote_file_path, False
             return remote_file_path, True
         except Exception as error:
             logger.error(f"创建或上传 V3 数据库备份制品失败：{error}")
