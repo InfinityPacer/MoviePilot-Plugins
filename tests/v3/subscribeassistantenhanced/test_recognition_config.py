@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 
 import app.plugins.subscribeassistantenhanced as plugin_module
 from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
-from app.plugins.subscribeassistantenhanced.form import build_form
 from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
@@ -73,7 +72,7 @@ def test_recognition_guard_public_keys_match_final_contract():
 def test_recognition_guard_warning_snapshot_is_not_persisted_form_key():
     assert "recognition_guard_config_warnings" not in PluginConfig({}).declared_keys()
 
-    _conf, model = build_form()
+    _conf, model = SubscribeAssistantEnhanced().get_form()
     assert "recognition_guard_config_warnings" not in model
 
 

@@ -178,12 +178,26 @@ class PriorityManager:
         return bool(summary and summary.get("updated"))
 
     def mark_full_best_version_complete(self, subscribe):
-        """将超时的电影或全集洗版标记为完成，仅更新当前模式的资源准入基线。"""
+        """将超时洗版标记为完成；分集洗版逐集回填，全集/电影更新整体优先级。"""
+        if is_tv_episode_best_version_subscribe(subscribe):
+            target = self._episode_target_episodes(subscribe)
+            if target:
+                SubscribeChain().backfill_existing_episodes(
+                    subscribe, target, priority=100, scene=self._format_backfill_scene("plugin_complete")
+                )
+            return
         payload = {"current_priority": 100}
         mode_label = self._mode_label(subscribe)
         detail(f"洗版优先级：{self._format_subscribe_label(subscribe)} 标记{mode_label}完成（priority=100）")
         if self._subscribe_oper:
             update_subscribe(self._subscribe_oper, subscribe.id, payload)
+
+    @staticmethod
+    def _episode_target_episodes(subscribe) -> list[int]:
+        """返回分集洗版的目标范围，供超时完成回填。"""
+        start = max(1, int(subscribe.start_episode or 1))
+        total = int(subscribe.total_episode or 0)
+        return list(range(start, total + 1)) if total >= start else []
 
     @staticmethod
     def _format_subscribe_label(subscribe) -> str:

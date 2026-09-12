@@ -148,7 +148,12 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
   bestVersion: [
     {
       titleKey: 'section.bestVersionScope',
-      keys: ['best_version_type', 'best_version_movie_remaining_days', 'best_version_tv_remaining_days'],
+      keys: [
+        'best_version_type',
+        'best_version_movie_remaining_days',
+        'best_version_tv_remaining_days',
+        'best_version_episode_remaining_days',
+      ],
     },
     {
       titleKey: 'section.backfill',
@@ -992,7 +997,7 @@ function runOnce(): void {
 
 .sae-group-nav__heading {
   padding: 6px 10px 10px;
-  color: rgba(var(--v-theme-on-surface), 0.54);
+  color: rgba(var(--v-theme-on-surface), 0.78);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -1001,10 +1006,12 @@ function runOnce(): void {
   flex: 1 1 auto;
   min-block-size: 0;
   overflow-y: auto;
-  padding: 0 4px;
+  padding: 6px 4px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.18);
+  border-radius: var(--app-surface-radius);
   backdrop-filter: none;
-  background: transparent;
-  background-color: transparent;
+  background: rgba(var(--v-theme-surface), 0.72);
+  background-color: rgba(var(--v-theme-surface), 0.72);
 }
 
 .sae-group-nav__list :deep(.v-list-item) {
@@ -1016,6 +1023,7 @@ function runOnce(): void {
 
 .sae-group-nav__list :deep(.v-list-item-title) {
   overflow-wrap: anywhere;
+  color: rgb(var(--v-theme-on-surface));
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0;
@@ -1023,12 +1031,24 @@ function runOnce(): void {
 }
 
 .sae-group-nav__list :deep(.v-list-item__prepend > .v-icon) {
+  color: rgba(var(--v-theme-on-surface), 0.94);
   font-size: 1.25rem;
 }
 
+.sae-group-nav__list :deep(.v-list-item:hover) {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+
 .sae-group-nav__list :deep(.v-list-item--active) {
-  background: rgba(var(--v-theme-primary), 0.09);
-  color: rgb(var(--v-theme-primary));
+  border: 1px solid rgba(var(--v-theme-primary), 0.38);
+  background: rgba(var(--v-theme-primary), 0.24);
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.sae-group-nav__list :deep(.v-list-item--active .v-list-item-title),
+.sae-group-nav__list :deep(.v-list-item--active .v-list-item__prepend > .v-icon) {
+  color: rgb(var(--v-theme-on-surface));
+  font-weight: 700;
 }
 
 .sae-group-nav__list :deep(.v-list-item--active)::before {
@@ -1045,9 +1065,9 @@ function runOnce(): void {
   flex: 0 0 auto;
   padding: 12px;
   margin-block-start: 10px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.18);
   border-radius: var(--app-control-radius);
-  background: rgba(var(--v-theme-on-surface), 0.025);
+  background: rgba(var(--v-theme-surface), 0.56);
 }
 
 .sae-group-nav__help-title {
@@ -1058,7 +1078,7 @@ function runOnce(): void {
 
 .sae-group-nav__help p {
   margin: 6px 0 0;
-  color: rgba(var(--v-theme-on-surface), 0.56);
+  color: rgba(var(--v-theme-on-surface), 0.72);
   font-size: 0.6875rem;
   line-height: 1rem;
 }
@@ -1127,6 +1147,9 @@ function runOnce(): void {
 .sae-field-section {
   overflow: hidden;
   min-inline-size: 0;
+  background-clip: padding-box;
+  /* 外投影会在紧凑分组间叠加，并被内容区滚动边界裁成矩形暗带。 */
+  box-shadow: none;
 }
 
 .sae-field-section + .sae-field-section {

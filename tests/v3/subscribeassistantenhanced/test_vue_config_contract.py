@@ -4,16 +4,6 @@ from collections import OrderedDict
 from pathlib import Path
 
 from app.plugins.subscribeassistantenhanced import SubscribeAssistantEnhanced
-from app.plugins.subscribeassistantenhanced.form import (
-    CRON_FIELDS,
-    HINTS,
-    LABELS,
-    MULTI_ITEMS,
-    PERIODS,
-    SELECT_ITEMS,
-    TABS,
-    TOP_SWITCHES,
-)
 from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 
 
@@ -22,48 +12,6 @@ README_PATH = REPO_ROOT / "plugins.v3/subscribeassistantenhanced/README.md"
 FRONTEND_PACKAGE_PATH = REPO_ROOT / "plugins.v3/subscribeassistantenhanced/frontend/package.json"
 DEFAULTS_PATH = REPO_ROOT / "plugins.v3/subscribeassistantenhanced/frontend/src/config/defaults.ts"
 FIELDS_PATH = REPO_ROOT / "plugins.v3/subscribeassistantenhanced/frontend/src/config/fields.ts"
-
-TAB_GROUPS = {
-    "订阅清理": "cleanup",
-    "订阅待定": "pending",
-    "订阅暂停": "pause",
-    "订阅补全": "completion",
-    "订阅洗版": "bestVersion",
-    "完结信号": "guard",
-    "识别增强": "recognition",
-}
-
-DANGER_KEYS = {
-    "reset_task",
-    "download_monitor_enabled",
-    "manual_delete_listen",
-    "tracker_response_listen",
-    "subscription_cleanup_history_type",
-    "subscription_cleanup_history_scenes",
-    "no_download_actions",
-    "best_version_type",
-    "best_version_episode_to_full",
-    "backfill_best_version_now",
-    "recognition_guard_mode",
-    "recognition_guard_custom_config",
-}
-
-ADVANCED_MARKERS = (
-    "threshold",
-    "cooldown",
-    "retention",
-    "interval",
-    "window",
-    "days",
-    "hours",
-    "minutes",
-    "rounds",
-    "limit",
-    "maxsize",
-    "custom_config",
-    "default_tracker_response",
-)
-
 
 def _load_json_export(path: Path, marker: str):
     assert path.is_file(), f"缺少生成配置契约：{path.relative_to(REPO_ROOT)}"
@@ -98,9 +46,6 @@ def _load_interface_types(path: Path, interface_name: str) -> OrderedDict[str, s
 
 
 def _expected_interface_types(defaults: dict) -> OrderedDict[str, str]:
-    list_keys = {key for key, value in defaults.items() if isinstance(value, list)}
-    assert list_keys == set(MULTI_ITEMS), "列表默认值必须与多选配置键完全一致"
-
     expected_types = OrderedDict()
     for key, value in defaults.items():
         if isinstance(value, bool):
@@ -117,58 +62,12 @@ def _expected_interface_types(defaults: dict) -> OrderedDict[str, str]:
     return expected_types
 
 
-def _expected_fields(defaults: dict) -> list[dict]:
-    group_by_key = {key: "global" for key in [*TOP_SWITCHES, *PERIODS]}
-    for title, rows in TABS:
-        for row in rows:
-            for item in row:
-                key = item[0] if isinstance(item, tuple) else item
-                group_by_key[key] = TAB_GROUPS[title]
-    group_by_key["default_tracker_response"] = "cleanup"
-
-    def kind_for(key: str) -> str:
-        if key in CRON_FIELDS:
-            return "cron"
-        if key in MULTI_ITEMS:
-            return "multi-select"
-        if key in SELECT_ITEMS:
-            return "select"
-        if key in {"default_tracker_response", "recognition_guard_custom_config"}:
-            return "textarea"
-        if isinstance(defaults[key], bool):
-            return "switch"
-        if isinstance(defaults[key], (int, float)):
-            return "number"
-        return "text"
-
-    expected = []
-    for key in defaults:
-        field = {
-            "key": key,
-            "label": LABELS[key],
-            "group": group_by_key[key],
-            "kind": kind_for(key),
-        }
-        if HINTS.get(key):
-            field["hint"] = HINTS[key]
-        if key in SELECT_ITEMS:
-            field["options"] = SELECT_ITEMS[key]
-        if key in MULTI_ITEMS:
-            field["options"] = MULTI_ITEMS[key]
-        if key == "default_tracker_response":
-            field["dialogOnly"] = True
-            field["advanced"] = True
-        if key in DANGER_KEYS:
-            field["risk"] = "danger"
-        elif any(marker in key for marker in ADVANCED_MARKERS):
-            field["advanced"] = True
-        expected.append(field)
-    return expected
-
-
 def test_render_mode_uses_vue_assets():
     plugin = SubscribeAssistantEnhanced()
 
+    conf, model = plugin.get_form()
+    assert conf == []
+    assert model == PluginConfig.defaults()
     assert plugin.get_render_mode() == ("vue", "frontend/dist/assets")
 
 
@@ -203,9 +102,12 @@ def test_generated_vue_config_contract_matches_python_sources():
 
     assert generated_types == _expected_interface_types(defaults)
     assert generated_defaults == defaults
-    assert generated_fields == _expected_fields(defaults)
+    assert len(generated_fields) == len(defaults)
+    assert {field["key"] for field in generated_fields} == set(defaults)
     for field in generated_fields:
-        if field["key"] in MULTI_ITEMS:
+        assert field["label"].strip()
+        assert "advanced" not in field
+        if field["kind"] == "multi-select":
             assert all(isinstance(option["value"], str) for option in field["options"])
 
 

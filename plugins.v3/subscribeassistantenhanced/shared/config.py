@@ -461,6 +461,11 @@ class PluginConfig:
         return self.get_int("best_version_tv_remaining_days", 0)
 
     @property
+    def best_version_episode_remaining_days(self) -> int:
+        """分集目标齐全后按订阅最近更新时间检查时限；0 不限，不依赖分集转全集。"""
+        return max(0, self.get_int("best_version_episode_remaining_days", 0))
+
+    @property
     def best_version_episode_to_full(self) -> bool:
         """分集转全集：分集洗版订阅目标集满足时切换为整季洗版。"""
         return self.get_bool("best_version_episode_to_full", False)

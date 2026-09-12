@@ -102,7 +102,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.7.7"
+    plugin_version = "0.7.8"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -753,7 +753,26 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """按媒体类型读取洗版时限。"""
         if resolve_subscribe_media_type(subscribe) == MediaType.MOVIE:
             return self._config.best_version_movie_remaining_days
+        if is_tv_episode_best_version_subscribe(subscribe):
+            return self._config.best_version_episode_remaining_days
         return self._config.best_version_tv_remaining_days
+
+    def _episode_best_version_overdue(self, subscribe, mediainfo=None) -> bool:
+        """按旧版语义判断分集洗版是否超时：目标未齐时不计算时限。"""
+        days = self._config.best_version_episode_remaining_days
+        if not days or not is_tv_episode_best_version_subscribe(subscribe):
+            return False
+        monitor = self._modules.get("download_monitor")
+        if monitor and monitor.has_active_downloads(subscribe.id):
+            return False
+        existing, missing = self._detect_episode_coverage(subscribe)
+        target = set(self._subscribe_target_episodes(subscribe))
+        if missing or not target or not target.issubset(set(existing)):
+            return False
+        last_update = self._parse_datetime(subscribe.last_update or subscribe.date)
+        if not last_update:
+            return False
+        return (datetime.datetime.now() - last_update).total_seconds() >= days * 86400
 
     def _best_version_overdue(self, subscribe, now=None) -> bool:
         """洗版是否超时限：从最近活动时间起算超过对应媒体类型洗版时限。
@@ -795,6 +814,28 @@ class SubscribeAssistantEnhanced(_PluginBase):
             mode_label = self._best_version_mode_label(subscribe)
             mediainfo = self._recognize_mediainfo(subscribe)
             if mediainfo:
+                if is_tv_episode_best_version_subscribe(subscribe):
+                    # 与旧版顺序一致：先尝试分集转全集，再处理独立分集时限。
+                    if (
+                        self._config.best_version_episode_to_full
+                        and converter
+                        and self._convert_episode_best_version_to_full_if_ready(
+                            subscribe.id, subscribe, mediainfo, trigger="洗版巡检"
+                        )
+                    ):
+                        continue
+                    if self._episode_best_version_overdue(subscribe, mediainfo):
+                        logger.info(
+                            f"洗版巡检：{format_subscribe(subscribe)} 分集洗版超过洗版时限，"
+                            "按分集优先级完成并停止洗版"
+                        )
+                        priority.mark_full_best_version_complete(subscribe)
+                        self._notify_subscribe(
+                            f"{format_subscribe(subscribe)} 分集洗版超过时限"
+                            f"（{self._config.best_version_episode_remaining_days}天），已标记洗版优先级为完成",
+                            image=self._resolve_notification_image(subscribe, mediainfo),
+                        )
+                        continue
                 if is_full_best_version_subscribe(subscribe) and self._best_version_overdue(subscribe):
                     logger.info(f"洗版巡检：{format_subscribe(subscribe)} {mode_label}超过洗版时限，标记洗版完成并停止洗版")
                     priority.mark_full_best_version_complete(subscribe)
@@ -802,18 +843,6 @@ class SubscribeAssistantEnhanced(_PluginBase):
                         f"{format_subscribe(subscribe)} {mode_label}超过时限"
                         f"（{self._best_version_timeout_days(subscribe)}天），已标记洗版优先级为完成",
                         image=self._resolve_notification_image(subscribe, mediainfo),
-                    )
-                    continue
-                if (
-                    self._config.best_version_episode_to_full
-                    and converter
-                    and is_tv_episode_best_version_subscribe(subscribe)
-                ):
-                    self._convert_episode_best_version_to_full_if_ready(
-                        subscribe.id,
-                        subscribe,
-                        mediainfo,
-                        trigger="洗版巡检",
                     )
                     continue
             else:
@@ -1395,9 +1424,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
         return "vue", "frontend/dist/assets"
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """返回宿主配置接口需要的表单结构和默认模型，Vue Config 使用默认模型初始化。"""
-        from .form import build_form
-        return build_form()
+        """仅提供 Vue 配置页的默认模型，不提供旧版动态表单。"""
+        return [], dict(PluginConfig.defaults())
 
     def get_page(self) -> Optional[List[dict]]:
         """不提供详情页：框架按 has_page=False 处理，运行概况由 summary API 提供。"""

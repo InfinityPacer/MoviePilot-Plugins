@@ -2629,7 +2629,7 @@ class TestPluginWiring:
         plugin.init_plugin({"enabled": True})
         assert plugin.get_command()            # /subscribe_toggle
         conf, model = plugin.get_form()
-        assert conf and model
+        assert conf == [] and model
         assert plugin.get_service()            # 启用后有定时任务
 
     def test_pause_manager_receives_subscribe_oper(self):

@@ -63,6 +63,7 @@ const configDefaults = {
   "best_version_type": "no",
   "best_version_movie_remaining_days": 0,
   "best_version_tv_remaining_days": 0,
+  "best_version_episode_remaining_days": 0,
   "best_version_episode_to_full": false,
   "best_version_backfill_enabled": false,
   "backfill_best_version_now": false,
@@ -250,8 +251,7 @@ const fields = [
         "title": "240分钟",
         "value": 240
       }
-    ],
-    "advanced": true
+    ]
   },
   {
     "key": "download_check_interval_minutes",
@@ -284,8 +284,7 @@ const fields = [
         "title": "120分钟",
         "value": 120
       }
-    ],
-    "advanced": true
+    ]
   },
   {
     "key": "meta_check_interval_hours",
@@ -314,8 +313,7 @@ const fields = [
         "title": "24小时",
         "value": 24
       }
-    ],
-    "advanced": true
+    ]
   },
   {
     "key": "best_version_cron",
@@ -367,16 +365,14 @@ const fields = [
     "label": "下载超时时间（分钟）",
     "group": "cleanup",
     "kind": "number",
-    "hint": "作为下载进度观察窗口，窗口内进度增长低于阈值时视为超时",
-    "advanced": true
+    "hint": "作为下载进度观察窗口，窗口内进度增长低于阈值时视为超时"
   },
   {
     "key": "download_progress_threshold",
     "label": "下载超时进度阈值",
     "group": "cleanup",
     "kind": "number",
-    "hint": "超时窗口内下载进度增长低于N%时才删除",
-    "advanced": true
+    "hint": "超时窗口内下载进度增长低于N%时才删除"
   },
   {
     "key": "download_queue_grace_multiplier",
@@ -390,8 +386,7 @@ const fields = [
     "label": "下载连续超时重试次数",
     "group": "cleanup",
     "kind": "number",
-    "hint": "连续低进度超时N次后保留种子并通知",
-    "advanced": true
+    "hint": "连续低进度超时N次后保留种子并通知"
   },
   {
     "key": "delete_exclude_tags",
@@ -406,16 +401,14 @@ const fields = [
     "group": "cleanup",
     "kind": "textarea",
     "hint": "每一行一个关键字，忽略大小写，支持正则表达式匹配",
-    "dialogOnly": true,
-    "advanced": true
+    "dialogOnly": true
   },
   {
     "key": "delete_record_retention_hours",
     "label": "删除记录保留（小时）",
     "group": "cleanup",
     "kind": "number",
-    "hint": "定时清理N小时前的删除记录",
-    "advanced": true
+    "hint": "定时清理N小时前的删除记录"
   },
   {
     "key": "subscription_cleanup_history_type",
@@ -525,8 +518,7 @@ const fields = [
     "label": "识别增强通知限频（秒）",
     "group": "recognition",
     "kind": "number",
-    "hint": "同订阅同动作同原因的通知限频秒数",
-    "advanced": true
+    "hint": "同订阅同动作同原因的通知限频秒数"
   },
   {
     "key": "recognition_guard_tmdb_recheck_mode",
@@ -558,8 +550,7 @@ const fields = [
     "label": "识别增强缓存大小",
     "group": "recognition",
     "kind": "number",
-    "hint": "缓存二次识别结果，避免重复识别",
-    "advanced": true
+    "hint": "缓存二次识别结果，避免重复识别"
   },
   {
     "key": "recognition_guard_custom_config",
@@ -588,8 +579,7 @@ const fields = [
     "label": "剧集待定天数",
     "group": "pending",
     "kind": "number",
-    "hint": "当前日期小于上映日期加N天，则视为待定，为0时不处理",
-    "advanced": true
+    "hint": "当前日期小于上映日期加N天，则视为待定，为0时不处理"
   },
   {
     "key": "auto_tv_pending_episodes",
@@ -624,40 +614,35 @@ const fields = [
     "label": "即将播出暂停天数",
     "group": "pause",
     "kind": "number",
-    "hint": "已存在最新播出集，且下集距当前日期大于N天，则视为暂停，为0时不处理",
-    "advanced": true
+    "hint": "已存在最新播出集，且下集距当前日期大于N天，则视为暂停，为0时不处理"
   },
   {
     "key": "movie_air_pause_days",
     "label": "电影上映暂停天数",
     "group": "pause",
     "kind": "number",
-    "hint": "当前日期小于上映日期减N天，则视为暂停，为0时不处理",
-    "advanced": true
+    "hint": "当前日期小于上映日期减N天，则视为暂停，为0时不处理"
   },
   {
     "key": "tv_air_pause_days",
     "label": "剧集上映暂停天数",
     "group": "pause",
     "kind": "number",
-    "hint": "当前日期小于开播日期减N天，则视为暂停，为0时不处理",
-    "advanced": true
+    "hint": "当前日期小于开播日期减N天，则视为暂停，为0时不处理"
   },
   {
     "key": "movie_no_download_days",
     "label": "电影无下载处理天数",
     "group": "pause",
     "kind": "number",
-    "hint": "电影上映后N天内无新的订阅下载，则按策略处理，为0时不处理",
-    "advanced": true
+    "hint": "电影上映后N天内无新的订阅下载，则按策略处理，为0时不处理"
   },
   {
     "key": "tv_no_download_days",
     "label": "剧集无下载处理天数",
     "group": "pause",
     "kind": "number",
-    "hint": "剧集上映后N天内无新的订阅下载，则按策略处理，为0时不处理",
-    "advanced": true
+    "hint": "剧集上映后N天内无新的订阅下载，则按策略处理，为0时不处理"
   },
   {
     "key": "no_download_actions",
@@ -738,8 +723,7 @@ const fields = [
     "label": "暂停满N天后补搜",
     "group": "completion",
     "kind": "number",
-    "hint": "暂停达到天数后开始补搜，0 表示不处理",
-    "advanced": true
+    "hint": "暂停达到天数后开始补搜，0 表示不处理"
   },
   {
     "key": "paused_probe_interval_hours",
@@ -772,8 +756,7 @@ const fields = [
         "title": "144",
         "value": 144
       }
-    ],
-    "advanced": true
+    ]
   },
   {
     "key": "best_version_type",
@@ -810,23 +793,28 @@ const fields = [
     "label": "电影洗版时限（天）",
     "group": "bestVersion",
     "kind": "number",
-    "hint": "电影洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
-    "advanced": true
+    "hint": "电影洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限"
   },
   {
     "key": "best_version_tv_remaining_days",
-    "label": "剧集洗版时限（天）",
+    "label": "全集洗版时限（天）",
     "group": "bestVersion",
     "kind": "number",
-    "hint": "剧集洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限",
-    "advanced": true
+    "hint": "全集洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限"
+  },
+  {
+    "key": "best_version_episode_remaining_days",
+    "label": "分集洗版时限（天）",
+    "group": "bestVersion",
+    "kind": "number",
+    "hint": "分集洗版订阅达到指定天数后自动终止，有下载则按最新时间计算，为0时不限"
   },
   {
     "key": "best_version_episode_to_full",
     "label": "分集转全集",
     "group": "bestVersion",
     "kind": "switch",
-    "hint": "订阅目标集数满足时，从分集洗版切换为全集洗版",
+    "hint": "分集目标满足且无进行中下载时优先切换为全集洗版，转换成功后使用全集洗版时限（天）",
     "risk": "danger"
   },
   {
@@ -888,8 +876,7 @@ const fields = [
     "label": "变更速率窗口（天）",
     "group": "guard",
     "kind": "number",
-    "hint": "统计总集数变化的天数，越长越保守",
-    "advanced": true
+    "hint": "统计总集数变化的天数，越长越保守"
   },
   {
     "key": "cadence_enabled",
@@ -910,8 +897,7 @@ const fields = [
     "label": "节奏窗口下限（天）",
     "group": "guard",
     "kind": "number",
-    "hint": "预计等待时间不得少于设置天数",
-    "advanced": true
+    "hint": "预计等待时间不得少于设置天数"
   },
   {
     "key": "cadence_min_episodes",
@@ -925,8 +911,7 @@ const fields = [
     "label": "季冷却期（天）",
     "group": "guard",
     "kind": "number",
-    "hint": "最后一集播出后继续观察的天数",
-    "advanced": true
+    "hint": "最后一集播出后继续观察的天数"
   },
   {
     "key": "verify_enabled",
@@ -940,24 +925,21 @@ const fields = [
     "label": "自动纠错间隔（小时）",
     "group": "guard",
     "kind": "number",
-    "hint": "完成后重新检查集数的间隔",
-    "advanced": true
+    "hint": "完成后重新检查集数的间隔"
   },
   {
     "key": "verify_retention_days",
     "label": "快照保留（天）",
     "group": "guard",
     "kind": "number",
-    "hint": "完成快照按设置天数保留并自动清理，默认180天",
-    "advanced": true
+    "hint": "完成快照按设置天数保留并自动清理，默认180天"
   },
   {
     "key": "timeout_release_days",
     "label": "完成前观察天数",
     "group": "guard",
     "kind": "number",
-    "hint": "完成前观察允许保留的最长天数",
-    "advanced": true
+    "hint": "完成前观察允许保留的最长天数"
   },
   {
     "key": "timeout_cadence_acceleration",
@@ -1364,12 +1346,16 @@ const englishFields = {
     "Stop movie upgrade subscriptions after this period; 0 means unlimited"
   ],
   best_version_tv_remaining_days: [
-    "TV upgrade time limit (days)",
-    "Stop TV upgrade subscriptions after this period; 0 means unlimited"
+    "Full-season upgrade time limit (days)",
+    "Stop full-season TV upgrade subscriptions after this period; 0 means unlimited"
+  ],
+  best_version_episode_remaining_days: [
+    "Episode upgrade time limit (days)",
+    "Stop episode upgrade subscriptions after this period; 0 means unlimited"
   ],
   best_version_episode_to_full: [
     "Convert episodes to full season",
-    "Switch from episode upgrades to a full-season upgrade when the target is met"
+    "Prioritize conversion when the episode target is met and no downloads are active; after a successful conversion, use the full-season upgrade time limit"
   ],
   best_version_backfill_enabled: [
     "Backfill existing episodes",
@@ -1470,9 +1456,12 @@ const traditionalPhrases = [
   ["间隔", "間隔"],
   ["默认", "預設"],
   ["目标", "目標"],
+  ["实际", "實際"],
   ["满足", "符合"],
   ["转换", "轉換"],
   ["转", "轉"],
+  ["独立", "獨立"],
+  ["优先级", "優先級"],
   ["扫描", "掃描"],
   ["存量", "既有"],
   ["回填", "回填"],
@@ -1989,7 +1978,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       bestVersion: [
         {
           titleKey: "section.bestVersionScope",
-          keys: ["best_version_type", "best_version_movie_remaining_days", "best_version_tv_remaining_days"]
+          keys: [
+            "best_version_type",
+            "best_version_movie_remaining_days",
+            "best_version_tv_remaining_days",
+            "best_version_episode_remaining_days"
+          ]
         },
         {
           titleKey: "section.backfill",
@@ -2882,6 +2876,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-59866d47"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-e6b593a5"]]);
 
 export { Config as default };
