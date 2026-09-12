@@ -96,13 +96,13 @@
         "name": "WebDAV备份",
         "description": "定时通过 WebDAV 上传 MoviePilot V3 一致性数据库备份。",
         "labels": "工具",
-        "version": "2.0",
+        "version": "2.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webdavbackup.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
-            "v2.0": "MoviePilot V3 版本WebDAV备份插件"
+            "v2.0.1": "支持上传主程序及插件 SQLite 数据库备份制品。"
         },
         "release": true
     },

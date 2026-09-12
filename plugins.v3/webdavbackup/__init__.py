@@ -33,7 +33,7 @@ class WebDAVBackup(_PluginBase):
     plugin_name = "WebDAV备份"
     plugin_desc = "定时通过 WebDAV 备份 MoviePilot V3 数据库。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webdavbackup.png"
-    plugin_version = "2.0"
+    plugin_version = "2.0.1"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "webdavbackup_"
