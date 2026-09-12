@@ -66,7 +66,7 @@ from .postcheck.verifier import CompletionVerifier
 from .postcheck.rebuilder import CompletionSubscribeRebuilder
 from .postcheck.timeout import PendingTimeoutManager
 from .events import EventProxy
-from .shared.media import parse_date
+from .shared.media import parse_date, target_episode_range
 from .shared.task import TaskDataManager
 from .shared.config import (
     DEFAULT_DELETE_EXCLUDE_TAGS,
@@ -766,7 +766,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
         if monitor and monitor.has_active_downloads(subscribe.id):
             return False
         existing, missing = self._detect_episode_coverage(subscribe)
-        target = set(self._subscribe_target_episodes(subscribe))
+        target = set(target_episode_range(subscribe))
         if missing or not target or not target.issubset(set(existing)):
             return False
         last_update = self._parse_datetime(subscribe.last_update or subscribe.date)

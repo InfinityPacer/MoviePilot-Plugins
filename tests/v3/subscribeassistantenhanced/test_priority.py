@@ -287,3 +287,19 @@ class TestMarkFullBestVersionComplete:
         payload = mgr._oper.update.call_args.args[1]
         assert payload == {"current_priority": 100}
         assert sub.episode_priority == {"1": 70, "2": 80}
+
+    def test_episode_wash_backfills_target_episodes_at_100(self):
+        """分集洗版超时逐集回填优先级 100，不写全集 current_priority。"""
+        mgr = _mgr()
+        sub = _sub(best_version=1, best_version_full=0, start_episode=2, total_episode=3)
+
+        with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
+            mgr.mark_full_best_version_complete(sub)
+
+        chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
+            sub,
+            [2, 3],
+            priority=100,
+            scene="plugin_complete<订阅助手（增强版）>",
+        )
+        mgr._oper.update.assert_not_called()
