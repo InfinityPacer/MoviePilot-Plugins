@@ -81,4 +81,17 @@ describe('SAE i18n adapter', () => {
       'Edit only when built-in rules are insufficient; leave empty to inherit the current mode',
     )
   })
+
+  it('keeps full-season and episode wash timeout copy distinct', () => {
+    const simplified = localizeFields('zh-CN', fields)
+    const english = localizeFields('en-US', fields)
+    const fullSeason = simplified.find(field => field.key === 'best_version_tv_remaining_days')
+    const episodes = simplified.find(field => field.key === 'best_version_episode_remaining_days')
+    const englishEpisodes = english.find(field => field.key === 'best_version_episode_remaining_days')
+
+    expect(fullSeason?.label).toBe('全集洗版时限（天）')
+    expect(episodes?.label).toBe('分集洗版时限（天）')
+    expect(episodes?.hint).toBe(fullSeason?.hint?.replace('全集', '分集'))
+    expect(englishEpisodes?.hint).toBe('Stop episode upgrade subscriptions after this period; 0 means unlimited')
+  })
 })

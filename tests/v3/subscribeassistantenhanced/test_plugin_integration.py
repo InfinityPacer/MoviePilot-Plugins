@@ -2629,7 +2629,7 @@ class TestPluginWiring:
         plugin.init_plugin({"enabled": True})
         assert plugin.get_command()            # /subscribe_toggle
         conf, model = plugin.get_form()
-        assert conf and model
+        assert conf == [] and model
         assert plugin.get_service()            # 启用后有定时任务
 
     def test_pause_manager_receives_subscribe_oper(self):
@@ -2822,6 +2822,65 @@ class TestPeriodicJobs:
         plugin.run_best_version_check()
 
         priority.mark_full_best_version_complete.assert_not_called()
+
+    def test_episode_best_version_timeout_requires_complete_target_and_uses_subscription_date(self):
+        """分集时限沿用旧版资格：无进行中下载、目标完整后按更新时间或创建日期判断。"""
+        old_date = date.today() - timedelta(days=2)
+        sub = _sub(
+            id=9,
+            best_version=1,
+            best_version_full=0,
+            start_episode=1,
+            total_episode=2,
+            date=old_date,
+            last_update=None,
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"best_version_type": "all", "best_version_episode_remaining_days": 1})
+        monitor = plugin._modules["download_monitor"]
+
+        assert plugin._best_version_timeout_days(sub) == 1
+
+        monitor.has_active_downloads = MagicMock(return_value=True)
+        assert plugin._episode_best_version_overdue(sub) is False
+
+        monitor.has_active_downloads.return_value = False
+        plugin._detect_episode_coverage = MagicMock(return_value=([1], [2]))
+        assert plugin._episode_best_version_overdue(sub) is False
+
+        plugin._detect_episode_coverage.return_value = ([1, 2], [])
+        sub.date = None
+        assert plugin._episode_best_version_overdue(sub) is False
+
+        sub.date = old_date
+        assert plugin._episode_best_version_overdue(sub) is True
+
+    def test_best_version_check_expires_complete_episode_wash(self):
+        """分集洗版超时后由巡检触发逐集优先级完成。"""
+        sub = _sub(
+            id=9,
+            name="测试",
+            best_version=1,
+            best_version_full=0,
+            start_episode=1,
+            total_episode=2,
+            date=date.today() - timedelta(days=2),
+        )
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({"best_version_type": "all", "best_version_episode_remaining_days": 1})
+        plugin._subscribe_oper = MagicMock()
+        plugin._subscribe_oper.list.return_value = [sub]
+        plugin._recognize_mediainfo = MagicMock(return_value=_mediainfo())
+        plugin._modules["download_monitor"].has_active_downloads = MagicMock(return_value=False)
+        plugin._detect_episode_coverage = MagicMock(return_value=([1, 2], []))
+        priority = plugin._modules["priority_manager"]
+        priority.mark_full_best_version_complete = MagicMock()
+        plugin._notify_subscribe = MagicMock()
+
+        plugin.run_best_version_check()
+
+        priority.mark_full_best_version_complete.assert_called_once_with(sub)
+        plugin._notify_subscribe.assert_called_once()
 
     def test_detect_missing_episodes_returns_partial_missing_set(self, monkeypatch):
         """媒体库部分覆盖时，helper 返回缺失集而不是已存在集。"""

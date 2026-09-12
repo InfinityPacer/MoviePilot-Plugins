@@ -28,6 +28,11 @@ describe('normalizeFiniteNumber', () => {
 })
 
 describe('normalizeSaeConfig', () => {
+  it('保留分集洗版时限的独立默认值并规范化数值', () => {
+    expect(configDefaults.best_version_episode_remaining_days).toBe(0)
+    expect(normalizeSaeConfig({ best_version_episode_remaining_days: '7' }).best_version_episode_remaining_days).toBe(7)
+  })
+
   it('将动态 Host 模型规范化为精确完整的 SaeConfig', () => {
     const input = {
       ...configDefaults,

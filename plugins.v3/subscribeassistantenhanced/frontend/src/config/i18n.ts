@@ -411,12 +411,16 @@ const englishFields: Record<ConfigKey, EnglishFieldText> = {
     'Stop movie upgrade subscriptions after this period; 0 means unlimited',
   ],
   best_version_tv_remaining_days: [
-    'TV upgrade time limit (days)',
-    'Stop TV upgrade subscriptions after this period; 0 means unlimited',
+    'Full-season upgrade time limit (days)',
+    'Stop full-season TV upgrade subscriptions after this period; 0 means unlimited',
+  ],
+  best_version_episode_remaining_days: [
+    'Episode upgrade time limit (days)',
+    'Stop episode upgrade subscriptions after this period; 0 means unlimited',
   ],
   best_version_episode_to_full: [
     'Convert episodes to full season',
-    'Switch from episode upgrades to a full-season upgrade when the target is met',
+    'Prioritize conversion when the episode target is met and no downloads are active; after a successful conversion, use the full-season upgrade time limit',
   ],
   best_version_backfill_enabled: [
     'Backfill existing episodes',
@@ -518,9 +522,12 @@ const traditionalPhrases: Array<[string, string]> = [
   ['间隔', '間隔'],
   ['默认', '預設'],
   ['目标', '目標'],
+  ['实际', '實際'],
   ['满足', '符合'],
   ['转换', '轉換'],
   ['转', '轉'],
+  ['独立', '獨立'],
+  ['优先级', '優先級'],
   ['扫描', '掃描'],
   ['存量', '既有'],
   ['回填', '回填'],

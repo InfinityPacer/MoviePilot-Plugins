@@ -24,7 +24,7 @@
       "vuetify/components": ["node_modules/vuetify/lib/components/index.d.mts"],
       "vuetify/directives": ["node_modules/vuetify/lib/directives/index.d.mts"]
     },
-    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
+    "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": [
     "src/**/*.ts",

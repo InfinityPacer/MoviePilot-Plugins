@@ -20,6 +20,7 @@
     "vuetify": "3.7.3"
   },
   "devDependencies": {
+    "@types/node": "^24.3.0",
     "@eslint/js": "^10.0.1",
     "@originjs/vite-plugin-federation": "^1.4.1",
     "@testing-library/dom": "9.3.4",

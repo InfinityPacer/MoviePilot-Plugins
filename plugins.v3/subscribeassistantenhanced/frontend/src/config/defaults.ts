@@ -94,8 +94,10 @@ export interface SaeConfig {
   best_version_type: string
   /** 电影洗版时限（天） */
   best_version_movie_remaining_days: number
-  /** 剧集洗版时限（天） */
+  /** 全集洗版时限（天） */
   best_version_tv_remaining_days: number
+  /** 分集洗版时限（天） */
+  best_version_episode_remaining_days: number
   /** 分集转全集 */
   best_version_episode_to_full: boolean
   /** 回填已存在集 */
@@ -195,6 +197,7 @@ export const configDefaults: SaeConfig = {
   "best_version_type": "no",
   "best_version_movie_remaining_days": 0,
   "best_version_tv_remaining_days": 0,
+  "best_version_episode_remaining_days": 0,
   "best_version_episode_to_full": false,
   "best_version_backfill_enabled": false,
   "backfill_best_version_now": false,
