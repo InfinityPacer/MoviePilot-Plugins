@@ -38,8 +38,10 @@ def episode_field(episode, name: str, default=None):
     return getattr(episode, name, default)
 
 
-def _same_optional_season(season_number, subscribe_season) -> bool:
-    """按显式季号比较分集归属；S0 是合法季号，不能按空值处理。"""
+def _same_optional_season(season_number, subscribe_season, episode_group=None) -> bool:
+    """按数据来源比较分集归属；剧集组分集已由调用方按组和季缩窄。"""
+    if episode_group:
+        return True
     return season_number is None or subscribe_season is None or season_number == subscribe_season
 
 
@@ -72,7 +74,9 @@ def resolve_airing_next_episode(subscribe, aggregate_episode, episodes: list,
             return False
         season_number = episode_field(episode, "season_number")
         subscribe_season = subscribe.season
-        if not _same_optional_season(season_number, subscribe_season):
+        if not _same_optional_season(
+            season_number, subscribe_season, episode_group=subscribe.episode_group
+        ):
             return False
         air_date = parse_date(episode_field(episode, "air_date"))
         if air_date is None or air_date <= today:
@@ -84,7 +88,8 @@ def resolve_airing_next_episode(subscribe, aggregate_episode, episodes: list,
             return False
         return True
 
-    if valid_candidate(aggregate_episode):
+    # 整剧聚合下一集的季号和集号不属于剧集组范围；剧集组订阅只信任已按组取回的分集表。
+    if not subscribe.episode_group and valid_candidate(aggregate_episode):
         return aggregate_episode
 
     candidates = [episode for episode in (episodes or []) if valid_candidate(episode)]
@@ -115,7 +120,9 @@ def unknown_tail_episode_count(subscribe, episodes: list) -> int:
     known_numbers = []
     for episode in (episodes or []):
         season_number = episode_field(episode, "season_number")
-        if not _same_optional_season(season_number, subscribe.season):
+        if not _same_optional_season(
+            season_number, subscribe.season, episode_group=subscribe.episode_group
+        ):
             continue
         episode_number = episode_field(episode, "episode_number")
         if episode_number is not None:
@@ -132,7 +139,9 @@ def episode_candidates_after(subscribe, episodes: list, cutoff: date) -> list:
     candidates = []
     for episode in (episodes or []):
         season_number = episode_field(episode, "season_number")
-        if not _same_optional_season(season_number, subscribe.season):
+        if not _same_optional_season(
+            season_number, subscribe.season, episode_group=subscribe.episode_group
+        ):
             continue
         episode_number = episode_field(episode, "episode_number")
         if episode_number is None or (target_episodes and episode_number not in target_episodes):
@@ -214,10 +223,11 @@ def first_available_scope_episode_air_date(subscribe, episodes: list) -> Optiona
     """返回当前季分集表中集号最早的有效播出日期；分集表由调用方按剧集组范围取得。"""
     candidates = []
     for episode in episodes or []:
-        if not subscribe.episode_group:
-            season_number = episode_field(episode, "season_number")
-            if not _same_optional_season(season_number, subscribe.season):
-                continue
+        season_number = episode_field(episode, "season_number")
+        if not _same_optional_season(
+            season_number, subscribe.season, episode_group=subscribe.episode_group
+        ):
+            continue
         episode_number = episode_field(episode, "episode_number")
         if episode_number is None:
             continue
