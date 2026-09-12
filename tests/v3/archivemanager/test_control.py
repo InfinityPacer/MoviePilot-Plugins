@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import app.plugins.archivemanager as manager_module
 import pytest
 from app.db.plugin.container import PluginDatabaseHandle
-from app.plugins.archivemanager.config import TaskConfig
+from app.plugins.archivemanager.config import TaskConfig, parse_config
 from app.plugins.archivemanager.scanner import identity
 from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
 from sqlalchemy import create_engine, select
@@ -89,6 +89,33 @@ def test_archive_manager_constructs_real_plugin_and_declares_persistence_contrac
     assert manager.get_database_models() == [manager_module.BatchRow, manager_module.FileRow, manager_module.TaskRow]
     assert manager.get_form() == ([], {"enabled": False, "notify": False, "notify_events": ["failure"], "tasks": []})
     assert manager.get_service() == []
+
+
+def test_task_public_omits_timezone_and_decimal_reserved_space_is_valid(tmp_path: Path) -> None:
+    task = _task(tmp_path, min_free_bytes=1.5 * 1024**3)
+
+    assert "timezone" not in task.public()
+    assert task.min_free_bytes == 1.5 * 1024**3
+
+
+def test_enabled_tasks_may_share_output_directory(tmp_path: Path) -> None:
+    shared = tmp_path / "shared-output"
+    first = _task(tmp_path / "first", id="first", output_dir=str(shared))
+    second = _task(tmp_path / "second", id="second", output_dir=str(shared))
+
+    assert len(parse_config({"tasks": [first.model_dump(), second.model_dump()]})) == 2
+
+
+def test_api_run_rejects_global_disabled_plugin(tmp_path: Path, monkeypatch) -> None:
+    task = _task(tmp_path, id="disabled-run")
+    manager = manager_module.ArchiveManager()
+    manager._tasks = [task]
+    manager._enabled = False
+
+    response = manager.api_run(manager_module.TaskRequest(task_id=task.id))
+
+    assert response.success is False
+    assert "未启用" in response.message
 
 
 def test_archive_manager_frontend_has_reproducible_lockfile() -> None:

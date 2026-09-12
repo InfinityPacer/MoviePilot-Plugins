@@ -18,7 +18,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .naming import frozen_names
-from zoneinfo import ZoneInfo
 from .scanner import fingerprint, identity
 
 Base = plugin_declarative_base()
@@ -218,12 +217,12 @@ class Store:
     def create(self, batch_id: str, task: dict, entries: list[dict], group: str) -> dict:
         """先预留全部成员并提交快照，再允许工作进程创建归档。"""
         created_at = datetime.now(timezone.utc).isoformat()
-        local_day = datetime.fromisoformat(created_at).astimezone(ZoneInfo(task["timezone"])).date()
+        local_day = datetime.fromisoformat(created_at).astimezone().date()
         sequence = 1
         # 序号按任务和容器本地日期递增；批次名称冻结后不会因重试改变。
         with self.handle.session() as sequence_session:
             for row in sequence_session.scalars(select(BatchRow).where(BatchRow.task_id == task["id"])).all():
-                if datetime.fromisoformat(row.created_at).astimezone(ZoneInfo(task["timezone"])).date() == local_day:
+                if datetime.fromisoformat(row.created_at).astimezone().date() == local_day:
                     sequence += 1
         data = {
             **frozen_names(task, batch_id, created_at, sequence),

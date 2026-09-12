@@ -59,6 +59,22 @@ describe('ArchiveManager federated config', () => {
         'password_version',
       ]),
     )
+    expect(payload.tasks[0]).not.toHaveProperty('timezone')
+  })
+
+  it('keeps the draft dirty until the host confirms saving', async () => {
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig(), onSave: save, saveResult: 'error' } })
+
+    await user.click(screen.getByText('任务', { exact: true }))
+    await user.click(screen.getByRole('button', { name: '新增归档任务' }))
+    await user.click(screen.getByRole('button', { name: '保存任务' }))
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+
+    expect(save).toHaveBeenCalledOnce()
+    expect(document.querySelector('.archive-header__save')).toBeEnabled()
   })
 
   it('keeps batch directory layout generic and renders the default naming preview', async () => {
@@ -127,6 +143,27 @@ describe('ArchiveManager federated config', () => {
       await screen.findByText('ZIP 不支持加密文件名。切换为 ZIP 会关闭“加密文件名”，是否继续？'),
     ).toBeInTheDocument()
     expect(format).toHaveValue('7z')
+  })
+
+  it('clears file-name encryption when switching AES-256 off', async () => {
+    const task = createArchiveTask({ id: 'task-1', name: '加密任务', encryption: 'aes256', encrypt_names: true })
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks: [task] }), onSave: save } })
+
+    await user.click(screen.getByText('任务', { exact: true }))
+    await user.click(screen.getByRole('button', { name: '编辑归档任务' }))
+    const editor = screen.getByText('编辑归档任务').closest('section') as HTMLElement
+    const encryption = within(editor).getByRole('textbox', { name: '加密方式' })
+    await user.click(encryption)
+    await user.click(await screen.findByText('不加密', { exact: true }))
+    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+    expect(save).toHaveBeenCalledOnce()
+    expect(save.mock.calls[0][0].tasks[0]).toEqual(
+      expect.objectContaining({ encryption: 'none', encrypt_names: false }),
+    )
   })
 
   it('switches between batches and files and closes through the host command', async () => {

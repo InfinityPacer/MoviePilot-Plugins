@@ -22,6 +22,7 @@ const config = ref<ArchiveConfig | null>(null)
 const loading = ref(true)
 const errorMessage = ref('')
 const saving = ref(false)
+const saveResult = ref<'idle' | 'success' | 'error'>('idle')
 
 function isApiResponse(value: unknown): value is ApiResponse<unknown> {
   return (
@@ -65,6 +66,7 @@ async function loadConfig(): Promise<void> {
 async function saveConfig(next: ArchiveConfig): Promise<void> {
   if (!props.api || saving.value) return
   saving.value = true
+  saveResult.value = 'idle'
   errorMessage.value = ''
   try {
     const response = await props.api.put<null>('plugin/ArchiveManager', next)
@@ -73,8 +75,10 @@ async function saveConfig(next: ArchiveConfig): Promise<void> {
     }
     // 保存后保持 Config 挂载，读回结果不能重置当前工作区和滚动位置。
     await loadConfig()
+    saveResult.value = 'success'
   } catch {
     errorMessage.value = '归档配置保存失败，请稍后重试。'
+    saveResult.value = 'error'
   } finally {
     saving.value = false
   }
@@ -105,7 +109,14 @@ onMounted(() => {
       <VAlert v-if="errorMessage" class="archive-page__error" type="error" variant="tonal">
         {{ errorMessage }}
       </VAlert>
-      <Config :api="api" :initial-config="config" @close="emit('close')" @layout="handleLayout" @save="saveConfig" />
+      <Config
+        :api="api"
+        :initial-config="config"
+        :save-result="saveResult"
+        @close="emit('close')"
+        @layout="handleLayout"
+        @save="saveConfig"
+      />
     </template>
   </section>
 </template>

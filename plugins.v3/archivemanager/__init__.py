@@ -20,6 +20,7 @@ from .catalog import write_catalog
 from .config import (
     NotificationConfig,
     TaskConfig,
+    container_timezone,
     overlap,
     parse_config,
     validate_paths,
@@ -152,7 +153,7 @@ class ArchiveManager(_PluginBase):
             {
                 "id": f"ArchiveManager_{task.id}",
                 "name": f"压缩归档 · {task.name}",
-                "trigger": CronTrigger.from_crontab(task.cron, timezone=task.timezone),
+                "trigger": CronTrigger.from_crontab(task.cron, timezone=container_timezone()),
                 "func": partial(self._enqueue_task, task.id),
                 "kwargs": {},
             }
@@ -210,6 +211,8 @@ class ArchiveManager(_PluginBase):
         raise ValueError("任务不存在或配置未生效，请先保存有效配置")
 
     def _enqueue_task(self, task_id: str, batch_id: str = "", *, repair: bool = False) -> str:
+        if not self.get_state():
+            raise ValueError("插件未启用，不能执行归档")
         task = self._task(task_id)
         if not repair:
             validate_paths(task)

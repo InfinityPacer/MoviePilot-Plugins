@@ -1,4 +1,4 @@
-import Config, { n as normalizeArchiveConfig, _ as _export_sfc } from './__federation_expose_Config-CVvYVoRq.js';
+import Config, { n as normalizeArchiveConfig, _ as _export_sfc } from './__federation_expose_Config-Didw63M-.js';
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -24,6 +24,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const loading = ref(true);
     const errorMessage = ref("");
     const saving = ref(false);
+    const saveResult = ref("idle");
     function isApiResponse(value) {
       return typeof value === "object" && value !== null && "success" in value && typeof value.success === "boolean" && "data" in value;
     }
@@ -56,6 +57,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     async function saveConfig(next) {
       if (!props.api || saving.value) return;
       saving.value = true;
+      saveResult.value = "idle";
       errorMessage.value = "";
       try {
         const response = await props.api.put("plugin/ArchiveManager", next);
@@ -63,8 +65,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           throw new Error(response.message || "归档配置保存失败");
         }
         await loadConfig();
+        saveResult.value = "success";
       } catch {
         errorMessage.value = "归档配置保存失败，请稍后重试。";
+        saveResult.value = "error";
       } finally {
         saving.value = false;
       }
@@ -100,9 +104,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               variant: "text",
               onClick: loadConfig
             }, {
-              default: _withCtx(() => [..._cache[2] || (_cache[2] = [
-                _createTextVNode("重试", -1)
-              ])]),
+              default: _withCtx(() => _cache[2] || (_cache[2] = [
+                _createTextVNode("重试")
+              ])),
               _: 1
             })
           ]),
@@ -123,18 +127,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _: 1
           })) : _createCommentVNode("", true),
           _createVNode(Config, {
-            api: __props.api,
+            api: _ctx.api,
             "initial-config": config.value,
+            "save-result": saveResult.value,
             onClose: _cache[0] || (_cache[0] = ($event) => emit("close")),
             onLayout: handleLayout,
             onSave: saveConfig
-          }, null, 8, ["api", "initial-config"])
+          }, null, 8, ["api", "initial-config", "save-result"])
         ], 64)) : _createCommentVNode("", true)
       ]);
     };
   }
 });
 
-const Page = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f3a0025c"]]);
+const Page = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a4eb719d"]]);
 
 export { Page as default };

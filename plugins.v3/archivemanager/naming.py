@@ -4,7 +4,6 @@ import re
 from datetime import datetime
 from pathlib import Path
 from string import Formatter
-from zoneinfo import ZoneInfo
 
 FIELDS = {"task_name", "date", "time", "id", "sequence"}
 
@@ -38,7 +37,7 @@ def validate_template(template: str) -> None:
 
 def frozen_names(task: dict, batch_id: str, created_at: str, sequence: int = 1) -> dict:
     """生成可读名与跨目录唯一的包名；长度为摘要和临时文件后缀预留空间。"""
-    moment = datetime.fromisoformat(created_at).astimezone(ZoneInfo(task["timezone"]))
+    moment = datetime.fromisoformat(created_at).astimezone()
     values = {
         "task_name": re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', "_", task["name"]),
         "date": moment.strftime("%Y%m%d"),

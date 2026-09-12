@@ -81,7 +81,6 @@ const taskDefaults = {
   output_dir: "",
   manifest_dir: "",
   cron: "0 2 * * *",
-  timezone: "",
   recursive: true,
   include_patterns: [],
   exclude_patterns: [],
@@ -154,7 +153,6 @@ function createArchiveTask(value = {}) {
     output_dir: toStringValue(source.output_dir, taskDefaults.output_dir),
     manifest_dir: toStringValue(source.manifest_dir, taskDefaults.manifest_dir),
     cron: toStringValue(source.cron, taskDefaults.cron),
-    timezone: toStringValue(source.timezone, taskDefaults.timezone),
     recursive: toBoolean(source.recursive, taskDefaults.recursive),
     include_patterns: toStringArray(source.include_patterns),
     exclude_patterns: toStringArray(source.exclude_patterns),
@@ -433,7 +431,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "Config",
   props: {
     initialConfig: {},
-    api: {}
+    api: {},
+    saveResult: {}
   },
   emits: ["save", "close", "layout"],
   setup(__props, { emit: __emit }) {
@@ -458,6 +457,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const compatibilityOpen = ref(false);
     const compatibilityReason = ref("format");
     const pendingFormat = ref(null);
+    watch(
+      () => props.saveResult,
+      (result) => {
+        if (result === "success") original.value = normalizeArchiveConfig(draft.value);
+      }
+    );
     const summary = ref(null);
     const summaryState = ref("loading");
     const notice = ref(null);
@@ -738,6 +743,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function handleEncryption(value) {
       taskEditor.value.encryption = value === "aes256" ? "aes256" : "none";
+      if (taskEditor.value.encryption === "none") taskEditor.value.encrypt_names = false;
       if (taskEditor.value.encryption === "aes256" && taskEditor.value.format === "7z" && !taskEditor.value.encrypt_names) {
         taskEditor.value.encrypt_names = true;
       }
@@ -745,7 +751,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function saveConfig() {
       const payload = normalizeArchiveConfig(draft.value);
       draft.value = payload;
-      original.value = normalizeArchiveConfig(payload);
       emit("save", normalizeArchiveConfig(payload));
       setNotice("配置已提交给宿主保存。", "success");
     }
@@ -1052,9 +1057,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     size: "x-small",
                     variant: "tonal"
                   }, {
-                    default: _withCtx(() => [..._cache[60] || (_cache[60] = [
-                      _createTextVNode("BETA", -1)
-                    ])]),
+                    default: _withCtx(() => _cache[60] || (_cache[60] = [
+                      _createTextVNode("BETA")
+                    ])),
                     _: 1
                   })
                 ])
@@ -1069,9 +1074,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 variant: "tonal",
                 onClick: _cache[0] || (_cache[0] = ($event) => executeRun())
               }, {
-                default: _withCtx(() => [..._cache[62] || (_cache[62] = [
-                  _createTextVNode(" 运行一次 ", -1)
-                ])]),
+                default: _withCtx(() => _cache[62] || (_cache[62] = [
+                  _createTextVNode(" 运行一次 ")
+                ])),
                 _: 1
               }, 8, ["disabled"]),
               _createVNode(_component_VBtn, {
@@ -1081,9 +1086,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 "prepend-icon": "mdi-content-save",
                 type: "submit"
               }, {
-                default: _withCtx(() => [..._cache[63] || (_cache[63] = [
-                  _createTextVNode(" 保存修改 ", -1)
-                ])]),
+                default: _withCtx(() => _cache[63] || (_cache[63] = [
+                  _createTextVNode(" 保存修改 ")
+                ])),
                 _: 1
               }, 8, ["disabled"]),
               _createVNode(_component_VBtn, {
@@ -1092,9 +1097,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 variant: "outlined",
                 onClick: _cache[1] || (_cache[1] = ($event) => emit("close"))
               }, {
-                default: _withCtx(() => [..._cache[64] || (_cache[64] = [
-                  _createTextVNode(" 关闭 ", -1)
-                ])]),
+                default: _withCtx(() => _cache[64] || (_cache[64] = [
+                  _createTextVNode(" 关闭 ")
+                ])),
                 _: 1
               }),
               _createVNode(_component_VBtn, {
@@ -1186,9 +1191,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     target: "_blank",
                     variant: "text"
                   }, {
-                    default: _withCtx(() => [..._cache[67] || (_cache[67] = [
-                      _createTextVNode(" 查看文档 ", -1)
-                    ])]),
+                    default: _withCtx(() => _cache[67] || (_cache[67] = [
+                      _createTextVNode(" 查看文档 ")
+                    ])),
                     _: 1
                   })
                 ])
@@ -1285,10 +1290,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         size: "18",
                         width: "2"
                       }),
-                      _cache[77] || (_cache[77] = _createTextVNode(" 正在读取运行概况… ", -1))
+                      _cache[77] || (_cache[77] = _createTextVNode(" 正在读取运行概况… "))
                     ])) : summaryState.value === "unavailable" ? (_openBlock(), _createElementBlock("div", _hoisted_25, [
                       _createVNode(_component_VIcon, { icon: "mdi-cloud-alert-outline" }),
-                      _cache[78] || (_cache[78] = _createTextVNode("运行概况暂不可用，配置编辑仍可继续。 ", -1))
+                      _cache[78] || (_cache[78] = _createTextVNode("运行概况暂不可用，配置编辑仍可继续。 "))
                     ])) : _createCommentVNode("", true),
                     summaryValue.value.running || queuedTaskNames.value.length ? (_openBlock(), _createElementBlock("div", _hoisted_26, [
                       _createElementVNode("div", _hoisted_27, [
@@ -1310,9 +1315,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         variant: "tonal",
                         onClick: executeStop
                       }, {
-                        default: _withCtx(() => [..._cache[79] || (_cache[79] = [
-                          _createTextVNode("停止", -1)
-                        ])]),
+                        default: _withCtx(() => _cache[79] || (_cache[79] = [
+                          _createTextVNode("停止")
+                        ])),
                         _: 1
                       }, 8, ["disabled"])
                     ])) : _createCommentVNode("", true),
@@ -1445,9 +1450,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           variant: "tonal",
                           onClick: _cache[10] || (_cache[10] = ($event) => openTaskEditor())
                         }, {
-                          default: _withCtx(() => [..._cache[84] || (_cache[84] = [
-                            _createTextVNode("创建第一个任务", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[84] || (_cache[84] = [
+                            _createTextVNode("创建第一个任务")
+                          ])),
                           _: 1
                         })
                       ])) : (_openBlock(), _createBlock(_component_VList, {
@@ -1588,9 +1593,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           color: "primary",
                           variant: "tonal"
                         }, {
-                          default: _withCtx(() => [..._cache[93] || (_cache[93] = [
-                            _createTextVNode("密码已保存", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[93] || (_cache[93] = [
+                            _createTextVNode("密码已保存")
+                          ])),
                           _: 1
                         })) : _createCommentVNode("", true)
                       ]),
@@ -1600,9 +1605,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           variant: "tonal",
                           onClick: _cache[13] || (_cache[13] = ($event) => startPreviewForTask(selectedTask.value))
                         }, {
-                          default: _withCtx(() => [..._cache[94] || (_cache[94] = [
-                            _createTextVNode("预览文件", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[94] || (_cache[94] = [
+                            _createTextVNode("预览文件")
+                          ])),
                           _: 1
                         }),
                         _createVNode(_component_VBtn, {
@@ -1612,9 +1617,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           variant: "flat",
                           onClick: _cache[14] || (_cache[14] = ($event) => executeRun(selectedTask.value.id))
                         }, {
-                          default: _withCtx(() => [..._cache[95] || (_cache[95] = [
-                            _createTextVNode("运行一次", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[95] || (_cache[95] = [
+                            _createTextVNode("运行一次")
+                          ])),
                           _: 1
                         })
                       ])
@@ -1743,27 +1748,27 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           type: "info",
                           variant: "tonal"
                         }, {
-                          default: _withCtx(() => [..._cache[99] || (_cache[99] = [
-                            _createTextVNode(" 基础变量：", -1),
+                          default: _withCtx(() => _cache[99] || (_cache[99] = [
+                            _createTextVNode(" 基础变量："),
                             _createElementVNode("code", null, "{date}", -1),
-                            _createTextVNode("=", -1),
+                            _createTextVNode("="),
                             _createElementVNode("code", null, "20260911", -1),
-                            _createTextVNode("、", -1),
+                            _createTextVNode("、"),
                             _createElementVNode("code", null, "{time}", -1),
-                            _createTextVNode("=", -1),
+                            _createTextVNode("="),
                             _createElementVNode("code", null, "040020", -1),
-                            _createTextVNode("、 ", -1),
+                            _createTextVNode("、 "),
                             _createElementVNode("code", null, "{id}", -1),
-                            _createTextVNode("=", -1),
+                            _createTextVNode("="),
                             _createElementVNode("code", null, "7f3a9c", -1),
-                            _createTextVNode("、", -1),
+                            _createTextVNode("、"),
                             _createElementVNode("code", null, "{sequence}", -1),
-                            _createTextVNode("=", -1),
+                            _createTextVNode("="),
                             _createElementVNode("code", null, "0001", -1),
-                            _createTextVNode("；也支持 strftime， 例如 ", -1),
+                            _createTextVNode("；也支持 strftime， 例如 "),
                             _createElementVNode("code", null, "{%Y%m%d_%H%M%S}", -1),
-                            _createTextVNode("。 ", -1)
-                          ])]),
+                            _createTextVNode("。 ")
+                          ])),
                           _: 1
                         }),
                         _createElementVNode("div", _hoisted_55, [
@@ -1776,9 +1781,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           type: "info",
                           variant: "tonal"
                         }, {
-                          default: _withCtx(() => [..._cache[101] || (_cache[101] = [
-                            _createTextVNode(" 外层归档包名会对存储端可见；需要隐藏文件名时，请使用 7z AES-256 并开启加密文件名。 ", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[101] || (_cache[101] = [
+                            _createTextVNode(" 外层归档包名会对存储端可见；需要隐藏文件名时，请使用 7z AES-256 并开启加密文件名。 ")
+                          ])),
                           _: 1
                         })
                       ]),
@@ -1963,9 +1968,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           type: "info",
                           variant: "tonal"
                         }, {
-                          default: _withCtx(() => [..._cache[105] || (_cache[105] = [
-                            _createTextVNode("插件只负责本地归档，不上传、不删除成品；自动续跑会在空间或成品积压达到限制时每 60 秒重新检测。", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[105] || (_cache[105] = [
+                            _createTextVNode("插件只负责本地归档，不上传、不删除成品；自动续跑会在空间或成品积压达到限制时每 60 秒重新检测。")
+                          ])),
                           _: 1
                         })
                       ]),
@@ -2059,9 +2064,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           type: "warning",
                           variant: "tonal"
                         }, {
-                          default: _withCtx(() => [..._cache[108] || (_cache[108] = [
-                            _createTextVNode("启用删除源文件后，后端会强制执行校验；校验失败不会删除源文件。", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[108] || (_cache[108] = [
+                            _createTextVNode("启用删除源文件后，后端会强制执行校验；校验失败不会删除源文件。")
+                          ])),
                           _: 1
                         })) : _createCommentVNode("", true)
                       ]),
@@ -2071,9 +2076,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           variant: "tonal",
                           onClick: _cache[42] || (_cache[42] = ($event) => startPreviewForTask(prepareEditorTask()))
                         }, {
-                          default: _withCtx(() => [..._cache[110] || (_cache[110] = [
-                            _createTextVNode("预览文件", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[110] || (_cache[110] = [
+                            _createTextVNode("预览文件")
+                          ])),
                           _: 1
                         }),
                         _createVNode(_component_VSpacer),
@@ -2081,9 +2086,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           variant: "text",
                           onClick: cancelTaskEditor
                         }, {
-                          default: _withCtx(() => [..._cache[111] || (_cache[111] = [
-                            _createTextVNode("取消", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[111] || (_cache[111] = [
+                            _createTextVNode("取消")
+                          ])),
                           _: 1
                         }),
                         _createVNode(_component_VBtn, {
@@ -2092,9 +2097,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           variant: "flat",
                           onClick: saveTaskEditor
                         }, {
-                          default: _withCtx(() => [..._cache[112] || (_cache[112] = [
-                            _createTextVNode("保存任务", -1)
-                          ])]),
+                          default: _withCtx(() => _cache[112] || (_cache[112] = [
+                            _createTextVNode("保存任务")
+                          ])),
                           _: 1
                         })
                       ])
@@ -2134,7 +2139,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       size: "18",
                       width: "2"
                     }),
-                    _cache[113] || (_cache[113] = _createTextVNode("正在读取批次… ", -1))
+                    _cache[113] || (_cache[113] = _createTextVNode("正在读取批次… "))
                   ])) : batchData.value.items.length === 0 ? (_openBlock(), _createElementBlock("div", _hoisted_70, [
                     _createVNode(_component_VIcon, {
                       icon: "mdi-package-variant-remove",
@@ -2204,8 +2209,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                 default: _withCtx(() => [
                                   _createVNode(_component_VIcon, { icon: "mdi-chevron-right" })
                                 ]),
-                                _: 1
-                              }, 8, ["onClick"])
+                                _: 2
+                              }, 1032, ["onClick"])
                             ])
                           ], 8, _hoisted_73);
                         }), 128))
@@ -2309,7 +2314,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         size: "18",
                         width: "2"
                       }),
-                      _cache[121] || (_cache[121] = _createTextVNode("正在读取文件… ", -1))
+                      _cache[121] || (_cache[121] = _createTextVNode("正在读取文件… "))
                     ])) : fileData.value.items.length === 0 && fileData.value.directories.length === 0 ? (_openBlock(), _createElementBlock("div", _hoisted_85, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-file-search-outline",
@@ -2445,7 +2450,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     }),
                     _cache[131] || (_cache[131] = _createElementVNode("h3", null, "当前状态", -1))
                   ]),
-                  summaryValue.value.running ? (_openBlock(), _createElementBlock("p", _hoisted_102, "正在处理：" + _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id), 1)) : queuedTaskNames.value.length ? (_openBlock(), _createElementBlock("p", _hoisted_103, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1)) : (_openBlock(), _createElementBlock("p", _hoisted_104, "当前没有运行中的归档任务"))
+                  summaryValue.value.running ? (_openBlock(), _createElementBlock("p", _hoisted_102, " 正在处理：" + _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id), 1)) : queuedTaskNames.value.length ? (_openBlock(), _createElementBlock("p", _hoisted_103, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1)) : (_openBlock(), _createElementBlock("p", _hoisted_104, "当前没有运行中的归档任务"))
                 ])
               ])
             ])
@@ -2457,7 +2462,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 icon: "mdi-circle",
                 size: "8"
               }),
-              _cache[132] || (_cache[132] = _createTextVNode("有未保存修改", -1))
+              _cache[132] || (_cache[132] = _createTextVNode("有未保存修改"))
             ]),
             _createVNode(_component_VSpacer),
             _createVNode(_component_VBtn, {
@@ -2472,7 +2477,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   icon: "mdi-content-save",
                   start: ""
                 }),
-                _cache[133] || (_cache[133] = _createTextVNode("保存修改", -1))
+                _cache[133] || (_cache[133] = _createTextVNode("保存修改"))
               ]),
               _: 1
             }, 8, ["disabled"])
@@ -2486,9 +2491,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createVNode(_component_VCard, null, {
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, null, {
-                  default: _withCtx(() => [..._cache[134] || (_cache[134] = [
-                    _createTextVNode("切换工作区", -1)
-                  ])]),
+                  default: _withCtx(() => _cache[134] || (_cache[134] = [
+                    _createTextVNode("切换工作区")
+                  ])),
                   _: 1
                 }),
                 _createVNode(_component_VList, {
@@ -2534,20 +2539,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createVNode(_component_VCard, null, {
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, null, {
-                  default: _withCtx(() => [..._cache[135] || (_cache[135] = [
-                    _createTextVNode("格式兼容性确认", -1)
-                  ])]),
+                  default: _withCtx(() => _cache[135] || (_cache[135] = [
+                    _createTextVNode("格式兼容性确认")
+                  ])),
                   _: 1
                 }),
                 compatibilityReason.value === "format" ? (_openBlock(), _createBlock(_component_VCardText, { key: 0 }, {
-                  default: _withCtx(() => [..._cache[136] || (_cache[136] = [
-                    _createTextVNode("ZIP 不支持加密文件名。切换为 ZIP 会关闭“加密文件名”，是否继续？", -1)
-                  ])]),
+                  default: _withCtx(() => _cache[136] || (_cache[136] = [
+                    _createTextVNode("ZIP 不支持加密文件名。切换为 ZIP 会关闭“加密文件名”，是否继续？")
+                  ])),
                   _: 1
                 })) : (_openBlock(), _createBlock(_component_VCardText, { key: 1 }, {
-                  default: _withCtx(() => [..._cache[137] || (_cache[137] = [
-                    _createTextVNode("ZIP 不支持加密文件名。要启用此选项，需要切换到 7z，是否继续？", -1)
-                  ])]),
+                  default: _withCtx(() => _cache[137] || (_cache[137] = [
+                    _createTextVNode("ZIP 不支持加密文件名。要启用此选项，需要切换到 7z，是否继续？")
+                  ])),
                   _: 1
                 })),
                 _createVNode(_component_VCardActions, null, {
@@ -2557,9 +2562,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "text",
                       onClick: cancelCompatibilityChange
                     }, {
-                      default: _withCtx(() => [..._cache[138] || (_cache[138] = [
-                        _createTextVNode("取消", -1)
-                      ])]),
+                      default: _withCtx(() => _cache[138] || (_cache[138] = [
+                        _createTextVNode("取消")
+                      ])),
                       _: 1
                     }),
                     _createVNode(_component_VBtn, {
@@ -2567,9 +2572,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "flat",
                       onClick: acceptCompatibilityChange
                     }, {
-                      default: _withCtx(() => [..._cache[139] || (_cache[139] = [
-                        _createTextVNode("确认切换", -1)
-                      ])]),
+                      default: _withCtx(() => _cache[139] || (_cache[139] = [
+                        _createTextVNode("确认切换")
+                      ])),
                       _: 1
                     })
                   ]),
@@ -2672,9 +2677,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                     size: "small",
                                     variant: "tonal"
                                   }, {
-                                    default: _withCtx(() => [..._cache[147] || (_cache[147] = [
-                                      _createTextVNode("超出限制", -1)
-                                    ])]),
+                                    default: _withCtx(() => _cache[147] || (_cache[147] = [
+                                      _createTextVNode("超出限制")
+                                    ])),
                                     _: 1
                                   })) : (_openBlock(), _createElementBlock("span", _hoisted_114, "正常"))
                                 ])
@@ -2694,9 +2699,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "text",
                       onClick: closePreview
                     }, {
-                      default: _withCtx(() => [..._cache[149] || (_cache[149] = [
-                        _createTextVNode("关闭", -1)
-                      ])]),
+                      default: _withCtx(() => _cache[149] || (_cache[149] = [
+                        _createTextVNode("关闭")
+                      ])),
                       _: 1
                     })
                   ]),
@@ -2748,16 +2753,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         size: "24",
                         width: "2"
                       }),
-                      _cache[150] || (_cache[150] = _createTextVNode("正在读取批次详情… ", -1))
+                      _cache[150] || (_cache[150] = _createTextVNode("正在读取批次详情… "))
                     ])) : (_openBlock(), _createElementBlock(_Fragment, { key: 1 }, [
                       selectedBatch.value.superseded ? (_openBlock(), _createBlock(_component_VAlert, {
                         key: 0,
                         type: "info",
                         variant: "tonal"
                       }, {
-                        default: _withCtx(() => [..._cache[151] || (_cache[151] = [
-                          _createTextVNode("该批次已被源文件的新版本替代，仅保留作审计记录，不能重试。", -1)
-                        ])]),
+                        default: _withCtx(() => _cache[151] || (_cache[151] = [
+                          _createTextVNode("该批次已被源文件的新版本替代，仅保留作审计记录，不能重试。")
+                        ])),
                         _: 1
                       })) : _createCommentVNode("", true),
                       _createElementVNode("div", _hoisted_116, [
@@ -2907,9 +2912,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "tonal",
                       onClick: _cache[54] || (_cache[54] = ($event) => executeBatchAction("repair", selectedBatch.value))
                     }, {
-                      default: _withCtx(() => [..._cache[165] || (_cache[165] = [
-                        _createTextVNode("补全清单", -1)
-                      ])]),
+                      default: _withCtx(() => _cache[165] || (_cache[165] = [
+                        _createTextVNode("补全清单")
+                      ])),
                       _: 1
                     })) : _createCommentVNode("", true),
                     !selectedBatch.value.superseded && selectedBatch.value.status !== "superseded" && ["failed", "cleanup_failed", "cancelled", "interrupted"].includes(selectedBatch.value.status) ? (_openBlock(), _createBlock(_component_VBtn, {
@@ -2919,18 +2924,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "flat",
                       onClick: _cache[55] || (_cache[55] = ($event) => executeBatchAction("retry", selectedBatch.value))
                     }, {
-                      default: _withCtx(() => [..._cache[166] || (_cache[166] = [
-                        _createTextVNode("重试批次", -1)
-                      ])]),
+                      default: _withCtx(() => _cache[166] || (_cache[166] = [
+                        _createTextVNode("重试批次")
+                      ])),
                       _: 1
                     })) : _createCommentVNode("", true),
                     _createVNode(_component_VBtn, {
                       variant: "text",
                       onClick: _cache[56] || (_cache[56] = ($event) => batchDialogOpen.value = false)
                     }, {
-                      default: _withCtx(() => [..._cache[167] || (_cache[167] = [
-                        _createTextVNode("关闭", -1)
-                      ])]),
+                      default: _withCtx(() => _cache[167] || (_cache[167] = [
+                        _createTextVNode("关闭")
+                      ])),
                       _: 1
                     })
                   ]),
@@ -2955,6 +2960,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f5a57855"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-6fd26cb1"]]);
 
 export { _export_sfc as _, Config as default, normalizeArchiveConfig as n };

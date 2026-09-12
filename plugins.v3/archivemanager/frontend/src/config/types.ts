@@ -35,7 +35,6 @@ export interface ArchiveTask {
   output_dir: string
   manifest_dir: string
   cron: string
-  timezone: string
   recursive: boolean
   include_patterns: string[]
   exclude_patterns: string[]

@@ -51,7 +51,6 @@ export function createArchiveTask(value: unknown = {}): ArchiveTask {
     output_dir: toStringValue(source.output_dir, taskDefaults.output_dir),
     manifest_dir: toStringValue(source.manifest_dir, taskDefaults.manifest_dir),
     cron: toStringValue(source.cron, taskDefaults.cron),
-    timezone: toStringValue(source.timezone, taskDefaults.timezone),
     recursive: toBoolean(source.recursive, taskDefaults.recursive),
     include_patterns: toStringArray(source.include_patterns),
     exclude_patterns: toStringArray(source.exclude_patterns),

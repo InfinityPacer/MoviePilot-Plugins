@@ -10,6 +10,7 @@ from threading import RLock
 from urllib.parse import quote
 from uuid import uuid4
 
+from .config import container_timezone
 from .naming import batch_relative_directory
 
 
@@ -308,7 +309,7 @@ def _task_folder_for_manifest_path(path: Path, batch: dict) -> Path | None:
 def _record_markdown(batch: dict, record: dict) -> str:
     manifest = _manifest_data(batch)
     task = batch["task"]
-    timezone = task["timezone"]
+    timezone = container_timezone()
     cleanup = batch.get("cleanup") or {}
     lines = [
         f"# 归档清单 {md(record['batch_name'])}",

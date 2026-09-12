@@ -3,7 +3,6 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -38,7 +37,6 @@ class TaskConfig(BaseModel):
     output_dir: str = ""  # 仅成品批次目录，供外部上传器读取
     manifest_dir: str = ""  # 明文文档根目录，与源和成品目录分开
     cron: str = "0 2 * * *"  # 五字段 Cron
-    timezone: str = Field(default_factory=container_timezone, exclude=True)  # 不向用户暴露
     recursive: bool = True  # 是否递归普通目录
     include_patterns: list[str] = Field(default_factory=list)  # 相对路径或文件名 glob，空为全部
     exclude_patterns: list[str] = Field(default_factory=list)  # 优先排除的 glob
@@ -61,13 +59,17 @@ class TaskConfig(BaseModel):
     auto_continue: bool = False  # 等待空间或成品移走后自动继续当前归档周期
     max_pending_archives: int = Field(default=1, ge=0)  # 本地尚存在的成品数量上限，0 不限制
     max_pending_bytes: int = Field(default=0, ge=0)  # 本地成品总字节上限，0 不限制
-    min_free_bytes: int = Field(default=1024**3, ge=0)  # 归档后至少保留的磁盘空间
+    min_free_bytes: float = Field(default=1024**3, ge=0)  # 归档后至少保留的磁盘空间
+
+    @property
+    def timezone(self) -> str:
+        """兼容内部调用；时区始终来自容器，不属于任务配置。"""
+        return container_timezone()
 
     @model_validator(mode="after")
     def validate_options(self):
         """拒绝不支持的组合；删除不能降低完整校验要求。"""
-        ZoneInfo(self.timezone)
-        CronTrigger.from_crontab(self.cron, timezone=self.timezone)
+        CronTrigger.from_crontab(self.cron, timezone=container_timezone())
         validate_template(self.batch_name_template)
         validate_template(self.archive_name_template)
         if self.encrypt_names and (self.format != "7z" or self.encryption != "aes256"):
@@ -81,7 +83,6 @@ class TaskConfig(BaseModel):
     def public(self) -> dict:
         """持久化运行快照不携带密码，只保留恢复所需版本标识。"""
         value = self.model_dump(exclude={"password"})
-        value["timezone"] = container_timezone()
         return value
 
 

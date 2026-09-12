@@ -42,6 +42,8 @@ const props = defineProps<{
   initialConfig?: unknown
   /** 宿主注入的已认证插件 API 客户端。 */
   api?: PluginApi
+  /** 宿主保存结果；只有成功后才清洁当前草稿。 */
+  saveResult?: 'idle' | 'success' | 'error'
 }>()
 
 const emit = defineEmits<{
@@ -76,6 +78,13 @@ const mobileNavOpen = ref(false)
 const compatibilityOpen = ref(false)
 const compatibilityReason = ref<'format' | 'encrypt_names'>('format')
 const pendingFormat = ref<'7z' | 'zip' | null>(null)
+
+watch(
+  () => props.saveResult,
+  result => {
+    if (result === 'success') original.value = normalizeArchiveConfig(draft.value)
+  },
+)
 
 const summary = ref<SummaryPayload | null>(null)
 const summaryState = ref<'loading' | 'available' | 'unavailable'>('loading')
@@ -390,6 +399,7 @@ function cancelCompatibilityChange(): void {
 
 function handleEncryption(value: unknown): void {
   taskEditor.value.encryption = value === 'aes256' ? 'aes256' : 'none'
+  if (taskEditor.value.encryption === 'none') taskEditor.value.encrypt_names = false
   if (taskEditor.value.encryption === 'aes256' && taskEditor.value.format === '7z' && !taskEditor.value.encrypt_names) {
     taskEditor.value.encrypt_names = true
   }
@@ -398,7 +408,6 @@ function handleEncryption(value: unknown): void {
 function saveConfig(): void {
   const payload = normalizeArchiveConfig(draft.value)
   draft.value = payload
-  original.value = normalizeArchiveConfig(payload)
   emit('save', normalizeArchiveConfig(payload))
   setNotice('配置已提交给宿主保存。', 'success')
 }
@@ -1699,7 +1708,9 @@ onBeforeUnmount(() => {
                 <VIcon color="primary" icon="mdi-progress-clock" size="19" />
                 <h3>当前状态</h3>
               </div>
-              <p v-if="summaryValue.running">正在处理：{{ tasksById.get(summaryValue.running.task_id)?.name || summaryValue.running.task_id }}</p>
+              <p v-if="summaryValue.running">
+                正在处理：{{ tasksById.get(summaryValue.running.task_id)?.name || summaryValue.running.task_id }}
+              </p>
               <p v-else-if="queuedTaskNames.length">排队任务：{{ queuedTaskNames.join('、') }}</p>
               <p v-else>当前没有运行中的归档任务</p>
             </section>
