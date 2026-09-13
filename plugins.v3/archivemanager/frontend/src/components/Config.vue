@@ -708,7 +708,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="archive-config">
-    <form @submit.prevent="saveConfig">
+    <form class="archive-config__form" @submit.prevent="saveConfig">
       <header class="archive-header">
         <div class="archive-header__brand">
           <img :src="archiveLogo" alt="" class="archive-header__logo" />
@@ -717,6 +717,7 @@ onBeforeUnmount(() => {
               <span>MoviePilot</span>
               <VIcon icon="mdi-chevron-right" size="14" />
               <span>插件</span>
+              <VIcon icon="mdi-chevron-right" size="14" />
             </div>
             <div class="archive-header__title-row">
               <h1>压缩归档</h1>
@@ -1945,13 +1946,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .archive-config {
   container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  block-size: min(900px, calc(100dvh - 64px));
-  max-block-size: calc(100dvh - 64px);
-  min-block-size: 0;
   min-inline-size: 0;
-  overflow: hidden;
   color: rgb(var(--v-theme-on-surface));
   letter-spacing: 0;
 }
@@ -1959,11 +1954,11 @@ onBeforeUnmount(() => {
 .archive-config * {
   box-sizing: border-box;
 }
-.archive-config > form {
+.archive-config__form {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   min-block-size: 0;
+  min-inline-size: 0;
 }
 .archive-header {
   position: relative;
@@ -2048,7 +2043,8 @@ onBeforeUnmount(() => {
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-  padding: 18px;
+  padding: 14px;
+  background: transparent;
 }
 .archive-alert {
   margin-block: 10px;
@@ -2060,7 +2056,7 @@ onBeforeUnmount(() => {
 .archive-metrics {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-block-end: 12px;
 }
@@ -2101,6 +2097,7 @@ onBeforeUnmount(() => {
   min-block-size: 0;
   min-inline-size: 0;
   gap: 14px;
+  margin-block-start: 12px;
   grid-template-columns: 168px minmax(0, 1fr) 232px;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
@@ -2116,55 +2113,92 @@ onBeforeUnmount(() => {
 }
 .archive-nav__heading {
   padding: 6px 10px 10px;
-  color: rgba(var(--v-theme-on-surface), 0.54);
+  color: rgba(var(--v-theme-on-surface), 0.78);
   font-size: 0.75rem;
   font-weight: 600;
 }
-.archive-nav__list {
+.archive-nav > .archive-nav__list.v-list {
   flex: 1 1 auto;
   min-block-size: 0;
   overflow-y: auto;
-  padding: 0 4px;
-  background: transparent;
+  padding: 6px 4px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.18);
+  border-radius: var(--app-surface-radius);
+  backdrop-filter: none;
+  background: rgba(var(--v-theme-surface), 0.72);
+  background-color: rgba(var(--v-theme-surface), 0.72);
 }
 .archive-nav__list :deep(.v-list-item) {
+  position: relative;
   min-block-size: 50px;
+  padding-inline: 12px;
   margin-block: 4px;
 }
 .archive-nav__list :deep(.v-list-item-title) {
   overflow-wrap: anywhere;
+  color: rgb(var(--v-theme-on-surface));
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2rem;
 }
+.archive-nav__list :deep(.v-list-item__prepend > .v-icon) {
+  color: rgba(var(--v-theme-on-surface), 0.94);
+  font-size: 1.25rem;
+}
+.archive-nav__list :deep(.v-list-item:hover) {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.archive-nav__list :deep(.v-list-item--active) {
+  border: 1px solid rgba(var(--v-theme-primary), 0.38);
+  background: rgba(var(--v-theme-primary), 0.24);
+  color: rgb(var(--v-theme-on-surface));
+}
+.archive-nav__list :deep(.v-list-item--active .v-list-item-title),
+.archive-nav__list :deep(.v-list-item--active .v-list-item__prepend > .v-icon) {
+  color: rgb(var(--v-theme-on-surface));
+  font-weight: 700;
+}
+.archive-nav__list :deep(.v-list-item--active)::before {
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: 0 3px 3px 0;
+  background: rgb(var(--v-theme-primary));
+  content: '';
+}
 .archive-nav__help {
   padding: 12px;
   margin-block-start: auto;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.025);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.18);
+  border-radius: var(--app-control-radius);
+  background: rgba(var(--v-theme-surface), 0.56);
 }
 .archive-nav__help-title {
   display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-.archive-nav__help p {
-  margin: 4px 0 0;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-  font-size: 0.68rem;
+  font-size: 0.8125rem;
   line-height: 1.1rem;
 }
+.archive-nav__help p {
+  margin: 6px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
 .archive-nav__help-link {
+  min-inline-size: 0;
+  min-block-size: 28px;
   padding-inline: 0;
-  margin-block-start: 4px;
+  margin-block-start: 7px;
+  font-size: 0.75rem;
 }
 .archive-main {
   display: flex;
   flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
+  background: transparent;
 }
 .archive-impact-preview {
   min-inline-size: 0;
@@ -2175,6 +2209,7 @@ onBeforeUnmount(() => {
   background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
   backdrop-filter: var(--app-grouped-list-backdrop-filter, none);
   box-shadow: var(--app-surface-shadow, none);
+  background-clip: padding-box;
 }
 .archive-impact-preview__title,
 .archive-runtime-summary__title {
@@ -2239,17 +2274,18 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 .archive-main__title {
-  gap: 8px;
+  gap: 9px;
 }
 .archive-main__title h2 {
   margin: 0;
   font-size: 1rem;
-  line-height: 1.3rem;
+  font-weight: 700;
+  line-height: 1.25rem;
 }
 .archive-main__heading p {
   margin: 3px 0 0;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-  font-size: 0.72rem;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.75rem;
 }
 .archive-main__heading-actions {
   gap: 4px;
@@ -2377,7 +2413,9 @@ onBeforeUnmount(() => {
   border-radius: var(--app-surface-radius, 8px);
   background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
   backdrop-filter: var(--app-grouped-list-backdrop-filter, none);
-  box-shadow: var(--app-surface-shadow, none);
+  background-clip: padding-box;
+  /* 透明主题下避免外投影被滚动边界裁成内容区矩形暗带。 */
+  box-shadow: none;
 }
 .archive-overview > .archive-section {
   margin-block-start: 12px;
@@ -2905,11 +2943,6 @@ onBeforeUnmount(() => {
   .archive-editor__actions > .v-btn:last-child {
     grid-column: 1 / -1;
   }
-  .archive-config {
-    block-size: calc(100dvh - 16px);
-    max-block-size: calc(100dvh - 16px);
-    min-block-size: 0;
-  }
   .archive-body {
     padding: 14px 16px 24px;
   }
@@ -2971,6 +3004,13 @@ onBeforeUnmount(() => {
   .archive-progress__capacity {
     grid-column: 1 / -1;
     text-align: start;
+  }
+}
+
+@container (width >= 880px) {
+  .archive-config__form {
+    overflow: hidden;
+    block-size: min(90dvh, 820px);
   }
 }
 @media (prefers-reduced-motion: reduce) {

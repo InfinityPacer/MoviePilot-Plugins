@@ -1,4 +1,4 @@
-import Config, { n as normalizeArchiveConfig, _ as _export_sfc } from './__federation_expose_Config-Didw63M-.js';
+import Config, { n as normalizeArchiveConfig, _ as _export_sfc } from './__federation_expose_Config-BfnZjz6P.js';
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');

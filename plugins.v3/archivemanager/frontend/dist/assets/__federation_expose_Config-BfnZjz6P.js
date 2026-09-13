@@ -1032,6 +1032,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const _component_VDialog = _resolveComponent("VDialog");
       return _openBlock(), _createElementBlock("section", _hoisted_1, [
         _createElementVNode("form", {
+          class: "archive-config__form",
           onSubmit: _withModifiers(saveConfig, ["prevent"])
         }, [
           _createElementVNode("header", _hoisted_2, [
@@ -1048,7 +1049,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     icon: "mdi-chevron-right",
                     size: "14"
                   }),
-                  _cache[59] || (_cache[59] = _createElementVNode("span", null, "插件", -1))
+                  _cache[59] || (_cache[59] = _createElementVNode("span", null, "插件", -1)),
+                  _createVNode(_component_VIcon, {
+                    icon: "mdi-chevron-right",
+                    size: "14"
+                  })
                 ]),
                 _createElementVNode("div", _hoisted_7, [
                   _cache[61] || (_cache[61] = _createElementVNode("h1", null, "压缩归档", -1)),
@@ -2960,6 +2965,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-6fd26cb1"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-79e6b266"]]);
 
 export { _export_sfc as _, Config as default, normalizeArchiveConfig as n };
