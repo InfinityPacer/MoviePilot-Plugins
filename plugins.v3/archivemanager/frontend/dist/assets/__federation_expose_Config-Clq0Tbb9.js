@@ -381,50 +381,55 @@ const _hoisted_96 = { class: "archive-impact-preview__item" };
 const _hoisted_97 = { class: "archive-impact-preview__item" };
 const _hoisted_98 = { class: "archive-impact-preview__item" };
 const _hoisted_99 = { class: "archive-impact-preview__item" };
-const _hoisted_100 = { class: "archive-runtime-summary" };
-const _hoisted_101 = { class: "archive-runtime-summary__title" };
-const _hoisted_102 = { key: 0 };
-const _hoisted_103 = { key: 1 };
-const _hoisted_104 = { key: 2 };
-const _hoisted_105 = {
+const _hoisted_100 = {
+  key: 0,
+  class: "archive-change-summary"
+};
+const _hoisted_101 = { class: "archive-change-summary__title" };
+const _hoisted_102 = { class: "archive-runtime-summary" };
+const _hoisted_103 = { class: "archive-runtime-summary__title" };
+const _hoisted_104 = { key: 0 };
+const _hoisted_105 = { key: 1 };
+const _hoisted_106 = { key: 2 };
+const _hoisted_107 = {
   key: 0,
   class: "archive-mobile-save-dock"
 };
-const _hoisted_106 = {
+const _hoisted_108 = {
   "aria-live": "polite",
   class: "archive-mobile-save-dock__state"
 };
-const _hoisted_107 = {
+const _hoisted_109 = {
   key: 0,
   class: "archive-dialog-state"
 };
-const _hoisted_108 = {
+const _hoisted_110 = {
   key: 1,
   class: "archive-dialog-state archive-dialog-state--error"
 };
-const _hoisted_109 = { class: "archive-preview-metrics" };
-const _hoisted_110 = { class: "archive-table-wrap" };
-const _hoisted_111 = { class: "archive-table" };
-const _hoisted_112 = { class: "archive-table__numeric" };
-const _hoisted_113 = { class: "archive-table__numeric" };
-const _hoisted_114 = { key: 1 };
-const _hoisted_115 = {
+const _hoisted_111 = { class: "archive-preview-metrics" };
+const _hoisted_112 = { class: "archive-table-wrap" };
+const _hoisted_113 = { class: "archive-table" };
+const _hoisted_114 = { class: "archive-table__numeric" };
+const _hoisted_115 = { class: "archive-table__numeric" };
+const _hoisted_116 = { key: 1 };
+const _hoisted_117 = {
   key: 0,
   class: "archive-dialog-state"
 };
-const _hoisted_116 = { class: "archive-batch-summary" };
-const _hoisted_117 = { class: "archive-paths" };
-const _hoisted_118 = {
+const _hoisted_118 = { class: "archive-batch-summary" };
+const _hoisted_119 = { class: "archive-paths" };
+const _hoisted_120 = {
   key: 2,
   class: "archive-table-wrap"
 };
-const _hoisted_119 = { class: "archive-table" };
-const _hoisted_120 = { class: "archive-table__numeric" };
-const _hoisted_121 = {
+const _hoisted_121 = { class: "archive-table" };
+const _hoisted_122 = { class: "archive-table__numeric" };
+const _hoisted_123 = {
   key: 3,
   class: "archive-cleanup"
 };
-const _hoisted_122 = { class: "archive-cleanup-grid" };
+const _hoisted_124 = { class: "archive-cleanup-grid" };
 const {computed,getCurrentInstance,inject,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
 const README_URL = "https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v3/archivemanager/README.md";
 const _sfc_main = /* @__PURE__ */ _defineComponent({
@@ -450,6 +455,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const editorOpen = ref(false);
     const editingTaskId = ref(null);
     const taskEditor = ref(createArchiveTask());
+    const taskEditorOriginal = ref(null);
     const includePatternsText = ref("");
     const excludePatternsText = ref("");
     const minFreeGiB = ref(1);
@@ -460,7 +466,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     watch(
       () => props.saveResult,
       (result) => {
-        if (result === "success") original.value = normalizeArchiveConfig(draft.value);
+        if (result === "success") {
+          original.value = normalizeArchiveConfig(draft.value);
+          emit("close");
+        }
       }
     );
     const summary = ref(null);
@@ -500,6 +509,27 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const selectedTask = computed(() => tasksById.value.get(activeTaskId.value) ?? draft.value.tasks[0] ?? null);
     const hasFileTaskSelection = computed(() => Boolean(fileTaskFilter.value && tasksById.value.has(fileTaskFilter.value)));
     const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(original.value));
+    const taskEditorDirty = computed(
+      () => editorOpen.value && taskEditorOriginal.value !== null && JSON.stringify(taskEditor.value) !== JSON.stringify(taskEditorOriginal.value)
+    );
+    const changedItems = computed(() => {
+      const items = [];
+      if (draft.value.enabled !== original.value.enabled) items.push("启用归档服务");
+      if (draft.value.notify !== original.value.notify) items.push("发送通知");
+      if (JSON.stringify(draft.value.notify_events) !== JSON.stringify(original.value.notify_events)) items.push("通知事件");
+      const originalTasks = new Map(original.value.tasks.map((task) => [task.id, task]));
+      for (const task of draft.value.tasks) {
+        const previous = originalTasks.get(task.id);
+        if (!previous || JSON.stringify(task) !== JSON.stringify(previous)) items.push(`任务：${task.name}`);
+        originalTasks.delete(task.id);
+      }
+      for (const task of originalTasks.values()) items.push(`已删除任务：${task.name}`);
+      if (taskEditorDirty.value && !items.some((item) => item === `任务：${taskEditor.value.name}`))
+        items.push(`任务：${taskEditor.value.name}`);
+      return items;
+    });
+    const pendingChangeCount = computed(() => changedItems.value.length);
+    const hasUnsavedChanges = computed(() => isDirty.value || taskEditorDirty.value);
     const summaryValue = computed(
       () => summary.value ?? {
         archived_files: 0,
@@ -645,6 +675,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       includePatternsText.value = next.include_patterns.join("\n");
       excludePatternsText.value = next.exclude_patterns.join("\n");
       minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2));
+      taskEditorOriginal.value = cloneTask(next);
       editorOpen.value = true;
     }
     function parsePatterns(value) {
@@ -667,6 +698,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       else draft.value.tasks.push(task);
       selectTask(task.id);
       editorOpen.value = false;
+      taskEditorOriginal.value = null;
       setNotice("任务已更新，保存配置后才会生效。", "success");
     }
     function cancelTaskEditor() {
@@ -749,10 +781,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function saveConfig() {
+      if (taskEditorDirty.value) saveTaskEditor();
       const payload = normalizeArchiveConfig(draft.value);
       draft.value = payload;
       emit("save", normalizeArchiveConfig(payload));
-      setNotice("配置已提交给宿主保存。", "success");
     }
     function formatNumber(value) {
       return new Intl.NumberFormat(locale.value.startsWith("en") ? "en-US" : "zh-CN").format(value || 0);
@@ -1087,7 +1119,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               _createVNode(_component_VBtn, {
                 class: "archive-header__save",
                 color: "primary",
-                disabled: !isDirty.value,
+                disabled: !hasUnsavedChanges.value,
                 "prepend-icon": "mdi-content-save",
                 type: "submit"
               }, {
@@ -2446,34 +2478,56 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _createElementVNode("strong", null, _toDisplayString(formatBytes(summaryValue.value.archive_bytes)), 1)
                   ])
                 ]),
-                _createElementVNode("section", _hoisted_100, [
+                changedItems.value.length ? (_openBlock(), _createElementBlock("section", _hoisted_100, [
                   _createElementVNode("div", _hoisted_101, [
+                    _createVNode(_component_VIcon, {
+                      color: "warning",
+                      icon: "mdi-format-list-checks",
+                      size: "19"
+                    }),
+                    _cache[131] || (_cache[131] = _createElementVNode("h3", null, "本次修改", -1))
+                  ]),
+                  _createElementVNode("ul", null, [
+                    (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(changedItems.value, (item) => {
+                      return _openBlock(), _createElementBlock("li", { key: item }, [
+                        _createVNode(_component_VIcon, {
+                          color: "warning",
+                          icon: "mdi-circle",
+                          size: "6"
+                        }),
+                        _createElementVNode("span", null, _toDisplayString(item), 1)
+                      ]);
+                    }), 128))
+                  ])
+                ])) : _createCommentVNode("", true),
+                _createElementVNode("section", _hoisted_102, [
+                  _createElementVNode("div", _hoisted_103, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-progress-clock",
                       size: "19"
                     }),
-                    _cache[131] || (_cache[131] = _createElementVNode("h3", null, "当前状态", -1))
+                    _cache[132] || (_cache[132] = _createElementVNode("h3", null, "当前状态", -1))
                   ]),
-                  summaryValue.value.running ? (_openBlock(), _createElementBlock("p", _hoisted_102, " 正在处理：" + _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id), 1)) : queuedTaskNames.value.length ? (_openBlock(), _createElementBlock("p", _hoisted_103, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1)) : (_openBlock(), _createElementBlock("p", _hoisted_104, "当前没有运行中的归档任务"))
+                  summaryValue.value.running ? (_openBlock(), _createElementBlock("p", _hoisted_104, " 正在处理：" + _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id), 1)) : queuedTaskNames.value.length ? (_openBlock(), _createElementBlock("p", _hoisted_105, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1)) : (_openBlock(), _createElementBlock("p", _hoisted_106, "当前没有运行中的归档任务"))
                 ])
               ])
             ])
           ]),
-          isDirty.value ? (_openBlock(), _createElementBlock("div", _hoisted_105, [
-            _createElementVNode("span", _hoisted_106, [
+          hasUnsavedChanges.value ? (_openBlock(), _createElementBlock("div", _hoisted_107, [
+            _createElementVNode("span", _hoisted_108, [
               _createVNode(_component_VIcon, {
                 color: "warning",
                 icon: "mdi-circle",
                 size: "8"
               }),
-              _cache[132] || (_cache[132] = _createTextVNode("有未保存修改"))
+              _createTextVNode(_toDisplayString(pendingChangeCount.value) + " 项待保存", 1)
             ]),
             _createVNode(_component_VSpacer),
             _createVNode(_component_VBtn, {
               class: "archive-mobile-save-dock__save",
               color: "primary",
-              disabled: !isDirty.value,
+              disabled: !hasUnsavedChanges.value,
               type: "submit",
               variant: "flat"
             }, {
@@ -2621,7 +2675,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }),
                 _createVNode(_component_VCardText, null, {
                   default: _withCtx(() => [
-                    previewState.value === "running" ? (_openBlock(), _createElementBlock("div", _hoisted_107, [
+                    previewState.value === "running" ? (_openBlock(), _createElementBlock("div", _hoisted_109, [
                       _createVNode(_component_VProgressCircular, {
                         color: "primary",
                         indeterminate: "",
@@ -2630,7 +2684,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       }),
                       _createElementVNode("strong", null, _toDisplayString(previewMessage.value), 1),
                       _cache[141] || (_cache[141] = _createElementVNode("span", null, "扫描过程不会写入归档，也不会删除源文件。", -1))
-                    ])) : previewState.value === "failed" ? (_openBlock(), _createElementBlock("div", _hoisted_108, [
+                    ])) : previewState.value === "failed" ? (_openBlock(), _createElementBlock("div", _hoisted_110, [
                       _createVNode(_component_VIcon, {
                         color: "error",
                         icon: "mdi-alert-circle-outline",
@@ -2639,7 +2693,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("strong", null, _toDisplayString(previewMessage.value), 1),
                       _cache[142] || (_cache[142] = _createElementVNode("span", null, "请检查目录、权限和筛选条件。", -1))
                     ])) : previewResult.value ? (_openBlock(), _createElementBlock(_Fragment, { key: 2 }, [
-                      _createElementVNode("div", _hoisted_109, [
+                      _createElementVNode("div", _hoisted_111, [
                         _createElementVNode("div", null, [
                           _cache[143] || (_cache[143] = _createElementVNode("span", null, "文件数", -1)),
                           _createElementVNode("strong", null, _toDisplayString(formatNumber(previewResult.value.file_count)), 1)
@@ -2657,8 +2711,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           _createElementVNode("strong", null, _toDisplayString(formatNumber(previewResult.value.skipped_count)), 1)
                         ])
                       ]),
-                      _createElementVNode("div", _hoisted_110, [
-                        _createElementVNode("table", _hoisted_111, [
+                      _createElementVNode("div", _hoisted_112, [
+                        _createElementVNode("table", _hoisted_113, [
                           _cache[148] || (_cache[148] = _createElementVNode("thead", null, [
                             _createElementVNode("tr", null, [
                               _createElementVNode("th", null, "分组"),
@@ -2673,8 +2727,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                 key: batch.group
                               }, [
                                 _createElementVNode("td", null, _toDisplayString(batch.group), 1),
-                                _createElementVNode("td", _hoisted_112, _toDisplayString(formatNumber(batch.file_count)), 1),
-                                _createElementVNode("td", _hoisted_113, _toDisplayString(formatBytes(batch.total_bytes)), 1),
+                                _createElementVNode("td", _hoisted_114, _toDisplayString(formatNumber(batch.file_count)), 1),
+                                _createElementVNode("td", _hoisted_115, _toDisplayString(formatBytes(batch.total_bytes)), 1),
                                 _createElementVNode("td", null, [
                                   batch.oversized ? (_openBlock(), _createBlock(_component_VChip, {
                                     key: 0,
@@ -2686,7 +2740,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                       _createTextVNode("超出限制")
                                     ])),
                                     _: 1
-                                  })) : (_openBlock(), _createElementBlock("span", _hoisted_114, "正常"))
+                                  })) : (_openBlock(), _createElementBlock("span", _hoisted_116, "正常"))
                                 ])
                               ]);
                             }), 128))
@@ -2751,7 +2805,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }),
                 _createVNode(_component_VCardText, null, {
                   default: _withCtx(() => [
-                    batchDetailLoading.value ? (_openBlock(), _createElementBlock("div", _hoisted_115, [
+                    batchDetailLoading.value ? (_openBlock(), _createElementBlock("div", _hoisted_117, [
                       _createVNode(_component_VProgressCircular, {
                         color: "primary",
                         indeterminate: "",
@@ -2770,7 +2824,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ])),
                         _: 1
                       })) : _createCommentVNode("", true),
-                      _createElementVNode("div", _hoisted_116, [
+                      _createElementVNode("div", _hoisted_118, [
                         _createElementVNode("div", null, [
                           _cache[152] || (_cache[152] = _createElementVNode("span", null, "状态", -1)),
                           _createVNode(_component_VChip, {
@@ -2832,7 +2886,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ]),
                         _: 1
                       })) : _createCommentVNode("", true),
-                      _createElementVNode("div", _hoisted_117, [
+                      _createElementVNode("div", _hoisted_119, [
                         _createElementVNode("div", null, [
                           _cache[160] || (_cache[160] = _createElementVNode("span", null, "归档路径", -1)),
                           _createElementVNode("code", null, _toDisplayString(selectedBatch.value.archive_path || "-"), 1)
@@ -2846,8 +2900,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           _createElementVNode("code", null, _toDisplayString(selectedBatch.value.archive_sha256 || "-"), 1)
                         ])
                       ]),
-                      selectedBatch.value.files?.length ? (_openBlock(), _createElementBlock("div", _hoisted_118, [
-                        _createElementVNode("table", _hoisted_119, [
+                      selectedBatch.value.files?.length ? (_openBlock(), _createElementBlock("div", _hoisted_120, [
+                        _createElementVNode("table", _hoisted_121, [
                           _cache[163] || (_cache[163] = _createElementVNode("thead", null, [
                             _createElementVNode("tr", null, [
                               _createElementVNode("th", null, "文件"),
@@ -2862,7 +2916,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                 key: file.relative_path
                               }, [
                                 _createElementVNode("td", null, _toDisplayString(file.relative_path), 1),
-                                _createElementVNode("td", _hoisted_120, _toDisplayString(formatBytes(file.size)), 1),
+                                _createElementVNode("td", _hoisted_122, _toDisplayString(formatBytes(file.size)), 1),
                                 _createElementVNode("td", null, [
                                   _createVNode(_component_VChip, {
                                     color: statusColor(batchFileStatus(file, selectedBatch.value)),
@@ -2883,9 +2937,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           ])
                         ])
                       ])) : _createCommentVNode("", true),
-                      Object.keys(selectedBatch.value.cleanup || {}).length ? (_openBlock(), _createElementBlock("div", _hoisted_121, [
+                      Object.keys(selectedBatch.value.cleanup || {}).length ? (_openBlock(), _createElementBlock("div", _hoisted_123, [
                         _cache[164] || (_cache[164] = _createElementVNode("h4", null, "清理结果", -1)),
-                        _createElementVNode("div", _hoisted_122, [
+                        _createElementVNode("div", _hoisted_124, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(selectedBatch.value.cleanup, (status, path) => {
                             return _openBlock(), _createElementBlock("div", { key: path }, [
                               _createElementVNode("span", null, _toDisplayString(path), 1),
@@ -2965,6 +3019,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-79e6b266"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-2cd5109a"]]);
 
 export { _export_sfc as _, Config as default, normalizeArchiveConfig as n };

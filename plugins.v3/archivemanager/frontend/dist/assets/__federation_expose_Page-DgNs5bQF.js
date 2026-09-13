@@ -1,4 +1,4 @@
-import Config, { n as normalizeArchiveConfig, _ as _export_sfc } from './__federation_expose_Config-BfnZjz6P.js';
+import Config, { n as normalizeArchiveConfig, _ as _export_sfc } from './__federation_expose_Config-Clq0Tbb9.js';
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -140,6 +140,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Page = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a4eb719d"]]);
+const Page = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-5a542a40"]]);
 
 export { Page as default };

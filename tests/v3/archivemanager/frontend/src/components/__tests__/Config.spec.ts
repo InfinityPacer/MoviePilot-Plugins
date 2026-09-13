@@ -62,6 +62,53 @@ describe('ArchiveManager federated config', () => {
     expect(payload.tasks[0]).not.toHaveProperty('timezone')
   })
 
+  it('closes after the host confirms saving without showing a submit notice', async () => {
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const close = vi.fn()
+    const user = userEvent.setup()
+    const rendered = renderWithHost(Config, {
+      props: { api, initialConfig: createConfig(), onSave: save, onClose: close, saveResult: 'idle' },
+    })
+
+    await user.click(screen.getByRole('checkbox', { name: '启用' }))
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+    expect(save).toHaveBeenCalledOnce()
+    expect(screen.queryByText('配置已提交给宿主保存。')).not.toBeInTheDocument()
+    expect(close).not.toHaveBeenCalled()
+
+    await rendered.rerender({
+      api,
+      initialConfig: createConfig(),
+      onSave: save,
+      onClose: close,
+      saveResult: 'success',
+    })
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('enables the main save while editing a task and lists the pending task change', async () => {
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig(), onSave: save } })
+
+    await user.click(screen.getByText('任务', { exact: true }))
+    await user.click(screen.getByRole('button', { name: '新增归档任务' }))
+    const editor = screen.getByText('新增归档任务').closest('section') as HTMLElement
+    const taskName = within(editor).getByRole('textbox', { name: '任务名称' })
+    await user.clear(taskName)
+    await user.type(taskName, '媒体归档')
+
+    const saveButton = document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement
+    expect(saveButton).toBeEnabled()
+    expect(screen.getByText('任务：媒体归档')).toBeInTheDocument()
+    await user.click(saveButton)
+
+    expect(save).toHaveBeenCalledOnce()
+    expect(save.mock.calls[0][0].tasks[0]).toEqual(expect.objectContaining({ name: '媒体归档' }))
+  })
+
   it('keeps the draft dirty until the host confirms saving', async () => {
     const { api } = createHostApi()
     const save = vi.fn()

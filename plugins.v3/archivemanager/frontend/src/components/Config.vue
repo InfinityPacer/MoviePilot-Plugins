@@ -71,6 +71,7 @@ const activeTaskId = ref(draft.value.tasks[0]?.id ?? '')
 const editorOpen = ref(false)
 const editingTaskId = ref<string | null>(null)
 const taskEditor = ref<ArchiveTask>(createArchiveTask())
+const taskEditorOriginal = ref<ArchiveTask | null>(null)
 const includePatternsText = ref('')
 const excludePatternsText = ref('')
 const minFreeGiB = ref(1)
@@ -82,7 +83,10 @@ const pendingFormat = ref<'7z' | 'zip' | null>(null)
 watch(
   () => props.saveResult,
   result => {
-    if (result === 'success') original.value = normalizeArchiveConfig(draft.value)
+    if (result === 'success') {
+      original.value = normalizeArchiveConfig(draft.value)
+      emit('close')
+    }
   },
 )
 
@@ -128,6 +132,27 @@ const tasksById = computed(() => new Map(draft.value.tasks.map(task => [task.id,
 const selectedTask = computed(() => tasksById.value.get(activeTaskId.value) ?? draft.value.tasks[0] ?? null)
 const hasFileTaskSelection = computed(() => Boolean(fileTaskFilter.value && tasksById.value.has(fileTaskFilter.value)))
 const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(original.value))
+const taskEditorDirty = computed(
+  () => editorOpen.value && taskEditorOriginal.value !== null && JSON.stringify(taskEditor.value) !== JSON.stringify(taskEditorOriginal.value),
+)
+const changedItems = computed(() => {
+  const items: string[] = []
+  if (draft.value.enabled !== original.value.enabled) items.push('启用归档服务')
+  if (draft.value.notify !== original.value.notify) items.push('发送通知')
+  if (JSON.stringify(draft.value.notify_events) !== JSON.stringify(original.value.notify_events)) items.push('通知事件')
+  const originalTasks = new Map(original.value.tasks.map(task => [task.id, task]))
+  for (const task of draft.value.tasks) {
+    const previous = originalTasks.get(task.id)
+    if (!previous || JSON.stringify(task) !== JSON.stringify(previous)) items.push(`任务：${task.name}`)
+    originalTasks.delete(task.id)
+  }
+  for (const task of originalTasks.values()) items.push(`已删除任务：${task.name}`)
+  if (taskEditorDirty.value && !items.some(item => item === `任务：${taskEditor.value.name}`))
+    items.push(`任务：${taskEditor.value.name}`)
+  return items
+})
+const pendingChangeCount = computed(() => changedItems.value.length)
+const hasUnsavedChanges = computed(() => isDirty.value || taskEditorDirty.value)
 const summaryValue = computed<SummaryPayload>(
   () =>
     summary.value ?? {
@@ -286,6 +311,7 @@ function openTaskEditor(task?: ArchiveTask): void {
   includePatternsText.value = next.include_patterns.join('\n')
   excludePatternsText.value = next.exclude_patterns.join('\n')
   minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2))
+  taskEditorOriginal.value = cloneTask(next)
   editorOpen.value = true
 }
 
@@ -314,6 +340,7 @@ function saveTaskEditor(): void {
   else draft.value.tasks.push(task)
   selectTask(task.id)
   editorOpen.value = false
+  taskEditorOriginal.value = null
   setNotice('任务已更新，保存配置后才会生效。', 'success')
 }
 
@@ -406,10 +433,10 @@ function handleEncryption(value: unknown): void {
 }
 
 function saveConfig(): void {
+  if (taskEditorDirty.value) saveTaskEditor()
   const payload = normalizeArchiveConfig(draft.value)
   draft.value = payload
   emit('save', normalizeArchiveConfig(payload))
-  setNotice('配置已提交给宿主保存。', 'success')
 }
 
 function formatNumber(value: number): string {
@@ -739,7 +766,7 @@ onBeforeUnmount(() => {
           <VBtn
             class="archive-header__save"
             color="primary"
-            :disabled="!isDirty"
+            :disabled="!hasUnsavedChanges"
             prepend-icon="mdi-content-save"
             type="submit"
           >
@@ -1704,6 +1731,12 @@ onBeforeUnmount(() => {
                 <strong>{{ formatBytes(summaryValue.archive_bytes) }}</strong>
               </li>
             </ul>
+            <section v-if="changedItems.length" class="archive-change-summary">
+              <div class="archive-change-summary__title"><VIcon color="warning" icon="mdi-format-list-checks" size="19" /><h3>本次修改</h3></div>
+              <ul>
+                <li v-for="item in changedItems" :key="item"><VIcon color="warning" icon="mdi-circle" size="6" /><span>{{ item }}</span></li>
+              </ul>
+            </section>
             <section class="archive-runtime-summary">
               <div class="archive-runtime-summary__title">
                 <VIcon color="primary" icon="mdi-progress-clock" size="19" />
@@ -1718,12 +1751,12 @@ onBeforeUnmount(() => {
           </aside>
         </div>
       </div>
-      <div v-if="isDirty" class="archive-mobile-save-dock">
+      <div v-if="hasUnsavedChanges" class="archive-mobile-save-dock">
         <span aria-live="polite" class="archive-mobile-save-dock__state"
-          ><VIcon color="warning" icon="mdi-circle" size="8" />有未保存修改</span
+          ><VIcon color="warning" icon="mdi-circle" size="8" />{{ pendingChangeCount }} 项待保存</span
         >
         <VSpacer />
-        <VBtn class="archive-mobile-save-dock__save" color="primary" :disabled="!isDirty" type="submit" variant="flat"
+        <VBtn class="archive-mobile-save-dock__save" color="primary" :disabled="!hasUnsavedChanges" type="submit" variant="flat"
           ><VIcon icon="mdi-content-save" start />保存修改</VBtn
         >
       </div>
@@ -2251,6 +2284,42 @@ onBeforeUnmount(() => {
 }
 .archive-impact-preview__item strong {
   text-align: end;
+}
+
+.archive-change-summary {
+  padding-block-start: 16px;
+  margin-block-start: 16px;
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+}
+.archive-change-summary__title {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+}
+.archive-change-summary__title h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.2rem;
+}
+.archive-change-summary ul {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 10px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.76rem;
+  list-style: none;
+}
+.archive-change-summary li {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  gap: 8px;
+}
+.archive-change-summary li span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 .archive-runtime-summary {
   padding-block-start: 16px;

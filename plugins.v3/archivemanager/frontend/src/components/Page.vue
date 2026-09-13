@@ -12,7 +12,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** 请求宿主关闭插件数据页。 */
+  /** 请求宿主关闭插件页面。 */
   close: []
   /** 请求宿主为联邦页面提供适合的横向空间。 */
   layout: [{ maxWidth: string }]
@@ -73,7 +73,6 @@ async function saveConfig(next: ArchiveConfig): Promise<void> {
     if (isApiResponse(response) && !response.success) {
       throw new Error(response.message || '归档配置保存失败')
     }
-    // 保存后保持 Config 挂载，读回结果不能重置当前工作区和滚动位置。
     await loadConfig()
     saveResult.value = 'success'
   } catch {
