@@ -136,6 +136,14 @@ export function repairBatch(api: PluginApi | undefined, batchId: string): Promis
   return postData(api, `${ROOT}repair`, { batch_id: batchId })
 }
 
+export function cleanupBatches(
+  api: PluginApi | undefined,
+  batchIds: string[],
+  deleteArtifacts: boolean,
+): Promise<ActionResult | null> {
+  return postData(api, `${ROOT}cleanup`, { batch_ids: batchIds, delete_artifacts: deleteArtifacts })
+}
+
 export function saveConfig(api: PluginApi | undefined, config: ArchiveConfig): Promise<ActionResult | null> {
   return postData(api, `${ROOT}config`, config)
 }

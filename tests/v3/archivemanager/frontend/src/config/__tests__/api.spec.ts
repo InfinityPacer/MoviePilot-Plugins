@@ -53,3 +53,16 @@ describe('ArchiveManager API helpers', () => {
     expect(document.body).not.toHaveTextContent('private details')
   })
 })
+
+it('cleans selected batches with an explicit artifact choice', async () => {
+  const post = vi.fn().mockResolvedValue({ success: true, message: '', data: { batch_count: 2, file_count: 4 } })
+  const api: PluginApi = { get: vi.fn(), post, put: vi.fn() }
+
+  const { cleanupBatches } = await import('@/config/api')
+  await cleanupBatches(api, ['batch-1', 'batch-2'], true)
+
+  expect(post).toHaveBeenCalledWith('plugin/ArchiveManager/cleanup', {
+    batch_ids: ['batch-1', 'batch-2'],
+    delete_artifacts: true,
+  })
+})

@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    delete,
     func,
     select,
     update,
@@ -286,6 +287,29 @@ class Store:
                     row.status = "archived"
                 if row.status in ("deleted", "missing"):
                     row.present = False
+
+    def clean_batches(self, batch_ids: list[str]) -> dict:
+        """删除批次账本及其文件去重记录，不触碰源文件或外部产物。"""
+        ids = list(dict.fromkeys(batch_ids))
+        if not ids:
+            raise ValueError("至少选择一个归档批次")
+        allowed = {"completed", "failed", "cancelled", "superseded"}
+        with self.handle.session() as session, session.begin():
+            rows = list(session.scalars(select(BatchRow).where(BatchRow.id.in_(ids))))
+            found = {row.id for row in rows}
+            missing = [batch_id for batch_id in ids if batch_id not in found]
+            if missing:
+                raise ValueError("部分批次已不存在，请刷新后重试")
+            blocked = [row for row in rows if row.status not in allowed]
+            if blocked:
+                names = "、".join(row.data.get("batch_name", row.id) for row in blocked[:3])
+                raise ValueError(f"批次正在执行或等待恢复，不能清理：{names}")
+            session.execute(delete(FileRow).where(FileRow.batch_id.in_(ids)))
+            session.execute(delete(BatchRow).where(BatchRow.id.in_(ids)))
+            return {
+                "batch_count": len(rows),
+                "file_count": sum(int(row.data.get("file_count", 0)) for row in rows),
+            }
 
     def batches(self, task_id: str = "", status: str = "", page: int = 1, page_size: int = 30) -> dict:
         """分页批次列表；执行快照仅供内部恢复使用。"""

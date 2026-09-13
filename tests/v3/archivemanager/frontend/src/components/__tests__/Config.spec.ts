@@ -38,7 +38,7 @@ describe('ArchiveManager federated config', () => {
     await user.type(taskName, '媒体归档')
     await user.click(within(editor).getByRole('checkbox', { name: '删除源文件' }))
     expect(within(editor).getByRole('checkbox', { name: '完成校验' })).toBeChecked()
-    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
+    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
     expect(document.querySelector('.archive-header__save')).toHaveTextContent('保存修改')
     await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
 
@@ -93,7 +93,7 @@ describe('ArchiveManager federated config', () => {
 
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
-    await user.click(screen.getByRole('button', { name: '保存任务' }))
+    await user.click(screen.getByRole('button', { name: '保存草稿' }))
     await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
 
     expect(save).toHaveBeenCalledOnce()
@@ -181,7 +181,7 @@ describe('ArchiveManager federated config', () => {
     const encryption = within(editor).getByRole('textbox', { name: '加密' })
     await user.click(encryption)
     await user.click(await screen.findByText('不加密', { exact: true }))
-    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
+    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
     await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
     expect(save).toHaveBeenCalledOnce()
     expect(save.mock.calls[0][0].tasks[0]).toEqual(
@@ -227,7 +227,7 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByRole('button', { name: 'Clear 任务' }))
 
     expect(await screen.findByText('请选择归档任务')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '搜索文件' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '搜索文件' })).toBeInTheDocument()
     expect(screen.queryByText(/共 .* 个文件/)).not.toBeInTheDocument()
   })
 

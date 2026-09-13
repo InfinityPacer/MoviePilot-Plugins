@@ -388,6 +388,34 @@ def write_catalog(batch: dict) -> str:
         return str(markdown)
 
 
+def remove_catalog(batch: dict) -> None:
+    """删除指定批次的外部清单并重建任务及共享根索引。"""
+    manifest_path = str(batch.get("manifest_path") or "").strip()
+    if not manifest_path:
+        return
+    path = Path(manifest_path)
+    task_folder = _task_folder_for_manifest_path(path, batch)
+    if task_folder is None:
+        return
+    markdown = path.with_suffix(".md") if path.suffix.lower() != ".md" else path
+    json_path = path.with_suffix(".json") if path.suffix.lower() != ".json" else path
+    for candidate in (markdown, json_path):
+        if candidate.is_symlink():
+            raise ValueError(f"清单路径是符号链接，拒绝删除：{candidate}")
+        if candidate.is_file():
+            candidate.unlink()
+    # 只移除已经为空的批次目录，保留任务目录及其索引文件。
+    current = markdown.parent
+    while current != task_folder and current.is_dir():
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+    rebuild_index(task_folder)
+    rebuild_root_index(task_folder.parent)
+
+
 def rebuild_root_index(root: Path) -> None:
     """递归汇总共享清单根目录，展示任务名与完整源路径而不暴露 task_id。"""
     with _CATALOG_LOCK:

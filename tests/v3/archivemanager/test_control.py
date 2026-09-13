@@ -10,7 +10,7 @@ import app.plugins.archivemanager as manager_module
 import pytest
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig, parse_config
-from app.plugins.archivemanager.scanner import identity
+from app.plugins.archivemanager.scanner import fingerprint, identity
 from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 from sqlalchemy import create_engine, select
@@ -293,3 +293,53 @@ def test_api_retry_supersedes_failed_batch_when_task_config_changed(store: Store
         assert row is not None
         assert row.batch_id is None
         assert row.status == "pending"
+
+
+def test_clean_batches_removes_database_records_and_releases_files(store: Store, tmp_path: Path) -> None:
+    task = _task(tmp_path, id="clean-task")
+    entry = _entry(Path(task.source_dir), "rearchive.mp4")
+    assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
+    batch = store.create("clean-batch", task.public(), [entry], "全部文件")
+    store.save(batch["id"], status="completed", archive_path="", manifest_path="")
+
+    result = store.clean_batches([batch["id"]])
+
+    assert result == {"batch_count": 1, "file_count": 1}
+    with pytest.raises(ValueError, match="归档批次不存在"):
+        store.get(batch["id"])
+    with store.handle.session() as session:
+        assert session.scalar(select(FileRow).where(FileRow.fingerprint == fingerprint(entry))) is None
+    assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
+
+
+def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path, id="artifact-clean-task")
+    entry = _entry(Path(task.source_dir), "keep-source.mp4")
+    assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
+    archive = Path(task.output_dir) / "artifact.7z"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"archive")
+    archive.with_name(archive.name + ".sha256").write_text("sha", encoding="utf-8")
+    batch = store.create("artifact-clean-batch", task.public(), [entry], "全部文件")
+    store.save(
+        batch["id"],
+        status="completed",
+        archive_path=str(archive),
+        archive_size=archive.stat().st_size,
+        archive_sha256="sha",
+    )
+    manager = manager_module.ArchiveManager()
+    manager._tasks = [task]
+    manager._enabled = True
+    monkeypatch.setattr(manager, "_store", lambda: store)
+
+    response = manager.api_cleanup(
+        manager_module.BatchCleanupRequest(batch_ids=[batch["id"]], delete_artifacts=True)
+    )
+
+    assert response.success is True
+    assert not archive.exists()
+    assert not archive.with_name(archive.name + ".sha256").exists()
+    assert Path(task.source_dir, entry["relative_path"]).is_file()

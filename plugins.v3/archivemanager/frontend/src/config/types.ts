@@ -191,4 +191,6 @@ export interface PreviewResult {
 export interface ActionResult {
   job_id?: string
   queued?: boolean
+  batch_count?: number
+  file_count?: number
 }

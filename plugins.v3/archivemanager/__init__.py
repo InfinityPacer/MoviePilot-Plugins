@@ -16,7 +16,7 @@ from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, Field, ValidationError
 
 from .capacity import CapacityWait, allowance, fit_batch
-from .catalog import write_catalog
+from .catalog import remove_catalog, write_catalog
 from .config import (
     NotificationConfig,
     TaskConfig,
@@ -40,6 +40,13 @@ class BatchRequest(BaseModel):
     """按稳定批次标识重试或补全文档。"""
 
     batch_id: str  # 原批次 ID，保持成品名称不变
+
+
+class BatchCleanupRequest(BaseModel):
+    """清理批次账本，可选同步清理本地归档产物。"""
+
+    batch_ids: list[str] = Field(min_length=1)
+    delete_artifacts: bool = False
 
 
 class PreviewRequest(BaseModel):
@@ -429,6 +436,8 @@ class ArchiveManager(_PluginBase):
                 f"free_bytes={capacity['free_bytes']} budget_bytes={capacity['budget']} reason={capacity['reason']}"
             )
             return
+        # 持久化当前扫描阶段，避免配置重载后任务仍显示为“已停止”。
+        store.set_task_state(task.id, active=task.auto_continue, phase="scanning", reason="")
         self._phase("scanning")
         entries, skipped = scan(task, self._stop, stable=True)
         entries = store.inventory(task.id, entries, task.source_dir, task.public())
@@ -636,6 +645,59 @@ class ArchiveManager(_PluginBase):
             self._queue = deque(job for job in self._queue if request.task_id and job["task"].id != request.task_id)
         return self._response({"stopping": True})
 
+    @staticmethod
+    def _artifact_paths(batch: dict) -> list[Path]:
+        """只允许删除批次快照中归档输出目录内的已发布文件。"""
+        archive_value = str(batch.get("archive_path") or "").strip()
+        if not archive_value:
+            return []
+        archive = Path(archive_value)
+        output = Path(str(batch["task"].get("output_dir") or "")).resolve()
+        resolved = archive.resolve(strict=False)
+        try:
+            resolved.relative_to(output)
+        except ValueError as exc:
+            raise ValueError("归档包路径不在该任务输出目录内，拒绝删除") from exc
+        if archive.is_symlink() or (archive.exists() and not archive.is_file()):
+            raise ValueError(f"归档包不是普通文件，拒绝删除：{archive}")
+        checksum = archive.with_name(archive.name + ".sha256")
+        if checksum.is_symlink() or (checksum.exists() and not checksum.is_file()):
+            raise ValueError(f"归档校验文件不是普通文件，拒绝删除：{checksum}")
+        manifest_value = str(batch.get("manifest_path") or "").strip()
+        if manifest_value:
+            manifest_root = Path(str(batch["task"].get("manifest_dir") or "")).resolve()
+            manifest_path = Path(manifest_value).resolve(strict=False)
+            try:
+                manifest_path.relative_to(manifest_root)
+            except ValueError as exc:
+                raise ValueError("清单路径不在该任务清单目录内，拒绝删除") from exc
+        return [archive, checksum]
+
+    def api_cleanup(self, request: BatchCleanupRequest):
+        """清理批次账本；源文件永远不在此入口中删除或修改。"""
+        ids = list(dict.fromkeys(request.batch_ids))
+        try:
+            with self._lock:
+                batches = [self._store().get(batch_id) for batch_id in ids]
+                allowed = {"completed", "failed", "cancelled", "superseded"}
+                for batch in batches:
+                    if batch["status"] not in allowed:
+                        raise ValueError(f"批次正在执行或等待恢复，不能清理：{batch.get('batch_name', batch['id'])}")
+                    if self._running and self._running.get("batch_id") == batch["id"]:
+                        raise ValueError("批次正在执行，不能清理")
+                    if any(job.get("batch_id") == batch["id"] for job in self._queue):
+                        raise ValueError("批次正在队列中，不能清理")
+                if request.delete_artifacts:
+                    for batch in batches:
+                        for path in self._artifact_paths(batch):
+                            if path.is_file():
+                                path.unlink()
+                        remove_catalog(batch)
+                result = self._store().clean_batches(ids)
+            return self._response(result)
+        except (ValueError, OSError) as exc:
+            return self._response(success=False, message=self._safe_error(exc))
+
     def api_retry(self, request: BatchRequest):
         try:
             batch = self._store().get(request.batch_id)
@@ -672,6 +734,7 @@ class ArchiveManager(_PluginBase):
             ("run", "POST", self.api_run, "运行归档"),
             ("stop", "POST", self.api_stop, "停止归档"),
             ("retry", "POST", self.api_retry, "重试批次"),
+            ("cleanup", "POST", self.api_cleanup, "清理批次"),
             ("repair", "POST", self.api_repair, "补全清单"),
         ]
         return [
