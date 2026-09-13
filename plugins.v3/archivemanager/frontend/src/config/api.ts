@@ -120,6 +120,14 @@ export function pollPreview(api: PluginApi | undefined, jobId: string): Promise<
   return getData<PreviewResult | null>(api, queryPath('preview', { job_id: jobId }), null)
 }
 
+export function previewReclaim(api: PluginApi | undefined): Promise<{ batch_count?: number; file_count?: number; estimated_bytes?: number } | null> {
+  return postData(api, `${ROOT}reclaim/preview`, {})
+}
+
+export function reclaimSpace(api: PluginApi | undefined): Promise<ActionResult | null> {
+  return postData(api, `${ROOT}reclaim`, {})
+}
+
 export function runTask(api: PluginApi | undefined, taskId: string): Promise<ActionResult | null> {
   return postData(api, `${ROOT}run`, { task_id: taskId })
 }

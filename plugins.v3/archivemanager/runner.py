@@ -138,6 +138,11 @@ class Runner:
         self.phase = phase
         self.cleanup_cancelled = cleanup_cancelled or (lambda: False)
 
+    def reclaim(self, batch: dict, current_task: TaskConfig) -> None:
+        """独立回收入口：复用已发布批次的逐文件校验，不重新打包或删除归档产物。"""
+        task = TaskConfig.model_validate({**batch["task"], "password": current_task.password})
+        self._cleanup(batch, task)
+
     def execute(self, batch: dict, current_task: TaskConfig) -> None:
         """使用批次冻结配置恢复；当前任务只提供同版本密码。"""
         password = current_task.password if batch["task"]["encryption"] != "none" else ""

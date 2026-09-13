@@ -49,6 +49,10 @@ class BatchCleanupRequest(BaseModel):
     delete_artifacts: bool = False
 
 
+class ReclaimRequest(BaseModel):
+    """回收所有已发布批次仍保留的源文件。"""
+
+
 class PreviewRequest(BaseModel):
     """未保存草稿的只读预览请求。"""
 
@@ -321,7 +325,16 @@ class ArchiveManager(_PluginBase):
             try:
                 store = self._store()
                 previous_phase = store.task_state(task.id)["phase"]
-                if job["kind"] == "repair":
+                if job["kind"] == "reclaim":
+                    batch = store.get(job["batch_id"])
+                    self._phase("cleaning", batch["id"])
+                    runner = Runner(store, self._stop, self._phase)
+                    runner.reclaim(batch, task)
+                    logger.info(
+                        f"压缩归档空间回收完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"batch={batch['id'][:6]}"
+                    )
+                elif job["kind"] == "repair":
                     batch = store.get(job["batch_id"])
                     self._phase("manifest_pending", batch["id"])
                     path = write_catalog(batch)
@@ -639,6 +652,58 @@ class ArchiveManager(_PluginBase):
             result = copy.deepcopy(self._previews.get(job_id))
         return self._response(result, success=result is not None, message="" if result else "预览已过期，请重新预览")
 
+    def _reclaimable_batches(self) -> list[dict]:
+        return self._store().reclaimable_batches()
+
+    @staticmethod
+    def _reclaim_estimated_bytes(batches: list[dict]) -> int:
+        return sum(
+            int(entry.get("size", 0))
+            for batch in batches
+            for entry in (batch.get("manifest") or {}).get("files", [])
+        )
+
+    def api_reclaim_preview(self, request: ReclaimRequest):
+        """只统计可回收源文件，供确认框展示，不加入队列。"""
+        del request
+        try:
+            batches = self._reclaimable_batches()
+            files = sum(len((batch.get("manifest") or {}).get("files", [])) for batch in batches)
+            return self._response(
+                {
+                    "batch_count": len(batches),
+                    "file_count": files,
+                    "estimated_bytes": self._reclaim_estimated_bytes(batches),
+                }
+            )
+        except (ValueError, OSError) as exc:
+            return self._response(success=False, message=self._safe_error(exc))
+
+    def api_reclaim(self, request: ReclaimRequest):
+        """批量回收所有已发布批次的源文件，归档包和清单保持不变。"""
+        del request
+        try:
+            batches = self._reclaimable_batches()
+            with self._lock:
+                queued = {job["batch_id"] for job in self._queue if job["kind"] == "reclaim"}
+                running = self._running.get("batch_id") if self._running else ""
+                jobs = []
+                for batch in batches:
+                    if batch["id"] in queued or batch["id"] == running:
+                        continue
+                    task = TaskConfig.model_validate({**batch["task"], "password": ""})
+                    job_id = uuid4().hex
+                    jobs.append({"id": job_id, "kind": "reclaim", "task": task, "batch_id": batch["id"]})
+                self._queue.extend(jobs)
+                if jobs:
+                    self._start_worker()
+            estimated_bytes = self._reclaim_estimated_bytes(batches)
+            return self._response(
+                {"queued": len(jobs), "found": len(batches), "estimated_bytes": estimated_bytes}
+            )
+        except (ValueError, OSError) as exc:
+            return self._response(success=False, message=self._safe_error(exc))
+
     def api_run(self, request: TaskRequest):
         try:
             return self._response({"job_id": self._enqueue_task(request.task_id)})
@@ -762,6 +827,8 @@ class ArchiveManager(_PluginBase):
             ("preview", "POST", self.api_preview_start, "开始只读预览"),
             ("preview", "GET", self.api_preview, "预览结果"),
             ("run", "POST", self.api_run, "运行归档"),
+            ("reclaim/preview", "POST", self.api_reclaim_preview, "预览可回收源文件"),
+            ("reclaim", "POST", self.api_reclaim, "回收源文件"),
             ("stop", "POST", self.api_stop, "停止归档"),
             ("retry", "POST", self.api_retry, "重试批次"),
             ("cleanup", "POST", self.api_cleanup, "清理批次"),

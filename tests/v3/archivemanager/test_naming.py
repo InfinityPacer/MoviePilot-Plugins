@@ -9,19 +9,19 @@ from app.plugins.archivemanager.naming import batch_relative_directory, frozen_n
 @pytest.mark.parametrize(
     ("layout", "group", "expected"),
     [
-        ("directory", "Camera/sub | 20260128", "Camera/sub/20260911_0001"),
-        ("flat", "Camera/sub | 20260128", "Camera_sub_20260911_0001"),
-        ("directory", ". | 20260128", "20260911_0001"),
+        ("directory", "Camera/sub | 20260128", "Camera/sub/20260911_000001"),
+        ("flat", "Camera/sub | 20260128", "Camera_sub_20260911_000001"),
+        ("directory", ". | 20260128", "20260911_000001"),
     ],
 )
 def test_batch_layout_preserves_group_and_human_batch_name(layout, group, expected):
-    batch = {"task": {"archive_layout": layout}, "group": group, "batch_name": "20260911_0001"}
+    batch = {"task": {"archive_layout": layout}, "group": group, "batch_name": "20260911_000001"}
     assert batch_relative_directory(batch).as_posix() == expected
 
 
 def test_date_only_group_does_not_become_source_directory():
-    batch = {"task": {"grouping": "date"}, "group": "20260128", "batch_name": "20260911_0001"}
-    assert batch_relative_directory(batch).as_posix() == "20260911_0001"
+    batch = {"task": {"grouping": "date"}, "group": "20260128", "batch_name": "20260911_000001"}
+    assert batch_relative_directory(batch).as_posix() == "20260911_000001"
 
 
 def test_names_use_frozen_creation_time_without_forced_identity_suffix():
@@ -40,6 +40,18 @@ def test_names_use_frozen_creation_time_without_forced_identity_suffix():
         frozen_names(task, "abc123", "2026-09-10T20:00:00+00:00")["archive_name"]
         == "abc123.7z"
     )
+
+
+def test_sequence_values_are_six_digits_and_global_sequence_is_supported():
+    task = {
+        "name": "camera",
+        "format": "7z",
+        "batch_name_template": "{sequence}_{global_sequence}",
+        "archive_name_template": "{global_sequence}",
+    }
+    names = frozen_names(task, "abc123", "2026-09-10T20:00:00+00:00", sequence=12, global_sequence=345)
+    assert names["batch_name"] == "000012_000345"
+    assert names["archive_name"] == "000345.7z"
 
 
 def test_file_mtime_uses_earliest_batch_file_and_supports_strftime():

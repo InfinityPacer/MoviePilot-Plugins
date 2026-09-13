@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from string import Formatter
 
-FIELDS = {"task_name", "date", "time", "id", "sequence", "file_mtime"}
+FIELDS = {"task_name", "date", "time", "id", "sequence", "global_sequence", "file_mtime"}
 DEFAULT_FILE_TIME_FORMAT = "%Y%m%d_%H%M%S"
 STRFTIME_PATTERN = re.compile(r'(?:%[A-Za-z]|[^%{}\\/:*?"<>|\x00-\x1f\x7f]){1,80}')
 
@@ -54,6 +54,7 @@ def frozen_names(
     created_at: str,
     sequence: int = 1,
     entries: list[dict] | None = None,
+    global_sequence: int | None = None,
 ) -> dict:
     """生成可读名与跨目录唯一的包名；长度为摘要和临时文件后缀预留空间。"""
     moment = datetime.fromisoformat(created_at).astimezone()
@@ -66,7 +67,8 @@ def frozen_names(
         "date": moment.strftime("%Y%m%d"),
         "time": moment.strftime("%H%M%S"),
         "id": batch_id[:6],
-        "sequence": f"{sequence:04d}",
+        "sequence": f"{sequence:06d}",
+        "global_sequence": f"{(global_sequence or sequence):06d}",
     }
     label_template = task.get("batch_name_template", "{date}_{sequence}")
     file_template = task.get("archive_name_template", "{id}")

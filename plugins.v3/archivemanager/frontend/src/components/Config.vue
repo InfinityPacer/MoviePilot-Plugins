@@ -8,6 +8,8 @@ import {
   loadBatch,
   loadSummary,
   pollPreview,
+  previewReclaim,
+  reclaimSpace,
   repairBatch,
   retryBatch,
   runTask,
@@ -193,7 +195,8 @@ const namingExamples = computed(() => {
     date: '20260911',
     time: '040020',
     id: '7f3a9c',
-    sequence: '0001',
+    sequence: '000001',
+    global_sequence: '000001',
     file_mtime: '20260128_141930',
   }
   const formatExampleTime = (format: string, fileTime = false): string => {
@@ -557,6 +560,40 @@ function startOperationPolling(): void {
   }, 2500)
 }
 
+async function executeReclaim(): Promise<void> {
+  operationBusy.value = true
+  const preview = await previewReclaim(props.api)
+  operationBusy.value = false
+  if (!preview) {
+    setNotice('无法读取可回收源文件，请刷新后重试。', 'error')
+    return
+  }
+  const batchCount = Number(preview.batch_count ?? 0)
+  const fileCount = Number(preview.file_count ?? 0)
+  const estimated = Number(preview.estimated_bytes ?? 0)
+  if (estimated <= 0 || fileCount <= 0) {
+    setNotice('暂无需要回收的源文件。', 'info')
+    return
+  }
+  const content = `将扫描所有已完成的归档批次，并回收仍保留且校验通过的源文件。\n\n可回收批次：${batchCount} 个\n可回收文件：${fileCount} 个\n预计释放空间：${formatBytes(estimated)}`
+  const confirmed = hostConfirm
+    ? await hostConfirm({ type: 'warn', title: '回收源文件', content, confirmText: '开始回收', cancelText: '取消' })
+    : window.confirm(`${content}\n\n是否继续？`)
+  if (!confirmed) return
+  operationBusy.value = true
+  const result = await reclaimSpace(props.api)
+  operationBusy.value = false
+  if (!result) {
+    setNotice('回收请求失败，请刷新后重试。', 'error')
+    return
+  }
+  const reclaimResult = result as { queued?: number; estimated_bytes?: number }
+  const queuedEstimate = Number(reclaimResult.estimated_bytes ?? 0)
+  const suffix = queuedEstimate > 0 ? `，预计回收 ${formatBytes(queuedEstimate)}` : ''
+  setNotice(`已加入 ${Number(reclaimResult.queued ?? 0)} 个批次的回收队列${suffix}。`, 'success')
+  await refreshSummary()
+}
+
 async function executeRun(taskId = activeTaskId.value): Promise<void> {
   if (!taskId) {
     setNotice('请先选择一个归档任务。', 'warning')
@@ -845,6 +882,16 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="archive-header__actions">
+          <VBtn
+            class="archive-header__reclaim"
+            :disabled="operationBusy"
+            prepend-icon="mdi-delete-sweep-outline"
+            type="button"
+            variant="tonal"
+            @click="executeReclaim"
+          >
+            回收空间
+          </VBtn>
           <VBtn
             class="archive-header__run"
             :disabled="!activeTaskId || operationBusy"
@@ -1788,7 +1835,7 @@ onBeforeUnmount(() => {
                 ><span>创建归档任务后，才能查询已归档文件。</span>
               </div>
               <div v-else>
-                <div class="archive-filter-bar">
+                <div class="archive-filter-bar archive-filter-bar--files">
                   <VSelect
                     aria-label="文件任务"
                     clearable
@@ -1814,14 +1861,13 @@ onBeforeUnmount(() => {
                     variant="outlined"
                   /><VTextField
                     v-model="fileQuery"
+                    append-inner-icon="mdi-magnify"
                     clearable
                     label="搜索相对路径"
-                    prepend-inner-icon="mdi-magnify"
                     variant="outlined"
+                    @click:append-inner="submitFileSearch"
                     @keyup.enter="submitFileSearch"
-                  /><VBtn aria-label="搜索文件" icon variant="tonal" @click="submitFileSearch"
-                    ><VIcon icon="mdi-magnify"
-                  /></VBtn>
+                  />
                 </div>
                 <div v-if="!hasFileTaskSelection" class="archive-empty archive-empty--table">
                   <VIcon icon="mdi-format-list-checks" size="34" /><strong>请选择归档任务</strong
@@ -2837,6 +2883,7 @@ onBeforeUnmount(() => {
 }
 .archive-empty--table {
   min-block-size: 220px;
+  align-content: center;
 }
 .archive-detail-grid {
   display: grid;
@@ -2972,6 +3019,24 @@ onBeforeUnmount(() => {
 }
 .archive-filter-bar--batches {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+.archive-filter-bar--files {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.archive-filter-bar--files > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+.archive-filter-bar--files > .v-input {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.archive-filter-bar--files > .v-btn {
+  justify-self: stretch;
+  align-self: center;
+}
+.archive-filter-bar--files :deep(.v-field),
+.archive-filter-bar--files :deep(.v-field__input) {
+  min-inline-size: 0;
 }
 .archive-cleanup-dialog__intro {
   margin: 0;
@@ -3275,6 +3340,7 @@ onBeforeUnmount(() => {
     min-block-size: 72px;
   }
   .archive-header__actions > .archive-header__run,
+  .archive-header__actions > .archive-header__reclaim,
   .archive-header__actions > .archive-header__save,
   .archive-header__close-action {
     display: none;
@@ -3303,7 +3369,8 @@ onBeforeUnmount(() => {
     padding-inline-start: 16px;
   }
   .archive-filter-bar,
-  .archive-filter-bar--batches {
+  .archive-filter-bar--batches,
+  .archive-filter-bar--files {
     grid-template-columns: minmax(0, 1fr);
   }
   .archive-filter-bar > .v-btn {
