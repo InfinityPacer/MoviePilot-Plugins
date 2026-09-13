@@ -730,7 +730,8 @@ async function executeBatchCleanup(deleteArtifacts: boolean): Promise<void> {
   await Promise.all([loadBatchPage(), refreshSummary(), loadFilePage()])
 }
 
-function chooseCleanupOption(): void {
+function chooseCleanupOption(deleteArtifacts = cleanupDeleteArtifacts.value): void {
+  cleanupDeleteArtifacts.value = deleteArtifacts
   if (cleanupDeleteArtifacts.value) {
     cleanupDialogOpen.value = false
     cleanupConfirmOpen.value = true
@@ -1673,7 +1674,7 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-else-if="activeView === 'batches'" class="archive-view archive-table-view">
-              <div class="archive-filter-bar">
+              <div class="archive-filter-bar archive-filter-bar--batches">
                 <VSelect
                   aria-label="批次任务"
                   v-model="batchTaskFilter"
@@ -2188,22 +2189,37 @@ onBeforeUnmount(() => {
       ></VDialog
     >
 
-    <VDialog v-model="cleanupDialogOpen" max-width="520" width="calc(100% - 24px)">
+    <VDialog v-model="cleanupDialogOpen" max-width="720" width="calc(100% - 24px)">
       <VCard>
-        <VCardTitle>清理归档批次</VCardTitle>
+        <VCardTitle>确认清理 {{ selectedBatchIds.length }} 条记录？</VCardTitle>
         <VCardText>
-          <p>已选择 {{ selectedBatchIds.length }} 个批次。此操作不会删除或修改源文件。</p>
-          <VRadioGroup v-model="cleanupDeleteArtifacts" hide-details>
-            <VRadio :value="false" label="仅清理批次记录，保留归档包和外部清单" />
-            <VRadio :value="true" label="同时清理本地归档产物" />
-          </VRadioGroup>
-          <VAlert v-if="cleanupDeleteArtifacts" class="mt-3" type="warning" variant="tonal">
-            将删除归档包、包外 .sha256、该批次的 manifest.md / manifest.json，并重建清单索引。
-          </VAlert>
+          <p class="archive-cleanup-dialog__intro">请选择清理范围，源文件不会被删除或修改</p>
+          <div class="archive-cleanup-options">
+            <VBtn
+              class="archive-cleanup-option"
+              prepend-icon="mdi-database-remove-outline"
+              variant="tonal"
+              :loading="cleanupBusy && !cleanupDeleteArtifacts"
+              @click="executeBatchCleanup(false)"
+            >
+              仅清理批次记录
+              <small>保留归档包和外部清单</small>
+            </VBtn>
+            <VBtn
+              class="archive-cleanup-option archive-cleanup-option--danger"
+              color="error"
+              prepend-icon="mdi-archive-remove-outline"
+              variant="tonal"
+              :disabled="cleanupBusy"
+              @click="chooseCleanupOption(true)"
+            >
+              清理批次记录和归档产物
+              <small>删除归档包、校验文件和外部清单</small>
+            </VBtn>
+          </div>
         </VCardText>
         <VCardActions>
           <VSpacer /><VBtn variant="text" @click="cleanupDialogOpen = false">取消</VBtn>
-          <VBtn color="primary" :loading="cleanupBusy" variant="flat" @click="chooseCleanupOption">继续</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
@@ -2954,6 +2970,39 @@ onBeforeUnmount(() => {
 .archive-filter-bar > .v-btn {
   justify-self: end;
 }
+.archive-filter-bar--batches {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+.archive-cleanup-dialog__intro {
+  margin: 0;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.76rem;
+}
+.archive-cleanup-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-block-start: 18px;
+}
+.archive-cleanup-option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-block-size: 82px;
+  padding: 14px 16px;
+  text-align: start;
+  white-space: normal;
+}
+.archive-cleanup-option small {
+  display: block;
+  margin-block-start: 4px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+.archive-cleanup-option--danger small {
+  color: rgba(var(--v-theme-error), 0.82);
+}
 .archive-table-wrap {
   flex: 1 1 auto;
   min-inline-size: 0;
@@ -3253,7 +3302,8 @@ onBeforeUnmount(() => {
     border-block-start: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
     padding-inline-start: 16px;
   }
-  .archive-filter-bar {
+  .archive-filter-bar,
+  .archive-filter-bar--batches {
     grid-template-columns: minmax(0, 1fr);
   }
   .archive-filter-bar > .v-btn {
@@ -3340,6 +3390,9 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
   .archive-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .archive-cleanup-options {
     grid-template-columns: 1fr;
   }
   .archive-preview-metrics,

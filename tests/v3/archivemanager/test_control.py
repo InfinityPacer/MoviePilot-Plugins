@@ -12,6 +12,7 @@ from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig, parse_config
 from app.plugins.archivemanager.scanner import fingerprint, identity
 from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
+from app.plugins.archivemanager.runner import cleanup_stale_staging, remove_staging, staging_path
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -81,6 +82,23 @@ def _create_failed_batch(store: Store, task: TaskConfig, batch_id: str) -> dict:
     assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
     store.create(batch_id, task.public(), [entry], "全部文件")
     return store.save(batch_id, status="failed", error="engine failed")
+
+
+def test_staging_cleanup_keeps_recoverable_batches_and_removes_stale(tmp_path: Path) -> None:
+    task = _task(tmp_path, id="staging-task")
+    recoverable = staging_path(task, "recoverable")
+    stale = staging_path(task, "stale")
+    recoverable.mkdir(parents=True)
+    stale.mkdir(parents=True)
+    (recoverable / "archive.7z").write_bytes(b"keep")
+    (stale / "archive.7z").write_bytes(b"remove")
+
+    assert cleanup_stale_staging(task, {"recoverable"}) == 1
+    assert recoverable.is_dir()
+    assert not stale.exists()
+
+    remove_staging(task, "recoverable")
+    assert not recoverable.exists()
 
 
 def test_archive_manager_constructs_real_plugin_and_declares_persistence_contract() -> None:
@@ -312,6 +330,39 @@ def test_clean_batches_removes_database_records_and_releases_files(store: Store,
     assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
 
 
+def test_api_cleanup_scans_old_staging_but_keeps_recoverable_batches(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path, id="staging-scan-task")
+    entry = _entry(Path(task.source_dir), "failed.mp4")
+    assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
+    selected = store.create("selected-cleanup-batch", task.public(), [entry], "全部文件")
+    store.save(selected["id"], status="cancelled")
+    recoverable = store.create("recoverable-batch", task.public(), [], "全部文件")
+    store.save(recoverable["id"], status="building")
+
+    selected_staging = staging_path(task, selected["id"])
+    orphan_staging = staging_path(task, "legacy-stopped-batch")
+    recoverable_staging = staging_path(task, recoverable["id"])
+    for staging in (selected_staging, orphan_staging, recoverable_staging):
+        staging.mkdir(parents=True)
+        (staging / "partial.7z").write_bytes(b"staging")
+
+    manager = manager_module.ArchiveManager()
+    manager._tasks = [task]
+    manager._enabled = True
+    monkeypatch.setattr(manager, "_store", lambda: store)
+
+    response = manager.api_cleanup(
+        manager_module.BatchCleanupRequest(batch_ids=[selected["id"]], delete_artifacts=False)
+    )
+
+    assert response.success is True
+    assert not selected_staging.exists()
+    assert not orphan_staging.exists()
+    assert recoverable_staging.is_dir()
+
+
 def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     store: Store, tmp_path: Path, monkeypatch
 ) -> None:
@@ -322,6 +373,9 @@ def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     archive.parent.mkdir(parents=True)
     archive.write_bytes(b"archive")
     archive.with_name(archive.name + ".sha256").write_text("sha", encoding="utf-8")
+    staging = staging_path(task, "artifact-clean-batch")
+    staging.mkdir(parents=True)
+    (staging / "partial.7z").write_bytes(b"staging")
     batch = store.create("artifact-clean-batch", task.public(), [entry], "全部文件")
     store.save(
         batch["id"],
@@ -342,4 +396,5 @@ def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     assert response.success is True
     assert not archive.exists()
     assert not archive.with_name(archive.name + ".sha256").exists()
+    assert not staging.exists()
     assert Path(task.source_dir, entry["relative_path"]).is_file()

@@ -25,7 +25,7 @@ from .config import (
     parse_config,
     validate_paths,
 )
-from .runner import Runner
+from .runner import Runner, cleanup_stale_staging, remove_staging
 from .scanner import Cancelled, partition, scan
 from .store import BatchRow, FileRow, Store, TaskRow
 
@@ -81,6 +81,7 @@ class ArchiveManager(_PluginBase):
         self._running: dict | None = None
         self._previews: dict[str, dict] = {}
         self._closing = False
+        self._manual_stop_tasks: set[str] = set()
 
     def init_plugin(self, config: dict | None = None):
         """重载先等待旧工作进程退出；数据库由宿主在此方法返回后建表。"""
@@ -357,7 +358,12 @@ class ArchiveManager(_PluginBase):
                     with self._lock:
                         self._previews[job["id"]] = {"status": "complete", "data": result, "message": ""}
                 else:
-                    runner = Runner(store, self._stop, self._phase)
+                    runner = Runner(
+                        store,
+                        self._stop,
+                        self._phase,
+                        cleanup_cancelled=lambda task_id=task.id: task_id in self._manual_stop_tasks,
+                    )
                     if job["batch_id"]:
                         batch = store.get(job["batch_id"])
                         self._check_execution_paths(
@@ -402,6 +408,7 @@ class ArchiveManager(_PluginBase):
             finally:
                 with self._lock:
                     self._running = None
+                    self._manual_stop_tasks.discard(task.id)
             if job["kind"] != "preview":
                 state = self._store().task_state(task.id)
                 if state["phase"] == "waiting_capacity" and previous_phase != "waiting_capacity":
@@ -426,6 +433,12 @@ class ArchiveManager(_PluginBase):
             self._check_execution_paths(TaskConfig.model_validate({**batch["task"], "password": task.password}))
             self._execute_batch(runner, store, batch, task)
             completed += 1
+        recoverable_ids = {batch["id"] for batch in store.unfinished(task.id)}
+        removed_staging = cleanup_stale_staging(task, recoverable_ids)
+        if removed_staging:
+            logger.info(
+                f"压缩归档清理不可恢复暂存：task={task.name}({task.id[:6]}) count={removed_staging}"
+            )
         state = store.task_state(task.id)
         capacity = allowance(task, store.local_archives(task.id))
         if state.get("initialized") and not capacity["budget"]:
@@ -633,10 +646,14 @@ class ArchiveManager(_PluginBase):
             return self._response(success=False, message=self._safe_error(exc))
 
     def api_stop(self, request: TaskRequest):
+        target_ids = {task.id for task in self._tasks if not request.task_id or task.id == request.task_id}
         for task in self._tasks:
-            if not request.task_id or task.id == request.task_id:
+            if task.id in target_ids:
                 self._store().set_task_state(task.id, active=False, phase="stopped", reason="已停止")
         with self._lock:
+            running_task_id = self._running.get("task_id") if self._running else None
+            if running_task_id and running_task_id in target_ids:
+                self._manual_stop_tasks.add(running_task_id)
             if not request.task_id or (self._running and self._running["task_id"] == request.task_id):
                 self._stop.set()
             for job in self._queue:
@@ -687,12 +704,25 @@ class ArchiveManager(_PluginBase):
                         raise ValueError("批次正在执行，不能清理")
                     if any(job.get("batch_id") == batch["id"] for job in self._queue):
                         raise ValueError("批次正在队列中，不能清理")
-                if request.delete_artifacts:
-                    for batch in batches:
+                cleanup_tasks: dict[tuple[str, str], TaskConfig] = {}
+                for batch in batches:
+                    task = TaskConfig.model_validate({**batch["task"], "password": ""})
+                    cleanup_tasks[(task.id, task.output_dir)] = task
+                    remove_staging(task, batch["id"])
+                    if request.delete_artifacts:
                         for path in self._artifact_paths(batch):
                             if path.is_file():
                                 path.unlink()
                         remove_catalog(batch)
+                # 清理时顺便扫描同一任务的暂存根目录，处理旧版本手工停止留下的孤儿目录。
+                # 仍处于可恢复阶段的批次必须保留，避免清理动作破坏恢复链路。
+                for task in cleanup_tasks.values():
+                    recoverable_ids = {batch["id"] for batch in self._store().unfinished(task.id)}
+                    removed = cleanup_stale_staging(task, recoverable_ids)
+                    if removed:
+                        logger.info(
+                            f"压缩归档清理批次时移除孤儿暂存：task={task.name}({task.id[:6]}) count={removed}"
+                        )
                 result = self._store().clean_batches(ids)
             return self._response(result)
         except (ValueError, OSError) as exc:

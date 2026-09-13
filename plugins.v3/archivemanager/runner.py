@@ -8,6 +8,7 @@ import subprocess
 import sys
 import traceback
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from threading import Event
 
@@ -91,13 +92,51 @@ def check_stop(stop: Event) -> None:
         raise Cancelled("已停止归档")
 
 
+def staging_path(task: TaskConfig, batch_id: str) -> Path:
+    """返回单个批次专属暂存目录，不跨任务清理。"""
+    return Path(task.output_dir).resolve().parent / ".archivemanager-staging" / task.id / batch_id
+
+
+def remove_staging(task: TaskConfig, batch_id: str) -> bool:
+    """删除指定批次暂存目录，已不存在时视为成功。"""
+    staging = staging_path(task, batch_id)
+    if staging.is_symlink() or staging.is_file():
+        staging.unlink()
+        return True
+    if staging.is_dir():
+        shutil.rmtree(staging)
+    return True
+
+
+def cleanup_stale_staging(task: TaskConfig, keep_batch_ids: set[str]) -> int:
+    """清理任务下不属于待恢复批次的暂存目录。"""
+    task_root = staging_path(task, "")
+    if not task_root.is_dir():
+        return 0
+    removed = 0
+    for child in task_root.iterdir():
+        if child.name in keep_batch_ids:
+            continue
+        if child.is_symlink() or child.is_file():
+            child.unlink()
+        elif child.is_dir():
+            shutil.rmtree(child)
+        removed += 1
+    try:
+        task_root.rmdir()
+    except OSError:
+        pass
+    return removed
+
+
 class Runner:
     """只负责一个批次；外部队列保证同一插件实例串行运行。"""
 
-    def __init__(self, store, stop: Event, phase):
+    def __init__(self, store, stop: Event, phase, cleanup_cancelled: Callable[[], bool] | None = None):
         self.store = store
         self.stop = stop
         self.phase = phase
+        self.cleanup_cancelled = cleanup_cancelled or (lambda: False)
 
     def execute(self, batch: dict, current_task: TaskConfig) -> None:
         """使用批次冻结配置恢复；当前任务只提供同版本密码。"""
@@ -108,7 +147,7 @@ class Runner:
         batch_id = batch["id"]
         output = Path(task.output_dir)
         published = output / batch_relative_directory(batch)
-        staging = output.parent / ".archivemanager-staging" / task.id / batch_id
+        staging = staging_path(task, batch_id)
         archive_name = batch.get("archive_name") or f"{batch_id}.{task.format}"
         archive_path = published / archive_name
         if batch.get("archive_path"):
@@ -277,6 +316,9 @@ class Runner:
                 status="interrupted" if published.exists() else "cancelled",
                 error="用户已停止；源文件清理不会继续",
             )
+            if self.cleanup_cancelled():
+                remove_staging(task, batch_id)
+                logger.info(f"压缩归档手工停止已清理暂存：{context} staging={staging}")
             logger.info(f"压缩归档批次已停止：{context} reason={exc}")
             raise
         except Exception as exc:  # noqa: BLE001  事务边界统一冻结失败阶段，供重启后恢复或重试
