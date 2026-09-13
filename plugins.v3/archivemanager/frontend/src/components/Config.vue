@@ -1076,7 +1076,7 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>运行设置</h3>
-                      <p>控制归档服务是否启用，以及哪些事件发送宿主通知。</p>
+                      <p>控制归档服务是否启用，以及哪些事件发送宿主通知</p>
                     </div>
                   </div>
                   <div class="archive-field-list">
@@ -1246,7 +1246,7 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>{{ taskEditorTitle }}</h3>
-                      <p>保存草稿后，再点击页面顶部“保存修改”才会写入配置。</p>
+                      <p>保存草稿后，再点击页面顶部“保存修改”才会写入配置</p>
                     </div>
                     <VBtn aria-label="取消编辑" icon size="small" variant="text" @click="cancelTaskEditor"
                       ><VIcon icon="mdi-close"

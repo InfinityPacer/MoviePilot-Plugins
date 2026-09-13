@@ -1531,7 +1531,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _cache[89] || (_cache[89] = _createElementVNode("div", { class: "archive-section__header" }, [
                         _createElementVNode("div", null, [
                           _createElementVNode("h3", null, "运行设置"),
-                          _createElementVNode("p", null, "控制归档服务是否启用，以及哪些事件发送宿主通知。")
+                          _createElementVNode("p", null, "控制归档服务是否启用，以及哪些事件发送宿主通知")
                         ])
                       ], -1)),
                       _createElementVNode("div", _hoisted_37, [
@@ -1807,7 +1807,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("div", _hoisted_48, [
                         _createElementVNode("div", null, [
                           _createElementVNode("h3", null, _toDisplayString(taskEditorTitle.value), 1),
-                          _cache[103] || (_cache[103] = _createElementVNode("p", null, "保存草稿后，再点击页面顶部“保存修改”才会写入配置。", -1))
+                          _cache[103] || (_cache[103] = _createElementVNode("p", null, "保存草稿后，再点击页面顶部“保存修改”才会写入配置", -1))
                         ]),
                         _createVNode(_component_VBtn, {
                           "aria-label": "取消编辑",
@@ -3521,6 +3521,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-bdebf471"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-c5326e2c"]]);
 
 export { Config as default };
