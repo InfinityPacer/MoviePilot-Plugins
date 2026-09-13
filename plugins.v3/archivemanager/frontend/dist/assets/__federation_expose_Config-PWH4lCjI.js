@@ -1856,7 +1856,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ]),
                         _createElementVNode("div", null, [
                           _cache[100] || (_cache[100] = _createElementVNode("span", null, "文件限制", -1)),
-                          _createElementVNode("strong", null, _toDisplayString(selectedTask.value.max_files ? `${formatNumber(selectedTask.value.max_files)} 个` : "不限数量") + " · " + _toDisplayString(selectedTask.value.max_bytes ? `${formatNumber(selectedTask.value.max_bytes)} M` : "不限体积"), 1)
+                          _createElementVNode("strong", null, _toDisplayString(selectedTask.value.max_files ? `${formatNumber(selectedTask.value.max_files)} 个` : "不限数量") + " · " + _toDisplayString(selectedTask.value.max_bytes ? `${formatNumber(selectedTask.value.max_bytes / 1024 ** 2)} M` : "不限体积"), 1)
                         ]),
                         _createElementVNode("div", null, [
                           _cache[101] || (_cache[101] = _createElementVNode("span", null, "归档策略", -1)),
@@ -3619,6 +3619,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-d317deaf"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-47a7a0b6"]]);
 
 export { Config as default };

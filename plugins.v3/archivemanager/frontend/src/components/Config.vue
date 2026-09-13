@@ -1298,7 +1298,7 @@ onBeforeUnmount(() => {
                       <span>文件限制</span
                       ><strong
                         >{{ selectedTask.max_files ? `${formatNumber(selectedTask.max_files)} 个` : '不限数量' }} ·
-                        {{ selectedTask.max_bytes ? `${formatNumber(selectedTask.max_bytes)} M` : '不限体积' }}</strong
+                        {{ selectedTask.max_bytes ? `${formatNumber(selectedTask.max_bytes / 1024 ** 2)} M` : '不限体积' }}</strong
                       >
                     </div>
                     <div>
