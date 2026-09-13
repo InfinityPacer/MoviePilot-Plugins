@@ -25,6 +25,7 @@ import type {
   SummaryPayload,
 } from '../config/types'
 import { cloneTask, createArchiveTask, normalizeArchiveConfig } from '../config/values'
+import ArchiveFieldRow from './ArchiveFieldRow.vue'
 import archiveLogo from '../assets/archive-logo.png'
 
 type NoticeType = 'success' | 'warning' | 'error' | 'info'
@@ -42,8 +43,6 @@ const props = defineProps<{
   initialConfig?: unknown
   /** 宿主注入的已认证插件 API 客户端。 */
   api?: PluginApi
-  /** 宿主保存结果；只有成功后才清洁当前草稿。 */
-  saveResult?: 'idle' | 'success' | 'error'
 }>()
 
 const emit = defineEmits<{
@@ -79,16 +78,6 @@ const mobileNavOpen = ref(false)
 const compatibilityOpen = ref(false)
 const compatibilityReason = ref<'format' | 'encrypt_names'>('format')
 const pendingFormat = ref<'7z' | 'zip' | null>(null)
-
-watch(
-  () => props.saveResult,
-  result => {
-    if (result === 'success') {
-      original.value = normalizeArchiveConfig(draft.value)
-      emit('close')
-    }
-  },
-)
 
 const summary = ref<SummaryPayload | null>(null)
 const summaryState = ref<'loading' | 'available' | 'unavailable'>('loading')
@@ -133,7 +122,10 @@ const selectedTask = computed(() => tasksById.value.get(activeTaskId.value) ?? d
 const hasFileTaskSelection = computed(() => Boolean(fileTaskFilter.value && tasksById.value.has(fileTaskFilter.value)))
 const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(original.value))
 const taskEditorDirty = computed(
-  () => editorOpen.value && taskEditorOriginal.value !== null && JSON.stringify(taskEditor.value) !== JSON.stringify(taskEditorOriginal.value),
+  () =>
+    editorOpen.value &&
+    taskEditorOriginal.value !== null &&
+    JSON.stringify(taskEditor.value) !== JSON.stringify(taskEditorOriginal.value),
 )
 const changedItems = computed(() => {
   const items: string[] = []
@@ -195,20 +187,23 @@ const namingExamples = computed(() => {
     time: '040020',
     id: '7f3a9c',
     sequence: '0001',
+    file_mtime: '20260128_141930',
+  }
+  const formatExampleTime = (format: string, fileTime = false): string => {
+    const tokens = fileTime
+      ? { '%Y': '2026', '%y': '26', '%m': '01', '%d': '28', '%H': '14', '%I': '02', '%M': '19', '%S': '30' }
+      : { '%Y': '2026', '%y': '26', '%m': '09', '%d': '11', '%H': '04', '%I': '04', '%M': '00', '%S': '20' }
+    return format.replace(/%Y|%y|%m|%d|%H|%I|%M|%S/g, token => tokens[token as keyof typeof tokens] || token)
   }
   const render = (template: string, fallback: string): string => {
     const source = template.trim() || fallback
-    const rendered = source.replace(/\{([^{}]+)\}/g, (match, field: string) => {
-      if (field.startsWith('%')) {
-        return field.replace(
-          /%Y|%y|%m|%d|%H|%I|%M|%S/g,
-          token =>
-            ({ '%Y': '2026', '%y': '26', '%m': '09', '%d': '11', '%H': '04', '%I': '04', '%M': '00', '%S': '20' })[
-              token
-            ] || token,
-        )
-      }
-      return field in values ? values[field as keyof typeof values] : match
+    const rendered = source.replace(/\{([^{}]+)\}/g, (match, expression: string) => {
+      if (expression.startsWith('%')) return formatExampleTime(expression)
+      const separator = expression.indexOf(':')
+      const field = separator === -1 ? expression : expression.slice(0, separator)
+      const format = separator === -1 ? '' : expression.slice(separator + 1)
+      if (field === 'file_mtime') return format ? formatExampleTime(format, true) : values.file_mtime
+      return separator === -1 && field in values ? values[field as keyof typeof values] : match
     })
     return rendered.trim() || fallback
   }
@@ -988,34 +983,40 @@ onBeforeUnmount(() => {
                       <p>控制归档服务是否启用，以及哪些事件发送宿主通知。</p>
                     </div>
                   </div>
-                  <div class="archive-form-grid archive-form-grid--three">
-                    <VSwitch
-                      v-model="draft.enabled"
-                      aria-label="启用"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                      label="启用"
-                    /><VSwitch
-                      v-model="draft.notify"
-                      aria-label="发送通知"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                      label="发送通知"
-                    /><VSelect
-                      aria-label="通知事件"
-                      v-model="draft.notify_events"
-                      :items="notificationEventOptions"
-                      chips
-                      closable-chips
-                      hide-details
-                      item-title="title"
-                      item-value="value"
-                      label="通知事件"
-                      multiple
-                      variant="outlined"
-                    />
+                  <div class="archive-field-list">
+                    <ArchiveFieldRow label="启用插件" hint="开启后插件将处于激活状态" switch-field>
+                      <VSwitch
+                        v-model="draft.enabled"
+                        aria-label="启用插件"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow label="发送通知" hint="是否在特定事件发生时发送通知" switch-field>
+                      <VSwitch
+                        v-model="draft.notify"
+                        aria-label="发送通知"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow label="通知事件" hint="选择归档成功、运行失败或其他状态中需要发送通知的事件。">
+                      <VSelect
+                        v-model="draft.notify_events"
+                        aria-label="通知事件"
+                        chips
+                        closable-chips
+                        density="compact"
+                        hide-details
+                        :items="notificationEventOptions"
+                        item-title="title"
+                        item-value="value"
+                        multiple
+                        variant="outlined"
+                      />
+                    </ArchiveFieldRow>
                   </div>
                 </section>
               </template>
@@ -1104,7 +1105,7 @@ onBeforeUnmount(() => {
                       <span>清单目录</span><strong>{{ selectedTask.manifest_dir || '与归档目录相同' }}</strong>
                     </div>
                     <div>
-                      <span>分组方式</span
+                      <span>文件分组</span
                       ><strong>{{ groupingOptions.find(item => item.value === selectedTask.grouping)?.title }}</strong>
                     </div>
                     <div>
@@ -1156,326 +1157,403 @@ onBeforeUnmount(() => {
                     /></VBtn>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>基础信息</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VTextField
-                        aria-label="任务名称"
-                        v-model="taskEditor.name"
-                        label="任务名称"
-                        variant="outlined"
-                      /><VSwitch
-                        v-model="taskEditor.enabled"
-                        color="primary"
-                        density="compact"
-                        hide-details
-                        label="启用任务"
-                      />
+                    <h4>1. 任务与目录</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="任务名" hint="用于任务列表、运行记录和归档清单中识别任务。">
+                        <VTextField
+                          v-model="taskEditor.name"
+                          aria-label="任务名"
+                          density="compact"
+                          hide-details
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="启用" hint="开启后按 Cron 自动运行任务。" switch-field>
+                        <VSwitch
+                          v-model="taskEditor.enabled"
+                          aria-label="启用"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="源目录" hint="扫描并归档此目录中的文件，填写容器内绝对路径。">
+                        <VTextField
+                          v-model="taskEditor.source_dir"
+                          aria-label="源目录"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-folder-open-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="输出目录" hint="保存归档包和校验文件，填写容器内绝对路径。">
+                        <VTextField
+                          v-model="taskEditor.output_dir"
+                          aria-label="输出目录"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-archive-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="清单目录" hint="保存 Markdown 和 JSON 清单，留空时跟随输出目录。">
+                        <VTextField
+                          v-model="taskEditor.manifest_dir"
+                          aria-label="清单目录"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-file-document-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="Cron" hint="使用五段 Cron 表达式，例如 0 2 * * * 表示每天 02:00。">
+                        <VTextField
+                          v-model="taskEditor.cron"
+                          aria-label="Cron"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-clock-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>目录与调度</h4>
-                    <div class="archive-form-grid">
-                      <VTextField
-                        aria-label="源目录"
-                        v-model="taskEditor.source_dir"
-                        label="源目录"
-                        prepend-inner-icon="mdi-folder-open-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="归档输出目录"
-                        v-model="taskEditor.output_dir"
-                        label="归档输出目录"
-                        prepend-inner-icon="mdi-archive-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="清单目录（可选）"
-                        v-model="taskEditor.manifest_dir"
-                        hint="留空时使用归档输出目录。"
-                        label="清单目录（可选）"
-                        persistent-hint
-                        prepend-inner-icon="mdi-file-document-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="Cron 调度"
-                        v-model="taskEditor.cron"
-                        hint="例如：0 2 * * *"
-                        label="Cron 调度"
-                        persistent-hint
-                        prepend-inner-icon="mdi-clock-outline"
-                        variant="outlined"
-                      />
+                    <h4>2. 命名规则</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="批次名称" hint="支持任务名、日期、时间、序号和文件修改时间变量。">
+                        <VTextField
+                          v-model="taskEditor.batch_name_template"
+                          aria-label="批次名称"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-label-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="归档包名称" hint="生成不含扩展名的归档包名称，变量规则与批次名称相同。">
+                        <VTextField
+                          v-model="taskEditor.archive_name_template"
+                          aria-label="归档包名称"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-file-certificate-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <div class="archive-naming-preview">
+                        <span>名称示例</span>
+                        <code>批次：{{ namingExamples.batch }}</code>
+                        <code>归档包：{{ namingExamples.archive }}</code>
+                      </div>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>命名规则</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VSelect
-                        aria-label="批次目录布局"
-                        class="archive-layout-select"
-                        v-model="taskEditor.archive_layout"
-                        :items="[
-                          { title: '按目录（来源目录 / 批次名称）', value: 'directory' },
-                          { title: '扁平（来源目录_批次名称）', value: 'flat' },
-                        ]"
-                        hint="按目录：来源目录/批次名称；扁平：来源目录_批次名称。"
-                        item-title="title"
-                        item-value="value"
-                        label="批次目录布局"
-                        persistent-hint
-                        variant="outlined"
-                      />
-                      <VTextField
-                        aria-label="批次名称模板"
-                        v-model="taskEditor.batch_name_template"
-                        hint="用于实际批次目录名，例如 20260911_0001；创建后固定，改模板只影响新批次。"
-                        label="批次名称模板"
-                        persistent-hint
-                        prepend-inner-icon="mdi-label-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="归档包名称模板"
-                        v-model="taskEditor.archive_name_template"
-                        hint="用于实际生成的 .7z/.zip 文件名。"
-                        label="归档包名称模板"
-                        persistent-hint
-                        prepend-inner-icon="mdi-file-certificate-outline"
-                        variant="outlined"
-                      />
-                    </div>
-                    <VAlert density="compact" type="info" variant="tonal">
-                      基础变量：<code>{date}</code>=<code>20260911</code>、<code>{time}</code>=<code>040020</code>、
-                      <code>{id}</code>=<code>7f3a9c</code>、<code>{sequence}</code>=<code>0001</code>；也支持
-                      strftime， 例如 <code>{%Y%m%d_%H%M%S}</code>。
-                    </VAlert>
-                    <div class="archive-naming-preview">
-                      <span>示例</span>
-                      <code>批次：{{ namingExamples.batch }}</code>
-                      <code>归档包：{{ namingExamples.archive }}</code>
-                    </div>
-                    <VAlert density="compact" type="info" variant="tonal">
-                      外层归档包名会对存储端可见；需要隐藏文件名时，请使用 7z AES-256 并开启加密文件名。
-                    </VAlert>
-                  </div>
-                  <div class="archive-editor__group">
-                    <h4>文件筛选</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VSwitch
-                        v-model="taskEditor.recursive"
-                        color="primary"
-                        density="compact"
-                        hide-details
-                        label="递归扫描子目录"
-                      /><VTextField
-                        aria-label="目录深度"
-                        v-model.number="taskEditor.directory_depth"
-                        hint="按目录分组时使用。"
-                        label="目录深度"
-                        min="1"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextarea
-                        aria-label="包含模式"
-                        v-model="includePatternsText"
-                        hint="每行一个 glob，留空表示不限制。"
-                        label="包含模式"
-                        persistent-hint
-                        rows="3"
-                        variant="outlined"
-                      /><VTextarea
-                        aria-label="排除模式"
-                        v-model="excludePatternsText"
-                        hint="每行一个 glob。"
-                        label="排除模式"
-                        persistent-hint
-                        rows="3"
-                        variant="outlined"
-                      />
+                    <h4>3. 文件范围</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="目录布局" hint="按目录保留来源层级，扁平布局合并为一层目录。">
+                        <VSelect
+                          v-model="taskEditor.archive_layout"
+                          aria-label="目录布局"
+                          class="archive-layout-select"
+                          density="compact"
+                          hide-details
+                          :items="[
+                            { title: '按目录（来源目录 / 批次名称）', value: 'directory' },
+                            { title: '扁平（来源目录_批次名称）', value: 'flat' },
+                          ]"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="递归扫描" hint="开启后扫描源目录下的所有子目录。" switch-field>
+                        <VSwitch
+                          v-model="taskEditor.recursive"
+                          aria-label="递归扫描"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="目录深度" hint="按目录分组时保留的来源目录层级，最小为 1。">
+                        <VTextField
+                          v-model.number="taskEditor.directory_depth"
+                          aria-label="目录深度"
+                          density="compact"
+                          hide-details
+                          min="1"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="包含文件" hint="每行一个 glob，留空时允许所有文件。">
+                        <VTextarea
+                          v-model="includePatternsText"
+                          aria-label="包含文件"
+                          density="compact"
+                          hide-details
+                          rows="3"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="排除文件" hint="每行一个 glob，命中的文件不会进入归档。">
+                        <VTextarea
+                          v-model="excludePatternsText"
+                          aria-label="排除文件"
+                          density="compact"
+                          hide-details
+                          rows="3"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="文件分组" hint="按来源目录、文件修改日期或两者组合分组。">
+                        <VSelect
+                          v-model="taskEditor.grouping"
+                          aria-label="文件分组"
+                          density="compact"
+                          hide-details
+                          :items="groupingOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="时间粒度" hint="按时间分组时使用小时、天或月。">
+                        <VSelect
+                          v-model="taskEditor.time_grain"
+                          aria-label="时间粒度"
+                          density="compact"
+                          hide-details
+                          :items="timeGrainOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>批次策略</h4>
-                    <div class="archive-form-grid archive-form-grid--three">
-                      <VSelect
-                        aria-label="分组方式"
-                        v-model="taskEditor.grouping"
-                        :items="groupingOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="分组方式"
-                        variant="outlined"
-                      /><VSelect
-                        aria-label="时间粒度"
-                        v-model="taskEditor.time_grain"
-                        :items="timeGrainOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="时间粒度"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="最多批次"
-                        v-model.number="taskEditor.max_batches"
-                        label="最多批次"
-                        min="1"
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="每批最多文件"
-                        v-model.number="taskEditor.max_files"
-                        hint="0 表示不限。"
-                        label="每批最多文件"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="每批最大体积"
-                        v-model.number="taskEditor.max_bytes"
-                        hint="0 表示不限，单位字节。"
-                        label="每批最大体积"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="归档多少天之前的文件"
-                        v-model.number="taskEditor.archive_age_days"
-                        hint="按文件修改时间筛选，0 表示不限制。"
-                        label="归档多少天之前的文件"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="稳定时间（秒）"
-                        v-model.number="taskEditor.stability_seconds"
-                        label="稳定时间（秒）"
-                        min="1"
-                        type="number"
-                        variant="outlined"
-                      />
+                    <h4>4. 批次与续跑</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="每轮批次" hint="限制单轮创建的批次数量，剩余文件下轮处理。">
+                        <VTextField
+                          v-model.number="taskEditor.max_batches"
+                          aria-label="每轮批次"
+                          density="compact"
+                          hide-details
+                          min="1"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="每批文件数" hint="限制单个归档包的文件数量，0 表示不限。">
+                        <VTextField
+                          v-model.number="taskEditor.max_files"
+                          aria-label="每批文件数"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="每批体积" hint="限制单个归档包的源文件体积，0 表示不限。">
+                        <VTextField
+                          v-model.number="taskEditor.max_bytes"
+                          aria-label="每批体积"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="文件保留天数" hint="按文件修改时间过滤近期文件，0 表示不限。">
+                        <VTextField
+                          v-model.number="taskEditor.archive_age_days"
+                          aria-label="文件保留天数"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="稳定时间" hint="归档前等待文件属性稳定，避免处理仍在写入的文件。">
+                        <VTextField
+                          v-model.number="taskEditor.stability_seconds"
+                          aria-label="稳定时间"
+                          density="compact"
+                          hide-details
+                          min="1"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="自动续跑"
+                        hint="达到空间或成品限制后定期复核，条件恢复时继续归档。"
+                        switch-field
+                      >
+                        <VSwitch
+                          v-model="taskEditor.auto_continue"
+                          aria-label="自动续跑"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="成品批次上限" hint="本地成品达到此批次数量时暂停续跑，0 表示不限。">
+                        <VTextField
+                          v-model.number="taskEditor.max_pending_archives"
+                          aria-label="成品批次上限"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="成品体积上限" hint="本地成品达到此体积时暂停续跑，0 表示不限。">
+                        <VTextField
+                          v-model.number="taskEditor.max_pending_bytes"
+                          aria-label="成品体积上限"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="预留空间" hint="预计归档完成后至少保留的可用空间，0 表示不预留。">
+                        <VTextField
+                          v-model.number="minFreeGiB"
+                          aria-label="预留空间"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          step="0.1"
+                          suffix="GiB"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>续跑与空间</h4>
-                    <div class="archive-form-grid archive-form-grid--three">
-                      <VSwitch
-                        v-model="taskEditor.auto_continue"
-                        color="primary"
-                        density="compact"
-                        hide-details
-                        label="自动分批续跑"
-                      /><VTextField
-                        aria-label="本地成品最多批次"
-                        v-model.number="taskEditor.max_pending_archives"
-                        hint="0 表示不限。"
-                        label="本地成品最多批次"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="本地成品最大体积"
-                        v-model.number="taskEditor.max_pending_bytes"
-                        hint="0 表示不限，单位字节。"
-                        label="本地成品最大体积"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="预留磁盘空间"
-                        v-model.number="minFreeGiB"
-                        hint="归档后必须保留的空间，0 表示不预留。"
-                        label="预留磁盘空间"
-                        min="0"
-                        persistent-hint
-                        step="0.1"
-                        suffix="GiB"
-                        type="number"
-                        variant="outlined"
-                      />
-                    </div>
-                    <VAlert density="compact" type="info" variant="tonal"
-                      >插件只负责本地归档，不上传、不删除成品；自动续跑会在空间或成品积压达到限制时每 60
-                      秒重新检测。</VAlert
-                    >
-                  </div>
-                  <div class="archive-editor__group">
-                    <h4>压缩与安全</h4>
-                    <div class="archive-form-grid archive-form-grid--three">
-                      <VSelect
-                        aria-label="归档格式"
-                        :model-value="taskEditor.format"
-                        :items="formatOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="归档格式"
-                        variant="outlined"
-                        @update:model-value="requestFormat"
-                      /><VSelect
-                        aria-label="压缩级别"
-                        v-model="taskEditor.compression"
-                        :items="compressionOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="压缩级别"
-                        variant="outlined"
-                      /><VSelect
-                        aria-label="加密方式"
-                        :model-value="taskEditor.encryption"
-                        :items="encryptionOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="加密方式"
-                        variant="outlined"
-                        @update:model-value="handleEncryption"
-                      /><VTextField
-                        aria-label="密码（可选）"
-                        v-model="taskEditor.password"
-                        autocomplete="new-password"
+                    <h4>5. 压缩与完成</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="格式" hint="选择生成 7z 或 ZIP 归档包，加密文件名仅支持 7z。">
+                        <VSelect
+                          :model-value="taskEditor.format"
+                          aria-label="格式"
+                          density="compact"
+                          hide-details
+                          :items="formatOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                          @update:model-value="requestFormat"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="压缩级别" hint="压缩级别越高通常越节省空间，同时需要更多处理时间。">
+                        <VSelect
+                          v-model="taskEditor.compression"
+                          aria-label="压缩级别"
+                          density="compact"
+                          hide-details
+                          :items="compressionOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="加密" hint="选择 AES-256 后需要提供密码。">
+                        <VSelect
+                          :model-value="taskEditor.encryption"
+                          aria-label="加密"
+                          density="compact"
+                          hide-details
+                          :items="encryptionOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                          @update:model-value="handleEncryption"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="密码"
                         :hint="
-                          taskEditorHasSavedPassword ? '已保存密码不会回显；输入新值可覆盖。' : '密码只写入，不会回显。'
+                          taskEditorHasSavedPassword
+                            ? '已保存密码不会回显，输入新值可覆盖。'
+                            : '启用 AES-256 时填写，密码只写入不会回显。'
                         "
-                        label="密码（可选）"
-                        persistent-hint
-                        type="password"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="密码版本"
-                        v-model="taskEditor.password_version"
-                        label="密码版本"
-                        variant="outlined"
-                      /><VSwitch
-                        :model-value="taskEditor.encrypt_names"
-                        color="primary"
-                        :disabled="taskEditor.encryption !== 'aes256'"
-                        density="compact"
-                        hide-details
-                        label="加密文件名（7z）"
-                        @update:model-value="requestEncryptNames"
-                      />
-                    </div>
-                  </div>
-                  <div class="archive-editor__group">
-                    <h4>完成行为</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VSwitch
-                        :model-value="taskEditor.verify"
-                        color="primary"
-                        :disabled="taskEditor.delete_source"
-                        density="compact"
-                        hide-details
-                        label="归档后校验"
-                        @update:model-value="handleVerify"
-                      /><VSwitch
-                        :model-value="taskEditor.delete_source"
-                        color="error"
-                        density="compact"
-                        hide-details
-                        label="校验通过后删除源文件"
-                        @update:model-value="handleDeleteSource"
-                      />
+                      >
+                        <VTextField
+                          v-model="taskEditor.password"
+                          aria-label="密码"
+                          autocomplete="new-password"
+                          density="compact"
+                          hide-details
+                          type="password"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="密码版本" hint="用于在清单中辨认所用密码，不保存密码内容。">
+                        <VTextField
+                          v-model="taskEditor.password_version"
+                          aria-label="密码版本"
+                          density="compact"
+                          hide-details
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="加密文件名"
+                        hint="使用 7z AES-256 时隐藏归档包内的文件名列表。"
+                        switch-field
+                      >
+                        <VSwitch
+                          :model-value="taskEditor.encrypt_names"
+                          aria-label="加密文件名"
+                          color="primary"
+                          :disabled="taskEditor.encryption !== 'aes256'"
+                          density="compact"
+                          hide-details
+                          @update:model-value="requestEncryptNames"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="完成校验"
+                        hint="发布成品前完整读回归档并核对文件清单和哈希。"
+                        switch-field
+                      >
+                        <VSwitch
+                          :model-value="taskEditor.verify"
+                          aria-label="完成校验"
+                          color="primary"
+                          :disabled="taskEditor.delete_source"
+                          density="compact"
+                          hide-details
+                          @update:model-value="handleVerify"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="删除源文件"
+                        hint="归档、清单和完整校验均成功后删除对应源文件。"
+                        switch-field
+                      >
+                        <VSwitch
+                          :model-value="taskEditor.delete_source"
+                          aria-label="删除源文件"
+                          color="error"
+                          density="compact"
+                          hide-details
+                          @update:model-value="handleDeleteSource"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                     <VAlert
                       v-if="taskEditor.delete_source"
@@ -1483,8 +1561,9 @@ onBeforeUnmount(() => {
                       density="compact"
                       type="warning"
                       variant="tonal"
-                      >启用删除源文件后，后端会强制执行校验；校验失败不会删除源文件。</VAlert
                     >
+                      启用后会强制校验，失败时保留源文件。
+                    </VAlert>
                   </div>
                   <div class="archive-editor__actions">
                     <VBtn
@@ -1732,9 +1811,14 @@ onBeforeUnmount(() => {
               </li>
             </ul>
             <section v-if="changedItems.length" class="archive-change-summary">
-              <div class="archive-change-summary__title"><VIcon color="warning" icon="mdi-format-list-checks" size="19" /><h3>本次修改</h3></div>
+              <div class="archive-change-summary__title">
+                <VIcon color="warning" icon="mdi-format-list-checks" size="19" />
+                <h3>本次修改</h3>
+              </div>
               <ul>
-                <li v-for="item in changedItems" :key="item"><VIcon color="warning" icon="mdi-circle" size="6" /><span>{{ item }}</span></li>
+                <li v-for="item in changedItems" :key="item">
+                  <VIcon color="warning" icon="mdi-circle" size="6" /><span>{{ item }}</span>
+                </li>
               </ul>
             </section>
             <section class="archive-runtime-summary">
@@ -1756,7 +1840,12 @@ onBeforeUnmount(() => {
           ><VIcon color="warning" icon="mdi-circle" size="8" />{{ pendingChangeCount }} 项待保存</span
         >
         <VSpacer />
-        <VBtn class="archive-mobile-save-dock__save" color="primary" :disabled="!hasUnsavedChanges" type="submit" variant="flat"
+        <VBtn
+          class="archive-mobile-save-dock__save"
+          color="primary"
+          :disabled="!hasUnsavedChanges"
+          type="submit"
+          variant="flat"
           ><VIcon icon="mdi-content-save" start />保存修改</VBtn
         >
       </div>
@@ -2473,6 +2562,14 @@ onBeforeUnmount(() => {
 }
 .archive-editor {
   min-block-size: max-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+.archive-editor > .archive-section__header {
+  padding: 18px 16px 0;
+  margin-block-end: 12px;
 }
 .archive-section {
   min-inline-size: 0;
@@ -2492,6 +2589,13 @@ onBeforeUnmount(() => {
 .archive-task-layout > .archive-task-detail {
   border-inline-start: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
   padding-inline-start: 16px;
+}
+.archive-section.archive-editor {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .archive-section__header {
   justify-content: space-between;
@@ -2599,15 +2703,26 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 .archive-editor__group {
-  padding-block: 15px;
-  border-block-end: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  min-inline-size: 0;
+  padding: 0 16px 14px;
+  border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  border-radius: var(--app-surface-radius, 8px);
+  background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
+  background-clip: padding-box;
 }
-.archive-editor__group:last-of-type {
-  border-block-end: 0;
+.archive-editor__group + .archive-editor__group {
+  margin-block-start: 12px;
 }
 .archive-editor__group h4 {
-  margin: 0 0 10px;
-  font-size: 0.82rem;
+  padding: 14px 0 10px;
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+}
+.archive-field-list {
+  display: grid;
+  min-inline-size: 0;
 }
 .archive-naming-preview {
   display: flex;
@@ -2660,7 +2775,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding-block-start: 16px;
+  padding: 16px;
 }
 .archive-filter-bar {
   display: flex;

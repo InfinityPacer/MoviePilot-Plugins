@@ -246,6 +246,20 @@
         },
         "release": true
     },
+    "AutoDiagnosis1": {
+        "name": "自动诊断1",
+        "description": "自动发起系统健康检查、网络连通性测试以及硬链接检查。",
+        "labels": "系统设置",
+        "version": "2.0.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v2.0.0": "迁移至 MoviePilot V3 稳定 SDK，保持系统健康、网络和硬链接诊断流程。"
+        },
+        "release": true
+    },
     "TrafficAssistant": {
         "name": "站点流量管理",
         "description": "自动管理流量，保障站点分享率。",
@@ -306,7 +320,7 @@
         "name": "压缩归档",
         "description": "文件压缩归档，支持独立清单、校验和可选加密。",
         "labels": "文件,归档",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png",
         "author": "InfinityPacer",
         "level": 1,

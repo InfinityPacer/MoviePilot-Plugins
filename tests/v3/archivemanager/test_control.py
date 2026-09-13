@@ -12,6 +12,7 @@ from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig, parse_config
 from app.plugins.archivemanager.scanner import identity
 from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
+from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import scoped_session, sessionmaker
 
@@ -88,6 +89,7 @@ def test_archive_manager_constructs_real_plugin_and_declares_persistence_contrac
     assert manager.get_state() is False
     assert manager.get_database_models() == [manager_module.BatchRow, manager_module.FileRow, manager_module.TaskRow]
     assert manager.get_form() == ([], {"enabled": False, "notify": False, "notify_events": ["failure"], "tasks": []})
+    assert supports_plugin_hook(manager, "get_page") is False
     assert manager.get_service() == []
 
 

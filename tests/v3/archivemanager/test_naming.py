@@ -1,5 +1,7 @@
 """命名模板的路径边界、时区及唯一性。"""
 
+from datetime import datetime, timezone
+
 import pytest
 from app.plugins.archivemanager.naming import batch_relative_directory, frozen_names, validate_template
 
@@ -40,6 +42,34 @@ def test_names_use_frozen_creation_time_without_forced_identity_suffix():
     )
 
 
+def test_file_mtime_uses_earliest_batch_file_and_supports_strftime():
+    first = datetime(2026, 1, 28, 6, 19, 30, tzinfo=timezone.utc)
+    second = datetime(2026, 1, 29, 7, 20, 40, tzinfo=timezone.utc)
+    expected = first.astimezone()
+    entries = [
+        {"mtime_ns": int(second.timestamp() * 1_000_000_000)},
+        {"mtime_ns": int(first.timestamp() * 1_000_000_000)},
+    ]
+    task = {
+        "name": "camera",
+        "format": "7z",
+        "batch_name_template": "{file_mtime}",
+        "archive_name_template": "camera_{file_mtime:%Y-%m-%d_%H-%M-%S}",
+    }
+
+    names = frozen_names(task, "abc123", "2026-09-13T00:00:00+00:00", entries=entries)
+
+    assert names["batch_name"] == expected.strftime("%Y%m%d_%H%M%S")
+    assert names["archive_name"] == f"camera_{expected.strftime('%Y-%m-%d_%H-%M-%S')}.7z"
+
+
+def test_file_mtime_requires_a_batch_file():
+    task = {"name": "backup", "format": "zip", "archive_name_template": "{file_mtime}"}
+
+    with pytest.raises(ValueError, match="至少包含一个文件"):
+        frozen_names(task, "abc123", "2026-09-13T00:00:00+00:00")
+
+
 def test_escaped_id_is_literal_when_requested():
     task = {"name": "backup", "timezone": "UTC", "format": "zip", "archive_name_template": "backup_{{id}}"}
     assert frozen_names(task, "abc123", "2026-09-10T20:00:00+00:00")["archive_name"] == "backup_{id}.zip"
@@ -53,6 +83,9 @@ def test_escaped_id_is_literal_when_requested():
         "{date:>30}",
         "{id!r}",
         "{unknown}",
+        "bad:name",
+        "{file_mtime:%Y:%m}",
+        "{file_mtime:{id}}",
         "",
         "a\nb",
     ],

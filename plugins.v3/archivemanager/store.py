@@ -225,7 +225,7 @@ class Store:
                 if datetime.fromisoformat(row.created_at).astimezone().date() == local_day:
                     sequence += 1
         data = {
-            **frozen_names(task, batch_id, created_at, sequence),
+            **frozen_names(task, batch_id, created_at, sequence, entries),
             "task": task,
             "task_name": task["name"],
             "entries": entries,

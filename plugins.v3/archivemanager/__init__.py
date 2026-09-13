@@ -51,15 +51,15 @@ class PreviewRequest(BaseModel):
 class ArchiveManager(_PluginBase):
     """只归档本地普通文件；上传及云端状态由用户的外部工具负责。"""
 
-    plugin_name = "压缩归档"  # 市场显示名
-    plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"  # 用户可见能力
+    plugin_name = "压缩归档"
+    plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.0"  # 插件版本
-    plugin_author = "InfinityPacer"  # 维护者
-    author_url = "https://github.com/InfinityPacer"  # 维护者主页
-    plugin_config_prefix = "archivemanager_"  # 配置项命名空间
-    plugin_order = 30  # 市场排序
-    auth_level = 1  # 使用权限等级
+    plugin_version = "0.1.1"
+    plugin_author = "InfinityPacer"
+    author_url = "https://github.com/InfinityPacer"
+    plugin_config_prefix = "archivemanager_"
+    plugin_order = 30
+    auth_level = 1
 
     def __init__(self):
         super().__init__()
@@ -514,8 +514,8 @@ class ArchiveManager(_PluginBase):
         """表单默认模型；完整任务编辑由联邦组件承担。"""
         return [], {"enabled": False, "notify": False, "notify_events": ["failure"], "tasks": []}
 
-    def get_page(self):
-        return None
+    # 本插件只有联邦配置页；设为 None 避免宿主把已启用实例识别为数据页。
+    get_page = None
 
     @staticmethod
     def get_command():

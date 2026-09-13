@@ -33,16 +33,17 @@ describe('ArchiveManager federated config', () => {
     expect(document.querySelector('.archive-main')?.textContent).not.toContain('已归档文件')
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
     const editor = screen.getByText('新增归档任务').closest('section') as HTMLElement
-    const taskName = within(editor).getByRole('textbox', { name: '任务名称' })
+    const taskName = within(editor).getByRole('textbox', { name: '任务名' })
     await user.clear(taskName)
     await user.type(taskName, '媒体归档')
-    await user.click(within(editor).getByRole('checkbox', { name: '校验通过后删除源文件' }))
-    expect(within(editor).getByRole('checkbox', { name: '归档后校验' })).toBeChecked()
+    await user.click(within(editor).getByRole('checkbox', { name: '删除源文件' }))
+    expect(within(editor).getByRole('checkbox', { name: '完成校验' })).toBeChecked()
     await user.click(within(editor).getByRole('button', { name: '保存任务' }))
     expect(document.querySelector('.archive-header__save')).toHaveTextContent('保存修改')
     await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
 
     expect(save).toHaveBeenCalledOnce()
+    expect(screen.queryByText('配置已提交给宿主保存。')).not.toBeInTheDocument()
     const payload = save.mock.calls[0][0]
     expect(payload).toEqual(expect.objectContaining({ enabled: false, tasks: expect.any(Array) }))
     expect(payload.tasks[0]).toEqual(expect.objectContaining({ name: '媒体归档', delete_source: true, verify: true }))
@@ -62,31 +63,6 @@ describe('ArchiveManager federated config', () => {
     expect(payload.tasks[0]).not.toHaveProperty('timezone')
   })
 
-  it('closes after the host confirms saving without showing a submit notice', async () => {
-    const { api } = createHostApi()
-    const save = vi.fn()
-    const close = vi.fn()
-    const user = userEvent.setup()
-    const rendered = renderWithHost(Config, {
-      props: { api, initialConfig: createConfig(), onSave: save, onClose: close, saveResult: 'idle' },
-    })
-
-    await user.click(screen.getByRole('checkbox', { name: '启用' }))
-    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
-    expect(save).toHaveBeenCalledOnce()
-    expect(screen.queryByText('配置已提交给宿主保存。')).not.toBeInTheDocument()
-    expect(close).not.toHaveBeenCalled()
-
-    await rendered.rerender({
-      api,
-      initialConfig: createConfig(),
-      onSave: save,
-      onClose: close,
-      saveResult: 'success',
-    })
-    expect(close).toHaveBeenCalledOnce()
-  })
-
   it('enables the main save while editing a task and lists the pending task change', async () => {
     const { api } = createHostApi()
     const save = vi.fn()
@@ -96,7 +72,7 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
     const editor = screen.getByText('新增归档任务').closest('section') as HTMLElement
-    const taskName = within(editor).getByRole('textbox', { name: '任务名称' })
+    const taskName = within(editor).getByRole('textbox', { name: '任务名' })
     await user.clear(taskName)
     await user.type(taskName, '媒体归档')
 
@@ -132,33 +108,30 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
     const editor = screen.getByText('新增归档任务').closest('section') as HTMLElement
-    const naming = within(editor).getByText('命名规则').closest('.archive-editor__group') as HTMLElement
+    const naming = within(editor).getByText('2. 命名规则').closest('.archive-editor__group') as HTMLElement
+    const scope = within(editor).getByText('3. 文件范围').closest('.archive-editor__group') as HTMLElement
 
-    expect(within(naming).getAllByText('批次目录布局')).not.toHaveLength(0)
+    expect(within(scope).getByRole('textbox', { name: '目录布局' })).toBeInTheDocument()
     expect(within(naming).queryByText('摄像头')).not.toBeInTheDocument()
-    expect(
-      within(naming).getByText('用于实际批次目录名，例如 20260911_0001；创建后固定，改模板只影响新批次。'),
-    ).toBeInTheDocument()
-    expect(naming.textContent).toContain('基础变量：')
-    expect(naming.textContent).toContain('040020')
+    expect(within(naming).getByText(/支持任务名、日期、时间、序号和文件修改时间变量/)).toBeInTheDocument()
     expect(naming.textContent).toContain('7f3a9c')
-    expect(naming.textContent).toContain('{%Y%m%d_%H%M%S}')
+    expect(within(naming).getByRole('textbox', { name: '批次名称' })).toHaveValue('{date}_{sequence}')
     expect(within(naming).getByText('批次：20260911_0001')).toBeInTheDocument()
     expect(within(naming).getByText('归档包：7f3a9c.7z')).toBeInTheDocument()
 
-    const batchTemplate = within(naming).getByRole('textbox', { name: '批次名称模板' })
+    const batchTemplate = within(naming).getByRole('textbox', { name: '批次名称' })
     await user.clear(batchTemplate)
     await fireEvent.update(batchTemplate, '{%Y%m%d_%H%M%S}')
     expect(within(naming).getByText('批次：20260911_040020')).toBeInTheDocument()
 
     // Vuetify renders the select's accessible name on its internal text input.
-    const layout = within(naming).getByRole('textbox', { name: '批次目录布局' })
+    const layout = within(scope).getByRole('textbox', { name: '目录布局' })
     expect(layout).toHaveValue('directory')
     await user.click(layout)
     expect(await screen.findByText('扁平（来源目录_批次名称）')).toBeInTheDocument()
   })
 
-  it('renders task_name in an existing batch template without exposing it as a base variable', async () => {
+  it('renders task_name and file_mtime variables in the naming preview', async () => {
     const task = createArchiveTask({ id: 'task-1', name: '存量任务', batch_name_template: '{task_name}_{date}' })
     const { api } = createHostApi()
     const user = userEvent.setup()
@@ -167,11 +140,14 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '编辑归档任务' }))
     const editor = screen.getByText('编辑归档任务').closest('section') as HTMLElement
-    const naming = within(editor).getByText('命名规则').closest('.archive-editor__group') as HTMLElement
+    const naming = within(editor).getByText('2. 命名规则').closest('.archive-editor__group') as HTMLElement
 
     expect(within(naming).getByText('批次：存量任务_20260911')).toBeInTheDocument()
-    expect(naming.textContent).toContain('{date}')
-    expect(naming.textContent).not.toContain('{task_name}')
+    expect(within(naming).getByRole('textbox', { name: '批次名称' })).toHaveValue('{task_name}_{date}')
+
+    const batchTemplate = within(naming).getByRole('textbox', { name: '批次名称' })
+    await fireEvent.update(batchTemplate, '{file_mtime:%Y-%m-%d_%H-%M-%S}')
+    expect(within(naming).getByText('批次：2026-01-28_14-19-30')).toBeInTheDocument()
   })
 
   it('does not silently downgrade ZIP file-name encryption', async () => {
@@ -183,7 +159,7 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '编辑归档任务' }))
     const editor = screen.getByText('编辑归档任务').closest('section') as HTMLElement
-    const format = within(editor).getByRole('textbox', { name: '归档格式' })
+    const format = within(editor).getByRole('textbox', { name: '格式' })
     await user.click(format)
     await user.click(await screen.findByText('ZIP', { exact: true }))
     expect(
@@ -202,7 +178,7 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '编辑归档任务' }))
     const editor = screen.getByText('编辑归档任务').closest('section') as HTMLElement
-    const encryption = within(editor).getByRole('textbox', { name: '加密方式' })
+    const encryption = within(editor).getByRole('textbox', { name: '加密' })
     await user.click(encryption)
     await user.click(await screen.findByText('不加密', { exact: true }))
     await user.click(within(editor).getByRole('button', { name: '保存任务' }))

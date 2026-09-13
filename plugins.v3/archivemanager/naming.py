@@ -5,7 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from string import Formatter
 
-FIELDS = {"task_name", "date", "time", "id", "sequence"}
+FIELDS = {"task_name", "date", "time", "id", "sequence", "file_mtime"}
+DEFAULT_FILE_TIME_FORMAT = "%Y%m%d_%H%M%S"
+STRFTIME_PATTERN = re.compile(r'(?:%[A-Za-z]|[^%{}\\/:*?"<>|\x00-\x1f\x7f]){1,80}')
 
 
 def batch_relative_directory(batch: dict) -> Path:
@@ -28,16 +30,37 @@ def validate_template(template: str) -> None:
     """只允许简单占位符和单层文件名，避免格式表达式改变路径语义。"""
     if not template.strip() or len(template) > 160:
         raise ValueError("命名模板不能为空且不能超过160个字符")
-    if re.search(r'[\\/:*?"<>|\x00-\x1f\x7f]', template):
+    if re.search(r'[\\/*?"<>|\x00-\x1f\x7f]', template):
         raise ValueError("命名模板不能包含路径分隔符或文件名保留字符")
-    for _literal, field, spec, conversion in Formatter().parse(template):
-        if field is not None and (spec or conversion or not (field in FIELDS or (field.startswith("%") and re.fullmatch(r"(?:%[A-Za-z]|[^%]){1,80}", field)))):
-            raise ValueError("命名模板仅支持任务名、日期时间和批次 ID 占位符")
+    for literal, field, spec, conversion in Formatter().parse(template):
+        if ":" in literal or (spec and ":" in spec):
+            raise ValueError("命名模板不能包含路径分隔符或文件名保留字符")
+        if field is None:
+            continue
+        valid_file_mtime = (
+            field == "file_mtime"
+            and not conversion
+            and (not spec or STRFTIME_PATTERN.fullmatch(spec))
+        )
+        valid_basic = field in FIELDS - {"file_mtime"} and not spec and not conversion
+        valid_created_time = field.startswith("%") and not spec and not conversion and STRFTIME_PATTERN.fullmatch(field)
+        if not (valid_file_mtime or valid_basic or valid_created_time):
+            raise ValueError("命名模板仅支持任务名、日期时间、文件修改时间和批次 ID 占位符")
 
 
-def frozen_names(task: dict, batch_id: str, created_at: str, sequence: int = 1) -> dict:
+def frozen_names(
+    task: dict,
+    batch_id: str,
+    created_at: str,
+    sequence: int = 1,
+    entries: list[dict] | None = None,
+) -> dict:
     """生成可读名与跨目录唯一的包名；长度为摘要和临时文件后缀预留空间。"""
     moment = datetime.fromisoformat(created_at).astimezone()
+    file_moment = None
+    if entries:
+        earliest_mtime_ns = min(int(entry["mtime_ns"]) for entry in entries)
+        file_moment = datetime.fromtimestamp(earliest_mtime_ns / 1e9).astimezone()
     values = {
         "task_name": re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', "_", task["name"]),
         "date": moment.strftime("%Y%m%d"),
@@ -49,12 +72,21 @@ def frozen_names(task: dict, batch_id: str, created_at: str, sequence: int = 1) 
     file_template = task.get("archive_name_template", "{id}")
     validate_template(label_template)
     validate_template(file_template)
+
     def render(template: str) -> str:
         parts = []
-        for literal, field, _spec, _conversion in Formatter().parse(template):
+        for literal, field, spec, _conversion in Formatter().parse(template):
             parts.append(literal)
-            if field is not None:
-                parts.append(moment.strftime(field) if field.startswith("%") else str(values[field]))
+            if field is None:
+                continue
+            if field.startswith("%"):
+                parts.append(moment.strftime(field))
+            elif field == "file_mtime":
+                if file_moment is None:
+                    raise ValueError("文件修改时间变量需要批次中至少包含一个文件")
+                parts.append(file_moment.strftime(spec or DEFAULT_FILE_TIME_FORMAT))
+            else:
+                parts.append(str(values[field]))
         return "".join(parts).strip(" .")
 
     label = render(label_template)
