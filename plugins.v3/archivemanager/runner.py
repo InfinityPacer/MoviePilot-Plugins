@@ -108,6 +108,34 @@ def remove_staging(task: TaskConfig, batch_id: str) -> bool:
     return True
 
 
+def staging_size(task: TaskConfig, keep_batch_ids: set[str]) -> tuple[int, int]:
+    """统计任务下可安全清理的孤儿暂存目录及其占用空间。"""
+    task_root = staging_path(task, "")
+    if not task_root.is_dir():
+        return 0, 0
+    count = 0
+    total = 0
+    for child in task_root.iterdir():
+        if child.name in keep_batch_ids:
+            continue
+        count += 1
+        if child.is_symlink() or child.is_file():
+            try:
+                total += child.lstat().st_size
+            except OSError:
+                pass
+            continue
+        if child.is_dir():
+            for item in child.rglob("*"):
+                if item.is_symlink() or not item.is_file():
+                    continue
+                try:
+                    total += item.stat().st_size
+                except OSError:
+                    pass
+    return count, total
+
+
 def cleanup_stale_staging(task: TaskConfig, keep_batch_ids: set[str]) -> int:
     """清理任务下不属于待恢复批次的暂存目录。"""
     task_root = staging_path(task, "")

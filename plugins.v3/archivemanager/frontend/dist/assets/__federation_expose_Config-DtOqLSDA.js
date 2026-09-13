@@ -63,8 +63,21 @@ function previewReclaim(api) {
 function reclaimSpace(api) {
   return postData(api, `${ROOT}reclaim`, {});
 }
-function runTask(api, taskId) {
-  return postData(api, `${ROOT}run`, { task_id: taskId });
+async function runTasks(api) {
+  return submitRun(api, "");
+}
+async function runTask(api, taskId) {
+  return submitRun(api, taskId);
+}
+async function submitRun(api, taskId) {
+  if (!api) return { data: null, message: "插件接口不可用" };
+  try {
+    const response = await api.post(`${ROOT}run`, { task_id: taskId }, { feedback: "silent" });
+    return response.success ? { data: response.data, message: "" } : { data: null, message: response.message || "归档任务提交失败" };
+  } catch {
+    console.warn(`[ArchiveManager] ${ROOT}run failed`);
+    return { data: null, message: "归档任务提交失败，请检查插件状态" };
+  }
 }
 function stopTask(api, taskId) {
   return postData(api, `${ROOT}stop`, taskId ? { task_id: taskId } : {});
@@ -509,6 +522,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const includePatternsText = ref("");
     const excludePatternsText = ref("");
     const minFreeGiB = ref(1);
+    const maxBytesMiB = ref(4096);
     const mobileNavOpen = ref(false);
     const compatibilityOpen = ref(false);
     const compatibilityReason = ref("format");
@@ -720,13 +734,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       activeView.value = view;
       mobileNavOpen.value = false;
     }
-    function openTaskEditor(task) {
+    function openTaskEditor(task, asNew = false) {
       const next = cloneTask(task ?? createArchiveTask());
-      taskEditor.value = next;
-      editingTaskId.value = task?.id ?? null;
+      if (asNew) {
+        const copy = createArchiveTask({ ...next, id: "", name: `${next.name || "归档任务"}（副本）`, enabled: false });
+        taskEditor.value = copy;
+      } else {
+        taskEditor.value = next;
+      }
+      editingTaskId.value = asNew ? null : task?.id ?? null;
       includePatternsText.value = next.include_patterns.join("\n");
       excludePatternsText.value = next.exclude_patterns.join("\n");
       minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2));
+      maxBytesMiB.value = Number((next.max_bytes / 1024 ** 2).toFixed(2));
       taskEditorOriginal.value = cloneTask(next);
       editorOpen.value = true;
     }
@@ -738,12 +758,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       task.include_patterns = parsePatterns(includePatternsText.value);
       task.exclude_patterns = parsePatterns(excludePatternsText.value);
       task.min_free_bytes = Math.max(0, Number(minFreeGiB.value) || 0) * 1024 ** 3;
+      task.max_bytes = Math.max(0, Number(maxBytesMiB.value) || 0) * 1024 ** 2;
       if (task.delete_source) task.verify = true;
       if (task.format === "zip") task.encrypt_names = false;
       if (task.password.length > 0) task.password_set = true;
       return task;
     }
-    function saveTaskEditor() {
+    function commitTaskEditor() {
       const task = prepareEditorTask();
       const index = draft.value.tasks.findIndex((item) => item.id === task.id);
       if (index >= 0) draft.value.tasks.splice(index, 1, task);
@@ -752,8 +773,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       editorOpen.value = false;
       taskEditorOriginal.value = null;
     }
+    function saveTaskEditor() {
+      commitTaskEditor();
+      saveConfig();
+    }
     function cancelTaskEditor() {
       editorOpen.value = false;
+    }
+    function copyTask(task) {
+      openTaskEditor(task, true);
     }
     async function removeTask(task) {
       let confirmed = false;
@@ -832,7 +860,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function saveConfig() {
-      if (taskEditorDirty.value) saveTaskEditor();
+      if (taskEditorDirty.value) commitTaskEditor();
       const payload = normalizeArchiveConfig(draft.value);
       draft.value = payload;
       emit("save", normalizeArchiveConfig(payload));
@@ -903,7 +931,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       if (progress.phase === "waiting_capacity") return progress.reason || "等待外部工具移走归档成品";
       if (progress.phase === "waiting_retry") return progress.reason || "存在失败批次，等待重试后继续";
-      return progress.reason || `积压 ${formatNumber(progress.pending_archives)} 批 · ${formatBytes(progress.pending_bytes)}`;
+      return progress.reason || `已归档 ${formatNumber(progress.pending_archives)} 批 · ${formatBytes(progress.pending_bytes)}`;
     }
     async function refreshSummary() {
       const requestToken = ++summaryRequestToken;
@@ -941,16 +969,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const batchCount = Number(preview.batch_count ?? 0);
       const fileCount = Number(preview.file_count ?? 0);
       const estimated = Number(preview.estimated_bytes ?? 0);
-      if (estimated <= 0 || fileCount <= 0) {
-        setNotice("暂无需要回收的源文件。", "info");
+      const stagingCount = Number(preview.staging_count ?? 0);
+      const stagingBytes = Number(preview.staging_bytes ?? 0);
+      if (estimated <= 0) {
+        setNotice("暂无需要回收的空间。", "info");
         return;
       }
-      const content = `将扫描所有已完成的归档批次，并回收仍保留且校验通过的源文件。
+      const content = `将扫描所有已完成的归档批次，并回收仍保留且校验通过的源文件，同时清理不可恢复的旧暂存。
 
 可回收批次：${batchCount} 个
 可回收文件：${fileCount} 个
-预计释放空间：${formatBytes(estimated)}`;
-      const confirmed = hostConfirm ? await hostConfirm({ type: "warn", title: "回收源文件", content, confirmText: "开始回收", cancelText: "取消" }) : window.confirm(`${content}
+旧暂存目录：${stagingCount} 个
+预计释放空间：${formatBytes(estimated)}${stagingBytes > 0 ? `（其中旧暂存 ${formatBytes(stagingBytes)}）` : ""}`;
+      const confirmed = hostConfirm ? await hostConfirm({ type: "warn", title: "回收空间", content, confirmText: "开始回收", cancelText: "取消" }) : window.confirm(`${content}
 
 是否继续？`);
       if (!confirmed) return;
@@ -963,9 +994,22 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       const reclaimResult = result;
       const queuedEstimate = Number(reclaimResult.estimated_bytes ?? 0);
+      const stagingRemoved = Number(reclaimResult.staging_removed ?? 0);
       const suffix = queuedEstimate > 0 ? `，预计回收 ${formatBytes(queuedEstimate)}` : "";
-      setNotice(`已加入 ${Number(reclaimResult.queued ?? 0)} 个批次的回收队列${suffix}。`, "success");
+      const stagingSuffix = stagingRemoved > 0 ? `，已清理 ${stagingRemoved} 个旧暂存目录` : "";
+      setNotice(`已加入 ${Number(reclaimResult.queued ?? 0)} 个批次的回收队列${suffix}${stagingSuffix}。`, "success");
       await refreshSummary();
+    }
+    async function submitRun(response, successMessage) {
+      if (!response.data) {
+        setNotice(response.message, "error");
+        operationMessage.value = "";
+        return;
+      }
+      setNotice(successMessage, "success");
+      operationMessage.value = "归档任务运行中…";
+      await refreshSummary();
+      startOperationPolling();
     }
     async function executeRun(taskId = activeTaskId.value) {
       if (!taskId) {
@@ -973,16 +1017,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         return;
       }
       operationMessage.value = "正在提交归档任务…";
-      const result = await runTask(props.api, taskId);
-      if (!result) {
-        setNotice("归档任务提交失败，请检查插件状态。", "error");
-        operationMessage.value = "";
+      await submitRun(await runTask(props.api, taskId), "归档任务已提交");
+    }
+    async function executeRunAll() {
+      if (!draft.value.tasks.length) {
+        setNotice("没有可运行的归档任务", "warning");
         return;
       }
-      setNotice(result.queued ? "归档任务已加入队列。" : "归档任务已启动。", "success");
-      operationMessage.value = "归档任务运行中…";
-      await refreshSummary();
-      startOperationPolling();
+      operationMessage.value = "正在提交全部归档任务…";
+      await submitRun(await runTasks(props.api), `已提交 ${draft.value.tasks.length} 个归档任务`);
     }
     async function executeStop() {
       operationMessage.value = "正在请求停止…";
@@ -1282,14 +1325,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               }, 8, ["disabled"]),
               _createVNode(_component_VBtn, {
                 class: "archive-header__run",
-                disabled: !activeTaskId.value || operationBusy.value,
+                disabled: !draft.value.tasks.length || operationBusy.value,
                 "prepend-icon": "mdi-play",
                 type: "button",
                 variant: "tonal",
-                onClick: _cache[0] || (_cache[0] = ($event) => executeRun())
+                onClick: executeRunAll
               }, {
                 default: _withCtx(() => _cache[71] || (_cache[71] = [
-                  _createTextVNode(" 运行一次 ")
+                  _createTextVNode(" 提交全部任务 ")
                 ])),
                 _: 1
               }, 8, ["disabled"]),
@@ -1309,7 +1352,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 class: "archive-header__close-action",
                 "prepend-icon": "mdi-close",
                 variant: "outlined",
-                onClick: _cache[1] || (_cache[1] = ($event) => emit("close"))
+                onClick: _cache[0] || (_cache[0] = ($event) => emit("close"))
               }, {
                 default: _withCtx(() => _cache[73] || (_cache[73] = [
                   _createTextVNode(" 关闭 ")
@@ -1322,7 +1365,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 icon: "",
                 size: "small",
                 variant: "text",
-                onClick: _cache[2] || (_cache[2] = ($event) => emit("close"))
+                onClick: _cache[1] || (_cache[1] = ($event) => emit("close"))
               }, {
                 default: _withCtx(() => [
                   _createVNode(_component_VIcon, { icon: "mdi-close" })
@@ -1338,7 +1381,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               closable: "",
               density: "compact",
               variant: "tonal",
-              "onClick:close": _cache[3] || (_cache[3] = ($event) => notice.value = null)
+              "onClick:close": _cache[2] || (_cache[2] = ($event) => notice.value = null)
             }, {
               default: _withCtx(() => [
                 _createTextVNode(_toDisplayString(notice.value.text), 1)
@@ -1432,7 +1475,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       icon: "",
                       size: "small",
                       variant: "tonal",
-                      onClick: _cache[4] || (_cache[4] = ($event) => mobileNavOpen.value = true)
+                      onClick: _cache[3] || (_cache[3] = ($event) => mobileNavOpen.value = true)
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_VIcon, { icon: "mdi-view-list-outline" }),
@@ -1448,7 +1491,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       icon: "",
                       size: "small",
                       variant: "text",
-                      onClick: _cache[5] || (_cache[5] = ($event) => activeView.value === "batches" ? loadBatchPage() : activeView.value === "files" ? loadFilePage() : refreshSummary())
+                      onClick: _cache[4] || (_cache[4] = ($event) => activeView.value === "batches" ? loadBatchPage() : activeView.value === "files" ? loadFilePage() : refreshSummary())
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_VIcon, { icon: "mdi-refresh" }),
@@ -1576,7 +1619,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                             }, 1032, ["color"]),
                             _createElementVNode("span", _hoisted_34, _toDisplayString(progressLabel(progress)), 1),
                             _createElementVNode("span", _hoisted_35, [
-                              _createTextVNode("积压 " + _toDisplayString(formatNumber(progress.pending_archives)) + " 批 · " + _toDisplayString(formatBytes(progress.pending_bytes)), 1),
+                              _createTextVNode("已归档 " + _toDisplayString(formatNumber(progress.pending_archives)) + " 批 · " + _toDisplayString(formatBytes(progress.pending_bytes)), 1),
                               _cache[90] || (_cache[90] = _createElementVNode("br", null, null, -1)),
                               _createTextVNode("可用空间 " + _toDisplayString(formatBytes(progress.free_bytes)), 1)
                             ])
@@ -1600,7 +1643,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           default: _withCtx(() => [
                             _createVNode(_component_VSwitch, {
                               modelValue: draft.value.enabled,
-                              "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => draft.value.enabled = $event),
+                              "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => draft.value.enabled = $event),
                               "aria-label": "启用插件",
                               color: "primary",
                               density: "compact",
@@ -1617,7 +1660,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           default: _withCtx(() => [
                             _createVNode(_component_VSwitch, {
                               modelValue: draft.value.notify,
-                              "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => draft.value.notify = $event),
+                              "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => draft.value.notify = $event),
                               "aria-label": "发送通知",
                               color: "primary",
                               density: "compact",
@@ -1633,7 +1676,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           default: _withCtx(() => [
                             _createVNode(_component_VSelect, {
                               modelValue: draft.value.notify_events,
-                              "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => draft.value.notify_events = $event),
+                              "onUpdate:modelValue": _cache[7] || (_cache[7] = ($event) => draft.value.notify_events = $event),
                               "aria-label": "通知事件",
                               chips: "",
                               "closable-chips": "",
@@ -1666,7 +1709,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           icon: "",
                           size: "small",
                           variant: "tonal",
-                          onClick: _cache[9] || (_cache[9] = ($event) => openTaskEditor())
+                          onClick: _cache[8] || (_cache[8] = ($event) => openTaskEditor())
                         }, {
                           default: _withCtx(() => [
                             _createVNode(_component_VIcon, { icon: "mdi-plus" })
@@ -1685,7 +1728,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           color: "primary",
                           "prepend-icon": "mdi-plus",
                           variant: "tonal",
-                          onClick: _cache[10] || (_cache[10] = ($event) => openTaskEditor())
+                          onClick: _cache[9] || (_cache[9] = ($event) => openTaskEditor())
                         }, {
                           default: _withCtx(() => _cache[93] || (_cache[93] = [
                             _createTextVNode("创建第一个任务")
@@ -1747,13 +1790,30 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                             icon: "",
                             size: "small",
                             variant: "tonal",
-                            onClick: _cache[11] || (_cache[11] = ($event) => openTaskEditor(selectedTask.value))
+                            onClick: _cache[10] || (_cache[10] = ($event) => openTaskEditor(selectedTask.value))
                           }, {
                             default: _withCtx(() => [
                               _createVNode(_component_VIcon, { icon: "mdi-pencil-outline" }),
                               _createVNode(_component_VTooltip, {
                                 activator: "parent",
                                 text: "编辑任务"
+                              })
+                            ]),
+                            _: 1
+                          }),
+                          _createVNode(_component_VBtn, {
+                            "aria-label": "复制归档任务",
+                            color: "primary",
+                            icon: "",
+                            size: "small",
+                            variant: "text",
+                            onClick: _cache[11] || (_cache[11] = ($event) => copyTask(selectedTask.value))
+                          }, {
+                            default: _withCtx(() => [
+                              _createVNode(_component_VIcon, { icon: "mdi-content-copy" }),
+                              _createVNode(_component_VTooltip, {
+                                activator: "parent",
+                                text: "复制任务"
                               })
                             ]),
                             _: 1
@@ -1796,7 +1856,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ]),
                         _createElementVNode("div", null, [
                           _cache[100] || (_cache[100] = _createElementVNode("span", null, "文件限制", -1)),
-                          _createElementVNode("strong", null, _toDisplayString(selectedTask.value.max_files ? `${formatNumber(selectedTask.value.max_files)} 个` : "不限数量") + " · " + _toDisplayString(selectedTask.value.max_bytes ? formatBytes(selectedTask.value.max_bytes) : "不限体积"), 1)
+                          _createElementVNode("strong", null, _toDisplayString(selectedTask.value.max_files ? `${formatNumber(selectedTask.value.max_files)} 个` : "不限数量") + " · " + _toDisplayString(selectedTask.value.max_bytes ? `${formatNumber(selectedTask.value.max_bytes)} M` : "不限体积"), 1)
                         ]),
                         _createElementVNode("div", null, [
                           _cache[101] || (_cache[101] = _createElementVNode("span", null, "归档策略", -1)),
@@ -1864,7 +1924,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("div", _hoisted_48, [
                         _createElementVNode("div", null, [
                           _createElementVNode("h3", null, _toDisplayString(taskEditorTitle.value), 1),
-                          _cache[105] || (_cache[105] = _createElementVNode("p", null, "保存草稿后，再点击页面顶部“保存修改”才会写入配置", -1))
+                          _cache[105] || (_cache[105] = _createElementVNode("p", null, "保存任务后会同步写入插件配置", -1))
                         ]),
                         _createVNode(_component_VBtn, {
                           "aria-label": "取消编辑",
@@ -2212,14 +2272,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           }, {
                             default: _withCtx(() => [
                               _createVNode(_component_VTextField, {
-                                modelValue: taskEditor.value.max_bytes,
-                                "onUpdate:modelValue": _cache[32] || (_cache[32] = ($event) => taskEditor.value.max_bytes = $event),
+                                modelValue: maxBytesMiB.value,
+                                "onUpdate:modelValue": _cache[32] || (_cache[32] = ($event) => maxBytesMiB.value = $event),
                                 modelModifiers: { number: true },
                                 "aria-label": "每批体积",
                                 density: "compact",
                                 "hide-details": "",
                                 min: "0",
                                 type: "number",
+                                suffix: "M",
                                 variant: "outlined"
                               }, null, 8, ["modelValue"])
                             ]),
@@ -2530,7 +2591,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           onClick: saveTaskEditor
                         }, {
                           default: _withCtx(() => _cache[115] || (_cache[115] = [
-                            _createTextVNode("保存草稿")
+                            _createTextVNode("保存任务")
                           ])),
                           _: 1
                         })
@@ -3558,6 +3619,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-be3fcdcd"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-d317deaf"]]);
 
 export { Config as default };

@@ -138,6 +138,22 @@ def test_api_run_rejects_global_disabled_plugin(tmp_path: Path, monkeypatch) -> 
     assert "未启用" in response.message
 
 
+def test_api_run_without_task_id_submits_all_tasks(tmp_path: Path, monkeypatch) -> None:
+    first = _task(tmp_path / "first", id="first")
+    second = _task(tmp_path / "second", id="second")
+    manager = manager_module.ArchiveManager()
+    manager._tasks = [first, second]
+    manager._enabled = True
+    submitted = []
+    monkeypatch.setattr(manager, "_enqueue_task", lambda task_id: submitted.append(task_id) or f"job-{task_id}")
+
+    response = manager.api_run(manager_module.TaskRequest())
+
+    assert response.success is True
+    assert response.data == {"job_ids": ["job-first", "job-second"], "task_count": 2}
+    assert submitted == ["first", "second"]
+
+
 def test_archive_manager_frontend_has_reproducible_lockfile() -> None:
     """联邦前端提交 yarn.lock，未来发布时可以按冻结依赖构建。"""
     lockfile = PLUGIN_ROOT / "frontend/yarn.lock"

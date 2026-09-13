@@ -13,6 +13,7 @@ import {
   repairBatch,
   retryBatch,
   runTask,
+  runTasks,
   startPreview,
   stopTask,
   type PluginApi,
@@ -77,6 +78,7 @@ const taskEditorOriginal = ref<ArchiveTask | null>(null)
 const includePatternsText = ref('')
 const excludePatternsText = ref('')
 const minFreeGiB = ref(1)
+const maxBytesMiB = ref(4096)
 const mobileNavOpen = ref(false)
 const compatibilityOpen = ref(false)
 const compatibilityReason = ref<'format' | 'encrypt_names'>('format')
@@ -309,13 +311,19 @@ function selectMobileView(view: ViewKey): void {
   mobileNavOpen.value = false
 }
 
-function openTaskEditor(task?: ArchiveTask): void {
+function openTaskEditor(task?: ArchiveTask, asNew = false): void {
   const next = cloneTask(task ?? createArchiveTask())
-  taskEditor.value = next
-  editingTaskId.value = task?.id ?? null
+  if (asNew) {
+    const copy = createArchiveTask({ ...next, id: '', name: `${next.name || '归档任务'}（副本）`, enabled: false })
+    taskEditor.value = copy
+  } else {
+    taskEditor.value = next
+  }
+  editingTaskId.value = asNew ? null : task?.id ?? null
   includePatternsText.value = next.include_patterns.join('\n')
   excludePatternsText.value = next.exclude_patterns.join('\n')
   minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2))
+  maxBytesMiB.value = Number((next.max_bytes / 1024 ** 2).toFixed(2))
   taskEditorOriginal.value = cloneTask(next)
   editorOpen.value = true
 }
@@ -332,13 +340,14 @@ function prepareEditorTask(): ArchiveTask {
   task.include_patterns = parsePatterns(includePatternsText.value)
   task.exclude_patterns = parsePatterns(excludePatternsText.value)
   task.min_free_bytes = Math.max(0, Number(minFreeGiB.value) || 0) * 1024 ** 3
+  task.max_bytes = Math.max(0, Number(maxBytesMiB.value) || 0) * 1024 ** 2
   if (task.delete_source) task.verify = true
   if (task.format === 'zip') task.encrypt_names = false
   if (task.password.length > 0) task.password_set = true
   return task
 }
 
-function saveTaskEditor(): void {
+function commitTaskEditor(): void {
   const task = prepareEditorTask()
   const index = draft.value.tasks.findIndex(item => item.id === task.id)
   if (index >= 0) draft.value.tasks.splice(index, 1, task)
@@ -348,8 +357,17 @@ function saveTaskEditor(): void {
   taskEditorOriginal.value = null
 }
 
+function saveTaskEditor(): void {
+  commitTaskEditor()
+  saveConfig()
+}
+
 function cancelTaskEditor(): void {
   editorOpen.value = false
+}
+
+function copyTask(task: ArchiveTask): void {
+  openTaskEditor(task, true)
 }
 
 async function removeTask(task: ArchiveTask): Promise<void> {
@@ -437,7 +455,7 @@ function handleEncryption(value: unknown): void {
 }
 
 function saveConfig(): void {
-  if (taskEditorDirty.value) saveTaskEditor()
+  if (taskEditorDirty.value) commitTaskEditor()
   const payload = normalizeArchiveConfig(draft.value)
   draft.value = payload
   emit('save', normalizeArchiveConfig(payload))
@@ -528,7 +546,7 @@ function progressLabel(progress: SummaryPayload['tasks'][number]): string {
   if (progress.phase === 'waiting_capacity') return progress.reason || '等待外部工具移走归档成品'
   if (progress.phase === 'waiting_retry') return progress.reason || '存在失败批次，等待重试后继续'
   return (
-    progress.reason || `积压 ${formatNumber(progress.pending_archives)} 批 · ${formatBytes(progress.pending_bytes)}`
+    progress.reason || `已归档 ${formatNumber(progress.pending_archives)} 批 · ${formatBytes(progress.pending_bytes)}`
   )
 }
 
@@ -571,13 +589,15 @@ async function executeReclaim(): Promise<void> {
   const batchCount = Number(preview.batch_count ?? 0)
   const fileCount = Number(preview.file_count ?? 0)
   const estimated = Number(preview.estimated_bytes ?? 0)
-  if (estimated <= 0 || fileCount <= 0) {
-    setNotice('暂无需要回收的源文件。', 'info')
+  const stagingCount = Number(preview.staging_count ?? 0)
+  const stagingBytes = Number(preview.staging_bytes ?? 0)
+  if (estimated <= 0) {
+    setNotice('暂无需要回收的空间。', 'info')
     return
   }
-  const content = `将扫描所有已完成的归档批次，并回收仍保留且校验通过的源文件。\n\n可回收批次：${batchCount} 个\n可回收文件：${fileCount} 个\n预计释放空间：${formatBytes(estimated)}`
+  const content = `将扫描所有已完成的归档批次，并回收仍保留且校验通过的源文件，同时清理不可恢复的旧暂存。\n\n可回收批次：${batchCount} 个\n可回收文件：${fileCount} 个\n旧暂存目录：${stagingCount} 个\n预计释放空间：${formatBytes(estimated)}${stagingBytes > 0 ? `（其中旧暂存 ${formatBytes(stagingBytes)}）` : ''}`
   const confirmed = hostConfirm
-    ? await hostConfirm({ type: 'warn', title: '回收源文件', content, confirmText: '开始回收', cancelText: '取消' })
+    ? await hostConfirm({ type: 'warn', title: '回收空间', content, confirmText: '开始回收', cancelText: '取消' })
     : window.confirm(`${content}\n\n是否继续？`)
   if (!confirmed) return
   operationBusy.value = true
@@ -587,11 +607,25 @@ async function executeReclaim(): Promise<void> {
     setNotice('回收请求失败，请刷新后重试。', 'error')
     return
   }
-  const reclaimResult = result as { queued?: number; estimated_bytes?: number }
+  const reclaimResult = result as { queued?: number; estimated_bytes?: number; staging_removed?: number; staging_bytes?: number }
   const queuedEstimate = Number(reclaimResult.estimated_bytes ?? 0)
+  const stagingRemoved = Number(reclaimResult.staging_removed ?? 0)
   const suffix = queuedEstimate > 0 ? `，预计回收 ${formatBytes(queuedEstimate)}` : ''
-  setNotice(`已加入 ${Number(reclaimResult.queued ?? 0)} 个批次的回收队列${suffix}。`, 'success')
+  const stagingSuffix = stagingRemoved > 0 ? `，已清理 ${stagingRemoved} 个旧暂存目录` : ''
+  setNotice(`已加入 ${Number(reclaimResult.queued ?? 0)} 个批次的回收队列${suffix}${stagingSuffix}。`, 'success')
   await refreshSummary()
+}
+
+async function submitRun(response: Awaited<ReturnType<typeof runTask>>, successMessage: string): Promise<void> {
+  if (!response.data) {
+    setNotice(response.message, 'error')
+    operationMessage.value = ''
+    return
+  }
+  setNotice(successMessage, 'success')
+  operationMessage.value = '归档任务运行中…'
+  await refreshSummary()
+  startOperationPolling()
 }
 
 async function executeRun(taskId = activeTaskId.value): Promise<void> {
@@ -600,16 +634,16 @@ async function executeRun(taskId = activeTaskId.value): Promise<void> {
     return
   }
   operationMessage.value = '正在提交归档任务…'
-  const result = await runTask(props.api, taskId)
-  if (!result) {
-    setNotice('归档任务提交失败，请检查插件状态。', 'error')
-    operationMessage.value = ''
+  await submitRun(await runTask(props.api, taskId), '归档任务已提交')
+}
+
+async function executeRunAll(): Promise<void> {
+  if (!draft.value.tasks.length) {
+    setNotice('没有可运行的归档任务', 'warning')
     return
   }
-  setNotice(result.queued ? '归档任务已加入队列。' : '归档任务已启动。', 'success')
-  operationMessage.value = '归档任务运行中…'
-  await refreshSummary()
-  startOperationPolling()
+  operationMessage.value = '正在提交全部归档任务…'
+  await submitRun(await runTasks(props.api), `已提交 ${draft.value.tasks.length} 个归档任务`)
 }
 
 async function executeStop(): Promise<void> {
@@ -894,13 +928,13 @@ onBeforeUnmount(() => {
           </VBtn>
           <VBtn
             class="archive-header__run"
-            :disabled="!activeTaskId || operationBusy"
+            :disabled="!draft.tasks.length || operationBusy"
             prepend-icon="mdi-play"
             type="button"
             variant="tonal"
-            @click="executeRun()"
+            @click="executeRunAll"
           >
-            运行一次
+            提交全部任务
           </VBtn>
           <VBtn
             class="archive-header__save"
@@ -1114,7 +1148,7 @@ onBeforeUnmount(() => {
                         >{{ phaseLabel(taskPhase(progress)) }}</VChip
                       ><span class="archive-progress__detail">{{ progressLabel(progress) }}</span
                       ><span class="archive-progress__capacity"
-                        >积压 {{ formatNumber(progress.pending_archives) }} 批 · {{ formatBytes(progress.pending_bytes)
+                        >已归档 {{ formatNumber(progress.pending_archives) }} 批 · {{ formatBytes(progress.pending_bytes)
                         }}<br />可用空间 {{ formatBytes(progress.free_bytes) }}</span
                       >
                     </div>
@@ -1228,6 +1262,14 @@ onBeforeUnmount(() => {
                         @click="openTaskEditor(selectedTask)"
                         ><VIcon icon="mdi-pencil-outline" /><VTooltip activator="parent" text="编辑任务" /></VBtn
                       ><VBtn
+                        aria-label="复制归档任务"
+                        color="primary"
+                        icon
+                        size="small"
+                        variant="text"
+                        @click="copyTask(selectedTask)"
+                        ><VIcon icon="mdi-content-copy" /><VTooltip activator="parent" text="复制任务" /></VBtn
+                      ><VBtn
                         aria-label="删除归档任务"
                         color="error"
                         icon
@@ -1256,7 +1298,7 @@ onBeforeUnmount(() => {
                       <span>文件限制</span
                       ><strong
                         >{{ selectedTask.max_files ? `${formatNumber(selectedTask.max_files)} 个` : '不限数量' }} ·
-                        {{ selectedTask.max_bytes ? formatBytes(selectedTask.max_bytes) : '不限体积' }}</strong
+                        {{ selectedTask.max_bytes ? `${formatNumber(selectedTask.max_bytes)} M` : '不限体积' }}</strong
                       >
                     </div>
                     <div>
@@ -1294,7 +1336,7 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>{{ taskEditorTitle }}</h3>
-                      <p>保存草稿后，再点击页面顶部“保存修改”才会写入配置</p>
+                      <p>保存任务后会同步写入插件配置</p>
                     </div>
                     <VBtn aria-label="取消编辑" icon size="small" variant="text" @click="cancelTaskEditor"
                       ><VIcon icon="mdi-close"
@@ -1505,12 +1547,13 @@ onBeforeUnmount(() => {
                       </ArchiveFieldRow>
                       <ArchiveFieldRow label="每批体积" hint="限制单个归档包的源文件体积，0 表示不限">
                         <VTextField
-                          v-model.number="taskEditor.max_bytes"
+                          v-model.number="maxBytesMiB"
                           aria-label="每批体积"
                           density="compact"
                           hide-details
                           min="0"
                           type="number"
+                          suffix="M"
                           variant="outlined"
                         />
                       </ArchiveFieldRow>
@@ -1713,7 +1756,7 @@ onBeforeUnmount(() => {
                       >预览文件</VBtn
                     ><VSpacer /><VBtn variant="text" @click="cancelTaskEditor">取消</VBtn
                     ><VBtn color="primary" prepend-icon="mdi-check" variant="flat" @click="saveTaskEditor"
-                      >保存草稿</VBtn
+                      >保存任务</VBtn
                     >
                   </div>
                 </section>

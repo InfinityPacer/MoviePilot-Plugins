@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { listBatches, listFiles, loadSummary, pollPreview, runTask, startPreview, stopTask } from '@/config/api'
+import { listBatches, listFiles, loadSummary, pollPreview, runTask, runTasks, startPreview, stopTask } from '@/config/api'
 import type { PluginApi } from '@/config/api'
 import type { ArchiveTask } from '@/config/types'
 
@@ -33,12 +33,14 @@ describe('ArchiveManager API helpers', () => {
 
     await startPreview(api, { ...task, password: 'secret' })
     await runTask(api, task.id)
+    await runTasks(api)
     await stopTask(api, task.id)
     await pollPreview(api, 'job/1')
 
     expect(post).toHaveBeenNthCalledWith(1, 'plugin/ArchiveManager/preview', { task: { ...task, password: 'secret' } })
-    expect(post).toHaveBeenNthCalledWith(2, 'plugin/ArchiveManager/run', { task_id: task.id })
-    expect(post).toHaveBeenNthCalledWith(3, 'plugin/ArchiveManager/stop', { task_id: task.id })
+    expect(post).toHaveBeenNthCalledWith(2, 'plugin/ArchiveManager/run', { task_id: task.id }, { feedback: 'silent' })
+    expect(post).toHaveBeenNthCalledWith(3, 'plugin/ArchiveManager/run', { task_id: '' }, { feedback: 'silent' })
+    expect(post).toHaveBeenNthCalledWith(4, 'plugin/ArchiveManager/stop', { task_id: task.id })
     expect(get).toHaveBeenCalledWith('plugin/ArchiveManager/preview?job_id=job%2F1')
   })
 

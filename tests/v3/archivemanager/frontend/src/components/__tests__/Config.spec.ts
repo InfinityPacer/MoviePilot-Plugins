@@ -38,9 +38,7 @@ describe('ArchiveManager federated config', () => {
     await user.type(taskName, '媒体归档')
     await user.click(within(editor).getByRole('checkbox', { name: '删除源文件' }))
     expect(within(editor).getByRole('checkbox', { name: '完成校验' })).toBeChecked()
-    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
-    expect(document.querySelector('.archive-header__save')).toHaveTextContent('保存修改')
-    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
 
     expect(save).toHaveBeenCalledOnce()
     expect(screen.queryByText('配置已提交给宿主保存。')).not.toBeInTheDocument()
@@ -93,8 +91,7 @@ describe('ArchiveManager federated config', () => {
 
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
-    await user.click(screen.getByRole('button', { name: '保存草稿' }))
-    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+    await user.click(screen.getByRole('button', { name: '保存任务' }))
 
     expect(save).toHaveBeenCalledOnce()
     expect(document.querySelector('.archive-header__save')).toBeEnabled()
@@ -116,7 +113,7 @@ describe('ArchiveManager federated config', () => {
     expect(within(naming).getByText(/支持任务名、日期、时间、序号和文件修改时间变量/)).toBeInTheDocument()
     expect(naming.textContent).toContain('7f3a9c')
     expect(within(naming).getByRole('textbox', { name: '批次名称' })).toHaveValue('{date}_{sequence}')
-    expect(within(naming).getByText('批次：20260911_0001')).toBeInTheDocument()
+    expect(within(naming).getByText('批次：20260911_000001')).toBeInTheDocument()
     expect(within(naming).getByText('归档包：7f3a9c.7z')).toBeInTheDocument()
 
     const batchTemplate = within(naming).getByRole('textbox', { name: '批次名称' })
@@ -181,12 +178,39 @@ describe('ArchiveManager federated config', () => {
     const encryption = within(editor).getByRole('textbox', { name: '加密' })
     await user.click(encryption)
     await user.click(await screen.findByText('不加密', { exact: true }))
-    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
-    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
     expect(save).toHaveBeenCalledOnce()
     expect(save.mock.calls[0][0].tasks[0]).toEqual(
       expect.objectContaining({ encryption: 'none', encrypt_names: false }),
     )
+  })
+
+  it('submits all tasks from the header in one silent request', async () => {
+    const first = createArchiveTask({ id: 'task-1', name: '任务一' })
+    const second = createArchiveTask({ id: 'task-2', name: '任务二' })
+    const { api, post } = createHostApi()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks: [first, second] }) } })
+
+    await user.click(screen.getByRole('button', { name: '提交全部任务' }))
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('plugin/ArchiveManager/run', { task_id: '' }, { feedback: 'silent' }),
+    )
+    expect(await screen.findByText('已提交 2 个归档任务')).toBeInTheDocument()
+  })
+
+  it('shows only the backend error when a run submission fails', async () => {
+    const task = createArchiveTask({ id: 'task-1', name: '任务一' })
+    const { api, post } = createHostApi()
+    post.mockResolvedValueOnce({ success: false, message: '任务不存在或配置未生效，请先保存有效配置', data: null })
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks: [task] }) } })
+
+    await user.click(screen.getByRole('button', { name: '提交全部任务' }))
+
+    expect(await screen.findByText('任务不存在或配置未生效，请先保存有效配置')).toBeInTheDocument()
+    expect(screen.queryByText('归档任务提交失败，请检查插件状态')).not.toBeInTheDocument()
   })
 
   it('switches between batches and files and closes through the host command', async () => {
@@ -227,7 +251,7 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByRole('button', { name: 'Clear 任务' }))
 
     expect(await screen.findByText('请选择归档任务')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '搜索文件' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /搜索相对路径/ })).toBeInTheDocument()
     expect(screen.queryByText(/共 .* 个文件/)).not.toBeInTheDocument()
   })
 
@@ -240,7 +264,7 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByText('文件', { exact: true }))
 
     expect(await screen.findByText('没有找到文件')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '搜索文件' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /搜索相对路径/ })).toBeInTheDocument()
     expect(screen.queryByText(/共 .* 个文件/)).not.toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: '文件目录' })).toBeInTheDocument()
   })

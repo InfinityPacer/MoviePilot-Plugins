@@ -25,15 +25,15 @@ from .config import (
     parse_config,
     validate_paths,
 )
-from .runner import Runner, cleanup_stale_staging, remove_staging
+from .runner import Runner, cleanup_stale_staging, remove_staging, staging_size
 from .scanner import Cancelled, partition, scan
 from .store import BatchRow, FileRow, Store, TaskRow
 
 
 class TaskRequest(BaseModel):
-    """任务执行与停止请求。"""
+    """任务执行与停止请求；运行时空标识表示提交全部任务。"""
 
-    task_id: str = ""  # 空标识仅用于停止全部队列
+    task_id: str = ""
 
 
 class BatchRequest(BaseModel):
@@ -179,7 +179,7 @@ class ArchiveManager(_PluginBase):
                     "name": "压缩归档 · 自动续跑",
                     "trigger": "interval",
                     "func": self._resume_waiting,
-                    "kwargs": {"seconds": 60},
+                    "kwargs": {"seconds": 1200},
                 }
             )
         return services
@@ -655,6 +655,46 @@ class ArchiveManager(_PluginBase):
     def _reclaimable_batches(self) -> list[dict]:
         return self._store().reclaimable_batches()
 
+    def _staging_tasks(self) -> list[tuple[TaskConfig, set[str]]]:
+        """收集当前配置和历史快照中的暂存目录，保留仍可恢复批次。"""
+        store = self._store()
+        values: dict[tuple[str, str], tuple[TaskConfig, set[str]]] = {}
+        for task in self._tasks:
+            values[(task.id, task.output_dir)] = (task, set())
+        for batch in store.batches(page=1, page_size=100000)["items"]:
+            snapshot = batch.get("task") or {}
+            try:
+                task = TaskConfig.model_validate({**snapshot, "password": ""})
+            except (TypeError, ValueError):
+                continue
+            values.setdefault((task.id, task.output_dir), (task, set()))
+        for key, (task, _) in list(values.items()):
+            values[key] = (task, {batch["id"] for batch in store.unfinished(task.id)})
+        return list(values.values())
+
+    def _staging_reclaim_preview(self) -> tuple[int, int]:
+        count = 0
+        total = 0
+        for task, keep_ids in self._staging_tasks():
+            item_count, item_bytes = staging_size(task, keep_ids)
+            count += item_count
+            total += item_bytes
+        return count, total
+
+    def _cleanup_reclaimable_staging(self) -> tuple[int, int]:
+        count = 0
+        total = 0
+        for task, keep_ids in self._staging_tasks():
+            item_count, item_bytes = staging_size(task, keep_ids)
+            removed = cleanup_stale_staging(task, keep_ids)
+            if removed:
+                count += removed
+                total += item_bytes
+                logger.info(
+                    f"压缩归档回收空间清理孤儿暂存：task={task.name}({task.id[:6]}) count={removed} bytes={item_bytes}"
+                )
+        return count, total
+
     @staticmethod
     def _reclaim_estimated_bytes(batches: list[dict]) -> int:
         return sum(
@@ -669,11 +709,14 @@ class ArchiveManager(_PluginBase):
         try:
             batches = self._reclaimable_batches()
             files = sum(len((batch.get("manifest") or {}).get("files", [])) for batch in batches)
+            staging_count, staging_bytes = self._staging_reclaim_preview()
             return self._response(
                 {
                     "batch_count": len(batches),
                     "file_count": files,
-                    "estimated_bytes": self._reclaim_estimated_bytes(batches),
+                    "estimated_bytes": self._reclaim_estimated_bytes(batches) + staging_bytes,
+                    "staging_count": staging_count,
+                    "staging_bytes": staging_bytes,
                 }
             )
         except (ValueError, OSError) as exc:
@@ -684,6 +727,7 @@ class ArchiveManager(_PluginBase):
         del request
         try:
             batches = self._reclaimable_batches()
+            staging_count, staging_bytes = self._cleanup_reclaimable_staging()
             with self._lock:
                 queued = {job["batch_id"] for job in self._queue if job["kind"] == "reclaim"}
                 running = self._running.get("batch_id") if self._running else ""
@@ -699,14 +743,29 @@ class ArchiveManager(_PluginBase):
                     self._start_worker()
             estimated_bytes = self._reclaim_estimated_bytes(batches)
             return self._response(
-                {"queued": len(jobs), "found": len(batches), "estimated_bytes": estimated_bytes}
+                {
+                    "queued": len(jobs),
+                    "found": len(batches),
+                    "estimated_bytes": estimated_bytes + staging_bytes,
+                    "staging_removed": staging_count,
+                    "staging_bytes": staging_bytes,
+                }
             )
         except (ValueError, OSError) as exc:
             return self._response(success=False, message=self._safe_error(exc))
 
     def api_run(self, request: TaskRequest):
         try:
-            return self._response({"job_id": self._enqueue_task(request.task_id)})
+            if request.task_id:
+                return self._response({"job_id": self._enqueue_task(request.task_id), "task_count": 1})
+            if not self._tasks:
+                raise ValueError("没有可运行的归档任务")
+            # 先检查全部任务，再统一入队，避免路径错误导致只提交一部分任务。
+            for task in self._tasks:
+                validate_paths(task)
+                self._check_execution_paths(task)
+            job_ids = [self._enqueue_task(task.id) for task in self._tasks]
+            return self._response({"job_ids": job_ids, "task_count": len(job_ids)})
         except (ValueError, OSError) as exc:
             return self._response(success=False, message=self._safe_error(exc))
 

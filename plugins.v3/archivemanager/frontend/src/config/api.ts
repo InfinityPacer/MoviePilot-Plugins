@@ -16,9 +16,22 @@ export interface ApiResponse<T> {
 }
 
 export interface PluginApi {
-  get<T = unknown>(path: string): Promise<ApiResponse<T>>
-  post<T = unknown>(path: string, body?: unknown): Promise<ApiResponse<T>>
-  put<T = unknown>(path: string, body?: unknown): Promise<ApiResponse<T>>
+  get<T = unknown>(path: string, config?: { feedback?: 'default' | 'silent' | 'all' }): Promise<ApiResponse<T>>
+  post<T = unknown>(
+    path: string,
+    body?: unknown,
+    config?: { feedback?: 'default' | 'silent' | 'all' },
+  ): Promise<ApiResponse<T>>
+  put<T = unknown>(
+    path: string,
+    body?: unknown,
+    config?: { feedback?: 'default' | 'silent' | 'all' },
+  ): Promise<ApiResponse<T>>
+}
+
+export interface ActionResponse<T> {
+  data: T | null
+  message: string
 }
 
 const ROOT = 'plugin/ArchiveManager/'
@@ -120,7 +133,15 @@ export function pollPreview(api: PluginApi | undefined, jobId: string): Promise<
   return getData<PreviewResult | null>(api, queryPath('preview', { job_id: jobId }), null)
 }
 
-export function previewReclaim(api: PluginApi | undefined): Promise<{ batch_count?: number; file_count?: number; estimated_bytes?: number } | null> {
+export function previewReclaim(
+  api: PluginApi | undefined,
+): Promise<{
+  batch_count?: number
+  file_count?: number
+  estimated_bytes?: number
+  staging_count?: number
+  staging_bytes?: number
+} | null> {
   return postData(api, `${ROOT}reclaim/preview`, {})
 }
 
@@ -128,8 +149,25 @@ export function reclaimSpace(api: PluginApi | undefined): Promise<ActionResult |
   return postData(api, `${ROOT}reclaim`, {})
 }
 
-export function runTask(api: PluginApi | undefined, taskId: string): Promise<ActionResult | null> {
-  return postData(api, `${ROOT}run`, { task_id: taskId })
+export async function runTasks(api: PluginApi | undefined): Promise<ActionResponse<ActionResult>> {
+  return submitRun(api, '')
+}
+
+export async function runTask(api: PluginApi | undefined, taskId: string): Promise<ActionResponse<ActionResult>> {
+  return submitRun(api, taskId)
+}
+
+async function submitRun(api: PluginApi | undefined, taskId: string): Promise<ActionResponse<ActionResult>> {
+  if (!api) return { data: null, message: '插件接口不可用' }
+  try {
+    const response = await api.post<ActionResult>(`${ROOT}run`, { task_id: taskId }, { feedback: 'silent' })
+    return response.success
+      ? { data: response.data, message: '' }
+      : { data: null, message: response.message || '归档任务提交失败' }
+  } catch {
+    console.warn(`[ArchiveManager] ${ROOT}run failed`)
+    return { data: null, message: '归档任务提交失败，请检查插件状态' }
+  }
 }
 
 export function stopTask(api: PluginApi | undefined, taskId?: string): Promise<ActionResult | null> {
