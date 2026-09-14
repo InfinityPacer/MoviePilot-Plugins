@@ -398,6 +398,21 @@ class Store:
                 "file_count": sum(int(row.data.get("file_count", 0)) for row in rows),
             }
 
+    def reset_data(self) -> dict:
+        """清空归档运行账本；任务与插件配置由宿主持久化，不属于这些业务表。"""
+        with self.handle.session() as session, session.begin():
+            counts = {
+                "batch_count": session.scalar(select(func.count()).select_from(BatchRow)) or 0,
+                "file_count": session.scalar(select(func.count()).select_from(FileRow)) or 0,
+                "directory_count": session.scalar(select(func.count()).select_from(DirectoryRow)) or 0,
+                "task_state_count": session.scalar(select(func.count()).select_from(TaskRow)) or 0,
+            }
+            session.execute(delete(FileRow))
+            session.execute(delete(DirectoryRow))
+            session.execute(delete(BatchRow))
+            session.execute(delete(TaskRow))
+            return counts
+
     def reclaimable_batches(self) -> list[dict]:
         """返回可尝试回收源文件的已发布批次，不要求用户先筛选任务或批次。"""
         with self.handle.session() as session:

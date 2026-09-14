@@ -86,6 +86,7 @@ class ArchiveManager(_PluginBase):
         self._previews: dict[str, dict] = {}
         self._closing = False
         self._manual_stop_tasks: set[str] = set()
+        self._reset_data_pending = False
 
     def init_plugin(self, config: dict | None = None):
         """重载先等待旧工作进程退出；数据库由宿主在此方法返回后建表。"""
@@ -96,6 +97,9 @@ class ArchiveManager(_PluginBase):
         self._enabled = False
         self._config_error = ""
         value = copy.deepcopy(config or {"enabled": False, "tasks": []})
+        self._reset_data_pending = bool(value.get("reset_data"))
+        if self._reset_data_pending:
+            value["reset_data"] = False
         self._notifications = NotificationConfig()
         try:
             self._notifications = NotificationConfig.model_validate(value)
@@ -155,7 +159,26 @@ class ArchiveManager(_PluginBase):
         return Path(__file__).resolve().parent / "migrations"
 
     def _store(self) -> Store:
-        return Store(self.get_database())
+        store = Store(self.get_database())
+        if self._reset_data_pending:
+            with self._lock:
+                if self._reset_data_pending:
+                    if self._running or self._queue:
+                        raise ValueError("归档任务正在运行或排队，暂不能重置数据")
+                    result = store.reset_data()
+                    # 一次性动作必须写回宿主配置，避免下次加载时重复执行或复选框仍保持勾选。
+                    persisted_config = copy.deepcopy(self.get_config() or {})
+                    if persisted_config.get("reset_data"):
+                        persisted_config["reset_data"] = False
+                        self.update_config(persisted_config)
+                    self._reset_data_pending = False
+                    self.save_data("last_error", None)
+                    logger.info(
+                        "压缩归档数据已重置："
+                        f"batches={result['batch_count']} files={result['file_count']} "
+                        f"directories={result['directory_count']} task_states={result['task_state_count']}"
+                    )
+        return store
 
     def get_service(self) -> list[dict]:
         """每个启用任务独立 Cron，重入在队列入口合并。"""
@@ -584,7 +607,7 @@ class ArchiveManager(_PluginBase):
 
     def get_form(self):
         """表单默认模型；完整任务编辑由联邦组件承担。"""
-        return [], {"enabled": False, "notify": False, "notify_events": ["failure"], "tasks": []}
+        return [], {"enabled": False, "notify": False, "notify_events": ["failure"], "reset_data": False, "tasks": []}
 
     # 本插件只有联邦配置页；设为 None 避免宿主把已启用实例识别为数据页。
     get_page = None

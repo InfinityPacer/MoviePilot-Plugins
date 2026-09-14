@@ -7,6 +7,7 @@ export function createConfig(overrides: Partial<ArchiveConfig> = {}): ArchiveCon
     enabled: false,
     notify: false,
     notify_events: ['failure'],
+    reset_data: false,
     tasks: [],
     ...overrides,
   }

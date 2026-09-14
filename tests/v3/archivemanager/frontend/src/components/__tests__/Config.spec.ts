@@ -23,6 +23,20 @@ describe('ArchiveManager federated config', () => {
     await waitFor(() => expect(within(main).getByText('归档批次').parentElement).toHaveTextContent('4'))
   })
 
+  it('splits overview settings and exposes reset data as a one-time checkbox', async () => {
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig(), onSave: save } })
+
+    expect(screen.getByRole('heading', { name: '1. 运行状态' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '2. 一次性动作' })).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: '重置数据' }))
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ reset_data: true }))
+  })
+
   it('creates a task, forces verification for source deletion, and emits a complete config', async () => {
     const { api } = createHostApi()
     const save = vi.fn()

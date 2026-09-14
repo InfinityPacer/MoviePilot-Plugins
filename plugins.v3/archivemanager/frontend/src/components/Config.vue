@@ -1163,8 +1163,7 @@ onBeforeUnmount(() => {
                 <section class="archive-section archive-overview-controls">
                   <div class="archive-section__header">
                     <div>
-                      <h3>运行设置</h3>
-                      <p>控制归档服务是否启用，以及哪些事件发送宿主通知</p>
+                      <h3>1. 运行状态</h3>
                     </div>
                   </div>
                   <div class="archive-field-list">
@@ -1200,6 +1199,20 @@ onBeforeUnmount(() => {
                         multiple
                         variant="outlined"
                       />
+                    </ArchiveFieldRow>
+                  </div>
+                </section>
+                <section class="archive-section archive-overview-data">
+                  <div class="archive-section__header">
+                    <div><h3>2. 一次性动作</h3></div>
+                  </div>
+                  <div class="archive-field-list">
+                    <ArchiveFieldRow
+                      danger
+                      label="重置数据"
+                      hint="保存后清空批次、文件、目录和运行状态，执行后自动复位"
+                    >
+                      <VCheckbox v-model="draft.reset_data" aria-label="重置数据" density="compact" hide-details />
                     </ArchiveFieldRow>
                   </div>
                 </section>
@@ -2842,7 +2855,7 @@ onBeforeUnmount(() => {
 .archive-section {
   min-inline-size: 0;
   overflow: hidden;
-  padding: 18px 16px;
+  padding: 0 16px 14px;
   border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
   border-radius: var(--app-surface-radius, 8px);
   background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
@@ -2868,6 +2881,7 @@ onBeforeUnmount(() => {
 .archive-section__header {
   justify-content: space-between;
   min-inline-size: 0;
+  padding: 14px 0 10px;
   gap: 10px;
 }
 .archive-section__header > div:first-child {
@@ -2879,7 +2893,9 @@ onBeforeUnmount(() => {
 .archive-section__header h3 {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 0.98rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0;
   line-height: 1.25rem;
 }
 .archive-section__header p {
@@ -3101,8 +3117,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  min-block-size: 82px;
-  padding: 14px 16px;
+  min-block-size: 64px;
+  padding: 10px 14px;
   text-align: start;
   white-space: normal;
 }
@@ -3184,6 +3200,14 @@ onBeforeUnmount(() => {
   width: 48px;
   padding-inline: 6px !important;
   text-align: center !important;
+  vertical-align: middle !important;
+}
+.archive-table__selection :deep(.v-selection-control) {
+  justify-content: center;
+}
+.archive-table__selection :deep(.v-input) {
+  display: flex;
+  justify-content: center;
 }
 .archive-table__numeric {
   text-align: end !important;
@@ -3316,7 +3340,11 @@ onBeforeUnmount(() => {
   margin-block-end: 14px;
 }
 .archive-batch-summary > div {
+  display: flex;
   min-inline-size: 0;
+  min-block-size: 64px;
+  flex-direction: column;
+  justify-content: center;
   padding: 9px 10px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 7px;
@@ -3324,8 +3352,10 @@ onBeforeUnmount(() => {
 .archive-batch-summary .v-chip {
   width: max-content;
   max-width: 100%;
-  justify-self: start;
-  align-self: center;
+  min-block-size: 26px;
+  height: 26px;
+  margin-block-start: 6px;
+  align-self: flex-start;
 }
 .archive-batch-summary strong {
   display: block;

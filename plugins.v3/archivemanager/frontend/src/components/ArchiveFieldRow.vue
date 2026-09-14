@@ -6,13 +6,17 @@ defineProps<{
   hint: string
   /** 开关使用更紧凑的右侧控制区。 */
   switchField?: boolean
+  /** 危险操作显示警示图标。 */
+  danger?: boolean
 }>()
 </script>
 
 <template>
   <div class="archive-field-row" :class="{ 'archive-field-row--switch': switchField }">
     <div class="archive-field-row__copy">
-      <div class="archive-field-row__label">{{ label }}</div>
+      <div class="archive-field-row__label">
+        <VIcon v-if="danger" color="error" icon="mdi-alert-outline" size="16" />{{ label }}
+      </div>
       <p>{{ hint }}</p>
     </div>
     <div class="archive-field-row__control">
@@ -26,8 +30,8 @@ defineProps<{
   display: grid;
   align-items: center;
   min-inline-size: 0;
-  padding: 11px 0;
-  border-block-end: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  padding: 13px 0;
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   gap: 18px;
   grid-template-columns: minmax(200px, 1.45fr) minmax(180px, 0.75fr);
 }
@@ -38,11 +42,19 @@ defineProps<{
 .archive-field-row__control {
   min-inline-size: 0;
 }
+.archive-field-row__control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
 .archive-field-row__label {
+  display: flex;
+  align-items: center;
   color: rgb(var(--v-theme-on-surface));
-  font-size: 0.78rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.15rem;
+  gap: 6px;
 }
 .archive-field-row__copy p {
   margin: 3px 0 0;

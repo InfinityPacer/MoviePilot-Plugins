@@ -68,6 +68,8 @@ export interface ArchiveConfig {
   notify: boolean
   /** 发送通知的事件类型。 */
   notify_events: NotificationEvent[]
+  /** 保存时触发一次运行数据重置，宿主配置随后自动复位。 */
+  reset_data: boolean
   tasks: ArchiveTask[]
 }
 
@@ -199,4 +201,6 @@ export interface ActionResult {
   staging_count?: number
   staging_bytes?: number
   staging_removed?: number
+  directory_count?: number
+  task_state_count?: number
 }

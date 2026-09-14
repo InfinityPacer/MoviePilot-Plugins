@@ -40,5 +40,6 @@ export const configDefaults: ArchiveConfig = {
   enabled: false,
   notify: false,
   notify_events: ['failure'],
+  reset_data: false,
   tasks: [],
 }

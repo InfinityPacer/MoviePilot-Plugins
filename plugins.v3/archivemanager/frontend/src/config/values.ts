@@ -98,6 +98,7 @@ export function normalizeArchiveConfig(value: unknown): ArchiveConfig {
     enabled: toBoolean(source.enabled, configDefaults.enabled),
     notify: toBoolean(source.notify, configDefaults.notify),
     notify_events: source.notify_events === undefined ? [...configDefaults.notify_events] : notifyEvents,
+    reset_data: toBoolean(source.reset_data, configDefaults.reset_data),
     tasks,
   }
 }
