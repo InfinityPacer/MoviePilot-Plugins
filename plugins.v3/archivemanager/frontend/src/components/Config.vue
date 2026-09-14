@@ -80,6 +80,7 @@ const excludePatternsText = ref('')
 const outputPathReplacementsText = ref('')
 const minFreeGiB = ref(1)
 const maxBytesMiB = ref(4096)
+const maxPendingGiB = ref(0)
 const mobileNavOpen = ref(false)
 const compatibilityOpen = ref(false)
 const compatibilityReason = ref<'format' | 'encrypt_names'>('format')
@@ -133,6 +134,12 @@ const tasksById = computed(() => new Map(draft.value.tasks.map(task => [task.id,
 const selectedTask = computed(() => tasksById.value.get(activeTaskId.value) ?? draft.value.tasks[0] ?? null)
 const hasFileTaskSelection = computed(() => Boolean(fileTaskFilter.value && tasksById.value.has(fileTaskFilter.value)))
 const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(original.value))
+const dailyArchiveLimitGiB = computed({
+  get: () => Number((draft.value.daily_archive_limit_bytes / 1024 ** 3).toFixed(2)),
+  set: value => {
+    draft.value.daily_archive_limit_bytes = Math.max(0, Number(value) || 0) * 1024 ** 3
+  },
+})
 const taskEditorDirty = computed(
   () =>
     editorOpen.value &&
@@ -144,6 +151,7 @@ const changedItems = computed(() => {
   if (draft.value.enabled !== original.value.enabled) items.push('启用归档服务')
   if (draft.value.notify !== original.value.notify) items.push('发送通知')
   if (JSON.stringify(draft.value.notify_events) !== JSON.stringify(original.value.notify_events)) items.push('通知事件')
+  if (draft.value.daily_archive_limit_bytes !== original.value.daily_archive_limit_bytes) items.push('每日归档额度')
   const originalTasks = new Map(original.value.tasks.map(task => [task.id, task]))
   for (const task of draft.value.tasks) {
     const previous = originalTasks.get(task.id)
@@ -164,6 +172,9 @@ const summaryValue = computed<SummaryPayload>(
       archive_count: 0,
       source_bytes: 0,
       archive_bytes: 0,
+      today_archived_files: 0,
+      today_archive_count: 0,
+      today_archive_bytes: 0,
       deleted_files: 0,
       failed_batches: 0,
       pending_files: 0,
@@ -343,6 +354,7 @@ function openTaskEditor(task?: ArchiveTask, asNew = false): void {
     .join('\n')
   minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2))
   maxBytesMiB.value = Number((next.max_bytes / 1024 ** 2).toFixed(2))
+  maxPendingGiB.value = Number((next.max_pending_bytes / 1024 ** 3).toFixed(2))
   taskEditorOriginal.value = cloneTask(next)
   editorOpen.value = true
 }
@@ -373,6 +385,7 @@ function prepareEditorTask(): ArchiveTask {
   task.output_path_replacements = parsePathReplacements(outputPathReplacementsText.value)
   task.min_free_bytes = Math.max(0, Number(minFreeGiB.value) || 0) * 1024 ** 3
   task.max_bytes = Math.max(0, Number(maxBytesMiB.value) || 0) * 1024 ** 2
+  task.max_pending_bytes = Math.max(0, Number(maxPendingGiB.value) || 0) * 1024 ** 3
   if (task.delete_source) task.verify = true
   if (task.format === 'zip') task.encrypt_names = false
   if (task.password.length > 0) task.password_set = true
@@ -1113,6 +1126,21 @@ onBeforeUnmount(() => {
                     <span>失败批次</span>
                     <strong>{{ formatNumber(summaryValue.failed_batches) }}</strong>
                   </div>
+                  <div class="archive-metric archive-metric--today">
+                    <VIcon icon="mdi-file-clock-outline" />
+                    <span>今日归档文件</span>
+                    <strong>{{ formatNumber(summaryValue.today_archived_files) }}</strong>
+                  </div>
+                  <div class="archive-metric archive-metric--today">
+                    <VIcon icon="mdi-calendar-check-outline" />
+                    <span>今日归档批次</span>
+                    <strong>{{ formatNumber(summaryValue.today_archive_count) }}</strong>
+                  </div>
+                  <div class="archive-metric archive-metric--today">
+                    <VIcon icon="mdi-calendar-arrow-right" />
+                    <span>今日归档体积</span>
+                    <strong>{{ formatBytes(summaryValue.today_archive_bytes) }}</strong>
+                  </div>
                 </div>
                 <div v-if="summaryState === 'loading'" class="archive-inline-state">
                   <VProgressCircular color="primary" indeterminate size="18" width="2" /> 正在读取运行概况…
@@ -1219,6 +1247,19 @@ onBeforeUnmount(() => {
                         item-title="title"
                         item-value="value"
                         multiple
+                        variant="outlined"
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow label="每日归档额度" hint="限制所有任务每天发布的归档包总大小，0 表示不限">
+                      <VTextField
+                        v-model.number="dailyArchiveLimitGiB"
+                        aria-label="每日归档额度"
+                        density="compact"
+                        hide-details
+                        min="0"
+                        step="1"
+                        suffix="GiB"
+                        type="number"
                         variant="outlined"
                       />
                     </ArchiveFieldRow>
@@ -1340,7 +1381,9 @@ onBeforeUnmount(() => {
                       ><strong
                         >{{ selectedTask.max_files ? `${formatNumber(selectedTask.max_files)} 个` : '不限数量' }} ·
                         {{
-                          selectedTask.max_bytes ? `${formatNumber(selectedTask.max_bytes / 1024 ** 2)} M` : '不限体积'
+                          selectedTask.max_bytes
+                            ? `${formatNumber(selectedTask.max_bytes / 1024 ** 2)} MiB`
+                            : '不限体积'
                         }}</strong
                       >
                     </div>
@@ -1443,7 +1486,7 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           placeholder="原目录名 => 新目录名"
-                          rows="2"
+                          rows="3"
                           variant="outlined"
                         />
                       </ArchiveFieldRow>
@@ -1524,6 +1567,7 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           min="1"
+                          suffix="层"
                           type="number"
                           variant="outlined"
                         />
@@ -1584,6 +1628,7 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           min="1"
+                          suffix="批"
                           type="number"
                           variant="outlined"
                         />
@@ -1595,6 +1640,7 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           min="0"
+                          suffix="个"
                           type="number"
                           variant="outlined"
                         />
@@ -1607,7 +1653,7 @@ onBeforeUnmount(() => {
                           hide-details
                           min="0"
                           type="number"
-                          suffix="M"
+                          suffix="MiB"
                           variant="outlined"
                         />
                       </ArchiveFieldRow>
@@ -1618,6 +1664,7 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           min="0"
+                          suffix="天"
                           type="number"
                           variant="outlined"
                         />
@@ -1629,6 +1676,7 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           min="1"
+                          suffix="秒"
                           type="number"
                           variant="outlined"
                         />
@@ -1653,17 +1701,20 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           min="0"
+                          suffix="批"
                           type="number"
                           variant="outlined"
                         />
                       </ArchiveFieldRow>
                       <ArchiveFieldRow label="成品体积上限" hint="本地成品达到此体积时暂停续跑，0 表示不限">
                         <VTextField
-                          v-model.number="taskEditor.max_pending_bytes"
+                          v-model.number="maxPendingGiB"
                           aria-label="成品体积上限"
                           density="compact"
                           hide-details
                           min="0"
+                          step="0.1"
+                          suffix="GiB"
                           type="number"
                           variant="outlined"
                         />

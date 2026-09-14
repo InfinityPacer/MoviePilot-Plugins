@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 from .capacity import CapacityWait, allowance, fit_batch
 from .catalog import remove_catalog, write_catalog
 from .config import (
-    NotificationConfig,
+    PluginConfig,
     TaskConfig,
     container_timezone,
     overlap,
@@ -65,7 +65,7 @@ class ArchiveManager(_PluginBase):
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.3"
+    plugin_version = "0.1.4"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
@@ -75,7 +75,7 @@ class ArchiveManager(_PluginBase):
     def __init__(self):
         super().__init__()
         self._enabled = False
-        self._notifications = NotificationConfig()
+        self._settings = PluginConfig()
         self._tasks: list[TaskConfig] = []
         self._config_error = ""
         self._lock = threading.RLock()
@@ -100,9 +100,9 @@ class ArchiveManager(_PluginBase):
         self._reset_data_pending = bool(value.get("reset_data"))
         if self._reset_data_pending:
             value["reset_data"] = False
-        self._notifications = NotificationConfig()
+        self._settings = PluginConfig()
         try:
-            self._notifications = NotificationConfig.model_validate(value)
+            self._settings = PluginConfig.model_validate(value)
             # 宿主配置接口直接回传配置，因此密码单独放入插件数据，不留在表单模型。
             secrets = self.get_data("task_passwords") or {}
             resolved = copy.deepcopy(value)
@@ -123,7 +123,8 @@ class ArchiveManager(_PluginBase):
             logger.info(
                 f"压缩归档配置加载完成：enabled={self._enabled} tasks={len(self._tasks)} "
                 f"scheduled={sum(task.enabled for task in self._tasks)} auto_continue="
-                f"{sum(task.enabled and task.auto_continue for task in self._tasks)}"
+                f"{sum(task.enabled and task.auto_continue for task in self._tasks)} "
+                f"daily_archive_limit_bytes={self._settings.daily_archive_limit_bytes}"
             )
             for task in self._tasks:
                 logger.info(
@@ -302,7 +303,7 @@ class ArchiveManager(_PluginBase):
 
     def _notify_event(self, event: str, task: TaskConfig, title: str, detail: str):
         """推送失败不能改变归档结果，密码也不能进入消息通道。"""
-        if not self._notifications.notify or event not in self._notifications.notify_events:
+        if not self._settings.notify or event not in self._settings.notify_events:
             return
         message = f"任务：{task.name}\n{detail}"
         if task.password:
@@ -399,6 +400,7 @@ class ArchiveManager(_PluginBase):
                         self._stop,
                         self._phase,
                         cleanup_cancelled=lambda task_id=task.id: task_id in self._manual_stop_tasks,
+                        daily_archive_limit_bytes=self._settings.daily_archive_limit_bytes,
                     )
                     if job["batch_id"]:
                         batch = store.get(job["batch_id"])
@@ -475,7 +477,12 @@ class ArchiveManager(_PluginBase):
                 f"压缩归档清理不可恢复暂存：task={task.name}({task.id[:6]}) count={removed_staging}"
             )
         state = store.task_state(task.id)
-        capacity = allowance(task, store.local_archives(task.id))
+        capacity = allowance(
+            task,
+            store.local_archives(task.id),
+            self._settings.daily_archive_limit_bytes,
+            store.daily_archive_bytes(),
+        )
         if state.get("initialized") and not capacity["budget"]:
             store.set_task_state(task.id, phase="waiting_capacity", **capacity)
             logger.warning(
@@ -521,7 +528,12 @@ class ArchiveManager(_PluginBase):
         while groups and completed < task.max_batches:
             if self._stop.is_set():
                 raise Cancelled("已停止")
-            capacity = allowance(task, store.local_archives(task.id))
+            capacity = allowance(
+            task,
+            store.local_archives(task.id),
+            self._settings.daily_archive_limit_bytes,
+            store.daily_archive_bytes(),
+        )
             directory_only = not groups[0]["entries"] and groups[0].get("directories")
             selected = groups[0] if directory_only and capacity["budget"] else (
                 fit_batch(groups[0], capacity["budget"]) if capacity["budget"] else None
@@ -561,7 +573,12 @@ class ArchiveManager(_PluginBase):
             else:
                 groups.pop(0)
         state = store.task_state(task.id)
-        capacity = allowance(task, store.local_archives(task.id))
+        capacity = allowance(
+            task,
+            store.local_archives(task.id),
+            self._settings.daily_archive_limit_bytes,
+            store.daily_archive_bytes(),
+        )
         if groups:
             store.set_task_state(task.id, phase="history" if state["history_remaining"] else "incremental", **capacity)
         elif state["history_remaining"]:
@@ -607,7 +624,14 @@ class ArchiveManager(_PluginBase):
 
     def get_form(self):
         """表单默认模型；完整任务编辑由联邦组件承担。"""
-        return [], {"enabled": False, "notify": False, "notify_events": ["failure"], "reset_data": False, "tasks": []}
+        return [], {
+            "enabled": False,
+            "notify": False,
+            "notify_events": ["failure"],
+            "daily_archive_limit_bytes": 0,
+            "reset_data": False,
+            "tasks": [],
+        }
 
     # 本插件只有联邦配置页；设为 None 避免宿主把已启用实例识别为数据页。
     get_page = None

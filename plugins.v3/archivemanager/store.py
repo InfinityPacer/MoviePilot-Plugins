@@ -262,6 +262,29 @@ class Store:
             else:
                 row.data = {**row.data, **changes}
 
+    @staticmethod
+    def _published_on_local_day(row: BatchRow, target_day) -> bool:
+        """按容器时区判断批次发布日期；旧批次缺少发布时间时回退到创建时间。"""
+        published_at = row.data.get("published_at")
+        if not published_at:
+            if row.status not in ("completed", "cleaning", "cleanup_failed"):
+                return False
+            published_at = row.created_at
+        try:
+            return datetime.fromisoformat(published_at).astimezone().date() == target_day
+        except (TypeError, ValueError):
+            return False
+
+    def daily_archive_bytes(self, local_day=None) -> int:
+        """统计容器本地日内已发布批次的实际归档包大小，成品移走后仍保留额度记录。"""
+        target_day = local_day or datetime.now().astimezone().date()
+        with self.handle.session() as session:
+            return sum(
+                int(row.data.get("archive_size") or 0)
+                for row in session.scalars(select(BatchRow)).all()
+                if self._published_on_local_day(row, target_day)
+            )
+
     def local_archives(self, task_id: str) -> list[dict]:
         """只统计确实仍在本地的成品；文件消失不等于上传成功。"""
         with self.handle.session() as session:
@@ -506,6 +529,8 @@ class Store:
         with self.handle.session() as session:
             batch_rows = list(session.scalars(select(BatchRow)))
             completed = [row for row in batch_rows if row.status in ("completed", "cleaning", "cleanup_failed")]
+            today = datetime.now().astimezone().date()
+            completed_today = [row for row in completed if self._published_on_local_day(row, today)]
 
             def count(*states):
                 return session.scalar(select(func.count()).select_from(FileRow).where(FileRow.status.in_(states)))
@@ -515,6 +540,9 @@ class Store:
                 "archive_count": len(completed),
                 "source_bytes": sum(row.data["source_bytes"] for row in completed),
                 "archive_bytes": sum(row.data["archive_size"] for row in completed),
+                "today_archived_files": sum(row.data["file_count"] for row in completed_today),
+                "today_archive_count": len(completed_today),
+                "today_archive_bytes": sum(row.data["archive_size"] for row in completed_today),
                 "deleted_files": count("deleted"),
                 "failed_batches": sum(
                     row.status in ("failed", "manifest_pending", "cleanup_failed") for row in batch_rows

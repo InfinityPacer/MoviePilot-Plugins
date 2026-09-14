@@ -47,7 +47,9 @@ export function createArchiveTask(value: unknown = {}): ArchiveTask {
     archive_name_template: toStringValue(source.archive_name_template, taskDefaults.archive_name_template),
     archive_layout: source.archive_layout === 'flat' ? 'flat' : 'directory',
     output_path_replacements: isRecord(source.output_path_replacements)
-      ? Object.fromEntries(Object.entries(source.output_path_replacements).map(([key, value]) => [String(key), String(value)]))
+      ? Object.fromEntries(
+          Object.entries(source.output_path_replacements).map(([key, value]) => [String(key), String(value)]),
+        )
       : {},
     enabled: toBoolean(source.enabled, taskDefaults.enabled),
     source_dir: toStringValue(source.source_dir, taskDefaults.source_dir),
@@ -101,6 +103,10 @@ export function normalizeArchiveConfig(value: unknown): ArchiveConfig {
     enabled: toBoolean(source.enabled, configDefaults.enabled),
     notify: toBoolean(source.notify, configDefaults.notify),
     notify_events: source.notify_events === undefined ? [...configDefaults.notify_events] : notifyEvents,
+    daily_archive_limit_bytes: toFiniteNumber(
+      source.daily_archive_limit_bytes,
+      configDefaults.daily_archive_limit_bytes,
+    ),
     reset_data: toBoolean(source.reset_data, configDefaults.reset_data),
     tasks,
   }

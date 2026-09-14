@@ -20,6 +20,7 @@ describe('ArchiveManager config normalization', () => {
   it('normalizes dynamic host data without mutating it', () => {
     const input = {
       enabled: 'true',
+      daily_archive_limit_bytes: '214748364800',
       tasks: [
         {
           id: 'task-1',
@@ -48,6 +49,7 @@ describe('ArchiveManager config normalization', () => {
     const result = normalizeArchiveConfig(input)
 
     expect(result.enabled).toBe(true)
+    expect(result.daily_archive_limit_bytes).toBe(214748364800)
     expect(result.tasks[0]).toMatchObject({
       id: 'task-1',
       archive_layout: 'flat',

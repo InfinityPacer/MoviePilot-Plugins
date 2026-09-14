@@ -70,6 +70,8 @@ export interface ArchiveConfig {
   notify: boolean
   /** 发送通知的事件类型。 */
   notify_events: NotificationEvent[]
+  /** 所有任务每天发布的归档包总字节上限，0 表示不限。 */
+  daily_archive_limit_bytes: number
   /** 保存时触发一次运行数据重置，宿主配置随后自动复位。 */
   reset_data: boolean
   tasks: ArchiveTask[]
@@ -107,6 +109,12 @@ export interface SummaryPayload {
   archive_count: number
   source_bytes: number
   archive_bytes: number
+  /** 按容器本地日期统计的今日已发布文件数。 */
+  today_archived_files: number
+  /** 按容器本地日期统计的今日已发布批次数。 */
+  today_archive_count: number
+  /** 按容器本地日期统计的今日归档包实际体积。 */
+  today_archive_bytes: number
   deleted_files: number
   failed_batches: number
   pending_files: number

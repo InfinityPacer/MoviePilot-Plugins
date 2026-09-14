@@ -401,6 +401,20 @@ def test_capacity_allowance_enforces_local_artifact_count_and_bytes(tmp_path: Pa
     assert limited_by_bytes["budget"] == 6
 
 
+def test_capacity_allowance_stops_after_global_daily_archive_quota(tmp_path: Path, monkeypatch) -> None:
+    task = _task(tmp_path, max_pending_archives=0, max_pending_bytes=0, min_free_bytes=0)
+    monkeypatch.setattr(capacity_module, "available_space", lambda _path: 4 * 1024**3)
+
+    available = allowance(task, [], daily_limit_bytes=200, daily_used_bytes=199)
+    assert available["budget"] > 0
+    assert available["daily_archive_bytes"] == 199
+    assert available["daily_archive_limit_bytes"] == 200
+
+    exhausted = allowance(task, [], daily_limit_bytes=200, daily_used_bytes=200)
+    assert exhausted["budget"] == 0
+    assert exhausted["reason"] == "今日归档额度已用完，等待次日恢复"
+
+
 def test_fit_batch_keeps_history_order_and_never_splits_a_file(tmp_path: Path) -> None:
     _task(tmp_path, grouping="none")
     batch = {
@@ -687,6 +701,7 @@ def test_runner_real_engine_completes_archive_and_manifest_chain(store: Store, t
     archive = Path(final["archive_path"])
     assert final["status"] == "completed"
     assert final["verified"] is True
+    assert datetime.fromisoformat(final["published_at"]).tzinfo is not None
     assert archive.is_file()
     assert archive.name == batch["archive_name"]
     assert archive.name.startswith("backup_")

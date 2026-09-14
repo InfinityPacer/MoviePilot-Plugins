@@ -16,11 +16,14 @@ def container_timezone() -> str:
     return getattr(tz, "key", None) or "UTC"
 
 
-class NotificationConfig(BaseModel):
-    """插件推送策略，事件使用稳定键与前端多选项对应。"""
+class PluginConfig(BaseModel):
+    """插件级运行设置，作用于通知和所有归档任务。"""
 
     notify: bool = False  # 总推送开关，默认不发送外部消息
     notify_events: list[Literal["success", "failure", "other"]] = Field(default_factory=lambda: ["failure"])
+    daily_archive_limit_bytes: int = Field(
+        default=0, ge=0
+    )  # 所有任务每天发布的归档包字节上限，0 不限制
 
 
 class TaskConfig(BaseModel):

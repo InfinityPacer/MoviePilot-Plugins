@@ -9,6 +9,7 @@ import sys
 import traceback
 from collections import Counter
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
 
@@ -160,11 +161,19 @@ def cleanup_stale_staging(task: TaskConfig, keep_batch_ids: set[str]) -> int:
 class Runner:
     """只负责一个批次；外部队列保证同一插件实例串行运行。"""
 
-    def __init__(self, store, stop: Event, phase, cleanup_cancelled: Callable[[], bool] | None = None):
+    def __init__(
+        self,
+        store,
+        stop: Event,
+        phase,
+        cleanup_cancelled: Callable[[], bool] | None = None,
+        daily_archive_limit_bytes: int = 0,
+    ):
         self.store = store
         self.stop = stop
         self.phase = phase
         self.cleanup_cancelled = cleanup_cancelled or (lambda: False)
+        self.daily_archive_limit_bytes = daily_archive_limit_bytes
 
     def reclaim(self, batch: dict, current_task: TaskConfig) -> None:
         """独立回收入口：复用已发布批次的逐文件校验，不重新打包或删除归档产物。"""
@@ -241,7 +250,12 @@ class Runner:
                         raise ValueError("批次暂存区包含非预期文件")
                     child.unlink()
                 required = batch["source_bytes"] + max(64 * 1024**2, batch["source_bytes"] // 10)
-                capacity = allowance(task, self.store.local_archives(task.id))
+                capacity = allowance(
+                    task,
+                    self.store.local_archives(task.id),
+                    self.daily_archive_limit_bytes,
+                    self.store.daily_archive_bytes(),
+                )
                 staging_free = shutil.disk_usage(staging).free
                 logger.info(
                     f"压缩归档容量检查：{context} free_bytes={capacity['free_bytes']} "
@@ -312,6 +326,7 @@ class Runner:
                     os.fsync(fd)
                 finally:
                     os.close(fd)
+                self.store.save(batch_id, published_at=datetime.now(timezone.utc).isoformat())
                 logger.info(f"压缩归档原子发布完成：{context} archive={archive_path}")
             else:
                 logger.info(f"压缩归档从已发布成品恢复：{context} archive={archive_path}")

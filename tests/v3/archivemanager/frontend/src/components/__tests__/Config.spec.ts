@@ -21,6 +21,9 @@ describe('ArchiveManager federated config', () => {
     const main = document.querySelector('.archive-main') as HTMLElement
     await waitFor(() => expect(within(main).getByText('已归档文件').parentElement).toHaveTextContent('15'))
     await waitFor(() => expect(within(main).getByText('归档批次').parentElement).toHaveTextContent('4'))
+    expect(within(main).getByText('今日归档文件').parentElement).toHaveTextContent('5')
+    expect(within(main).getByText('今日归档批次').parentElement).toHaveTextContent('2')
+    expect(within(main).getByText('今日归档体积').parentElement).toHaveTextContent('18.0 MB')
   })
 
   it('renders every runtime phase in Chinese', async () => {
@@ -62,6 +65,20 @@ describe('ArchiveManager federated config', () => {
     await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
 
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ reset_data: true }))
+  })
+
+  it('saves the global daily archive quota in GiB as bytes', async () => {
+    const { api } = createHostApi()
+    const save = vi.fn()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig(), onSave: save } })
+
+    const quota = screen.getByRole('spinbutton', { name: '每日归档额度' })
+    expect(quota).toHaveValue(0)
+    expect(quota.parentElement).toHaveTextContent('GiB')
+    await fireEvent.update(quota, '200')
+    await fireEvent.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ daily_archive_limit_bytes: 200 * 1024 ** 3 }))
   })
 
   it('creates a task, forces verification for source deletion, and emits a complete config', async () => {
@@ -126,6 +143,47 @@ describe('ArchiveManager federated config', () => {
 
     expect(save).toHaveBeenCalledOnce()
     expect(save.mock.calls[0][0].tasks[0]).toEqual(expect.objectContaining({ name: '媒体归档' }))
+  })
+
+  it('shows natural units and converts capacity inputs back to bytes', async () => {
+    const task = createArchiveTask({
+      id: 'task-1',
+      name: '容量任务',
+      max_bytes: 2 * 1024 ** 2,
+      max_pending_bytes: 3 * 1024 ** 3,
+      min_free_bytes: 4 * 1024 ** 3,
+    })
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks: [task] }), onSave: save } })
+
+    await user.click(screen.getByText('任务', { exact: true }))
+    await user.click(screen.getByRole('button', { name: '编辑归档任务' }))
+    const editor = screen.getByText('编辑归档任务').closest('section') as HTMLElement
+
+    expect(within(editor).getByRole('spinbutton', { name: '目录深度' })).toHaveValue(1)
+    expect(within(editor).getByRole('spinbutton', { name: '每批体积' })).toHaveValue(2)
+    expect(within(editor).getByRole('spinbutton', { name: '成品体积上限' })).toHaveValue(3)
+    expect(within(editor).getByRole('spinbutton', { name: '预留空间' })).toHaveValue(4)
+    expect(within(editor).getByRole('textbox', { name: '输出路径替换' })).toHaveAttribute('rows', '3')
+    for (const unit of ['层', '批', '个', 'MiB', '天', '秒', 'GiB'])
+      expect(within(editor).getAllByText(unit).length).toBeGreaterThan(0)
+
+    await fireEvent.update(within(editor).getByRole('spinbutton', { name: '每批体积' }), '2.5')
+    await fireEvent.update(within(editor).getByRole('spinbutton', { name: '成品体积上限' }), '3.25')
+    await fireEvent.update(within(editor).getByRole('spinbutton', { name: '预留空间' }), '4.5')
+    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+
+    expect(save).toHaveBeenCalledOnce()
+    expect(save.mock.calls[0][0].tasks[0]).toEqual(
+      expect.objectContaining({
+        max_bytes: 2.5 * 1024 ** 2,
+        max_pending_bytes: 3.25 * 1024 ** 3,
+        min_free_bytes: 4.5 * 1024 ** 3,
+      }),
+    )
   })
 
   it('keeps the draft dirty until the host confirms saving', async () => {
