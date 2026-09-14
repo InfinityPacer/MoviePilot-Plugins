@@ -1148,7 +1148,7 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>任务队列进度</h3>
-                      <p>历史快照优先完成；空间不足时等待外部工具移走已发布成品。</p>
+                      <p>优先处理历史快照，空间不足时等待释放。</p>
                     </div>
                     <VChip color="primary" size="small" variant="tonal"
                       >{{ summaryValue.tasks.filter(task => task.active).length }} 个活动任务</VChip

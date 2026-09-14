@@ -1616,7 +1616,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("div", _hoisted_31, [
                         _cache[91] || (_cache[91] = _createElementVNode("div", null, [
                           _createElementVNode("h3", null, "任务队列进度"),
-                          _createElementVNode("p", null, "历史快照优先完成；空间不足时等待外部工具移走已发布成品。")
+                          _createElementVNode("p", null, "优先处理历史快照，空间不足时等待释放。")
                         ], -1)),
                         _createVNode(_component_VChip, {
                           color: "primary",
@@ -3695,6 +3695,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-e00ab0ae"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-3967f26e"]]);
 
 export { Config as default };
