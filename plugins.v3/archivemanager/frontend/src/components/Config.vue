@@ -77,6 +77,7 @@ const taskEditor = ref<ArchiveTask>(createArchiveTask())
 const taskEditorOriginal = ref<ArchiveTask | null>(null)
 const includePatternsText = ref('')
 const excludePatternsText = ref('')
+const outputPathReplacementsText = ref('')
 const minFreeGiB = ref(1)
 const maxBytesMiB = ref(4096)
 const mobileNavOpen = ref(false)
@@ -337,6 +338,9 @@ function openTaskEditor(task?: ArchiveTask, asNew = false): void {
   editingTaskId.value = asNew ? null : (task?.id ?? null)
   includePatternsText.value = next.include_patterns.join('\n')
   excludePatternsText.value = next.exclude_patterns.join('\n')
+  outputPathReplacementsText.value = Object.entries(next.output_path_replacements)
+    .map(([source, target]) => `${source} => ${target}`)
+    .join('\n')
   minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2))
   maxBytesMiB.value = Number((next.max_bytes / 1024 ** 2).toFixed(2))
   taskEditorOriginal.value = cloneTask(next)
@@ -350,10 +354,23 @@ function parsePatterns(value: string): string[] {
     .filter(Boolean)
 }
 
+function parsePathReplacements(value: string): Record<string, string> {
+  const replacements: Record<string, string> = {}
+  for (const line of value.split(/\r?\n/)) {
+    const separator = line.indexOf('=>')
+    if (separator < 0) continue
+    const source = line.slice(0, separator).trim()
+    const target = line.slice(separator + 2).trim()
+    if (source && target) replacements[source] = target
+  }
+  return replacements
+}
+
 function prepareEditorTask(): ArchiveTask {
   const task = cloneTask(taskEditor.value)
   task.include_patterns = parsePatterns(includePatternsText.value)
   task.exclude_patterns = parsePatterns(excludePatternsText.value)
+  task.output_path_replacements = parsePathReplacements(outputPathReplacementsText.value)
   task.min_free_bytes = Math.max(0, Number(minFreeGiB.value) || 0) * 1024 ** 3
   task.max_bytes = Math.max(0, Number(maxBytesMiB.value) || 0) * 1024 ** 2
   if (task.delete_source) task.verify = true
@@ -1416,6 +1433,17 @@ onBeforeUnmount(() => {
                           density="compact"
                           hide-details
                           prepend-inner-icon="mdi-file-document-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="输出路径替换" hint="每行一条 A => B，只替换输出子目录名称">
+                        <VTextarea
+                          v-model="outputPathReplacementsText"
+                          aria-label="输出路径替换"
+                          density="compact"
+                          hide-details
+                          placeholder="原目录名 => 新目录名"
+                          rows="2"
                           variant="outlined"
                         />
                       </ArchiveFieldRow>

@@ -32,6 +32,7 @@ class TaskConfig(BaseModel):
     batch_name_template: str = "{date}_{sequence}"  # 创建时固定的批次名称及目录名
     archive_name_template: str = "{id}"  # 外层文件名模板，不包含扩展名
     archive_layout: Literal["directory", "flat"] = "directory"  # 成品目录按分组嵌套或批次扁平
+    output_path_replacements: dict[str, str] = Field(default_factory=dict)  # 输出子目录名称精确替换
     enabled: bool = False  # 是否接受定时触发
     source_dir: str = ""  # MoviePilot 可访问的源目录
     output_dir: str = ""  # 仅成品批次目录，供外部上传器读取
@@ -72,6 +73,11 @@ class TaskConfig(BaseModel):
         CronTrigger.from_crontab(self.cron, timezone=container_timezone())
         validate_template(self.batch_name_template)
         validate_template(self.archive_name_template)
+        for source, target in self.output_path_replacements.items():
+            if not str(source).strip() or not str(target).strip():
+                raise ValueError("输出路径替换的原名称和替换名称不能为空")
+            if any(char in str(source) + str(target) for char in '\\/:*?"<>|\x00\x1f\x7f'):
+                raise ValueError("输出路径替换只能填写单个目录名")
         if self.encrypt_names and (self.format != "7z" or self.encryption != "aes256"):
             raise ValueError("隐藏文件名仅适用于 7z AES-256 加密")
         if self.encryption == "aes256" and not self.password:

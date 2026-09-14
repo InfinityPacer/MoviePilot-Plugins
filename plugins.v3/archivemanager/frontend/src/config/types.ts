@@ -30,6 +30,8 @@ export interface ArchiveTask {
   /** 外层归档包文件名模板；后端负责补充扩展名和必要的批次 ID。 */
   archive_name_template: string
   archive_layout: ArchiveLayout
+  /** 输出子目录名称精确替换，键和值均为单个目录名。 */
+  output_path_replacements: Record<string, string>
   enabled: boolean
   source_dir: string
   output_dir: string

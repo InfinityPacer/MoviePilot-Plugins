@@ -582,3 +582,23 @@ def test_api_cleanup_encrypted_snapshot_does_not_require_password(
     assert response.success is True
     assert not archive.exists()
     assert Path(task.source_dir, entry["relative_path"]).is_file()
+
+
+def test_complete_files_persists_directory_manifest_archive_path(store: Store, tmp_path: Path) -> None:
+    task = _task(tmp_path, id="directory-manifest")
+    source = Path(task.source_dir)
+    entry = _entry(source, "nested/file.txt")
+    directory_path = source / "nested"
+    directory = {"relative_path": "nested", "source_root": str(source.resolve()), **directory_identity(directory_path)}
+    store.inventory(task.id, [entry], task.source_dir, task.public())
+    store.inventory_directories(task.id, [directory], task.public())
+    batch = store.create("directory-manifest-batch", task.public(), [entry], "nested", [directory])
+    batch["manifest"] = {
+        "files": [{**entry, "archive_path": "files/nested/file.txt", "sha256": "a" * 64}],
+        "directories": [{**directory, "archive_path": "files/nested"}],
+    }
+    batch["cleanup"] = {}
+    store.complete_files(batch)
+    with store.handle.session() as session:
+        row = session.scalar(select(DirectoryRow).where(DirectoryRow.batch_id == batch["id"]))
+        assert row.data["archive_path"] == "files/nested"

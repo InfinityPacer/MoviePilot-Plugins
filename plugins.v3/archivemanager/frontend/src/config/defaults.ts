@@ -6,6 +6,7 @@ export const taskDefaults: ArchiveTask = {
   batch_name_template: '{date}_{sequence}',
   archive_name_template: '{id}',
   archive_layout: 'directory',
+  output_path_replacements: {},
   enabled: false,
   source_dir: '',
   output_dir: '',

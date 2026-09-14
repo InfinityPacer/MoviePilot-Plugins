@@ -46,6 +46,9 @@ export function createArchiveTask(value: unknown = {}): ArchiveTask {
     batch_name_template: toStringValue(source.batch_name_template, taskDefaults.batch_name_template),
     archive_name_template: toStringValue(source.archive_name_template, taskDefaults.archive_name_template),
     archive_layout: source.archive_layout === 'flat' ? 'flat' : 'directory',
+    output_path_replacements: isRecord(source.output_path_replacements)
+      ? Object.fromEntries(Object.entries(source.output_path_replacements).map(([key, value]) => [String(key), String(value)]))
+      : {},
     enabled: toBoolean(source.enabled, taskDefaults.enabled),
     source_dir: toStringValue(source.source_dir, taskDefaults.source_dir),
     output_dir: toStringValue(source.output_dir, taskDefaults.output_dir),

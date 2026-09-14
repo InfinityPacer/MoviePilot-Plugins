@@ -371,7 +371,11 @@ class Store:
                     row.status = "archived"
                 if row.status in ("deleted", "missing"):
                     row.present = False
+            manifest_directories = {item["relative_path"]: item for item in batch["manifest"].get("directories", [])}
             for row in session.scalars(select(DirectoryRow).where(DirectoryRow.batch_id == batch["id"])):
+                item = manifest_directories.get(row.relative_path)
+                if item is not None:
+                    row.data = {**item, "source_root": row.data.get("source_root", "")}
                 row.status = "archived"
 
     def clean_batches(self, batch_ids: list[str]) -> dict:
