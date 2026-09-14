@@ -11,7 +11,7 @@ STRFTIME_PATTERN = re.compile(r'(?:%[A-Za-z]|[^%{}\\/:*?"<>|\x00-\x1f\x7f]){1,80
 
 
 def batch_relative_directory(batch: dict) -> Path:
-    """成品与外部清单共享可读布局；更深分组目录在扁平布局中以下划线连接。"""
+    """生成成品相对目录，并按任务配置模糊替换输出子目录名称。"""
     task = batch["task"]
     parts = []
     if task.get("grouping", "directory_date") in ("directory", "directory_date"):
@@ -20,6 +20,12 @@ def batch_relative_directory(batch: dict) -> Path:
             clean = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', "_", part).strip(" .")
             if clean and clean != "全部文件":
                 parts.append(clean)
+    replacements = task.get("output_path_replacements", {}) or {}
+    for source, target in replacements.items():
+        source_text = str(source)
+        target_text = str(target)
+        if source_text:
+            parts = [re.sub(re.escape(source_text), target_text, part, flags=re.IGNORECASE) for part in parts]
     name = batch.get("batch_name") or batch["id"][:6]
     if task.get("archive_layout", "directory") == "flat":
         return Path("_".join([*parts, name]))

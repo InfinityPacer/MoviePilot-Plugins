@@ -23,6 +23,47 @@ describe('ArchiveManager federated config', () => {
     await waitFor(() => expect(within(main).getByText('归档批次').parentElement).toHaveTextContent('4'))
   })
 
+  it('renders every runtime phase in Chinese', async () => {
+    const phases = ['scanning', 'building', 'verifying', 'publishing', 'manifest_pending', 'cleaning']
+    const tasks = phases.map((phase, index) => createArchiveTask({ id: `task-${index}`, name: `任务${index}` }))
+    const progress = phases.map((phase, index) => ({
+      task_id: `task-${index}`,
+      phase,
+      history_total: 0,
+      history_remaining: 0,
+      history_archived: 0,
+      history_unavailable: 0,
+      pending_archives: 0,
+      pending_bytes: 0,
+      free_bytes: 1024,
+      reason: '',
+      active: true,
+    }))
+    const { api } = createHostApi(
+      createSummary({ running: { task_id: 'task-1', batch_id: 'batch-1', phase: 'building' }, tasks: progress }),
+    )
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks }) } })
+
+    for (const label of ['扫描中', '构建中', '校验中', '发布中', '待补全清单', '清理中'])
+      expect(await screen.findAllByText(label)).not.toHaveLength(0)
+    expect(document.querySelector('.archive-running')).toHaveTextContent('任务1 · 构建中')
+    for (const phase of phases) expect(document.querySelector('.archive-main')).not.toHaveTextContent(phase)
+  })
+
+  it('splits overview settings and exposes reset data as a one-time checkbox', async () => {
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig(), onSave: save } })
+
+    expect(screen.getByRole('heading', { name: '1. 运行状态' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '2. 一次性动作' })).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: '重置数据' }))
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ reset_data: true }))
+  })
+
   it('creates a task, forces verification for source deletion, and emits a complete config', async () => {
     const { api } = createHostApi()
     const save = vi.fn()
@@ -38,10 +79,14 @@ describe('ArchiveManager federated config', () => {
     await user.type(taskName, '媒体归档')
     await user.click(within(editor).getByRole('checkbox', { name: '删除源文件' }))
     expect(within(editor).getByRole('checkbox', { name: '完成校验' })).toBeChecked()
-    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
+    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
+
+    expect(save).not.toHaveBeenCalled()
+    expect(screen.queryByText('任务草稿已保存，请点击顶部“保存修改”写入配置。')).not.toBeInTheDocument()
+    const saveButton = document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement
+    await user.click(saveButton)
 
     expect(save).toHaveBeenCalledOnce()
-    expect(screen.queryByText('配置已提交给宿主保存。')).not.toBeInTheDocument()
     const payload = save.mock.calls[0][0]
     expect(payload).toEqual(expect.objectContaining({ enabled: false, tasks: expect.any(Array) }))
     expect(payload.tasks[0]).toEqual(expect.objectContaining({ name: '媒体归档', delete_source: true, verify: true }))
@@ -91,10 +136,23 @@ describe('ArchiveManager federated config', () => {
 
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
-    await user.click(screen.getByRole('button', { name: '保存任务' }))
+    await user.click(screen.getByRole('button', { name: '保存草稿' }))
 
-    expect(save).toHaveBeenCalledOnce()
+    expect(save).not.toHaveBeenCalled()
     expect(document.querySelector('.archive-header__save')).toBeEnabled()
+  })
+
+  it('states that the manifest directory is an independent absolute path', async () => {
+    const task = createArchiveTask({ id: 'task-1', name: '未配置清单任务', manifest_dir: '' })
+    const { api } = createHostApi()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks: [task] }) } })
+
+    await user.click(screen.getByText('任务', { exact: true }))
+    expect(screen.getByText('清单目录').parentElement).toHaveTextContent('未设置')
+    await user.click(screen.getByRole('button', { name: '编辑归档任务' }))
+    expect(screen.getByText('保存 Markdown 和 JSON 清单，填写独立的容器内绝对路径')).toBeInTheDocument()
+    expect(screen.queryByText('与归档目录相同')).not.toBeInTheDocument()
   })
 
   it('keeps batch directory layout generic and renders the default naming preview', async () => {
@@ -178,7 +236,9 @@ describe('ArchiveManager federated config', () => {
     const encryption = within(editor).getByRole('textbox', { name: '加密' })
     await user.click(encryption)
     await user.click(await screen.findByText('不加密', { exact: true }))
-    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
+    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
+    expect(save).not.toHaveBeenCalled()
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
     expect(save).toHaveBeenCalledOnce()
     expect(save.mock.calls[0][0].tasks[0]).toEqual(
       expect.objectContaining({ encryption: 'none', encrypt_names: false }),
@@ -211,6 +271,21 @@ describe('ArchiveManager federated config', () => {
 
     expect(await screen.findByText('任务不存在或配置未生效，请先保存有效配置')).toBeInTheDocument()
     expect(screen.queryByText('归档任务提交失败，请检查插件状态')).not.toBeInTheDocument()
+  })
+
+  it('defaults the batch filter to all tasks', async () => {
+    const first = createArchiveTask({ id: 'task-1', name: '任务一' })
+    const second = createArchiveTask({ id: 'task-2', name: '任务二' })
+    const { api, get } = createHostApi()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks: [first, second] }) } })
+
+    await user.click(screen.getByText('批次'))
+
+    expect(await screen.findByRole('textbox', { name: '批次任务' })).toHaveValue('')
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith(expect.stringMatching(/^plugin\/ArchiveManager\/batches\?(?!.*task_id=)/)),
+    )
   })
 
   it('switches between batches and files and closes through the host command', async () => {

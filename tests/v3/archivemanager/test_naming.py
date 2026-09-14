@@ -103,3 +103,30 @@ def test_escaped_id_is_literal_when_requested():
 def test_invalid_templates_are_rejected(template):
     with pytest.raises(ValueError):
         validate_template(template)
+
+
+def test_output_path_replacements_only_change_group_components():
+    batch = {
+        "task": {
+            "archive_layout": "directory",
+            "output_path_replacements": {
+                "XiaomiCamera_00_B888801B9BCD": "B888801B9BCD",
+                "xiaomi_camera_videos": "patch",
+            },
+        },
+        "group": "xiaomi_camera_videos/78DF7297F7AA | 20260128",
+        "batch_name": "batch-000001",
+    }
+    assert batch_relative_directory(batch).as_posix() == "patch/78DF7297F7AA/batch-000001"
+
+
+def test_output_path_replacements_match_substrings_in_each_group_component_case_insensitively():
+    batch = {
+        "task": {
+            "archive_layout": "directory",
+            "output_path_replacements": {"camera": "source"},
+        },
+        "group": "XiaomiCamera_00_B888801B9BCD/Camera-A | 20260128",
+        "batch_name": "batch-000001",
+    }
+    assert batch_relative_directory(batch).as_posix() == "Xiaomisource_00_B888801B9BCD/source-A/batch-000001"

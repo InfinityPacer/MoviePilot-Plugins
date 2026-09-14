@@ -77,6 +77,7 @@ const taskEditor = ref<ArchiveTask>(createArchiveTask())
 const taskEditorOriginal = ref<ArchiveTask | null>(null)
 const includePatternsText = ref('')
 const excludePatternsText = ref('')
+const outputPathReplacementsText = ref('')
 const minFreeGiB = ref(1)
 const maxBytesMiB = ref(4096)
 const mobileNavOpen = ref(false)
@@ -97,7 +98,7 @@ const previewResult = ref<PreviewData | null>(null)
 const previewTask = ref<ArchiveTask | null>(null)
 const previewMessage = ref('')
 
-const batchTaskFilter = ref(activeTaskId.value)
+const batchTaskFilter = ref('')
 const batchStatusFilter = ref('')
 const batchPage = ref(1)
 const batchPageSize = ref(30)
@@ -233,6 +234,21 @@ const viewLabels: Record<ViewKey, { title: string; icon: string; summary: string
   files: { title: '文件', icon: 'mdi-file-search-outline', summary: '按目录和状态检索归档文件' },
 }
 
+const phaseLabels: Record<string, string> = {
+  scanning: '扫描中',
+  building: '构建中',
+  verifying: '校验中',
+  publishing: '发布中',
+  manifest_pending: '待补全清单',
+  cleaning: '清理中',
+  history: '历史队列',
+  incremental: '新增文件',
+  waiting_capacity: '等待空间',
+  waiting_retry: '等待重试',
+  idle: '空闲',
+  stopped: '已停止',
+}
+
 const batchStatusOptions: Array<{ title: string; value: string }> = [
   { title: '全部状态', value: '' },
   { title: '构建中', value: 'building' },
@@ -296,13 +312,13 @@ function setNotice(text: string, type: NoticeType = 'info'): void {
 function ensureSelection(): void {
   if (!draft.value.tasks.some(task => task.id === activeTaskId.value))
     activeTaskId.value = draft.value.tasks[0]?.id ?? ''
-  if (!draft.value.tasks.some(task => task.id === batchTaskFilter.value)) batchTaskFilter.value = activeTaskId.value
+  if (batchTaskFilter.value && !draft.value.tasks.some(task => task.id === batchTaskFilter.value))
+    batchTaskFilter.value = ''
   if (!draft.value.tasks.some(task => task.id === fileTaskFilter.value)) fileTaskFilter.value = activeTaskId.value
 }
 
 function selectTask(taskId: string): void {
   activeTaskId.value = taskId
-  batchTaskFilter.value = taskId
   fileTaskFilter.value = taskId
 }
 
@@ -322,6 +338,9 @@ function openTaskEditor(task?: ArchiveTask, asNew = false): void {
   editingTaskId.value = asNew ? null : (task?.id ?? null)
   includePatternsText.value = next.include_patterns.join('\n')
   excludePatternsText.value = next.exclude_patterns.join('\n')
+  outputPathReplacementsText.value = Object.entries(next.output_path_replacements)
+    .map(([source, target]) => `${source} => ${target}`)
+    .join('\n')
   minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2))
   maxBytesMiB.value = Number((next.max_bytes / 1024 ** 2).toFixed(2))
   taskEditorOriginal.value = cloneTask(next)
@@ -335,10 +354,23 @@ function parsePatterns(value: string): string[] {
     .filter(Boolean)
 }
 
+function parsePathReplacements(value: string): Record<string, string> {
+  const replacements: Record<string, string> = {}
+  for (const line of value.split(/\r?\n/)) {
+    const separator = line.indexOf('=>')
+    if (separator < 0) continue
+    const source = line.slice(0, separator).trim()
+    const target = line.slice(separator + 2).trim()
+    if (source && target) replacements[source] = target
+  }
+  return replacements
+}
+
 function prepareEditorTask(): ArchiveTask {
   const task = cloneTask(taskEditor.value)
   task.include_patterns = parsePatterns(includePatternsText.value)
   task.exclude_patterns = parsePatterns(excludePatternsText.value)
+  task.output_path_replacements = parsePathReplacements(outputPathReplacementsText.value)
   task.min_free_bytes = Math.max(0, Number(minFreeGiB.value) || 0) * 1024 ** 3
   task.max_bytes = Math.max(0, Number(maxBytesMiB.value) || 0) * 1024 ** 2
   if (task.delete_source) task.verify = true
@@ -359,7 +391,6 @@ function commitTaskEditor(): void {
 
 function saveTaskEditor(): void {
   commitTaskEditor()
-  saveConfig()
 }
 
 function cancelTaskEditor(): void {
@@ -527,16 +558,7 @@ function taskIsActive(progress: SummaryPayload['tasks'][number]): boolean {
 }
 
 function phaseLabel(phase: string): string {
-  return (
-    {
-      history: '历史队列',
-      incremental: '新增文件',
-      waiting_capacity: '等待空间',
-      waiting_retry: '等待重试',
-      idle: '空闲',
-      stopped: '已停止',
-    }[phase] || phase
-  )
+  return phaseLabels[phase] || phase
 }
 
 function progressLabel(progress: SummaryPayload['tasks'][number]): string {
@@ -1108,7 +1130,7 @@ onBeforeUnmount(() => {
                       <strong>{{ operationMessage || '归档任务正在运行' }}</strong>
                       <span v-if="summaryValue.running"
                         >{{ tasksById.get(summaryValue.running.task_id)?.name || summaryValue.running.task_id }} ·
-                        {{ summaryValue.running.phase }}</span
+                        {{ phaseLabel(summaryValue.running.phase) }}</span
                       >
                       <span v-else>排队任务：{{ queuedTaskNames.join('、') }}</span>
                     </div>
@@ -1126,7 +1148,7 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>任务队列进度</h3>
-                      <p>历史快照优先完成；空间不足时等待外部工具移走已发布成品。</p>
+                      <p>优先处理历史快照，空间不足时等待释放。</p>
                     </div>
                     <VChip color="primary" size="small" variant="tonal"
                       >{{ summaryValue.tasks.filter(task => task.active).length }} 个活动任务</VChip
@@ -1163,8 +1185,7 @@ onBeforeUnmount(() => {
                 <section class="archive-section archive-overview-controls">
                   <div class="archive-section__header">
                     <div>
-                      <h3>运行设置</h3>
-                      <p>控制归档服务是否启用，以及哪些事件发送宿主通知</p>
+                      <h3>1. 运行状态</h3>
                     </div>
                   </div>
                   <div class="archive-field-list">
@@ -1200,6 +1221,20 @@ onBeforeUnmount(() => {
                         multiple
                         variant="outlined"
                       />
+                    </ArchiveFieldRow>
+                  </div>
+                </section>
+                <section class="archive-section archive-overview-data">
+                  <div class="archive-section__header">
+                    <div><h3>2. 一次性动作</h3></div>
+                  </div>
+                  <div class="archive-field-list">
+                    <ArchiveFieldRow
+                      danger
+                      label="重置数据"
+                      hint="保存后清空批次、文件、目录和运行状态，执行后自动复位"
+                    >
+                      <VCheckbox v-model="draft.reset_data" aria-label="重置数据" density="compact" hide-details />
                     </ArchiveFieldRow>
                   </div>
                 </section>
@@ -1294,7 +1329,7 @@ onBeforeUnmount(() => {
                       <span>输出目录</span><strong>{{ selectedTask.output_dir || '-' }}</strong>
                     </div>
                     <div>
-                      <span>清单目录</span><strong>{{ selectedTask.manifest_dir || '与归档目录相同' }}</strong>
+                      <span>清单目录</span><strong>{{ selectedTask.manifest_dir || '未设置' }}</strong>
                     </div>
                     <div>
                       <span>文件分组</span
@@ -1344,7 +1379,7 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>{{ taskEditorTitle }}</h3>
-                      <p>保存任务后会同步写入插件配置</p>
+                      <p>保存草稿后仍需点击顶部“保存修改”写入配置</p>
                     </div>
                     <VBtn aria-label="取消编辑" icon size="small" variant="text" @click="cancelTaskEditor"
                       ><VIcon icon="mdi-close"
@@ -1391,13 +1426,24 @@ onBeforeUnmount(() => {
                           variant="outlined"
                         />
                       </ArchiveFieldRow>
-                      <ArchiveFieldRow label="清单目录" hint="保存 Markdown 和 JSON 清单，留空时跟随输出目录">
+                      <ArchiveFieldRow label="清单目录" hint="保存 Markdown 和 JSON 清单，填写独立的容器内绝对路径">
                         <VTextField
                           v-model="taskEditor.manifest_dir"
                           aria-label="清单目录"
                           density="compact"
                           hide-details
                           prepend-inner-icon="mdi-file-document-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="输出路径替换" hint="每行一条 A => B，只替换输出子目录名称">
+                        <VTextarea
+                          v-model="outputPathReplacementsText"
+                          aria-label="输出路径替换"
+                          density="compact"
+                          hide-details
+                          placeholder="原目录名 => 新目录名"
+                          rows="2"
                           variant="outlined"
                         />
                       </ArchiveFieldRow>
@@ -1764,7 +1810,7 @@ onBeforeUnmount(() => {
                       >预览文件</VBtn
                     ><VSpacer /><VBtn variant="text" @click="cancelTaskEditor">取消</VBtn
                     ><VBtn color="primary" prepend-icon="mdi-check" variant="flat" @click="saveTaskEditor"
-                      >保存任务</VBtn
+                      >保存草稿</VBtn
                     >
                   </div>
                 </section>
@@ -2842,7 +2888,7 @@ onBeforeUnmount(() => {
 .archive-section {
   min-inline-size: 0;
   overflow: hidden;
-  padding: 18px 16px;
+  padding: 0 16px 14px;
   border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
   border-radius: var(--app-surface-radius, 8px);
   background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
@@ -2868,6 +2914,7 @@ onBeforeUnmount(() => {
 .archive-section__header {
   justify-content: space-between;
   min-inline-size: 0;
+  padding: 14px 0 10px;
   gap: 10px;
 }
 .archive-section__header > div:first-child {
@@ -2879,7 +2926,9 @@ onBeforeUnmount(() => {
 .archive-section__header h3 {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 0.98rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0;
   line-height: 1.25rem;
 }
 .archive-section__header p {
@@ -3101,8 +3150,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  min-block-size: 82px;
-  padding: 14px 16px;
+  min-block-size: 64px;
+  padding: 10px 14px;
   text-align: start;
   white-space: normal;
 }
@@ -3184,6 +3233,14 @@ onBeforeUnmount(() => {
   width: 48px;
   padding-inline: 6px !important;
   text-align: center !important;
+  vertical-align: middle !important;
+}
+.archive-table__selection :deep(.v-selection-control) {
+  justify-content: center;
+}
+.archive-table__selection :deep(.v-input) {
+  display: flex;
+  justify-content: center;
 }
 .archive-table__numeric {
   text-align: end !important;
@@ -3316,16 +3373,34 @@ onBeforeUnmount(() => {
   margin-block-end: 14px;
 }
 .archive-batch-summary > div {
+  display: flex;
   min-inline-size: 0;
+  min-block-size: 64px;
+  flex-direction: column;
+  justify-content: center;
   padding: 9px 10px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 7px;
 }
 .archive-batch-summary .v-chip {
-  width: max-content;
+  display: inline-flex;
+  width: fit-content;
   max-width: 100%;
-  justify-self: start;
-  align-self: center;
+  min-width: 0;
+  min-block-size: 28px;
+  height: 28px;
+  margin-block-start: 6px;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 12px;
+  vertical-align: middle;
+}
+.archive-batch-summary .v-chip :deep(.v-chip__content) {
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  white-space: nowrap;
 }
 .archive-batch-summary strong {
   display: block;

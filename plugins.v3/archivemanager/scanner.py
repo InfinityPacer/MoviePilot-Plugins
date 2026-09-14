@@ -46,6 +46,20 @@ def identity(path: Path) -> dict:
     return {"size": info.st_size, **_metadata(info)}
 
 
+def _file_identity(info: os.stat_result) -> dict:
+    """从已取得的 DirEntry stat 结果构造文件身份，避免再次 lstat。"""
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError("不是普通文件")
+    return {"size": info.st_size, **_metadata(info)}
+
+
+def _directory_identity(info: os.stat_result) -> dict:
+    """从已取得的 DirEntry stat 结果构造目录身份，避免再次 lstat。"""
+    if not stat.S_ISDIR(info.st_mode):
+        raise ValueError("不是目录")
+    return _metadata(info)
+
+
 def directory_identity(path: Path) -> dict:
     """记录真实目录的时间、权限和身份，符号链接目录不进入归档。"""
     info = path.lstat()
@@ -75,10 +89,11 @@ def fingerprint(entry: dict) -> str:
 
 
 def scan_tree(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[list[dict], list[dict], int]:
-    """扫描普通文件和真实目录；真实运行在稳定窗口后复核两类元数据。"""
+    """扫描普通文件和真实目录；使用 scandir 减少路径对象和重复 lstat。"""
     validate_paths(task)
     cutoff = time.time_ns() - int(task.archive_age_days * 86400 * 1_000_000_000)
     root = Path(task.source_dir)
+    source_root = str(root.resolve())
     entries: list[dict] = []
     directories: list[dict] = []
     skipped = 0
@@ -87,56 +102,68 @@ def scan_tree(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[l
     skipped_unreadable = 0
     skipped_unstable = 0
     started = time.monotonic()
-    for directory, dirs, names in os.walk(root, followlinks=False):
+    pending_dirs = [(root, "")]
+    while pending_dirs:
         if stop.is_set():
             raise Cancelled("已停止扫描")
-        current = Path(directory)
-        accepted_dirs = []
-        for name in sorted(dirs):
-            path = current / name
-            relative = path.relative_to(root).as_posix()
-            excluded = any(
-                fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(name, pattern)
-                for pattern in task.exclude_patterns
-            )
-            if path.is_symlink() or excluded:
-                continue
-            accepted_dirs.append(name)
+        current, current_relative = pending_dirs.pop()
+        try:
+            children = sorted(os.scandir(current), key=lambda item: item.name)
+        except OSError, ValueError:
+            skipped += 1
+            skipped_unreadable += 1
+            continue
+        child_dirs: list[tuple[Path, str]] = []
+        for child in children:
+            relative = f"{current_relative}/{child.name}".strip("/")
             try:
-                directories.append(
-                    {"relative_path": relative, "source_root": str(root.resolve()), **directory_identity(path)}
+                is_symlink = child.is_symlink()
+                # os.walk 会静默跳过目录符号链接；保持这一计数语义，文件符号链接仍计为特殊文件。
+                if is_symlink and child.is_dir(follow_symlinks=True):
+                    continue
+                is_dir = child.is_dir(follow_symlinks=False)
+                if is_dir:
+                    excluded = any(
+                        fnmatch.fnmatchcase(relative, pattern)
+                        or fnmatch.fnmatchcase(child.name, pattern)
+                        for pattern in task.exclude_patterns
+                    )
+                    if is_symlink or excluded:
+                        continue
+                    directories.append(
+                        {
+                            "relative_path": relative,
+                            "source_root": source_root,
+                            **_directory_identity(child.stat(follow_symlinks=False)),
+                        }
+                    )
+                    if task.recursive:
+                        child_dirs.append((Path(child.path), relative))
+                    continue
+                included = any(
+                    fnmatch.fnmatchcase(relative, pattern)
+                    or fnmatch.fnmatchcase(child.name, pattern)
+                    for pattern in task.include_patterns
                 )
-            except OSError, ValueError:
-                skipped += 1
-                skipped_unreadable += 1
-        dirs[:] = accepted_dirs if task.recursive else []
-        for name in sorted(names):
-            if stop.is_set():
-                raise Cancelled("已停止扫描")
-            path = current / name
-            relative = path.relative_to(root).as_posix()
-            included = any(
-                fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(name, pattern)
-                for pattern in task.include_patterns
-            )
-            excluded = any(
-                fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(name, pattern)
-                for pattern in task.exclude_patterns
-            )
-            if (task.include_patterns and not included) or excluded:
-                skipped += 1
-                skipped_patterns += 1
-                continue
-            try:
-                item = identity(path)
+                excluded = any(
+                    fnmatch.fnmatchcase(relative, pattern)
+                    or fnmatch.fnmatchcase(child.name, pattern)
+                    for pattern in task.exclude_patterns
+                )
+                if (task.include_patterns and not included) or excluded:
+                    skipped += 1
+                    skipped_patterns += 1
+                    continue
+                item = _file_identity(child.stat(follow_symlinks=False))
                 if item["mtime_ns"] > cutoff:
                     skipped += 1
                     skipped_too_new += 1
                     continue
-                entries.append({"relative_path": relative, "source_root": str(root.resolve()), **item})
+                entries.append({"relative_path": relative, "source_root": source_root, **item})
             except OSError, ValueError:
                 skipped += 1
                 skipped_unreadable += 1
+        pending_dirs.extend(reversed(child_dirs))
     if stable and (entries or directories):
         if stop.wait(task.stability_seconds):
             raise Cancelled("已停止稳定性观察")

@@ -371,7 +371,11 @@ class Store:
                     row.status = "archived"
                 if row.status in ("deleted", "missing"):
                     row.present = False
+            manifest_directories = {item["relative_path"]: item for item in batch["manifest"].get("directories", [])}
             for row in session.scalars(select(DirectoryRow).where(DirectoryRow.batch_id == batch["id"])):
+                item = manifest_directories.get(row.relative_path)
+                if item is not None:
+                    row.data = {**item, "source_root": row.data.get("source_root", "")}
                 row.status = "archived"
 
     def clean_batches(self, batch_ids: list[str]) -> dict:
@@ -397,6 +401,21 @@ class Store:
                 "batch_count": len(rows),
                 "file_count": sum(int(row.data.get("file_count", 0)) for row in rows),
             }
+
+    def reset_data(self) -> dict:
+        """清空归档运行账本；任务与插件配置由宿主持久化，不属于这些业务表。"""
+        with self.handle.session() as session, session.begin():
+            counts = {
+                "batch_count": session.scalar(select(func.count()).select_from(BatchRow)) or 0,
+                "file_count": session.scalar(select(func.count()).select_from(FileRow)) or 0,
+                "directory_count": session.scalar(select(func.count()).select_from(DirectoryRow)) or 0,
+                "task_state_count": session.scalar(select(func.count()).select_from(TaskRow)) or 0,
+            }
+            session.execute(delete(FileRow))
+            session.execute(delete(DirectoryRow))
+            session.execute(delete(BatchRow))
+            session.execute(delete(TaskRow))
+            return counts
 
     def reclaimable_batches(self) -> list[dict]:
         """返回可尝试回收源文件的已发布批次，不要求用户先筛选任务或批次。"""
@@ -443,16 +462,45 @@ class Store:
             )
             return [self._serialize(row) for row in rows]
 
-    def file_result(self, batch_id: str, relative_path: str, result: str) -> None:
-        """逐文件清理只更新当前成员，避免每次删除都重写整个批次的数据库行。"""
+    def cleanup_intent(self, batch_id: str, relative_path: str) -> None:
+        """删除源文件前单独持久化意图，进程中断后可据此恢复。"""
         with self.handle.session() as session, session.begin():
-            row = session.scalar(
-                select(FileRow).where(FileRow.batch_id == batch_id, FileRow.relative_path == relative_path)
-            )
-            if row is not None:
+            row = session.get(BatchRow, batch_id)
+            if row is None:
+                raise ValueError("归档批次不存在")
+            cleanup = {**row.data.get("cleanup", {}), relative_path: "deleting"}
+            row.data = {**row.data, "cleanup": cleanup}
+
+    def cleanup_results(self, batch_id: str, results: dict[str, str]) -> dict:
+        """在同一事务中批量保存清理结果和文件状态，减少逐文件重复写库。"""
+        if not results:
+            return self.get(batch_id)
+        with self.handle.session() as session, session.begin():
+            batch = session.get(BatchRow, batch_id)
+            if batch is None:
+                raise ValueError("归档批次不存在")
+            batch.data = {**batch.data, "cleanup": {**batch.data.get("cleanup", {}), **results}}
+            rows = {
+                row.relative_path: row
+                for row in session.scalars(
+                    select(FileRow).where(
+                        FileRow.batch_id == batch_id, FileRow.relative_path.in_(results)
+                    )
+                )
+            }
+            for relative_path, result in results.items():
+                row = rows.get(relative_path)
+                if row is None:
+                    continue
                 row.status = result
                 if result in ("deleted", "missing"):
                     row.present = False
+            session.flush()
+            return self._serialize(batch)
+
+    def file_result(self, batch_id: str, relative_path: str, result: str) -> None:
+        """兼容单文件状态更新；新清理流程使用 cleanup_results 批量提交。"""
+        self.cleanup_results(batch_id, {relative_path: result})
 
     def summary(self) -> dict:
         with self.handle.session() as session:

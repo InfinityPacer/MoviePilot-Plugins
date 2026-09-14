@@ -30,6 +30,8 @@ export interface ArchiveTask {
   /** 外层归档包文件名模板；后端负责补充扩展名和必要的批次 ID。 */
   archive_name_template: string
   archive_layout: ArchiveLayout
+  /** 输出子目录名称精确替换，键和值均为单个目录名。 */
+  output_path_replacements: Record<string, string>
   enabled: boolean
   source_dir: string
   output_dir: string
@@ -68,6 +70,8 @@ export interface ArchiveConfig {
   notify: boolean
   /** 发送通知的事件类型。 */
   notify_events: NotificationEvent[]
+  /** 保存时触发一次运行数据重置，宿主配置随后自动复位。 */
+  reset_data: boolean
   tasks: ArchiveTask[]
 }
 
@@ -199,4 +203,6 @@ export interface ActionResult {
   staging_count?: number
   staging_bytes?: number
   staging_removed?: number
+  directory_count?: number
+  task_state_count?: number
 }

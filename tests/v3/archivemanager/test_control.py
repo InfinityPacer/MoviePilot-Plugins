@@ -10,9 +10,25 @@ import app.plugins.archivemanager as manager_module
 import pytest
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig, parse_config
-from app.plugins.archivemanager.scanner import Cancelled, fingerprint, identity
-from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
-from app.plugins.archivemanager.runner import cleanup_stale_staging, remove_staging, staging_path
+from app.plugins.archivemanager.runner import (
+    cleanup_stale_staging,
+    remove_staging,
+    staging_path,
+)
+from app.plugins.archivemanager.scanner import (
+    Cancelled,
+    directory_identity,
+    fingerprint,
+    identity,
+)
+from app.plugins.archivemanager.store import (
+    Base,
+    BatchRow,
+    DirectoryRow,
+    FileRow,
+    Store,
+    TaskRow,
+)
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -101,6 +117,85 @@ def test_staging_cleanup_keeps_recoverable_batches_and_removes_stale(tmp_path: P
     assert not recoverable.exists()
 
 
+def test_cleanup_results_commit_batch_and_file_states_together(store: Store, tmp_path: Path) -> None:
+    task = _task(tmp_path, id="cleanup-results-task")
+    source = Path(task.source_dir)
+    first = _entry(source, "first.txt")
+    second = _entry(source, "second.txt")
+    store.inventory(task.id, [first, second], task.source_dir, task.public())
+    batch = store.create("cleanup-results-batch", task.public(), [first, second], "全部文件")
+
+    store.cleanup_intent(batch["id"], first["relative_path"])
+    interim = store.get(batch["id"])
+    assert interim["cleanup"] == {"first.txt": "deleting"}
+
+    result = store.cleanup_results(
+        batch["id"],
+        {"first.txt": "deleted", "second.txt": "changed"},
+    )
+
+    assert result["cleanup"] == {"first.txt": "deleted", "second.txt": "changed"}
+    with store.handle.session() as session:
+        rows = {
+            row.relative_path: row
+            for row in session.scalars(select(FileRow).where(FileRow.batch_id == batch["id"]))
+        }
+        assert rows["first.txt"].status == "deleted"
+        assert rows["first.txt"].present is False
+        assert rows["second.txt"].status == "changed"
+        assert rows["second.txt"].present is True
+
+
+def test_reset_data_clears_all_runtime_tables_and_keeps_physical_files(store: Store, tmp_path: Path) -> None:
+    task = _task(tmp_path, id="reset-task")
+    source = Path(task.source_dir)
+    entry = _entry(source, "nested/file.txt")
+    directory_path = source / "nested"
+    directory = {
+        "relative_path": "nested",
+        "source_root": str(source.resolve()),
+        **directory_identity(directory_path),
+    }
+    store.inventory(task.id, [entry], task.source_dir, task.public())
+    store.inventory_directories(task.id, [directory], task.public())
+    store.create("reset-batch", task.public(), [entry], "全部文件", [directory])
+    store.set_task_state(task.id, active=True, phase="history")
+
+    result = store.reset_data()
+
+    assert result == {"batch_count": 1, "file_count": 1, "directory_count": 1, "task_state_count": 1}
+    assert (source / "nested/file.txt").is_file()
+    with store.handle.session() as session:
+        assert session.query(BatchRow).count() == 0
+        assert session.query(FileRow).count() == 0
+        assert session.query(DirectoryRow).count() == 0
+        assert session.query(TaskRow).count() == 0
+
+
+def test_pending_reset_clears_runtime_data_after_database_is_ready(monkeypatch) -> None:
+    manager = manager_module.ArchiveManager()
+    manager._previews = {"preview-1": {"status": "complete"}}
+    store = MagicMock()
+    store.reset_data.return_value = {"batch_count": 2, "file_count": 8, "directory_count": 3, "task_state_count": 1}
+    save_data = MagicMock()
+    update_config = MagicMock()
+    monkeypatch.setattr(manager, "get_database", lambda: object())
+    monkeypatch.setattr(manager_module, "Store", lambda _handle: store)
+    monkeypatch.setattr(manager, "save_data", save_data)
+    monkeypatch.setattr(manager, "get_config", lambda: {"enabled": True, "reset_data": True})
+    monkeypatch.setattr(manager, "update_config", update_config)
+    manager._reset_data_pending = True
+
+    result_store = manager._store()
+
+    assert result_store is store
+    store.reset_data.assert_called_once_with()
+    assert manager._reset_data_pending is False
+    assert manager._previews == {"preview-1": {"status": "complete"}}
+    save_data.assert_called_once_with("last_error", None)
+    update_config.assert_called_once_with({"enabled": True, "reset_data": False})
+
+
 def test_archive_manager_constructs_real_plugin_and_declares_persistence_contract() -> None:
     manager = manager_module.ArchiveManager()
 
@@ -111,7 +206,7 @@ def test_archive_manager_constructs_real_plugin_and_declares_persistence_contrac
         manager_module.DirectoryRow,
         manager_module.TaskRow,
     ]
-    assert manager.get_form() == ([], {"enabled": False, "notify": False, "notify_events": ["failure"], "tasks": []})
+    assert manager.get_form() == ([], {"enabled": False, "notify": False, "notify_events": ["failure"], "reset_data": False, "tasks": []})
     assert supports_plugin_hook(manager, "get_page") is False
     assert manager.get_service() == []
 
@@ -423,7 +518,7 @@ def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     task = _task(tmp_path, id="artifact-clean-task")
     entry = _entry(Path(task.source_dir), "keep-source.mp4")
     assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
-    archive = Path(task.output_dir) / "artifact.7z"
+    archive = Path(task.output_dir) / "2026" / "05" / "artifact-clean-batch" / "artifact.7z"
     archive.parent.mkdir(parents=True)
     archive.write_bytes(b"archive")
     archive.with_name(archive.name + ".sha256").write_text("sha", encoding="utf-8")
@@ -450,6 +545,10 @@ def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     assert response.success is True
     assert not archive.exists()
     assert not archive.with_name(archive.name + ".sha256").exists()
+    assert not archive.parent.exists()
+    assert not (Path(task.output_dir) / "2026" / "05").exists()
+    assert not (Path(task.output_dir) / "2026").exists()
+    assert Path(task.output_dir).is_dir()
     assert not staging.exists()
     assert Path(task.source_dir, entry["relative_path"]).is_file()
 
@@ -483,3 +582,23 @@ def test_api_cleanup_encrypted_snapshot_does_not_require_password(
     assert response.success is True
     assert not archive.exists()
     assert Path(task.source_dir, entry["relative_path"]).is_file()
+
+
+def test_complete_files_persists_directory_manifest_archive_path(store: Store, tmp_path: Path) -> None:
+    task = _task(tmp_path, id="directory-manifest")
+    source = Path(task.source_dir)
+    entry = _entry(source, "nested/file.txt")
+    directory_path = source / "nested"
+    directory = {"relative_path": "nested", "source_root": str(source.resolve()), **directory_identity(directory_path)}
+    store.inventory(task.id, [entry], task.source_dir, task.public())
+    store.inventory_directories(task.id, [directory], task.public())
+    batch = store.create("directory-manifest-batch", task.public(), [entry], "nested", [directory])
+    batch["manifest"] = {
+        "files": [{**entry, "archive_path": "files/nested/file.txt", "sha256": "a" * 64}],
+        "directories": [{**directory, "archive_path": "files/nested"}],
+    }
+    batch["cleanup"] = {}
+    store.complete_files(batch)
+    with store.handle.session() as session:
+        row = session.scalar(select(DirectoryRow).where(DirectoryRow.batch_id == batch["id"]))
+        assert row.data["archive_path"] == "files/nested"
