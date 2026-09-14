@@ -417,7 +417,6 @@ class ArchiveManager(_PluginBase):
                     logger.info(
                         f"压缩归档作业已停止：job={job['id'][:6]} task={task.name}({task.id[:6]})"
                     )
-                    self._notify_event("other", task, "任务已停止", "归档已停止，已发布成品和清单保留。")
             finally:
                 with self._lock:
                     self._running = None

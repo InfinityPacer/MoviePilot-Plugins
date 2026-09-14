@@ -10,7 +10,7 @@ import app.plugins.archivemanager as manager_module
 import pytest
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig, parse_config
-from app.plugins.archivemanager.scanner import fingerprint, identity
+from app.plugins.archivemanager.scanner import Cancelled, fingerprint, identity
 from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
 from app.plugins.archivemanager.runner import cleanup_stale_staging, remove_staging, staging_path
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
@@ -183,6 +183,39 @@ def test_notifications_respect_switch_events_and_channel_failure(tmp_path: Path,
 
     monkeypatch.setattr(manager, "post_message", failed_channel)
     manager._notify_event("failure", task, "归档失败", "不应中断归档")
+
+
+def test_cancelled_job_is_silent_but_failure_includes_reason(store: Store, tmp_path: Path, monkeypatch) -> None:
+    """停止只更新状态；真正异常才发送带原因的失败通知。"""
+    task = _task(tmp_path, id="notify-stop-task")
+    manager = manager_module.ArchiveManager()
+    manager._tasks = [task]
+    manager._notifications = manager_module.NotificationConfig(notify=True, notify_events=["failure", "other"])
+    messages = []
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    monkeypatch.setattr(manager, "post_message", lambda **message: messages.append(message))
+    monkeypatch.setattr(manager, "save_data", lambda *_args: None)
+
+    def cancelled(*_args):
+        raise Cancelled("插件正在停止")
+
+    monkeypatch.setattr(manager, "_execute_cycle", cancelled)
+    manager._queue.append({"id": "cancelled-job", "kind": "run", "task": task, "batch_id": ""})
+    manager._work()
+
+    assert messages == []
+    assert store.task_state(task.id)["phase"] == "stopped"
+
+    def failed(*_args):
+        raise RuntimeError("读取源文件失败")
+
+    monkeypatch.setattr(manager, "_execute_cycle", failed)
+    manager._queue.append({"id": "failed-job", "kind": "run", "task": task, "batch_id": ""})
+    manager._work()
+
+    assert len(messages) == 1
+    assert messages[0]["title"] == "压缩归档：归档失败"
+    assert "读取源文件失败" in messages[0]["text"]
 
 
 def test_init_plugin_writes_password_only_to_secret_store_and_public_config_has_no_echo(tmp_path: Path, monkeypatch) -> None:
