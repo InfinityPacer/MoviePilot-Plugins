@@ -359,7 +359,7 @@ function commitTaskEditor(): void {
 
 function saveTaskEditor(): void {
   commitTaskEditor()
-  saveConfig()
+  setNotice('任务草稿已保存，请点击顶部“保存修改”写入配置。', 'success')
 }
 
 function cancelTaskEditor(): void {
@@ -1357,7 +1357,7 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>{{ taskEditorTitle }}</h3>
-                      <p>保存任务后会同步写入插件配置</p>
+                      <p>保存草稿后仍需点击顶部“保存修改”写入配置</p>
                     </div>
                     <VBtn aria-label="取消编辑" icon size="small" variant="text" @click="cancelTaskEditor"
                       ><VIcon icon="mdi-close"
@@ -1777,7 +1777,7 @@ onBeforeUnmount(() => {
                       >预览文件</VBtn
                     ><VSpacer /><VBtn variant="text" @click="cancelTaskEditor">取消</VBtn
                     ><VBtn color="primary" prepend-icon="mdi-check" variant="flat" @click="saveTaskEditor"
-                      >保存任务</VBtn
+                      >保存草稿</VBtn
                     >
                   </div>
                 </section>

@@ -854,6 +854,27 @@ class ArchiveManager(_PluginBase):
         return self._response({"stopping": True})
 
     @staticmethod
+    def _remove_empty_output_dirs(archive_path: Path, output_dir: str) -> int:
+        """删除批次归档包所在路径上的空目录，但保留配置的输出根目录。"""
+        output_root = Path(output_dir).resolve()
+        current = archive_path.resolve(strict=False).parent
+        removed = 0
+        while current != output_root:
+            try:
+                current.relative_to(output_root)
+            except ValueError:
+                break
+            if current.is_symlink():
+                break
+            try:
+                current.rmdir()
+            except OSError:
+                break
+            removed += 1
+            current = current.parent
+        return removed
+
+    @staticmethod
     def _artifact_paths(batch: dict) -> list[Path]:
         """只允许删除批次快照中归档输出目录内的已发布文件。"""
         archive_value = str(batch.get("archive_path") or "").strip()
@@ -901,9 +922,19 @@ class ArchiveManager(_PluginBase):
                     cleanup_tasks[(task.id, task.output_dir)] = task
                     remove_staging(task, batch["id"])
                     if request.delete_artifacts:
-                        for path in self._artifact_paths(batch):
+                        artifact_paths = self._artifact_paths(batch)
+                        for path in artifact_paths:
                             if path.is_file():
                                 path.unlink()
+                        if artifact_paths:
+                            removed_dirs = self._remove_empty_output_dirs(
+                                artifact_paths[0], task.output_dir
+                            )
+                            if removed_dirs:
+                                logger.info(
+                                    f"压缩归档清理空归档目录：task={task.name} "
+                                    f"batch={batch['id'][:6]} count={removed_dirs}"
+                                )
                         remove_catalog(batch)
                 # 清理时顺便扫描同一任务的暂存根目录，处理旧版本手工停止留下的孤儿目录。
                 # 仍处于可恢复阶段的批次必须保留，避免清理动作破坏恢复链路。

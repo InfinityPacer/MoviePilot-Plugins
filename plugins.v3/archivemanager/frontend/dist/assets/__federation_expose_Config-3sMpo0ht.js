@@ -788,7 +788,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function saveTaskEditor() {
       commitTaskEditor();
-      saveConfig();
+      setNotice("任务草稿已保存，请点击顶部“保存修改”写入配置。", "success");
     }
     function cancelTaskEditor() {
       editorOpen.value = false;
@@ -1961,7 +1961,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("div", _hoisted_50, [
                         _createElementVNode("div", null, [
                           _createElementVNode("h3", null, _toDisplayString(taskEditorTitle.value), 1),
-                          _cache[107] || (_cache[107] = _createElementVNode("p", null, "保存任务后会同步写入插件配置", -1))
+                          _cache[107] || (_cache[107] = _createElementVNode("p", null, "保存草稿后仍需点击顶部“保存修改”写入配置", -1))
                         ]),
                         _createVNode(_component_VBtn, {
                           "aria-label": "取消编辑",
@@ -2628,7 +2628,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           onClick: saveTaskEditor
                         }, {
                           default: _withCtx(() => [..._cache[117] || (_cache[117] = [
-                            _createTextVNode("保存任务", -1)
+                            _createTextVNode("保存草稿", -1)
                           ])]),
                           _: 1
                         })
@@ -3655,6 +3655,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-826700f5"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-1459e53b"]]);
 
 export { Config as default };

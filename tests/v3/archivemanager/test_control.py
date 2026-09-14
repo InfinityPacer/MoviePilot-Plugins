@@ -473,7 +473,7 @@ def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     task = _task(tmp_path, id="artifact-clean-task")
     entry = _entry(Path(task.source_dir), "keep-source.mp4")
     assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
-    archive = Path(task.output_dir) / "artifact.7z"
+    archive = Path(task.output_dir) / "2026" / "05" / "artifact-clean-batch" / "artifact.7z"
     archive.parent.mkdir(parents=True)
     archive.write_bytes(b"archive")
     archive.with_name(archive.name + ".sha256").write_text("sha", encoding="utf-8")
@@ -500,6 +500,10 @@ def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     assert response.success is True
     assert not archive.exists()
     assert not archive.with_name(archive.name + ".sha256").exists()
+    assert not archive.parent.exists()
+    assert not (Path(task.output_dir) / "2026" / "05").exists()
+    assert not (Path(task.output_dir) / "2026").exists()
+    assert Path(task.output_dir).is_dir()
     assert not staging.exists()
     assert Path(task.source_dir, entry["relative_path"]).is_file()
 

@@ -52,10 +52,14 @@ describe('ArchiveManager federated config', () => {
     await user.type(taskName, '媒体归档')
     await user.click(within(editor).getByRole('checkbox', { name: '删除源文件' }))
     expect(within(editor).getByRole('checkbox', { name: '完成校验' })).toBeChecked()
-    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
+    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
+
+    expect(save).not.toHaveBeenCalled()
+    expect(screen.getByText('任务草稿已保存，请点击顶部“保存修改”写入配置。')).toBeInTheDocument()
+    const saveButton = document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement
+    await user.click(saveButton)
 
     expect(save).toHaveBeenCalledOnce()
-    expect(screen.queryByText('配置已提交给宿主保存。')).not.toBeInTheDocument()
     const payload = save.mock.calls[0][0]
     expect(payload).toEqual(expect.objectContaining({ enabled: false, tasks: expect.any(Array) }))
     expect(payload.tasks[0]).toEqual(expect.objectContaining({ name: '媒体归档', delete_source: true, verify: true }))
@@ -105,9 +109,9 @@ describe('ArchiveManager federated config', () => {
 
     await user.click(screen.getByText('任务', { exact: true }))
     await user.click(screen.getByRole('button', { name: '新增归档任务' }))
-    await user.click(screen.getByRole('button', { name: '保存任务' }))
+    await user.click(screen.getByRole('button', { name: '保存草稿' }))
 
-    expect(save).toHaveBeenCalledOnce()
+    expect(save).not.toHaveBeenCalled()
     expect(document.querySelector('.archive-header__save')).toBeEnabled()
   })
 
@@ -192,7 +196,9 @@ describe('ArchiveManager federated config', () => {
     const encryption = within(editor).getByRole('textbox', { name: '加密' })
     await user.click(encryption)
     await user.click(await screen.findByText('不加密', { exact: true }))
-    await user.click(within(editor).getByRole('button', { name: '保存任务' }))
+    await user.click(within(editor).getByRole('button', { name: '保存草稿' }))
+    expect(save).not.toHaveBeenCalled()
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
     expect(save).toHaveBeenCalledOnce()
     expect(save.mock.calls[0][0].tasks[0]).toEqual(
       expect.objectContaining({ encryption: 'none', encrypt_names: false }),
