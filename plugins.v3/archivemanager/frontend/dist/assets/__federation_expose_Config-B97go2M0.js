@@ -551,7 +551,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const previewResult = ref(null);
     const previewTask = ref(null);
     const previewMessage = ref("");
-    const batchTaskFilter = ref(activeTaskId.value);
+    const batchTaskFilter = ref("");
     const batchStatusFilter = ref("");
     const batchPage = ref(1);
     const batchPageSize = ref(30);
@@ -676,6 +676,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       batches: { title: "批次", icon: "mdi-package-variant-closed", summary: "查看归档批次、清理和校验结果" },
       files: { title: "文件", icon: "mdi-file-search-outline", summary: "按目录和状态检索归档文件" }
     };
+    const phaseLabels = {
+      scanning: "扫描中",
+      building: "构建中",
+      verifying: "校验中",
+      publishing: "发布中",
+      manifest_pending: "待补全清单",
+      cleaning: "清理中",
+      history: "历史队列",
+      incremental: "新增文件",
+      waiting_capacity: "等待空间",
+      waiting_retry: "等待重试",
+      idle: "空闲",
+      stopped: "已停止"
+    };
     const batchStatusOptions = [
       { title: "全部状态", value: "" },
       { title: "构建中", value: "building" },
@@ -735,12 +749,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function ensureSelection() {
       if (!draft.value.tasks.some((task) => task.id === activeTaskId.value))
         activeTaskId.value = draft.value.tasks[0]?.id ?? "";
-      if (!draft.value.tasks.some((task) => task.id === batchTaskFilter.value)) batchTaskFilter.value = activeTaskId.value;
+      if (batchTaskFilter.value && !draft.value.tasks.some((task) => task.id === batchTaskFilter.value))
+        batchTaskFilter.value = "";
       if (!draft.value.tasks.some((task) => task.id === fileTaskFilter.value)) fileTaskFilter.value = activeTaskId.value;
     }
     function selectTask(taskId) {
       activeTaskId.value = taskId;
-      batchTaskFilter.value = taskId;
       fileTaskFilter.value = taskId;
     }
     function selectMobileView(view) {
@@ -788,7 +802,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function saveTaskEditor() {
       commitTaskEditor();
-      setNotice("任务草稿已保存，请点击顶部“保存修改”写入配置。", "success");
     }
     function cancelTaskEditor() {
       editorOpen.value = false;
@@ -929,14 +942,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return progress.active || taskIsRunning(progress.task_id);
     }
     function phaseLabel(phase) {
-      return {
-        history: "历史队列",
-        incremental: "新增文件",
-        waiting_capacity: "等待空间",
-        waiting_retry: "等待重试",
-        idle: "空闲",
-        stopped: "已停止"
-      }[phase] || phase;
+      return phaseLabels[phase] || phase;
     }
     function progressLabel(progress) {
       if (progress.phase === "history") {
@@ -1574,7 +1580,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         }),
                         _createElementVNode("div", null, [
                           _createElementVNode("strong", null, _toDisplayString(operationMessage.value || "归档任务正在运行"), 1),
-                          summaryValue.value.running ? (_openBlock(), _createElementBlock("span", _hoisted_28, _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id) + " · " + _toDisplayString(summaryValue.value.running.phase), 1)) : (_openBlock(), _createElementBlock("span", _hoisted_29, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1))
+                          summaryValue.value.running ? (_openBlock(), _createElementBlock("span", _hoisted_28, _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id) + " · " + _toDisplayString(phaseLabel(summaryValue.value.running.phase)), 1)) : (_openBlock(), _createElementBlock("span", _hoisted_29, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1))
                         ])
                       ]),
                       _createVNode(_component_VBtn, {
@@ -1885,7 +1891,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ]),
                         _createElementVNode("div", null, [
                           _cache[100] || (_cache[100] = _createElementVNode("span", null, "清单目录", -1)),
-                          _createElementVNode("strong", null, _toDisplayString(selectedTask.value.manifest_dir || "与归档目录相同"), 1)
+                          _createElementVNode("strong", null, _toDisplayString(selectedTask.value.manifest_dir || "未设置"), 1)
                         ]),
                         _createElementVNode("div", null, [
                           _cache[101] || (_cache[101] = _createElementVNode("span", null, "文件分组", -1)),
@@ -2048,7 +2054,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           }),
                           _createVNode(ArchiveFieldRow, {
                             label: "清单目录",
-                            hint: "保存 Markdown 和 JSON 清单，留空时跟随输出目录"
+                            hint: "保存 Markdown 和 JSON 清单，填写独立的容器内绝对路径"
                           }, {
                             default: _withCtx(() => [
                               _createVNode(_component_VTextField, {
@@ -3655,6 +3661,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-1459e53b"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a848453b"]]);
 
 export { Config as default };

@@ -97,7 +97,7 @@ const previewResult = ref<PreviewData | null>(null)
 const previewTask = ref<ArchiveTask | null>(null)
 const previewMessage = ref('')
 
-const batchTaskFilter = ref(activeTaskId.value)
+const batchTaskFilter = ref('')
 const batchStatusFilter = ref('')
 const batchPage = ref(1)
 const batchPageSize = ref(30)
@@ -233,6 +233,21 @@ const viewLabels: Record<ViewKey, { title: string; icon: string; summary: string
   files: { title: '文件', icon: 'mdi-file-search-outline', summary: '按目录和状态检索归档文件' },
 }
 
+const phaseLabels: Record<string, string> = {
+  scanning: '扫描中',
+  building: '构建中',
+  verifying: '校验中',
+  publishing: '发布中',
+  manifest_pending: '待补全清单',
+  cleaning: '清理中',
+  history: '历史队列',
+  incremental: '新增文件',
+  waiting_capacity: '等待空间',
+  waiting_retry: '等待重试',
+  idle: '空闲',
+  stopped: '已停止',
+}
+
 const batchStatusOptions: Array<{ title: string; value: string }> = [
   { title: '全部状态', value: '' },
   { title: '构建中', value: 'building' },
@@ -296,13 +311,13 @@ function setNotice(text: string, type: NoticeType = 'info'): void {
 function ensureSelection(): void {
   if (!draft.value.tasks.some(task => task.id === activeTaskId.value))
     activeTaskId.value = draft.value.tasks[0]?.id ?? ''
-  if (!draft.value.tasks.some(task => task.id === batchTaskFilter.value)) batchTaskFilter.value = activeTaskId.value
+  if (batchTaskFilter.value && !draft.value.tasks.some(task => task.id === batchTaskFilter.value))
+    batchTaskFilter.value = ''
   if (!draft.value.tasks.some(task => task.id === fileTaskFilter.value)) fileTaskFilter.value = activeTaskId.value
 }
 
 function selectTask(taskId: string): void {
   activeTaskId.value = taskId
-  batchTaskFilter.value = taskId
   fileTaskFilter.value = taskId
 }
 
@@ -359,7 +374,6 @@ function commitTaskEditor(): void {
 
 function saveTaskEditor(): void {
   commitTaskEditor()
-  setNotice('任务草稿已保存，请点击顶部“保存修改”写入配置。', 'success')
 }
 
 function cancelTaskEditor(): void {
@@ -527,16 +541,7 @@ function taskIsActive(progress: SummaryPayload['tasks'][number]): boolean {
 }
 
 function phaseLabel(phase: string): string {
-  return (
-    {
-      history: '历史队列',
-      incremental: '新增文件',
-      waiting_capacity: '等待空间',
-      waiting_retry: '等待重试',
-      idle: '空闲',
-      stopped: '已停止',
-    }[phase] || phase
-  )
+  return phaseLabels[phase] || phase
 }
 
 function progressLabel(progress: SummaryPayload['tasks'][number]): string {
@@ -1108,7 +1113,7 @@ onBeforeUnmount(() => {
                       <strong>{{ operationMessage || '归档任务正在运行' }}</strong>
                       <span v-if="summaryValue.running"
                         >{{ tasksById.get(summaryValue.running.task_id)?.name || summaryValue.running.task_id }} ·
-                        {{ summaryValue.running.phase }}</span
+                        {{ phaseLabel(summaryValue.running.phase) }}</span
                       >
                       <span v-else>排队任务：{{ queuedTaskNames.join('、') }}</span>
                     </div>
@@ -1307,7 +1312,7 @@ onBeforeUnmount(() => {
                       <span>输出目录</span><strong>{{ selectedTask.output_dir || '-' }}</strong>
                     </div>
                     <div>
-                      <span>清单目录</span><strong>{{ selectedTask.manifest_dir || '与归档目录相同' }}</strong>
+                      <span>清单目录</span><strong>{{ selectedTask.manifest_dir || '未设置' }}</strong>
                     </div>
                     <div>
                       <span>文件分组</span
@@ -1404,7 +1409,7 @@ onBeforeUnmount(() => {
                           variant="outlined"
                         />
                       </ArchiveFieldRow>
-                      <ArchiveFieldRow label="清单目录" hint="保存 Markdown 和 JSON 清单，留空时跟随输出目录">
+                      <ArchiveFieldRow label="清单目录" hint="保存 Markdown 和 JSON 清单，填写独立的容器内绝对路径">
                         <VTextField
                           v-model="taskEditor.manifest_dir"
                           aria-label="清单目录"
@@ -3350,12 +3355,24 @@ onBeforeUnmount(() => {
   border-radius: 7px;
 }
 .archive-batch-summary .v-chip {
-  width: max-content;
+  display: inline-flex;
+  width: fit-content;
   max-width: 100%;
-  min-block-size: 26px;
-  height: 26px;
+  min-width: 0;
+  min-block-size: 28px;
+  height: 28px;
   margin-block-start: 6px;
   align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 12px;
+  vertical-align: middle;
+}
+.archive-batch-summary .v-chip :deep(.v-chip__content) {
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  white-space: nowrap;
 }
 .archive-batch-summary strong {
   display: block;
