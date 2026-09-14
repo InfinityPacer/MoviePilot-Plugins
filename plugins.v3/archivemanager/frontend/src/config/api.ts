@@ -133,9 +133,7 @@ export function pollPreview(api: PluginApi | undefined, jobId: string): Promise<
   return getData<PreviewResult | null>(api, queryPath('preview', { job_id: jobId }), null)
 }
 
-export function previewReclaim(
-  api: PluginApi | undefined,
-): Promise<{
+export function previewReclaim(api: PluginApi | undefined): Promise<{
   batch_count?: number
   file_count?: number
   estimated_bytes?: number

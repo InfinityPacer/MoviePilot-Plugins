@@ -319,7 +319,7 @@ function openTaskEditor(task?: ArchiveTask, asNew = false): void {
   } else {
     taskEditor.value = next
   }
-  editingTaskId.value = asNew ? null : task?.id ?? null
+  editingTaskId.value = asNew ? null : (task?.id ?? null)
   includePatternsText.value = next.include_patterns.join('\n')
   excludePatternsText.value = next.exclude_patterns.join('\n')
   minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2))
@@ -607,7 +607,12 @@ async function executeReclaim(): Promise<void> {
     setNotice('回收请求失败，请刷新后重试。', 'error')
     return
   }
-  const reclaimResult = result as { queued?: number; estimated_bytes?: number; staging_removed?: number; staging_bytes?: number }
+  const reclaimResult = result as {
+    queued?: number
+    estimated_bytes?: number
+    staging_removed?: number
+    staging_bytes?: number
+  }
   const queuedEstimate = Number(reclaimResult.estimated_bytes ?? 0)
   const stagingRemoved = Number(reclaimResult.staging_removed ?? 0)
   const suffix = queuedEstimate > 0 ? `，预计回收 ${formatBytes(queuedEstimate)}` : ''
@@ -1148,8 +1153,9 @@ onBeforeUnmount(() => {
                         >{{ phaseLabel(taskPhase(progress)) }}</VChip
                       ><span class="archive-progress__detail">{{ progressLabel(progress) }}</span
                       ><span class="archive-progress__capacity"
-                        >已归档 {{ formatNumber(progress.pending_archives) }} 批 · {{ formatBytes(progress.pending_bytes)
-                        }}<br />可用空间 {{ formatBytes(progress.free_bytes) }}</span
+                        >已归档 {{ formatNumber(progress.pending_archives) }} 批 ·
+                        {{ formatBytes(progress.pending_bytes) }}<br />可用空间
+                        {{ formatBytes(progress.free_bytes) }}</span
                       >
                     </div>
                   </div>
@@ -1298,7 +1304,9 @@ onBeforeUnmount(() => {
                       <span>文件限制</span
                       ><strong
                         >{{ selectedTask.max_files ? `${formatNumber(selectedTask.max_files)} 个` : '不限数量' }} ·
-                        {{ selectedTask.max_bytes ? `${formatNumber(selectedTask.max_bytes / 1024 ** 2)} M` : '不限体积' }}</strong
+                        {{
+                          selectedTask.max_bytes ? `${formatNumber(selectedTask.max_bytes / 1024 ** 2)} M` : '不限体积'
+                        }}</strong
                       >
                     </div>
                     <div>
@@ -2307,9 +2315,7 @@ onBeforeUnmount(() => {
             </VBtn>
           </div>
         </VCardText>
-        <VCardActions>
-          <VSpacer /><VBtn variant="text" @click="cleanupDialogOpen = false">取消</VBtn>
-        </VCardActions>
+        <VCardActions> <VSpacer /><VBtn variant="text" @click="cleanupDialogOpen = false">取消</VBtn> </VCardActions>
       </VCard>
     </VDialog>
 

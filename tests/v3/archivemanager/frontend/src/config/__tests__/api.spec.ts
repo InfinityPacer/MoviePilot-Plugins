@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { listBatches, listFiles, loadSummary, pollPreview, runTask, runTasks, startPreview, stopTask } from '@/config/api'
+import {
+  listBatches,
+  listFiles,
+  loadSummary,
+  pollPreview,
+  runTask,
+  runTasks,
+  startPreview,
+  stopTask,
+} from '@/config/api'
 import type { PluginApi } from '@/config/api'
 import type { ArchiveTask } from '@/config/types'
 
