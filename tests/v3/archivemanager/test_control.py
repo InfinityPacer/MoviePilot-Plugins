@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -146,6 +147,49 @@ def test_cleanup_results_commit_batch_and_file_states_together(store: Store, tmp
         assert rows["second.txt"].present is True
 
 
+def test_daily_archive_bytes_uses_publication_day_and_keeps_moved_artifacts_counted(store: Store) -> None:
+    now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(days=1)
+    with store.handle.session() as session, session.begin():
+        session.add_all(
+            [
+                BatchRow(
+                    id="today-published",
+                    task_id="task-1",
+                    status="completed",
+                    created_at=yesterday.isoformat(),
+                    data={
+                        "published_at": now.isoformat(),
+                        "archive_size": 125,
+                        "source_bytes": 250,
+                        "file_count": 3,
+                    },
+                ),
+                BatchRow(
+                    id="legacy-today",
+                    task_id="task-2",
+                    status="completed",
+                    created_at=now.isoformat(),
+                    data={"archive_size": 75, "source_bytes": 150, "file_count": 2},
+                ),
+                BatchRow(
+                    id="not-published",
+                    task_id="task-2",
+                    status="building",
+                    created_at=now.isoformat(),
+                    data={"archive_size": 900, "source_bytes": 1800, "file_count": 9},
+                ),
+            ]
+        )
+
+    assert store.daily_archive_bytes(now.astimezone().date()) == 200
+    assert store.daily_archive_bytes(yesterday.astimezone().date()) == 0
+    summary = store.summary()
+    assert summary["today_archived_files"] == 5
+    assert summary["today_archive_count"] == 2
+    assert summary["today_archive_bytes"] == 200
+
+
 def test_reset_data_clears_all_runtime_tables_and_keeps_physical_files(store: Store, tmp_path: Path) -> None:
     task = _task(tmp_path, id="reset-task")
     source = Path(task.source_dir)
@@ -206,7 +250,17 @@ def test_archive_manager_constructs_real_plugin_and_declares_persistence_contrac
         manager_module.DirectoryRow,
         manager_module.TaskRow,
     ]
-    assert manager.get_form() == ([], {"enabled": False, "notify": False, "notify_events": ["failure"], "reset_data": False, "tasks": []})
+    assert manager.get_form() == (
+        [],
+        {
+            "enabled": False,
+            "notify": False,
+            "notify_events": ["failure"],
+            "daily_archive_limit_bytes": 0,
+            "reset_data": False,
+            "tasks": [],
+        },
+    )
     assert supports_plugin_hook(manager, "get_page") is False
     assert manager.get_service() == []
 
@@ -270,7 +324,7 @@ def test_notifications_respect_switch_events_and_channel_failure(tmp_path: Path,
 
     manager._notify_event("failure", task, "归档失败", "默认关闭")
     assert messages == []
-    manager._notifications = manager_module.NotificationConfig(notify=True, notify_events=["failure"])
+    manager._settings = manager_module.PluginConfig(notify=True, notify_events=["failure"])
     manager._notify_event("success", task, "归档成功", "未选择此事件")
     assert messages == []
     manager._notify_event("failure", task, "归档失败", task.password)
@@ -290,7 +344,7 @@ def test_cancelled_job_is_silent_but_failure_includes_reason(store: Store, tmp_p
     task = _task(tmp_path, id="notify-stop-task")
     manager = manager_module.ArchiveManager()
     manager._tasks = [task]
-    manager._notifications = manager_module.NotificationConfig(notify=True, notify_events=["failure", "other"])
+    manager._settings = manager_module.PluginConfig(notify=True, notify_events=["failure", "other"])
     messages = []
     monkeypatch.setattr(manager, "_store", lambda: store)
     monkeypatch.setattr(manager, "post_message", lambda **message: messages.append(message))

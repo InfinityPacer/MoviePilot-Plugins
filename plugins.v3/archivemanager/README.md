@@ -7,6 +7,9 @@
 
 ## 版本更新日志
 
+- v0.1.4
+  - 新增所有任务共享的每日归档额度与今日归档统计
+  - 统一容量和数量配置单位显示
 - v0.1.3
   - 新增输出子目录替换规则，支持模糊替换
   - 补齐目录归档路径记录
@@ -69,6 +72,7 @@
 | 启用插件 | `enabled` | bool | `false` | 激活插件、定时服务和操作入口 | 关闭后保留任务配置与运行数据 |
 | 发送通知 | `notify` | bool | `false` | 通过宿主消息通道发送所选事件 | 依赖 MoviePilot 通知渠道 |
 | 通知事件 | `notify_events` | string[] | `failure` | 选择归档成功、失败或其他事件 | 其他包含等待空间和清单补全 |
+| 每日归档额度 | `daily_archive_limit_bytes` | number（GiB） | `0 GiB` | 限制所有任务每天发布的归档包总大小 | `0` 表示不限，按容器本地日期和实际成品体积统计 |
 
 ### 一次性动作
 
@@ -105,7 +109,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 目录布局 | `archive_layout` | enum | `directory`（按目录） | 控制来源分组与批次目录的组合 | 可选按目录、扁平 |
 | 递归扫描 | `recursive` | bool | `true` | 扫描源目录下的子目录 | 不跟随符号链接 |
-| 目录深度 | `directory_depth` | integer | `1` | 按目录分组时保留的层级 | 范围 `1`–`20` |
+| 目录深度 | `directory_depth` | integer（层） | `1 层` | 按目录分组时保留的层级 | 范围 `1`–`20` |
 | 包含文件 | `include_patterns` | string[] | 空 | 只归档匹配的文件 | 每行一个 glob，空表示全部 |
 | 排除文件 | `exclude_patterns` | string[] | 空 | 排除匹配的文件 | 排除规则优先 |
 | [文件分组](#cfg-grouping) | `grouping` | enum | `directory_date`（目录 + 日期） | 按来源目录和文件时间分组 | 可选不分组、目录、日期、目录 + 日期 |
@@ -115,14 +119,14 @@
 
 | 配置项 | 标识 | 类型 | 默认值 | 说明 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| 每轮批次 | `max_batches` | integer | `10` | 单轮最多处理的批次数 | 范围 `1`–`10000` |
-| 每批文件数 | `max_files` | integer | `1000` | 单个归档包的文件数上限 | `0` 表示不限 |
-| 每批体积 | `max_bytes` | number（MiB） | `4096 M` | 单个归档包的源文件体积上限 | `0` 表示不限，后端按字节保存 |
-| [文件保留天数](#cfg-archive_age_days) | `archive_age_days` | number（天） | `7` | 只处理修改时间达到该年龄的文件 | `0` 表示不限 |
-| 稳定时间 | `stability_seconds` | integer（秒） | `60` | 归档前等待文件属性保持稳定 | 范围 `1`–`3600` |
+| 每轮批次 | `max_batches` | integer（批） | `10 批` | 单轮最多处理的批次数 | 范围 `1`–`10000` |
+| 每批文件数 | `max_files` | integer（个） | `1000 个` | 单个归档包的文件数上限 | `0` 表示不限 |
+| 每批体积 | `max_bytes` | number（MiB） | `4096 MiB` | 单个归档包的源文件体积上限 | `0` 表示不限，后端按字节保存 |
+| [文件保留天数](#cfg-archive_age_days) | `archive_age_days` | number（天） | `7 天` | 只处理修改时间达到该年龄的文件 | `0` 表示不限 |
+| 稳定时间 | `stability_seconds` | integer（秒） | `60 秒` | 归档前等待文件属性保持稳定 | 范围 `1`–`3600` |
 | [自动续跑](#cfg-auto_continue) | `auto_continue` | bool | `false` | 条件恢复后继续当前归档周期 | 每 20 分钟检查一次 |
-| [成品批次上限](#cfg-max_pending_archives) | `max_pending_archives` | integer | `1` | 本地成品达到数量后暂停 | `0` 表示不限 |
-| 成品体积上限 | `max_pending_bytes` | integer（字节） | `0` | 本地成品达到体积后暂停 | `0` 表示不限 |
+| [成品批次上限](#cfg-max_pending_archives) | `max_pending_archives` | integer（批） | `1 批` | 本地成品达到数量后暂停 | `0` 表示不限 |
+| 成品体积上限 | `max_pending_bytes` | number（GiB） | `0 GiB` | 本地成品达到体积后暂停 | `0` 表示不限 |
 | [预留空间](#cfg-min_free_bytes) | `min_free_bytes` | number（GiB） | `1 GiB` | 归档完成后保留的输出卷空间 | `0` 表示不预留 |
 
 ### 5. 压缩与完成
