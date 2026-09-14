@@ -18,7 +18,7 @@ from .capacity import CapacityWait, allowance
 from .catalog import atomic_write, write_catalog
 from .config import TaskConfig, validate_paths
 from .naming import batch_relative_directory
-from .scanner import Cancelled, identity
+from .scanner import Cancelled, identity, identity_matches
 
 
 def run_engine(payload: dict, stop: Event) -> dict:
@@ -262,12 +262,16 @@ class Runner:
                         "action": "build",
                         "task": engine_task,
                         "entries": batch["entries"],
+                        "directories": batch.get("directories", []),
                         "destination": str(stage_archive),
                         "batch_id": batch_id,
                     },
                     self.stop,
                 )
-                logger.info(f"压缩归档打包完成：{context} members={len(manifest['files'])}")
+                logger.info(
+                    f"压缩归档打包完成：{context} files={len(manifest['files'])} "
+                    f"directories={len(manifest.get('directories', []))}"
+                )
                 verified = False
                 if task.verify:
                     self.phase("verifying", batch_id)
@@ -391,7 +395,6 @@ class Runner:
             if batch["cleanup"].get(relative) in ("deleted", "missing", "changed"):
                 continue
             source = Path(task.source_dir) / relative
-            expected = {key: entry[key] for key in ("size", "mtime_ns", "ctime_ns", "device", "inode")}
             result = "retained"
             try:
                 if not source.exists():
@@ -399,9 +402,9 @@ class Runner:
                     logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=missing")
                 elif (
                     any(part.is_symlink() for part in (source, *source.parents))
-                    or identity(source) != expected
+                    or not identity_matches(source, entry)
                     or digest(source, self.stop) != entry["sha256"]
-                    or identity(source) != expected
+                    or not identity_matches(source, entry)
                 ):
                     result = "changed"
                     logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=changed")
@@ -411,7 +414,7 @@ class Runner:
                     batch = self.store.save(batch["id"], cleanup=cleanup)
                     write_catalog(batch)
                     check_stop(self.stop)
-                    if identity(archive) != archive_identity or identity(source) != expected:
+                    if identity(archive) != archive_identity or not identity_matches(source, entry):
                         raise ValueError("清理前源文件或归档包已变化")
                     source.unlink()
                     result = "deleted"

@@ -26,8 +26,8 @@ from .config import (
     validate_paths,
 )
 from .runner import Runner, cleanup_stale_staging, remove_staging, staging_size
-from .scanner import Cancelled, partition, scan
-from .store import BatchRow, FileRow, Store, TaskRow
+from .scanner import Cancelled, partition, scan, scan_tree
+from .store import BatchRow, DirectoryRow, FileRow, Store, TaskRow
 
 
 class TaskRequest(BaseModel):
@@ -148,7 +148,7 @@ class ArchiveManager(_PluginBase):
 
     def get_database_models(self):
         """声明插件隔离表，不向宿主主库注册业务表。"""
-        return [BatchRow, FileRow, TaskRow]
+        return [BatchRow, FileRow, DirectoryRow, TaskRow]
 
     def get_database_migrations(self):
         """交由宿主在激活插件前升级独立库，迁移声明优先于模型自动建表。"""
@@ -464,33 +464,71 @@ class ArchiveManager(_PluginBase):
         # 持久化当前扫描阶段，避免配置重载后任务仍显示为“已停止”。
         store.set_task_state(task.id, active=task.auto_continue, phase="scanning", reason="")
         self._phase("scanning")
-        entries, skipped = scan(task, self._stop, stable=True)
+        entries, directories, skipped = scan_tree(task, self._stop, stable=True)
         entries = store.inventory(task.id, entries, task.source_dir, task.public())
+        pending_directories = store.inventory_directories(task.id, directories, task.public())
         groups = partition(task, entries)
+        directory_map = {entry["relative_path"]: entry for entry in directories}
+        file_ancestor_paths = {
+            parent.as_posix()
+            for entry in entries
+            for parent in Path(entry["relative_path"]).parents
+            if parent.as_posix() != "."
+        }
+        standalone_directories = [
+            entry for entry in pending_directories if entry["relative_path"] not in file_ancestor_paths
+        ]
+        if standalone_directories:
+            limit = task.max_files or len(standalone_directories)
+            for offset in range(0, len(standalone_directories), limit):
+                groups.append(
+                    {
+                        "group": "目录结构",
+                        "entries": [],
+                        "directories": standalone_directories[offset : offset + limit],
+                        "total_bytes": 0,
+                    }
+                )
         logger.info(
             f"压缩归档扫描完成：task={task.name}({task.id[:6]}) eligible_files={len(entries)} "
-            f"eligible_bytes={sum(entry['size'] for entry in entries)} batches={len(groups)} skipped={skipped} "
-            f"age_days={task.archive_age_days} stability_seconds={task.stability_seconds}"
+            f"eligible_directories={len(pending_directories)} eligible_bytes={sum(entry['size'] for entry in entries)} "
+            f"batches={len(groups)} skipped={skipped} age_days={task.archive_age_days} "
+            f"stability_seconds={task.stability_seconds}"
         )
         while groups and completed < task.max_batches:
             if self._stop.is_set():
                 raise Cancelled("已停止")
             capacity = allowance(task, store.local_archives(task.id))
-            selected = fit_batch(groups[0], capacity["budget"]) if capacity["budget"] else None
+            directory_only = not groups[0]["entries"] and groups[0].get("directories")
+            selected = groups[0] if directory_only and capacity["budget"] else (
+                fit_batch(groups[0], capacity["budget"]) if capacity["budget"] else None
+            )
             if selected is None:
                 capacity["reason"] = capacity["reason"] or "剩余容量不足以容纳下一份完整文件，等待空间或调整容量上限"
                 store.set_task_state(task.id, phase="waiting_capacity", **capacity)
                 logger.warning(
                     f"压缩归档下一批无法容纳：task={task.name}({task.id[:6]}) "
-                    f"group={groups[0]['group']} next_file_bytes={groups[0]['entries'][0]['size']} "
+                    f"group={groups[0]['group']} next_file_bytes="
+                    f"{groups[0]['entries'][0]['size'] if groups[0]['entries'] else 0} "
                     f"budget_bytes={capacity['budget']} reason={capacity['reason']}"
                 )
                 return
-            batch = store.create(uuid4().hex, task.public(), selected["entries"], selected["group"])
+            selected_directories = list(selected.get("directories", []))
+            if selected["entries"]:
+                required_paths = {
+                    parent.as_posix()
+                    for entry in selected["entries"]
+                    for parent in Path(entry["relative_path"]).parents
+                    if parent.as_posix() != "."
+                }
+                selected_directories = [directory_map[path] for path in sorted(required_paths) if path in directory_map]
+            batch = store.create(
+                uuid4().hex, task.public(), selected["entries"], selected["group"], selected_directories
+            )
             logger.info(
                 f"压缩归档批次已创建：task={task.name}({task.id[:6]}) batch={batch['id'][:6]} "
                 f"name={batch['batch_name']} group={selected['group']} files={len(selected['entries'])} "
-                f"source_bytes={selected['total_bytes']}"
+                f"directories={len(selected_directories)} source_bytes={selected['total_bytes']}"
             )
             self._execute_batch(runner, store, batch, task)
             completed += 1
@@ -654,6 +692,13 @@ class ArchiveManager(_PluginBase):
     def _reclaimable_batches(self) -> list[dict]:
         return self._store().reclaimable_batches()
 
+    @staticmethod
+    def _snapshot_task_for_maintenance(snapshot: dict) -> TaskConfig:
+        """清理产物和暂存只需要路径契约，不应因历史密码未加载而失败。"""
+        return TaskConfig.model_validate(
+            {**snapshot, "password": "", "encryption": "none", "encrypt_names": False}
+        )
+
     def _staging_tasks(self) -> list[tuple[TaskConfig, set[str]]]:
         """收集当前配置和历史快照中的暂存目录，保留仍可恢复批次。"""
         store = self._store()
@@ -663,7 +708,7 @@ class ArchiveManager(_PluginBase):
         for batch in store.batches(page=1, page_size=100000)["items"]:
             snapshot = batch.get("task") or {}
             try:
-                task = TaskConfig.model_validate({**snapshot, "password": ""})
+                task = self._snapshot_task_for_maintenance(snapshot)
             except (TypeError, ValueError):
                 continue
             values.setdefault((task.id, task.output_dir), (task, set()))
@@ -734,7 +779,7 @@ class ArchiveManager(_PluginBase):
                 for batch in batches:
                     if batch["id"] in queued or batch["id"] == running:
                         continue
-                    task = TaskConfig.model_validate({**batch["task"], "password": ""})
+                    task = self._snapshot_task_for_maintenance(batch["task"])
                     job_id = uuid4().hex
                     jobs.append({"id": job_id, "kind": "reclaim", "task": task, "batch_id": batch["id"]})
                 self._queue.extend(jobs)
@@ -829,7 +874,7 @@ class ArchiveManager(_PluginBase):
                         raise ValueError("批次正在队列中，不能清理")
                 cleanup_tasks: dict[tuple[str, str], TaskConfig] = {}
                 for batch in batches:
-                    task = TaskConfig.model_validate({**batch["task"], "password": ""})
+                    task = self._snapshot_task_for_maintenance(batch["task"])
                     cleanup_tasks[(task.id, task.output_dir)] = task
                     remove_staging(task, batch["id"])
                     if request.delete_artifacts:

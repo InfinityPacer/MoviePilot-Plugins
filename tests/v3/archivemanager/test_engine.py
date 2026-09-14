@@ -82,7 +82,7 @@ def test_eight_format_and_compression_combinations(source_dir: Path, tmp_path: P
     restored = engine.verify_archive(destination)
 
     assert restored == manifest
-    assert manifest["schema_version"] == 1
+    assert manifest["schema_version"] == 2
     assert all(item["archive_path"].startswith("files/") for item in manifest["files"])
     assert "password" not in manifest
 

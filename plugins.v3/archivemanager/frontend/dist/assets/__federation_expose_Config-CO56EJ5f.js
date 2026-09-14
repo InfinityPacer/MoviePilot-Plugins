@@ -384,116 +384,115 @@ const _hoisted_66 = { class: "archive-table" };
 const _hoisted_67 = { class: "archive-table__selection" };
 const _hoisted_68 = ["onClick"];
 const _hoisted_69 = { class: "archive-table__selection" };
-const _hoisted_70 = { class: "archive-id" };
+const _hoisted_70 = { class: "archive-table__numeric" };
 const _hoisted_71 = { class: "archive-table__numeric" };
-const _hoisted_72 = { class: "archive-table__numeric" };
-const _hoisted_73 = { class: "sr-only" };
-const _hoisted_74 = {
+const _hoisted_72 = { class: "sr-only" };
+const _hoisted_73 = {
   key: 3,
   class: "archive-pagination"
 };
-const _hoisted_75 = {
+const _hoisted_74 = {
   key: 2,
   class: "archive-view archive-table-view"
 };
-const _hoisted_76 = {
+const _hoisted_75 = {
   key: 0,
   class: "archive-empty archive-empty--table"
 };
-const _hoisted_77 = { key: 1 };
-const _hoisted_78 = { class: "archive-filter-bar archive-filter-bar--files" };
+const _hoisted_76 = { key: 1 };
+const _hoisted_77 = { class: "archive-filter-bar archive-filter-bar--files" };
+const _hoisted_78 = {
+  key: 0,
+  class: "archive-empty archive-empty--table"
+};
 const _hoisted_79 = {
-  key: 0,
-  class: "archive-empty archive-empty--table"
-};
-const _hoisted_80 = {
   "aria-label": "文件目录",
   class: "archive-breadcrumbs"
 };
-const _hoisted_81 = {
+const _hoisted_80 = {
   key: 0,
   class: "archive-inline-state"
 };
-const _hoisted_82 = {
+const _hoisted_81 = {
   key: 1,
   class: "archive-empty archive-empty--table"
 };
-const _hoisted_83 = {
+const _hoisted_82 = {
   key: 2,
   class: "archive-files-browser"
 };
-const _hoisted_84 = {
+const _hoisted_83 = {
   key: 0,
   class: "archive-directory-list"
 };
-const _hoisted_85 = ["onClick"];
-const _hoisted_86 = {
+const _hoisted_84 = ["onClick"];
+const _hoisted_85 = {
   key: 1,
   class: "archive-table-wrap"
 };
-const _hoisted_87 = { class: "archive-table" };
-const _hoisted_88 = { class: "archive-table__numeric" };
-const _hoisted_89 = {
+const _hoisted_86 = { class: "archive-table" };
+const _hoisted_87 = { class: "archive-table__numeric" };
+const _hoisted_88 = {
   key: 3,
   class: "archive-pagination"
 };
-const _hoisted_90 = { class: "archive-impact-preview" };
-const _hoisted_91 = { class: "archive-impact-preview__title" };
-const _hoisted_92 = { class: "archive-impact-preview__list" };
+const _hoisted_89 = { class: "archive-impact-preview" };
+const _hoisted_90 = { class: "archive-impact-preview__title" };
+const _hoisted_91 = { class: "archive-impact-preview__list" };
+const _hoisted_92 = { class: "archive-impact-preview__item" };
 const _hoisted_93 = { class: "archive-impact-preview__item" };
 const _hoisted_94 = { class: "archive-impact-preview__item" };
 const _hoisted_95 = { class: "archive-impact-preview__item" };
-const _hoisted_96 = { class: "archive-impact-preview__item" };
-const _hoisted_97 = {
+const _hoisted_96 = {
   key: 0,
   class: "archive-change-summary"
 };
-const _hoisted_98 = { class: "archive-change-summary__title" };
-const _hoisted_99 = { class: "archive-runtime-summary" };
-const _hoisted_100 = { class: "archive-runtime-summary__title" };
-const _hoisted_101 = { key: 0 };
-const _hoisted_102 = { key: 1 };
-const _hoisted_103 = { key: 2 };
-const _hoisted_104 = {
+const _hoisted_97 = { class: "archive-change-summary__title" };
+const _hoisted_98 = { class: "archive-runtime-summary" };
+const _hoisted_99 = { class: "archive-runtime-summary__title" };
+const _hoisted_100 = { key: 0 };
+const _hoisted_101 = { key: 1 };
+const _hoisted_102 = { key: 2 };
+const _hoisted_103 = {
   key: 0,
   class: "archive-mobile-save-dock"
 };
-const _hoisted_105 = {
+const _hoisted_104 = {
   "aria-live": "polite",
   class: "archive-mobile-save-dock__state"
 };
-const _hoisted_106 = {
+const _hoisted_105 = {
   key: 0,
   class: "archive-dialog-state"
 };
-const _hoisted_107 = {
+const _hoisted_106 = {
   key: 1,
   class: "archive-dialog-state archive-dialog-state--error"
 };
-const _hoisted_108 = { class: "archive-preview-metrics" };
-const _hoisted_109 = { class: "archive-table-wrap" };
-const _hoisted_110 = { class: "archive-table" };
+const _hoisted_107 = { class: "archive-preview-metrics" };
+const _hoisted_108 = { class: "archive-table-wrap" };
+const _hoisted_109 = { class: "archive-table" };
+const _hoisted_110 = { class: "archive-table__numeric" };
 const _hoisted_111 = { class: "archive-table__numeric" };
-const _hoisted_112 = { class: "archive-table__numeric" };
-const _hoisted_113 = { key: 1 };
-const _hoisted_114 = {
+const _hoisted_112 = { key: 1 };
+const _hoisted_113 = {
   key: 0,
   class: "archive-dialog-state"
 };
-const _hoisted_115 = { class: "archive-batch-summary" };
-const _hoisted_116 = { class: "archive-paths" };
-const _hoisted_117 = {
+const _hoisted_114 = { class: "archive-batch-summary" };
+const _hoisted_115 = { class: "archive-paths" };
+const _hoisted_116 = {
   key: 2,
   class: "archive-table-wrap"
 };
-const _hoisted_118 = { class: "archive-table" };
-const _hoisted_119 = { class: "archive-table__numeric" };
-const _hoisted_120 = {
+const _hoisted_117 = { class: "archive-table" };
+const _hoisted_118 = { class: "archive-table__numeric" };
+const _hoisted_119 = {
   key: 3,
   class: "archive-cleanup"
 };
-const _hoisted_121 = { class: "archive-cleanup-grid" };
-const _hoisted_122 = { class: "archive-cleanup-options" };
+const _hoisted_120 = { class: "archive-cleanup-grid" };
+const _hoisted_121 = { class: "archive-cleanup-options" };
 const {computed,getCurrentInstance,inject,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
 const README_URL = "https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v3/archivemanager/README.md";
 const _sfc_main = /* @__PURE__ */ _defineComponent({
@@ -2695,7 +2694,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                             ]),
                             _createElementVNode("td", null, [
                               _createElementVNode("strong", null, _toDisplayString(batch.batch_name || batch.id), 1),
-                              _createElementVNode("small", _hoisted_70, "ID：" + _toDisplayString(batch.id), 1),
                               _createElementVNode("small", null, _toDisplayString(batch.archive_name || batch.archive_path || "暂无归档路径"), 1)
                             ]),
                             _createElementVNode("td", null, _toDisplayString(batch.task_name), 1),
@@ -2715,14 +2713,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                               }, 1032, ["color"])
                             ]),
                             _createElementVNode("td", null, _toDisplayString(formatDate(batch.created_at)), 1),
-                            _createElementVNode("td", _hoisted_71, _toDisplayString(formatNumber(batch.file_count)), 1),
-                            _createElementVNode("td", _hoisted_72, _toDisplayString(formatBytes(batch.archive_size)), 1),
+                            _createElementVNode("td", _hoisted_70, _toDisplayString(formatNumber(batch.file_count)), 1),
+                            _createElementVNode("td", _hoisted_71, _toDisplayString(formatBytes(batch.archive_size)), 1),
                             _createElementVNode("td", null, [
                               _createVNode(_component_VIcon, {
                                 color: batch.verified ? "success" : "warning",
                                 icon: batch.verified ? "mdi-check-circle-outline" : "mdi-help-circle-outline"
                               }, null, 8, ["color", "icon"]),
-                              _createElementVNode("span", _hoisted_73, _toDisplayString(batch.verified ? "已校验" : "未校验"), 1)
+                              _createElementVNode("span", _hoisted_72, _toDisplayString(batch.verified ? "已校验" : "未校验"), 1)
                             ]),
                             _createElementVNode("td", null, [
                               _createVNode(_component_VBtn, {
@@ -2743,7 +2741,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       ])
                     ])
                   ])),
-                  batchData.value.total > 0 ? (_openBlock(), _createElementBlock("div", _hoisted_74, [
+                  batchData.value.total > 0 ? (_openBlock(), _createElementBlock("div", _hoisted_73, [
                     _createElementVNode("span", null, "共 " + _toDisplayString(formatNumber(batchData.value.total)) + " 个批次", 1),
                     _createVNode(_component_VPagination, {
                       modelValue: batchPage.value,
@@ -2753,16 +2751,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       "total-visible": 5
                     }, null, 8, ["modelValue", "length"])
                   ])) : _createCommentVNode("", true)
-                ])) : (_openBlock(), _createElementBlock("section", _hoisted_75, [
-                  !draft.value.tasks.length ? (_openBlock(), _createElementBlock("div", _hoisted_76, [
+                ])) : (_openBlock(), _createElementBlock("section", _hoisted_74, [
+                  !draft.value.tasks.length ? (_openBlock(), _createElementBlock("div", _hoisted_75, [
                     _createVNode(_component_VIcon, {
                       icon: "mdi-archive-off-outline",
                       size: "34"
                     }),
                     _cache[127] || (_cache[127] = _createElementVNode("strong", null, "暂无归档任务", -1)),
                     _cache[128] || (_cache[128] = _createElementVNode("span", null, "创建归档任务后，才能查询已归档文件。", -1))
-                  ])) : (_openBlock(), _createElementBlock("div", _hoisted_77, [
-                    _createElementVNode("div", _hoisted_78, [
+                  ])) : (_openBlock(), _createElementBlock("div", _hoisted_76, [
+                    _createElementVNode("div", _hoisted_77, [
                       _createVNode(_component_VSelect, {
                         "aria-label": "文件任务",
                         clearable: "",
@@ -2801,7 +2799,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         onKeyup: _withKeys(submitFileSearch, ["enter"])
                       }, null, 8, ["modelValue"])
                     ]),
-                    !hasFileTaskSelection.value ? (_openBlock(), _createElementBlock("div", _hoisted_79, [
+                    !hasFileTaskSelection.value ? (_openBlock(), _createElementBlock("div", _hoisted_78, [
                       _createVNode(_component_VIcon, {
                         icon: "mdi-format-list-checks",
                         size: "34"
@@ -2809,7 +2807,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _cache[129] || (_cache[129] = _createElementVNode("strong", null, "请选择归档任务", -1)),
                       _cache[130] || (_cache[130] = _createElementVNode("span", null, "选择任务后，可以按目录、状态或相对路径查询文件。", -1))
                     ])) : (_openBlock(), _createElementBlock(_Fragment, { key: 1 }, [
-                      _createElementVNode("nav", _hoisted_80, [
+                      _createElementVNode("nav", _hoisted_79, [
                         (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(breadcrumbs.value, (crumb) => {
                           return _openBlock(), _createBlock(_component_VBtn, {
                             key: crumb.path || "root",
@@ -2824,7 +2822,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           }, 1032, ["onClick"]);
                         }), 128))
                       ]),
-                      fileLoading.value ? (_openBlock(), _createElementBlock("div", _hoisted_81, [
+                      fileLoading.value ? (_openBlock(), _createElementBlock("div", _hoisted_80, [
                         _createVNode(_component_VProgressCircular, {
                           color: "primary",
                           indeterminate: "",
@@ -2832,15 +2830,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           width: "2"
                         }),
                         _cache[131] || (_cache[131] = _createTextVNode("正在读取文件… ", -1))
-                      ])) : fileData.value.items.length === 0 && fileData.value.directories.length === 0 ? (_openBlock(), _createElementBlock("div", _hoisted_82, [
+                      ])) : fileData.value.items.length === 0 && fileData.value.directories.length === 0 ? (_openBlock(), _createElementBlock("div", _hoisted_81, [
                         _createVNode(_component_VIcon, {
                           icon: "mdi-file-search-outline",
                           size: "34"
                         }),
                         _cache[132] || (_cache[132] = _createElementVNode("strong", null, "没有找到文件", -1)),
                         _cache[133] || (_cache[133] = _createElementVNode("span", null, "调整任务、目录或搜索条件后重试。", -1))
-                      ])) : (_openBlock(), _createElementBlock("div", _hoisted_83, [
-                        fileData.value.directories.length ? (_openBlock(), _createElementBlock("div", _hoisted_84, [
+                      ])) : (_openBlock(), _createElementBlock("div", _hoisted_82, [
+                        fileData.value.directories.length ? (_openBlock(), _createElementBlock("div", _hoisted_83, [
                           _cache[134] || (_cache[134] = _createElementVNode("div", { class: "archive-directory-list__heading" }, "子目录", -1)),
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(fileData.value.directories, (directory) => {
                             return _openBlock(), _createElementBlock("button", {
@@ -2855,11 +2853,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                 icon: "mdi-chevron-right",
                                 size: "18"
                               })
-                            ], 8, _hoisted_85);
+                            ], 8, _hoisted_84);
                           }), 128))
                         ])) : _createCommentVNode("", true),
-                        fileData.value.items.length ? (_openBlock(), _createElementBlock("div", _hoisted_86, [
-                          _createElementVNode("table", _hoisted_87, [
+                        fileData.value.items.length ? (_openBlock(), _createElementBlock("div", _hoisted_85, [
+                          _createElementVNode("table", _hoisted_86, [
                             _cache[135] || (_cache[135] = _createElementVNode("thead", null, [
                               _createElementVNode("tr", null, [
                                 _createElementVNode("th", null, "相对路径"),
@@ -2878,7 +2876,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                   _createElementVNode("td", null, [
                                     _createElementVNode("strong", null, _toDisplayString(file.relative_path), 1)
                                   ]),
-                                  _createElementVNode("td", _hoisted_88, _toDisplayString(formatBytes(file.size)), 1),
+                                  _createElementVNode("td", _hoisted_87, _toDisplayString(formatBytes(file.size)), 1),
                                   _createElementVNode("td", null, _toDisplayString(file.mtime_ns ? formatDate(new Date(file.mtime_ns / 1e6).toISOString()) : "-"), 1),
                                   _createElementVNode("td", null, [
                                     _createVNode(_component_VChip, {
@@ -2902,7 +2900,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           ])
                         ])) : _createCommentVNode("", true)
                       ])),
-                      fileData.value.total > 0 ? (_openBlock(), _createElementBlock("div", _hoisted_89, [
+                      fileData.value.total > 0 ? (_openBlock(), _createElementBlock("div", _hoisted_88, [
                         _createElementVNode("span", null, "共 " + _toDisplayString(formatNumber(fileData.value.total)) + " 个文件", 1),
                         _createVNode(_component_VPagination, {
                           modelValue: filePage.value,
@@ -2916,8 +2914,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   ]))
                 ]))
               ]),
-              _createElementVNode("aside", _hoisted_90, [
-                _createElementVNode("div", _hoisted_91, [
+              _createElementVNode("aside", _hoisted_89, [
+                _createElementVNode("div", _hoisted_90, [
                   _createVNode(_component_VIcon, {
                     color: "primary",
                     icon: "mdi-chart-box-outline",
@@ -2925,8 +2923,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   }),
                   _cache[136] || (_cache[136] = _createElementVNode("h2", null, "运行概览", -1))
                 ]),
-                _createElementVNode("ul", _hoisted_92, [
-                  _createElementVNode("li", _hoisted_93, [
+                _createElementVNode("ul", _hoisted_91, [
+                  _createElementVNode("li", _hoisted_92, [
                     _createVNode(_component_VIcon, {
                       icon: "mdi-file-check-outline",
                       size: "18"
@@ -2934,7 +2932,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _cache[137] || (_cache[137] = _createElementVNode("span", null, "已归档文件", -1)),
                     _createElementVNode("strong", null, _toDisplayString(formatNumber(summaryValue.value.archived_files)), 1)
                   ]),
-                  _createElementVNode("li", _hoisted_94, [
+                  _createElementVNode("li", _hoisted_93, [
                     _createVNode(_component_VIcon, {
                       icon: "mdi-package-variant-closed",
                       size: "18"
@@ -2942,7 +2940,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _cache[138] || (_cache[138] = _createElementVNode("span", null, "归档批次", -1)),
                     _createElementVNode("strong", null, _toDisplayString(formatNumber(summaryValue.value.archive_count)), 1)
                   ]),
-                  _createElementVNode("li", _hoisted_95, [
+                  _createElementVNode("li", _hoisted_94, [
                     _createVNode(_component_VIcon, {
                       icon: "mdi-database-arrow-down-outline",
                       size: "18"
@@ -2950,7 +2948,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _cache[139] || (_cache[139] = _createElementVNode("span", null, "源文件体积", -1)),
                     _createElementVNode("strong", null, _toDisplayString(formatBytes(summaryValue.value.source_bytes)), 1)
                   ]),
-                  _createElementVNode("li", _hoisted_96, [
+                  _createElementVNode("li", _hoisted_95, [
                     _createVNode(_component_VIcon, {
                       icon: "mdi-archive-arrow-down-outline",
                       size: "18"
@@ -2959,8 +2957,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     _createElementVNode("strong", null, _toDisplayString(formatBytes(summaryValue.value.archive_bytes)), 1)
                   ])
                 ]),
-                changedItems.value.length ? (_openBlock(), _createElementBlock("section", _hoisted_97, [
-                  _createElementVNode("div", _hoisted_98, [
+                changedItems.value.length ? (_openBlock(), _createElementBlock("section", _hoisted_96, [
+                  _createElementVNode("div", _hoisted_97, [
                     _createVNode(_component_VIcon, {
                       color: "warning",
                       icon: "mdi-format-list-checks",
@@ -2981,8 +2979,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     }), 128))
                   ])
                 ])) : _createCommentVNode("", true),
-                _createElementVNode("section", _hoisted_99, [
-                  _createElementVNode("div", _hoisted_100, [
+                _createElementVNode("section", _hoisted_98, [
+                  _createElementVNode("div", _hoisted_99, [
                     _createVNode(_component_VIcon, {
                       color: "primary",
                       icon: "mdi-progress-clock",
@@ -2990,13 +2988,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     }),
                     _cache[142] || (_cache[142] = _createElementVNode("h3", null, "当前状态", -1))
                   ]),
-                  summaryValue.value.running ? (_openBlock(), _createElementBlock("p", _hoisted_101, " 正在处理：" + _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id), 1)) : queuedTaskNames.value.length ? (_openBlock(), _createElementBlock("p", _hoisted_102, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1)) : (_openBlock(), _createElementBlock("p", _hoisted_103, "当前没有运行中的归档任务"))
+                  summaryValue.value.running ? (_openBlock(), _createElementBlock("p", _hoisted_100, " 正在处理：" + _toDisplayString(tasksById.value.get(summaryValue.value.running.task_id)?.name || summaryValue.value.running.task_id), 1)) : queuedTaskNames.value.length ? (_openBlock(), _createElementBlock("p", _hoisted_101, "排队任务：" + _toDisplayString(queuedTaskNames.value.join("、")), 1)) : (_openBlock(), _createElementBlock("p", _hoisted_102, "当前没有运行中的归档任务"))
                 ])
               ])
             ])
           ]),
-          hasUnsavedChanges.value ? (_openBlock(), _createElementBlock("div", _hoisted_104, [
-            _createElementVNode("span", _hoisted_105, [
+          hasUnsavedChanges.value ? (_openBlock(), _createElementBlock("div", _hoisted_103, [
+            _createElementVNode("span", _hoisted_104, [
               _createVNode(_component_VIcon, {
                 color: "warning",
                 icon: "mdi-circle",
@@ -3156,7 +3154,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }),
                 _createVNode(_component_VCardText, null, {
                   default: _withCtx(() => [
-                    previewState.value === "running" ? (_openBlock(), _createElementBlock("div", _hoisted_106, [
+                    previewState.value === "running" ? (_openBlock(), _createElementBlock("div", _hoisted_105, [
                       _createVNode(_component_VProgressCircular, {
                         color: "primary",
                         indeterminate: "",
@@ -3165,7 +3163,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       }),
                       _createElementVNode("strong", null, _toDisplayString(previewMessage.value), 1),
                       _cache[151] || (_cache[151] = _createElementVNode("span", null, "扫描过程不会写入归档，也不会删除源文件。", -1))
-                    ])) : previewState.value === "failed" ? (_openBlock(), _createElementBlock("div", _hoisted_107, [
+                    ])) : previewState.value === "failed" ? (_openBlock(), _createElementBlock("div", _hoisted_106, [
                       _createVNode(_component_VIcon, {
                         color: "error",
                         icon: "mdi-alert-circle-outline",
@@ -3174,7 +3172,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       _createElementVNode("strong", null, _toDisplayString(previewMessage.value), 1),
                       _cache[152] || (_cache[152] = _createElementVNode("span", null, "请检查目录、权限和筛选条件。", -1))
                     ])) : previewResult.value ? (_openBlock(), _createElementBlock(_Fragment, { key: 2 }, [
-                      _createElementVNode("div", _hoisted_108, [
+                      _createElementVNode("div", _hoisted_107, [
                         _createElementVNode("div", null, [
                           _cache[153] || (_cache[153] = _createElementVNode("span", null, "文件数", -1)),
                           _createElementVNode("strong", null, _toDisplayString(formatNumber(previewResult.value.file_count)), 1)
@@ -3192,8 +3190,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           _createElementVNode("strong", null, _toDisplayString(formatNumber(previewResult.value.skipped_count)), 1)
                         ])
                       ]),
-                      _createElementVNode("div", _hoisted_109, [
-                        _createElementVNode("table", _hoisted_110, [
+                      _createElementVNode("div", _hoisted_108, [
+                        _createElementVNode("table", _hoisted_109, [
                           _cache[158] || (_cache[158] = _createElementVNode("thead", null, [
                             _createElementVNode("tr", null, [
                               _createElementVNode("th", null, "目录结构"),
@@ -3211,8 +3209,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                   _createElementVNode("strong", null, _toDisplayString(previewDirectoryPath(batch.group)), 1),
                                   _createElementVNode("small", null, _toDisplayString(previewGroupingBasis(batch.group)), 1)
                                 ]),
-                                _createElementVNode("td", _hoisted_111, _toDisplayString(formatNumber(batch.file_count)), 1),
-                                _createElementVNode("td", _hoisted_112, _toDisplayString(formatBytes(batch.total_bytes)), 1),
+                                _createElementVNode("td", _hoisted_110, _toDisplayString(formatNumber(batch.file_count)), 1),
+                                _createElementVNode("td", _hoisted_111, _toDisplayString(formatBytes(batch.total_bytes)), 1),
                                 _createElementVNode("td", null, [
                                   batch.oversized ? (_openBlock(), _createBlock(_component_VChip, {
                                     key: 0,
@@ -3224,7 +3222,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                       _createTextVNode("超出限制", -1)
                                     ])]),
                                     _: 1
-                                  })) : (_openBlock(), _createElementBlock("span", _hoisted_113, "正常"))
+                                  })) : (_openBlock(), _createElementBlock("span", _hoisted_112, "正常"))
                                 ])
                               ]);
                             }), 128))
@@ -3289,7 +3287,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }),
                 _createVNode(_component_VCardText, null, {
                   default: _withCtx(() => [
-                    batchDetailLoading.value ? (_openBlock(), _createElementBlock("div", _hoisted_114, [
+                    batchDetailLoading.value ? (_openBlock(), _createElementBlock("div", _hoisted_113, [
                       _createVNode(_component_VProgressCircular, {
                         color: "primary",
                         indeterminate: "",
@@ -3308,7 +3306,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ])]),
                         _: 1
                       })) : _createCommentVNode("", true),
-                      _createElementVNode("div", _hoisted_115, [
+                      _createElementVNode("div", _hoisted_114, [
                         _createElementVNode("div", null, [
                           _cache[162] || (_cache[162] = _createElementVNode("span", null, "状态", -1)),
                           _createVNode(_component_VChip, {
@@ -3370,7 +3368,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ]),
                         _: 1
                       })) : _createCommentVNode("", true),
-                      _createElementVNode("div", _hoisted_116, [
+                      _createElementVNode("div", _hoisted_115, [
                         _createElementVNode("div", null, [
                           _cache[170] || (_cache[170] = _createElementVNode("span", null, "归档路径", -1)),
                           _createElementVNode("code", null, _toDisplayString(selectedBatch.value.archive_path || "-"), 1)
@@ -3384,8 +3382,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           _createElementVNode("code", null, _toDisplayString(selectedBatch.value.archive_sha256 || "-"), 1)
                         ])
                       ]),
-                      selectedBatch.value.files?.length ? (_openBlock(), _createElementBlock("div", _hoisted_117, [
-                        _createElementVNode("table", _hoisted_118, [
+                      selectedBatch.value.files?.length ? (_openBlock(), _createElementBlock("div", _hoisted_116, [
+                        _createElementVNode("table", _hoisted_117, [
                           _cache[173] || (_cache[173] = _createElementVNode("thead", null, [
                             _createElementVNode("tr", null, [
                               _createElementVNode("th", null, "文件"),
@@ -3400,7 +3398,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                                 key: file.relative_path
                               }, [
                                 _createElementVNode("td", null, _toDisplayString(file.relative_path), 1),
-                                _createElementVNode("td", _hoisted_119, _toDisplayString(formatBytes(file.size)), 1),
+                                _createElementVNode("td", _hoisted_118, _toDisplayString(formatBytes(file.size)), 1),
                                 _createElementVNode("td", null, [
                                   _createVNode(_component_VChip, {
                                     color: statusColor(batchFileStatus(file, selectedBatch.value)),
@@ -3421,9 +3419,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                           ])
                         ])
                       ])) : _createCommentVNode("", true),
-                      Object.keys(selectedBatch.value.cleanup || {}).length ? (_openBlock(), _createElementBlock("div", _hoisted_120, [
+                      Object.keys(selectedBatch.value.cleanup || {}).length ? (_openBlock(), _createElementBlock("div", _hoisted_119, [
                         _cache[174] || (_cache[174] = _createElementVNode("h4", null, "清理结果", -1)),
-                        _createElementVNode("div", _hoisted_121, [
+                        _createElementVNode("div", _hoisted_120, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(selectedBatch.value.cleanup, (status, path) => {
                             return _openBlock(), _createElementBlock("div", { key: path }, [
                               _createElementVNode("span", null, _toDisplayString(path), 1),
@@ -3508,7 +3506,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 _createVNode(_component_VCardText, null, {
                   default: _withCtx(() => [
                     _cache[180] || (_cache[180] = _createElementVNode("p", { class: "archive-cleanup-dialog__intro" }, "请选择清理范围，源文件不会被删除或修改", -1)),
-                    _createElementVNode("div", _hoisted_122, [
+                    _createElementVNode("div", _hoisted_121, [
                       _createVNode(_component_VBtn, {
                         class: "archive-cleanup-option",
                         "prepend-icon": "mdi-database-remove-outline",
@@ -3517,7 +3515,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         onClick: _cache[59] || (_cache[59] = ($event) => executeBatchCleanup(false))
                       }, {
                         default: _withCtx(() => [..._cache[178] || (_cache[178] = [
-                          _createTextVNode(" 仅清理批次记录 ", -1),
+                          _createElementVNode("span", null, "仅清理批次记录", -1),
                           _createElementVNode("small", null, "保留归档包和外部清单", -1)
                         ])]),
                         _: 1
@@ -3531,7 +3529,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         onClick: _cache[60] || (_cache[60] = ($event) => chooseCleanupOption(true))
                       }, {
                         default: _withCtx(() => [..._cache[179] || (_cache[179] = [
-                          _createTextVNode(" 清理批次记录和归档产物 ", -1),
+                          _createElementVNode("span", null, "清理批次记录和归档产物", -1),
                           _createElementVNode("small", null, "删除归档包、校验文件和外部清单", -1)
                         ])]),
                         _: 1
@@ -3619,6 +3617,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-cb993c39"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a8ee1db0"]]);
 
 export { Config as default };

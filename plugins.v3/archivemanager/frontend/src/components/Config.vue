@@ -1847,7 +1847,6 @@ onBeforeUnmount(() => {
                       </td>
                       <td>
                         <strong>{{ batch.batch_name || batch.id }}</strong
-                        ><small class="archive-id">ID：{{ batch.id }}</small
                         ><small>{{ batch.archive_name || batch.archive_path || '暂无归档路径' }}</small>
                       </td>
                       <td>{{ batch.task_name }}</td>
@@ -2299,7 +2298,7 @@ onBeforeUnmount(() => {
               :loading="cleanupBusy && !cleanupDeleteArtifacts"
               @click="executeBatchCleanup(false)"
             >
-              仅清理批次记录
+              <span>仅清理批次记录</span>
               <small>保留归档包和外部清单</small>
             </VBtn>
             <VBtn
@@ -2310,7 +2309,7 @@ onBeforeUnmount(() => {
               :disabled="cleanupBusy"
               @click="chooseCleanupOption(true)"
             >
-              清理批次记录和归档产物
+              <span>清理批次记录和归档产物</span>
               <small>删除归档包、校验文件和外部清单</small>
             </VBtn>
           </div>
@@ -3107,6 +3106,19 @@ onBeforeUnmount(() => {
   text-align: start;
   white-space: normal;
 }
+.archive-cleanup-option :deep(.v-btn__content) {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.archive-cleanup-option :deep(.v-btn__content > span) {
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
 .archive-cleanup-option small {
   display: block;
   margin-block-start: 4px;
@@ -3308,6 +3320,12 @@ onBeforeUnmount(() => {
   padding: 9px 10px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 7px;
+}
+.archive-batch-summary .v-chip {
+  width: max-content;
+  max-width: 100%;
+  justify-self: start;
+  align-self: center;
 }
 .archive-batch-summary strong {
   display: block;
