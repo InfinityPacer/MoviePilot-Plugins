@@ -51,6 +51,21 @@ class FileRow(Base):
     historical: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # 是否属于初次合格文件快照
 
 
+class DirectoryRow(Base):
+    """目录元数据版本账本；空目录归档后不会在每轮重复生成批次。"""
+
+    __tablename__ = "archive_directory"
+    __table_args__ = (UniqueConstraint("task_id", "fingerprint"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # 内部行标识
+    task_id: Mapped[str] = mapped_column(String(64), index=True)  # 任务边界
+    fingerprint: Mapped[str] = mapped_column(String(64))  # 路径与目录元数据指纹
+    relative_path: Mapped[str] = mapped_column(Text)  # 完整源相对路径
+    batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)  # 首次归档批次
+    present: Mapped[bool] = mapped_column(Boolean, default=True)  # 最近一次扫描可见
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)  # 元数据归档结果
+    data: Mapped[dict] = mapped_column(JSON)  # 目录身份、时间与权限
+
+
 class TaskRow(Base):
     """跨运行保存历史快照边界、续跑意图及等待原因。"""
 
@@ -151,6 +166,56 @@ class Store:
             state.data = {**state.data, "phase": "incremental"}
             return pending
 
+    def inventory_directories(
+        self, task_id: str, directories: list[dict], task_config: dict | None = None
+    ) -> list[dict]:
+        """刷新目录元数据索引，返回尚未归档的目录版本。"""
+        with self.handle.session() as session, session.begin():
+            rows = {
+                row.fingerprint: row
+                for row in session.scalars(select(DirectoryRow).where(DirectoryRow.task_id == task_id))
+            }
+            current = {fingerprint(entry) for entry in directories}
+            stale = session.scalars(
+                select(BatchRow).where(BatchRow.task_id == task_id, BatchRow.status.in_(["failed", "cancelled"]))
+            )
+            for batch in stale:
+                changed_config = task_config is not None and batch.data["task"] != task_config
+                batch_directories = batch.data.get("directories", [])
+                if not batch.data["archive_sha256"] and (
+                    changed_config or any(fingerprint(entry) not in current for entry in batch_directories)
+                ):
+                    batch.status = "superseded"
+                    batch.data = {**batch.data, "error": "源目录元数据或任务配置已变化，将在本轮重新分批"}
+                    session.execute(
+                        update(FileRow).where(FileRow.batch_id == batch.id).values(batch_id=None, status="pending")
+                    )
+                    session.execute(
+                        update(DirectoryRow)
+                        .where(DirectoryRow.batch_id == batch.id)
+                        .values(batch_id=None, status="pending")
+                    )
+            session.execute(update(DirectoryRow).where(DirectoryRow.task_id == task_id).values(present=False))
+            pending = []
+            for entry in directories:
+                key = fingerprint(entry)
+                row = rows.get(key)
+                if row is None:
+                    row = DirectoryRow(
+                        task_id=task_id,
+                        fingerprint=key,
+                        relative_path=entry["relative_path"],
+                        data=entry,
+                        present=True,
+                        status="pending",
+                    )
+                    session.add(row)
+                else:
+                    row.present = True
+                if not row.batch_id:
+                    pending.append(entry)
+            return pending
+
     def task_state(self, task_id: str) -> dict:
         """返回状态快照，历史变化/缺失单独计数，不能计入归档成功。"""
         with self.handle.session() as session:
@@ -215,7 +280,9 @@ class Store:
             )
         return [entry for entry in entries if fingerprint(entry) not in known]
 
-    def create(self, batch_id: str, task: dict, entries: list[dict], group: str) -> dict:
+    def create(
+        self, batch_id: str, task: dict, entries: list[dict], group: str, directories: list[dict] | None = None
+    ) -> dict:
         """先预留全部成员并提交快照，再允许工作进程创建归档。"""
         created_at = datetime.now(timezone.utc).isoformat()
         local_day = datetime.fromisoformat(created_at).astimezone().date()
@@ -229,11 +296,14 @@ class Store:
                 global_sequence += 1
                 if row.task_id == task["id"]:
                     sequence += 1
+        directories = directories or []
+        naming_entries = entries or directories
         data = {
-            **frozen_names(task, batch_id, created_at, sequence, entries, global_sequence),
+            **frozen_names(task, batch_id, created_at, sequence, naming_entries, global_sequence),
             "task": task,
             "task_name": task["name"],
             "entries": entries,
+            "directories": directories,
             "group": group,
             "file_count": len(entries),
             "source_bytes": sum(e["size"] for e in entries),
@@ -256,6 +326,16 @@ class Store:
                     raise ValueError("文件版本已经被其他批次预留，请重新扫描")
                 row.batch_id = batch_id
                 row.status = "pending"
+            for entry in directories:
+                row = session.scalar(
+                    select(DirectoryRow).where(
+                        DirectoryRow.task_id == task["id"], DirectoryRow.fingerprint == fingerprint(entry)
+                    )
+                )
+                # 已归档祖先目录会随文件批次再次写入，但只需首次批次拥有账本记录。
+                if row is not None and not row.batch_id:
+                    row.batch_id = batch_id
+                    row.status = "pending"
         return self.get(batch_id)
 
     @staticmethod
@@ -291,6 +371,8 @@ class Store:
                     row.status = "archived"
                 if row.status in ("deleted", "missing"):
                     row.present = False
+            for row in session.scalars(select(DirectoryRow).where(DirectoryRow.batch_id == batch["id"])):
+                row.status = "archived"
 
     def clean_batches(self, batch_ids: list[str]) -> dict:
         """删除批次账本及其文件去重记录，不触碰源文件或外部产物。"""
@@ -309,6 +391,7 @@ class Store:
                 names = "、".join(row.data.get("batch_name", row.id) for row in blocked[:3])
                 raise ValueError(f"批次正在执行或等待恢复，不能清理：{names}")
             session.execute(delete(FileRow).where(FileRow.batch_id.in_(ids)))
+            session.execute(delete(DirectoryRow).where(DirectoryRow.batch_id.in_(ids)))
             session.execute(delete(BatchRow).where(BatchRow.id.in_(ids)))
             return {
                 "batch_count": len(rows),

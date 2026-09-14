@@ -122,7 +122,7 @@ def _record_from_manifest(path: Path, folder: Path) -> dict:
         "archive_sha256",
         "verified",
     )
-    if value.get("schema_version") != 1 or any(key not in value for key in required):
+    if value.get("schema_version") not in (1, 2) or any(key not in value for key in required):
         raise ValueError(f"清单格式不完整：{path.name}")
     # 旧版清单按批次 ID 直接命名；新布局固定使用 manifest.json。
     if path.parent == folder and path.name != "manifest.json" and path.stem != value["batch_id"]:
@@ -344,6 +344,22 @@ def _record_markdown(batch: dict, record: dict) -> str:
         lines.append(
             f"| {md(relative_path)} | {item['size']} | {item['mtime_ns']} | {item['sha256']} | {md(cleanup.get(relative_path, 'retained'))} |"
         )
+    directories = manifest.get("directories", [])
+    if directories:
+        lines.extend(
+            [
+                "",
+                "## 目录",
+                "",
+                "| 相对路径 | 修改时间（纳秒） | 权限 | 创建时间（纳秒） |",
+                "| --- | ---: | --- | ---: |",
+            ]
+        )
+        for item in directories:
+            birthtime = item["birthtime_ns"] if item["birthtime_ns"] is not None else "不支持"
+            lines.append(
+                f"| {md(item['relative_path'])} | {item['mtime_ns']} | {item['mode']:04o} | {birthtime} |"
+            )
     return "\n".join(lines) + "\n"
 
 

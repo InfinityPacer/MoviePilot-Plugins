@@ -24,10 +24,10 @@ def test_host_migration_creates_schema_and_preserves_data(tmp_path):
     try:
         run_migrations(handle, migrations)
         assert set(inspect(engine).get_table_names()) == {
-            "archive_batch", "archive_file", "archive_task", "alembic_version",
+            "archive_batch", "archive_file", "archive_directory", "archive_task", "alembic_version",
         }
         with engine.begin() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0001_initial"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002_directory_metadata"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
             connection.execute(text("INSERT INTO archive_task (id, data) VALUES ('sample', '{}')"))
         run_migrations(handle, migrations)
@@ -49,6 +49,6 @@ def test_migration_uses_host_connection(tmp_path):
         with engine.begin() as connection:
             config.attributes["connection"] = connection
             upgrade(config, "head")
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0001_initial"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002_directory_metadata"
     finally:
         engine.dispose()

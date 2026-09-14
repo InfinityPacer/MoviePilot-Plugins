@@ -105,7 +105,12 @@ def test_archive_manager_constructs_real_plugin_and_declares_persistence_contrac
     manager = manager_module.ArchiveManager()
 
     assert manager.get_state() is False
-    assert manager.get_database_models() == [manager_module.BatchRow, manager_module.FileRow, manager_module.TaskRow]
+    assert manager.get_database_models() == [
+        manager_module.BatchRow,
+        manager_module.FileRow,
+        manager_module.DirectoryRow,
+        manager_module.TaskRow,
+    ]
     assert manager.get_form() == ([], {"enabled": False, "notify": False, "notify_events": ["failure"], "tasks": []})
     assert supports_plugin_hook(manager, "get_page") is False
     assert manager.get_service() == []
@@ -446,4 +451,35 @@ def test_api_cleanup_can_remove_local_artifacts_without_touching_source(
     assert not archive.exists()
     assert not archive.with_name(archive.name + ".sha256").exists()
     assert not staging.exists()
+    assert Path(task.source_dir, entry["relative_path"]).is_file()
+
+
+def test_api_cleanup_encrypted_snapshot_does_not_require_password(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path, id="encrypted-clean-task", encryption="aes256", password="secret")
+    entry = _entry(Path(task.source_dir), "encrypted.mp4")
+    assert store.inventory(task.id, [entry], task.source_dir, task.public()) == [entry]
+    batch = store.create("encrypted-clean-batch", task.public(), [entry], "全部文件")
+    archive = Path(task.output_dir) / "encrypted.7z"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"archive")
+    store.save(
+        batch["id"],
+        status="completed",
+        archive_path=str(archive),
+        archive_size=archive.stat().st_size,
+        archive_sha256="sha",
+    )
+    manager = manager_module.ArchiveManager()
+    manager._tasks = [task]
+    manager._enabled = True
+    monkeypatch.setattr(manager, "_store", lambda: store)
+
+    response = manager.api_cleanup(
+        manager_module.BatchCleanupRequest(batch_ids=[batch["id"]], delete_artifacts=True)
+    )
+
+    assert response.success is True
+    assert not archive.exists()
     assert Path(task.source_dir, entry["relative_path"]).is_file()

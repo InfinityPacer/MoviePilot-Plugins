@@ -13,6 +13,7 @@ import io
 import json
 import os
 import stat
+import struct
 import sys
 import tempfile
 from collections.abc import Mapping
@@ -23,14 +24,32 @@ from zoneinfo import ZoneInfo
 
 import py7zr
 import pyzipper
+from py7zr.helpers import ArchiveTimestamp
+from py7zr.member import FILE_ATTRIBUTE_UNIX_EXTENSION, MemberType
 
 _CHUNK_SIZE = 1024 * 1024
 _MAX_METADATA_BYTES = 32 * 1024 * 1024
-_IDENTITY_FIELDS = ("size", "mtime_ns", "ctime_ns", "device", "inode")
+_LEGACY_IDENTITY_FIELDS = ("size", "mtime_ns", "ctime_ns", "device", "inode")
+_FILE_METADATA_FIELDS = ("mode", "birthtime_ns")
+_DIRECTORY_IDENTITY_FIELDS = ("mtime_ns", "ctime_ns", "mode", "birthtime_ns", "device", "inode")
 _ARCHIVE_FORMATS = {"7z", "zip"}
 _COMPRESSION_LEVELS = {"store": None, "fast": 1, "normal": 6, "high": 9}
 _SEVEN_ZIP_PRESETS = {"fast": 1, "normal": 5, "high": 9}
 _METADATA_NAMES = frozenset(("manifest.md", "manifest.json", "SHA256SUMS"))
+
+
+class _MetadataZipInfo(pyzipper.zipfile_aes.AESZipInfo):
+    """补上 pyzipper 写入时会忽略的标准扩展时间字段。"""
+
+    def zip64_local_header(self, zip64, file_size, compress_size):
+        extra, file_size, compress_size, min_version = super().zip64_local_header(
+            zip64, file_size, compress_size
+        )
+        return extra + self.extra, file_size, compress_size, min_version
+
+    def zip64_central_header(self):
+        extra, file_size, compress_size, header_offset, min_version = super().zip64_central_header()
+        return extra + self.extra, file_size, compress_size, header_offset, min_version
 
 
 class ArchiveError(ValueError):
@@ -116,6 +135,14 @@ def _validate_relative_path(value: Any) -> str:
     return value
 
 
+def _optional_timestamp(value: Any, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ArchiveError(f"{field} 必须是非负整数或 null")
+    return value
+
+
 def _prepare_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not isinstance(entries, list):
         raise ArchiveError("entries 必须是数组")
@@ -124,32 +151,80 @@ def _prepare_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for item in entries:
         if not isinstance(item, Mapping):
             raise ArchiveError("entries 的每项必须是对象")
-        missing = [key for key in ("relative_path", *_IDENTITY_FIELDS) if key not in item]
+        missing = [key for key in ("relative_path", *_LEGACY_IDENTITY_FIELDS) if key not in item]
         if missing:
             raise ArchiveError(f"entry 缺少字段: {', '.join(missing)}")
         relative_path = _validate_relative_path(item["relative_path"])
         if relative_path in seen:
             raise ArchiveError(f"entry 重复: {relative_path!r}")
         seen.add(relative_path)
-        identity: dict[str, Any] = {"relative_path": relative_path}
-        for key in _IDENTITY_FIELDS:
+        record: dict[str, Any] = {"relative_path": relative_path}
+        for key in _LEGACY_IDENTITY_FIELDS:
             value = item[key]
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ArchiveError(f"entry.{key} 必须是整数")
             if key == "size" and value < 0:
                 raise ArchiveError("entry.size 不能为负数")
-            identity[key] = value
-        identity["archive_path"] = f"files/{relative_path}"
-        identity["sha256"] = None
-        prepared.append(identity)
+            record[key] = value
+        mode = item.get("mode")
+        if mode is not None and (isinstance(mode, bool) or not isinstance(mode, int) or not 0 <= mode <= 0o7777):
+            raise ArchiveError("entry.mode 必须是有效 Unix 权限或 null")
+        record["mode"] = mode
+        record["birthtime_ns"] = _optional_timestamp(item.get("birthtime_ns"), "entry.birthtime_ns")
+        record["archive_path"] = f"files/{relative_path}"
+        record["sha256"] = None
+        prepared.append(record)
     return sorted(prepared, key=lambda item: item["relative_path"])
 
 
-def _archive_identity(stat_result: os.stat_result) -> dict[str, int]:
+def _prepare_directories(directories: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    if directories is None:
+        return []
+    if not isinstance(directories, list):
+        raise ArchiveError("directories 必须是数组")
+    prepared = []
+    seen: set[str] = set()
+    for item in directories:
+        if not isinstance(item, Mapping):
+            raise ArchiveError("directories 的每项必须是对象")
+        missing = [key for key in ("relative_path", *_DIRECTORY_IDENTITY_FIELDS) if key not in item]
+        if missing:
+            raise ArchiveError(f"directory 缺少字段: {', '.join(missing)}")
+        relative_path = _validate_relative_path(item["relative_path"])
+        if relative_path in seen:
+            raise ArchiveError(f"directory 重复: {relative_path!r}")
+        seen.add(relative_path)
+        record = {"relative_path": relative_path}
+        for key in _DIRECTORY_IDENTITY_FIELDS:
+            value = item[key]
+            if key == "birthtime_ns":
+                record[key] = _optional_timestamp(value, "directory.birthtime_ns")
+            elif isinstance(value, bool) or not isinstance(value, int):
+                raise ArchiveError(f"directory.{key} 必须是整数")
+            else:
+                record[key] = value
+        if not 0 <= record["mode"] <= 0o7777:
+            raise ArchiveError("directory.mode 必须是有效 Unix 权限")
+        record["archive_path"] = f"files/{relative_path}"
+        prepared.append(record)
+    return sorted(prepared, key=lambda item: item["relative_path"])
+
+
+def _stat_birthtime_ns(stat_result: os.stat_result) -> int | None:
+    value = getattr(stat_result, "st_birthtime_ns", None)
+    if value is not None:
+        return int(value)
+    seconds = getattr(stat_result, "st_birthtime", None)
+    return int(seconds * 1_000_000_000) if seconds is not None else None
+
+
+def _archive_identity(stat_result: os.stat_result) -> dict[str, int | None]:
     return {
         "size": stat_result.st_size,
         "mtime_ns": stat_result.st_mtime_ns,
         "ctime_ns": stat_result.st_ctime_ns,
+        "mode": stat.S_IMODE(stat_result.st_mode),
+        "birthtime_ns": _stat_birthtime_ns(stat_result),
         "device": stat_result.st_dev,
         "inode": stat_result.st_ino,
     }
@@ -157,8 +232,10 @@ def _archive_identity(stat_result: os.stat_result) -> dict[str, int]:
 
 def _assert_identity(stat_result: os.stat_result, entry: Mapping[str, Any]) -> None:
     actual = _archive_identity(stat_result)
-    expected = {key: entry[key] for key in _IDENTITY_FIELDS}
-    if actual != expected:
+    fields = list(_LEGACY_IDENTITY_FIELDS)
+    fields.extend(key for key in _FILE_METADATA_FIELDS if entry.get(key) is not None)
+    expected = {key: entry[key] for key in fields}
+    if {key: actual[key] for key in fields} != expected:
         raise ArchiveError(f"源文件在归档期间发生变化: {entry['relative_path']!r}")
     if not stat.S_ISREG(stat_result.st_mode):
         raise ArchiveError(f"源文件不是普通文件: {entry['relative_path']!r}")
@@ -338,13 +415,57 @@ def _seven_zip_filters(task: Mapping[str, Any]) -> list[dict[str, int]]:
     return filters
 
 
-def _zip_info(archive: Any, name: str, size: int, compression: int, level: int | None) -> Any:
-    info = archive.zipinfo_cls(name, date_time=(1980, 1, 1, 0, 0, 0))
+def _zip_datetime(mtime_ns: int) -> tuple[int, int, int, int, int, int]:
+    value = _datetime.datetime.fromtimestamp(mtime_ns / 1e9).astimezone()
+    year = min(2107, max(1980, value.year))
+    return year, value.month, value.day, value.hour, value.minute, value.second
+
+
+def _filetime(timestamp_ns: int) -> int:
+    return timestamp_ns // 100 + 116444736000000000
+
+
+def _zip_extra(mtime_ns: int, birthtime_ns: int | None) -> bytes:
+    # Extended Timestamp 兼容常见解压器；NTFS 字段在可用时补充高精度创建时间。
+    unix_time = max(0, min(0xFFFFFFFF, mtime_ns // 1_000_000_000))
+    extra = struct.pack("<HHBI", 0x5455, 5, 1, unix_time)
+    if birthtime_ns is not None:
+        extra += struct.pack(
+            "<HHIHHQQQ",
+            0x000A,
+            32,
+            0,
+            1,
+            24,
+            _filetime(mtime_ns),
+            _filetime(mtime_ns),
+            _filetime(birthtime_ns),
+        )
+    return extra
+
+
+def _zip_info(
+    archive: Any,
+    name: str,
+    size: int,
+    compression: int,
+    level: int | None,
+    *,
+    mode: int = 0o600,
+    mtime_ns: int | None = None,
+    birthtime_ns: int | None = None,
+    directory: bool = False,
+) -> Any:
+    timestamp = mtime_ns if mtime_ns is not None else int(_datetime.datetime.now().timestamp() * 1e9)
+    filename = name.rstrip("/") + "/" if directory else name
+    info = archive.zipinfo_cls(filename, date_time=_zip_datetime(timestamp))
     info.file_size = size
     info.compress_type = compression
     info._compresslevel = level
     info.create_system = 3
-    info.external_attr = 0o600 << 16
+    file_type = stat.S_IFDIR if directory else stat.S_IFREG
+    info.external_attr = ((file_type | mode) << 16) | (0x10 if directory else 0)
+    info.extra = _zip_extra(timestamp, birthtime_ns)
     return info
 
 
@@ -353,19 +474,77 @@ def _write_zip_bytes(archive: Any, name: str, data: bytes, compression: int, lev
     archive.writestr(info, data)
 
 
+def _seven_zip_attributes(member_type: MemberType, mode: int) -> int:
+    return (
+        member_type.win32_file_attributes
+        | FILE_ATTRIBUTE_UNIX_EXTENSION
+        | ((member_type.unix_file_type_bits | mode) << 16)
+    )
+
+
+def _apply_7z_metadata(file_info: dict[str, Any], record: Mapping[str, Any], member_type: MemberType) -> None:
+    file_info["lastwritetime"] = ArchiveTimestamp.from_datetime(record["mtime_ns"] / 1e9)
+    file_info["lastaccesstime"] = None
+    file_info["creationtime"] = (
+        ArchiveTimestamp.from_datetime(record["birthtime_ns"] / 1e9)
+        if record.get("birthtime_ns") is not None
+        else None
+    )
+    file_info["attributes"] = _seven_zip_attributes(member_type, record["mode"])
+
+
+def _write_directories_7z(archive: Any, directories: list[dict[str, Any]]) -> None:
+    for record in directories:
+        folder = archive.header.initialize()
+        file_info = {
+            "origin": None,
+            "filename": record["archive_path"],
+            "emptystream": True,
+        }
+        _apply_7z_metadata(file_info, record, MemberType.DIRECTORY)
+        archive.header.files_info.files.append(file_info)
+        archive.header.files_info.emptyfiles.append(False)
+        archive.files.append(file_info)
+        # Worker 以成员索引顺序推进；目录没有数据流，但仍需消费该索引。
+        archive.worker.archive(archive.fp, archive.files, folder, deref=False)
+
+
 def _write_sources_7z(archive: Any, source_dir: str | Path, records: list[dict[str, Any]]) -> None:
     for record in records:
         with _source_fd(source_dir, record) as fd:
+            current = os.fstat(fd)
+            record["mode"] = record["mode"] if record["mode"] is not None else stat.S_IMODE(current.st_mode)
+            if record["birthtime_ns"] is None:
+                record["birthtime_ns"] = _stat_birthtime_ns(current)
             raw = os.fdopen(os.dup(fd), "rb", buffering=0)
             reader = _HashingReader(raw)
             try:
                 archive.writef(reader, record["archive_path"])
+                _apply_7z_metadata(archive.header.files_info.files[-1], record, MemberType.FILE)
                 if reader.bytes_read != record["size"]:
                     raise ArchiveError("源文件读取大小与扫描快照不一致")
                 record["sha256"] = reader.digest.hexdigest()
             finally:
                 reader.close()
         _check_current_source(source_dir, record)
+
+
+def _write_directories_zip(
+    archive: Any, directories: list[dict[str, Any]], compression: int, level: int | None
+) -> None:
+    for record in directories:
+        info = _zip_info(
+            archive,
+            record["archive_path"],
+            0,
+            compression,
+            level,
+            mode=record["mode"],
+            mtime_ns=record["mtime_ns"],
+            birthtime_ns=record["birthtime_ns"],
+            directory=True,
+        )
+        archive.writestr(info, b"")
 
 
 def _write_sources_zip(
@@ -377,10 +556,23 @@ def _write_sources_zip(
 ) -> None:
     for record in records:
         with _source_fd(source_dir, record) as fd:
+            current = os.fstat(fd)
+            record["mode"] = record["mode"] if record["mode"] is not None else stat.S_IMODE(current.st_mode)
+            if record["birthtime_ns"] is None:
+                record["birthtime_ns"] = _stat_birthtime_ns(current)
             raw = os.fdopen(os.dup(fd), "rb", buffering=0)
             source = io.BufferedReader(raw)
             try:
-                info = _zip_info(archive, record["archive_path"], record["size"], compression, level)
+                info = _zip_info(
+                    archive,
+                    record["archive_path"],
+                    record["size"],
+                    compression,
+                    level,
+                    mode=record["mode"],
+                    mtime_ns=record["mtime_ns"],
+                    birthtime_ns=record["birthtime_ns"],
+                )
                 with archive.open(info, "w", force_zip64=True) as target:
                     record["sha256"] = _copy_and_hash(source, target, record["size"])
             finally:
@@ -388,9 +580,11 @@ def _write_sources_zip(
         _check_current_source(source_dir, record)
 
 
-def _new_manifest(task: Mapping[str, Any], batch_id: str, records: list[dict[str, Any]]) -> dict[str, Any]:
+def _new_manifest(
+    task: Mapping[str, Any], batch_id: str, records: list[dict[str, Any]], directories: list[dict[str, Any]]
+) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "batch_id": batch_id,
         "task_id": task["id"],
         "task_name": task["name"],
@@ -405,6 +599,7 @@ def _new_manifest(task: Mapping[str, Any], batch_id: str, records: list[dict[str
         "encrypt_names": task["encrypt_names"],
         "password_version": task["password_version"],
         "files": records,
+        "directories": directories,
     }
 
 
@@ -413,11 +608,13 @@ def build_archive(
     entries: list[dict],
     destination: str | Path,
     batch_id: str,
+    directories: list[dict] | None = None,
 ) -> dict:
     """流式创建归档并原子发布，返回不含密码的 manifest。"""
 
     normalized_task = _validate_task(task)
     records = _prepare_entries(entries)
+    directory_records = _prepare_directories(directories)
     if normalized_task["format"] == "7z" and any("\\" in item["relative_path"] for item in records):
         # 7z 的路径字段按库规范把反斜杠当目录分隔符，拒绝静默改变恢复路径。
         raise ArchiveError("7z 不支持包含反斜杠的源文件名，请改用 ZIP")
@@ -427,7 +624,7 @@ def build_archive(
     if not destination_path.name or destination_path.exists() and destination_path.is_dir():
         raise ArchiveError("destination 必须是归档文件路径")
     destination_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest = _new_manifest(normalized_task, batch_id, records)
+    manifest = _new_manifest(normalized_task, batch_id, records, directory_records)
     temp_path: Path | None = None
     try:
         fd, temp_name = tempfile.mkstemp(
@@ -444,6 +641,7 @@ def build_archive(
                 password=normalized_task["password"] if normalized_task["encryption"] == "aes256" else None,
                 header_encryption=normalized_task["encrypt_names"],
             ) as archive:
+                _write_directories_7z(archive, directory_records)
                 _write_sources_7z(archive, normalized_task["source_dir"], records)
                 manifest_json = _manifest_json(manifest)
                 manifest_md = _manifest_markdown(manifest, _sha256_bytes(manifest_json))
@@ -462,8 +660,10 @@ def build_archive(
             if encryption_kwargs is not None:
                 archive_kwargs.update({"encryption": pyzipper.WZ_AES, "encryption_kwargs": encryption_kwargs})
             with pyzipper.AESZipFile(temp_path, "w", **archive_kwargs) as archive:
+                archive.zipinfo_cls = _MetadataZipInfo
                 if normalized_task["encryption"] == "aes256":
                     archive.setpassword(normalized_task["password"].encode("utf-8"))
+                _write_directories_zip(archive, directory_records, compression, level)
                 _write_sources_zip(archive, normalized_task["source_dir"], records, compression, level)
                 manifest_json = _manifest_json(manifest)
                 manifest_md = _manifest_markdown(manifest, _sha256_bytes(manifest_json))
@@ -604,6 +804,11 @@ def _parse_sha256sums(data: bytes) -> dict[str, str]:
     return result
 
 
+def _validate_mode(value: Any, field: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 0o7777:
+        raise ArchiveError(f"{field} 元数据无效")
+
+
 def _parse_manifest(data: bytes, archive_format: str) -> dict[str, Any]:
     if len(data) > _MAX_METADATA_BYTES:
         raise ArchiveError("manifest.json 超过 32 MiB 限制")
@@ -632,7 +837,8 @@ def _parse_manifest(data: bytes, archive_format: str) -> dict[str, Any]:
     }
     if not required.issubset(manifest):
         raise ArchiveError("manifest.json 缺少字段")
-    if manifest["schema_version"] != 1 or manifest["format"] != archive_format:
+    schema_version = manifest["schema_version"]
+    if schema_version not in (1, 2) or manifest["format"] != archive_format:
         raise ArchiveError("manifest schema 或格式不匹配")
     if manifest["format"] not in _ARCHIVE_FORMATS or manifest["compression"] not in _COMPRESSION_LEVELS:
         raise ArchiveError("manifest 的归档选项无效")
@@ -650,18 +856,47 @@ def _parse_manifest(data: bytes, archive_format: str) -> dict[str, Any]:
     for item in manifest["files"]:
         if not isinstance(item, dict):
             raise ArchiveError("manifest.files 项无效")
-        for key in (*_IDENTITY_FIELDS, "relative_path", "archive_path", "sha256"):
-            if key not in item:
-                raise ArchiveError("manifest.files 项缺少字段")
+        fields = (*_LEGACY_IDENTITY_FIELDS, "relative_path", "archive_path", "sha256")
+        if schema_version == 2:
+            fields += _FILE_METADATA_FIELDS
+        if any(key not in item for key in fields):
+            raise ArchiveError("manifest.files 项缺少字段")
         relative_path = _validate_relative_path(item["relative_path"])
         if relative_path in seen or item["archive_path"] != f"files/{relative_path}":
             raise ArchiveError("manifest.files 路径无效或重复")
         seen.add(relative_path)
-        for key in _IDENTITY_FIELDS:
+        for key in _LEGACY_IDENTITY_FIELDS:
             if isinstance(item[key], bool) or not isinstance(item[key], int) or (key == "size" and item[key] < 0):
                 raise ArchiveError("manifest.files 元数据无效")
+        if schema_version == 2:
+            _validate_mode(item["mode"], "manifest.files")
+            _optional_timestamp(item["birthtime_ns"], "manifest.files.birthtime_ns")
         if not isinstance(item["sha256"], str) or len(item["sha256"]) != 64:
             raise ArchiveError("manifest.files SHA256 无效")
+    directories = manifest.get("directories", [])
+    if schema_version == 2 and "directories" not in manifest:
+        raise ArchiveError("manifest.json 缺少 directories")
+    if not isinstance(directories, list):
+        raise ArchiveError("manifest.directories 必须是数组")
+    directory_seen: set[str] = set()
+    for item in directories:
+        if not isinstance(item, dict) or any(
+            key not in item for key in (*_DIRECTORY_IDENTITY_FIELDS, "relative_path", "archive_path")
+        ):
+            raise ArchiveError("manifest.directories 项缺少字段")
+        relative_path = _validate_relative_path(item["relative_path"])
+        if (
+            relative_path in directory_seen
+            or relative_path in seen
+            or item["archive_path"] != f"files/{relative_path}"
+        ):
+            raise ArchiveError("manifest.directories 路径无效或重复")
+        directory_seen.add(relative_path)
+        for key in ("mtime_ns", "ctime_ns", "device", "inode"):
+            if isinstance(item[key], bool) or not isinstance(item[key], int):
+                raise ArchiveError("manifest.directories 元数据无效")
+        _validate_mode(item["mode"], "manifest.directories")
+        _optional_timestamp(item["birthtime_ns"], "manifest.directories.birthtime_ns")
     return manifest
 
 
@@ -675,8 +910,15 @@ def _validate_member_names(actual_names: list[str]) -> None:
 
 def _check_member_names(actual_names: list[str], manifest: Mapping[str, Any]) -> set[str]:
     _validate_member_names(actual_names)
-    expected = {item["archive_path"] for item in manifest["files"]} | set(_METADATA_NAMES)
-    actual = set(actual_names)
+    expected = (
+        {item["archive_path"] for item in manifest["files"]}
+        | {item["archive_path"] for item in manifest.get("directories", [])}
+        | set(_METADATA_NAMES)
+    )
+    normalized_names = [name.rstrip("/") for name in actual_names]
+    if len(normalized_names) != len(set(normalized_names)):
+        raise ArchiveError("归档成员名称重复")
+    actual = set(normalized_names)
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
@@ -717,6 +959,75 @@ def _verify_content(
     return manifest
 
 
+def _manifest_metadata_by_path(manifest: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        item["archive_path"]: item
+        for item in (*manifest["files"], *manifest.get("directories", []))
+    }
+
+
+def _validate_7z_metadata(properties: Mapping[str, tuple[int | None, int | None]], manifest: Mapping[str, Any]) -> None:
+    if manifest["schema_version"] < 2:
+        return
+    for name, record in _manifest_metadata_by_path(manifest).items():
+        mode, mtime_ns = properties.get(name, (None, None))
+        if mode != record["mode"]:
+            raise ArchiveError(f"成员权限与 manifest 不匹配: {name!r}")
+        if mtime_ns is None or abs(mtime_ns - record["mtime_ns"]) > 10_000:
+            raise ArchiveError(f"成员修改时间与 manifest 不匹配: {name!r}")
+
+
+def _extra_fields(extra: bytes) -> dict[int, bytes]:
+    fields: dict[int, bytes] = {}
+    offset = 0
+    while offset + 4 <= len(extra):
+        field_id, size = struct.unpack_from("<HH", extra, offset)
+        offset += 4
+        if offset + size > len(extra):
+            raise ArchiveError("ZIP 扩展字段长度无效")
+        fields[field_id] = extra[offset : offset + size]
+        offset += size
+    if offset != len(extra):
+        raise ArchiveError("ZIP 扩展字段格式无效")
+    return fields
+
+
+def _zip_times(info: Any) -> tuple[int, int | None, int]:
+    fields = _extra_fields(info.extra)
+    ntfs = fields.get(0x000A)
+    if ntfs is not None and len(ntfs) >= 32:
+        reserved, tag, size = struct.unpack_from("<IHH", ntfs)
+        if reserved == 0 and tag == 1 and size == 24:
+            modified, _accessed, created = struct.unpack_from("<QQQ", ntfs, 8)
+            return (
+                (modified - 116444736000000000) * 100,
+                (created - 116444736000000000) * 100,
+                100,
+            )
+    extended = fields.get(0x5455)
+    if extended is not None and len(extended) >= 5 and extended[0] & 1:
+        return struct.unpack_from("<I", extended, 1)[0] * 1_000_000_000, None, 1_000_000_000
+    value = _datetime.datetime(*info.date_time, tzinfo=_datetime.datetime.now().astimezone().tzinfo)
+    return int(value.timestamp() * 1_000_000_000), None, 2_000_000_000
+
+
+def _validate_zip_metadata(infos: list[Any], manifest: Mapping[str, Any]) -> None:
+    if manifest["schema_version"] < 2:
+        return
+    properties = {info.filename.rstrip("/"): info for info in infos}
+    for name, record in _manifest_metadata_by_path(manifest).items():
+        info = properties.get(name)
+        if info is None or stat.S_IMODE(info.external_attr >> 16) != record["mode"]:
+            raise ArchiveError(f"成员权限与 manifest 不匹配: {name!r}")
+        mtime_ns, birthtime_ns, precision = _zip_times(info)
+        if abs(mtime_ns - record["mtime_ns"]) >= precision:
+            raise ArchiveError(f"成员修改时间与 manifest 不匹配: {name!r}")
+        if record["birthtime_ns"] is not None and (
+            birthtime_ns is None or abs(birthtime_ns - record["birthtime_ns"]) > 100
+        ):
+            raise ArchiveError(f"成员创建时间与 manifest 不匹配: {name!r}")
+
+
 def _archive_format(path: Path) -> str:
     with open(path, "rb") as source:
         magic = source.read(6)
@@ -732,12 +1043,20 @@ def _verify_7z(path: Path, password: str) -> dict[str, Any]:
     with py7zr.SevenZipFile(path, "r", password=password or None) as archive:
         names = archive.getnames()
         _validate_member_names(names)
+        properties = {
+            item.filename.rstrip("/"): (
+                item.posix_mode,
+                int(item.lastwritetime.totimestamp() * 1_000_000_000) if item.lastwritetime is not None else None,
+            )
+            for item in archive.files
+        }
         factory = _VerifyFactory(budget)
         archive.extractall(factory=factory)
     if set(_METADATA_NAMES) - factory.sinks.keys():
         raise ArchiveError("归档缺少必要元数据")
     metadata = {name: _metadata_bytes(factory.sinks[name], name) for name in _METADATA_NAMES}
     manifest = _parse_manifest(metadata["manifest.json"], "7z")
+    _validate_7z_metadata(properties, manifest)
     digests = {name: sink.digest for name, sink in factory.sinks.items()}
     return _verify_content(manifest, names, digests, metadata)
 
@@ -770,6 +1089,7 @@ def _verify_zip(path: Path, password: str) -> dict[str, Any]:
     if set(_METADATA_NAMES) - metadata.keys():
         raise ArchiveError("归档缺少必要元数据")
     manifest = _parse_manifest(metadata["manifest.json"], "zip")
+    _validate_zip_metadata(infos, manifest)
     return _verify_content(manifest, names, digests, metadata)
 
 
@@ -809,7 +1129,9 @@ def main() -> int:
             task = request["task"]
             candidate = task.get("password", "") if isinstance(task, dict) else ""
             secret = candidate if isinstance(candidate, str) else ""
-            data = build_archive(task, request["entries"], request["destination"], request["batch_id"])
+            data = build_archive(
+                task, request["entries"], request["destination"], request["batch_id"], request.get("directories")
+            )
         elif action == "verify":
             candidate = request.get("password", "")
             secret = candidate if isinstance(candidate, str) else ""
