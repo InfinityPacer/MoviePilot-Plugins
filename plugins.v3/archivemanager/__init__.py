@@ -65,7 +65,7 @@ class ArchiveManager(_PluginBase):
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.1"
+    plugin_version = "0.1.2"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
