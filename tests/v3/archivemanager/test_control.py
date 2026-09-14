@@ -10,9 +10,25 @@ import app.plugins.archivemanager as manager_module
 import pytest
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig, parse_config
-from app.plugins.archivemanager.scanner import Cancelled, directory_identity, fingerprint, identity
-from app.plugins.archivemanager.store import Base, BatchRow, DirectoryRow, FileRow, Store, TaskRow
-from app.plugins.archivemanager.runner import cleanup_stale_staging, remove_staging, staging_path
+from app.plugins.archivemanager.runner import (
+    cleanup_stale_staging,
+    remove_staging,
+    staging_path,
+)
+from app.plugins.archivemanager.scanner import (
+    Cancelled,
+    directory_identity,
+    fingerprint,
+    identity,
+)
+from app.plugins.archivemanager.store import (
+    Base,
+    BatchRow,
+    DirectoryRow,
+    FileRow,
+    Store,
+    TaskRow,
+)
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -99,6 +115,35 @@ def test_staging_cleanup_keeps_recoverable_batches_and_removes_stale(tmp_path: P
 
     remove_staging(task, "recoverable")
     assert not recoverable.exists()
+
+
+def test_cleanup_results_commit_batch_and_file_states_together(store: Store, tmp_path: Path) -> None:
+    task = _task(tmp_path, id="cleanup-results-task")
+    source = Path(task.source_dir)
+    first = _entry(source, "first.txt")
+    second = _entry(source, "second.txt")
+    store.inventory(task.id, [first, second], task.source_dir, task.public())
+    batch = store.create("cleanup-results-batch", task.public(), [first, second], "全部文件")
+
+    store.cleanup_intent(batch["id"], first["relative_path"])
+    interim = store.get(batch["id"])
+    assert interim["cleanup"] == {"first.txt": "deleting"}
+
+    result = store.cleanup_results(
+        batch["id"],
+        {"first.txt": "deleted", "second.txt": "changed"},
+    )
+
+    assert result["cleanup"] == {"first.txt": "deleted", "second.txt": "changed"}
+    with store.handle.session() as session:
+        rows = {
+            row.relative_path: row
+            for row in session.scalars(select(FileRow).where(FileRow.batch_id == batch["id"]))
+        }
+        assert rows["first.txt"].status == "deleted"
+        assert rows["first.txt"].present is False
+        assert rows["second.txt"].status == "changed"
+        assert rows["second.txt"].present is True
 
 
 def test_reset_data_clears_all_runtime_tables_and_keeps_physical_files(store: Store, tmp_path: Path) -> None:

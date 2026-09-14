@@ -377,7 +377,7 @@ class Runner:
             raise RuntimeError(message) from None
 
     def _cleanup(self, batch: dict, task: TaskConfig) -> None:
-        """完整成品和外部文档可用后才逐项清理；每次删除意图先落盘。"""
+        """完整成品和外部文档可用后才逐项清理；删除意图逐项落库，结果分批提交。"""
         if not batch["verified"]:
             raise ValueError("清理源文件需要完整校验通过")
         archive = Path(batch["archive_path"])
@@ -389,47 +389,67 @@ class Runner:
         context = f"task={task.name}({task.id[:6]}) batch={batch['id'][:6]}"
         logger.info(f"压缩归档源文件清理开始：{context} files={len(batch['manifest']['files'])}")
         failed = False
-        for entry in batch["manifest"]["files"]:
-            check_stop(self.stop)
-            relative = entry["relative_path"]
-            if batch["cleanup"].get(relative) in ("deleted", "missing", "changed"):
-                continue
-            source = Path(task.source_dir) / relative
-            result = "retained"
-            try:
-                if not source.exists():
+        source_root = Path(task.source_dir)
+        pending_results: dict[str, str] = {}
+
+        def flush_results() -> None:
+            nonlocal batch
+            if not pending_results:
+                return
+            batch = self.store.cleanup_results(batch["id"], pending_results)
+            pending_results.clear()
+            write_catalog(batch)
+
+        try:
+            for entry in batch["manifest"]["files"]:
+                check_stop(self.stop)
+                relative = entry["relative_path"]
+                if batch["cleanup"].get(relative) in ("deleted", "missing", "changed"):
+                    continue
+                source = source_root / relative
+                result = "retained"
+                try:
+                    if not source.exists():
+                        result = "missing"
+                        logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=missing")
+                    elif (
+                        any(part.is_symlink() for part in (source, *source.parents))
+                        or not identity_matches(source, entry)
+                        or digest(source, self.stop) != entry["sha256"]
+                        or not identity_matches(source, entry)
+                    ):
+                        result = "changed"
+                        logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=changed")
+                    else:
+                        # 删除意图必须先独立提交；批量结果尚未落库时崩溃也能从 deleting 恢复。
+                        self.store.cleanup_intent(batch["id"], relative)
+                        batch["cleanup"][relative] = "deleting"
+                        check_stop(self.stop)
+                        if (
+                            identity(archive) != archive_identity
+                            or not identity_matches(source, entry)
+                        ):
+                            raise ValueError("清理前源文件或归档包已变化")
+                        source.unlink()
+                        result = "deleted"
+                except FileNotFoundError:
+                    if not archive.exists():
+                        raise ValueError("成品已被外部移走，停止源文件清理") from None
                     result = "missing"
                     logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=missing")
-                elif (
-                    any(part.is_symlink() for part in (source, *source.parents))
-                    or not identity_matches(source, entry)
-                    or digest(source, self.stop) != entry["sha256"]
-                    or not identity_matches(source, entry)
-                ):
-                    result = "changed"
-                    logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=changed")
-                else:
-                    # 意图文档失败就停止，不出现“已删除但从未记录该成员”的新操作。
-                    cleanup = {**batch["cleanup"], relative: "deleting"}
-                    batch = self.store.save(batch["id"], cleanup=cleanup)
-                    write_catalog(batch)
-                    check_stop(self.stop)
-                    if identity(archive) != archive_identity or not identity_matches(source, entry):
-                        raise ValueError("清理前源文件或归档包已变化")
-                    source.unlink()
-                    result = "deleted"
-            except FileNotFoundError:
-                if not archive.exists():
-                    raise ValueError("成品已被外部移走，停止源文件清理") from None
-                result = "missing"
-                logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=missing")
-            except PermissionError:
-                result = "failed"
-                failed = True
-                logger.warning(f"压缩归档源文件清理失败：{context} path={relative} reason=permission_denied")
-            batch = self.store.save(batch["id"], cleanup={**batch["cleanup"], relative: result})
-            write_catalog(batch)
-            self.store.file_result(batch["id"], relative, result)
+                except PermissionError:
+                    result = "failed"
+                    failed = True
+                    logger.warning(
+                        f"压缩归档源文件清理失败：{context} "
+                        f"path={relative} reason=permission_denied"
+                    )
+                batch["cleanup"][relative] = result
+                pending_results[relative] = result
+                if len(pending_results) >= 100:
+                    flush_results()
+        finally:
+            flush_results()
         status = "cleanup_failed" if failed else "completed"
         batch = self.store.save(batch["id"], status=status, error="部分源文件无权限删除" if failed else "")
         write_catalog(batch)

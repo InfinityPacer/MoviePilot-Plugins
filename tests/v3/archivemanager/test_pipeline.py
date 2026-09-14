@@ -859,7 +859,9 @@ def test_runner_moved_archive_aborts_cleanup_and_keeps_sources(store: Store, tmp
 
 
 @requires_archive_backend
-def test_runner_cleanup_records_each_file_state_independently(store: Store, tmp_path: Path) -> None:
+def test_runner_cleanup_records_each_file_state_independently(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
     task = _task(tmp_path, id="cleanup", delete_source=True)
     source = Path(task.source_dir)
     batch = _create_batch(store, task, source, ["deleted.txt", "changed.txt", "missing.txt"], "cleanup-batch")
@@ -869,6 +871,15 @@ def test_runner_cleanup_records_each_file_state_independently(store: Store, tmp_
             (source / "changed.txt").write_bytes(b"changed before cleanup")
             (source / "missing.txt").unlink()
 
+    catalog_calls = 0
+    original_catalog = runner_module.write_catalog
+
+    def count_catalog(value: dict) -> str:
+        nonlocal catalog_calls
+        catalog_calls += 1
+        return original_catalog(value)
+
+    monkeypatch.setattr(runner_module, "write_catalog", count_catalog)
     Runner(store, Event(), prepare_cleanup).execute(batch, task)
 
     final = store.get(batch["id"])
@@ -881,6 +892,8 @@ def test_runner_cleanup_records_each_file_state_independently(store: Store, tmp_
     assert not (source / "deleted.txt").exists()
     assert (source / "changed.txt").exists()
     assert not (source / "missing.txt").exists()
+    # 初次清单、批量清理结果和最终状态各写一次，不再按每个文件重复重建。
+    assert catalog_calls == 3
 
 
 def test_runner_rejects_unrelated_partial_staging_file(store: Store, tmp_path: Path) -> None:
