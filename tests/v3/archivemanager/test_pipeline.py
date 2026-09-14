@@ -349,20 +349,21 @@ def test_partition_splits_by_file_count_and_bytes_without_dropping_oversized_fil
     assert [batch["total_bytes"] for batch in batches] == [4, 5, 10]
 
 
-def test_partition_uses_directory_and_timezone_aware_date_rules(tmp_path: Path) -> None:
+def test_partition_uses_directory_and_container_local_date_rules(tmp_path: Path) -> None:
     task = _task(
         tmp_path,
         grouping="directory_date",
         directory_depth=1,
         time_grain="month",
-        timezone="Asia/Shanghai",
         max_files=0,
         max_bytes=0,
     )
+    local_first = datetime(2026, 10, 1, 0, 30).astimezone()
+    local_second = datetime(2026, 10, 2, 0, 30).astimezone()
     entries = [
-        _entry_at("series/episode-1.mkv", 1, datetime(2026, 9, 30, 16, 30, tzinfo=timezone.utc)),
-        _entry_at("series/episode-2.mkv", 1, datetime(2026, 10, 1, 16, 30, tzinfo=timezone.utc)),
-        _entry_at("film/movie.mkv", 1, datetime(2026, 10, 1, 16, 30, tzinfo=timezone.utc)),
+        _entry_at("series/episode-1.mkv", 1, local_first),
+        _entry_at("series/episode-2.mkv", 1, local_second),
+        _entry_at("film/movie.mkv", 1, local_second),
     ]
 
     batches = partition(task, entries)

@@ -27,19 +27,17 @@ def test_date_only_group_does_not_become_source_directory():
 def test_names_use_frozen_creation_time_without_forced_identity_suffix():
     task = {
         "name": "报告/资料",
-        "timezone": "Asia/Shanghai",
         "format": "7z",
         "batch_name_template": "{task_name}_{date}",
         "archive_name_template": "备份_{date}",
     }
-    names = frozen_names(task, "abc123", "2026-09-10T20:00:00+00:00")
-    assert names["batch_name"] == "报告_资料_20260911"
-    assert names["archive_name"] == "备份_20260911.7z"
+    created_at = "2026-09-10T20:00:00+00:00"
+    local_date = datetime.fromisoformat(created_at).astimezone().strftime("%Y%m%d")
+    names = frozen_names(task, "abc123", created_at)
+    assert names["batch_name"] == f"报告_资料_{local_date}"
+    assert names["archive_name"] == f"备份_{local_date}.7z"
     task["archive_name_template"] = "{id}"
-    assert (
-        frozen_names(task, "abc123", "2026-09-10T20:00:00+00:00")["archive_name"]
-        == "abc123.7z"
-    )
+    assert frozen_names(task, "abc123", created_at)["archive_name"] == "abc123.7z"
 
 
 def test_sequence_values_are_six_digits_and_global_sequence_is_supported():
