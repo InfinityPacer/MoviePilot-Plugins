@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    delete,
     func,
     select,
     update,
@@ -18,7 +19,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .naming import frozen_names
-from zoneinfo import ZoneInfo
 from .scanner import fingerprint, identity
 
 Base = plugin_declarative_base()
@@ -218,15 +218,19 @@ class Store:
     def create(self, batch_id: str, task: dict, entries: list[dict], group: str) -> dict:
         """先预留全部成员并提交快照，再允许工作进程创建归档。"""
         created_at = datetime.now(timezone.utc).isoformat()
-        local_day = datetime.fromisoformat(created_at).astimezone(ZoneInfo(task["timezone"])).date()
+        local_day = datetime.fromisoformat(created_at).astimezone().date()
         sequence = 1
-        # 序号按任务和容器本地日期递增；批次名称冻结后不会因重试改变。
+        global_sequence = 1
+        # sequence 按任务递增，global_sequence 跨所有任务递增；两者都按容器本地日期重新计数。
         with self.handle.session() as sequence_session:
-            for row in sequence_session.scalars(select(BatchRow).where(BatchRow.task_id == task["id"])).all():
-                if datetime.fromisoformat(row.created_at).astimezone(ZoneInfo(task["timezone"])).date() == local_day:
+            for row in sequence_session.scalars(select(BatchRow)).all():
+                if datetime.fromisoformat(row.created_at).astimezone().date() != local_day:
+                    continue
+                global_sequence += 1
+                if row.task_id == task["id"]:
                     sequence += 1
         data = {
-            **frozen_names(task, batch_id, created_at, sequence),
+            **frozen_names(task, batch_id, created_at, sequence, entries, global_sequence),
             "task": task,
             "task_name": task["name"],
             "entries": entries,
@@ -287,6 +291,47 @@ class Store:
                     row.status = "archived"
                 if row.status in ("deleted", "missing"):
                     row.present = False
+
+    def clean_batches(self, batch_ids: list[str]) -> dict:
+        """删除批次账本及其文件去重记录，不触碰源文件或外部产物。"""
+        ids = list(dict.fromkeys(batch_ids))
+        if not ids:
+            raise ValueError("至少选择一个归档批次")
+        allowed = {"completed", "failed", "cancelled", "superseded"}
+        with self.handle.session() as session, session.begin():
+            rows = list(session.scalars(select(BatchRow).where(BatchRow.id.in_(ids))))
+            found = {row.id for row in rows}
+            missing = [batch_id for batch_id in ids if batch_id not in found]
+            if missing:
+                raise ValueError("部分批次已不存在，请刷新后重试")
+            blocked = [row for row in rows if row.status not in allowed]
+            if blocked:
+                names = "、".join(row.data.get("batch_name", row.id) for row in blocked[:3])
+                raise ValueError(f"批次正在执行或等待恢复，不能清理：{names}")
+            session.execute(delete(FileRow).where(FileRow.batch_id.in_(ids)))
+            session.execute(delete(BatchRow).where(BatchRow.id.in_(ids)))
+            return {
+                "batch_count": len(rows),
+                "file_count": sum(int(row.data.get("file_count", 0)) for row in rows),
+            }
+
+    def reclaimable_batches(self) -> list[dict]:
+        """返回可尝试回收源文件的已发布批次，不要求用户先筛选任务或批次。"""
+        with self.handle.session() as session:
+            rows = session.scalars(
+                select(BatchRow)
+                .where(BatchRow.status.in_(["completed", "cleanup_failed"]))
+                .order_by(BatchRow.created_at)
+            )
+            result = []
+            for row in rows:
+                batch = self._serialize(row)
+                if not batch.get("archive_path") or not batch.get("manifest"):
+                    continue
+                files = session.scalars(select(FileRow).where(FileRow.batch_id == row.id)).all()
+                if any(file.status not in ("deleted", "missing") for file in files):
+                    result.append(batch)
+            return result
 
     def batches(self, task_id: str = "", status: str = "", page: int = 1, page_size: int = 30) -> dict:
         """分页批次列表；执行快照仅供内部恢复使用。"""

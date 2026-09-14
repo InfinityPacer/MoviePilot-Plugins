@@ -35,7 +35,6 @@ export interface ArchiveTask {
   output_dir: string
   manifest_dir: string
   cron: string
-  timezone: string
   recursive: boolean
   include_patterns: string[]
   exclude_patterns: string[]
@@ -191,5 +190,13 @@ export interface PreviewResult {
 
 export interface ActionResult {
   job_id?: string
+  job_ids?: string[]
+  task_count?: number
   queued?: boolean
+  batch_count?: number
+  file_count?: number
+  estimated_bytes?: number
+  staging_count?: number
+  staging_bytes?: number
+  staging_removed?: number
 }

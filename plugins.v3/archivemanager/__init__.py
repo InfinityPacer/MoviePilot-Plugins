@@ -2,36 +2,55 @@
 
 import copy
 import threading
+import traceback
 from collections import deque
 from functools import partial
 from pathlib import Path
 from uuid import uuid4
 
 from app import schemas
-from app.schemas.types import NotificationType
 from app.plugins import _PluginBase
+from app.schemas.types import NotificationType
 from app.sdk.logging import logger
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, Field, ValidationError
 
 from .capacity import CapacityWait, allowance, fit_batch
-from .catalog import write_catalog
-from .config import NotificationConfig, TaskConfig, overlap, parse_config, validate_paths
-from .runner import Runner
+from .catalog import remove_catalog, write_catalog
+from .config import (
+    NotificationConfig,
+    TaskConfig,
+    container_timezone,
+    overlap,
+    parse_config,
+    validate_paths,
+)
+from .runner import Runner, cleanup_stale_staging, remove_staging, staging_size
 from .scanner import Cancelled, partition, scan
 from .store import BatchRow, FileRow, Store, TaskRow
 
 
 class TaskRequest(BaseModel):
-    """任务执行与停止请求。"""
+    """任务执行与停止请求；运行时空标识表示提交全部任务。"""
 
-    task_id: str = ""  # 空标识仅用于停止全部队列
+    task_id: str = ""
 
 
 class BatchRequest(BaseModel):
     """按稳定批次标识重试或补全文档。"""
 
     batch_id: str  # 原批次 ID，保持成品名称不变
+
+
+class BatchCleanupRequest(BaseModel):
+    """清理批次账本，可选同步清理本地归档产物。"""
+
+    batch_ids: list[str] = Field(min_length=1)
+    delete_artifacts: bool = False
+
+
+class ReclaimRequest(BaseModel):
+    """回收所有已发布批次仍保留的源文件。"""
 
 
 class PreviewRequest(BaseModel):
@@ -43,15 +62,15 @@ class PreviewRequest(BaseModel):
 class ArchiveManager(_PluginBase):
     """只归档本地普通文件；上传及云端状态由用户的外部工具负责。"""
 
-    plugin_name = "压缩归档"  # 市场显示名
-    plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"  # 用户可见能力
+    plugin_name = "压缩归档"
+    plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.0"  # 插件版本
-    plugin_author = "InfinityPacer"  # 维护者
-    author_url = "https://github.com/InfinityPacer"  # 维护者主页
-    plugin_config_prefix = "archivemanager_"  # 配置项命名空间
-    plugin_order = 30  # 市场排序
-    auth_level = 1  # 使用权限等级
+    plugin_version = "0.1.1"
+    plugin_author = "InfinityPacer"
+    author_url = "https://github.com/InfinityPacer"
+    plugin_config_prefix = "archivemanager_"
+    plugin_order = 30
+    auth_level = 1
 
     def __init__(self):
         super().__init__()
@@ -66,8 +85,9 @@ class ArchiveManager(_PluginBase):
         self._running: dict | None = None
         self._previews: dict[str, dict] = {}
         self._closing = False
+        self._manual_stop_tasks: set[str] = set()
 
-    def init_plugin(self, config: dict = None):
+    def init_plugin(self, config: dict | None = None):
         """重载先等待旧工作进程退出；数据库由宿主在此方法返回后建表。"""
         self.stop_service()
         self._stop = threading.Event()
@@ -96,6 +116,19 @@ class ArchiveManager(_PluginBase):
             self.update_config(value)
             self._tasks = parse_config(resolved)
             self._enabled = bool(value.get("enabled", False))
+            logger.info(
+                f"压缩归档配置加载完成：enabled={self._enabled} tasks={len(self._tasks)} "
+                f"scheduled={sum(task.enabled for task in self._tasks)} auto_continue="
+                f"{sum(task.enabled and task.auto_continue for task in self._tasks)}"
+            )
+            for task in self._tasks:
+                logger.info(
+                    f"压缩归档任务配置：task={task.name}({task.id[:6]}) enabled={task.enabled} "
+                    f"source={task.source_dir} output={task.output_dir} manifest={task.manifest_dir} "
+                    f"cron={task.cron} format={task.format} compression={task.compression} "
+                    f"encrypted={task.encryption != 'none'} verify={task.verify} "
+                    f"delete_source={task.delete_source} auto_continue={task.auto_continue}"
+                )
         except (ValueError, OSError, TypeError, KeyError) as exc:
             # Pydantic 的原始错误包含 input_value，不能将可能含密码的输入记录到日志。
             self._config_error = self._safe_error(exc)
@@ -132,7 +165,7 @@ class ArchiveManager(_PluginBase):
             {
                 "id": f"ArchiveManager_{task.id}",
                 "name": f"压缩归档 · {task.name}",
-                "trigger": CronTrigger.from_crontab(task.cron, timezone=task.timezone),
+                "trigger": CronTrigger.from_crontab(task.cron, timezone=container_timezone()),
                 "func": partial(self._enqueue_task, task.id),
                 "kwargs": {},
             }
@@ -146,7 +179,7 @@ class ArchiveManager(_PluginBase):
                     "name": "压缩归档 · 自动续跑",
                     "trigger": "interval",
                     "func": self._resume_waiting,
-                    "kwargs": {"seconds": 60},
+                    "kwargs": {"seconds": 1200},
                 }
             )
         return services
@@ -190,6 +223,8 @@ class ArchiveManager(_PluginBase):
         raise ValueError("任务不存在或配置未生效，请先保存有效配置")
 
     def _enqueue_task(self, task_id: str, batch_id: str = "", *, repair: bool = False) -> str:
+        if not self.get_state():
+            raise ValueError("插件未启用，不能执行归档")
         task = self._task(task_id)
         if not repair:
             validate_paths(task)
@@ -211,15 +246,21 @@ class ArchiveManager(_PluginBase):
             if self._running and self._running["task_id"] == task_id and self._running["kind"] != "preview":
                 if batch_id:
                     raise ValueError("任务正在运行，请结束后再操作指定批次")
+                logger.debug(f"压缩归档任务已在运行，复用作业：task={task.name}({task.id[:6]})")
                 return self._running["job_id"]
             for job in self._queue:
                 if job["task"].id == task_id and job["kind"] != "preview":
                     if batch_id and job["batch_id"] != batch_id:
                         raise ValueError("任务已有排队操作，请完成后再操作指定批次")
+                    logger.debug(f"压缩归档任务已在队列，复用作业：task={task.name}({task.id[:6]})")
                     return job["id"]
             job_id = uuid4().hex
             self._queue.append(
                 {"id": job_id, "kind": "repair" if repair else "run", "task": task, "batch_id": batch_id}
+            )
+            logger.info(
+                f"压缩归档作业入队：job={job_id[:6]} kind={'repair' if repair else 'run'} "
+                f"task={task.name}({task.id[:6]}) batch={batch_id[:6] or '-'} queue={len(self._queue)}"
             )
             self._start_worker()
             return job_id
@@ -276,15 +317,32 @@ class ArchiveManager(_PluginBase):
                     "job_id": job["id"],
                     "kind": job["kind"],
                 }
+                logger.info(
+                    f"压缩归档作业开始：job={job['id'][:6]} kind={job['kind']} "
+                    f"task={task.name}({task.id[:6]}) batch={job['batch_id'][:6] or '-'}"
+                )
             previous_phase = ""
             try:
                 store = self._store()
                 previous_phase = store.task_state(task.id)["phase"]
-                if job["kind"] == "repair":
+                if job["kind"] == "reclaim":
+                    batch = store.get(job["batch_id"])
+                    self._phase("cleaning", batch["id"])
+                    runner = Runner(store, self._stop, self._phase)
+                    runner.reclaim(batch, task)
+                    logger.info(
+                        f"压缩归档空间回收完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"batch={batch['id'][:6]}"
+                    )
+                elif job["kind"] == "repair":
                     batch = store.get(job["batch_id"])
                     self._phase("manifest_pending", batch["id"])
                     path = write_catalog(batch)
                     store.save(batch["id"], manifest_path=path)
+                    logger.info(
+                        f"压缩归档清单补全完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"batch={batch['id'][:6]} manifest={path}"
+                    )
                     self._notify_event("other", task, "清单已补全", f"批次：{batch.get('batch_name', batch['id'])}")
                 elif job["kind"] == "preview":
                     entries, skipped = scan(task, self._stop)
@@ -305,10 +363,20 @@ class ArchiveManager(_PluginBase):
                             for b in batches[:200]
                         ],
                     }
+                    logger.info(
+                        f"压缩归档预览完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"files={result['file_count']} bytes={result['total_bytes']} "
+                        f"batches={result['batch_count']} skipped={result['skipped_count']}"
+                    )
                     with self._lock:
                         self._previews[job["id"]] = {"status": "complete", "data": result, "message": ""}
                 else:
-                    runner = Runner(store, self._stop, self._phase)
+                    runner = Runner(
+                        store,
+                        self._stop,
+                        self._phase,
+                        cleanup_cancelled=lambda task_id=task.id: task_id in self._manual_stop_tasks,
+                    )
                     if job["batch_id"]:
                         batch = store.get(job["batch_id"])
                         self._check_execution_paths(
@@ -318,7 +386,7 @@ class ArchiveManager(_PluginBase):
                         store.set_task_state(task.id, active=task.auto_continue, phase="history", reason="")
                         continue
                     self._execute_cycle(task, store, runner)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  队列边界必须把任意插件错误持久化并继续服务后续作业
                 message = self._safe_error(exc)
                 if task.password:
                     message = message.replace(task.password, "***")
@@ -329,8 +397,16 @@ class ArchiveManager(_PluginBase):
                     self._store().set_task_state(
                         task.id, active=task.auto_continue, phase="waiting_capacity", reason=message
                     )
+                    logger.warning(
+                        f"压缩归档作业等待容量：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"reason={message}"
+                    )
                 elif not isinstance(exc, Cancelled):
-                    logger.error(f"压缩归档任务 {task.id}：{message}")
+                    trace = traceback.format_exc().replace(task.password, "***") if task.password else traceback.format_exc()
+                    logger.error(
+                        f"压缩归档作业失败：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
+                        f"kind={job['kind']} error_type={type(exc).__name__} error={message}\n{trace[-8000:]}"
+                    )
                     self.save_data("last_error", {"task_id": task.id, "message": message})
                     self._store().set_task_state(
                         task.id, active=task.auto_continue, phase="waiting_retry", reason=message
@@ -338,10 +414,13 @@ class ArchiveManager(_PluginBase):
                     self._notify_event("failure", task, "归档失败", message)
                 else:
                     self._store().set_task_state(task.id, active=False, phase="stopped", reason="已停止")
-                    self._notify_event("other", task, "任务已停止", "归档已停止，已发布成品和清单保留。")
+                    logger.info(
+                        f"压缩归档作业已停止：job={job['id'][:6]} task={task.name}({task.id[:6]})"
+                    )
             finally:
                 with self._lock:
                     self._running = None
+                    self._manual_stop_tasks.discard(task.id)
             if job["kind"] != "preview":
                 state = self._store().task_state(task.id)
                 if state["phase"] == "waiting_capacity" and previous_phase != "waiting_capacity":
@@ -351,19 +430,48 @@ class ArchiveManager(_PluginBase):
         """历史快照优先，容量不足作为可恢复等待而非归档失败。"""
         store.set_task_state(task.id, active=task.auto_continue, reason="")
         completed = 0
-        for batch in store.unfinished(task.id)[: task.max_batches]:
+        unfinished = store.unfinished(task.id)[: task.max_batches]
+        initial_state = store.task_state(task.id)
+        logger.info(
+            f"压缩归档周期开始：task={task.name}({task.id[:6]}) phase={initial_state['phase']} "
+            f"history_remaining={initial_state['history_remaining']} unfinished_batches={len(unfinished)} "
+            f"max_batches={task.max_batches}"
+        )
+        for batch in unfinished:
+            logger.info(
+                f"压缩归档恢复未完成批次：task={task.name}({task.id[:6]}) "
+                f"batch={batch['id'][:6]} status={batch['status']}"
+            )
             self._check_execution_paths(TaskConfig.model_validate({**batch["task"], "password": task.password}))
             self._execute_batch(runner, store, batch, task)
             completed += 1
+        recoverable_ids = {batch["id"] for batch in store.unfinished(task.id)}
+        removed_staging = cleanup_stale_staging(task, recoverable_ids)
+        if removed_staging:
+            logger.info(
+                f"压缩归档清理不可恢复暂存：task={task.name}({task.id[:6]}) count={removed_staging}"
+            )
         state = store.task_state(task.id)
         capacity = allowance(task, store.local_archives(task.id))
         if state.get("initialized") and not capacity["budget"]:
             store.set_task_state(task.id, phase="waiting_capacity", **capacity)
+            logger.warning(
+                f"压缩归档周期容量受限：task={task.name}({task.id[:6]}) "
+                f"pending_archives={capacity['pending_archives']} pending_bytes={capacity['pending_bytes']} "
+                f"free_bytes={capacity['free_bytes']} budget_bytes={capacity['budget']} reason={capacity['reason']}"
+            )
             return
+        # 持久化当前扫描阶段，避免配置重载后任务仍显示为“已停止”。
+        store.set_task_state(task.id, active=task.auto_continue, phase="scanning", reason="")
         self._phase("scanning")
-        entries, _skipped = scan(task, self._stop, stable=True)
+        entries, skipped = scan(task, self._stop, stable=True)
         entries = store.inventory(task.id, entries, task.source_dir, task.public())
         groups = partition(task, entries)
+        logger.info(
+            f"压缩归档扫描完成：task={task.name}({task.id[:6]}) eligible_files={len(entries)} "
+            f"eligible_bytes={sum(entry['size'] for entry in entries)} batches={len(groups)} skipped={skipped} "
+            f"age_days={task.archive_age_days} stability_seconds={task.stability_seconds}"
+        )
         while groups and completed < task.max_batches:
             if self._stop.is_set():
                 raise Cancelled("已停止")
@@ -372,8 +480,18 @@ class ArchiveManager(_PluginBase):
             if selected is None:
                 capacity["reason"] = capacity["reason"] or "剩余容量不足以容纳下一份完整文件，等待空间或调整容量上限"
                 store.set_task_state(task.id, phase="waiting_capacity", **capacity)
+                logger.warning(
+                    f"压缩归档下一批无法容纳：task={task.name}({task.id[:6]}) "
+                    f"group={groups[0]['group']} next_file_bytes={groups[0]['entries'][0]['size']} "
+                    f"budget_bytes={capacity['budget']} reason={capacity['reason']}"
+                )
                 return
             batch = store.create(uuid4().hex, task.public(), selected["entries"], selected["group"])
+            logger.info(
+                f"压缩归档批次已创建：task={task.name}({task.id[:6]}) batch={batch['id'][:6]} "
+                f"name={batch['batch_name']} group={selected['group']} files={len(selected['entries'])} "
+                f"source_bytes={selected['total_bytes']}"
+            )
             self._execute_batch(runner, store, batch, task)
             completed += 1
             remaining = groups[0]["entries"][len(selected["entries"]) :]
@@ -398,6 +516,13 @@ class ArchiveManager(_PluginBase):
                 phase="incremental" if was_history else "idle",
                 **capacity,
             )
+        final_state = store.task_state(task.id)
+        logger.info(
+            f"压缩归档周期结束：task={task.name}({task.id[:6]}) completed_batches={completed} "
+            f"phase={final_state['phase']} history_remaining={final_state['history_remaining']} "
+            f"pending_archives={final_state['pending_archives']} pending_bytes={final_state['pending_bytes']} "
+            f"free_bytes={final_state['free_bytes']}"
+        )
 
     def stop_service(self):
         """同步等待扫描/工作子进程退出后返回，防止卸载后继续写库或删除文件。"""
@@ -409,8 +534,11 @@ class ArchiveManager(_PluginBase):
                     self._previews[job["id"]] = {"status": "failed", "data": None, "message": "已停止"}
             self._queue.clear()
             worker = self._thread
+        if worker and worker.is_alive():
+            logger.info("压缩归档服务停止中：等待当前扫描或归档工作安全退出")
         if worker and worker is not threading.current_thread():
             worker.join()
+            logger.info("压缩归档服务已停止")
 
     @staticmethod
     def get_render_mode():
@@ -420,8 +548,8 @@ class ArchiveManager(_PluginBase):
         """表单默认模型；完整任务编辑由联邦组件承担。"""
         return [], {"enabled": False, "notify": False, "notify_events": ["failure"], "tasks": []}
 
-    def get_page(self):
-        return None
+    # 本插件只有联邦配置页；设为 None 避免宿主把已启用实例识别为数据页。
+    get_page = None
 
     @staticmethod
     def get_command():
@@ -523,17 +651,132 @@ class ArchiveManager(_PluginBase):
             result = copy.deepcopy(self._previews.get(job_id))
         return self._response(result, success=result is not None, message="" if result else "预览已过期，请重新预览")
 
+    def _reclaimable_batches(self) -> list[dict]:
+        return self._store().reclaimable_batches()
+
+    def _staging_tasks(self) -> list[tuple[TaskConfig, set[str]]]:
+        """收集当前配置和历史快照中的暂存目录，保留仍可恢复批次。"""
+        store = self._store()
+        values: dict[tuple[str, str], tuple[TaskConfig, set[str]]] = {}
+        for task in self._tasks:
+            values[(task.id, task.output_dir)] = (task, set())
+        for batch in store.batches(page=1, page_size=100000)["items"]:
+            snapshot = batch.get("task") or {}
+            try:
+                task = TaskConfig.model_validate({**snapshot, "password": ""})
+            except (TypeError, ValueError):
+                continue
+            values.setdefault((task.id, task.output_dir), (task, set()))
+        for key, (task, _) in list(values.items()):
+            values[key] = (task, {batch["id"] for batch in store.unfinished(task.id)})
+        return list(values.values())
+
+    def _staging_reclaim_preview(self) -> tuple[int, int]:
+        count = 0
+        total = 0
+        for task, keep_ids in self._staging_tasks():
+            item_count, item_bytes = staging_size(task, keep_ids)
+            count += item_count
+            total += item_bytes
+        return count, total
+
+    def _cleanup_reclaimable_staging(self) -> tuple[int, int]:
+        count = 0
+        total = 0
+        for task, keep_ids in self._staging_tasks():
+            item_count, item_bytes = staging_size(task, keep_ids)
+            removed = cleanup_stale_staging(task, keep_ids)
+            if removed:
+                count += removed
+                total += item_bytes
+                logger.info(
+                    f"压缩归档回收空间清理孤儿暂存：task={task.name}({task.id[:6]}) count={removed} bytes={item_bytes}"
+                )
+        return count, total
+
+    @staticmethod
+    def _reclaim_estimated_bytes(batches: list[dict]) -> int:
+        return sum(
+            int(entry.get("size", 0))
+            for batch in batches
+            for entry in (batch.get("manifest") or {}).get("files", [])
+        )
+
+    def api_reclaim_preview(self, request: ReclaimRequest):
+        """只统计可回收源文件，供确认框展示，不加入队列。"""
+        del request
+        try:
+            batches = self._reclaimable_batches()
+            files = sum(len((batch.get("manifest") or {}).get("files", [])) for batch in batches)
+            staging_count, staging_bytes = self._staging_reclaim_preview()
+            return self._response(
+                {
+                    "batch_count": len(batches),
+                    "file_count": files,
+                    "estimated_bytes": self._reclaim_estimated_bytes(batches) + staging_bytes,
+                    "staging_count": staging_count,
+                    "staging_bytes": staging_bytes,
+                }
+            )
+        except (ValueError, OSError) as exc:
+            return self._response(success=False, message=self._safe_error(exc))
+
+    def api_reclaim(self, request: ReclaimRequest):
+        """批量回收所有已发布批次的源文件，归档包和清单保持不变。"""
+        del request
+        try:
+            batches = self._reclaimable_batches()
+            staging_count, staging_bytes = self._cleanup_reclaimable_staging()
+            with self._lock:
+                queued = {job["batch_id"] for job in self._queue if job["kind"] == "reclaim"}
+                running = self._running.get("batch_id") if self._running else ""
+                jobs = []
+                for batch in batches:
+                    if batch["id"] in queued or batch["id"] == running:
+                        continue
+                    task = TaskConfig.model_validate({**batch["task"], "password": ""})
+                    job_id = uuid4().hex
+                    jobs.append({"id": job_id, "kind": "reclaim", "task": task, "batch_id": batch["id"]})
+                self._queue.extend(jobs)
+                if jobs:
+                    self._start_worker()
+            estimated_bytes = self._reclaim_estimated_bytes(batches)
+            return self._response(
+                {
+                    "queued": len(jobs),
+                    "found": len(batches),
+                    "estimated_bytes": estimated_bytes + staging_bytes,
+                    "staging_removed": staging_count,
+                    "staging_bytes": staging_bytes,
+                }
+            )
+        except (ValueError, OSError) as exc:
+            return self._response(success=False, message=self._safe_error(exc))
+
     def api_run(self, request: TaskRequest):
         try:
-            return self._response({"job_id": self._enqueue_task(request.task_id)})
+            if request.task_id:
+                return self._response({"job_id": self._enqueue_task(request.task_id), "task_count": 1})
+            if not self._tasks:
+                raise ValueError("没有可运行的归档任务")
+            # 先检查全部任务，再统一入队，避免路径错误导致只提交一部分任务。
+            for task in self._tasks:
+                validate_paths(task)
+                self._check_execution_paths(task)
+            job_ids = [self._enqueue_task(task.id) for task in self._tasks]
+            return self._response({"job_ids": job_ids, "task_count": len(job_ids)})
         except (ValueError, OSError) as exc:
             return self._response(success=False, message=self._safe_error(exc))
 
     def api_stop(self, request: TaskRequest):
+        target_ids = {task.id for task in self._tasks if not request.task_id or task.id == request.task_id}
         for task in self._tasks:
-            if not request.task_id or task.id == request.task_id:
+            if task.id in target_ids:
                 self._store().set_task_state(task.id, active=False, phase="stopped", reason="已停止")
         with self._lock:
+            running_task_id = self._running.get("task_id") if self._running else None
+            if running_task_id and running_task_id in target_ids:
+                self._manual_stop_tasks.add(running_task_id)
             if not request.task_id or (self._running and self._running["task_id"] == request.task_id):
                 self._stop.set()
             for job in self._queue:
@@ -541,6 +784,72 @@ class ArchiveManager(_PluginBase):
                     self._previews[job["id"]] = {"status": "failed", "data": None, "message": "已停止"}
             self._queue = deque(job for job in self._queue if request.task_id and job["task"].id != request.task_id)
         return self._response({"stopping": True})
+
+    @staticmethod
+    def _artifact_paths(batch: dict) -> list[Path]:
+        """只允许删除批次快照中归档输出目录内的已发布文件。"""
+        archive_value = str(batch.get("archive_path") or "").strip()
+        if not archive_value:
+            return []
+        archive = Path(archive_value)
+        output = Path(str(batch["task"].get("output_dir") or "")).resolve()
+        resolved = archive.resolve(strict=False)
+        try:
+            resolved.relative_to(output)
+        except ValueError as exc:
+            raise ValueError("归档包路径不在该任务输出目录内，拒绝删除") from exc
+        if archive.is_symlink() or (archive.exists() and not archive.is_file()):
+            raise ValueError(f"归档包不是普通文件，拒绝删除：{archive}")
+        checksum = archive.with_name(archive.name + ".sha256")
+        if checksum.is_symlink() or (checksum.exists() and not checksum.is_file()):
+            raise ValueError(f"归档校验文件不是普通文件，拒绝删除：{checksum}")
+        manifest_value = str(batch.get("manifest_path") or "").strip()
+        if manifest_value:
+            manifest_root = Path(str(batch["task"].get("manifest_dir") or "")).resolve()
+            manifest_path = Path(manifest_value).resolve(strict=False)
+            try:
+                manifest_path.relative_to(manifest_root)
+            except ValueError as exc:
+                raise ValueError("清单路径不在该任务清单目录内，拒绝删除") from exc
+        return [archive, checksum]
+
+    def api_cleanup(self, request: BatchCleanupRequest):
+        """清理批次账本；源文件永远不在此入口中删除或修改。"""
+        ids = list(dict.fromkeys(request.batch_ids))
+        try:
+            with self._lock:
+                batches = [self._store().get(batch_id) for batch_id in ids]
+                allowed = {"completed", "failed", "cancelled", "superseded"}
+                for batch in batches:
+                    if batch["status"] not in allowed:
+                        raise ValueError(f"批次正在执行或等待恢复，不能清理：{batch.get('batch_name', batch['id'])}")
+                    if self._running and self._running.get("batch_id") == batch["id"]:
+                        raise ValueError("批次正在执行，不能清理")
+                    if any(job.get("batch_id") == batch["id"] for job in self._queue):
+                        raise ValueError("批次正在队列中，不能清理")
+                cleanup_tasks: dict[tuple[str, str], TaskConfig] = {}
+                for batch in batches:
+                    task = TaskConfig.model_validate({**batch["task"], "password": ""})
+                    cleanup_tasks[(task.id, task.output_dir)] = task
+                    remove_staging(task, batch["id"])
+                    if request.delete_artifacts:
+                        for path in self._artifact_paths(batch):
+                            if path.is_file():
+                                path.unlink()
+                        remove_catalog(batch)
+                # 清理时顺便扫描同一任务的暂存根目录，处理旧版本手工停止留下的孤儿目录。
+                # 仍处于可恢复阶段的批次必须保留，避免清理动作破坏恢复链路。
+                for task in cleanup_tasks.values():
+                    recoverable_ids = {batch["id"] for batch in self._store().unfinished(task.id)}
+                    removed = cleanup_stale_staging(task, recoverable_ids)
+                    if removed:
+                        logger.info(
+                            f"压缩归档清理批次时移除孤儿暂存：task={task.name}({task.id[:6]}) count={removed}"
+                        )
+                result = self._store().clean_batches(ids)
+            return self._response(result)
+        except (ValueError, OSError) as exc:
+            return self._response(success=False, message=self._safe_error(exc))
 
     def api_retry(self, request: BatchRequest):
         try:
@@ -576,8 +885,11 @@ class ArchiveManager(_PluginBase):
             ("preview", "POST", self.api_preview_start, "开始只读预览"),
             ("preview", "GET", self.api_preview, "预览结果"),
             ("run", "POST", self.api_run, "运行归档"),
+            ("reclaim/preview", "POST", self.api_reclaim_preview, "预览可回收源文件"),
+            ("reclaim", "POST", self.api_reclaim, "回收源文件"),
             ("stop", "POST", self.api_stop, "停止归档"),
             ("retry", "POST", self.api_retry, "重试批次"),
+            ("cleanup", "POST", self.api_cleanup, "清理批次"),
             ("repair", "POST", self.api_repair, "补全清单"),
         ]
         return [

@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { listBatches, listFiles, loadSummary, pollPreview, runTask, startPreview, stopTask } from '@/config/api'
+import {
+  listBatches,
+  listFiles,
+  loadSummary,
+  pollPreview,
+  runTask,
+  runTasks,
+  startPreview,
+  stopTask,
+} from '@/config/api'
 import type { PluginApi } from '@/config/api'
 import type { ArchiveTask } from '@/config/types'
 
@@ -33,12 +42,14 @@ describe('ArchiveManager API helpers', () => {
 
     await startPreview(api, { ...task, password: 'secret' })
     await runTask(api, task.id)
+    await runTasks(api)
     await stopTask(api, task.id)
     await pollPreview(api, 'job/1')
 
     expect(post).toHaveBeenNthCalledWith(1, 'plugin/ArchiveManager/preview', { task: { ...task, password: 'secret' } })
-    expect(post).toHaveBeenNthCalledWith(2, 'plugin/ArchiveManager/run', { task_id: task.id })
-    expect(post).toHaveBeenNthCalledWith(3, 'plugin/ArchiveManager/stop', { task_id: task.id })
+    expect(post).toHaveBeenNthCalledWith(2, 'plugin/ArchiveManager/run', { task_id: task.id }, { feedback: 'silent' })
+    expect(post).toHaveBeenNthCalledWith(3, 'plugin/ArchiveManager/run', { task_id: '' }, { feedback: 'silent' })
+    expect(post).toHaveBeenNthCalledWith(4, 'plugin/ArchiveManager/stop', { task_id: task.id })
     expect(get).toHaveBeenCalledWith('plugin/ArchiveManager/preview?job_id=job%2F1')
   })
 
@@ -51,5 +62,18 @@ describe('ArchiveManager API helpers', () => {
     await expect(listFiles(api, {})).resolves.toEqual({ items: [], directories: [], total: 0 })
     expect(warn).toHaveBeenCalledWith('[ArchiveManager] summary unavailable')
     expect(document.body).not.toHaveTextContent('private details')
+  })
+})
+
+it('cleans selected batches with an explicit artifact choice', async () => {
+  const post = vi.fn().mockResolvedValue({ success: true, message: '', data: { batch_count: 2, file_count: 4 } })
+  const api: PluginApi = { get: vi.fn(), post, put: vi.fn() }
+
+  const { cleanupBatches } = await import('@/config/api')
+  await cleanupBatches(api, ['batch-1', 'batch-2'], true)
+
+  expect(post).toHaveBeenCalledWith('plugin/ArchiveManager/cleanup', {
+    batch_ids: ['batch-1', 'batch-2'],
+    delete_artifacts: true,
   })
 })

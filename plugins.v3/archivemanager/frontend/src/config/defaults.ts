@@ -11,7 +11,6 @@ export const taskDefaults: ArchiveTask = {
   output_dir: '',
   manifest_dir: '',
   cron: '0 2 * * *',
-  timezone: '',
   recursive: true,
   include_patterns: [],
   exclude_patterns: [],

@@ -2,14 +2,18 @@
 import { computed, getCurrentInstance, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import {
+  cleanupBatches,
   listBatches,
   listFiles,
   loadBatch,
   loadSummary,
   pollPreview,
+  previewReclaim,
+  reclaimSpace,
   repairBatch,
   retryBatch,
   runTask,
+  runTasks,
   startPreview,
   stopTask,
   type PluginApi,
@@ -25,6 +29,7 @@ import type {
   SummaryPayload,
 } from '../config/types'
 import { cloneTask, createArchiveTask, normalizeArchiveConfig } from '../config/values'
+import ArchiveFieldRow from './ArchiveFieldRow.vue'
 import archiveLogo from '../assets/archive-logo.png'
 
 type NoticeType = 'success' | 'warning' | 'error' | 'info'
@@ -69,9 +74,11 @@ const activeTaskId = ref(draft.value.tasks[0]?.id ?? '')
 const editorOpen = ref(false)
 const editingTaskId = ref<string | null>(null)
 const taskEditor = ref<ArchiveTask>(createArchiveTask())
+const taskEditorOriginal = ref<ArchiveTask | null>(null)
 const includePatternsText = ref('')
 const excludePatternsText = ref('')
 const minFreeGiB = ref(1)
+const maxBytesMiB = ref(4096)
 const mobileNavOpen = ref(false)
 const compatibilityOpen = ref(false)
 const compatibilityReason = ref<'format' | 'encrypt_names'>('format')
@@ -87,6 +94,7 @@ const previewOpen = ref(false)
 const previewJobId = ref('')
 const previewState = ref<'idle' | 'running' | 'complete' | 'failed'>('idle')
 const previewResult = ref<PreviewData | null>(null)
+const previewTask = ref<ArchiveTask | null>(null)
 const previewMessage = ref('')
 
 const batchTaskFilter = ref(activeTaskId.value)
@@ -98,6 +106,11 @@ const batchLoading = ref(false)
 const batchDialogOpen = ref(false)
 const selectedBatch = ref<Batch | null>(null)
 const batchDetailLoading = ref(false)
+const selectedBatchIds = ref<string[]>([])
+const cleanupDialogOpen = ref(false)
+const cleanupConfirmOpen = ref(false)
+const cleanupDeleteArtifacts = ref(false)
+const cleanupBusy = ref(false)
 
 const fileTaskFilter = ref(activeTaskId.value)
 const fileDirectory = ref('')
@@ -119,6 +132,30 @@ const tasksById = computed(() => new Map(draft.value.tasks.map(task => [task.id,
 const selectedTask = computed(() => tasksById.value.get(activeTaskId.value) ?? draft.value.tasks[0] ?? null)
 const hasFileTaskSelection = computed(() => Boolean(fileTaskFilter.value && tasksById.value.has(fileTaskFilter.value)))
 const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(original.value))
+const taskEditorDirty = computed(
+  () =>
+    editorOpen.value &&
+    taskEditorOriginal.value !== null &&
+    JSON.stringify(taskEditor.value) !== JSON.stringify(taskEditorOriginal.value),
+)
+const changedItems = computed(() => {
+  const items: string[] = []
+  if (draft.value.enabled !== original.value.enabled) items.push('启用归档服务')
+  if (draft.value.notify !== original.value.notify) items.push('发送通知')
+  if (JSON.stringify(draft.value.notify_events) !== JSON.stringify(original.value.notify_events)) items.push('通知事件')
+  const originalTasks = new Map(original.value.tasks.map(task => [task.id, task]))
+  for (const task of draft.value.tasks) {
+    const previous = originalTasks.get(task.id)
+    if (!previous || JSON.stringify(task) !== JSON.stringify(previous)) items.push(`任务：${task.name}`)
+    originalTasks.delete(task.id)
+  }
+  for (const task of originalTasks.values()) items.push(`已删除任务：${task.name}`)
+  if (taskEditorDirty.value && !items.some(item => item === `任务：${taskEditor.value.name}`))
+    items.push(`任务：${taskEditor.value.name}`)
+  return items
+})
+const pendingChangeCount = computed(() => changedItems.value.length)
+const hasUnsavedChanges = computed(() => isDirty.value || taskEditorDirty.value)
 const summaryValue = computed<SummaryPayload>(
   () =>
     summary.value ?? {
@@ -160,21 +197,25 @@ const namingExamples = computed(() => {
     date: '20260911',
     time: '040020',
     id: '7f3a9c',
-    sequence: '0001',
+    sequence: '000001',
+    global_sequence: '000001',
+    file_mtime: '20260128_141930',
+  }
+  const formatExampleTime = (format: string, fileTime = false): string => {
+    const tokens = fileTime
+      ? { '%Y': '2026', '%y': '26', '%m': '01', '%d': '28', '%H': '14', '%I': '02', '%M': '19', '%S': '30' }
+      : { '%Y': '2026', '%y': '26', '%m': '09', '%d': '11', '%H': '04', '%I': '04', '%M': '00', '%S': '20' }
+    return format.replace(/%Y|%y|%m|%d|%H|%I|%M|%S/g, token => tokens[token as keyof typeof tokens] || token)
   }
   const render = (template: string, fallback: string): string => {
     const source = template.trim() || fallback
-    const rendered = source.replace(/\{([^{}]+)\}/g, (match, field: string) => {
-      if (field.startsWith('%')) {
-        return field.replace(
-          /%Y|%y|%m|%d|%H|%I|%M|%S/g,
-          token =>
-            ({ '%Y': '2026', '%y': '26', '%m': '09', '%d': '11', '%H': '04', '%I': '04', '%M': '00', '%S': '20' })[
-              token
-            ] || token,
-        )
-      }
-      return field in values ? values[field as keyof typeof values] : match
+    const rendered = source.replace(/\{([^{}]+)\}/g, (match, expression: string) => {
+      if (expression.startsWith('%')) return formatExampleTime(expression)
+      const separator = expression.indexOf(':')
+      const field = separator === -1 ? expression : expression.slice(0, separator)
+      const format = separator === -1 ? '' : expression.slice(separator + 1)
+      if (field === 'file_mtime') return format ? formatExampleTime(format, true) : values.file_mtime
+      return separator === -1 && field in values ? values[field as keyof typeof values] : match
     })
     return rendered.trim() || fallback
   }
@@ -270,13 +311,20 @@ function selectMobileView(view: ViewKey): void {
   mobileNavOpen.value = false
 }
 
-function openTaskEditor(task?: ArchiveTask): void {
+function openTaskEditor(task?: ArchiveTask, asNew = false): void {
   const next = cloneTask(task ?? createArchiveTask())
-  taskEditor.value = next
-  editingTaskId.value = task?.id ?? null
+  if (asNew) {
+    const copy = createArchiveTask({ ...next, id: '', name: `${next.name || '归档任务'}（副本）`, enabled: false })
+    taskEditor.value = copy
+  } else {
+    taskEditor.value = next
+  }
+  editingTaskId.value = asNew ? null : (task?.id ?? null)
   includePatternsText.value = next.include_patterns.join('\n')
   excludePatternsText.value = next.exclude_patterns.join('\n')
   minFreeGiB.value = Number((next.min_free_bytes / 1024 ** 3).toFixed(2))
+  maxBytesMiB.value = Number((next.max_bytes / 1024 ** 2).toFixed(2))
+  taskEditorOriginal.value = cloneTask(next)
   editorOpen.value = true
 }
 
@@ -292,24 +340,34 @@ function prepareEditorTask(): ArchiveTask {
   task.include_patterns = parsePatterns(includePatternsText.value)
   task.exclude_patterns = parsePatterns(excludePatternsText.value)
   task.min_free_bytes = Math.max(0, Number(minFreeGiB.value) || 0) * 1024 ** 3
+  task.max_bytes = Math.max(0, Number(maxBytesMiB.value) || 0) * 1024 ** 2
   if (task.delete_source) task.verify = true
   if (task.format === 'zip') task.encrypt_names = false
   if (task.password.length > 0) task.password_set = true
   return task
 }
 
-function saveTaskEditor(): void {
+function commitTaskEditor(): void {
   const task = prepareEditorTask()
   const index = draft.value.tasks.findIndex(item => item.id === task.id)
   if (index >= 0) draft.value.tasks.splice(index, 1, task)
   else draft.value.tasks.push(task)
   selectTask(task.id)
   editorOpen.value = false
-  setNotice('任务已更新，保存配置后才会生效。', 'success')
+  taskEditorOriginal.value = null
+}
+
+function saveTaskEditor(): void {
+  commitTaskEditor()
+  saveConfig()
 }
 
 function cancelTaskEditor(): void {
   editorOpen.value = false
+}
+
+function copyTask(task: ArchiveTask): void {
+  openTaskEditor(task, true)
 }
 
 async function removeTask(task: ArchiveTask): Promise<void> {
@@ -390,17 +448,17 @@ function cancelCompatibilityChange(): void {
 
 function handleEncryption(value: unknown): void {
   taskEditor.value.encryption = value === 'aes256' ? 'aes256' : 'none'
+  if (taskEditor.value.encryption === 'none') taskEditor.value.encrypt_names = false
   if (taskEditor.value.encryption === 'aes256' && taskEditor.value.format === '7z' && !taskEditor.value.encrypt_names) {
     taskEditor.value.encrypt_names = true
   }
 }
 
 function saveConfig(): void {
+  if (taskEditorDirty.value) commitTaskEditor()
   const payload = normalizeArchiveConfig(draft.value)
   draft.value = payload
-  original.value = normalizeArchiveConfig(payload)
   emit('save', normalizeArchiveConfig(payload))
-  setNotice('配置已提交给宿主保存。', 'success')
 }
 
 function formatNumber(value: number): string {
@@ -456,6 +514,18 @@ function batchFileStatus(file: ArchiveFile, batch: Batch): string {
   return batch.status || 'pending'
 }
 
+function taskIsRunning(taskId: string): boolean {
+  return summaryValue.value.running?.task_id === taskId
+}
+
+function taskPhase(progress: SummaryPayload['tasks'][number]): string {
+  return taskIsRunning(progress.task_id) ? summaryValue.value.running?.phase || progress.phase : progress.phase
+}
+
+function taskIsActive(progress: SummaryPayload['tasks'][number]): boolean {
+  return progress.active || taskIsRunning(progress.task_id)
+}
+
 function phaseLabel(phase: string): string {
   return (
     {
@@ -476,7 +546,7 @@ function progressLabel(progress: SummaryPayload['tasks'][number]): string {
   if (progress.phase === 'waiting_capacity') return progress.reason || '等待外部工具移走归档成品'
   if (progress.phase === 'waiting_retry') return progress.reason || '存在失败批次，等待重试后继续'
   return (
-    progress.reason || `积压 ${formatNumber(progress.pending_archives)} 批 · ${formatBytes(progress.pending_bytes)}`
+    progress.reason || `已归档 ${formatNumber(progress.pending_archives)} 批 · ${formatBytes(progress.pending_bytes)}`
   )
 }
 
@@ -508,22 +578,77 @@ function startOperationPolling(): void {
   }, 2500)
 }
 
+async function executeReclaim(): Promise<void> {
+  operationBusy.value = true
+  const preview = await previewReclaim(props.api)
+  operationBusy.value = false
+  if (!preview) {
+    setNotice('无法读取可回收源文件，请刷新后重试。', 'error')
+    return
+  }
+  const batchCount = Number(preview.batch_count ?? 0)
+  const fileCount = Number(preview.file_count ?? 0)
+  const estimated = Number(preview.estimated_bytes ?? 0)
+  const stagingCount = Number(preview.staging_count ?? 0)
+  const stagingBytes = Number(preview.staging_bytes ?? 0)
+  if (estimated <= 0) {
+    setNotice('暂无需要回收的空间。', 'info')
+    return
+  }
+  const content = `将扫描所有已完成的归档批次，并回收仍保留且校验通过的源文件，同时清理不可恢复的旧暂存。\n\n可回收批次：${batchCount} 个\n可回收文件：${fileCount} 个\n旧暂存目录：${stagingCount} 个\n预计释放空间：${formatBytes(estimated)}${stagingBytes > 0 ? `（其中旧暂存 ${formatBytes(stagingBytes)}）` : ''}`
+  const confirmed = hostConfirm
+    ? await hostConfirm({ type: 'warn', title: '回收空间', content, confirmText: '开始回收', cancelText: '取消' })
+    : window.confirm(`${content}\n\n是否继续？`)
+  if (!confirmed) return
+  operationBusy.value = true
+  const result = await reclaimSpace(props.api)
+  operationBusy.value = false
+  if (!result) {
+    setNotice('回收请求失败，请刷新后重试。', 'error')
+    return
+  }
+  const reclaimResult = result as {
+    queued?: number
+    estimated_bytes?: number
+    staging_removed?: number
+    staging_bytes?: number
+  }
+  const queuedEstimate = Number(reclaimResult.estimated_bytes ?? 0)
+  const stagingRemoved = Number(reclaimResult.staging_removed ?? 0)
+  const suffix = queuedEstimate > 0 ? `，预计回收 ${formatBytes(queuedEstimate)}` : ''
+  const stagingSuffix = stagingRemoved > 0 ? `，已清理 ${stagingRemoved} 个旧暂存目录` : ''
+  setNotice(`已加入 ${Number(reclaimResult.queued ?? 0)} 个批次的回收队列${suffix}${stagingSuffix}。`, 'success')
+  await refreshSummary()
+}
+
+async function submitRun(response: Awaited<ReturnType<typeof runTask>>, successMessage: string): Promise<void> {
+  if (!response.data) {
+    setNotice(response.message, 'error')
+    operationMessage.value = ''
+    return
+  }
+  setNotice(successMessage, 'success')
+  operationMessage.value = '归档任务运行中…'
+  await refreshSummary()
+  startOperationPolling()
+}
+
 async function executeRun(taskId = activeTaskId.value): Promise<void> {
   if (!taskId) {
     setNotice('请先选择一个归档任务。', 'warning')
     return
   }
   operationMessage.value = '正在提交归档任务…'
-  const result = await runTask(props.api, taskId)
-  if (!result) {
-    setNotice('归档任务提交失败，请检查插件状态。', 'error')
-    operationMessage.value = ''
+  await submitRun(await runTask(props.api, taskId), '归档任务已提交')
+}
+
+async function executeRunAll(): Promise<void> {
+  if (!draft.value.tasks.length) {
+    setNotice('没有可运行的归档任务', 'warning')
     return
   }
-  setNotice(result.queued ? '归档任务已加入队列。' : '归档任务已启动。', 'success')
-  operationMessage.value = '归档任务运行中…'
-  await refreshSummary()
-  startOperationPolling()
+  operationMessage.value = '正在提交全部归档任务…'
+  await submitRun(await runTasks(props.api), `已提交 ${draft.value.tasks.length} 个归档任务`)
 }
 
 async function executeStop(): Promise<void> {
@@ -553,7 +678,23 @@ async function executeBatchAction(action: 'retry' | 'repair', batch: Batch): Pro
   startOperationPolling()
 }
 
+function previewDirectoryPath(group: string): string {
+  const task = previewTask.value
+  if (!task) return group
+  const [directoryGroup] = group.split(' | ', 1)
+  const parts = directoryGroup.split('/').filter(part => part && part !== '.' && part !== '全部文件')
+  const prefix =
+    task.archive_layout === 'flat' ? [...parts, '<批次名称>'].join('_') : [...parts, '<批次名称>'].join('/')
+  return `${prefix || '<批次名称>'}/<归档包名称>.${task.format}`
+}
+
+function previewGroupingBasis(group: string): string {
+  const [, ...basis] = group.split(' | ')
+  return basis.length ? `分组依据：${basis.join(' | ')}` : '未按目录或日期分组'
+}
+
 async function startPreviewForTask(task: ArchiveTask): Promise<void> {
+  previewTask.value = task
   previewOpen.value = true
   previewState.value = 'running'
   previewResult.value = null
@@ -606,10 +747,73 @@ async function loadBatchPage(): Promise<void> {
       page_size: batchPageSize.value,
       status: batchStatusFilter.value || undefined,
     })
-    if (!disposed && requestToken === batchRequestToken && activeView.value === 'batches') batchData.value = result
+    if (!disposed && requestToken === batchRequestToken && activeView.value === 'batches') {
+      batchData.value = result
+      const visible = new Set(result.items.map(batch => batch.id))
+      selectedBatchIds.value = selectedBatchIds.value.filter(id => visible.has(id))
+    }
   } finally {
     if (requestToken === batchRequestToken) batchLoading.value = false
   }
+}
+
+function batchCanBeCleaned(batch: Batch): boolean {
+  return ['completed', 'failed', 'cancelled', 'superseded'].includes(batch.status)
+}
+
+function toggleBatchSelection(batch: Batch, selected: unknown): void {
+  if (!batchCanBeCleaned(batch)) return
+  if (selected === true) {
+    if (!selectedBatchIds.value.includes(batch.id)) selectedBatchIds.value = [...selectedBatchIds.value, batch.id]
+  } else {
+    selectedBatchIds.value = selectedBatchIds.value.filter(id => id !== batch.id)
+  }
+}
+
+const allCleanableBatchesSelected = computed(() => {
+  const cleanable = batchData.value.items.filter(batchCanBeCleaned)
+  return cleanable.length > 0 && cleanable.every(batch => selectedBatchIds.value.includes(batch.id))
+})
+
+function toggleAllBatchSelection(selected: unknown): void {
+  const ids = batchData.value.items.filter(batchCanBeCleaned).map(batch => batch.id)
+  selectedBatchIds.value =
+    selected === true
+      ? Array.from(new Set([...selectedBatchIds.value, ...ids]))
+      : selectedBatchIds.value.filter(id => !ids.includes(id))
+}
+
+function openCleanupDialog(): void {
+  if (selectedBatchIds.value.length) {
+    cleanupDeleteArtifacts.value = false
+    cleanupDialogOpen.value = true
+  }
+}
+
+async function executeBatchCleanup(deleteArtifacts: boolean): Promise<void> {
+  cleanupBusy.value = true
+  const result = await cleanupBatches(props.api, selectedBatchIds.value, deleteArtifacts)
+  cleanupBusy.value = false
+  if (!result) {
+    setNotice('批次清理失败，请刷新后重试。', 'error')
+    return
+  }
+  selectedBatchIds.value = []
+  cleanupDialogOpen.value = false
+  cleanupConfirmOpen.value = false
+  batchDialogOpen.value = false
+  setNotice(`已清理 ${result.batch_count ?? 0} 个批次。`, 'success')
+  await Promise.all([loadBatchPage(), refreshSummary(), loadFilePage()])
+}
+
+function chooseCleanupOption(deleteArtifacts = cleanupDeleteArtifacts.value): void {
+  cleanupDeleteArtifacts.value = deleteArtifacts
+  if (cleanupDeleteArtifacts.value) {
+    cleanupDialogOpen.value = false
+    cleanupConfirmOpen.value = true
+    return
+  }
+  void executeBatchCleanup(false)
 }
 
 async function openBatch(batch: Batch): Promise<void> {
@@ -699,7 +903,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="archive-config">
-    <form @submit.prevent="saveConfig">
+    <form class="archive-config__form" @submit.prevent="saveConfig">
       <header class="archive-header">
         <div class="archive-header__brand">
           <img :src="archiveLogo" alt="" class="archive-header__logo" />
@@ -708,6 +912,7 @@ onBeforeUnmount(() => {
               <span>MoviePilot</span>
               <VIcon icon="mdi-chevron-right" size="14" />
               <span>插件</span>
+              <VIcon icon="mdi-chevron-right" size="14" />
             </div>
             <div class="archive-header__title-row">
               <h1>压缩归档</h1>
@@ -717,19 +922,29 @@ onBeforeUnmount(() => {
         </div>
         <div class="archive-header__actions">
           <VBtn
+            class="archive-header__reclaim"
+            :disabled="operationBusy"
+            prepend-icon="mdi-delete-sweep-outline"
+            type="button"
+            variant="tonal"
+            @click="executeReclaim"
+          >
+            回收空间
+          </VBtn>
+          <VBtn
             class="archive-header__run"
-            :disabled="!activeTaskId || operationBusy"
+            :disabled="!draft.tasks.length || operationBusy"
             prepend-icon="mdi-play"
             type="button"
             variant="tonal"
-            @click="executeRun()"
+            @click="executeRunAll"
           >
-            运行一次
+            提交全部任务
           </VBtn>
           <VBtn
             class="archive-header__save"
             color="primary"
-            :disabled="!isDirty"
+            :disabled="!hasUnsavedChanges"
             prepend-icon="mdi-content-save"
             type="submit"
           >
@@ -888,7 +1103,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="summaryValue.running || queuedTaskNames.length" class="archive-running">
                   <div class="archive-running__copy">
-                    <VProgressCircular color="primary" indeterminate size="20" width="2" />
+                    <VIcon color="primary" icon="mdi-progress-clock" size="20" />
                     <div>
                       <strong>{{ operationMessage || '归档任务正在运行' }}</strong>
                       <span v-if="summaryValue.running"
@@ -921,25 +1136,26 @@ onBeforeUnmount(() => {
                     <div v-for="progress in summaryValue.tasks" :key="progress.task_id" class="archive-progress__row">
                       <div class="archive-progress__identity">
                         <VIcon
-                          :color="progress.active ? 'primary' : 'disabled'"
-                          :icon="progress.active ? 'mdi-progress-clock' : 'mdi-check-circle-outline'"
+                          :color="taskIsActive(progress) ? 'primary' : 'disabled'"
+                          :icon="taskIsActive(progress) ? 'mdi-progress-clock' : 'mdi-check-circle-outline'"
                         /><strong>{{ tasksById.get(progress.task_id)?.name || progress.task_id }}</strong>
                       </div>
                       <VChip
                         :color="
-                          progress.phase === 'waiting_capacity' || progress.phase === 'waiting_retry'
+                          taskPhase(progress) === 'waiting_capacity' || taskPhase(progress) === 'waiting_retry'
                             ? 'warning'
-                            : progress.active
+                            : taskIsActive(progress)
                               ? 'primary'
                               : 'default'
                         "
                         size="small"
                         variant="tonal"
-                        >{{ phaseLabel(progress.phase) }}</VChip
+                        >{{ phaseLabel(taskPhase(progress)) }}</VChip
                       ><span class="archive-progress__detail">{{ progressLabel(progress) }}</span
                       ><span class="archive-progress__capacity"
-                        >积压 {{ formatNumber(progress.pending_archives) }} 批 · {{ formatBytes(progress.pending_bytes)
-                        }}<br />可用空间 {{ formatBytes(progress.free_bytes) }}</span
+                        >已归档 {{ formatNumber(progress.pending_archives) }} 批 ·
+                        {{ formatBytes(progress.pending_bytes) }}<br />可用空间
+                        {{ formatBytes(progress.free_bytes) }}</span
                       >
                     </div>
                   </div>
@@ -948,37 +1164,43 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>运行设置</h3>
-                      <p>控制归档服务是否启用，以及哪些事件发送宿主通知。</p>
+                      <p>控制归档服务是否启用，以及哪些事件发送宿主通知</p>
                     </div>
                   </div>
-                  <div class="archive-form-grid archive-form-grid--three">
-                    <VSwitch
-                      v-model="draft.enabled"
-                      aria-label="启用"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                      label="启用"
-                    /><VSwitch
-                      v-model="draft.notify"
-                      aria-label="发送通知"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                      label="发送通知"
-                    /><VSelect
-                      aria-label="通知事件"
-                      v-model="draft.notify_events"
-                      :items="notificationEventOptions"
-                      chips
-                      closable-chips
-                      hide-details
-                      item-title="title"
-                      item-value="value"
-                      label="通知事件"
-                      multiple
-                      variant="outlined"
-                    />
+                  <div class="archive-field-list">
+                    <ArchiveFieldRow label="启用插件" hint="开启后插件将处于激活状态" switch-field>
+                      <VSwitch
+                        v-model="draft.enabled"
+                        aria-label="启用插件"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow label="发送通知" hint="是否在特定事件发生时发送通知" switch-field>
+                      <VSwitch
+                        v-model="draft.notify"
+                        aria-label="发送通知"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow label="通知事件" hint="选择需要发送通知的事件">
+                      <VSelect
+                        v-model="draft.notify_events"
+                        aria-label="通知事件"
+                        chips
+                        closable-chips
+                        density="compact"
+                        hide-details
+                        :items="notificationEventOptions"
+                        item-title="title"
+                        item-value="value"
+                        multiple
+                        variant="outlined"
+                      />
+                    </ArchiveFieldRow>
                   </div>
                 </section>
               </template>
@@ -1046,6 +1268,14 @@ onBeforeUnmount(() => {
                         @click="openTaskEditor(selectedTask)"
                         ><VIcon icon="mdi-pencil-outline" /><VTooltip activator="parent" text="编辑任务" /></VBtn
                       ><VBtn
+                        aria-label="复制归档任务"
+                        color="primary"
+                        icon
+                        size="small"
+                        variant="text"
+                        @click="copyTask(selectedTask)"
+                        ><VIcon icon="mdi-content-copy" /><VTooltip activator="parent" text="复制任务" /></VBtn
+                      ><VBtn
                         aria-label="删除归档任务"
                         color="error"
                         icon
@@ -1067,14 +1297,16 @@ onBeforeUnmount(() => {
                       <span>清单目录</span><strong>{{ selectedTask.manifest_dir || '与归档目录相同' }}</strong>
                     </div>
                     <div>
-                      <span>分组方式</span
+                      <span>文件分组</span
                       ><strong>{{ groupingOptions.find(item => item.value === selectedTask.grouping)?.title }}</strong>
                     </div>
                     <div>
                       <span>文件限制</span
                       ><strong
                         >{{ selectedTask.max_files ? `${formatNumber(selectedTask.max_files)} 个` : '不限数量' }} ·
-                        {{ selectedTask.max_bytes ? formatBytes(selectedTask.max_bytes) : '不限体积' }}</strong
+                        {{
+                          selectedTask.max_bytes ? `${formatNumber(selectedTask.max_bytes / 1024 ** 2)} M` : '不限体积'
+                        }}</strong
                       >
                     </div>
                     <div>
@@ -1112,333 +1344,407 @@ onBeforeUnmount(() => {
                   <div class="archive-section__header">
                     <div>
                       <h3>{{ taskEditorTitle }}</h3>
-                      <p>保存任务后，再点击页面顶部“保存修改”提交完整配置。</p>
+                      <p>保存任务后会同步写入插件配置</p>
                     </div>
                     <VBtn aria-label="取消编辑" icon size="small" variant="text" @click="cancelTaskEditor"
                       ><VIcon icon="mdi-close"
                     /></VBtn>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>基础信息</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VTextField
-                        aria-label="任务名称"
-                        v-model="taskEditor.name"
-                        label="任务名称"
-                        variant="outlined"
-                      /><VSwitch
-                        v-model="taskEditor.enabled"
-                        color="primary"
-                        density="compact"
-                        hide-details
-                        label="启用任务"
-                      />
+                    <h4>1. 任务与目录</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="任务名" hint="用于任务列表、运行记录和归档清单中识别任务">
+                        <VTextField
+                          v-model="taskEditor.name"
+                          aria-label="任务名"
+                          density="compact"
+                          hide-details
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="启用" hint="开启后按 Cron 自动运行任务" switch-field>
+                        <VSwitch
+                          v-model="taskEditor.enabled"
+                          aria-label="启用"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="源目录" hint="扫描并归档此目录中的文件，填写容器内绝对路径">
+                        <VTextField
+                          v-model="taskEditor.source_dir"
+                          aria-label="源目录"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-folder-open-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="输出目录" hint="保存归档包和校验文件，填写容器内绝对路径">
+                        <VTextField
+                          v-model="taskEditor.output_dir"
+                          aria-label="输出目录"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-archive-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="清单目录" hint="保存 Markdown 和 JSON 清单，留空时跟随输出目录">
+                        <VTextField
+                          v-model="taskEditor.manifest_dir"
+                          aria-label="清单目录"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-file-document-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="Cron" hint="使用五段 Cron 表达式，例如 0 2 * * * 表示每天 02:00">
+                        <VTextField
+                          v-model="taskEditor.cron"
+                          aria-label="Cron"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-clock-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>目录与调度</h4>
-                    <div class="archive-form-grid">
-                      <VTextField
-                        aria-label="源目录"
-                        v-model="taskEditor.source_dir"
-                        label="源目录"
-                        prepend-inner-icon="mdi-folder-open-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="归档输出目录"
-                        v-model="taskEditor.output_dir"
-                        label="归档输出目录"
-                        prepend-inner-icon="mdi-archive-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="清单目录（可选）"
-                        v-model="taskEditor.manifest_dir"
-                        hint="留空时使用归档输出目录。"
-                        label="清单目录（可选）"
-                        persistent-hint
-                        prepend-inner-icon="mdi-file-document-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="Cron 调度"
-                        v-model="taskEditor.cron"
-                        hint="例如：0 2 * * *"
-                        label="Cron 调度"
-                        persistent-hint
-                        prepend-inner-icon="mdi-clock-outline"
-                        variant="outlined"
-                      />
+                    <h4>2. 命名规则</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="批次名称" hint="支持任务名、日期、时间、序号和文件修改时间变量">
+                        <VTextField
+                          v-model="taskEditor.batch_name_template"
+                          aria-label="批次名称"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-label-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="归档包名称" hint="生成不含扩展名的归档包名称，变量规则与批次名称相同">
+                        <VTextField
+                          v-model="taskEditor.archive_name_template"
+                          aria-label="归档包名称"
+                          density="compact"
+                          hide-details
+                          prepend-inner-icon="mdi-file-certificate-outline"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <div class="archive-naming-preview">
+                        <span>名称示例</span>
+                        <code>批次：{{ namingExamples.batch }}</code>
+                        <code>归档包：{{ namingExamples.archive }}</code>
+                      </div>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>命名规则</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VSelect
-                        aria-label="批次目录布局"
-                        class="archive-layout-select"
-                        v-model="taskEditor.archive_layout"
-                        :items="[
-                          { title: '按目录（来源目录 / 批次名称）', value: 'directory' },
-                          { title: '扁平（来源目录_批次名称）', value: 'flat' },
-                        ]"
-                        hint="按目录：来源目录/批次名称；扁平：来源目录_批次名称。"
-                        item-title="title"
-                        item-value="value"
-                        label="批次目录布局"
-                        persistent-hint
-                        variant="outlined"
-                      />
-                      <VTextField
-                        aria-label="批次名称模板"
-                        v-model="taskEditor.batch_name_template"
-                        hint="用于实际批次目录名，例如 20260911_0001；创建后固定，改模板只影响新批次。"
-                        label="批次名称模板"
-                        persistent-hint
-                        prepend-inner-icon="mdi-label-outline"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="归档包名称模板"
-                        v-model="taskEditor.archive_name_template"
-                        hint="用于实际生成的 .7z/.zip 文件名。"
-                        label="归档包名称模板"
-                        persistent-hint
-                        prepend-inner-icon="mdi-file-certificate-outline"
-                        variant="outlined"
-                      />
-                    </div>
-                    <VAlert density="compact" type="info" variant="tonal">
-                      基础变量：<code>{date}</code>=<code>20260911</code>、<code>{time}</code>=<code>040020</code>、
-                      <code>{id}</code>=<code>7f3a9c</code>、<code>{sequence}</code>=<code>0001</code>；也支持
-                      strftime， 例如 <code>{%Y%m%d_%H%M%S}</code>。
-                    </VAlert>
-                    <div class="archive-naming-preview">
-                      <span>示例</span>
-                      <code>批次：{{ namingExamples.batch }}</code>
-                      <code>归档包：{{ namingExamples.archive }}</code>
-                    </div>
-                    <VAlert density="compact" type="info" variant="tonal">
-                      外层归档包名会对存储端可见；需要隐藏文件名时，请使用 7z AES-256 并开启加密文件名。
-                    </VAlert>
-                  </div>
-                  <div class="archive-editor__group">
-                    <h4>文件筛选</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VSwitch
-                        v-model="taskEditor.recursive"
-                        color="primary"
-                        density="compact"
-                        hide-details
-                        label="递归扫描子目录"
-                      /><VTextField
-                        aria-label="目录深度"
-                        v-model.number="taskEditor.directory_depth"
-                        hint="按目录分组时使用。"
-                        label="目录深度"
-                        min="1"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextarea
-                        aria-label="包含模式"
-                        v-model="includePatternsText"
-                        hint="每行一个 glob，留空表示不限制。"
-                        label="包含模式"
-                        persistent-hint
-                        rows="3"
-                        variant="outlined"
-                      /><VTextarea
-                        aria-label="排除模式"
-                        v-model="excludePatternsText"
-                        hint="每行一个 glob。"
-                        label="排除模式"
-                        persistent-hint
-                        rows="3"
-                        variant="outlined"
-                      />
+                    <h4>3. 文件范围</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="目录布局" hint="按目录保留来源层级，扁平布局合并为一层目录">
+                        <VSelect
+                          v-model="taskEditor.archive_layout"
+                          aria-label="目录布局"
+                          class="archive-layout-select"
+                          density="compact"
+                          hide-details
+                          :items="[
+                            { title: '按目录（来源目录 / 批次名称）', value: 'directory' },
+                            { title: '扁平（来源目录_批次名称）', value: 'flat' },
+                          ]"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="递归扫描" hint="开启后扫描源目录下的所有子目录" switch-field>
+                        <VSwitch
+                          v-model="taskEditor.recursive"
+                          aria-label="递归扫描"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="目录深度" hint="按目录分组时保留的来源目录层级，最小为 1">
+                        <VTextField
+                          v-model.number="taskEditor.directory_depth"
+                          aria-label="目录深度"
+                          density="compact"
+                          hide-details
+                          min="1"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="包含文件" hint="每行一个 glob，留空时允许所有文件">
+                        <VTextarea
+                          v-model="includePatternsText"
+                          aria-label="包含文件"
+                          density="compact"
+                          hide-details
+                          rows="3"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="排除文件" hint="每行一个 glob，命中的文件不会进入归档">
+                        <VTextarea
+                          v-model="excludePatternsText"
+                          aria-label="排除文件"
+                          density="compact"
+                          hide-details
+                          rows="3"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="文件分组" hint="按来源目录、文件修改日期或两者组合分组">
+                        <VSelect
+                          v-model="taskEditor.grouping"
+                          aria-label="文件分组"
+                          density="compact"
+                          hide-details
+                          :items="groupingOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="时间粒度" hint="按时间分组时使用小时、天或月">
+                        <VSelect
+                          v-model="taskEditor.time_grain"
+                          aria-label="时间粒度"
+                          density="compact"
+                          hide-details
+                          :items="timeGrainOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>批次策略</h4>
-                    <div class="archive-form-grid archive-form-grid--three">
-                      <VSelect
-                        aria-label="分组方式"
-                        v-model="taskEditor.grouping"
-                        :items="groupingOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="分组方式"
-                        variant="outlined"
-                      /><VSelect
-                        aria-label="时间粒度"
-                        v-model="taskEditor.time_grain"
-                        :items="timeGrainOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="时间粒度"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="最多批次"
-                        v-model.number="taskEditor.max_batches"
-                        label="最多批次"
-                        min="1"
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="每批最多文件"
-                        v-model.number="taskEditor.max_files"
-                        hint="0 表示不限。"
-                        label="每批最多文件"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="每批最大体积"
-                        v-model.number="taskEditor.max_bytes"
-                        hint="0 表示不限，单位字节。"
-                        label="每批最大体积"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="归档多少天之前的文件"
-                        v-model.number="taskEditor.archive_age_days"
-                        hint="按文件修改时间筛选，0 表示不限制。"
-                        label="归档多少天之前的文件"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="稳定时间（秒）"
-                        v-model.number="taskEditor.stability_seconds"
-                        label="稳定时间（秒）"
-                        min="1"
-                        type="number"
-                        variant="outlined"
-                      />
+                    <h4>4. 批次与续跑</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="每轮批次" hint="限制单轮创建的批次数量，剩余文件下轮处理">
+                        <VTextField
+                          v-model.number="taskEditor.max_batches"
+                          aria-label="每轮批次"
+                          density="compact"
+                          hide-details
+                          min="1"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="每批文件数" hint="限制单个归档包的文件数量，0 表示不限">
+                        <VTextField
+                          v-model.number="taskEditor.max_files"
+                          aria-label="每批文件数"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="每批体积" hint="限制单个归档包的源文件体积，0 表示不限">
+                        <VTextField
+                          v-model.number="maxBytesMiB"
+                          aria-label="每批体积"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          suffix="M"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="文件保留天数" hint="按文件修改时间过滤近期文件，0 表示不限">
+                        <VTextField
+                          v-model.number="taskEditor.archive_age_days"
+                          aria-label="文件保留天数"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="稳定时间" hint="归档前等待文件属性稳定，避免处理仍在写入的文件">
+                        <VTextField
+                          v-model.number="taskEditor.stability_seconds"
+                          aria-label="稳定时间"
+                          density="compact"
+                          hide-details
+                          min="1"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="自动续跑"
+                        hint="达到空间或成品限制后定期复核，条件恢复时继续归档"
+                        switch-field
+                      >
+                        <VSwitch
+                          v-model="taskEditor.auto_continue"
+                          aria-label="自动续跑"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="成品批次上限" hint="本地成品达到此批次数量时暂停续跑，0 表示不限">
+                        <VTextField
+                          v-model.number="taskEditor.max_pending_archives"
+                          aria-label="成品批次上限"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="成品体积上限" hint="本地成品达到此体积时暂停续跑，0 表示不限">
+                        <VTextField
+                          v-model.number="taskEditor.max_pending_bytes"
+                          aria-label="成品体积上限"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="预留空间" hint="预计归档完成后至少保留的可用空间，0 表示不预留">
+                        <VTextField
+                          v-model.number="minFreeGiB"
+                          aria-label="预留空间"
+                          density="compact"
+                          hide-details
+                          min="0"
+                          step="0.1"
+                          suffix="GiB"
+                          type="number"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                   </div>
                   <div class="archive-editor__group">
-                    <h4>续跑与空间</h4>
-                    <div class="archive-form-grid archive-form-grid--three">
-                      <VSwitch
-                        v-model="taskEditor.auto_continue"
-                        color="primary"
-                        density="compact"
-                        hide-details
-                        label="自动分批续跑"
-                      /><VTextField
-                        aria-label="本地成品最多批次"
-                        v-model.number="taskEditor.max_pending_archives"
-                        hint="0 表示不限。"
-                        label="本地成品最多批次"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="本地成品最大体积"
-                        v-model.number="taskEditor.max_pending_bytes"
-                        hint="0 表示不限，单位字节。"
-                        label="本地成品最大体积"
-                        min="0"
-                        persistent-hint
-                        type="number"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="预留磁盘空间"
-                        v-model.number="minFreeGiB"
-                        hint="归档后必须保留的空间，0 表示不预留。"
-                        label="预留磁盘空间"
-                        min="0"
-                        persistent-hint
-                        step="0.1"
-                        suffix="GiB"
-                        type="number"
-                        variant="outlined"
-                      />
-                    </div>
-                    <VAlert density="compact" type="info" variant="tonal"
-                      >插件只负责本地归档，不上传、不删除成品；自动续跑会在空间或成品积压达到限制时每 60
-                      秒重新检测。</VAlert
-                    >
-                  </div>
-                  <div class="archive-editor__group">
-                    <h4>压缩与安全</h4>
-                    <div class="archive-form-grid archive-form-grid--three">
-                      <VSelect
-                        aria-label="归档格式"
-                        :model-value="taskEditor.format"
-                        :items="formatOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="归档格式"
-                        variant="outlined"
-                        @update:model-value="requestFormat"
-                      /><VSelect
-                        aria-label="压缩级别"
-                        v-model="taskEditor.compression"
-                        :items="compressionOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="压缩级别"
-                        variant="outlined"
-                      /><VSelect
-                        aria-label="加密方式"
-                        :model-value="taskEditor.encryption"
-                        :items="encryptionOptions"
-                        item-title="title"
-                        item-value="value"
-                        label="加密方式"
-                        variant="outlined"
-                        @update:model-value="handleEncryption"
-                      /><VTextField
-                        aria-label="密码（可选）"
-                        v-model="taskEditor.password"
-                        autocomplete="new-password"
+                    <h4>5. 压缩与完成</h4>
+                    <div class="archive-field-list">
+                      <ArchiveFieldRow label="格式" hint="选择生成 7z 或 ZIP 归档包，加密文件名仅支持 7z">
+                        <VSelect
+                          :model-value="taskEditor.format"
+                          aria-label="格式"
+                          density="compact"
+                          hide-details
+                          :items="formatOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                          @update:model-value="requestFormat"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="压缩级别" hint="压缩级别越高通常越节省空间，同时需要更多处理时间">
+                        <VSelect
+                          v-model="taskEditor.compression"
+                          aria-label="压缩级别"
+                          density="compact"
+                          hide-details
+                          :items="compressionOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="加密" hint="选择 AES-256 后需要提供密码">
+                        <VSelect
+                          :model-value="taskEditor.encryption"
+                          aria-label="加密"
+                          density="compact"
+                          hide-details
+                          :items="encryptionOptions"
+                          item-title="title"
+                          item-value="value"
+                          variant="outlined"
+                          @update:model-value="handleEncryption"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="密码"
                         :hint="
-                          taskEditorHasSavedPassword ? '已保存密码不会回显；输入新值可覆盖。' : '密码只写入，不会回显。'
+                          taskEditorHasSavedPassword
+                            ? '已保存密码不会回显，输入新值可覆盖'
+                            : '启用 AES-256 时填写，密码只写入不会回显'
                         "
-                        label="密码（可选）"
-                        persistent-hint
-                        type="password"
-                        variant="outlined"
-                      /><VTextField
-                        aria-label="密码版本"
-                        v-model="taskEditor.password_version"
-                        label="密码版本"
-                        variant="outlined"
-                      /><VSwitch
-                        :model-value="taskEditor.encrypt_names"
-                        color="primary"
-                        :disabled="taskEditor.encryption !== 'aes256'"
-                        density="compact"
-                        hide-details
-                        label="加密文件名（7z）"
-                        @update:model-value="requestEncryptNames"
-                      />
-                    </div>
-                  </div>
-                  <div class="archive-editor__group">
-                    <h4>完成行为</h4>
-                    <div class="archive-form-grid archive-form-grid--two">
-                      <VSwitch
-                        :model-value="taskEditor.verify"
-                        color="primary"
-                        :disabled="taskEditor.delete_source"
-                        density="compact"
-                        hide-details
-                        label="归档后校验"
-                        @update:model-value="handleVerify"
-                      /><VSwitch
-                        :model-value="taskEditor.delete_source"
-                        color="error"
-                        density="compact"
-                        hide-details
-                        label="校验通过后删除源文件"
-                        @update:model-value="handleDeleteSource"
-                      />
+                      >
+                        <VTextField
+                          v-model="taskEditor.password"
+                          aria-label="密码"
+                          autocomplete="new-password"
+                          density="compact"
+                          hide-details
+                          type="password"
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="密码版本" hint="用于在清单中辨认所用密码，不保存密码内容">
+                        <VTextField
+                          v-model="taskEditor.password_version"
+                          aria-label="密码版本"
+                          density="compact"
+                          hide-details
+                          variant="outlined"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="加密文件名"
+                        hint="使用 7z AES-256 时隐藏归档包内的文件名列表"
+                        switch-field
+                      >
+                        <VSwitch
+                          :model-value="taskEditor.encrypt_names"
+                          aria-label="加密文件名"
+                          color="primary"
+                          :disabled="taskEditor.encryption !== 'aes256'"
+                          density="compact"
+                          hide-details
+                          @update:model-value="requestEncryptNames"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow label="完成校验" hint="发布成品前完整读回归档并核对文件清单和哈希" switch-field>
+                        <VSwitch
+                          :model-value="taskEditor.verify"
+                          aria-label="完成校验"
+                          color="primary"
+                          :disabled="taskEditor.delete_source"
+                          density="compact"
+                          hide-details
+                          @update:model-value="handleVerify"
+                        />
+                      </ArchiveFieldRow>
+                      <ArchiveFieldRow
+                        label="删除源文件"
+                        hint="归档、清单和完整校验均成功后删除对应源文件"
+                        switch-field
+                      >
+                        <VSwitch
+                          :model-value="taskEditor.delete_source"
+                          aria-label="删除源文件"
+                          color="error"
+                          density="compact"
+                          hide-details
+                          @update:model-value="handleDeleteSource"
+                        />
+                      </ArchiveFieldRow>
                     </div>
                     <VAlert
                       v-if="taskEditor.delete_source"
@@ -1446,8 +1752,9 @@ onBeforeUnmount(() => {
                       density="compact"
                       type="warning"
                       variant="tonal"
-                      >启用删除源文件后，后端会强制执行校验；校验失败不会删除源文件。</VAlert
                     >
+                      启用后会强制校验，失败时保留源文件。
+                    </VAlert>
                   </div>
                   <div class="archive-editor__actions">
                     <VBtn
@@ -1465,7 +1772,7 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-else-if="activeView === 'batches'" class="archive-view archive-table-view">
-              <div class="archive-filter-bar">
+              <div class="archive-filter-bar archive-filter-bar--batches">
                 <VSelect
                   aria-label="批次任务"
                   v-model="batchTaskFilter"
@@ -1486,6 +1793,14 @@ onBeforeUnmount(() => {
                   label="状态"
                   variant="outlined"
                 /><VSpacer />
+                <VBtn
+                  v-if="selectedBatchIds.length"
+                  color="error"
+                  prepend-icon="mdi-delete-sweep-outline"
+                  variant="tonal"
+                  @click="openCleanupDialog"
+                  >清理 {{ selectedBatchIds.length }} 个批次</VBtn
+                >
               </div>
               <div v-if="batchLoading" class="archive-inline-state">
                 <VProgressCircular color="primary" indeterminate size="18" width="2" />正在读取批次…
@@ -1498,6 +1813,15 @@ onBeforeUnmount(() => {
                 <table class="archive-table">
                   <thead>
                     <tr>
+                      <th class="archive-table__selection">
+                        <VCheckbox
+                          aria-label="选择全部可清理批次"
+                          :model-value="allCleanableBatchesSelected"
+                          hide-details
+                          density="compact"
+                          @update:model-value="toggleAllBatchSelection"
+                        />
+                      </th>
                       <th>批次</th>
                       <th>任务</th>
                       <th>状态</th>
@@ -1510,6 +1834,17 @@ onBeforeUnmount(() => {
                   </thead>
                   <tbody>
                     <tr v-for="batch in batchData.items" :key="batch.id" @click="openBatch(batch)">
+                      <td class="archive-table__selection">
+                        <VCheckbox
+                          :aria-label="`选择批次 ${batch.batch_name || batch.id}`"
+                          :disabled="!batchCanBeCleaned(batch)"
+                          :model-value="selectedBatchIds.includes(batch.id)"
+                          hide-details
+                          density="compact"
+                          @click.stop
+                          @update:model-value="toggleBatchSelection(batch, $event)"
+                        />
+                      </td>
                       <td>
                         <strong>{{ batch.batch_name || batch.id }}</strong
                         ><small class="archive-id">ID：{{ batch.id }}</small
@@ -1550,12 +1885,8 @@ onBeforeUnmount(() => {
                 <VIcon icon="mdi-archive-off-outline" size="34" /><strong>暂无归档任务</strong
                 ><span>创建归档任务后，才能查询已归档文件。</span>
               </div>
-              <div v-else-if="!hasFileTaskSelection" class="archive-empty archive-empty--table">
-                <VIcon icon="mdi-format-list-checks" size="34" /><strong>请选择归档任务</strong
-                ><span>选择任务后，可以按目录、状态或相对路径查询文件。</span>
-              </div>
-              <template v-else>
-                <div class="archive-filter-bar">
+              <div v-else>
+                <div class="archive-filter-bar archive-filter-bar--files">
                   <VSelect
                     aria-label="文件任务"
                     clearable
@@ -1565,13 +1896,6 @@ onBeforeUnmount(() => {
                     item-value="value"
                     label="任务"
                     variant="outlined"
-                  /><VTextField
-                    v-model="fileQuery"
-                    clearable
-                    label="搜索相对路径"
-                    prepend-inner-icon="mdi-magnify"
-                    variant="outlined"
-                    @keyup.enter="submitFileSearch"
                   /><VSelect
                     aria-label="文件状态"
                     v-model="fileStatus"
@@ -1586,94 +1910,162 @@ onBeforeUnmount(() => {
                     item-value="value"
                     label="文件状态"
                     variant="outlined"
-                  /><VBtn aria-label="搜索文件" icon variant="tonal" @click="submitFileSearch"
-                    ><VIcon icon="mdi-magnify"
-                  /></VBtn>
+                  /><VTextField
+                    v-model="fileQuery"
+                    append-inner-icon="mdi-magnify"
+                    clearable
+                    label="搜索相对路径"
+                    variant="outlined"
+                    @click:append-inner="submitFileSearch"
+                    @keyup.enter="submitFileSearch"
+                  />
                 </div>
-                <nav aria-label="文件目录" class="archive-breadcrumbs">
-                  <VBtn
-                    v-for="crumb in breadcrumbs"
-                    :key="crumb.path || 'root'"
-                    size="small"
-                    variant="text"
-                    @click="navigateDirectory(crumb.path)"
-                    >{{ crumb.title }}</VBtn
-                  >
-                </nav>
-                <div v-if="fileLoading" class="archive-inline-state">
-                  <VProgressCircular color="primary" indeterminate size="18" width="2" />正在读取文件…
+                <div v-if="!hasFileTaskSelection" class="archive-empty archive-empty--table">
+                  <VIcon icon="mdi-format-list-checks" size="34" /><strong>请选择归档任务</strong
+                  ><span>选择任务后，可以按目录、状态或相对路径查询文件。</span>
                 </div>
-                <div
-                  v-else-if="fileData.items.length === 0 && fileData.directories.length === 0"
-                  class="archive-empty archive-empty--table"
-                >
-                  <VIcon icon="mdi-file-search-outline" size="34" /><strong>没有找到文件</strong
-                  ><span>调整任务、目录或搜索条件后重试。</span>
-                </div>
-                <div v-else class="archive-files-browser">
-                  <div v-if="fileData.directories.length" class="archive-directory-list">
-                    <div class="archive-directory-list__heading">子目录</div>
-                    <button
-                      v-for="directory in fileData.directories"
-                      :key="directory.path"
-                      class="archive-directory"
-                      type="button"
-                      @click="navigateDirectory(directory.path)"
+                <template v-else>
+                  <nav aria-label="文件目录" class="archive-breadcrumbs">
+                    <VBtn
+                      v-for="crumb in breadcrumbs"
+                      :key="crumb.path || 'root'"
+                      size="small"
+                      variant="text"
+                      @click="navigateDirectory(crumb.path)"
+                      >{{ crumb.title }}</VBtn
                     >
-                      <VIcon icon="mdi-folder-outline" /><span>{{ directory.name }}</span
-                      ><VIcon icon="mdi-chevron-right" size="18" />
-                    </button>
+                  </nav>
+                  <div v-if="fileLoading" class="archive-inline-state">
+                    <VProgressCircular color="primary" indeterminate size="18" width="2" />正在读取文件…
                   </div>
-                  <div class="archive-table-wrap">
-                    <table class="archive-table">
-                      <thead>
-                        <tr>
-                          <th>相对路径</th>
-                          <th class="archive-table__numeric">大小</th>
-                          <th>修改时间</th>
-                          <th>状态</th>
-                          <th>批次</th>
-                          <th>SHA-256</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr v-for="file in fileData.items" :key="`${file.batch_id}:${file.relative_path}`">
-                          <td>
-                            <strong>{{ file.relative_path }}</strong>
-                          </td>
-                          <td class="archive-table__numeric">{{ formatBytes(file.size) }}</td>
-                          <td>
-                            {{ file.mtime_ns ? formatDate(new Date(file.mtime_ns / 1000000).toISOString()) : '-' }}
-                          </td>
-                          <td>
-                            <VChip :color="statusColor(file.status)" size="small" variant="tonal">{{
-                              statusLabel(file.status)
-                            }}</VChip>
-                          </td>
-                          <td>{{ file.batch_id ? file.batch_id.slice(0, 12) : '-' }}</td>
-                          <td>
-                            <code>{{ file.sha256 ? file.sha256.slice(0, 16) : '-' }}</code>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+                  <div
+                    v-else-if="fileData.items.length === 0 && fileData.directories.length === 0"
+                    class="archive-empty archive-empty--table"
+                  >
+                    <VIcon icon="mdi-file-search-outline" size="34" /><strong>没有找到文件</strong
+                    ><span>调整任务、目录或搜索条件后重试。</span>
                   </div>
-                </div>
-                <div v-if="fileData.total > 0" class="archive-pagination">
-                  <span>共 {{ formatNumber(fileData.total) }} 个文件</span
-                  ><VPagination v-model="filePage" :length="filePageCount" density="compact" :total-visible="5" />
-                </div>
-              </template>
+                  <div v-else class="archive-files-browser">
+                    <div v-if="fileData.directories.length" class="archive-directory-list">
+                      <div class="archive-directory-list__heading">子目录</div>
+                      <button
+                        v-for="directory in fileData.directories"
+                        :key="directory.path"
+                        class="archive-directory"
+                        type="button"
+                        @click="navigateDirectory(directory.path)"
+                      >
+                        <VIcon icon="mdi-folder-outline" /><span>{{ directory.name }}</span
+                        ><VIcon icon="mdi-chevron-right" size="18" />
+                      </button>
+                    </div>
+                    <div v-if="fileData.items.length" class="archive-table-wrap">
+                      <table class="archive-table">
+                        <thead>
+                          <tr>
+                            <th>相对路径</th>
+                            <th class="archive-table__numeric">大小</th>
+                            <th>修改时间</th>
+                            <th>状态</th>
+                            <th>批次</th>
+                            <th>SHA-256</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="file in fileData.items" :key="`${file.batch_id}:${file.relative_path}`">
+                            <td>
+                              <strong>{{ file.relative_path }}</strong>
+                            </td>
+                            <td class="archive-table__numeric">{{ formatBytes(file.size) }}</td>
+                            <td>
+                              {{ file.mtime_ns ? formatDate(new Date(file.mtime_ns / 1000000).toISOString()) : '-' }}
+                            </td>
+                            <td>
+                              <VChip :color="statusColor(file.status)" size="small" variant="tonal">{{
+                                statusLabel(file.status)
+                              }}</VChip>
+                            </td>
+                            <td>{{ file.batch_id ? file.batch_id.slice(0, 12) : '-' }}</td>
+                            <td>
+                              <code>{{ file.sha256 ? file.sha256.slice(0, 16) : '-' }}</code>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div v-if="fileData.total > 0" class="archive-pagination">
+                    <span>共 {{ formatNumber(fileData.total) }} 个文件</span
+                    ><VPagination v-model="filePage" :length="filePageCount" density="compact" :total-visible="5" />
+                  </div>
+                </template>
+              </div>
             </section>
           </main>
+
+          <aside class="archive-impact-preview">
+            <div class="archive-impact-preview__title">
+              <VIcon color="primary" icon="mdi-chart-box-outline" size="20" />
+              <h2>运行概览</h2>
+            </div>
+            <ul class="archive-impact-preview__list">
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-file-check-outline" size="18" />
+                <span>已归档文件</span>
+                <strong>{{ formatNumber(summaryValue.archived_files) }}</strong>
+              </li>
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-package-variant-closed" size="18" />
+                <span>归档批次</span>
+                <strong>{{ formatNumber(summaryValue.archive_count) }}</strong>
+              </li>
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-database-arrow-down-outline" size="18" />
+                <span>源文件体积</span>
+                <strong>{{ formatBytes(summaryValue.source_bytes) }}</strong>
+              </li>
+              <li class="archive-impact-preview__item">
+                <VIcon icon="mdi-archive-arrow-down-outline" size="18" />
+                <span>归档体积</span>
+                <strong>{{ formatBytes(summaryValue.archive_bytes) }}</strong>
+              </li>
+            </ul>
+            <section v-if="changedItems.length" class="archive-change-summary">
+              <div class="archive-change-summary__title">
+                <VIcon color="warning" icon="mdi-format-list-checks" size="19" />
+                <h3>本次修改</h3>
+              </div>
+              <ul>
+                <li v-for="item in changedItems" :key="item">
+                  <VIcon color="warning" icon="mdi-circle" size="6" /><span>{{ item }}</span>
+                </li>
+              </ul>
+            </section>
+            <section class="archive-runtime-summary">
+              <div class="archive-runtime-summary__title">
+                <VIcon color="primary" icon="mdi-progress-clock" size="19" />
+                <h3>当前状态</h3>
+              </div>
+              <p v-if="summaryValue.running">
+                正在处理：{{ tasksById.get(summaryValue.running.task_id)?.name || summaryValue.running.task_id }}
+              </p>
+              <p v-else-if="queuedTaskNames.length">排队任务：{{ queuedTaskNames.join('、') }}</p>
+              <p v-else>当前没有运行中的归档任务</p>
+            </section>
+          </aside>
         </div>
       </div>
-      <div v-if="isDirty" class="archive-mobile-save-dock">
+      <div v-if="hasUnsavedChanges" class="archive-mobile-save-dock">
         <span aria-live="polite" class="archive-mobile-save-dock__state"
-          ><VIcon color="warning" icon="mdi-circle" size="8" />有未保存修改</span
+          ><VIcon color="warning" icon="mdi-circle" size="8" />{{ pendingChangeCount }} 项待保存</span
         >
         <VSpacer />
-        <VBtn class="archive-mobile-save-dock__save" color="primary" :disabled="!isDirty" type="submit" variant="flat"
+        <VBtn
+          class="archive-mobile-save-dock__save"
+          color="primary"
+          :disabled="!hasUnsavedChanges"
+          type="submit"
+          variant="flat"
           ><VIcon icon="mdi-content-save" start />保存修改</VBtn
         >
       </div>
@@ -1743,7 +2135,7 @@ onBeforeUnmount(() => {
               <table class="archive-table">
                 <thead>
                   <tr>
-                    <th>分组</th>
+                    <th>目录结构</th>
                     <th class="archive-table__numeric">文件数</th>
                     <th class="archive-table__numeric">大小</th>
                     <th>限制</th>
@@ -1751,7 +2143,10 @@ onBeforeUnmount(() => {
                 </thead>
                 <tbody>
                   <tr v-for="batch in previewResult.batches" :key="batch.group">
-                    <td>{{ batch.group }}</td>
+                    <td>
+                      <strong>{{ previewDirectoryPath(batch.group) }}</strong>
+                      <small>{{ previewGroupingBasis(batch.group) }}</small>
+                    </td>
                     <td class="archive-table__numeric">{{ formatNumber(batch.file_count) }}</td>
                     <td class="archive-table__numeric">{{ formatBytes(batch.total_bytes) }}</td>
                     <td>
@@ -1890,19 +2285,59 @@ onBeforeUnmount(() => {
         ></VCard
       ></VDialog
     >
+
+    <VDialog v-model="cleanupDialogOpen" max-width="720" width="calc(100% - 24px)">
+      <VCard>
+        <VCardTitle>确认清理 {{ selectedBatchIds.length }} 条记录？</VCardTitle>
+        <VCardText>
+          <p class="archive-cleanup-dialog__intro">请选择清理范围，源文件不会被删除或修改</p>
+          <div class="archive-cleanup-options">
+            <VBtn
+              class="archive-cleanup-option"
+              prepend-icon="mdi-database-remove-outline"
+              variant="tonal"
+              :loading="cleanupBusy && !cleanupDeleteArtifacts"
+              @click="executeBatchCleanup(false)"
+            >
+              仅清理批次记录
+              <small>保留归档包和外部清单</small>
+            </VBtn>
+            <VBtn
+              class="archive-cleanup-option archive-cleanup-option--danger"
+              color="error"
+              prepend-icon="mdi-archive-remove-outline"
+              variant="tonal"
+              :disabled="cleanupBusy"
+              @click="chooseCleanupOption(true)"
+            >
+              清理批次记录和归档产物
+              <small>删除归档包、校验文件和外部清单</small>
+            </VBtn>
+          </div>
+        </VCardText>
+        <VCardActions> <VSpacer /><VBtn variant="text" @click="cleanupDialogOpen = false">取消</VBtn> </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="cleanupConfirmOpen" max-width="520" width="calc(100% - 24px)">
+      <VCard>
+        <VCardTitle>确认清理本地归档产物</VCardTitle>
+        <VCardText><strong>确定删除所选批次的归档包和外部清单吗？源文件不会被删除。</strong></VCardText>
+        <VCardActions>
+          <VSpacer /><VBtn variant="text" @click="cleanupConfirmOpen = false">取消</VBtn>
+          <VBtn color="error" :loading="cleanupBusy" variant="flat" @click="executeBatchCleanup(true)"
+            >确认删除归档产物</VBtn
+          >
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </section>
 </template>
 
 <style scoped>
 .archive-config {
   container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  block-size: min(900px, calc(100dvh - 64px));
-  max-block-size: calc(100dvh - 64px);
-  min-block-size: 0;
   min-inline-size: 0;
-  overflow: hidden;
   color: rgb(var(--v-theme-on-surface));
   letter-spacing: 0;
 }
@@ -1910,11 +2345,11 @@ onBeforeUnmount(() => {
 .archive-config * {
   box-sizing: border-box;
 }
-.archive-config > form {
+.archive-config__form {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   min-block-size: 0;
+  min-inline-size: 0;
 }
 .archive-header {
   position: relative;
@@ -1999,7 +2434,8 @@ onBeforeUnmount(() => {
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-  padding: 18px;
+  padding: 14px;
+  background: transparent;
 }
 .archive-alert {
   margin-block: 10px;
@@ -2011,7 +2447,7 @@ onBeforeUnmount(() => {
 .archive-metrics {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-block-end: 12px;
 }
@@ -2052,7 +2488,8 @@ onBeforeUnmount(() => {
   min-block-size: 0;
   min-inline-size: 0;
   gap: 14px;
-  grid-template-columns: 168px minmax(0, 1fr);
+  margin-block-start: 12px;
+  grid-template-columns: 168px minmax(0, 1fr) 232px;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
@@ -2067,55 +2504,192 @@ onBeforeUnmount(() => {
 }
 .archive-nav__heading {
   padding: 6px 10px 10px;
-  color: rgba(var(--v-theme-on-surface), 0.54);
+  color: rgba(var(--v-theme-on-surface), 0.78);
   font-size: 0.75rem;
   font-weight: 600;
 }
-.archive-nav__list {
+.archive-nav > .archive-nav__list.v-list {
   flex: 1 1 auto;
   min-block-size: 0;
   overflow-y: auto;
-  padding: 0 4px;
-  background: transparent;
+  padding: 6px 4px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.18);
+  border-radius: var(--app-surface-radius);
+  backdrop-filter: none;
+  background: rgba(var(--v-theme-surface), 0.72);
+  background-color: rgba(var(--v-theme-surface), 0.72);
 }
 .archive-nav__list :deep(.v-list-item) {
+  position: relative;
   min-block-size: 50px;
+  padding-inline: 12px;
   margin-block: 4px;
 }
 .archive-nav__list :deep(.v-list-item-title) {
   overflow-wrap: anywhere;
+  color: rgb(var(--v-theme-on-surface));
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2rem;
 }
+.archive-nav__list :deep(.v-list-item__prepend > .v-icon) {
+  color: rgba(var(--v-theme-on-surface), 0.94);
+  font-size: 1.25rem;
+}
+.archive-nav__list :deep(.v-list-item:hover) {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+.archive-nav__list :deep(.v-list-item--active) {
+  border: 1px solid rgba(var(--v-theme-primary), 0.38);
+  background: rgba(var(--v-theme-primary), 0.24);
+  color: rgb(var(--v-theme-on-surface));
+}
+.archive-nav__list :deep(.v-list-item--active .v-list-item-title),
+.archive-nav__list :deep(.v-list-item--active .v-list-item__prepend > .v-icon) {
+  color: rgb(var(--v-theme-on-surface));
+  font-weight: 700;
+}
+.archive-nav__list :deep(.v-list-item--active)::before {
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  border-radius: 0 3px 3px 0;
+  background: rgb(var(--v-theme-primary));
+  content: '';
+}
 .archive-nav__help {
   padding: 12px;
   margin-block-start: auto;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.025);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.18);
+  border-radius: var(--app-control-radius);
+  background: rgba(var(--v-theme-surface), 0.56);
 }
 .archive-nav__help-title {
   display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-.archive-nav__help p {
-  margin: 4px 0 0;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-  font-size: 0.68rem;
+  font-size: 0.8125rem;
   line-height: 1.1rem;
 }
+.archive-nav__help p {
+  margin: 6px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
 .archive-nav__help-link {
+  min-inline-size: 0;
+  min-block-size: 28px;
   padding-inline: 0;
-  margin-block-start: 4px;
+  margin-block-start: 7px;
+  font-size: 0.75rem;
 }
 .archive-main {
   display: flex;
   flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
+  background: transparent;
+}
+.archive-impact-preview {
+  min-inline-size: 0;
+  overflow: auto;
+  padding: 16px;
+  border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  border-radius: var(--app-surface-radius, 8px);
+  background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
+  backdrop-filter: var(--app-grouped-list-backdrop-filter, none);
+  box-shadow: var(--app-surface-shadow, none);
+  background-clip: padding-box;
+}
+.archive-impact-preview__title,
+.archive-runtime-summary__title {
+  display: grid;
+  align-items: center;
+  min-inline-size: 0;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+.archive-impact-preview h2,
+.archive-runtime-summary h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.25rem;
+}
+.archive-impact-preview__list {
+  padding: 0;
+  margin: 10px 0 0;
+  list-style: none;
+}
+.archive-impact-preview__item {
+  display: grid;
+  align-items: center;
+  min-inline-size: 0;
+  padding-block: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.82rem;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+.archive-impact-preview__item > .v-icon {
+  justify-self: center;
+  color: rgba(var(--v-theme-on-surface), 0.54);
+}
+.archive-impact-preview__item span,
+.archive-impact-preview__item strong {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.archive-impact-preview__item strong {
+  text-align: end;
+}
+
+.archive-change-summary {
+  padding-block-start: 16px;
+  margin-block-start: 16px;
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+}
+.archive-change-summary__title {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+}
+.archive-change-summary__title h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.2rem;
+}
+.archive-change-summary ul {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 10px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.76rem;
+  list-style: none;
+}
+.archive-change-summary li {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  gap: 8px;
+}
+.archive-change-summary li span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.archive-runtime-summary {
+  padding-block-start: 16px;
+  margin-block-start: 16px;
+  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+}
+.archive-runtime-summary p {
+  margin: 10px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.76rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
 }
 .archive-main__heading {
   flex: 0 0 auto;
@@ -2127,17 +2701,18 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 .archive-main__title {
-  gap: 8px;
+  gap: 9px;
 }
 .archive-main__title h2 {
   margin: 0;
   font-size: 1rem;
-  line-height: 1.3rem;
+  font-weight: 700;
+  line-height: 1.25rem;
 }
 .archive-main__heading p {
   margin: 3px 0 0;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-  font-size: 0.72rem;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.75rem;
 }
 .archive-main__heading-actions {
   gap: 4px;
@@ -2256,18 +2831,40 @@ onBeforeUnmount(() => {
 }
 .archive-editor {
   min-block-size: max-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+.archive-editor > .archive-section__header {
+  padding: 18px 16px 0;
+  margin-block-end: 12px;
 }
 .archive-section {
   min-inline-size: 0;
-  padding: 18px 0;
-  background: transparent;
+  overflow: hidden;
+  padding: 18px 16px;
+  border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  border-radius: var(--app-surface-radius, 8px);
+  background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
+  backdrop-filter: var(--app-grouped-list-backdrop-filter, none);
+  background-clip: padding-box;
+  /* 透明主题下避免外投影被滚动边界裁成内容区矩形暗带。 */
+  box-shadow: none;
 }
 .archive-overview > .archive-section {
-  border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  margin-block-start: 12px;
 }
 .archive-task-layout > .archive-task-detail {
-  border-inline-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  padding-inline-start: 18px;
+  border-inline-start: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  padding-inline-start: 16px;
+}
+.archive-section.archive-editor {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .archive-section__header {
   justify-content: space-between;
@@ -2335,6 +2932,7 @@ onBeforeUnmount(() => {
 }
 .archive-empty--table {
   min-block-size: 220px;
+  align-content: center;
 }
 .archive-detail-grid {
   display: grid;
@@ -2375,15 +2973,26 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 .archive-editor__group {
-  padding-block: 15px;
-  border-block-end: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  min-inline-size: 0;
+  padding: 0 16px 14px;
+  border: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+  border-radius: var(--app-surface-radius, 8px);
+  background: var(--app-grouped-list-background, rgba(var(--v-theme-surface), 0.5));
+  background-clip: padding-box;
 }
-.archive-editor__group:last-of-type {
-  border-block-end: 0;
+.archive-editor__group + .archive-editor__group {
+  margin-block-start: 12px;
 }
 .archive-editor__group h4 {
-  margin: 0 0 10px;
-  font-size: 0.82rem;
+  padding: 14px 0 10px;
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+}
+.archive-field-list {
+  display: grid;
+  min-inline-size: 0;
 }
 .archive-naming-preview {
   display: flex;
@@ -2436,10 +3045,11 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding-block-start: 16px;
+  padding: 16px;
 }
 .archive-filter-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   min-inline-size: 0;
   gap: 8px;
@@ -2447,8 +3057,65 @@ onBeforeUnmount(() => {
   margin-block-end: 18px;
 }
 .archive-filter-bar > .v-input {
-  flex: 0 1 220px;
-  min-inline-size: 120px;
+  width: 100%;
+  min-inline-size: 0;
+}
+.archive-filter-bar > .v-spacer {
+  display: none;
+}
+.archive-filter-bar > .v-btn {
+  justify-self: end;
+}
+.archive-filter-bar--batches {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+.archive-filter-bar--files {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.archive-filter-bar--files > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+.archive-filter-bar--files > .v-input {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.archive-filter-bar--files > .v-btn {
+  justify-self: stretch;
+  align-self: center;
+}
+.archive-filter-bar--files :deep(.v-field),
+.archive-filter-bar--files :deep(.v-field__input) {
+  min-inline-size: 0;
+}
+.archive-cleanup-dialog__intro {
+  margin: 0;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.76rem;
+}
+.archive-cleanup-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-block-start: 18px;
+}
+.archive-cleanup-option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-block-size: 82px;
+  padding: 14px 16px;
+  text-align: start;
+  white-space: normal;
+}
+.archive-cleanup-option small {
+  display: block;
+  margin-block-start: 4px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+.archive-cleanup-option--danger small {
+  color: rgba(var(--v-theme-error), 0.82);
 }
 .archive-table-wrap {
   flex: 1 1 auto;
@@ -2500,6 +3167,11 @@ onBeforeUnmount(() => {
   margin-block-start: 3px;
   color: rgba(var(--v-theme-on-surface), 0.52);
   font-size: 0.65rem;
+}
+.archive-table__selection {
+  width: 48px;
+  padding-inline: 6px !important;
+  text-align: center !important;
 }
 .archive-table__numeric {
   text-align: end !important;
@@ -2717,6 +3389,7 @@ onBeforeUnmount(() => {
     min-block-size: 72px;
   }
   .archive-header__actions > .archive-header__run,
+  .archive-header__actions > .archive-header__reclaim,
   .archive-header__actions > .archive-header__save,
   .archive-header__close-action {
     display: none;
@@ -2726,6 +3399,9 @@ onBeforeUnmount(() => {
   }
   .archive-workspace {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .archive-impact-preview {
+    display: none;
   }
   .archive-nav {
     display: none;
@@ -2738,14 +3414,16 @@ onBeforeUnmount(() => {
   }
   .archive-task-layout > .archive-task-detail {
     border-inline-start: 0;
-    border-block-start: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-    padding-inline-start: 0;
+    border-block-start: var(--app-surface-border, 1px solid rgba(var(--v-theme-on-surface), 0.12));
+    padding-inline-start: 16px;
   }
-  .archive-filter-bar {
-    flex-wrap: wrap;
+  .archive-filter-bar,
+  .archive-filter-bar--batches,
+  .archive-filter-bar--files {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .archive-filter-bar > .v-input {
-    flex: 1 1 180px;
+  .archive-filter-bar > .v-btn {
+    justify-self: start;
   }
   .archive-mobile-save-dock {
     position: sticky;
@@ -2784,11 +3462,6 @@ onBeforeUnmount(() => {
   }
   .archive-editor__actions > .v-btn:last-child {
     grid-column: 1 / -1;
-  }
-  .archive-config {
-    block-size: calc(100dvh - 16px);
-    max-block-size: calc(100dvh - 16px);
-    min-block-size: 0;
   }
   .archive-body {
     padding: 14px 16px 24px;
@@ -2835,6 +3508,9 @@ onBeforeUnmount(() => {
   .archive-detail-grid {
     grid-template-columns: 1fr;
   }
+  .archive-cleanup-options {
+    grid-template-columns: 1fr;
+  }
   .archive-preview-metrics,
   .archive-batch-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2851,6 +3527,13 @@ onBeforeUnmount(() => {
   .archive-progress__capacity {
     grid-column: 1 / -1;
     text-align: start;
+  }
+}
+
+@container (width >= 880px) {
+  .archive-config__form {
+    overflow: hidden;
+    block-size: min(90dvh, 820px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
