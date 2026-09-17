@@ -1,8 +1,10 @@
 """命名模板的路径边界、时区及唯一性。"""
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
+from app.sdk.config import settings
 from app.plugins.archivemanager.naming import batch_relative_directory, frozen_names, validate_template
 
 
@@ -32,12 +34,34 @@ def test_names_use_frozen_creation_time_without_forced_identity_suffix():
         "archive_name_template": "备份_{date}",
     }
     created_at = "2026-09-10T20:00:00+00:00"
-    local_date = datetime.fromisoformat(created_at).astimezone().strftime("%Y%m%d")
+    local_date = datetime.fromisoformat(created_at).astimezone(ZoneInfo(settings.TZ)).strftime("%Y%m%d")
     names = frozen_names(task, "abc123", created_at)
     assert names["batch_name"] == f"报告_资料_{local_date}"
     assert names["archive_name"] == f"备份_{local_date}.7z"
     task["archive_name_template"] = "{id}"
     assert frozen_names(task, "abc123", created_at)["archive_name"] == "abc123.7z"
+
+
+def test_names_follow_moviepilot_timezone(monkeypatch):
+    monkeypatch.setattr(settings, "TZ", "UTC")
+    task = {
+        "name": "camera",
+        "format": "zip",
+        "batch_name_template": "{date}_{time}",
+        "archive_name_template": "camera_{file_mtime:%Y%m%d_%H%M%S}",
+    }
+    created_at = "2026-01-28T00:30:00+00:00"
+    entry_mtime = datetime(2026, 1, 28, 1, 2, 3, tzinfo=timezone.utc)
+
+    names = frozen_names(
+        task,
+        "abc123",
+        created_at,
+        entries=[{"mtime_ns": int(entry_mtime.timestamp() * 1_000_000_000)}],
+    )
+
+    assert names["batch_name"] == "20260128_003000"
+    assert names["archive_name"] == "camera_20260128_010203.zip"
 
 
 def test_sequence_values_are_six_digits_and_global_sequence_is_supported():
@@ -55,7 +79,7 @@ def test_sequence_values_are_six_digits_and_global_sequence_is_supported():
 def test_file_mtime_uses_earliest_batch_file_and_supports_strftime():
     first = datetime(2026, 1, 28, 6, 19, 30, tzinfo=timezone.utc)
     second = datetime(2026, 1, 29, 7, 20, 40, tzinfo=timezone.utc)
-    expected = first.astimezone()
+    expected = first.astimezone(ZoneInfo(settings.TZ))
     entries = [
         {"mtime_ns": int(second.timestamp() * 1_000_000_000)},
         {"mtime_ns": int(first.timestamp() * 1_000_000_000)},

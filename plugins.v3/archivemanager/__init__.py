@@ -11,6 +11,7 @@ from uuid import uuid4
 from app import schemas
 from app.plugins import _PluginBase
 from app.schemas.types import NotificationType
+from app.sdk.config import settings
 from app.sdk.logging import logger
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, Field, ValidationError
@@ -20,7 +21,6 @@ from .catalog import remove_catalog, write_catalog
 from .config import (
     PluginConfig,
     TaskConfig,
-    container_timezone,
     overlap,
     parse_config,
     validate_paths,
@@ -65,7 +65,7 @@ class ArchiveManager(_PluginBase):
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.4"
+    plugin_version = "0.1.5"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
@@ -189,7 +189,7 @@ class ArchiveManager(_PluginBase):
             {
                 "id": f"ArchiveManager_{task.id}",
                 "name": f"压缩归档 · {task.name}",
-                "trigger": CronTrigger.from_crontab(task.cron, timezone=container_timezone()),
+                "trigger": CronTrigger.from_crontab(task.cron, timezone=settings.TZ),
                 "func": partial(self._enqueue_task, task.id),
                 "kwargs": {},
             }

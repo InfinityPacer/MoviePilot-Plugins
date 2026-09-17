@@ -4,6 +4,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 from string import Formatter
+from zoneinfo import ZoneInfo
+
+from app.sdk.config import settings
 
 FIELDS = {"task_name", "date", "time", "id", "sequence", "global_sequence", "file_mtime"}
 DEFAULT_FILE_TIME_FORMAT = "%Y%m%d_%H%M%S"
@@ -63,11 +66,12 @@ def frozen_names(
     global_sequence: int | None = None,
 ) -> dict:
     """生成可读名与跨目录唯一的包名；长度为摘要和临时文件后缀预留空间。"""
-    moment = datetime.fromisoformat(created_at).astimezone()
+    configured_timezone = ZoneInfo(settings.TZ)
+    moment = datetime.fromisoformat(created_at).astimezone(configured_timezone)
     file_moment = None
     if entries:
         earliest_mtime_ns = min(int(entry["mtime_ns"]) for entry in entries)
-        file_moment = datetime.fromtimestamp(earliest_mtime_ns / 1e9).astimezone()
+        file_moment = datetime.fromtimestamp(earliest_mtime_ns / 1e9, tz=configured_timezone)
     values = {
         "task_name": re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', "_", task["name"]),
         "date": moment.strftime("%Y%m%d"),

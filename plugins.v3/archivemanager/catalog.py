@@ -10,7 +10,8 @@ from threading import RLock
 from urllib.parse import quote
 from uuid import uuid4
 
-from .config import container_timezone
+from app.sdk.config import settings
+
 from .naming import batch_relative_directory
 
 
@@ -309,7 +310,8 @@ def _task_folder_for_manifest_path(path: Path, batch: dict) -> Path | None:
 def _record_markdown(batch: dict, record: dict) -> str:
     manifest = _manifest_data(batch)
     task = batch["task"]
-    timezone = container_timezone()
+    # 新清单冻结生成时的时区；旧清单没有该字段时才回退到当前 MoviePilot 配置。
+    timezone = manifest.get("timezone") or settings.TZ
     cleanup = batch.get("cleanup") or {}
     lines = [
         f"# 归档清单 {md(record['batch_name'])}",
