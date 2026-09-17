@@ -1,19 +1,13 @@
 """任务配置与目录边界；不将业务场景或文件扩展名固化到归档规则。"""
 
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from app.sdk.config import settings
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .naming import validate_template
-
-
-def container_timezone() -> str:
-    """使用容器运行时的本地时区。"""
-    tz = datetime.now().astimezone().tzinfo
-    return getattr(tz, "key", None) or "UTC"
 
 
 class PluginConfig(BaseModel):
@@ -65,15 +59,10 @@ class TaskConfig(BaseModel):
     max_pending_bytes: int = Field(default=0, ge=0)  # 本地成品总字节上限，0 不限制
     min_free_bytes: float = Field(default=1024**3, ge=0)  # 归档后至少保留的磁盘空间
 
-    @property
-    def timezone(self) -> str:
-        """兼容内部调用；时区始终来自容器，不属于任务配置。"""
-        return container_timezone()
-
     @model_validator(mode="after")
     def validate_options(self):
         """拒绝不支持的组合；删除不能降低完整校验要求。"""
-        CronTrigger.from_crontab(self.cron, timezone=container_timezone())
+        CronTrigger.from_crontab(self.cron, timezone=settings.TZ)
         validate_template(self.batch_name_template)
         validate_template(self.archive_name_template)
         for source, target in self.output_path_replacements.items():

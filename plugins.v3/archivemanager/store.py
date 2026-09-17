@@ -2,8 +2,10 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from app.sdk.database import plugin_declarative_base
+from app.sdk.config import settings
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -264,20 +266,20 @@ class Store:
 
     @staticmethod
     def _published_on_local_day(row: BatchRow, target_day) -> bool:
-        """按容器时区判断批次发布日期；旧批次缺少发布时间时回退到创建时间。"""
+        """按 MoviePilot 配置时区判断批次发布日期；旧批次缺少发布时间时回退到创建时间。"""
         published_at = row.data.get("published_at")
         if not published_at:
             if row.status not in ("completed", "cleaning", "cleanup_failed"):
                 return False
             published_at = row.created_at
         try:
-            return datetime.fromisoformat(published_at).astimezone().date() == target_day
+            return datetime.fromisoformat(published_at).astimezone(ZoneInfo(settings.TZ)).date() == target_day
         except (TypeError, ValueError):
             return False
 
     def daily_archive_bytes(self, local_day=None) -> int:
-        """统计容器本地日内已发布批次的实际归档包大小，成品移走后仍保留额度记录。"""
-        target_day = local_day or datetime.now().astimezone().date()
+        """统计 MoviePilot 配置时区日内已发布批次的实际归档包大小，成品移走后仍保留额度记录。"""
+        target_day = local_day or datetime.now(tz=ZoneInfo(settings.TZ)).date()
         with self.handle.session() as session:
             return sum(
                 int(row.data.get("archive_size") or 0)
@@ -308,13 +310,13 @@ class Store:
     ) -> dict:
         """先预留全部成员并提交快照，再允许工作进程创建归档。"""
         created_at = datetime.now(timezone.utc).isoformat()
-        local_day = datetime.fromisoformat(created_at).astimezone().date()
+        local_day = datetime.fromisoformat(created_at).astimezone(ZoneInfo(settings.TZ)).date()
         sequence = 1
         global_sequence = 1
-        # sequence 按任务递增，global_sequence 跨所有任务递增；两者都按容器本地日期重新计数。
+        # sequence 按任务递增，global_sequence 跨所有任务递增；两者都按 MoviePilot 配置日期重新计数。
         with self.handle.session() as sequence_session:
             for row in sequence_session.scalars(select(BatchRow)).all():
-                if datetime.fromisoformat(row.created_at).astimezone().date() != local_day:
+                if datetime.fromisoformat(row.created_at).astimezone(ZoneInfo(settings.TZ)).date() != local_day:
                     continue
                 global_sequence += 1
                 if row.task_id == task["id"]:
@@ -529,7 +531,7 @@ class Store:
         with self.handle.session() as session:
             batch_rows = list(session.scalars(select(BatchRow)))
             completed = [row for row in batch_rows if row.status in ("completed", "cleaning", "cleanup_failed")]
-            today = datetime.now().astimezone().date()
+            today = datetime.now(tz=ZoneInfo(settings.TZ)).date()
             completed_today = [row for row in completed if self._published_on_local_day(row, today)]
 
             def count(*states):

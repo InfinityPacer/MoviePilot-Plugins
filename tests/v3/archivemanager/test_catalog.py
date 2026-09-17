@@ -107,6 +107,7 @@ def test_directory_layout_mirrors_group_and_batch_and_recurses_links(tmp_path: P
     batch_dir = task_dir / "XiaomiCamera_00_B888801B9BCD" / "20260128_0001"
     assert markdown == batch_dir / "manifest.md"
     assert (batch_dir / "manifest.json").is_file()
+    assert "分组时区：UTC" in markdown.read_text(encoding="utf-8")
 
     task_index = _json(task_dir / "index.json")
     assert task_index["task_id"] == "disk-1"

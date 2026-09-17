@@ -6,9 +6,11 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import app.plugins.archivemanager as manager_module
 import pytest
+from app.sdk.config import settings
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig, parse_config
 from app.plugins.archivemanager.runner import (
@@ -182,8 +184,9 @@ def test_daily_archive_bytes_uses_publication_day_and_keeps_moved_artifacts_coun
             ]
         )
 
-    assert store.daily_archive_bytes(now.astimezone().date()) == 200
-    assert store.daily_archive_bytes(yesterday.astimezone().date()) == 0
+    configured_timezone = ZoneInfo(settings.TZ)
+    assert store.daily_archive_bytes(now.astimezone(configured_timezone).date()) == 200
+    assert store.daily_archive_bytes(yesterday.astimezone(configured_timezone).date()) == 0
     summary = store.summary()
     assert summary["today_archived_files"] == 5
     assert summary["today_archive_count"] == 2
@@ -270,6 +273,18 @@ def test_task_public_omits_timezone_and_decimal_reserved_space_is_valid(tmp_path
 
     assert "timezone" not in task.public()
     assert task.min_free_bytes == 1.5 * 1024**3
+
+
+def test_cron_service_uses_moviepilot_timezone(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "TZ", "UTC")
+    task = _task(tmp_path, cron="0 0 * * *")
+    manager = manager_module.ArchiveManager()
+    manager._enabled = True
+    manager._tasks = [task]
+
+    service = manager.get_service()[0]
+
+    assert str(service["trigger"].timezone) == "UTC"
 
 
 def test_enabled_tasks_may_share_output_directory(tmp_path: Path) -> None:

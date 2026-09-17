@@ -11,11 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import app.plugins.archivemanager as manager_module
 import app.plugins.archivemanager.capacity as capacity_module
 import app.plugins.archivemanager.scanner as scanner_module
 import pytest
+from app.sdk.config import settings
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager import runner as runner_module
 from app.plugins.archivemanager.capacity import allowance, fit_batch
@@ -349,7 +351,7 @@ def test_partition_splits_by_file_count_and_bytes_without_dropping_oversized_fil
     assert [batch["total_bytes"] for batch in batches] == [4, 5, 10]
 
 
-def test_partition_uses_directory_and_container_local_date_rules(tmp_path: Path) -> None:
+def test_partition_uses_directory_and_moviepilot_date_rules(tmp_path: Path) -> None:
     task = _task(
         tmp_path,
         grouping="directory_date",
@@ -358,8 +360,9 @@ def test_partition_uses_directory_and_container_local_date_rules(tmp_path: Path)
         max_files=0,
         max_bytes=0,
     )
-    local_first = datetime(2026, 10, 1, 0, 30).astimezone()
-    local_second = datetime(2026, 10, 2, 0, 30).astimezone()
+    configured_timezone = ZoneInfo(settings.TZ)
+    local_first = datetime(2026, 10, 1, 0, 30, tzinfo=configured_timezone)
+    local_second = datetime(2026, 10, 2, 0, 30, tzinfo=configured_timezone)
     entries = [
         _entry_at("series/episode-1.mkv", 1, local_first),
         _entry_at("series/episode-2.mkv", 1, local_second),

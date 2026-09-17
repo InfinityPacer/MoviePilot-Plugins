@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
 
+from app.sdk.config import settings
 from app.sdk.logging import logger
 
 from .capacity import CapacityWait, allowance
@@ -269,7 +270,7 @@ class Runner:
                 ):
                     raise CapacityWait(capacity["reason"] or "归档目标剩余容量不足，等待外部清理")
                 engine_task = task.model_dump()
-                engine_task["timezone"] = task.timezone
+                engine_task["timezone"] = settings.TZ
                 logger.info(f"压缩归档打包开始：{context} staging_archive={stage_archive}")
                 manifest = run_engine(
                     {

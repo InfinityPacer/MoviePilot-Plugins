@@ -8,7 +8,9 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from threading import Event
+from zoneinfo import ZoneInfo
 
+from app.sdk.config import settings
 from app.sdk.logging import logger
 
 from .config import TaskConfig, validate_paths
@@ -228,7 +230,9 @@ def partition(task: TaskConfig, entries: list[dict]) -> list[dict]:
             components.append("/".join(Path(item["relative_path"]).parts[:-1][: task.directory_depth]) or ".")
         if task.grouping in ("date", "directory_date"):
             fmt = {"hour": "%Y-%m-%d %H", "day": "%Y-%m-%d", "month": "%Y-%m"}[task.time_grain]
-            components.append(datetime.fromtimestamp(item["mtime_ns"] / 1e9).astimezone().strftime(fmt))
+            components.append(
+                datetime.fromtimestamp(item["mtime_ns"] / 1e9, tz=ZoneInfo(settings.TZ)).strftime(fmt)
+            )
         groups[" | ".join(components) or "全部文件"].append(item)
     batches = []
     for group, items in groups.items():
