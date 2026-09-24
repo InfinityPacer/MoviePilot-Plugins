@@ -152,6 +152,8 @@ export interface Batch {
   file_count: number
   verified: boolean
   archive_sha256: string
+  /** 归档包 SHA-1，仅用于与 115 等网盘元数据对账；0.1.6 之前的批次可能为空。 */
+  archive_sha1?: string
   error: string
   archive_available: boolean
   manifest_available: boolean

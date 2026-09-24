@@ -336,6 +336,7 @@ class Store:
             "archive_path": "",
             "manifest_path": "",
             "archive_sha256": "",
+            "archive_sha1": "",  # 归档包 SHA-1，仅用于与网盘元数据对账，不参与判定
             "verified": False,
             "error": "",
             "cleanup": {},

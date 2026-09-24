@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -722,6 +723,12 @@ def test_runner_real_engine_completes_archive_and_manifest_chain(store: Store, t
     catalog = json.loads(Path(final["manifest_path"]).with_suffix(".json").read_text())
     assert catalog["batch_name"] == batch["batch_name"]
     assert catalog["archive_name"] == archive.name
+    archive_bytes = archive.read_bytes()
+    assert final["archive_sha256"] == hashlib.sha256(archive_bytes).hexdigest()
+    assert final["archive_sha1"] == hashlib.sha1(archive_bytes).hexdigest()
+    assert catalog["archive_sha1"] == final["archive_sha1"]
+    # 包外 .sha256 旁挂文件保持 sha256sum 兼容格式，不混入 SHA-1。
+    assert archive.with_name(archive.name + ".sha256").read_text() == f"{final['archive_sha256']}  {archive.name}\n"
     task.archive_name_template = "changed_{id}"
     Runner(store, Event(), lambda *_: None).execute(final, task)
     assert Path(store.get(batch["id"])["archive_path"]) == archive
@@ -836,6 +843,25 @@ def test_runner_interrupted_after_publish_rebuilds_documents_without_rearchiving
     assert engine_calls.count("build") == 1
     assert engine_calls.count("verify") == 2
     assert Path(final["manifest_path"]).is_file()
+
+
+@requires_archive_backend
+def test_runner_backfills_sha1_for_legacy_published_batch_after_sha256_match(store: Store, tmp_path: Path) -> None:
+    """0.1.6 前的批次没有 SHA-1；恢复时先核验 SHA-256，再补记 SHA-1 并写入清单。"""
+    task = _task(tmp_path, id="legacy-sha1")
+    source = Path(task.source_dir)
+    batch = _create_batch(store, task, source, ["legacy.txt"], "legacy-sha1-batch")
+    Runner(store, Event(), lambda *_args: None).execute(batch, task)
+    legacy = store.save(batch["id"], status="manifest_pending", archive_sha1="")
+    archive = Path(legacy["archive_path"])
+
+    Runner(store, Event(), lambda *_args: None).execute(legacy, task)
+
+    final = store.get(batch["id"])
+    assert final["status"] == "completed"
+    assert final["archive_sha1"] == hashlib.sha1(archive.read_bytes()).hexdigest()
+    catalog = json.loads(Path(final["manifest_path"]).with_suffix(".json").read_text())
+    assert catalog["archive_sha1"] == final["archive_sha1"]
 
 
 @requires_archive_backend

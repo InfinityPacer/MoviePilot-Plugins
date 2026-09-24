@@ -262,3 +262,23 @@ def test_root_index_refreshes_existing_task_index_when_new_manifest_is_present(t
     root_index = _json(root / "index.json")
     assert {item["batch_id"] for item in task_index["batches"]} == {"first", "second"}
     assert {item["batch_id"] for item in root_index["batches"]} == {"first", "second"}
+
+
+def test_archive_sha1_flows_to_manifest_and_indexes_and_legacy_batches_stay_empty(tmp_path: Path) -> None:
+    """SHA-1 用于网盘对账：新批次写入清单与索引，旧批次缺字段时保持空串。"""
+    root = tmp_path / "catalog"
+    task = _task(root, task_id="disk-1")
+    current = _batch(task, batch_id="with-sha1", batch_name="20260128_0001", group="cam")
+    current["archive_sha1"] = "c" * 40
+    legacy = _batch(task, batch_id="legacy", batch_name="20260128_0002", group="cam")
+
+    current_markdown = Path(write_catalog(current))
+    legacy_markdown = Path(write_catalog(legacy))
+
+    assert _json(current_markdown.with_name("manifest.json"))["archive_sha1"] == "c" * 40
+    assert f"归档 SHA-1：`{'c' * 40}`" in current_markdown.read_text(encoding="utf-8")
+    assert _json(legacy_markdown.with_name("manifest.json"))["archive_sha1"] == ""
+    assert "归档 SHA-1：`未记录`" in legacy_markdown.read_text(encoding="utf-8")
+    root_rows = {row["batch_id"]: row for row in _json(root / "index.json")["batches"]}
+    assert root_rows["with-sha1"]["archive_sha1"] == "c" * 40
+    assert root_rows["legacy"]["archive_sha1"] == ""
