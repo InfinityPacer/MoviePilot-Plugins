@@ -3525,11 +3525,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         _createElementVNode("div", null, [
                           _cache[179] || (_cache[179] = _createElementVNode("span", null, "SHA-256", -1)),
                           _createElementVNode("code", null, _toDisplayString(selectedBatch.value.archive_sha256 || "-"), 1)
+                        ]),
+                        _createElementVNode("div", null, [
+                          _cache[180] || (_cache[180] = _createElementVNode("span", null, "SHA-1", -1)),
+                          _createElementVNode("code", null, _toDisplayString(selectedBatch.value.archive_sha1 || "-"), 1)
                         ])
                       ]),
                       selectedBatch.value.files?.length ? (_openBlock(), _createElementBlock("div", _hoisted_121, [
                         _createElementVNode("table", _hoisted_122, [
-                          _cache[180] || (_cache[180] = _createElementVNode("thead", null, [
+                          _cache[181] || (_cache[181] = _createElementVNode("thead", null, [
                             _createElementVNode("tr", null, [
                               _createElementVNode("th", null, "文件"),
                               _createElementVNode("th", { class: "archive-table__numeric" }, "大小"),
@@ -3565,7 +3569,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         ])
                       ])) : _createCommentVNode("", true),
                       Object.keys(selectedBatch.value.cleanup || {}).length ? (_openBlock(), _createElementBlock("div", _hoisted_124, [
-                        _cache[181] || (_cache[181] = _createElementVNode("h4", null, "清理结果", -1)),
+                        _cache[182] || (_cache[182] = _createElementVNode("h4", null, "清理结果", -1)),
                         _createElementVNode("div", _hoisted_125, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(selectedBatch.value.cleanup, (status, path) => {
                             return _openBlock(), _createElementBlock("div", { key: path }, [
@@ -3598,7 +3602,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "tonal",
                       onClick: _cache[58] || (_cache[58] = ($event) => executeBatchAction("repair", selectedBatch.value))
                     }, {
-                      default: _withCtx(() => [..._cache[182] || (_cache[182] = [
+                      default: _withCtx(() => [..._cache[183] || (_cache[183] = [
                         _createTextVNode("补全清单", -1)
                       ])]),
                       _: 1
@@ -3610,7 +3614,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "flat",
                       onClick: _cache[59] || (_cache[59] = ($event) => executeBatchAction("retry", selectedBatch.value))
                     }, {
-                      default: _withCtx(() => [..._cache[183] || (_cache[183] = [
+                      default: _withCtx(() => [..._cache[184] || (_cache[184] = [
                         _createTextVNode("重试批次", -1)
                       ])]),
                       _: 1
@@ -3619,7 +3623,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "text",
                       onClick: _cache[60] || (_cache[60] = ($event) => batchDialogOpen.value = false)
                     }, {
-                      default: _withCtx(() => [..._cache[184] || (_cache[184] = [
+                      default: _withCtx(() => [..._cache[185] || (_cache[185] = [
                         _createTextVNode("关闭", -1)
                       ])]),
                       _: 1
@@ -3650,7 +3654,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }),
                 _createVNode(_component_VCardText, null, {
                   default: _withCtx(() => [
-                    _cache[187] || (_cache[187] = _createElementVNode("p", { class: "archive-cleanup-dialog__intro" }, "请选择清理范围，源文件不会被删除或修改", -1)),
+                    _cache[188] || (_cache[188] = _createElementVNode("p", { class: "archive-cleanup-dialog__intro" }, "请选择清理范围，源文件不会被删除或修改", -1)),
                     _createElementVNode("div", _hoisted_126, [
                       _createVNode(_component_VBtn, {
                         class: "archive-cleanup-option",
@@ -3659,7 +3663,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         loading: cleanupBusy.value && !cleanupDeleteArtifacts.value,
                         onClick: _cache[62] || (_cache[62] = ($event) => executeBatchCleanup(false))
                       }, {
-                        default: _withCtx(() => [..._cache[185] || (_cache[185] = [
+                        default: _withCtx(() => [..._cache[186] || (_cache[186] = [
                           _createElementVNode("span", null, "仅清理批次记录", -1),
                           _createElementVNode("small", null, "保留归档包和外部清单", -1)
                         ])]),
@@ -3673,7 +3677,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         disabled: cleanupBusy.value,
                         onClick: _cache[63] || (_cache[63] = ($event) => chooseCleanupOption(true))
                       }, {
-                        default: _withCtx(() => [..._cache[186] || (_cache[186] = [
+                        default: _withCtx(() => [..._cache[187] || (_cache[187] = [
                           _createElementVNode("span", null, "清理批次记录和归档产物", -1),
                           _createElementVNode("small", null, "删除归档包、校验文件和外部清单", -1)
                         ])]),
@@ -3690,7 +3694,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "text",
                       onClick: _cache[64] || (_cache[64] = ($event) => cleanupDialogOpen.value = false)
                     }, {
-                      default: _withCtx(() => [..._cache[188] || (_cache[188] = [
+                      default: _withCtx(() => [..._cache[189] || (_cache[189] = [
                         _createTextVNode("取消", -1)
                       ])]),
                       _: 1
@@ -3714,13 +3718,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createVNode(_component_VCard, null, {
               default: _withCtx(() => [
                 _createVNode(_component_VCardTitle, null, {
-                  default: _withCtx(() => [..._cache[189] || (_cache[189] = [
+                  default: _withCtx(() => [..._cache[190] || (_cache[190] = [
                     _createTextVNode("确认清理本地归档产物", -1)
                   ])]),
                   _: 1
                 }),
                 _createVNode(_component_VCardText, null, {
-                  default: _withCtx(() => [..._cache[190] || (_cache[190] = [
+                  default: _withCtx(() => [..._cache[191] || (_cache[191] = [
                     _createElementVNode("strong", null, "确定删除所选批次的归档包和外部清单吗？源文件不会被删除。", -1)
                   ])]),
                   _: 1
@@ -3732,7 +3736,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "text",
                       onClick: _cache[66] || (_cache[66] = ($event) => cleanupConfirmOpen.value = false)
                     }, {
-                      default: _withCtx(() => [..._cache[191] || (_cache[191] = [
+                      default: _withCtx(() => [..._cache[192] || (_cache[192] = [
                         _createTextVNode("取消", -1)
                       ])]),
                       _: 1
@@ -3743,7 +3747,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       variant: "flat",
                       onClick: _cache[67] || (_cache[67] = ($event) => executeBatchCleanup(true))
                     }, {
-                      default: _withCtx(() => [..._cache[192] || (_cache[192] = [
+                      default: _withCtx(() => [..._cache[193] || (_cache[193] = [
                         _createTextVNode("确认删除归档产物", -1)
                       ])]),
                       _: 1
@@ -3762,6 +3766,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-1dae7ad0"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-17465dbf"]]);
 
 export { Config as default };

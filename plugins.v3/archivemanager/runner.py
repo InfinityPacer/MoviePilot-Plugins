@@ -75,18 +75,34 @@ def run_engine(payload: dict, stop: Event) -> dict:
                 process.communicate()
 
 
-def digest(path: Path, stop: Event) -> str:
-    """计算磁盘文件摘要，支持停止，不跟随末级符号链接。"""
+def _hash_file(path: Path, stop: Event, *algorithms: str) -> list[str]:
+    """一次顺序读取算出多个摘要，支持停止，不跟随末级符号链接。"""
     import hashlib
 
-    result = hashlib.sha256()
+    results = [hashlib.new(name) for name in algorithms]
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as stream:
         while data := stream.read(1024 * 1024):
             if stop.is_set():
                 raise Cancelled("已停止校验")
-            result.update(data)
-    return result.hexdigest()
+            for result in results:
+                result.update(data)
+    return [result.hexdigest() for result in results]
+
+
+def digest(path: Path, stop: Event) -> str:
+    """计算磁盘文件 SHA-256 摘要。"""
+    return _hash_file(path, stop, "sha256")[0]
+
+
+def archive_digests(path: Path, stop: Event) -> tuple[str, str]:
+    """同一次读取算出归档包的 (SHA-256, SHA-1)。
+
+    SHA-256 是发布、恢复和删源的唯一判定依据；SHA-1 只供与 115 等仅提供 SHA-1 的
+    网盘元数据对账，不参与任何判定，也不写入包外 .sha256 旁挂文件。
+    """
+    sha256, sha1 = _hash_file(path, stop, "sha256", "sha1")
+    return sha256, sha1
 
 
 def check_stop(stop: Event) -> None:
@@ -209,8 +225,10 @@ class Runner:
                 # 只允许恢复 rename 前已持久化的同一成品，不能因外部移走成品就重新打包。
                 logger.info(f"压缩归档恢复暂存成品：{context} staging={staging}")
                 stage_archive = staging / archive_name
-                if not stage_archive.is_file() or digest(stage_archive, self.stop) != batch["archive_sha256"]:
-                    raise ValueError("已记录成品不在本地；请恢复原归档包，或仅补全外部清单")
+                missing = "已记录成品不在本地；请恢复原归档包，或仅补全外部清单"
+                if not stage_archive.is_file():
+                    raise ValueError(missing)
+                batch = self._match_archive(stage_archive, batch, missing)
                 if task.verify:
                     logger.info(f"压缩归档恢复校验开始：{context}")
                     actual = run_engine(
@@ -299,7 +317,7 @@ class Runner:
                         raise ValueError("归档读回清单与打包结果不一致")
                     verified = True
                     logger.info(f"压缩归档完整校验通过：{context}")
-                archive_hash = digest(stage_archive, self.stop)
+                archive_hash, archive_sha1 = archive_digests(stage_archive, self.stop)
                 # 读回可能命中页缓存；删源前必须先把归档数据持久化到文件系统。
                 with stage_archive.open("rb") as stream:
                     os.fsync(stream.fileno())
@@ -312,11 +330,12 @@ class Runner:
                     verified=verified,
                     archive_path=str(archive_path),
                     archive_sha256=archive_hash,
+                    archive_sha1=archive_sha1,
                     archive_size=stage_archive.stat().st_size,
                 )
                 logger.info(
                     f"压缩归档摘要完成：{context} archive_bytes={batch['archive_size']} "
-                    f"sha256={archive_hash}"
+                    f"sha256={archive_hash} sha1={archive_sha1}"
                 )
                 self.phase("publishing", batch_id)
                 check_stop(self.stop)
@@ -333,8 +352,7 @@ class Runner:
                 logger.info(f"压缩归档从已发布成品恢复：{context} archive={archive_path}")
                 if published.is_symlink() or not batch["manifest"] or not batch["archive_sha256"]:
                     raise ValueError("已存在的成品缺少可信恢复快照，不允许覆盖")
-                if digest(archive_path, self.stop) != batch["archive_sha256"]:
-                    raise ValueError("已发布归档 SHA-256 不匹配")
+                batch = self._match_archive(archive_path, batch, "已发布归档 SHA-256 不匹配")
                 # 发布后的源文件可能已经删除，恢复只从已核验成品继续。
                 if task.verify:
                     actual = run_engine(
@@ -392,13 +410,25 @@ class Runner:
             )
             raise RuntimeError(message) from None
 
+    def _match_archive(self, path: Path, batch: dict, mismatch: str) -> dict:
+        """按账本 SHA-256 核验归档包，并为旧批次补记 SHA-1。
+
+        SHA-1 字段在 0.1.6 引入，旧批次数据中不存在，因此按动态字段读取；
+        已记录的 SHA-1 不覆盖，补记只发生在 SHA-256 核验通过之后。
+        """
+        sha256, sha1 = archive_digests(path, self.stop)
+        if sha256 != batch["archive_sha256"]:
+            raise ValueError(mismatch)
+        if not batch.get("archive_sha1"):
+            batch = self.store.save(batch["id"], archive_sha1=sha1)
+        return batch
+
     def _cleanup(self, batch: dict, task: TaskConfig) -> None:
         """完整成品和外部文档可用后才逐项清理；删除意图逐项落库，结果分批提交。"""
         if not batch["verified"]:
             raise ValueError("清理源文件需要完整校验通过")
         archive = Path(batch["archive_path"])
-        if digest(archive, self.stop) != batch["archive_sha256"]:
-            raise ValueError("清理前归档摘要不匹配")
+        batch = self._match_archive(archive, batch, "清理前归档摘要不匹配")
         archive_identity = identity(archive)
         batch = self.store.save(batch["id"], status="cleaning")
         self.phase("cleaning", batch["id"])

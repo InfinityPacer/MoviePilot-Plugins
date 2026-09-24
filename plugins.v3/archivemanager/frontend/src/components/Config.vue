@@ -2321,6 +2321,9 @@ onBeforeUnmount(() => {
               <div>
                 <span>SHA-256</span><code>{{ selectedBatch.archive_sha256 || '-' }}</code>
               </div>
+              <div>
+                <span>SHA-1</span><code>{{ selectedBatch.archive_sha1 || '-' }}</code>
+              </div>
             </div>
             <div v-if="selectedBatch.files?.length" class="archive-table-wrap">
               <table class="archive-table">
