@@ -9,6 +9,7 @@ import sys
 import traceback
 from collections import Counter
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
@@ -75,34 +76,38 @@ def run_engine(payload: dict, stop: Event) -> dict:
                 process.communicate()
 
 
-def _hash_file(path: Path, stop: Event, *algorithms: str) -> list[str]:
-    """一次顺序读取算出多个摘要，支持停止，不跟随末级符号链接。"""
+def digest(path: Path, stop: Event) -> str:
+    """计算磁盘文件 SHA-256 摘要，支持停止，不跟随末级符号链接。
+
+    只用于删源前逐个复核源文件；读完即释放该文件页缓存，避免批量复核占满容器内存。
+    """
     import hashlib
 
-    results = [hashlib.new(name) for name in algorithms]
+    result = hashlib.sha256()
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as stream:
         while data := stream.read(1024 * 1024):
             if stop.is_set():
                 raise Cancelled("已停止校验")
-            for result in results:
-                result.update(data)
-    return [result.hexdigest() for result in results]
+            result.update(data)
+        # posix_fadvise 是平台可选接口，macOS 等平台上不存在。
+        advise = getattr(os, "posix_fadvise", None)
+        dontneed = getattr(os, "POSIX_FADV_DONTNEED", None)
+        if callable(advise) and dontneed is not None:
+            with suppress(OSError):
+                advise(stream.fileno(), 0, 0, dontneed)  # pylint: disable=not-callable
+    return result.hexdigest()
 
 
-def digest(path: Path, stop: Event) -> str:
-    """计算磁盘文件 SHA-256 摘要。"""
-    return _hash_file(path, stop, "sha256")[0]
-
-
-def archive_digests(path: Path, stop: Event) -> tuple[str, str]:
-    """同一次读取算出归档包的 (SHA-256, SHA-1)。
+def archive_digests(path: Path, stop: Event, release_cache: bool = True) -> tuple[str, str]:
+    """在低优先级归档工作进程里一次读取算出归档包的 (SHA-256, SHA-1)。
 
     SHA-256 是发布、恢复和删源的唯一判定依据；SHA-1 只供与 115 等仅提供 SHA-1 的
-    网盘元数据对账，不参与任何判定，也不写入包外 .sha256 旁挂文件。
+    网盘元数据对账，不参与任何判定，也不写入包外 .sha256 旁挂文件。紧接着还要完整
+    校验同一文件时传 release_cache=False，由校验那一遍负责释放页缓存。
     """
-    sha256, sha1 = _hash_file(path, stop, "sha256", "sha1")
-    return sha256, sha1
+    result = run_engine({"action": "digest", "path": str(path), "release_cache": release_cache}, stop)
+    return result["sha256"], result["sha1"]
 
 
 def check_stop(stop: Event) -> None:
@@ -228,7 +233,7 @@ class Runner:
                 missing = "已记录成品不在本地；请恢复原归档包，或仅补全外部清单"
                 if not stage_archive.is_file():
                     raise ValueError(missing)
-                batch = self._match_archive(stage_archive, batch, missing)
+                batch = self._match_archive(stage_archive, batch, missing, release_cache=not task.verify)
                 if task.verify:
                     logger.info(f"压缩归档恢复校验开始：{context}")
                     actual = run_engine(
@@ -310,8 +315,15 @@ class Runner:
                     self.phase("verifying", batch_id)
                     self.store.save(batch_id, status="verifying")
                     logger.info(f"压缩归档完整校验开始：{context}")
+                    # 摘要紧随其后读取同一文件，校验这一遍保留页缓存，由摘要落盘后统一释放。
                     actual = run_engine(
-                        {"action": "verify", "path": str(stage_archive), "password": password}, self.stop
+                        {
+                            "action": "verify",
+                            "path": str(stage_archive),
+                            "password": password,
+                            "release_cache": False,
+                        },
+                        self.stop,
                     )
                     if actual != manifest:
                         raise ValueError("归档读回清单与打包结果不一致")
@@ -352,7 +364,9 @@ class Runner:
                 logger.info(f"压缩归档从已发布成品恢复：{context} archive={archive_path}")
                 if published.is_symlink() or not batch["manifest"] or not batch["archive_sha256"]:
                     raise ValueError("已存在的成品缺少可信恢复快照，不允许覆盖")
-                batch = self._match_archive(archive_path, batch, "已发布归档 SHA-256 不匹配")
+                batch = self._match_archive(
+                    archive_path, batch, "已发布归档 SHA-256 不匹配", release_cache=not task.verify
+                )
                 # 发布后的源文件可能已经删除，恢复只从已核验成品继续。
                 if task.verify:
                     actual = run_engine(
@@ -410,13 +424,14 @@ class Runner:
             )
             raise RuntimeError(message) from None
 
-    def _match_archive(self, path: Path, batch: dict, mismatch: str) -> dict:
+    def _match_archive(self, path: Path, batch: dict, mismatch: str, release_cache: bool = True) -> dict:
         """按账本 SHA-256 核验归档包，并为旧批次补记 SHA-1。
 
         SHA-1 字段在 0.1.6 引入，旧批次数据中不存在，因此按动态字段读取；
         已记录的 SHA-1 不覆盖，补记只发生在 SHA-256 核验通过之后。
+        release_cache 语义同 archive_digests。
         """
-        sha256, sha1 = archive_digests(path, self.stop)
+        sha256, sha1 = archive_digests(path, self.stop, release_cache)
         if sha256 != batch["archive_sha256"]:
             raise ValueError(mismatch)
         if not batch.get("archive_sha1"):
