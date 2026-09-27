@@ -957,7 +957,6 @@ def test_runner_rejects_unrelated_partial_staging_file(store: Store, tmp_path: P
 
 
 @requires_archive_backend
-@requires_archive_backend
 def test_runner_keeps_cache_for_digest_after_verify_then_releases(
     store: Store, tmp_path: Path, monkeypatch
 ) -> None:
@@ -979,6 +978,7 @@ def test_runner_keeps_cache_for_digest_after_verify_then_releases(
     assert calls == [("build", None), ("verify", False), ("digest", True)]
 
 
+@requires_archive_backend
 def test_runner_fsyncs_archive_before_publishing(store: Store, tmp_path: Path, monkeypatch) -> None:
     task = _task(tmp_path, id="fsync-archive")
     source = Path(task.source_dir)
