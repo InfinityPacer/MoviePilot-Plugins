@@ -957,6 +957,28 @@ def test_runner_rejects_unrelated_partial_staging_file(store: Store, tmp_path: P
 
 
 @requires_archive_backend
+@requires_archive_backend
+def test_runner_keeps_cache_for_digest_after_verify_then_releases(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path, id="cache-order")
+    source = Path(task.source_dir)
+    batch = _create_batch(store, task, source, ["cache.txt"], "cache-order-batch")
+    original_engine = runner_module.run_engine
+    calls: list[tuple[str, bool | None]] = []
+
+    def track_engine(payload: dict, event: Event) -> dict:
+        calls.append((payload["action"], payload.get("release_cache")))
+        return original_engine(payload, event)
+
+    monkeypatch.setattr(runner_module, "run_engine", track_engine)
+    Runner(store, Event(), lambda *_args: None).execute(batch, task)
+
+    assert store.get(batch["id"])["status"] == "completed"
+    # 校验后紧接着算摘要：校验保留页缓存，摘要作为最后一次读取负责落盘并释放。
+    assert calls == [("build", None), ("verify", False), ("digest", True)]
+
+
 def test_runner_fsyncs_archive_before_publishing(store: Store, tmp_path: Path, monkeypatch) -> None:
     task = _task(tmp_path, id="fsync-archive")
     source = Path(task.source_dir)

@@ -1,5 +1,6 @@
 """插件独立数据库：逐文件版本索引与可恢复批次账本。"""
 
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -15,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     delete,
     func,
+    insert,
     select,
     update,
 )
@@ -24,6 +26,8 @@ from .naming import frozen_names
 from .scanner import fingerprint, identity
 
 Base = plugin_declarative_base()
+# 文件账本按块查询与写入的条目数；低于 SQLite 旧版 999 个绑定参数上限。
+INVENTORY_CHUNK = 500
 
 
 class BatchRow(Base):
@@ -83,19 +87,21 @@ class Store:
         self.handle = handle
 
     def inventory(
-        self, task_id: str, entries: list[dict], source_dir: str = "", task_config: dict | None = None
-    ) -> list[dict]:
-        """刷新最近扫描索引并返回尚未被批次预留的文件。"""
+        self, task_id: str, entries: list[Mapping], source_dir: str = "", task_config: dict | None = None
+    ) -> list[Mapping]:
+        """刷新最近扫描索引并返回尚未被批次预留的文件。
+
+        文件账本可达十万行，这里按 ``INVENTORY_CHUNK`` 分块只查询判定所需的列并批量写入，
+        不把整表载入为 ORM 对象，也不常驻全量指纹集合；内存只随扫描结果本身和单个分块增长。
+        """
         with self.handle.session() as session, session.begin():
             state = session.get(TaskRow, task_id)
             if state is None:
                 state = TaskRow(id=task_id, data={})
                 session.add(state)
             fresh = not state.data.get("initialized") or state.data.get("source_dir", "") != source_dir
-            rows = {row.fingerprint: row for row in session.scalars(select(FileRow).where(FileRow.task_id == task_id))}
             if fresh:
-                for row in rows.values():
-                    row.historical = False
+                self._bulk_update(session, FileRow.task_id == task_id, historical=False)
                 state.data = {
                     **state.data,
                     "initialized": True,
@@ -103,70 +109,128 @@ class Store:
                     "history_started_at": datetime.now(timezone.utc).isoformat(),
                     "phase": "history",
                 }
-            current = {fingerprint(entry) for entry in entries}
-            stale = session.scalars(
-                select(BatchRow).where(BatchRow.task_id == task_id, BatchRow.status.in_(["failed", "cancelled"]))
-            )
-            for batch in stale:
-                # 未发布的失败快照失效后允许剩余成员重新分批，不能永久锁住未归档文件。
-                changed_config = task_config is not None and batch.data["task"] != task_config
-                if not batch.data["archive_sha256"] and (
-                    changed_config or any(fingerprint(e) not in current for e in batch.data["entries"])
-                ):
-                    batch.status = "superseded"
-                    batch.data = {**batch.data, "error": "源文件版本或任务配置已变化，未归档成员将在本轮重新分批"}
-                    for row in rows.values():
-                        if row.batch_id == batch.id:
-                            row.batch_id = None
-                            row.status = "pending"
-            session.execute(update(FileRow).where(FileRow.task_id == task_id).values(present=False))
-            pending = []
-            for entry in entries:
-                key = fingerprint(entry)
-                row = rows.get(key)
-                if row is None:
-                    row = FileRow(
-                        task_id=task_id,
-                        fingerprint=key,
-                        relative_path=entry["relative_path"],
-                        data=entry,
-                        present=True,
-                        status="pending",
-                        historical=fresh,
-                    )
-                    session.add(row)
-                else:
-                    row.present = True
-                    if fresh:
-                        row.historical = True
-                if not row.batch_id:
-                    pending.append(entry)
-            if source_dir:
-                for key, row in rows.items():
-                    if row.historical and key not in current and row.status == "pending":
-                        # 历史版本已消失或被修改需有明确记录，不把它伪装成已归档。
-                        try:
-                            current_identity = identity(Path(source_dir) / row.relative_path)
-                            if any(current_identity[field] != row.data[field] for field in current_identity):
-                                row.status = "changed"
-                        except FileNotFoundError:
-                            row.status = "missing"
-                        except OSError, ValueError:
-                            pass
-            session.flush()
-            historical_pending = list(
+            stale = list(
                 session.scalars(
-                    select(FileRow).where(
-                        FileRow.task_id == task_id, FileRow.historical.is_(True), FileRow.status == "pending"
+                    select(BatchRow).where(
+                        BatchRow.task_id == task_id, BatchRow.status.in_(["failed", "cancelled"])
                     )
                 )
             )
-            if historical_pending:
+            current = None
+            for batch in stale:
+                # 未发布的失败快照失效后允许剩余成员重新分批，不能永久锁住未归档文件。
+                if batch.data["archive_sha256"]:
+                    continue
+                changed_config = task_config is not None and batch.data["task"] != task_config
+                if not changed_config and current is None:
+                    # 只有存在待判定的失败快照时才需要本轮全部指纹。
+                    current = {fingerprint(entry) for entry in entries}
+                if changed_config or any(fingerprint(item) not in current for item in batch.data["entries"]):
+                    batch.status = "superseded"
+                    batch.data = {**batch.data, "error": "源文件版本或任务配置已变化，未归档成员将在本轮重新分批"}
+                    self._bulk_update(
+                        session,
+                        FileRow.task_id == task_id,
+                        FileRow.batch_id == batch.id,
+                        batch_id=None,
+                        status="pending",
+                    )
+            current = None
+            self._bulk_update(session, FileRow.task_id == task_id, present=False)
+            seen_values = {"present": True, **({"historical": True} if fresh else {})}
+            pending = []
+            historical_eligible = []
+            for offset in range(0, len(entries), INVENTORY_CHUNK):
+                chunk = entries[offset : offset + INVENTORY_CHUNK]
+                keys = [fingerprint(entry) for entry in chunk]
+                known = {
+                    key: (reserved, historical, status)
+                    for key, reserved, historical, status in session.execute(
+                        select(
+                            FileRow.fingerprint,
+                            FileRow.batch_id.is_not(None),
+                            FileRow.historical,
+                            FileRow.status,
+                        ).where(FileRow.task_id == task_id, FileRow.fingerprint.in_(keys))
+                    )
+                }
+                if known:
+                    self._bulk_update(
+                        session,
+                        FileRow.task_id == task_id,
+                        FileRow.fingerprint.in_(list(known)),
+                        **seen_values,
+                    )
+                created = []
+                for key, entry in zip(keys, chunk):
+                    flags = known.get(key)
+                    if flags is None:
+                        created.append(
+                            {
+                                "task_id": task_id,
+                                "fingerprint": key,
+                                "relative_path": entry["relative_path"],
+                                "data": dict(entry),
+                                "present": True,
+                                "status": "pending",
+                                "historical": fresh,
+                            }
+                        )
+                        # 同一轮重复出现的指纹沿用首次写入结果，保持唯一约束。
+                        known[key] = flags = (False, fresh, "pending")
+                    reserved, historical, status = flags
+                    if reserved:
+                        continue
+                    pending.append(entry)
+                    if (fresh or historical) and status == "pending":
+                        historical_eligible.append(entry)
+                if created:
+                    session.execute(insert(FileRow), created)
+            if source_dir:
+                self._mark_unseen_history(session, task_id, source_dir)
+            historical_pending = session.scalar(
+                select(FileRow.id)
+                .where(
+                    FileRow.task_id == task_id, FileRow.historical.is_(True), FileRow.status == "pending"
+                )
+                .limit(1)
+            )
+            if historical_pending is not None:
                 state.data = {**state.data, "phase": "history"}
-                eligible = {row.fingerprint for row in historical_pending if not row.batch_id}
-                return [entry for entry in pending if fingerprint(entry) in eligible]
+                return historical_eligible
             state.data = {**state.data, "phase": "incremental"}
             return pending
+
+    @staticmethod
+    def _bulk_update(session, *conditions, **values) -> None:
+        """账本批量更新不加载 ORM 对象；调用方保证会话中没有需要同步的同表对象。"""
+        session.execute(
+            update(FileRow)
+            .where(*conditions)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+
+    @classmethod
+    def _mark_unseen_history(cls, session, task_id: str, source_dir: str) -> None:
+        """本轮未见到的历史待归档版本需有明确记录，不把它伪装成已归档。"""
+        unseen = session.execute(
+            select(FileRow.id, FileRow.relative_path, FileRow.data).where(
+                FileRow.task_id == task_id,
+                FileRow.historical.is_(True),
+                FileRow.status == "pending",
+                FileRow.present.is_(False),
+            )
+        ).all()
+        for row_id, relative_path, data in unseen:
+            try:
+                current_identity = identity(Path(source_dir) / relative_path)
+                if any(current_identity[key] != data[key] for key in current_identity):
+                    cls._bulk_update(session, FileRow.id == row_id, status="changed")
+            except FileNotFoundError:
+                cls._bulk_update(session, FileRow.id == row_id, status="missing")
+            except OSError, ValueError:
+                pass
 
     def inventory_directories(
         self, task_id: str, directories: list[dict], task_config: dict | None = None
@@ -265,61 +329,101 @@ class Store:
                 row.data = {**row.data, **changes}
 
     @staticmethod
-    def _published_on_local_day(row: BatchRow, target_day) -> bool:
+    def _published_on_local_day(
+        status: str, created_at: str, published_at: str | None, target_day
+    ) -> bool:
         """按 MoviePilot 配置时区判断批次发布日期；旧批次缺少发布时间时回退到创建时间。"""
-        published_at = row.data.get("published_at")
         if not published_at:
-            if row.status not in ("completed", "cleaning", "cleanup_failed"):
+            if status not in ("completed", "cleaning", "cleanup_failed"):
                 return False
-            published_at = row.created_at
+            published_at = created_at
         try:
             return datetime.fromisoformat(published_at).astimezone(ZoneInfo(settings.TZ)).date() == target_day
         except (TypeError, ValueError):
             return False
 
     def daily_archive_bytes(self, local_day=None) -> int:
-        """统计 MoviePilot 配置时区日内已发布批次的实际归档包大小，成品移走后仍保留额度记录。"""
+        """统计 MoviePilot 配置时区日内已发布批次的实际归档包大小，成品移走后仍保留额度记录。
+
+        批次循环每轮都会调用；只取判定所需的列与 JSON 键，不载入含文件明细和清单的完整快照。
+        ``archive_size`` 以文本取出再转整数，避免 PostgreSQL 按 32 位 INTEGER 转换大于 2GB 的包。
+        """
         target_day = local_day or datetime.now(tz=ZoneInfo(settings.TZ)).date()
         with self.handle.session() as session:
-            return sum(
-                int(row.data.get("archive_size") or 0)
-                for row in session.scalars(select(BatchRow)).all()
-                if self._published_on_local_day(row, target_day)
-            )
+            rows = session.execute(
+                select(
+                    BatchRow.status,
+                    BatchRow.created_at,
+                    BatchRow.data["published_at"].as_string(),
+                    BatchRow.data["archive_size"].as_string(),
+                )
+            ).all()
+        return sum(
+            int(archive_size or 0)
+            for status, created_at, published_at, archive_size in rows
+            if self._published_on_local_day(status, created_at, published_at, target_day)
+        )
 
     def local_archives(self, task_id: str) -> list[dict]:
-        """只统计确实仍在本地的成品；文件消失不等于上传成功。"""
-        with self.handle.session() as session:
-            records = [
-                self._serialize(row) for row in session.scalars(select(BatchRow).where(BatchRow.task_id == task_id))
-            ]
-        return [batch for batch in records if batch["archive_path"] and Path(batch["archive_path"]).is_file()]
+        """只统计确实仍在本地的成品；文件消失不等于上传成功。
 
-    def exclude_reserved(self, task_id: str, entries: list[dict]) -> list[dict]:
-        """预览只查询去重证据，不刷新扫描状态。"""
+        先只按成品路径判断仍在本地的批次，再载入这些批次的完整快照；已被外部移走的
+        历史批次不再每轮整表反序列化。
+        """
         with self.handle.session() as session:
-            known = set(
-                session.scalars(
-                    select(FileRow.fingerprint).where(FileRow.task_id == task_id, FileRow.batch_id.is_not(None))
+            candidates = session.execute(
+                select(BatchRow.id, BatchRow.data["archive_path"].as_string()).where(
+                    BatchRow.task_id == task_id
                 )
-            )
-        return [entry for entry in entries if fingerprint(entry) not in known]
+            ).all()
+            local_ids = [batch_id for batch_id, path in candidates if path and Path(path).is_file()]
+            if not local_ids:
+                return []
+            rows = {
+                row.id: row
+                for row in session.scalars(select(BatchRow).where(BatchRow.id.in_(local_ids)))
+            }
+            return [self._serialize(rows[batch_id]) for batch_id in local_ids if batch_id in rows]
+
+    def exclude_reserved(self, task_id: str, entries: list[Mapping]) -> list[Mapping]:
+        """预览只查询去重证据，不刷新扫描状态；按块查询，避免载入全部已预留指纹。"""
+        result = []
+        with self.handle.session() as session:
+            for offset in range(0, len(entries), INVENTORY_CHUNK):
+                chunk = entries[offset : offset + INVENTORY_CHUNK]
+                keys = [fingerprint(entry) for entry in chunk]
+                reserved = set(
+                    session.scalars(
+                        select(FileRow.fingerprint).where(
+                            FileRow.task_id == task_id,
+                            FileRow.batch_id.is_not(None),
+                            FileRow.fingerprint.in_(keys),
+                        )
+                    )
+                )
+                result.extend(entry for key, entry in zip(keys, chunk) if key not in reserved)
+        return result
 
     def create(
-        self, batch_id: str, task: dict, entries: list[dict], group: str, directories: list[dict] | None = None
+        self, batch_id: str, task: dict, entries: list[Mapping], group: str, directories: list[dict] | None = None
     ) -> dict:
         """先预留全部成员并提交快照，再允许工作进程创建归档。"""
+        # 扫描阶段的紧凑记录在进入 JSON 快照前转为普通 dict。
+        entries = [dict(entry) for entry in entries]
         created_at = datetime.now(timezone.utc).isoformat()
         local_day = datetime.fromisoformat(created_at).astimezone(ZoneInfo(settings.TZ)).date()
         sequence = 1
         global_sequence = 1
         # sequence 按任务递增，global_sequence 跨所有任务递增；两者都按 MoviePilot 配置日期重新计数。
+        # 只读取任务与创建时间两列，不反序列化历史批次快照。
         with self.handle.session() as sequence_session:
-            for row in sequence_session.scalars(select(BatchRow)).all():
-                if datetime.fromisoformat(row.created_at).astimezone(ZoneInfo(settings.TZ)).date() != local_day:
+            for row_task_id, row_created_at in sequence_session.execute(
+                select(BatchRow.task_id, BatchRow.created_at)
+            ):
+                if datetime.fromisoformat(row_created_at).astimezone(ZoneInfo(settings.TZ)).date() != local_day:
                     continue
                 global_sequence += 1
-                if row.task_id == task["id"]:
+                if row_task_id == task["id"]:
                     sequence += 1
         directories = directories or []
         naming_entries = entries or directories
@@ -529,26 +633,46 @@ class Store:
         self.cleanup_results(batch_id, {relative_path: result})
 
     def summary(self) -> dict:
+        """归档概览；页面打开和任务运行期间会被轮询，只读取统计所需的列与 JSON 键。
+
+        大小与数量以文本取出后在 Python 中转整数，避免 PostgreSQL 32 位整数转换溢出。
+        """
+        published_states = ("completed", "cleaning", "cleanup_failed")
         with self.handle.session() as session:
-            batch_rows = list(session.scalars(select(BatchRow)))
-            completed = [row for row in batch_rows if row.status in ("completed", "cleaning", "cleanup_failed")]
+            completed = session.execute(
+                select(
+                    BatchRow.status,
+                    BatchRow.created_at,
+                    BatchRow.data["published_at"].as_string(),
+                    BatchRow.data["file_count"].as_string(),
+                    BatchRow.data["source_bytes"].as_string(),
+                    BatchRow.data["archive_size"].as_string(),
+                ).where(BatchRow.status.in_(published_states))
+            ).all()
             today = datetime.now(tz=ZoneInfo(settings.TZ)).date()
-            completed_today = [row for row in completed if self._published_on_local_day(row, today)]
+            completed_today = [
+                row for row in completed if self._published_on_local_day(row[0], row[1], row[2], today)
+            ]
 
             def count(*states):
                 return session.scalar(select(func.count()).select_from(FileRow).where(FileRow.status.in_(states)))
 
+            def total(rows, index: int) -> int:
+                return sum(int(row[index] or 0) for row in rows)
+
             return {
-                "archived_files": sum(row.data["file_count"] for row in completed),
+                "archived_files": total(completed, 3),
                 "archive_count": len(completed),
-                "source_bytes": sum(row.data["source_bytes"] for row in completed),
-                "archive_bytes": sum(row.data["archive_size"] for row in completed),
-                "today_archived_files": sum(row.data["file_count"] for row in completed_today),
+                "source_bytes": total(completed, 4),
+                "archive_bytes": total(completed, 5),
+                "today_archived_files": total(completed_today, 3),
                 "today_archive_count": len(completed_today),
-                "today_archive_bytes": sum(row.data["archive_size"] for row in completed_today),
+                "today_archive_bytes": total(completed_today, 5),
                 "deleted_files": count("deleted"),
-                "failed_batches": sum(
-                    row.status in ("failed", "manifest_pending", "cleanup_failed") for row in batch_rows
+                "failed_batches": session.scalar(
+                    select(func.count())
+                    .select_from(BatchRow)
+                    .where(BatchRow.status.in_(["failed", "manifest_pending", "cleanup_failed"]))
                 ),
                 "pending_files": session.scalar(
                     select(func.count())
@@ -556,6 +680,20 @@ class Store:
                     .where(FileRow.status == "pending", FileRow.present.is_(True))
                 ),
             }
+
+    def task_snapshots(self) -> Iterator[dict]:
+        """按批次列表顺序（最新在前）逐条产出批次冻结的任务快照，供暂存清理收集输出目录。
+
+        只读取 ``data.task`` 并分批流式获取，不载入文件明细和清单；缺少快照的旧批次产出空 dict。
+        """
+        with self.handle.session() as session:
+            rows = session.execute(
+                select(BatchRow.data["task"].as_json())
+                .order_by(BatchRow.created_at.desc(), BatchRow.id)
+                .execution_options(yield_per=200)
+            )
+            for (snapshot,) in rows:
+                yield snapshot or {}
 
     def files(
         self,

@@ -7,11 +7,13 @@
 
 from __future__ import annotations
 
+import ctypes
 import datetime as _datetime
 import hashlib
 import io
 import json
 import os
+import platform
 import stat
 import struct
 import sys
@@ -36,6 +38,12 @@ _ARCHIVE_FORMATS = {"7z", "zip"}
 _COMPRESSION_LEVELS = {"store": None, "fast": 1, "normal": 6, "high": 9}
 _SEVEN_ZIP_PRESETS = {"fast": 1, "normal": 5, "high": 9}
 _METADATA_NAMES = frozenset(("manifest.md", "manifest.json", "SHA256SUMS"))
+# ioprio_set 没有 Python 标准库封装，只在已知系统调用号的 Linux 架构上启用。
+_IOPRIO_SET_SYSCALLS = {"x86_64": 251, "aarch64": 30}
+_IOPRIO_WHO_PROCESS = 1
+_IOPRIO_CLASS_IDLE = 3
+_IOPRIO_CLASS_SHIFT = 13
+_WORKER_NICE = 10
 
 
 class _MetadataZipInfo(pyzipper.zipfile_aes.AESZipInfo):
@@ -64,6 +72,74 @@ def sha256_file(path: str | Path) -> str:
         while chunk := source.read(_CHUNK_SIZE):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _lower_priority() -> None:
+    """把本工作进程降为后台优先级，让出 CPU 和磁盘给播放、下载和数据库等前台服务。
+
+    CPU 降低 nice，磁盘读取改为 idle 调度类（mq-deadline/BFQ 会让它排在其他请求之后，
+    并由调度器的老化机制避免长期饿死）。只作用于这个短生命周期进程，任一步骤不被
+    平台支持时静默跳过，不影响归档正确性。
+    """
+
+    try:
+        os.nice(_WORKER_NICE)
+    except OSError:
+        pass
+    number = _IOPRIO_SET_SYSCALLS.get(platform.machine()) if sys.platform.startswith("linux") else None
+    if number is None:
+        return
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.syscall(number, _IOPRIO_WHO_PROCESS, 0, _IOPRIO_CLASS_IDLE << _IOPRIO_CLASS_SHIFT)
+    except (OSError, AttributeError):
+        pass
+
+
+def _drop_page_cache(fd: int) -> None:
+    """提示内核丢弃该文件已缓存的页，避免 GB 级归档长期占用容器内存并挤掉其他服务的热缓存。
+
+    只影响缓存不影响数据；脏页不会被丢弃，需要先 fsync 才能完全释放。
+    """
+
+    # posix_fadvise 是平台可选接口，macOS 等平台上不存在。
+    advise = getattr(os, "posix_fadvise", None)
+    dontneed = getattr(os, "POSIX_FADV_DONTNEED", None)
+    if not callable(advise) or dontneed is None:
+        return
+    try:
+        advise(fd, 0, 0, dontneed)  # pylint: disable=not-callable
+    except OSError:
+        pass
+
+
+def _release_path_cache(path: str | Path) -> None:
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        _drop_page_cache(fd)
+    finally:
+        os.close(fd)
+
+
+def archive_digests(path: str | Path, release_cache: bool = True) -> dict[str, str]:
+    """一次顺序读取算出归档包的 SHA-256 与 SHA-1。
+
+    SHA-256 是发布、恢复和删源的唯一判定依据；SHA-1 只供与 115 等仅提供 SHA-1 的
+    网盘元数据对账，不参与任何判定。release_cache 为真时先 fsync 再释放页缓存，
+    调用方若紧接着还要读取同一文件（例如随后完整校验）应传 False，让下一次读取命中缓存。
+    """
+
+    sha256 = hashlib.sha256()
+    sha1 = hashlib.sha1()
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as stream:
+        while chunk := stream.read(_CHUNK_SIZE):
+            sha256.update(chunk)
+            sha1.update(chunk)
+        if release_cache:
+            os.fsync(stream.fileno())
+            _drop_page_cache(stream.fileno())
+    return {"sha256": sha256.hexdigest(), "sha1": sha1.hexdigest()}
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -526,6 +602,8 @@ def _write_sources_7z(archive: Any, source_dir: str | Path, records: list[dict[s
                 record["sha256"] = reader.digest.hexdigest()
             finally:
                 reader.close()
+            # 源文件打包后不会立即再读，释放其页缓存。
+            _drop_page_cache(fd)
         _check_current_source(source_dir, record)
 
 
@@ -577,6 +655,7 @@ def _write_sources_zip(
                     record["sha256"] = _copy_and_hash(source, target, record["size"])
             finally:
                 source.close()
+            _drop_page_cache(fd)
         _check_current_source(source_dir, record)
 
 
@@ -1093,8 +1172,11 @@ def _verify_zip(path: Path, password: str) -> dict[str, Any]:
     return _verify_content(manifest, names, digests, metadata)
 
 
-def verify_archive(path: str | Path, password: str = "") -> dict:
-    """流式读取并校验归档，不将任何成员解压到磁盘。"""
+def verify_archive(path: str | Path, password: str = "", release_cache: bool = True) -> dict:
+    """流式读取并校验归档，不将任何成员解压到磁盘。
+
+    release_cache 为真时校验结束后释放归档页缓存；紧接着还要读取同一文件时传 False。
+    """
 
     if not isinstance(password, str):
         raise ArchiveError("password 必须是字符串")
@@ -1102,9 +1184,13 @@ def verify_archive(path: str | Path, password: str = "") -> dict:
     if not archive_path.is_file():
         raise ArchiveError("归档文件不存在")
     archive_format = _archive_format(archive_path)
-    if archive_format == "7z":
-        return _verify_7z(archive_path, password)
-    return _verify_zip(archive_path, password)
+    try:
+        if archive_format == "7z":
+            return _verify_7z(archive_path, password)
+        return _verify_zip(archive_path, password)
+    finally:
+        if release_cache:
+            _release_path_cache(archive_path)
 
 
 def _cli_error(exc: Exception, secret: str = "") -> str:
@@ -1119,6 +1205,7 @@ def main() -> int:
 
     request: dict[str, Any] = {}
     secret = ""
+    _lower_priority()
     try:
         parsed = json.load(sys.stdin)
         if not isinstance(parsed, dict):
@@ -1135,9 +1222,11 @@ def main() -> int:
         elif action == "verify":
             candidate = request.get("password", "")
             secret = candidate if isinstance(candidate, str) else ""
-            data = verify_archive(request["path"], secret)
+            data = verify_archive(request["path"], secret, request.get("release_cache", True))
+        elif action == "digest":
+            data = archive_digests(request["path"], request.get("release_cache", True))
         else:
-            raise ArchiveError("action 只支持 build 或 verify")
+            raise ArchiveError("action 只支持 build、verify 或 digest")
         print(json.dumps({"success": True, "data": data}, ensure_ascii=False, separators=(",", ":")))
         return 0
     except Exception as exc:

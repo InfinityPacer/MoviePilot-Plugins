@@ -213,3 +213,74 @@ def test_cli_outputs_one_json_line_and_does_not_echo_password(source_dir: Path, 
     assert wrong.returncode != 0
     assert len(wrong.stdout.splitlines()) == 1
     assert "wrong-secret" not in wrong.stdout
+
+
+def _record_fadvise(monkeypatch) -> list[int]:
+    """记录 DONTNEED 提示涉及的 inode；macOS 没有 posix_fadvise，按 Linux 接口补齐。"""
+
+    released: list[int] = []
+
+    def fake_fadvise(fd: int, offset: int, length: int, advice: int) -> None:
+        assert (offset, length, advice) == (0, 0, engine.os.POSIX_FADV_DONTNEED)
+        released.append(os.fstat(fd).st_ino)
+
+    monkeypatch.setattr(engine.os, "POSIX_FADV_DONTNEED", 4, raising=False)
+    monkeypatch.setattr(engine.os, "posix_fadvise", fake_fadvise, raising=False)
+    return released
+
+
+@pytest.mark.parametrize("archive_format", ["7z", "zip"])
+def test_build_releases_each_source_page_cache(source_dir: Path, tmp_path: Path, monkeypatch, archive_format: str):
+    released = _record_fadvise(monkeypatch)
+    entries = _entries(source_dir, include_special=False)
+
+    engine.build_archive(_task(source_dir, archive_format), entries, tmp_path / f"cache.{archive_format}", "batch-cache")
+
+    assert sorted(released) == sorted(entry["inode"] for entry in entries)
+
+
+@pytest.mark.parametrize("release_cache", [True, False])
+def test_verify_and_digest_release_archive_cache_only_when_requested(
+    source_dir: Path, tmp_path: Path, monkeypatch, release_cache: bool
+):
+    destination = tmp_path / "release.7z"
+    engine.build_archive(_task(source_dir), _entries(source_dir, include_special=False), destination, "batch-release")
+    released = _record_fadvise(monkeypatch)
+    archive_inode = destination.stat().st_ino
+
+    engine.verify_archive(destination, release_cache=release_cache)
+    digests = engine.archive_digests(destination, release_cache=release_cache)
+
+    assert released == ([archive_inode, archive_inode] if release_cache else [])
+    data = destination.read_bytes()
+    assert digests == {"sha256": hashlib.sha256(data).hexdigest(), "sha1": hashlib.sha1(data).hexdigest()}
+
+
+def test_cli_digest_action_returns_sha256_and_sha1(source_dir: Path, tmp_path: Path):
+    destination = tmp_path / "digest.zip"
+    engine.build_archive(_task(source_dir, "zip"), _entries(source_dir, include_special=False), destination, "batch-digest")
+
+    result = subprocess.run(
+        [engine.sys.executable, str(_ENGINE_PATH)],
+        input=json.dumps({"action": "digest", "path": str(destination)}),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    data = destination.read_bytes()
+    assert json.loads(result.stdout)["data"] == {
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "sha1": hashlib.sha1(data).hexdigest(),
+    }
+
+
+def test_lower_priority_tolerates_unsupported_platform(monkeypatch):
+    def refuse(_increment: int) -> int:
+        raise PermissionError("nice not permitted")
+
+    monkeypatch.setattr(engine.os, "nice", refuse)
+    monkeypatch.setattr(engine.platform, "machine", lambda: "unknown-arch")
+
+    engine._lower_priority()
