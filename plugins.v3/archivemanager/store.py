@@ -1,5 +1,6 @@
 """插件独立数据库：逐文件版本索引与可恢复批次账本。"""
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -15,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     delete,
     func,
+    insert,
     select,
     update,
 )
@@ -24,6 +26,8 @@ from .naming import frozen_names
 from .scanner import fingerprint, identity
 
 Base = plugin_declarative_base()
+# 文件账本按块查询与写入的条目数；低于 SQLite 旧版 999 个绑定参数上限。
+INVENTORY_CHUNK = 500
 
 
 class BatchRow(Base):
@@ -83,19 +87,21 @@ class Store:
         self.handle = handle
 
     def inventory(
-        self, task_id: str, entries: list[dict], source_dir: str = "", task_config: dict | None = None
-    ) -> list[dict]:
-        """刷新最近扫描索引并返回尚未被批次预留的文件。"""
+        self, task_id: str, entries: list[Mapping], source_dir: str = "", task_config: dict | None = None
+    ) -> list[Mapping]:
+        """刷新最近扫描索引并返回尚未被批次预留的文件。
+
+        文件账本可达十万行，这里按 ``INVENTORY_CHUNK`` 分块只查询判定所需的列并批量写入，
+        不把整表载入为 ORM 对象，也不常驻全量指纹集合；内存只随扫描结果本身和单个分块增长。
+        """
         with self.handle.session() as session, session.begin():
             state = session.get(TaskRow, task_id)
             if state is None:
                 state = TaskRow(id=task_id, data={})
                 session.add(state)
             fresh = not state.data.get("initialized") or state.data.get("source_dir", "") != source_dir
-            rows = {row.fingerprint: row for row in session.scalars(select(FileRow).where(FileRow.task_id == task_id))}
             if fresh:
-                for row in rows.values():
-                    row.historical = False
+                self._bulk_update(session, FileRow.task_id == task_id, historical=False)
                 state.data = {
                     **state.data,
                     "initialized": True,
@@ -103,70 +109,128 @@ class Store:
                     "history_started_at": datetime.now(timezone.utc).isoformat(),
                     "phase": "history",
                 }
-            current = {fingerprint(entry) for entry in entries}
-            stale = session.scalars(
-                select(BatchRow).where(BatchRow.task_id == task_id, BatchRow.status.in_(["failed", "cancelled"]))
-            )
-            for batch in stale:
-                # 未发布的失败快照失效后允许剩余成员重新分批，不能永久锁住未归档文件。
-                changed_config = task_config is not None and batch.data["task"] != task_config
-                if not batch.data["archive_sha256"] and (
-                    changed_config or any(fingerprint(e) not in current for e in batch.data["entries"])
-                ):
-                    batch.status = "superseded"
-                    batch.data = {**batch.data, "error": "源文件版本或任务配置已变化，未归档成员将在本轮重新分批"}
-                    for row in rows.values():
-                        if row.batch_id == batch.id:
-                            row.batch_id = None
-                            row.status = "pending"
-            session.execute(update(FileRow).where(FileRow.task_id == task_id).values(present=False))
-            pending = []
-            for entry in entries:
-                key = fingerprint(entry)
-                row = rows.get(key)
-                if row is None:
-                    row = FileRow(
-                        task_id=task_id,
-                        fingerprint=key,
-                        relative_path=entry["relative_path"],
-                        data=entry,
-                        present=True,
-                        status="pending",
-                        historical=fresh,
-                    )
-                    session.add(row)
-                else:
-                    row.present = True
-                    if fresh:
-                        row.historical = True
-                if not row.batch_id:
-                    pending.append(entry)
-            if source_dir:
-                for key, row in rows.items():
-                    if row.historical and key not in current and row.status == "pending":
-                        # 历史版本已消失或被修改需有明确记录，不把它伪装成已归档。
-                        try:
-                            current_identity = identity(Path(source_dir) / row.relative_path)
-                            if any(current_identity[field] != row.data[field] for field in current_identity):
-                                row.status = "changed"
-                        except FileNotFoundError:
-                            row.status = "missing"
-                        except OSError, ValueError:
-                            pass
-            session.flush()
-            historical_pending = list(
+            stale = list(
                 session.scalars(
-                    select(FileRow).where(
-                        FileRow.task_id == task_id, FileRow.historical.is_(True), FileRow.status == "pending"
+                    select(BatchRow).where(
+                        BatchRow.task_id == task_id, BatchRow.status.in_(["failed", "cancelled"])
                     )
                 )
             )
-            if historical_pending:
+            current = None
+            for batch in stale:
+                # 未发布的失败快照失效后允许剩余成员重新分批，不能永久锁住未归档文件。
+                if batch.data["archive_sha256"]:
+                    continue
+                changed_config = task_config is not None and batch.data["task"] != task_config
+                if not changed_config and current is None:
+                    # 只有存在待判定的失败快照时才需要本轮全部指纹。
+                    current = {fingerprint(entry) for entry in entries}
+                if changed_config or any(fingerprint(item) not in current for item in batch.data["entries"]):
+                    batch.status = "superseded"
+                    batch.data = {**batch.data, "error": "源文件版本或任务配置已变化，未归档成员将在本轮重新分批"}
+                    self._bulk_update(
+                        session,
+                        FileRow.task_id == task_id,
+                        FileRow.batch_id == batch.id,
+                        batch_id=None,
+                        status="pending",
+                    )
+            current = None
+            self._bulk_update(session, FileRow.task_id == task_id, present=False)
+            seen_values = {"present": True, **({"historical": True} if fresh else {})}
+            pending = []
+            historical_eligible = []
+            for offset in range(0, len(entries), INVENTORY_CHUNK):
+                chunk = entries[offset : offset + INVENTORY_CHUNK]
+                keys = [fingerprint(entry) for entry in chunk]
+                known = {
+                    key: (reserved, historical, status)
+                    for key, reserved, historical, status in session.execute(
+                        select(
+                            FileRow.fingerprint,
+                            FileRow.batch_id.is_not(None),
+                            FileRow.historical,
+                            FileRow.status,
+                        ).where(FileRow.task_id == task_id, FileRow.fingerprint.in_(keys))
+                    )
+                }
+                if known:
+                    self._bulk_update(
+                        session,
+                        FileRow.task_id == task_id,
+                        FileRow.fingerprint.in_(list(known)),
+                        **seen_values,
+                    )
+                created = []
+                for key, entry in zip(keys, chunk):
+                    flags = known.get(key)
+                    if flags is None:
+                        created.append(
+                            {
+                                "task_id": task_id,
+                                "fingerprint": key,
+                                "relative_path": entry["relative_path"],
+                                "data": dict(entry),
+                                "present": True,
+                                "status": "pending",
+                                "historical": fresh,
+                            }
+                        )
+                        # 同一轮重复出现的指纹沿用首次写入结果，保持唯一约束。
+                        known[key] = flags = (False, fresh, "pending")
+                    reserved, historical, status = flags
+                    if reserved:
+                        continue
+                    pending.append(entry)
+                    if (fresh or historical) and status == "pending":
+                        historical_eligible.append(entry)
+                if created:
+                    session.execute(insert(FileRow), created)
+            if source_dir:
+                self._mark_unseen_history(session, task_id, source_dir)
+            historical_pending = session.scalar(
+                select(FileRow.id)
+                .where(
+                    FileRow.task_id == task_id, FileRow.historical.is_(True), FileRow.status == "pending"
+                )
+                .limit(1)
+            )
+            if historical_pending is not None:
                 state.data = {**state.data, "phase": "history"}
-                eligible = {row.fingerprint for row in historical_pending if not row.batch_id}
-                return [entry for entry in pending if fingerprint(entry) in eligible]
+                return historical_eligible
             state.data = {**state.data, "phase": "incremental"}
             return pending
+
+    @staticmethod
+    def _bulk_update(session, *conditions, **values) -> None:
+        """账本批量更新不加载 ORM 对象；调用方保证会话中没有需要同步的同表对象。"""
+        session.execute(
+            update(FileRow)
+            .where(*conditions)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+
+    @classmethod
+    def _mark_unseen_history(cls, session, task_id: str, source_dir: str) -> None:
+        """本轮未见到的历史待归档版本需有明确记录，不把它伪装成已归档。"""
+        unseen = session.execute(
+            select(FileRow.id, FileRow.relative_path, FileRow.data).where(
+                FileRow.task_id == task_id,
+                FileRow.historical.is_(True),
+                FileRow.status == "pending",
+                FileRow.present.is_(False),
+            )
+        ).all()
+        for row_id, relative_path, data in unseen:
+            try:
+                current_identity = identity(Path(source_dir) / relative_path)
+                if any(current_identity[key] != data[key] for key in current_identity):
+                    cls._bulk_update(session, FileRow.id == row_id, status="changed")
+            except FileNotFoundError:
+                cls._bulk_update(session, FileRow.id == row_id, status="missing")
+            except OSError, ValueError:
+                pass
 
     def inventory_directories(
         self, task_id: str, directories: list[dict], task_config: dict | None = None
@@ -295,20 +359,31 @@ class Store:
             ]
         return [batch for batch in records if batch["archive_path"] and Path(batch["archive_path"]).is_file()]
 
-    def exclude_reserved(self, task_id: str, entries: list[dict]) -> list[dict]:
-        """预览只查询去重证据，不刷新扫描状态。"""
+    def exclude_reserved(self, task_id: str, entries: list[Mapping]) -> list[Mapping]:
+        """预览只查询去重证据，不刷新扫描状态；按块查询，避免载入全部已预留指纹。"""
+        result = []
         with self.handle.session() as session:
-            known = set(
-                session.scalars(
-                    select(FileRow.fingerprint).where(FileRow.task_id == task_id, FileRow.batch_id.is_not(None))
+            for offset in range(0, len(entries), INVENTORY_CHUNK):
+                chunk = entries[offset : offset + INVENTORY_CHUNK]
+                keys = [fingerprint(entry) for entry in chunk]
+                reserved = set(
+                    session.scalars(
+                        select(FileRow.fingerprint).where(
+                            FileRow.task_id == task_id,
+                            FileRow.batch_id.is_not(None),
+                            FileRow.fingerprint.in_(keys),
+                        )
+                    )
                 )
-            )
-        return [entry for entry in entries if fingerprint(entry) not in known]
+                result.extend(entry for key, entry in zip(keys, chunk) if key not in reserved)
+        return result
 
     def create(
-        self, batch_id: str, task: dict, entries: list[dict], group: str, directories: list[dict] | None = None
+        self, batch_id: str, task: dict, entries: list[Mapping], group: str, directories: list[dict] | None = None
     ) -> dict:
         """先预留全部成员并提交快照，再允许工作进程创建归档。"""
+        # 扫描阶段的紧凑记录在进入 JSON 快照前转为普通 dict。
+        entries = [dict(entry) for entry in entries]
         created_at = datetime.now(timezone.utc).isoformat()
         local_day = datetime.fromisoformat(created_at).astimezone(ZoneInfo(settings.TZ)).date()
         sequence = 1

@@ -25,8 +25,9 @@ from .config import (
     parse_config,
     validate_paths,
 )
+from .planner import plan_cycle
 from .runner import Runner, cleanup_stale_staging, remove_staging, staging_size
-from .scanner import Cancelled, partition, scan, scan_tree
+from .scanner import Cancelled, partition, scan
 from .store import BatchRow, DirectoryRow, FileRow, Store, TaskRow
 
 
@@ -494,35 +495,15 @@ class ArchiveManager(_PluginBase):
         # 持久化当前扫描阶段，避免配置重载后任务仍显示为“已停止”。
         store.set_task_state(task.id, active=task.auto_continue, phase="scanning", reason="")
         self._phase("scanning")
-        entries, directories, skipped = scan_tree(task, self._stop, stable=True)
-        entries = store.inventory(task.id, entries, task.source_dir, task.public())
-        pending_directories = store.inventory_directories(task.id, directories, task.public())
-        groups = partition(task, entries)
-        directory_map = {entry["relative_path"]: entry for entry in directories}
-        file_ancestor_paths = {
-            parent.as_posix()
-            for entry in entries
-            for parent in Path(entry["relative_path"]).parents
-            if parent.as_posix() != "."
-        }
-        standalone_directories = [
-            entry for entry in pending_directories if entry["relative_path"] not in file_ancestor_paths
-        ]
-        if standalone_directories:
-            limit = task.max_files or len(standalone_directories)
-            for offset in range(0, len(standalone_directories), limit):
-                groups.append(
-                    {
-                        "group": "目录结构",
-                        "entries": [],
-                        "directories": standalone_directories[offset : offset + limit],
-                        "total_bytes": 0,
-                    }
-                )
+        # 规划函数返回后全量扫描结果即释放，批次执行期间只常驻本轮可能处理的候选批次。
+        plan = plan_cycle(task, self._stop, store, max(0, task.max_batches - completed))
+        groups = plan.groups
+        directory_map = plan.directory_map
         logger.info(
-            f"压缩归档扫描完成：task={task.name}({task.id[:6]}) eligible_files={len(entries)} "
-            f"eligible_directories={len(pending_directories)} eligible_bytes={sum(entry['size'] for entry in entries)} "
-            f"batches={len(groups)} skipped={skipped} age_days={task.archive_age_days} "
+            f"压缩归档扫描完成：task={task.name}({task.id[:6]}) "
+            f"eligible_files={plan.eligible_files} eligible_directories={plan.eligible_directories} "
+            f"eligible_bytes={plan.eligible_bytes} batches={plan.batch_count} skipped={plan.skipped} "
+            f"age_days={task.archive_age_days} "
             f"stability_seconds={task.stability_seconds}"
         )
         while groups and completed < task.max_batches:
@@ -579,7 +560,7 @@ class ArchiveManager(_PluginBase):
             self._settings.daily_archive_limit_bytes,
             store.daily_archive_bytes(),
         )
-        if groups:
+        if groups or plan.has_more:
             store.set_task_state(task.id, phase="history" if state["history_remaining"] else "incremental", **capacity)
         elif state["history_remaining"]:
             store.set_task_state(

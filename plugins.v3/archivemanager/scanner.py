@@ -5,6 +5,7 @@ import os
 import stat
 import time
 from collections import defaultdict
+from collections.abc import Iterator, Mapping
 from datetime import datetime
 from pathlib import Path
 from threading import Event
@@ -48,11 +49,57 @@ def identity(path: Path) -> dict:
     return {"size": info.st_size, **_metadata(info)}
 
 
-def _file_identity(info: os.stat_result) -> dict:
-    """从已取得的 DirEntry stat 结果构造文件身份，避免再次 lstat。"""
-    if not stat.S_ISREG(info.st_mode):
-        raise ValueError("不是普通文件")
-    return {"size": info.st_size, **_metadata(info)}
+FILE_ENTRY_FIELDS = (
+    "relative_path",
+    "source_root",
+    "size",
+    "mtime_ns",
+    "ctime_ns",
+    "mode",
+    "birthtime_ns",
+    "device",
+    "inode",
+)
+_FILE_ENTRY_FIELD_SET = frozenset(FILE_ENTRY_FIELDS)
+
+
+class FileEntry(Mapping):  # pylint: disable=too-many-instance-attributes  # 字段即文件版本身份，不能再拆
+    """扫描阶段的紧凑文件版本记录。
+
+    大目录一次扫描会产生十万级候选文件，逐个 dict 保存九个字段会让扫描和整轮执行期间
+    常驻数十 MB；这里用 ``__slots__`` 保存同一组字段，并以只读 Mapping 暴露与旧 dict
+    相同的键和顺序，分批、容量与指纹逻辑无需区分来源。写入 JSON 列或批次快照前
+    必须用 ``dict(entry)`` 转换，账本和工作进程看到的仍是普通 dict。
+    """
+
+    __slots__ = FILE_ENTRY_FIELDS
+
+    def __init__(self, relative_path: str, source_root: str, info: os.stat_result):
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("不是普通文件")
+        self.relative_path = relative_path  # 源目录内相对路径
+        self.source_root = source_root  # 解析后的源目录根，同一轮扫描共享同一字符串
+        self.size = info.st_size  # 源文件字节数
+        self.mtime_ns = info.st_mtime_ns  # 修改时间，决定归档年龄和批次顺序
+        self.ctime_ns = info.st_ctime_ns  # 元数据变更时间，参与版本身份核对
+        self.mode = stat.S_IMODE(info.st_mode)  # 权限位
+        self.birthtime_ns = _birthtime_ns(info)  # 文件系统创建时间，平台不支持时为空
+        self.device = info.st_dev  # 所在设备
+        self.inode = info.st_ino  # inode 编号
+
+    def __getitem__(self, key: str):
+        if key not in _FILE_ENTRY_FIELD_SET:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(FILE_ENTRY_FIELDS)
+
+    def __len__(self) -> int:
+        return len(FILE_ENTRY_FIELDS)
+
+    def __repr__(self) -> str:
+        return f"FileEntry({dict(self)!r})"
 
 
 def _directory_identity(info: os.stat_result) -> dict:
@@ -90,13 +137,15 @@ def fingerprint(entry: dict) -> str:
     return hashlib.sha256(json.dumps(fields, ensure_ascii=True).encode()).hexdigest()
 
 
-def scan_tree(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[list[dict], list[dict], int]:
-    """扫描普通文件和真实目录；使用 scandir 减少路径对象和重复 lstat。"""
+def scan_tree(
+    task: TaskConfig, stop: Event, *, stable: bool = False
+) -> tuple[list[FileEntry], list[dict], int]:
+    """扫描普通文件和真实目录；使用 scandir 减少路径对象和重复 lstat，文件以紧凑记录返回。"""
     validate_paths(task)
     cutoff = time.time_ns() - int(task.archive_age_days * 86400 * 1_000_000_000)
     root = Path(task.source_dir)
     source_root = str(root.resolve())
-    entries: list[dict] = []
+    entries: list[FileEntry] = []
     directories: list[dict] = []
     skipped = 0
     skipped_patterns = 0
@@ -156,12 +205,12 @@ def scan_tree(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[l
                     skipped += 1
                     skipped_patterns += 1
                     continue
-                item = _file_identity(child.stat(follow_symlinks=False))
-                if item["mtime_ns"] > cutoff:
+                item = FileEntry(relative, source_root, child.stat(follow_symlinks=False))
+                if item.mtime_ns > cutoff:
                     skipped += 1
                     skipped_too_new += 1
                     continue
-                entries.append({"relative_path": relative, "source_root": source_root, **item})
+                entries.append(item)
             except OSError, ValueError:
                 skipped += 1
                 skipped_unreadable += 1
@@ -208,20 +257,19 @@ def scan_tree(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[l
         f"unreadable_or_special={skipped_unreadable} unstable={skipped_unstable} "
         f"elapsed_seconds={time.monotonic() - started:.3f}"
     )
-    return (
-        sorted(entries, key=lambda item: (item["mtime_ns"], item["relative_path"])),
-        sorted(directories, key=lambda item: item["relative_path"]),
-        skipped,
-    )
+    # 原地排序，避免在扫描峰值时再复制一份十万级列表。
+    entries.sort(key=lambda item: (item.mtime_ns, item.relative_path))
+    directories.sort(key=lambda item: item["relative_path"])
+    return entries, directories, skipped
 
 
-def scan(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[list[dict], int]:
+def scan(task: TaskConfig, stop: Event, *, stable: bool = False) -> tuple[list[FileEntry], int]:
     """兼容只关心普通文件的预览与测试调用。"""
     entries, _directories, skipped = scan_tree(task, stop, stable=stable)
     return entries, skipped
 
 
-def partition(task: TaskConfig, entries: list[dict]) -> list[dict]:
+def partition(task: TaskConfig, entries: list[Mapping]) -> list[dict]:
     """按组内时间排序，数量或源字节上限满足任一条件即拆批。"""
     groups = defaultdict(list)
     for item in entries:
