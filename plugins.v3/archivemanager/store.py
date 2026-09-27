@@ -1,6 +1,6 @@
 """插件独立数据库：逐文件版本索引与可恢复批次账本。"""
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -633,32 +633,46 @@ class Store:
         self.cleanup_results(batch_id, {relative_path: result})
 
     def summary(self) -> dict:
+        """归档概览；页面打开和任务运行期间会被轮询，只读取统计所需的列与 JSON 键。
+
+        大小与数量以文本取出后在 Python 中转整数，避免 PostgreSQL 32 位整数转换溢出。
+        """
+        published_states = ("completed", "cleaning", "cleanup_failed")
         with self.handle.session() as session:
-            batch_rows = list(session.scalars(select(BatchRow)))
-            completed = [row for row in batch_rows if row.status in ("completed", "cleaning", "cleanup_failed")]
+            completed = session.execute(
+                select(
+                    BatchRow.status,
+                    BatchRow.created_at,
+                    BatchRow.data["published_at"].as_string(),
+                    BatchRow.data["file_count"].as_string(),
+                    BatchRow.data["source_bytes"].as_string(),
+                    BatchRow.data["archive_size"].as_string(),
+                ).where(BatchRow.status.in_(published_states))
+            ).all()
             today = datetime.now(tz=ZoneInfo(settings.TZ)).date()
             completed_today = [
-                row
-                for row in completed
-                if self._published_on_local_day(
-                    row.status, row.created_at, row.data.get("published_at"), today
-                )
+                row for row in completed if self._published_on_local_day(row[0], row[1], row[2], today)
             ]
 
             def count(*states):
                 return session.scalar(select(func.count()).select_from(FileRow).where(FileRow.status.in_(states)))
 
+            def total(rows, index: int) -> int:
+                return sum(int(row[index] or 0) for row in rows)
+
             return {
-                "archived_files": sum(row.data["file_count"] for row in completed),
+                "archived_files": total(completed, 3),
                 "archive_count": len(completed),
-                "source_bytes": sum(row.data["source_bytes"] for row in completed),
-                "archive_bytes": sum(row.data["archive_size"] for row in completed),
-                "today_archived_files": sum(row.data["file_count"] for row in completed_today),
+                "source_bytes": total(completed, 4),
+                "archive_bytes": total(completed, 5),
+                "today_archived_files": total(completed_today, 3),
                 "today_archive_count": len(completed_today),
-                "today_archive_bytes": sum(row.data["archive_size"] for row in completed_today),
+                "today_archive_bytes": total(completed_today, 5),
                 "deleted_files": count("deleted"),
-                "failed_batches": sum(
-                    row.status in ("failed", "manifest_pending", "cleanup_failed") for row in batch_rows
+                "failed_batches": session.scalar(
+                    select(func.count())
+                    .select_from(BatchRow)
+                    .where(BatchRow.status.in_(["failed", "manifest_pending", "cleanup_failed"]))
                 ),
                 "pending_files": session.scalar(
                     select(func.count())
@@ -666,6 +680,20 @@ class Store:
                     .where(FileRow.status == "pending", FileRow.present.is_(True))
                 ),
             }
+
+    def task_snapshots(self) -> Iterator[dict]:
+        """按批次列表顺序（最新在前）逐条产出批次冻结的任务快照，供暂存清理收集输出目录。
+
+        只读取 ``data.task`` 并分批流式获取，不载入文件明细和清单；缺少快照的旧批次产出空 dict。
+        """
+        with self.handle.session() as session:
+            rows = session.execute(
+                select(BatchRow.data["task"].as_json())
+                .order_by(BatchRow.created_at.desc(), BatchRow.id)
+                .execution_options(yield_per=200)
+            )
+            for (snapshot,) in rows:
+                yield snapshot or {}
 
     def files(
         self,

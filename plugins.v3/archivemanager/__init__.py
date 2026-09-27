@@ -733,8 +733,7 @@ class ArchiveManager(_PluginBase):
         values: dict[tuple[str, str], tuple[TaskConfig, set[str]]] = {}
         for task in self._tasks:
             values[(task.id, task.output_dir)] = (task, set())
-        for batch in store.batches(page=1, page_size=100000)["items"]:
-            snapshot = batch.get("task") or {}
+        for snapshot in store.task_snapshots():
             try:
                 task = self._snapshot_task_for_maintenance(snapshot)
             except (TypeError, ValueError):

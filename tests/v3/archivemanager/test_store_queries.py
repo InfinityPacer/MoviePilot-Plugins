@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import app.plugins.archivemanager as manager_module
 import pytest
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig
 from app.plugins.archivemanager.store import Base, BatchRow, Store
 from app.sdk.config import settings
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import scoped_session, sessionmaker
 from zoneinfo import ZoneInfo
 
@@ -113,3 +114,124 @@ def test_create_counts_task_and_global_sequences_from_same_local_day_only(
     batch = store.create("new-batch", task.public(), [], "目录结构")
 
     assert batch["batch_name"] == "000003-000004"
+
+
+def _legacy_summary(store: Store) -> dict:
+    """旧实现的整表载入口径，作为窄查询结果的对照。"""
+    with store.handle.session() as session:
+        rows = list(session.scalars(select(BatchRow)))
+        completed = [row for row in rows if row.status in ("completed", "cleaning", "cleanup_failed")]
+        today = datetime.now(tz=ZoneInfo(settings.TZ)).date()
+        completed_today = [
+            row
+            for row in completed
+            if store._published_on_local_day(  # pylint: disable=protected-access
+                row.status, row.created_at, row.data.get("published_at"), today
+            )
+        ]
+        return {
+            "archived_files": sum(row.data["file_count"] for row in completed),
+            "archive_count": len(completed),
+            "source_bytes": sum(row.data["source_bytes"] for row in completed),
+            "archive_bytes": sum(row.data["archive_size"] for row in completed),
+            "today_archived_files": sum(row.data["file_count"] for row in completed_today),
+            "today_archive_count": len(completed_today),
+            "today_archive_bytes": sum(row.data["archive_size"] for row in completed_today),
+            "failed_batches": sum(
+                row.status in ("failed", "manifest_pending", "cleanup_failed") for row in rows
+            ),
+        }
+
+
+def test_summary_matches_full_snapshot_totals_across_local_day_boundary_and_large_sizes(
+    store: Store,
+) -> None:
+    local_timezone = ZoneInfo(settings.TZ)
+    midnight = datetime.now(local_timezone).replace(hour=0, minute=0, second=0, microsecond=0)
+    just_after = (midnight + timedelta(seconds=1)).astimezone(timezone.utc)
+    just_before = (midnight - timedelta(seconds=1)).astimezone(timezone.utc)
+
+    def published(batch_id: str, status: str, created: datetime, published_at: datetime | None, size: int):
+        extra = {"published_at": published_at.isoformat()} if published_at else {}
+        return _batch(
+            batch_id,
+            "task",
+            created,
+            status=status,
+            file_count=32,
+            source_bytes=size * 2,
+            archive_size=size,
+            **extra,
+        )
+
+    with store.handle.session() as session, session.begin():
+        session.add_all(
+            [
+                published("today-large", "completed", just_before, just_after, 5_000_000_000),
+                published("yesterday", "completed", just_before, just_before, 3_000_000_000),
+                published("legacy-today", "cleaning", just_after, None, 7),
+                published("cleanup-failed", "cleanup_failed", just_after, just_after, 11),
+                published("failed", "failed", just_after, None, 13),
+                published("manifest", "manifest_pending", just_after, just_after, 17),
+                published("building", "building", just_after, None, 19),
+            ]
+        )
+
+    summary = store.summary()
+
+    assert {key: summary[key] for key in _legacy_summary(store)} == _legacy_summary(store)
+    assert summary["archive_count"] == 4
+    assert summary["archive_bytes"] == 8_000_000_018
+    assert summary["source_bytes"] == 16_000_000_036
+    assert summary["today_archive_count"] == 3
+    assert summary["today_archive_bytes"] == 5_000_000_018
+    assert summary["today_archived_files"] == 96
+    assert summary["failed_batches"] == 3
+
+
+def test_staging_tasks_reads_task_snapshots_in_listing_order(store: Store, tmp_path: Path) -> None:
+    def config(output: str, name: str) -> TaskConfig:
+        return TaskConfig.model_validate(
+            {
+                "id": "staging-task",
+                "name": name,
+                "source_dir": str(tmp_path / "source"),
+                "output_dir": str(tmp_path / output),
+                "manifest_dir": str(tmp_path / "manifest"),
+            }
+        )
+
+    current = config("current", "当前")
+    now = datetime.now(timezone.utc)
+    with store.handle.session() as session, session.begin():
+        session.add_all(
+            [
+                _batch("old-a", "staging-task", now - timedelta(hours=2), task=config("old", "旧名").public()),
+                _batch("old-b", "staging-task", now - timedelta(hours=1), task=config("old", "新名").public()),
+                _batch("unfinished", "staging-task", now, status="building", task=current.public()),
+                _batch("broken", "staging-task", now, task={"id": "broken"}),
+                BatchRow(id="no-task", task_id="x", status="completed", created_at=now.isoformat(), data={}),
+            ]
+        )
+    manager = manager_module.ArchiveManager()
+    manager._tasks = [current]  # pylint: disable=protected-access
+    manager._store = lambda: store  # pylint: disable=protected-access
+
+    result = manager._staging_tasks()  # pylint: disable=protected-access
+
+    # 旧实现按完整批次列表逐条读取 task 快照；新查询必须给出相同的任务、输出目录与保留批次。
+    legacy: dict[tuple[str, str], tuple[TaskConfig, set[str]]] = {(current.id, current.output_dir): (current, set())}
+    for batch in store.batches(page=1, page_size=100000)["items"]:
+        try:
+            task = manager._snapshot_task_for_maintenance(batch.get("task") or {})  # pylint: disable=protected-access
+        except (TypeError, ValueError):
+            continue
+        legacy.setdefault((task.id, task.output_dir), (task, set()))
+    expected = [(task, {batch["id"] for batch in store.unfinished(task.id)}) for task, _ in legacy.values()]
+    assert result == expected
+    by_output = {task.output_dir: (task.name, keep) for task, keep in result}
+    assert by_output[str(tmp_path / "current")] == ("当前", {"unfinished"})
+    assert by_output[str(tmp_path / "old")] == ("新名", {"unfinished"})
+    assert list(store.task_snapshots()) == [
+        batch.get("task") or {} for batch in store.batches(page=1, page_size=100000)["items"]
+    ]
