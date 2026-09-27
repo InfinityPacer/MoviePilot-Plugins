@@ -329,35 +329,61 @@ class Store:
                 row.data = {**row.data, **changes}
 
     @staticmethod
-    def _published_on_local_day(row: BatchRow, target_day) -> bool:
+    def _published_on_local_day(
+        status: str, created_at: str, published_at: str | None, target_day
+    ) -> bool:
         """按 MoviePilot 配置时区判断批次发布日期；旧批次缺少发布时间时回退到创建时间。"""
-        published_at = row.data.get("published_at")
         if not published_at:
-            if row.status not in ("completed", "cleaning", "cleanup_failed"):
+            if status not in ("completed", "cleaning", "cleanup_failed"):
                 return False
-            published_at = row.created_at
+            published_at = created_at
         try:
             return datetime.fromisoformat(published_at).astimezone(ZoneInfo(settings.TZ)).date() == target_day
         except (TypeError, ValueError):
             return False
 
     def daily_archive_bytes(self, local_day=None) -> int:
-        """统计 MoviePilot 配置时区日内已发布批次的实际归档包大小，成品移走后仍保留额度记录。"""
+        """统计 MoviePilot 配置时区日内已发布批次的实际归档包大小，成品移走后仍保留额度记录。
+
+        批次循环每轮都会调用；只取判定所需的列与 JSON 键，不载入含文件明细和清单的完整快照。
+        ``archive_size`` 以文本取出再转整数，避免 PostgreSQL 按 32 位 INTEGER 转换大于 2GB 的包。
+        """
         target_day = local_day or datetime.now(tz=ZoneInfo(settings.TZ)).date()
         with self.handle.session() as session:
-            return sum(
-                int(row.data.get("archive_size") or 0)
-                for row in session.scalars(select(BatchRow)).all()
-                if self._published_on_local_day(row, target_day)
-            )
+            rows = session.execute(
+                select(
+                    BatchRow.status,
+                    BatchRow.created_at,
+                    BatchRow.data["published_at"].as_string(),
+                    BatchRow.data["archive_size"].as_string(),
+                )
+            ).all()
+        return sum(
+            int(archive_size or 0)
+            for status, created_at, published_at, archive_size in rows
+            if self._published_on_local_day(status, created_at, published_at, target_day)
+        )
 
     def local_archives(self, task_id: str) -> list[dict]:
-        """只统计确实仍在本地的成品；文件消失不等于上传成功。"""
+        """只统计确实仍在本地的成品；文件消失不等于上传成功。
+
+        先只按成品路径判断仍在本地的批次，再载入这些批次的完整快照；已被外部移走的
+        历史批次不再每轮整表反序列化。
+        """
         with self.handle.session() as session:
-            records = [
-                self._serialize(row) for row in session.scalars(select(BatchRow).where(BatchRow.task_id == task_id))
-            ]
-        return [batch for batch in records if batch["archive_path"] and Path(batch["archive_path"]).is_file()]
+            candidates = session.execute(
+                select(BatchRow.id, BatchRow.data["archive_path"].as_string()).where(
+                    BatchRow.task_id == task_id
+                )
+            ).all()
+            local_ids = [batch_id for batch_id, path in candidates if path and Path(path).is_file()]
+            if not local_ids:
+                return []
+            rows = {
+                row.id: row
+                for row in session.scalars(select(BatchRow).where(BatchRow.id.in_(local_ids)))
+            }
+            return [self._serialize(rows[batch_id]) for batch_id in local_ids if batch_id in rows]
 
     def exclude_reserved(self, task_id: str, entries: list[Mapping]) -> list[Mapping]:
         """预览只查询去重证据，不刷新扫描状态；按块查询，避免载入全部已预留指纹。"""
@@ -389,12 +415,15 @@ class Store:
         sequence = 1
         global_sequence = 1
         # sequence 按任务递增，global_sequence 跨所有任务递增；两者都按 MoviePilot 配置日期重新计数。
+        # 只读取任务与创建时间两列，不反序列化历史批次快照。
         with self.handle.session() as sequence_session:
-            for row in sequence_session.scalars(select(BatchRow)).all():
-                if datetime.fromisoformat(row.created_at).astimezone(ZoneInfo(settings.TZ)).date() != local_day:
+            for row_task_id, row_created_at in sequence_session.execute(
+                select(BatchRow.task_id, BatchRow.created_at)
+            ):
+                if datetime.fromisoformat(row_created_at).astimezone(ZoneInfo(settings.TZ)).date() != local_day:
                     continue
                 global_sequence += 1
-                if row.task_id == task["id"]:
+                if row_task_id == task["id"]:
                     sequence += 1
         directories = directories or []
         naming_entries = entries or directories
@@ -608,7 +637,13 @@ class Store:
             batch_rows = list(session.scalars(select(BatchRow)))
             completed = [row for row in batch_rows if row.status in ("completed", "cleaning", "cleanup_failed")]
             today = datetime.now(tz=ZoneInfo(settings.TZ)).date()
-            completed_today = [row for row in completed if self._published_on_local_day(row, today)]
+            completed_today = [
+                row
+                for row in completed
+                if self._published_on_local_day(
+                    row.status, row.created_at, row.data.get("published_at"), today
+                )
+            ]
 
             def count(*states):
                 return session.scalar(select(func.count()).select_from(FileRow).where(FileRow.status.in_(states)))
