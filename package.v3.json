@@ -223,12 +223,13 @@
         "name": "天气",
         "description": "定时推送天气，并在仪表盘中显示实时天气。",
         "labels": "工具,仪表板",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/weatherwidget.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v3.1.0": "新增天气刷新周期设置，默认每 6 小时刷新，可选不刷新仅推送通知；仪表盘不再每次加载都重新截图；每轮截图只启动一个浏览器，结束后释放浏览器文件缓存，降低容器内存占用。",
             "v3.0.0": "迁移至 MoviePilot V3 稳定接口与浏览器 SDK，保持天气仪表板和通知流程。"
         },
         "release": true
