@@ -29,7 +29,7 @@ class PlexPersonMeta(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png"
     # 插件版本
-    plugin_version = "2.7"
+    plugin_version = "2.8"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -734,7 +734,8 @@ class PlexPersonMeta(_PluginBase):
         }
 
     def get_page(self) -> List[dict]:
-        return []
+        """不提供详情页，函数体保持占位使框架判定 has_page=False，点击卡片直接进入配置页。"""
+        pass
 
     def __get_service_library_options(self):
         """

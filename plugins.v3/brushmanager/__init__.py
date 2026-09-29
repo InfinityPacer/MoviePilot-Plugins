@@ -29,7 +29,7 @@ class BrushManager(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/brushmanager.png"
     # 插件版本
-    plugin_version = "2.0.0"
+    plugin_version = "2.0.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -513,8 +513,8 @@ class BrushManager(_PluginBase):
         }
 
     def get_page(self) -> Optional[List[dict]]:
-        """本插件没有详情页。"""
-        return None
+        """不提供详情页，函数体保持占位使框架判定 has_page=False，点击卡片直接进入配置页。"""
+        pass
 
     def stop_service(self):
         """

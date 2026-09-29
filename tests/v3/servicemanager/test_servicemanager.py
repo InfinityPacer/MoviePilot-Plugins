@@ -142,10 +142,10 @@ def test_v3_metadata_and_readme_boundary():
     package_v3 = json.loads((REPO_ROOT / "package.v3.json").read_text(encoding="utf-8"))
     package_v2 = json.loads((REPO_ROOT / "package.v2.json").read_text(encoding="utf-8"))
 
-    assert ServiceManager.plugin_version == "2.0.0"
+    assert ServiceManager.plugin_version == "2.0.1"
     assert package_v3["ServiceManager"]["version"] == ServiceManager.plugin_version
     assert package_v3["ServiceManager"]["system_version"] == ">=3.0.0"
-    assert list(package_v3["ServiceManager"]["history"]) == ["v2.0.0"]
+    assert list(package_v3["ServiceManager"]["history"]) == ["v2.0.1", "v2.0.0"]
     assert package_v2["ServiceManager"]["v3"] is False
     assert not (REPO_ROOT / "plugins.v3/servicemanager/README.md").exists()
 

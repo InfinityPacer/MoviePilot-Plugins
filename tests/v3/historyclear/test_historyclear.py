@@ -71,7 +71,7 @@ def test_v3_plugin_entry_initializes_history_operator(monkeypatch):
 def test_v3_plugin_metadata():
     assert historyclear.HistoryClear.plugin_name == "历史记录清理"
     assert historyclear.HistoryClear.plugin_desc == "一键清理历史记录。"
-    assert historyclear.HistoryClear.plugin_version == "2.0"
+    assert historyclear.HistoryClear.plugin_version == "2.1"
     assert historyclear.HistoryClear.plugin_author == "InfinityPacer"
     assert historyclear.HistoryClear.plugin_config_prefix == "historyclear_"
     assert historyclear.HistoryClear.plugin_order == 61
