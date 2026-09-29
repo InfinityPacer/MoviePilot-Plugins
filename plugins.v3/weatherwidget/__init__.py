@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, List, Dict, Tuple, Optional
 
+import psutil
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -67,6 +68,17 @@ SCREENSHOT_DEVICE_CONTEXTS = {
     }
 }
 
+# 可选的天气刷新周期（小时）。截图每次都要启动完整浏览器，默认值取 6 小时，
+# 在天气时效和浏览器带来的内存、磁盘开销之间取平衡。
+REFRESH_INTERVAL_HOURS = (1, 3, 6, 12, 24)
+DEFAULT_REFRESH_INTERVAL = 6
+# 不刷新：只保留天气通知，不再启动浏览器截图，仪表盘也不显示天气。
+# 用显式取值而不是空值表示，避免与旧配置中缺失该字段（按默认周期处理）混淆。
+REFRESH_DISABLED = 0
+# 浏览器关闭后等待其进程退出的最长秒数，进程退出后文件页才不再被映射、可以释放。
+BROWSER_EXIT_TIMEOUT = 5
+
+
 class WeatherWidget(_PluginBase):
     # region 全局定义
 
@@ -77,7 +89,7 @@ class WeatherWidget(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/weatherwidget.png"
     # 插件版本
-    plugin_version = "3.0.0"
+    plugin_version = "3.1.0"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -138,8 +150,11 @@ class WeatherWidget(_PluginBase):
     _screenshot_timeout = 2 * 60
     # 截图类型
     _screenshot_type = None
-    # 天气刷新间隔
-    _refresh_interval = 1
+    # 天气刷新周期（小时），同时约束定时刷新和仪表盘触发的按需刷新
+    _refresh_interval = DEFAULT_REFRESH_INTERVAL
+    # 最近一次截图时解析到的日出、日落时间，按需刷新时据此在本地判断主题是否需要切换
+    _sunrise_time = None
+    _sunset_time = None
     # 定时器
     _scheduler = None
     # 退出事件
@@ -166,9 +181,12 @@ class WeatherWidget(_PluginBase):
         self._auto_theme_enabled = config.get("auto_theme_enabled", True)
         self._auto_height = config.get("auto_height", False)
         self._last_screenshot_time = None
+        self._sunrise_time = None
+        self._sunset_time = None
         self._use_dark_mode = self.__should_use_dark_mode()
         self._adapt_mode = config.get("adapt_mode", "compatibility")
         self._component_size = config.get("component_size", "mini")
+        self._refresh_interval = self.__normalize_refresh_interval(config.get("refresh_interval"))
         self._weather_notify = bool(config.get("weather_notify", True))
         self._weather_notify_cron = config.get("weather_notify_cron")
         self._weather_notify_type = config.get("weather_notify_type", "Plugin")
@@ -191,6 +209,10 @@ class WeatherWidget(_PluginBase):
 
         if not self._location:
             logger.error("城市不能为空")
+            return
+
+        if not self.__is_refresh_enabled():
+            logger.info("已关闭天气刷新，仅推送天气通知")
             return
 
         if not self.__check_image():
@@ -392,8 +414,9 @@ class WeatherWidget(_PluginBase):
         """
         # 根据UA获取设备类型
         key = self.__detect_device_type(user_agent=user_agent).lower()
-        # 获取图片资源
-        image = self.__get_weather_base64_image(location=self._location, key=key)
+        # 不刷新时旧截图会越来越旧，不再展示，避免误导
+        refresh_enabled = self.__is_refresh_enabled()
+        image = self.__get_weather_base64_image(location=self._location, key=key) if refresh_enabled else None
 
         # 列配置
         size_to_cols_map = {
@@ -417,7 +440,7 @@ class WeatherWidget(_PluginBase):
                     'content': [
                         {
                             'component': 'div',
-                            'text': '暂无数据',
+                            'text': '暂无数据' if refresh_enabled else '已关闭天气刷新',
                             'props': {
                                 'class': 'text-center'
                             }
@@ -623,6 +646,31 @@ class WeatherWidget(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'refresh_interval',
+                                            'label': '天气刷新周期',
+                                            'items': [
+                                                {"title": "不刷新（仅通知）", "value": REFRESH_DISABLED},
+                                                *[
+                                                    {"title": f"每 {hours} 小时", "value": hours}
+                                                    for hours in REFRESH_INTERVAL_HOURS
+                                                ]
+                                            ],
+                                            'hint': '每次刷新都会启动浏览器截图；不刷新时仅推送通知，仪表盘不显示天气',
+                                            'persistent-hint': True,
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
@@ -779,7 +827,8 @@ class WeatherWidget(_PluginBase):
             "weather_notify": True,
             "weather_notify_cron": "0 8 * * *",
             "auto_height": False,
-            "component_size": "mini"
+            "component_size": "mini",
+            "refresh_interval": DEFAULT_REFRESH_INTERVAL
         }
 
     def get_page(self) -> Optional[List[dict]]:
@@ -799,7 +848,7 @@ class WeatherWidget(_PluginBase):
 
         services = []
 
-        if self._enabled:
+        if self.__is_refresh_enabled():
             services.append({
                 "id": "RefreshWeather",
                 "name": "定时获取天气信息",
@@ -849,6 +898,7 @@ class WeatherWidget(_PluginBase):
             "auto_height": self._auto_height,
             'adapt_mode': self._adapt_mode,
             "component_size": self._component_size,
+            "refresh_interval": self._refresh_interval,
             "weather_notify": self._weather_notify,
             "weather_notify_cron": self._weather_notify_cron,
             "weather_notify_type": self._weather_notify_type,
@@ -870,11 +920,13 @@ class WeatherWidget(_PluginBase):
 
         if apikey != settings.API_TOKEN:
             return None
+        if not self.__is_refresh_enabled():
+            return None
         if not location:
             logger.error("没有地址信息，获取天气图片失败")
             return None
-        # 每次请求时，获取一次最新的图片信息
-        self.__add_screenshot_task()
+        # 截图过期或主题需要切换时才补一次截图，其余请求直接复用已有图片
+        self.__add_screenshot_task_if_stale()
         # 获取UA
         user_agent = request.headers.get('user-agent', 'Unknown User-Agent')
         key = self.__detect_device_type(user_agent=user_agent).lower()
@@ -889,8 +941,8 @@ class WeatherWidget(_PluginBase):
         if not location:
             logger.error("没有地址信息，获取天气图片失败")
             return None
-        # 每次请求时，获取一次最新的图片信息
-        self.__add_screenshot_task()
+        # 截图过期或主题需要切换时才补一次截图，其余请求直接复用已有图片
+        self.__add_screenshot_task_if_stale()
         # 这里实际上返回的是上一次的图片信息
         image = self.__get_latest_image(key=key)
         if not image:
@@ -900,9 +952,52 @@ class WeatherWidget(_PluginBase):
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
         return f"data:image/{image.suffix.replace('.', '')};base64,{encoded_string}"
 
+    @staticmethod
+    def __normalize_refresh_interval(value: Any) -> int:
+        """把配置中的刷新周期规范为可选值之一，旧配置或非法值回落到默认周期。"""
+        try:
+            hours = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_REFRESH_INTERVAL
+        if hours == REFRESH_DISABLED or hours in REFRESH_INTERVAL_HOURS:
+            return hours
+        return DEFAULT_REFRESH_INTERVAL
+
+    def __is_refresh_enabled(self) -> bool:
+        """是否需要维护天气截图；选择不刷新时插件只负责天气通知。"""
+        return self._enabled and self._refresh_interval != REFRESH_DISABLED
+
+    def __add_screenshot_task_if_stale(self):
+        """
+        仪表盘或图片接口读取截图时调用，只在需要时补一次截图。
+
+        没有截图、最新截图已超过刷新周期，或按缓存的日出日落时间判断明暗主题
+        已经变化时才添加任务，避免仪表盘每次加载都启动浏览器。
+        """
+        if not self.__is_refresh_enabled():
+            return
+        images = list(self.__get_images_path().glob(f"{self.__get_screenshot_image_pre_path()}_*.png"))
+        if not images:
+            self.__add_screenshot_task()
+            return
+        latest_mtime = max(image.stat().st_mtime for image in images)
+        age_seconds = datetime.now().timestamp() - latest_mtime
+        if age_seconds >= self._refresh_interval * 3600:
+            self.__add_screenshot_task()
+            return
+        if self._auto_theme_enabled and self._sunrise_time and self._sunset_time:
+            expected_dark = self.__is_dark_at(
+                sunrise_time=self._sunrise_time,
+                sunset_time=self._sunset_time,
+                current_time=datetime.now(tz=pytz.timezone(settings.TZ)).time(),
+            )
+            if expected_dark != bool(self._use_dark_mode):
+                logger.info("明暗主题已变化，重新截图")
+                self.__add_screenshot_task()
+
     def __add_screenshot_task(self):
         """添加截图任务"""
-        if not self._enabled:
+        if not self.__is_refresh_enabled():
             return
 
         if not self._scheduler:
@@ -935,6 +1030,8 @@ class WeatherWidget(_PluginBase):
 
     def __take_screenshots(self):
         """管理多设备截图任务"""
+        if not self.__is_refresh_enabled():
+            return
         self.__get_images_path().mkdir(parents=True, exist_ok=True)
         current_time = datetime.now(tz=pytz.timezone(settings.TZ))
         if self._last_screenshot_time and self.__check_image():
@@ -971,16 +1068,118 @@ class WeatherWidget(_PluginBase):
                                       screenshot_devices: dict,
                                       color_scheme: str,
                                       start_time: datetime) -> None:
-        """使用宿主浏览器 SDK 为不同设备生成天气截图。"""
+        """
+        使用宿主浏览器 SDK 为不同设备生成天气截图。
+
+        一轮截图只启动一个浏览器：第一个设备通过 SDK 启动浏览器上下文，其余设备在同一
+        浏览器上各开一个上下文，设备参数（UA、视口、缩放）都按上下文隔离。浏览器进程会
+        把约 300MB 的程序文件读进页缓存，并计入 MoviePilot 容器的内存占用，因此关闭后
+        主动释放这些文件的缓存。
+        """
         logger.info("正在准备截图服务，宿主浏览器内核启动中")
-        for key, device in screenshot_devices.items():
+        known_pids = self.__get_child_pids()
+        primary_context = None
+        # 额外上下文需要先于主上下文关闭：主上下文关闭时会连带关闭整个浏览器
+        extra_contexts = []
+        browser_procs = []
+        mapped_files = set()
+        try:
+            for key, device in screenshot_devices.items():
+                try:
+                    logger.info(f'{key} 正在启动浏览器截图 ...')
+                    context_options = self.__get_browser_context_options(device=device, color_scheme=color_scheme)
+                    if primary_context is None:
+                        primary_context = self.__launch_browser_context(device=device, color_scheme=color_scheme)
+                        context = primary_context
+                    elif primary_context.browser:
+                        context = primary_context.browser.new_context(**context_options)
+                        extra_contexts.append(context)
+                    else:
+                        # 持久化上下文没有独立的 Browser 对象，只能为该设备另起一个浏览器
+                        context = self.__launch_browser_context(device=device, color_scheme=color_scheme)
+                        extra_contexts.append(context)
+                    self.__screenshot_element_by_browser(key=key, device=device, context=context)
+                    elapsed_time = datetime.now() - start_time
+                    logger.info(f'运行完毕，用时 {elapsed_time.total_seconds()} 秒')
+                except Exception as e:
+                    logger.error(f"{key} 浏览器截图失败: {str(e)}")
+            # 必须在浏览器仍在运行时收集进程和映射文件：渲染进程只在打开页面后才出现，
+            # 而进程退出后就无法再读取它的内存映射
+            browser_procs = self.__get_new_child_procs(known_pids=known_pids)
+            mapped_files = self.__collect_mapped_files(browser_procs=browser_procs)
+        finally:
+            for context in reversed(extra_contexts):
+                try:
+                    context.close()
+                except Exception as e:
+                    logger.warning(f"关闭浏览器上下文失败: {e}")
+            if primary_context:
+                try:
+                    primary_context.close()
+                except Exception as e:
+                    logger.warning(f"关闭浏览器失败: {e}")
+            self.__release_browser_file_cache(browser_procs=browser_procs, mapped_files=mapped_files)
+
+    @staticmethod
+    def __get_child_pids() -> set:
+        """返回当前进程所有后代进程的 PID，用于识别本轮截图新启动的浏览器进程。"""
+        try:
+            return {proc.pid for proc in psutil.Process().children(recursive=True)}
+        except psutil.Error:
+            return set()
+
+    @staticmethod
+    def __get_new_child_procs(known_pids: set) -> list:
+        """返回截图开始后新出现的后代进程，包括 Playwright 驱动和浏览器的各个子进程。"""
+        try:
+            return [proc for proc in psutil.Process().children(recursive=True) if proc.pid not in known_pids]
+        except psutil.Error:
+            return []
+
+    @staticmethod
+    def __collect_mapped_files(browser_procs: list) -> set:
+        """收集浏览器进程映射的真实文件，包括浏览器主程序、资源包、动态库和字体。"""
+        mapped_files = set()
+        for proc in browser_procs:
             try:
-                logger.info(f'{key} 正在启动浏览器截图 ...')
-                self.__screenshot_element_by_browser(key=key, device=device, color_scheme=color_scheme)
-                elapsed_time = datetime.now() - start_time
-                logger.info(f'运行完毕，用时 {elapsed_time.total_seconds()} 秒')
-            except Exception as e:
-                logger.error(f"{key} 浏览器截图失败: {str(e)}")
+                for mapping in proc.memory_maps(grouped=True):
+                    if mapping.path.startswith("/") and not mapping.path.endswith("(deleted)"):
+                        mapped_files.add(mapping.path)
+            except psutil.Error:
+                continue
+        return mapped_files
+
+    @staticmethod
+    def __release_browser_file_cache(browser_procs: list, mapped_files: set) -> None:
+        """
+        浏览器退出后释放它映射过的文件的页缓存。
+
+        等待浏览器进程退出后，对其映射过的文件逐个调用 posix_fadvise(DONTNEED)。内核
+        不会释放仍被其他进程映射的页，所以同时运行的其他浏览器或共享的系统库不受影响。
+        缓存本身可回收，释放失败只影响内存显示，不影响截图结果，因此所有异常都只记录不抛出。
+        """
+        if not mapped_files:
+            return
+        # posix_fadvise 是平台可选接口，macOS、Windows 上不存在，此时跳过释放。
+        advise = getattr(os, "posix_fadvise", None)
+        dontneed = getattr(os, "POSIX_FADV_DONTNEED", None)
+        if advise is None or dontneed is None:
+            return
+        psutil.wait_procs(browser_procs, timeout=BROWSER_EXIT_TIMEOUT)
+        released = 0
+        for path in mapped_files:
+            try:
+                fd = os.open(path, os.O_RDONLY)
+            except OSError:
+                continue
+            try:
+                advise(fd, 0, 0, dontneed)
+                released += 1
+            except OSError:
+                pass
+            finally:
+                os.close(fd)
+        logger.info(f"已释放浏览器文件缓存，共 {released} 个文件")
 
     @staticmethod
     def __get_browser_context_options(device: dict, color_scheme: str) -> dict:
@@ -1006,8 +1205,8 @@ class WeatherWidget(_PluginBase):
             ),
         )
 
-    def __screenshot_element_by_browser(self, key: str, device: dict, color_scheme: str = 'light') -> bool:
-        """使用宿主浏览器 SDK 执行单个截图任务。"""
+    def __screenshot_element_by_browser(self, key: str, device: dict, context: Any) -> bool:
+        """在调用方提供的浏览器上下文中执行单个截图任务，上下文的关闭由调用方负责。"""
         current_time = datetime.now(tz=pytz.timezone(settings.TZ))
         timestamp = current_time.strftime("%Y%m%d%H%M%S")
         selector = ".c-city-weather-current"
@@ -1015,10 +1214,8 @@ class WeatherWidget(_PluginBase):
 
         logger.info(f"开始加载 {key} 页面: {self._weather_url}")
         self.__update_with_log_screenshot_time(current_time=current_time)
-        context = None
         page = None
         try:
-            context = self.__launch_browser_context(device=device, color_scheme=color_scheme)
             page = context.new_page()
             size = device.get("size")
             if size:
@@ -1059,8 +1256,6 @@ class WeatherWidget(_PluginBase):
         finally:
             if page:
                 page.close()
-            if context:
-                context.close()
 
     def __reset_page_style(self, page: Any, key: str = 'mobile'):
         """重置页面样式"""
@@ -1361,16 +1556,14 @@ class WeatherWidget(_PluginBase):
                 # 转换时间字符串为datetime.time对象
                 sunrise_time = datetime.strptime(sunrise_time_str, '%H:%M').time()
                 sunset_time = datetime.strptime(sunset_time_str, '%H:%M').time()
+                self._sunrise_time = sunrise_time
+                self._sunset_time = sunset_time
 
                 # 获取当前时间（只关心时间，不关心日期）
                 current_time = datetime.now(tz=pytz.timezone(settings.TZ)).time()
-
-                if sunrise_time < sunset_time:
-                    # 日出和日落在同一天
-                    return not (sunrise_time <= current_time <= sunset_time)
-                else:
-                    # 跨天情况：日落发生在日出前（例如在极地地区）
-                    return not (sunset_time <= current_time <= sunrise_time)
+                return self.__is_dark_at(sunrise_time=sunrise_time,
+                                         sunset_time=sunset_time,
+                                         current_time=current_time)
 
             return False
         except re.error as e:
@@ -1382,6 +1575,15 @@ class WeatherWidget(_PluginBase):
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return False
+
+    @staticmethod
+    def __is_dark_at(sunrise_time, sunset_time, current_time) -> bool:
+        """按日出日落时间判断给定时刻是否处于夜间。"""
+        if sunrise_time < sunset_time:
+            # 日出和日落在同一天
+            return not (sunrise_time <= current_time <= sunset_time)
+        # 跨天情况：日落发生在日出前（例如在极地地区）
+        return not (sunset_time <= current_time <= sunrise_time)
 
     @eventmanager.register(EventType.PluginAction)
     def notify_weather(self, event: Event = None):

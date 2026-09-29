@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+import os
 import threading
+from datetime import datetime, time as dtime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -78,7 +80,7 @@ def test_v3_metadata_and_capability_contract() -> None:
     """插件版本、命令、页面和 API 能力符合 V3 索引合同。"""
     plugin = _plugin(Path("/tmp/weatherwidget-test"))
 
-    assert WeatherWidget.plugin_version == "3.0.0"
+    assert WeatherWidget.plugin_version == "3.1.0"
     assert WeatherWidget.plugin_name == "天气"
     assert plugin.get_command()[0]["cmd"] == "/weather_notify"
     assert plugin.get_api() == []
@@ -223,82 +225,219 @@ def test_instance_cache_paths_are_isolated(tmp_path: Path) -> None:
     assert first_path != second_path
 
 
-def test_browser_screenshot_uses_host_sdk_and_closes_resources(tmp_path, monkeypatch) -> None:
-    """截图通过宿主浏览器 SDK 完成，并在成功后关闭页面和上下文。"""
+class _FakeElement:
+    """只提供截图路径写入的页面元素替身。"""
+
+    def bounding_box(self):
+        return None
+
+    def screenshot(self, path):
+        Path(path).write_bytes(b"png")
+
+
+class _FakePage:
+    """记录关闭状态的页面替身。"""
+
+    def __init__(self, timeout_ms: int):
+        self.element = _FakeElement()
+        self.closed = False
+        self.timeout_ms = timeout_ms
+
+    def set_viewport_size(self, _size):
+        return None
+
+    def goto(self, _url):
+        return None
+
+    def wait_for_selector(self, _selector, timeout):
+        assert timeout == self.timeout_ms
+
+    def query_selector(self, _selector):
+        return self.element
+
+    def title(self):
+        return "天气"
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeContext:
+    """浏览器上下文替身，关闭顺序写入共享列表以便断言。"""
+
+    def __init__(self, name: str, timeout_ms: int, close_log: list, browser=None):
+        self.name = name
+        self.page = _FakePage(timeout_ms)
+        self.browser = browser
+        self.close_log = close_log
+
+    def new_page(self):
+        return self.page
+
+    def close(self):
+        self.close_log.append(self.name)
+
+
+def _stub_page_styles(monkeypatch) -> None:
+    """截图流程中的页面样式调整依赖真实 DOM，测试中置空。"""
+    for name in ("__reset_weather_style", "__reset_page_style"):
+        monkeypatch.setattr(WeatherWidget, f"_WeatherWidget{name}", MagicMock())
+
+
+def test_browser_screenshots_share_one_browser_and_release_cache(tmp_path, monkeypatch) -> None:
+    """一轮截图只启动一个浏览器，其余设备复用同一浏览器新开上下文，关闭后释放文件缓存。"""
     plugin = _plugin(tmp_path)
-    image_dir = tmp_path / "images"
-    image_dir.mkdir()
-
-    class FakeElement:
-        def bounding_box(self):
-            return None
-
-        def screenshot(self, path):
-            Path(path).write_bytes(b"png")
-
-    class FakePage:
-        def __init__(self):
-            self.element = FakeElement()
-            self.closed = False
-
-        def goto(self, _url):
-            return None
-
-        def wait_for_selector(self, _selector, timeout):
-            assert timeout == plugin._screenshot_timeout * 1000
-
-        def query_selector(self, _selector):
-            return self.element
-
-        def title(self):
-            return "天气"
-
-        def close(self):
-            self.closed = True
-
-    class FakeContext:
-        def __init__(self):
-            self.page = FakePage()
-            self.closed = False
-
-        def new_page(self):
-            return self.page
-
-        def close(self):
-            self.closed = True
-
-    context = FakeContext()
-    launcher = MagicMock(return_value=context)
+    (tmp_path / "images").mkdir()
+    timeout_ms = plugin._screenshot_timeout * 1000
+    close_log = []
+    browser = MagicMock()
+    desktop_context = _FakeContext("desktop", timeout_ms, close_log)
+    browser.new_context.return_value = desktop_context
+    mobile_context = _FakeContext("mobile", timeout_ms, close_log, browser=browser)
+    launcher = MagicMock(return_value=mobile_context)
     monkeypatch.setattr(weatherwidget, "launch_browser_context", launcher)
+    _stub_page_styles(monkeypatch)
+    browser_procs = [object()]
+    monkeypatch.setattr(WeatherWidget, "_WeatherWidget__get_child_pids", staticmethod(lambda: {1}))
     monkeypatch.setattr(
         WeatherWidget,
-        "_WeatherWidget__reset_weather_style",
-        MagicMock(),
+        "_WeatherWidget__get_new_child_procs",
+        staticmethod(lambda known_pids: browser_procs),
     )
-    monkeypatch.setattr(
-        WeatherWidget,
-        "_WeatherWidget__reset_page_style",
-        MagicMock(),
-    )
-    monkeypatch.setattr(
-        WeatherWidget,
-        "_WeatherWidget__manage_images",
-        MagicMock(),
-    )
+    # 映射文件必须在关闭上下文之前收集，此时浏览器进程仍在运行
+    collect = MagicMock(side_effect=lambda browser_procs: close_log.append("collect") or {"/chrome"})
+    monkeypatch.setattr(WeatherWidget, "_WeatherWidget__collect_mapped_files", staticmethod(collect))
+    release = MagicMock()
+    monkeypatch.setattr(WeatherWidget, "_WeatherWidget__release_browser_file_cache", staticmethod(release))
 
-    success = plugin._WeatherWidget__screenshot_element_by_browser(
-        key="mobile",
-        device={"device": "iphone_13_pro_max", "size": {}},
+    plugin._WeatherWidget__take_screenshots_by_browser(
+        screenshot_devices=weatherwidget.SCREENSHOT_DEVICES["default"],
         color_scheme="dark",
+        start_time=datetime.now(),
     )
 
-    assert success is True
     launcher.assert_called_once()
     assert launcher.call_args.kwargs["headless"] is True
     assert launcher.call_args.kwargs["color_scheme"] == "dark"
-    assert context.page.closed is True
-    assert context.closed is True
-    assert list(image_dir.glob("weather_南京_default_mobile_*.png"))
+    desktop_options = browser.new_context.call_args.kwargs
+    assert desktop_options["viewport"] == {"width": 740, "height": 1024}
+    assert desktop_options["color_scheme"] == "dark"
+    assert "iPad" in desktop_options["user_agent"]
+    assert mobile_context.page.closed is True
+    assert desktop_context.page.closed is True
+    # 主上下文关闭会连带关闭浏览器，必须最后关闭
+    assert close_log == ["collect", "desktop", "mobile"]
+    collect.assert_called_once_with(browser_procs=browser_procs)
+    release.assert_called_once_with(browser_procs=browser_procs, mapped_files={"/chrome"})
+    assert list((tmp_path / "images").glob("weather_南京_default_mobile_*.png"))
+    assert list((tmp_path / "images").glob("weather_南京_default_desktop_*.png"))
+
+
+def test_release_browser_file_cache_drops_mapped_files(tmp_path, monkeypatch) -> None:
+    """只收集浏览器进程映射的真实文件，并在进程退出后再释放它们的缓存。"""
+    mapped = tmp_path / "chrome"
+    mapped.write_bytes(b"binary")
+    proc = MagicMock()
+    proc.memory_maps.return_value = [
+        SimpleNamespace(path=str(mapped)),
+        SimpleNamespace(path="[heap]"),
+        SimpleNamespace(path="/tmp/removed (deleted)"),
+    ]
+    order = []
+    monkeypatch.setattr(
+        weatherwidget.psutil,
+        "wait_procs",
+        lambda procs, timeout: order.append(("wait", timeout)),
+    )
+    advised = []
+
+    def fake_fadvise(fd, offset, length, advice):
+        order.append("advise")
+        advised.append((os.fstat(fd).st_ino, offset, length, advice))
+
+    monkeypatch.setattr(os, "posix_fadvise", fake_fadvise, raising=False)
+    monkeypatch.setattr(os, "POSIX_FADV_DONTNEED", 4, raising=False)
+
+    mapped_files = WeatherWidget._WeatherWidget__collect_mapped_files(browser_procs=[proc])
+    assert mapped_files == {str(mapped)}
+    WeatherWidget._WeatherWidget__release_browser_file_cache(browser_procs=[proc], mapped_files=mapped_files)
+
+    assert order == [("wait", weatherwidget.BROWSER_EXIT_TIMEOUT), "advise"]
+    assert advised == [(mapped.stat().st_ino, 0, 0, 4)]
+
+
+def test_refresh_interval_defaults_and_accepts_disabled() -> None:
+    """旧配置缺少刷新周期时按默认 6 小时，不刷新用显式 0 表示，非法值回落默认。"""
+    normalize = WeatherWidget._WeatherWidget__normalize_refresh_interval
+
+    assert normalize(None) == 6
+    assert normalize("12") == 12
+    assert normalize(0) == weatherwidget.REFRESH_DISABLED
+    assert normalize(5) == 6
+    assert normalize("abc") == 6
+
+
+def test_form_and_config_expose_refresh_interval() -> None:
+    """表单提供不刷新和各周期选项，默认 6 小时，保存配置时写回刷新周期。"""
+    plugin = _plugin(Path("/tmp/weatherwidget-test"))
+    form, defaults = plugin.get_form()
+
+    assert defaults["refresh_interval"] == 6
+    source = str(form)
+    assert "'model': 'refresh_interval'" in source
+    assert "不刷新（仅通知）" in source
+
+    plugin._refresh_interval = 12
+    plugin.update_config = MagicMock()
+    plugin._WeatherWidget__update_config()
+    assert plugin.update_config.call_args.args[0]["refresh_interval"] == 12
+
+
+def test_disabled_refresh_keeps_notification_only(tmp_path) -> None:
+    """选择不刷新时只保留通知服务，按需刷新和仪表盘都不触发截图。"""
+    plugin = _plugin(tmp_path)
+    plugin._refresh_interval = weatherwidget.REFRESH_DISABLED
+    plugin._WeatherWidget__take_screenshots = MagicMock()
+    add_task = MagicMock()
+    plugin._WeatherWidget__add_screenshot_task = add_task
+
+    services = plugin.get_service()
+    plugin._WeatherWidget__add_screenshot_task_if_stale()
+    cols, attrs, elements = plugin.get_dashboard(user_agent="Mozilla/5.0 (iPhone)")
+
+    assert [service["id"] for service in services] == ["NotifyWeather"]
+    add_task.assert_not_called()
+    assert "已关闭天气刷新" in str(elements)
+
+
+def test_on_demand_refresh_respects_interval_and_theme(tmp_path, monkeypatch) -> None:
+    """仪表盘读取截图时，只有截图过期或明暗主题变化才补一次截图。"""
+    plugin = _plugin(tmp_path)
+    plugin._refresh_interval = 6
+    images = tmp_path / "images"
+    images.mkdir()
+    image = images / "weather_南京_default_mobile_20260929120000.png"
+    image.write_bytes(b"png")
+    add_task = MagicMock()
+    plugin._WeatherWidget__add_screenshot_task = add_task
+
+    plugin._WeatherWidget__add_screenshot_task_if_stale()
+    add_task.assert_not_called()
+
+    stale = datetime.now().timestamp() - 7 * 3600
+    os.utime(image, (stale, stale))
+    plugin._WeatherWidget__add_screenshot_task_if_stale()
+    assert add_task.call_count == 1
+
+    # 截图仍新鲜，但按缓存的日出日落时间已进入夜间，需要切换为暗色截图
+    now = datetime.now().timestamp()
+    os.utime(image, (now, now))
+    plugin._auto_theme_enabled = True
+    plugin._use_dark_mode = False
+    plugin._sunrise_time = dtime(0, 0)
+    plugin._sunset_time = dtime(0, 1)
+    plugin._WeatherWidget__add_screenshot_task_if_stale()
+    assert add_task.call_count == 2
 
 
 def test_resolve_weather_parses_current_report(monkeypatch) -> None:
