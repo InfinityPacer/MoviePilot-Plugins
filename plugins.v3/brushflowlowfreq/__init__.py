@@ -249,7 +249,7 @@ class BrushFlowLowFreq(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "4.8"
+    plugin_version = "4.9"
     # 插件作者
     plugin_author = "jxxghp,InfinityPacer"
     # 作者主页
@@ -2137,7 +2137,9 @@ class BrushFlowLowFreq(_PluginBase):
             return True
 
         logger.info(f"开始获取站点 {siteinfo.get('name')} 的新种子 ...")
-        torrents = self.torrents_chain.browse(domain=siteinfo.get("domain"))
+        # 索引器 domain 是站点完整访问地址，browse 按注册域名查找站点，需要先收敛成注册域名
+        domain = StringUtils.get_url_domain(siteinfo.get("domain"))
+        torrents = self.torrents_chain.browse(domain=domain)
         if not torrents:
             logger.info(f"站点 {siteinfo.get('name')} 没有获取到种子")
             return True
