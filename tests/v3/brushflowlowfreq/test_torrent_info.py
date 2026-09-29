@@ -243,7 +243,7 @@ def test_v2_and_v3_filter_sources_normalize_optional_text():
 
 
 def test_v3_plugin_version_increments_minor_version():
-    assert BrushFlowLowFreq.plugin_version == "4.8"
+    assert BrushFlowLowFreq.plugin_version == "4.9"
 
 
 def test_v3_plugin_uses_stable_sdk_imports():
@@ -290,3 +290,33 @@ def test_v3_plugin_uses_stable_sdk_imports():
 
 def test_v3_plugin_has_no_http_api():
     assert object.__new__(BrushFlowLowFreq).get_api() == []
+
+
+class TestBrushSiteBrowseDomain:
+    """刷流浏览站点时应把索引器完整访问地址收敛为注册域名。"""
+
+    @staticmethod
+    def _browse_domain(indexer_domain):
+        plugin = object.__new__(BrushFlowLowFreq)
+        plugin.sites_helper = MagicMock()
+        plugin.sites_helper.get_indexers.return_value = [
+            {"id": 1, "name": "测试站点", "domain": indexer_domain}
+        ]
+        plugin.torrents_chain = MagicMock()
+        plugin.torrents_chain.browse.return_value = []
+
+        result = plugin._BrushFlowLowFreq__brush_site_torrents(
+            siteid=1, torrent_tasks={}, statistic_info={}, subscribe_titles=set()
+        )
+
+        assert result is True
+        plugin.torrents_chain.browse.assert_called_once()
+        return plugin.torrents_chain.browse.call_args.kwargs["domain"]
+
+    def test_full_url_indexer_domain_is_normalized(self):
+        assert self._browse_domain("https://pt.sjtu.edu.cn/") == "pt.sjtu.edu.cn"
+        assert self._browse_domain("https://www.musopia.vip/") == "musopia.vip"
+        assert self._browse_domain("https://pt.soulvoice.club/") == "soulvoice.club"
+
+    def test_registered_domain_is_kept(self):
+        assert self._browse_domain("hdhome.org") == "hdhome.org"
