@@ -41,12 +41,13 @@
         "name": "PlexEdition",
         "description": "根据入库记录修改Edition为电影版本/资源类型/特效信息。",
         "labels": "Plex",
-        "version": "1.4",
+        "version": "1.5",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexedition.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v1.5": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v1.4": "适配 V3 SDK 导入规范，迁移至 app.sdk 体系"
         },
         "release": true
@@ -55,12 +56,13 @@
         "name": "Plex演职人员刮削",
         "description": "实现刮削演职人员中文名称及角色。",
         "labels": "Plex,刮削",
-        "version": "2.7",
+        "version": "2.8",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.8": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.7": "迁移至 MoviePilot V3 app.sdk 稳定接口，并修复媒体服务器实例异常路径。"
         },
         "release": true
@@ -69,12 +71,13 @@
         "name": "PlexMatch",
         "description": "实现入库时添加 .plexmatch 文件，提高识别准确率。",
         "labels": "Plex,刮削",
-        "version": "1.6",
+        "version": "1.7",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v1.7": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v1.6": "通过统一查询 SDK 读取整理历史，移除对宿主数据库模型与会话的依赖。"
         },
         "release": true
@@ -83,12 +86,13 @@
         "name": "历史记录清理",
         "description": "一键清理历史记录，并在清理前创建 MoviePilot V3 一致性数据库备份。",
         "labels": "工具",
-        "version": "2.0",
+        "version": "2.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/historyclear.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.1": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.0": "MoviePilot V3 版本历史记录清理插件"
         },
         "release": true
@@ -97,12 +101,13 @@
         "name": "WebDAV备份",
         "description": "定时通过 WebDAV 上传 MoviePilot V3 一致性数据库备份。",
         "labels": "工具",
-        "version": "2.0.1",
+        "version": "2.0.2",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webdavbackup.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.0.2": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.0.1": "支持上传主程序及插件 SQLite 数据库备份制品。"
         },
         "release": true
@@ -194,13 +199,14 @@
     "BrushManager": {
         "name": "刷流种子整理",
         "description": "针对刷流种子进行整理操作。",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "labels": "文件整理,刷流",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/brushmanager.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.0.1": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.0.0": "MoviePilot V3 版本刷流种子整理插件"
         },
         "release": true
@@ -223,12 +229,13 @@
         "name": "天气",
         "description": "定时推送天气，并在仪表盘中显示实时天气。",
         "labels": "工具,仪表板",
-        "version": "3.1.0",
+        "version": "3.1.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/weatherwidget.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v3.1.1": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v3.1.0": "新增天气刷新周期设置，默认每 6 小时刷新，可选不刷新仅推送通知；仪表盘不再每次加载都重新截图；每轮截图只启动一个浏览器，结束后释放浏览器文件缓存，降低容器内存占用。",
             "v3.0.0": "迁移至 MoviePilot V3 稳定接口与浏览器 SDK，保持天气仪表板和通知流程。"
         },
@@ -238,12 +245,13 @@
         "name": "自动诊断",
         "description": "自动发起系统健康检查、网络连通性测试以及硬链接检查。",
         "labels": "系统设置",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/autodiagnosis.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.0.1": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.0.0": "迁移至 MoviePilot V3 稳定 SDK，保持系统健康、网络和硬链接诊断流程。"
         },
         "release": true
@@ -252,12 +260,13 @@
         "name": "站点流量管理",
         "description": "自动管理流量，保障站点分享率。",
         "labels": "站点,订阅,刷流",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/trafficassistant.png",
         "author": "InfinityPacer",
         "level": 2,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.0.1": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持站点流量管理与刷流联动流程。"
         },
         "release": true
@@ -280,12 +289,13 @@
         "name": "服务管理",
         "description": "实现自定义服务管理。",
         "labels": "系统设置",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/servicemanager.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.0.1": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持系统服务接管与周期配置流程。"
         },
         "release": true

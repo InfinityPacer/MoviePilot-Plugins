@@ -80,12 +80,12 @@ def test_v3_metadata_and_capability_contract() -> None:
     """插件版本、命令、页面和 API 能力符合 V3 索引合同。"""
     plugin = _plugin(Path("/tmp/weatherwidget-test"))
 
-    assert WeatherWidget.plugin_version == "3.1.0"
+    assert WeatherWidget.plugin_version == "3.1.1"
     assert WeatherWidget.plugin_name == "天气"
     assert plugin.get_command()[0]["cmd"] == "/weather_notify"
     assert plugin.get_api() == []
     assert plugin.get_page() is None
-    assert supports_plugin_hook(plugin, "get_page") is True
+    assert supports_plugin_hook(plugin, "get_page") is False
 
 
 def test_init_plugin_resets_state_without_reusing_previous_config(monkeypatch) -> None:

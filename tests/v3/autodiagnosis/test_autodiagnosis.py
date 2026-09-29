@@ -94,7 +94,7 @@ def test_v3_metadata_and_empty_capabilities_are_explicit() -> None:
     """插件元数据和无额外扩展能力符合 V3 运行时合同。"""
     plugin = _plugin()
 
-    assert AutoDiagnosis.plugin_version == "2.0.0"
+    assert AutoDiagnosis.plugin_version == "2.0.1"
     assert AutoDiagnosis.plugin_name == "自动诊断"
     assert plugin.get_state() is False
     assert plugin.get_command() == []

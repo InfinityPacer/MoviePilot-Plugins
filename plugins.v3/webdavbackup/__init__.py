@@ -33,7 +33,7 @@ class WebDAVBackup(_PluginBase):
     plugin_name = "WebDAV备份"
     plugin_desc = "定时通过 WebDAV 备份 MoviePilot V3 数据库。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/webdavbackup.png"
-    plugin_version = "2.0.1"
+    plugin_version = "2.0.2"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "webdavbackup_"
@@ -165,8 +165,8 @@ class WebDAVBackup(_PluginBase):
         }
 
     def get_page(self) -> None:
-        """本插件没有详情页。"""
-        return None
+        """不提供详情页，函数体保持占位使框架判定 has_page=False，点击卡片直接进入配置页。"""
+        pass
 
     def get_service(self) -> List[Dict[str, Any]]:
         """注册 WebDAV 定时备份服务。"""

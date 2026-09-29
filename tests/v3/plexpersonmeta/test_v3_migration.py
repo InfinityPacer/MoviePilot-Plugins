@@ -31,7 +31,7 @@ def test_v3_plugin_uses_stable_sdk_imports():
     plugin = object.__new__(_plugin)
     assert _plugin.get_command() == []
     assert plugin.get_api() == []
-    assert plugin.get_page() == []
+    assert plugin.get_page() is None
 
 
 def test_v3_version_history_and_legacy_index_are_consistent():
@@ -41,10 +41,10 @@ def test_v3_version_history_and_legacy_index_are_consistent():
     package_v2 = json.loads((repo_root / "package.v2.json").read_text(encoding="utf-8"))
     metadata = package_v3["PlexPersonMeta"]
 
-    assert _plugin.plugin_version == "2.7"
+    assert _plugin.plugin_version == "2.8"
     assert metadata["version"] == _plugin.plugin_version
-    assert list(metadata["history"]) == ["v2.7"]
-    assert metadata["history"]["v2.7"]
+    assert list(metadata["history"]) == ["v2.8", "v2.7"]
+    assert metadata["history"]["v2.8"]
     assert metadata["system_version"] == ">=3.0.0"
     assert package_v2["PlexPersonMeta"]["v3"] is False
 

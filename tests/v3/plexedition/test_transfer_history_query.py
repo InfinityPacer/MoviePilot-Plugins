@@ -41,7 +41,7 @@ def test_process_item_queries_transfer_history_by_v3_media_identity(monkeypatch)
 
 
 def test_v3_plugin_version() -> None:
-    assert plexedition.PlexEdition.plugin_version == "1.4"
+    assert plexedition.PlexEdition.plugin_version == "1.5"
 
 
 def test_v3_plugin_lifecycle_contracts() -> None:

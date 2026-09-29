@@ -102,7 +102,7 @@ def test_v3_lifecycle_and_empty_capabilities_are_explicit():
 
 
 def test_v3_plugin_version():
-    assert BrushManager.plugin_version == "2.0.0"
+    assert BrushManager.plugin_version == "2.0.1"
 
 
 def test_mp_tag_schedules_transfer_without_brush_plugin(monkeypatch):

@@ -19,7 +19,7 @@ class HistoryClear(_PluginBase):
     plugin_name = "历史记录清理"
     plugin_desc = "一键清理历史记录。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/historyclear.png"
-    plugin_version = "2.0"
+    plugin_version = "2.1"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "historyclear_"
@@ -160,8 +160,8 @@ class HistoryClear(_PluginBase):
         ], {"clear_history": False}
 
     def get_page(self) -> None:
-        """本插件没有详情页。"""
-        return None
+        """不提供详情页，函数体保持占位使框架判定 has_page=False，点击卡片直接进入配置页。"""
+        pass
 
     def get_service(self) -> List[Dict[str, Any]]:
         """本插件不注册定时服务。"""

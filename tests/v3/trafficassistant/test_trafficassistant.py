@@ -72,11 +72,11 @@ def test_v3_metadata_and_version_contract_are_consistent():
     package_v2 = json.loads((REPO_ROOT / "package.v2.json").read_text(encoding="utf-8"))
     metadata = package_v3["TrafficAssistant"]
 
-    assert TrafficAssistant.plugin_version == "2.0.0"
+    assert TrafficAssistant.plugin_version == "2.0.1"
     assert metadata["version"] == TrafficAssistant.plugin_version
     assert metadata["system_version"] == ">=3.0.0"
-    assert list(metadata["history"]) == ["v2.0.0"]
-    assert metadata["history"]["v2.0.0"]
+    assert list(metadata["history"]) == ["v2.0.1", "v2.0.0"]
+    assert metadata["history"]["v2.0.1"]
     assert package_v2["TrafficAssistant"]["v3"] is False
 
 
