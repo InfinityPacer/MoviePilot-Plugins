@@ -1,16 +1,12 @@
 import threading
 import time
-from datetime import datetime, timedelta
-from threading import Event
 from typing import Any, Dict, List, Optional, Tuple, Union
-
-import pytz
-from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.chain.transfer import TransferChain
 from app.sdk.config import settings
 from app.sdk.logging import logger
 from app.sdk.plugins import PluginManager
+from app.sdk import scheduler as scheduler_sdk
 from app.sdk.scheduler import start_scheduler_job
 from app.sdk.services import DownloaderHelper
 from app.modules.qbittorrent import Qbittorrent
@@ -29,7 +25,7 @@ class BrushManager(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/brushmanager.png"
     # 插件版本
-    plugin_version = "2.0.1"
+    plugin_version = "2.0.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -72,10 +68,8 @@ class BrushManager(_PluginBase):
     _brush_tag = "刷流"
     # 整理Tag
     _organize_tag = "已整理"
-    # 退出事件
-    _event = Event()
-    # 定时器
-    _scheduler = None
+    # 旧宿主没有一次性任务接口时使用的延迟线程，停止插件时统一取消
+    _timers: List[threading.Timer] = []
 
     # endregion
 
@@ -521,13 +515,13 @@ class BrushManager(_PluginBase):
         退出插件
         """
         try:
-            if self._scheduler:
-                self._scheduler.remove_all_jobs()
-                if self._scheduler.running:
-                    self._event.set()
-                    self._scheduler.shutdown()
-                    self._event.clear()
-                self._scheduler = None
+            for timer in self._timers:
+                timer.cancel()
+            self._timers = []
+            remove_once = getattr(scheduler_sdk, "remove_plugin_once_job", None)
+            if remove_once:
+                for job_id in self.__after_organize_job_ids:
+                    remove_once(self.__class__.__name__, job_id)
         except Exception as e:
             print(str(e))
 
@@ -1040,35 +1034,49 @@ class BrushManager(_PluginBase):
             return "BrushFlowLowFreqCheck" if self._brush_plugin == "BrushFlowLowFreq" else "BrushFlowCheck"
         return None
 
+    # 整理后延迟执行的一次性任务 ID，同 ID 重复触发时替换尚未执行的旧任务
+    __after_organize_job_ids = ("brush_check", "transfer")
+    # 延迟执行秒数，留出下载器写入标签和分类的时间
+    __after_organize_delay = 3
+
     def __run_after_organize(self):
         """整理后执行相关任务"""
-        self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-
         # 开启移除刷流标签，则调用刷流插件的Check任务
         if self._remove_brush_tag:
             logger.info(f"已开启移除刷流标签，调用站点刷流检查服务")
             jobid = self.__get_check_job_id()
             if jobid:
-                self._scheduler.add_job(lambda: start_scheduler_job(jobid), 'date',
-                                        run_date=datetime.now(
-                                            tz=pytz.timezone(settings.TZ)
-                                        ) + timedelta(seconds=3),
-                                        name="站点刷流检查服务 by 刷流种子整理)")
+                self.__run_later("brush_check", "站点刷流检查服务 by 刷流种子整理",
+                                 self.__start_brush_check, {"job_id": jobid})
 
         # 开启添加MP标签，则调用下载文件整理服务
         if self._mp_tag:
             logger.info(f"已开启添加MP标签，调用下载文件整理服务")
-            self._scheduler.add_job(lambda: TransferChain().process(), 'date',
-                                    run_date=datetime.now(
-                                        tz=pytz.timezone(settings.TZ)
-                                    ) + timedelta(seconds=3),
-                                    name="下载文件整理 by 刷流种子整理")
+            self.__run_later("transfer", "下载文件整理 by 刷流种子整理", self.__process_transfer, {})
 
-        # 存在任务则启动任务
-        if self._scheduler.get_jobs():
-            # 启动服务
-            self._scheduler.print_jobs()
-            self._scheduler.start()
+    def __run_later(self, job_id: str, name: str, func, func_kwargs: dict):
+        """
+        延迟执行一次任务，优先交给宿主调度器，不再为每次整理新建常驻的 BackgroundScheduler。
+        旧宿主没有一次性任务接口或调度器未运行时，退回用执行完即退出的守护线程。
+        """
+        # add_plugin_once_job 是较新宿主才提供的 SDK 接口，旧宿主上不存在
+        add_once = getattr(scheduler_sdk, "add_plugin_once_job", None)
+        if add_once and add_once(self.__class__.__name__, job_id, func, name,
+                                 delay_seconds=self.__after_organize_delay, func_kwargs=func_kwargs):
+            return
+        timer = threading.Timer(self.__after_organize_delay, func, kwargs=func_kwargs)
+        timer.daemon = True
+        timer.name = f"BrushManager-{job_id}"
+        self._timers = [item for item in self._timers if item.is_alive()] + [timer]
+        timer.start()
+
+    def __start_brush_check(self, job_id: str):
+        """触发刷流插件的检查服务；绑定实例方法，插件重载后宿主可丢弃旧实例的待执行任务"""
+        start_scheduler_job(job_id)
+
+    def __process_transfer(self):
+        """执行下载文件整理；绑定实例方法，插件重载后宿主可丢弃旧实例的待执行任务"""
+        TransferChain().process()
 
     def __log_and_notify_error(self, message):
         """
