@@ -93,6 +93,8 @@ class Store:
 
         文件账本可达十万行，这里按 ``INVENTORY_CHUNK`` 分块只查询判定所需的列并批量写入，
         不把整表载入为 ORM 对象，也不常驻全量指纹集合；内存只随扫描结果本身和单个分块增长。
+        可见性与历史标记只写入取值实际变化的行：PostgreSQL 的 MVCC 会把每次 UPDATE 都写成
+        新的行版本，按任务整表重置再逐块恢复会让未变化的大账本每轮被重写两次。
         """
         with self.handle.session() as session, session.begin():
             state = session.get(TaskRow, task_id)
@@ -101,7 +103,7 @@ class Store:
                 session.add(state)
             fresh = not state.data.get("initialized") or state.data.get("source_dir", "") != source_dir
             if fresh:
-                self._bulk_update(session, FileRow.task_id == task_id, historical=False)
+                # 历史标记的重置并入扫描后的未见行处理，本轮见到的行直接置为历史快照，避免先清后写。
                 state.data = {
                     **state.data,
                     "initialized": True,
@@ -136,31 +138,33 @@ class Store:
                         status="pending",
                     )
             current = None
-            self._bulk_update(session, FileRow.task_id == task_id, present=False)
+            # 本轮新增行的 id 必然大于扫描前的最大 id，未见行判定只需覆盖此前已存在的行。
+            existing_max_id = session.scalar(select(func.max(FileRow.id)).where(FileRow.task_id == task_id))
+            seen_ids = set()
             seen_values = {"present": True, **({"historical": True} if fresh else {})}
             pending = []
             historical_eligible = []
             for offset in range(0, len(entries), INVENTORY_CHUNK):
                 chunk = entries[offset : offset + INVENTORY_CHUNK]
                 keys = [fingerprint(entry) for entry in chunk]
-                known = {
-                    key: (reserved, historical, status)
-                    for key, reserved, historical, status in session.execute(
-                        select(
-                            FileRow.fingerprint,
-                            FileRow.batch_id.is_not(None),
-                            FileRow.historical,
-                            FileRow.status,
-                        ).where(FileRow.task_id == task_id, FileRow.fingerprint.in_(keys))
-                    )
-                }
-                if known:
-                    self._bulk_update(
-                        session,
-                        FileRow.task_id == task_id,
-                        FileRow.fingerprint.in_(list(known)),
-                        **seen_values,
-                    )
+                known = {}
+                stale_ids = []
+                for row_id, key, reserved, present, historical, status in session.execute(
+                    select(
+                        FileRow.id,
+                        FileRow.fingerprint,
+                        FileRow.batch_id.is_not(None),
+                        FileRow.present,
+                        FileRow.historical,
+                        FileRow.status,
+                    ).where(FileRow.task_id == task_id, FileRow.fingerprint.in_(keys))
+                ):
+                    known[key] = (reserved, historical, status)
+                    seen_ids.add(row_id)
+                    if not present or (fresh and not historical):
+                        stale_ids.append(row_id)
+                if stale_ids:
+                    self._bulk_update(session, FileRow.id.in_(stale_ids), **seen_values)
                 created = []
                 for key, entry in zip(keys, chunk):
                     flags = known.get(key)
@@ -186,6 +190,9 @@ class Store:
                         historical_eligible.append(entry)
                 if created:
                     session.execute(insert(FileRow), created)
+            if existing_max_id is not None:
+                self._mark_unseen(session, task_id, existing_max_id, seen_ids, fresh)
+            seen_ids = None
             if source_dir:
                 self._mark_unseen_history(session, task_id, source_dir)
             historical_pending = session.scalar(
@@ -210,6 +217,32 @@ class Store:
             .values(**values)
             .execution_options(synchronize_session=False)
         )
+
+    @classmethod
+    def _mark_unseen(cls, session, task_id: str, max_id: int, seen_ids: set[int], fresh: bool) -> None:
+        """把本轮未见到的已有行标记为不可见；重新捕获历史边界时一并清除其历史标记。
+
+        只按 id 顺序分页读取仍需变化的行的 id，在 Python 中排除本轮见到的行后分块更新，
+        既不载入 ORM 对象，也不生成随账本规模增长的 ``NOT IN`` 参数列表，SQLite 与 PostgreSQL 通用。
+        """
+        values = {"present": False, **({"historical": False} if fresh else {})}
+        changed = FileRow.present.is_(True)
+        if fresh:
+            changed = changed | FileRow.historical.is_(True)
+        last_id = 0
+        while True:
+            page = session.scalars(
+                select(FileRow.id)
+                .where(FileRow.task_id == task_id, FileRow.id > last_id, FileRow.id <= max_id, changed)
+                .order_by(FileRow.id)
+                .limit(INVENTORY_CHUNK)
+            ).all()
+            if not page:
+                return
+            last_id = page[-1]
+            unseen = [row_id for row_id in page if row_id not in seen_ids]
+            if unseen:
+                cls._bulk_update(session, FileRow.id.in_(unseen), **values)
 
     @classmethod
     def _mark_unseen_history(cls, session, task_id: str, source_dir: str) -> None:
@@ -261,7 +294,10 @@ class Store:
                         .where(DirectoryRow.batch_id == batch.id)
                         .values(batch_id=None, status="pending")
                     )
-            session.execute(update(DirectoryRow).where(DirectoryRow.task_id == task_id).values(present=False))
+            # 只改写可见性实际变化的目录行，未变化的行不产生新的行版本。
+            for key, row in rows.items():
+                if row.present and key not in current:
+                    row.present = False
             pending = []
             for entry in directories:
                 key = fingerprint(entry)
@@ -276,7 +312,7 @@ class Store:
                         status="pending",
                     )
                     session.add(row)
-                else:
+                elif not row.present:
                     row.present = True
                 if not row.batch_id:
                     pending.append(entry)

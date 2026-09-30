@@ -13,9 +13,9 @@ import pytest
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager.config import TaskConfig
 from app.plugins.archivemanager.planner import plan_cycle
-from app.plugins.archivemanager.scanner import FileEntry, fingerprint, identity, scan
-from app.plugins.archivemanager.store import Base, BatchRow, FileRow, Store, TaskRow
-from sqlalchemy import create_engine, func, select
+from app.plugins.archivemanager.scanner import FileEntry, directory_identity, fingerprint, identity, scan
+from app.plugins.archivemanager.store import Base, BatchRow, DirectoryRow, FileRow, Store, TaskRow
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 pytestmark = pytest.mark.v3
@@ -150,6 +150,110 @@ def test_inventory_keeps_history_semantics_across_chunk_boundaries(
     assert store.inventory(task.id, visible, task.source_dir, changed.public()) == historical[:4]
     assert store.get("chunk-batch")["status"] == "superseded"
 
+
+
+def _ledger_updates(store: Store) -> list[str]:
+    """收集发往文件与目录账本的 UPDATE 语句，用于断言扫描不重写未变化的行。"""
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
+        normalized = " ".join(statement.split()).lower()
+        if normalized.startswith(("update archive_file", "update archive_directory")):
+            statements.append(normalized)
+
+    event.listen(store.handle.engine, "before_cursor_execute", record)
+    return statements
+
+
+def _directory(source: Path, relative_path: str) -> dict:
+    path = source / relative_path
+    path.mkdir(parents=True, exist_ok=True)
+    return {"relative_path": relative_path, "source_root": str(source.resolve()), **directory_identity(path)}
+
+
+def _flags(store: Store, row_type, task_id: str) -> dict[str, tuple]:
+    with store.handle.session() as session:
+        rows = session.scalars(select(row_type).where(row_type.task_id == task_id))
+        return {row.relative_path: (row.present, getattr(row, "historical", None)) for row in rows}
+
+
+def test_repeat_scan_with_identical_inputs_does_not_rewrite_ledger_rows(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(store_module, "INVENTORY_CHUNK", 2)
+    task = _task(tmp_path, id="repeat")
+    source = Path(task.source_dir)
+    entries = [_entry(source, f"dir-{index % 2}/file-{index}.txt") for index in range(5)]
+    directories = [_directory(source, "dir-0"), _directory(source, "dir-1")]
+    first = store.inventory(task.id, entries, task.source_dir, task.public())
+    first_directories = store.inventory_directories(task.id, directories, task.public())
+    updates = _ledger_updates(store)
+
+    assert store.inventory(task.id, entries, task.source_dir, task.public()) == first
+    assert store.inventory_directories(task.id, directories, task.public()) == first_directories
+
+    assert updates == []
+
+
+def test_scan_flips_only_rows_whose_visibility_changes(store: Store, tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(store_module, "INVENTORY_CHUNK", 2)
+    task = _task(tmp_path, id="visibility")
+    source = Path(task.source_dir)
+    entries = [_entry(source, f"dir-{index}/file-{index}.txt") for index in range(5)]
+    directories = [_directory(source, f"dir-{index}") for index in range(3)]
+    store.inventory(task.id, entries, task.source_dir, task.public())
+    store.inventory_directories(task.id, directories, task.public())
+    updates = _ledger_updates(store)
+
+    # 文件与目录消失后只翻转对应的一行，其余行不产生写入。
+    store.inventory(task.id, entries[:2] + entries[3:], task.source_dir, task.public())
+    store.inventory_directories(task.id, directories[:1] + directories[2:], task.public())
+    files = _flags(store, FileRow, task.id)
+    folders = _flags(store, DirectoryRow, task.id)
+    assert [path for path, (present, _) in files.items() if not present] == ["dir-2/file-2.txt"]
+    assert [path for path, (present, _) in folders.items() if not present] == ["dir-1"]
+    assert len(updates) == 2
+    updates.clear()
+
+    # 重新出现后只把这一行恢复为可见。
+    store.inventory(task.id, entries, task.source_dir, task.public())
+    store.inventory_directories(task.id, directories, task.public())
+    assert all(present for present, _ in _flags(store, FileRow, task.id).values())
+    assert all(present for present, _ in _flags(store, DirectoryRow, task.id).values())
+    assert len(updates) == 2
+
+
+def test_recaptured_history_marks_seen_rows_historical_and_clears_unseen_rows(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(store_module, "INVENTORY_CHUNK", 2)
+    task = _task(tmp_path, id="recapture")
+    source = Path(task.source_dir)
+    historical = [_entry(source, f"history-{index}.txt") for index in range(3)]
+    store.inventory(task.id, historical, task.source_dir, task.public())
+    new_entry = _entry(source, "new.txt")
+    store.inventory(task.id, historical + [new_entry], task.source_dir, task.public())
+    assert _flags(store, FileRow, task.id)["new.txt"] == (True, False)
+
+    # 源目录变化会重新捕获历史边界：本轮见到的行成为历史快照，未见到的行失去历史标记且不可见。
+    visible = historical[1:] + [new_entry]
+    assert store.inventory(task.id, visible, f"{task.source_dir}/", task.public()) == visible
+    assert _flags(store, FileRow, task.id) == {
+        "history-0.txt": (False, False),
+        "history-1.txt": (True, True),
+        "history-2.txt": (True, True),
+        "new.txt": (True, True),
+    }
+    assert store.task_state(task.id)["history_remaining"] == 3
+    with store.handle.session() as session:
+        statuses = dict(session.execute(select(FileRow.relative_path, FileRow.status)).all())
+    # 不再属于历史快照的行不会被记为 missing。
+    assert statuses["history-0.txt"] == "pending"
+
+    # 同一历史边界下的重复扫描不再写入任何账本行。
+    updates = _ledger_updates(store)
+    assert store.inventory(task.id, visible, f"{task.source_dir}/", task.public()) == visible
+    assert updates == []
 
 def test_inventory_rolls_back_when_interrupted_mid_way_and_next_run_resumes(
     store: Store, tmp_path: Path, monkeypatch
