@@ -455,6 +455,10 @@ def test_legacy_batches_require_the_option_and_can_be_reclaimed_when_enabled(
     assert store.get(batch["id"])["cleanup"]["legacy-source.txt"] == "deleted"
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("py7zr") is None or importlib.util.find_spec("pyzipper") is None,
+    reason="归档工作进程依赖未安装",
+)
 def test_local_archive_reclaim_still_hashes_archive_before_deleting_sources(
     store: Store, tmp_path: Path, monkeypatch
 ) -> None:
