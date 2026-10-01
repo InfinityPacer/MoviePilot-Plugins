@@ -233,7 +233,7 @@ class ArchiveManager(_PluginBase):
                 {
                     "id": "ArchiveManager_auto_reclaim",
                     "name": "压缩归档 · 自动回收",
-                    "trigger": CronTrigger.from_crontab("0 3 * * *", timezone=settings.TZ),
+                    "trigger": CronTrigger.from_crontab(self._settings.auto_reclaim_cron, timezone=settings.TZ),
                     "func": self._auto_reclaim,
                     "kwargs": {},
                 }
@@ -660,6 +660,7 @@ class ArchiveManager(_PluginBase):
             "reclaim_legacy_by_upload_record": False,
             "auto_reclaim_days": 0,
             "reclaim_verify_sha256": False,
+            "auto_reclaim_cron": "0 3 * * *",
             "reset_data": False,
             "tasks": [],
         }

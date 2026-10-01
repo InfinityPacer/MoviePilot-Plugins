@@ -754,3 +754,27 @@ def test_reclaim_preview_counts_only_files_still_waiting(store: Store, tmp_path:
     store.cleanup_results(batch["id"], {"left.txt": "deleted"})
     after = manager.api_reclaim_preview(manager_module.ReclaimRequest()).data
     assert (after["file_count"], after["estimated_bytes"]) == (0, 0)
+
+
+def test_auto_reclaim_runs_on_the_configured_cron_and_rejects_invalid_expressions(monkeypatch) -> None:
+    manager = manager_module.ArchiveManager()
+    manager._settings = PluginConfig(auto_reclaim_days=0.5, auto_reclaim_cron="30 11 * * *")
+    monkeypatch.setattr(manager, "get_state", lambda: True)
+
+    service = next(item for item in manager.get_service() if item["id"] == "ArchiveManager_auto_reclaim")
+    fields = {field.name: str(field) for field in service["trigger"].fields}
+    assert (fields["hour"], fields["minute"]) == ("11", "30")
+
+    manager._settings = PluginConfig(auto_reclaim_days=0, auto_reclaim_cron="30 11 * * *")
+    assert all(item["id"] != "ArchiveManager_auto_reclaim" for item in manager.get_service())
+    with pytest.raises(ValidationError):
+        PluginConfig(auto_reclaim_cron="every day")
+
+
+def test_reclaim_candidates_read_only_batches_with_files_left(store: Store, tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    done = _published_batch(store, task, "candidate-done", "done.txt", archive_sha1="a" * 40)
+    left = _published_batch(store, task, "candidate-left", "left.txt", archive_sha1="b" * 40)
+    store.cleanup_results(done["id"], {"done.txt": "deleted"})
+
+    assert [batch["id"] for batch in store.reclaim_candidates()] == [left["id"]]

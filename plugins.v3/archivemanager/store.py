@@ -626,20 +626,26 @@ class Store:
             return counts, list(conflicts.values())
 
     def reclaim_candidates(self) -> list[dict]:
-        """收集仍有源文件账本的已发布批次，资格另按成品和云端证明判断。"""
+        """收集仍有源文件账本的已发布批次，资格另按成品和云端证明判断。
+
+        先在文件表里找出仍有未删除文件的批次，只读取这些批次的记录；批次 JSON 含完整清单，
+        回收完成后逐个读取全部批次会让预览随历史批次数线性变慢。
+        """
         with self.handle.session() as session:
+            waiting = (
+                select(FileRow.batch_id)
+                .where(FileRow.batch_id.is_not(None), FileRow.status.not_in(["deleted", "missing"]))
+                .distinct()
+            )
             rows = session.scalars(
                 select(BatchRow)
-                .where(BatchRow.status.in_(["completed", "cleanup_failed"]))
+                .where(BatchRow.status.in_(["completed", "cleanup_failed"]), BatchRow.id.in_(waiting))
                 .order_by(BatchRow.created_at)
             )
             result = []
             for row in rows:
                 batch = self._serialize(row)
-                if not batch.get("archive_path") or not batch.get("manifest"):
-                    continue
-                files = session.scalars(select(FileRow).where(FileRow.batch_id == row.id)).all()
-                if any(file.status not in ("deleted", "missing") for file in files):
+                if batch.get("archive_path") and batch.get("manifest"):
                     result.append(batch)
             return result
 

@@ -113,6 +113,10 @@ export function normalizeArchiveConfig(value: unknown): ArchiveConfig {
     ),
     auto_reclaim_days: Math.max(0, toFiniteNumber(source.auto_reclaim_days, configDefaults.auto_reclaim_days)),
     reclaim_verify_sha256: toBoolean(source.reclaim_verify_sha256, configDefaults.reclaim_verify_sha256),
+    auto_reclaim_cron:
+      typeof source.auto_reclaim_cron === 'string' && source.auto_reclaim_cron.trim()
+        ? source.auto_reclaim_cron.trim()
+        : configDefaults.auto_reclaim_cron,
     reset_data: toBoolean(source.reset_data, configDefaults.reset_data),
     tasks,
   }
