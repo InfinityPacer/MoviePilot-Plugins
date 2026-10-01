@@ -125,6 +125,14 @@ def identity_matches(path: Path, expected: dict) -> bool:
     return all(actual[key] == expected[key] for key in fields)
 
 
+def identity_differences(path: Path, expected: dict) -> tuple[dict, set[str]]:
+    """返回当前身份和与清单不同的字段，字段范围与 identity_matches 一致。"""
+    actual = identity(path)
+    fields = ["size", "mtime_ns", "ctime_ns", "device", "inode"]
+    fields.extend(key for key in ("mode", "birthtime_ns") if key in expected)
+    return actual, {key for key in fields if actual[key] != expected[key]}
+
+
 def fingerprint(entry: dict) -> str:
     """相对路径与文件版本共同参与去重，不跨任务合并同名文件。"""
     import hashlib

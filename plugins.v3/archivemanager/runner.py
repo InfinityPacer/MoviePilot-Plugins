@@ -21,7 +21,7 @@ from .capacity import CapacityWait, allowance
 from .catalog import atomic_write, write_catalog
 from .config import TaskConfig, reclaim_precondition, validate_paths
 from .naming import batch_relative_directory
-from .scanner import Cancelled, identity, identity_matches
+from .scanner import Cancelled, identity, identity_differences
 
 
 def run_engine(payload: dict, stop: Event) -> dict:
@@ -433,6 +433,26 @@ class Runner:
             )
             raise RuntimeError(message) from None
 
+    def _source_unchanged(self, source: Path, entry: dict) -> bool:
+        """判断源文件是否仍是归档时的内容。
+
+        身份含 size、mtime、ctime、device、inode，改写、替换或重建都会改变其中一项，ctime 也无法由
+        普通程序回拨，所以身份一致即视为未变；开启 reclaim_verify_sha256 时再比对内容。只有 ctime
+        不同而其余身份一致时，通常是 chmod、chown 或扩展属性等元数据操作，此时比对 SHA-256，
+        一致才认为内容未变。
+        """
+        if any(part.is_symlink() for part in (source, *source.parents)):
+            return False
+        before, differences = identity_differences(source, entry)
+        if differences - {"ctime_ns"}:
+            return False
+        if not differences and not self.reclaim_verify_sha256:
+            return True
+        if digest(source, self.stop) != entry["sha256"]:
+            return False
+        # 读取期间文件不能再有任何变化。
+        return identity(source) == before
+
     def _match_archive(self, path: Path, batch: dict, mismatch: str, release_cache: bool = True) -> dict:
         """按账本 SHA-256 核验归档包，并为旧批次补记 SHA-1。
 
@@ -479,7 +499,8 @@ class Runner:
             for entry in batch["manifest"]["files"]:
                 check_stop(self.stop)
                 relative = entry["relative_path"]
-                if batch["cleanup"].get(relative) in ("deleted", "missing", "changed"):
+                # 之前判为 changed 的文件每次回收都重新判断：只改了 ctime 的文件经内容比对后可以删除。
+                if batch["cleanup"].get(relative) in ("deleted", "missing"):
                     continue
                 source = source_root / relative
                 result = "retained"
@@ -487,26 +508,20 @@ class Runner:
                     if not source.exists():
                         result = "missing"
                         logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=missing")
-                    elif (
-                        any(part.is_symlink() for part in (source, *source.parents))
-                        or not identity_matches(source, entry)
-                        # 身份含 size、mtime、ctime、device、inode，改写、替换或重建都会改变其中一项，
-                        # ctime 也无法由普通程序回拨；重读内容比对 SHA-256 只在用户开启时额外执行。
-                        or (
-                            self.reclaim_verify_sha256
-                            and (digest(source, self.stop) != entry["sha256"] or not identity_matches(source, entry))
-                        )
-                    ):
+                    elif not self._source_unchanged(source, entry):
                         result = "changed"
                         logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=changed")
                     else:
+                        observed = identity(source)
                         # 删除意图必须先独立提交；批量结果尚未落库时崩溃也能从 deleting 恢复。
                         self.store.cleanup_intent(batch["id"], relative)
                         batch["cleanup"][relative] = "deleting"
                         check_stop(self.stop)
+                        # 与刚核对过的身份比较，而不是清单身份，这样只改了 ctime 的文件也能删除，
+                        # 核对之后发生的任何改动仍会中止。
                         if (
                             (precondition == "local" and identity(archive) != archive_identity)
-                            or not identity_matches(source, entry)
+                            or identity(source) != observed
                         ):
                             raise ValueError("清理前源文件或归档包已变化")
                         source.unlink()

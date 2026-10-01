@@ -365,15 +365,6 @@ def test_sha256_option_rereads_sources_and_retains_content_mismatch(
             "muvyo-115",
             [_attest_item(batch_data, sha1=batch_data["archive_sha1"])],
         )[0]["verified"] == 1
-    original_identity_matches = runner_module.identity_matches
-
-    def identity_matches(path: Path, entry: dict) -> bool:
-        # 讓同尺寸、恢復原 mtime 的變更內容走到摘要核對分支。
-        if path.name == "changed.txt":
-            return True
-        return original_identity_matches(path, entry)
-
-    monkeypatch.setattr(runner_module, "identity_matches", identity_matches)
     monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
 
     _runner(store, verify_sha256=True).reclaim(store.get(batch["id"]), task)
@@ -711,3 +702,55 @@ def test_reclaim_checks_identity_without_rereading_sources_by_default(
     assert store.get(kept["id"])["cleanup"]["kept.txt"] == "deleted"
     assert (Path(task.source_dir) / "rewritten.txt").read_bytes() == b"rewritten later"
     assert store.get(rewritten["id"])["cleanup"]["rewritten.txt"] == "changed"
+
+
+def test_ctime_only_change_is_reclaimed_after_matching_sha256_and_rechecked_later(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    same = _published_batch(store, task, "ctime-same", "same.txt", archive_sha1="a" * 40, content=b"same bytes")
+    edited = _published_batch(store, task, "ctime-edited", "edited.txt", archive_sha1="b" * 40, content=b"old bytes")
+    for batch in (same, edited):
+        assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1=batch["archive_sha1"])])[0]["verified"] == 1
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+    same_path = Path(task.source_dir) / "same.txt"
+    edited_path = Path(task.source_dir) / "edited.txt"
+    edited_entry = edited["manifest"]["files"][0]
+    # chmod 到同一权限只更新 ctime；另一个文件改写为等长内容后恢复 mtime，也只剩 ctime 不同。
+    os.chmod(same_path, same_path.stat().st_mode & 0o7777)
+    edited_path.write_bytes(b"new bytes")
+    os.utime(edited_path, ns=(edited_entry["mtime_ns"], edited_entry["mtime_ns"]))
+
+    _runner(store).reclaim(store.get(same["id"]), task)
+    _runner(store).reclaim(store.get(edited["id"]), task)
+
+    assert not same_path.exists()
+    assert store.get(same["id"])["cleanup"]["same.txt"] == "deleted"
+    assert edited_path.read_bytes() == b"new bytes"
+    assert store.get(edited["id"])["cleanup"]["edited.txt"] == "changed"
+
+    # 之前判为 changed 的文件在下次回收时重新判断，内容恢复一致后即可删除。
+    edited_path.write_bytes(b"old bytes")
+    os.utime(edited_path, ns=(edited_entry["mtime_ns"], edited_entry["mtime_ns"]))
+    assert edited["id"] in {batch["id"] for batch in store.reclaimable_batches()}
+    _runner(store).reclaim(store.get(edited["id"]), task)
+
+    assert not edited_path.exists()
+    assert store.get(edited["id"])["cleanup"]["edited.txt"] == "deleted"
+
+
+def test_reclaim_preview_counts_only_files_still_waiting(store: Store, tmp_path: Path, monkeypatch) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "preview-left", "left.txt", archive_sha1="a" * 40)
+    assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1="a" * 40)])[0]["verified"] == 1
+    manager = manager_module.ArchiveManager()
+    manager._settings = PluginConfig()
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    entry = batch["manifest"]["files"][0]
+    before = manager.api_reclaim_preview(manager_module.ReclaimRequest()).data
+    assert (before["batch_count"], before["file_count"], before["estimated_bytes"]) == (1, 1, entry["size"])
+
+    # 清单里已删除的文件不再计入；只剩被保留的文件时批次仍可回收，但文件数和空间只算剩余部分。
+    store.cleanup_results(batch["id"], {"left.txt": "deleted"})
+    after = manager.api_reclaim_preview(manager_module.ReclaimRequest()).data
+    assert (after["file_count"], after["estimated_bytes"]) == (0, 0)
