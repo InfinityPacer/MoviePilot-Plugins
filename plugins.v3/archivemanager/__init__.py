@@ -390,6 +390,7 @@ class ArchiveManager(_PluginBase):
                     runner = Runner(
                         store, self._stop, self._phase,
                         reclaim_legacy_by_upload_record=self._settings.reclaim_legacy_by_upload_record,
+                        reclaim_verify_sha256=self._settings.reclaim_verify_sha256,
                     )
                     runner.reclaim(batch, task)
                     self._count_reclaim_batch(batch, store.get(batch["id"]))
@@ -440,6 +441,7 @@ class ArchiveManager(_PluginBase):
                         self._phase,
                         cleanup_cancelled=lambda task_id=task.id: task_id in self._manual_stop_tasks,
                         daily_archive_limit_bytes=self._settings.daily_archive_limit_bytes,
+                        reclaim_verify_sha256=self._settings.reclaim_verify_sha256,
                     )
                     if job["batch_id"]:
                         batch = store.get(job["batch_id"])
@@ -657,6 +659,7 @@ class ArchiveManager(_PluginBase):
             "daily_archive_limit_bytes": 0,
             "reclaim_legacy_by_upload_record": False,
             "auto_reclaim_days": 0,
+            "reclaim_verify_sha256": False,
             "reset_data": False,
             "tasks": [],
         }

@@ -20,6 +20,7 @@ class PluginConfig(BaseModel):
     )  # 所有任务每天发布的归档包字节上限，0 不限制
     reclaim_legacy_by_upload_record: bool = False  # 允许使用上传器摘要认定缺少插件 SHA-1 的旧批次
     auto_reclaim_days: float = Field(default=0, ge=0, allow_inf_nan=False)  # 确认上云后的回收等待天数，0 关闭
+    reclaim_verify_sha256: bool = False  # 删除源文件前是否重读内容比对 SHA-256；默认只核对文件身份
 
 
 def reclaim_precondition(batch: dict, allow_legacy: bool = False) -> str:

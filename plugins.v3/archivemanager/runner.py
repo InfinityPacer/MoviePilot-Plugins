@@ -191,6 +191,7 @@ class Runner:
         cleanup_cancelled: Callable[[], bool] | None = None,
         daily_archive_limit_bytes: int = 0,
         reclaim_legacy_by_upload_record: bool = False,
+        reclaim_verify_sha256: bool = False,
     ):
         self.store = store
         self.stop = stop
@@ -198,6 +199,7 @@ class Runner:
         self.cleanup_cancelled = cleanup_cancelled or (lambda: False)
         self.daily_archive_limit_bytes = daily_archive_limit_bytes
         self.reclaim_legacy_by_upload_record = reclaim_legacy_by_upload_record
+        self.reclaim_verify_sha256 = reclaim_verify_sha256
 
     def reclaim(self, batch: dict, current_task: TaskConfig) -> None:
         """独立回收入口：复用已发布批次的逐文件校验，不重新打包或删除归档产物。"""
@@ -488,8 +490,12 @@ class Runner:
                     elif (
                         any(part.is_symlink() for part in (source, *source.parents))
                         or not identity_matches(source, entry)
-                        or digest(source, self.stop) != entry["sha256"]
-                        or not identity_matches(source, entry)
+                        # 身份含 size、mtime、ctime、device、inode，改写、替换或重建都会改变其中一项，
+                        # ctime 也无法由普通程序回拨；重读内容比对 SHA-256 只在用户开启时额外执行。
+                        or (
+                            self.reclaim_verify_sha256
+                            and (digest(source, self.stop) != entry["sha256"] or not identity_matches(source, entry))
+                        )
                     ):
                         result = "changed"
                         logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=changed")

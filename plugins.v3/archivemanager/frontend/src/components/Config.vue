@@ -157,6 +157,8 @@ const changedItems = computed(() => {
   if (draft.value.reclaim_legacy_by_upload_record !== original.value.reclaim_legacy_by_upload_record)
     items.push('旧批次按上传记录认定')
   if (draft.value.auto_reclaim_days !== original.value.auto_reclaim_days) items.push('确认上云后自动回收天数')
+  if (draft.value.reclaim_verify_sha256 !== original.value.reclaim_verify_sha256)
+    items.push('回收前重新计算源文件 SHA-256')
   const originalTasks = new Map(original.value.tasks.map(task => [task.id, task]))
   for (const task of draft.value.tasks) {
     const previous = originalTasks.get(task.id)
@@ -1323,6 +1325,19 @@ onBeforeUnmount(() => {
                         suffix="天"
                         type="number"
                         variant="outlined"
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow
+                      label="回收前重新计算源文件 SHA-256"
+                      hint="关闭时删除前只核对大小、修改时间、ctime 和 inode 等文件身份；开启后再完整读取源文件比对 SHA-256，大量文件时耗时很长"
+                      switch-field
+                    >
+                      <VSwitch
+                        v-model="draft.reclaim_verify_sha256"
+                        aria-label="回收前重新计算源文件 SHA-256"
+                        color="primary"
+                        density="compact"
+                        hide-details
                       />
                     </ArchiveFieldRow>
                   </div>
