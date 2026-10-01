@@ -112,6 +112,7 @@ export function normalizeArchiveConfig(value: unknown): ArchiveConfig {
       configDefaults.reclaim_legacy_by_upload_record,
     ),
     auto_reclaim_days: Math.max(0, toFiniteNumber(source.auto_reclaim_days, configDefaults.auto_reclaim_days)),
+    reclaim_verify_sha256: toBoolean(source.reclaim_verify_sha256, configDefaults.reclaim_verify_sha256),
     reset_data: toBoolean(source.reset_data, configDefaults.reset_data),
     tasks,
   }

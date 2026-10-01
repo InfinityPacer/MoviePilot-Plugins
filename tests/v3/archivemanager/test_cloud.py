@@ -140,12 +140,13 @@ def _attest_item(batch: dict, *, sha1: str, size: int | None = None, upload_sha1
     }
 
 
-def _runner(store: Store, *, allow_legacy: bool = False) -> Runner:
+def _runner(store: Store, *, allow_legacy: bool = False, verify_sha256: bool = False) -> Runner:
     return Runner(
         store,
         Event(),
         lambda *_args: None,
         reclaim_legacy_by_upload_record=allow_legacy,
+        reclaim_verify_sha256=verify_sha256,
     )
 
 
@@ -321,7 +322,7 @@ def test_cloud_attest_request_validates_source_item_limit_size_and_sha1() -> Non
             )
 
 
-def test_moved_verified_archive_reclaims_unchanged_sources_and_retains_sha256_mismatch(
+def test_sha256_option_rereads_sources_and_retains_content_mismatch(
     store: Store, tmp_path: Path, monkeypatch
 ) -> None:
     task = _task(tmp_path)
@@ -375,8 +376,8 @@ def test_moved_verified_archive_reclaims_unchanged_sources_and_retains_sha256_mi
     monkeypatch.setattr(runner_module, "identity_matches", identity_matches)
     monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
 
-    _runner(store).reclaim(store.get(batch["id"]), task)
-    _runner(store).reclaim(store.get(second["id"]), task)
+    _runner(store, verify_sha256=True).reclaim(store.get(batch["id"]), task)
+    _runner(store, verify_sha256=True).reclaim(store.get(second["id"]), task)
 
     assert not (Path(task.source_dir) / "unchanged.txt").exists()
     assert changed_path.read_bytes() == b"changed bytes!"
@@ -684,3 +685,29 @@ def test_reclaim_summary_reports_failed_batches_as_failure(store: Store, tmp_pat
     assert "压缩归档：空间回收有失败" in titles
     summary = next(message for message in messages if message["title"] == "压缩归档：空间回收有失败")
     assert "回收批次：0，跳过 0，失败 1" in summary["text"]
+
+
+def test_reclaim_checks_identity_without_rereading_sources_by_default(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    kept = _published_batch(store, task, "identity-kept", "kept.txt", archive_sha1="a" * 40)
+    rewritten = _published_batch(store, task, "identity-rewritten", "rewritten.txt", archive_sha1="b" * 40)
+    for batch in (kept, rewritten):
+        assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1=batch["archive_sha1"])])[0]["verified"] == 1
+    # 改写会更新 ctime，身份核对即可发现，无需重读内容。
+    (Path(task.source_dir) / "rewritten.txt").write_bytes(b"rewritten later")
+
+    def no_digest(*_args, **_kwargs):
+        raise AssertionError("默认回收不应重读源文件")
+
+    monkeypatch.setattr(runner_module, "digest", no_digest)
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+
+    _runner(store).reclaim(store.get(kept["id"]), task)
+    _runner(store).reclaim(store.get(rewritten["id"]), task)
+
+    assert not (Path(task.source_dir) / "kept.txt").exists()
+    assert store.get(kept["id"])["cleanup"]["kept.txt"] == "deleted"
+    assert (Path(task.source_dir) / "rewritten.txt").read_bytes() == b"rewritten later"
+    assert store.get(rewritten["id"])["cleanup"]["rewritten.txt"] == "changed"

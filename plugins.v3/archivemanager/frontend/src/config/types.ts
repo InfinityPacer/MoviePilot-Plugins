@@ -77,6 +77,8 @@ export interface ArchiveConfig {
   reclaim_legacy_by_upload_record: boolean
   /** 云端首次确认达到的天数后自动加入回收队列，0 表示关闭。 */
   auto_reclaim_days: number
+  /** 删除源文件前是否重读内容比对 SHA-256；关闭时只核对文件身份。 */
+  reclaim_verify_sha256: boolean
   /** 保存时触发一次运行数据重置，宿主配置随后自动复位。 */
   reset_data: boolean
   tasks: ArchiveTask[]

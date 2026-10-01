@@ -262,6 +262,7 @@ def test_archive_manager_constructs_real_plugin_and_declares_persistence_contrac
             "daily_archive_limit_bytes": 0,
             "reclaim_legacy_by_upload_record": False,
             "auto_reclaim_days": 0,
+            "reclaim_verify_sha256": False,
             "reset_data": False,
             "tasks": [],
         },

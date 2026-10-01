@@ -9,6 +9,7 @@ export function createConfig(overrides: Partial<ArchiveConfig> = {}): ArchiveCon
     notify_events: ['failure'],
     daily_archive_limit_bytes: 0,
     reclaim_legacy_by_upload_record: false,
+    reclaim_verify_sha256: false,
     auto_reclaim_days: 0,
     reset_data: false,
     tasks: [],
