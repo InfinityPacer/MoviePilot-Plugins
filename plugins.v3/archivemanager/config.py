@@ -21,6 +21,13 @@ class PluginConfig(BaseModel):
     reclaim_legacy_by_upload_record: bool = False  # 允许使用上传器摘要认定缺少插件 SHA-1 的旧批次
     auto_reclaim_days: float = Field(default=0, ge=0, allow_inf_nan=False)  # 确认上云后的回收等待天数，0 关闭
     reclaim_verify_sha256: bool = False  # 删除源文件前是否重读内容比对 SHA-256；默认只核对文件身份
+    auto_reclaim_cron: str = "0 3 * * *"  # 自动回收的五字段 Cron，仅在自动回收天数大于 0 时注册
+
+    @model_validator(mode="after")
+    def validate_schedule(self):
+        """自动回收时间与任务 Cron 使用同一解析规则，非法表达式在保存时拒绝。"""
+        CronTrigger.from_crontab(self.auto_reclaim_cron, timezone=settings.TZ)
+        return self
 
 
 def reclaim_precondition(batch: dict, allow_legacy: bool = False) -> str:

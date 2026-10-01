@@ -45,6 +45,7 @@ export const configDefaults: ArchiveConfig = {
   reclaim_legacy_by_upload_record: false,
   auto_reclaim_days: 0,
   reclaim_verify_sha256: false,
+  auto_reclaim_cron: '0 3 * * *',
   reset_data: false,
   tasks: [],
 }

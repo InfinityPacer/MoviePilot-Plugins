@@ -157,6 +157,7 @@ const changedItems = computed(() => {
   if (draft.value.reclaim_legacy_by_upload_record !== original.value.reclaim_legacy_by_upload_record)
     items.push('旧批次按上传记录认定')
   if (draft.value.auto_reclaim_days !== original.value.auto_reclaim_days) items.push('确认上云后自动回收天数')
+  if (draft.value.auto_reclaim_cron !== original.value.auto_reclaim_cron) items.push('自动回收时间')
   if (draft.value.reclaim_verify_sha256 !== original.value.reclaim_verify_sha256)
     items.push('回收前重新计算源文件 SHA-256')
   const originalTasks = new Map(original.value.tasks.map(task => [task.id, task]))
@@ -1324,6 +1325,19 @@ onBeforeUnmount(() => {
                         step="any"
                         suffix="天"
                         type="number"
+                        variant="outlined"
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow
+                      label="自动回收时间"
+                      hint="五段 Cron 表达式，按 MoviePilot 时区执行，默认 0 3 * * * 表示每天 03:00；自动回收天数为 0 时不运行"
+                    >
+                      <VTextField
+                        v-model="draft.auto_reclaim_cron"
+                        aria-label="自动回收时间"
+                        density="compact"
+                        hide-details
+                        prepend-inner-icon="mdi-clock-outline"
                         variant="outlined"
                       />
                     </ArchiveFieldRow>
