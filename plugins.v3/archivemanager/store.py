@@ -22,6 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from .config import reclaim_precondition
 from .naming import frozen_names
 from .scanner import fingerprint, identity
 
@@ -476,7 +477,7 @@ class Store:
             "archive_path": "",
             "manifest_path": "",
             "archive_sha256": "",
-            "archive_sha1": "",  # 归档包 SHA-1，仅用于与网盘元数据对账，不参与判定
+            "archive_sha1": "",  # 云端核验成品的 SHA-1，本地成品仍以 SHA-256 校验
             "verified": False,
             "error": "",
             "cleanup": {},
@@ -583,8 +584,49 @@ class Store:
             session.execute(delete(TaskRow))
             return counts
 
-    def reclaimable_batches(self) -> list[dict]:
-        """返回可尝试回收源文件的已发布批次，不要求用户先筛选任务或批次。"""
+    def attest_cloud(self, source: str, items: list[dict]) -> tuple[dict, list[dict]]:
+        """按插件摘要核定外部记录；相同证明不更新时间戳或写行。"""
+        counts = dict.fromkeys(("verified", "legacy", "conflict", "unproven", "unknown"), 0)
+        conflicts = {}
+        now = datetime.now(timezone.utc).isoformat()
+        with self.handle.session() as session, session.begin():
+            rows = session.scalars(select(BatchRow).where(BatchRow.status.in_(["completed", "cleanup_failed"])))
+            by_path: dict[str, list[BatchRow]] = {}
+            for row in rows:
+                by_path.setdefault(row.data.get("archive_path", ""), []).append(row)
+            for item in items:
+                matches = by_path.get(item["archive_path"], [])
+                if not matches:
+                    counts["unknown"] += 1
+                    continue
+                for row in matches:
+                    sha1 = item["sha1"].lower()
+                    upload_sha1 = item.get("upload_sha1", "").lower()
+                    size_matches = item["size"] == row.data.get("archive_size")
+                    expected = row.data.get("archive_sha1")
+                    if expected:
+                        status = "verified" if size_matches and sha1 == expected.lower() else "conflict"
+                    else:
+                        status = "legacy" if size_matches and upload_sha1 and upload_sha1 == sha1 else "unproven"
+                    counts[status] += 1
+                    old = row.data.get("cloud") or {}
+                    value = {
+                        "status": status,
+                        "sha1": sha1,
+                        "size": item["size"],
+                        "cloud_path": item["cloud_path"],
+                        "source": source,
+                    }
+                    # 时间只记录证明内容的变化；重复巡检不产生数据库写入。
+                    if any(old.get(key) != val for key, val in value.items()):
+                        confirmed = (old.get("confirmed_at") or now) if status in ("verified", "legacy") else None
+                        row.data = {**row.data, "cloud": {**value, "attested_at": now, "confirmed_at": confirmed}}
+                    if status == "conflict":
+                        conflicts[row.id] = self._serialize(row)
+            return counts, list(conflicts.values())
+
+    def reclaim_candidates(self) -> list[dict]:
+        """收集仍有源文件账本的已发布批次，资格另按成品和云端证明判断。"""
         with self.handle.session() as session:
             rows = session.scalars(
                 select(BatchRow)
@@ -600,6 +642,22 @@ class Store:
                 if any(file.status not in ("deleted", "missing") for file in files):
                     result.append(batch)
             return result
+
+    def reclaim_selection(self, allow_legacy: bool = False) -> tuple[list[dict], dict]:
+        """预览和入队共用资格及跳过原因，估算只使用合格批次。"""
+        skipped = dict.fromkeys(("skipped_unconfirmed", "skipped_conflict", "skipped_legacy_disabled"), 0)
+        eligible = []
+        for batch in self.reclaim_candidates():
+            reason = reclaim_precondition(batch, allow_legacy)
+            if reason in skipped:
+                skipped[reason] += 1
+            else:
+                eligible.append(batch)
+        return eligible, skipped
+
+    def reclaimable_batches(self, allow_legacy: bool = False) -> list[dict]:
+        """只返回存在本地成品或获准云端证明的批次。"""
+        return self.reclaim_selection(allow_legacy)[0]
 
     def batches(self, task_id: str = "", status: str = "", page: int = 1, page_size: int = 30) -> dict:
         """分页批次列表；执行快照仅供内部恢复使用。"""

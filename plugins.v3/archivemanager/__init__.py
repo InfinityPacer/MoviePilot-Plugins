@@ -4,6 +4,7 @@ import copy
 import threading
 import traceback
 from collections import deque
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
 from uuid import uuid4
@@ -23,6 +24,7 @@ from .config import (
     TaskConfig,
     overlap,
     parse_config,
+    reclaim_precondition,
     validate_paths,
 )
 from .planner import plan_cycle
@@ -54,6 +56,23 @@ class ReclaimRequest(BaseModel):
     """回收所有已发布批次仍保留的源文件。"""
 
 
+class CloudAttestItem(BaseModel):
+    """外部上传记录；路径匹配账本，摘要由插件判定可信程度。"""
+
+    archive_path: str = Field(min_length=1)  # 与已发布批次的成品路径完全一致
+    cloud_path: str  # 云端位置仅供展示
+    size: int = Field(ge=0, strict=True)  # 云端报告的字节数
+    sha1: str = Field(pattern=r"^[0-9a-fA-F]{40}$")  # 云端内容摘要
+    upload_sha1: str = Field(default="", pattern=r"^(?:[0-9a-fA-F]{40})?$")  # 上传器读取本地文件的摘要
+
+
+class CloudAttestRequest(BaseModel):
+    """一次至多 5000 条云端对账，报告方不能指定核验结果。"""
+
+    source: str = Field(max_length=64)  # 报告方自由文本标识
+    items: list[CloudAttestItem] = Field(max_length=5000)  # 已发布成品对应的云端记录
+
+
 class PreviewRequest(BaseModel):
     """未保存草稿的只读预览请求。"""
 
@@ -61,12 +80,12 @@ class PreviewRequest(BaseModel):
 
 
 class ArchiveManager(_PluginBase):
-    """只归档本地普通文件；上传及云端状态由用户的外部工具负责。"""
+    """归档本地普通文件，核定外部上传证明后允许回收未变更的源文件。"""
 
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.8"
+    plugin_version = "0.1.9"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
@@ -207,6 +226,16 @@ class ArchiveManager(_PluginBase):
                     "kwargs": {"seconds": 1200},
                 }
             )
+        if self._settings.auto_reclaim_days > 0:
+            services.append(
+                {
+                    "id": "ArchiveManager_auto_reclaim",
+                    "name": "压缩归档 · 自动回收",
+                    "trigger": CronTrigger.from_crontab("0 3 * * *", timezone=settings.TZ),
+                    "func": self._auto_reclaim,
+                    "kwargs": {},
+                }
+            )
         return services
 
     def _resume_waiting(self):
@@ -337,7 +366,7 @@ class ArchiveManager(_PluginBase):
                 task = job["task"]
                 self._running = {
                     "task_id": task.id,
-                    "batch_id": "",
+                    "batch_id": job["batch_id"],
                     "phase": "scanning",
                     "job_id": job["id"],
                     "kind": job["kind"],
@@ -352,8 +381,13 @@ class ArchiveManager(_PluginBase):
                 previous_phase = store.task_state(task.id)["phase"]
                 if job["kind"] == "reclaim":
                     batch = store.get(job["batch_id"])
-                    self._phase("cleaning", batch["id"])
-                    runner = Runner(store, self._stop, self._phase)
+                    # 排队后证明可能被新对账撤销；此时安静跳过，不改任务状态。
+                    if reclaim_precondition(batch, self._settings.reclaim_legacy_by_upload_record).startswith("skipped_"):
+                        continue
+                    runner = Runner(
+                        store, self._stop, self._phase,
+                        reclaim_legacy_by_upload_record=self._settings.reclaim_legacy_by_upload_record,
+                    )
                     runner.reclaim(batch, task)
                     logger.info(
                         f"压缩归档空间回收完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
@@ -610,6 +644,8 @@ class ArchiveManager(_PluginBase):
             "notify": False,
             "notify_events": ["failure"],
             "daily_archive_limit_bytes": 0,
+            "reclaim_legacy_by_upload_record": False,
+            "auto_reclaim_days": 0,
             "reset_data": False,
             "tasks": [],
         }
@@ -718,7 +754,54 @@ class ArchiveManager(_PluginBase):
         return self._response(result, success=result is not None, message="" if result else "预览已过期，请重新预览")
 
     def _reclaimable_batches(self) -> list[dict]:
-        return self._store().reclaimable_batches()
+        return self._store().reclaimable_batches(self._settings.reclaim_legacy_by_upload_record)
+
+    def api_cloud_attest(self, request: CloudAttestRequest):
+        """API_TOKEN 认证的外部对账入口，冲突每次调用合并通知。"""
+        counts, conflicts = self._store().attest_cloud(request.source, [item.model_dump() for item in request.items])
+        if conflicts:
+            detail = "\n".join(f"{batch.get('batch_name', batch['id'])} ({batch['id']})" for batch in conflicts)
+            logger.warning(f"压缩归档云端对账冲突：source={request.source} batches={len(conflicts)}\n{detail}")
+            task = self._snapshot_task_for_maintenance(conflicts[0]["task"])
+            self._notify_event("failure", task, "云端对账冲突", detail)
+        return self._response(counts)
+
+    def _queue_reclaim(self, batches: list[dict]) -> int:
+        """人工和每日自动回收共用串行队列，并合并重复批次。"""
+        with self._lock:
+            queued = {job["batch_id"] for job in self._queue if job["kind"] == "reclaim"}
+            running = self._running.get("batch_id") if self._running else ""
+            jobs = []
+            for batch in batches:
+                if batch["id"] in queued or batch["id"] == running:
+                    continue
+                task = self._snapshot_task_for_maintenance(batch["task"])
+                jobs.append({"id": uuid4().hex, "kind": "reclaim", "task": task, "batch_id": batch["id"]})
+            self._queue.extend(jobs)
+            if jobs:
+                self._start_worker()
+            return len(jobs)
+
+    def _auto_reclaim(self):
+        """每日调度仅回收超过等待期的获准云端证明，不以本地存在代替上云。"""
+        if not self.get_state() or self._settings.auto_reclaim_days <= 0:
+            return
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self._settings.auto_reclaim_days)
+        batches = []
+        for batch in self._reclaimable_batches():
+            cloud = batch.get("cloud") or {}
+            if cloud.get("status") != "verified" and not (
+                cloud.get("status") == "legacy" and self._settings.reclaim_legacy_by_upload_record
+            ):
+                continue
+            try:
+                confirmed = datetime.fromisoformat(cloud.get("confirmed_at") or "")
+                if confirmed.tzinfo is not None and confirmed < cutoff:
+                    batches.append(batch)
+            except (ValueError, TypeError):
+                continue
+        queued = self._queue_reclaim(batches)
+        logger.info(f"压缩归档每日自动回收：queued={queued}")
 
     @staticmethod
     def _snapshot_task_for_maintenance(snapshot: dict) -> TaskConfig:
@@ -778,7 +861,7 @@ class ArchiveManager(_PluginBase):
         """只统计可回收源文件，供确认框展示，不加入队列。"""
         del request
         try:
-            batches = self._reclaimable_batches()
+            batches, skipped = self._store().reclaim_selection(self._settings.reclaim_legacy_by_upload_record)
             files = sum(len((batch.get("manifest") or {}).get("files", [])) for batch in batches)
             staging_count, staging_bytes = self._staging_reclaim_preview()
             return self._response(
@@ -788,6 +871,7 @@ class ArchiveManager(_PluginBase):
                     "estimated_bytes": self._reclaim_estimated_bytes(batches) + staging_bytes,
                     "staging_count": staging_count,
                     "staging_bytes": staging_bytes,
+                    **skipped,
                 }
             )
         except (ValueError, OSError) as exc:
@@ -797,29 +881,18 @@ class ArchiveManager(_PluginBase):
         """批量回收所有已发布批次的源文件，归档包和清单保持不变。"""
         del request
         try:
-            batches = self._reclaimable_batches()
+            batches, skipped = self._store().reclaim_selection(self._settings.reclaim_legacy_by_upload_record)
             staging_count, staging_bytes = self._cleanup_reclaimable_staging()
-            with self._lock:
-                queued = {job["batch_id"] for job in self._queue if job["kind"] == "reclaim"}
-                running = self._running.get("batch_id") if self._running else ""
-                jobs = []
-                for batch in batches:
-                    if batch["id"] in queued or batch["id"] == running:
-                        continue
-                    task = self._snapshot_task_for_maintenance(batch["task"])
-                    job_id = uuid4().hex
-                    jobs.append({"id": job_id, "kind": "reclaim", "task": task, "batch_id": batch["id"]})
-                self._queue.extend(jobs)
-                if jobs:
-                    self._start_worker()
+            queued = self._queue_reclaim(batches)
             estimated_bytes = self._reclaim_estimated_bytes(batches)
             return self._response(
                 {
-                    "queued": len(jobs),
+                    "queued": queued,
                     "found": len(batches),
                     "estimated_bytes": estimated_bytes + staging_bytes,
                     "staging_removed": staging_count,
                     "staging_bytes": staging_bytes,
+                    **skipped,
                 }
             )
         except (ValueError, OSError) as exc:
@@ -994,13 +1067,14 @@ class ArchiveManager(_PluginBase):
             ("retry", "POST", self.api_retry, "重试批次"),
             ("cleanup", "POST", self.api_cleanup, "清理批次"),
             ("repair", "POST", self.api_repair, "补全清单"),
+            ("cloud/attest", "POST", self.api_cloud_attest, "云端对账"),
         ]
         return [
             {
                 "path": f"/{path}",
                 "endpoint": endpoint,
                 "methods": [method],
-                "auth": "bear",
+                "auth": "apikey" if path == "cloud/attest" else "bear",
                 "summary": title,
                 "response_model": schemas.Response[dict],
             }

@@ -6,6 +6,7 @@ import type {
   BatchPage,
   FilePage,
   PreviewResult,
+  ReclaimPreview,
   SummaryPayload,
 } from './types'
 
@@ -136,13 +137,7 @@ export function pollPreview(api: PluginApi | undefined, jobId: string): Promise<
   return getData<PreviewResult | null>(api, queryPath('preview', { job_id: jobId }), null)
 }
 
-export function previewReclaim(api: PluginApi | undefined): Promise<{
-  batch_count?: number
-  file_count?: number
-  estimated_bytes?: number
-  staging_count?: number
-  staging_bytes?: number
-} | null> {
+export function previewReclaim(api: PluginApi | undefined): Promise<ReclaimPreview | null> {
   return postData(api, `${ROOT}reclaim/preview`, {})
 }
 

@@ -18,6 +18,20 @@ class PluginConfig(BaseModel):
     daily_archive_limit_bytes: int = Field(
         default=0, ge=0
     )  # 所有任务每天发布的归档包字节上限，0 不限制
+    reclaim_legacy_by_upload_record: bool = False  # 允许使用上传器摘要认定缺少插件 SHA-1 的旧批次
+    auto_reclaim_days: float = Field(default=0, ge=0, allow_inf_nan=False)  # 确认上云后的回收等待天数，0 关闭
+
+
+def reclaim_precondition(batch: dict, allow_legacy: bool = False) -> str:
+    """本地成品优先；成品不存在时只接受插件核定的云端证明。"""
+    if batch.get("archive_path") and Path(batch["archive_path"]).exists():
+        return "local"
+    status = (batch.get("cloud") or {}).get("status")
+    if status == "verified":
+        return "cloud_verified"
+    if status == "legacy":
+        return "cloud_legacy" if allow_legacy else "skipped_legacy_disabled"
+    return "skipped_conflict" if status == "conflict" else "skipped_unconfirmed"
 
 
 class TaskConfig(BaseModel):

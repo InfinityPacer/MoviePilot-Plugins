@@ -21,6 +21,8 @@ describe('ArchiveManager config normalization', () => {
     const input = {
       enabled: 'true',
       daily_archive_limit_bytes: '214748364800',
+      reclaim_legacy_by_upload_record: 'true',
+      auto_reclaim_days: '2.5',
       tasks: [
         {
           id: 'task-1',
@@ -50,6 +52,8 @@ describe('ArchiveManager config normalization', () => {
 
     expect(result.enabled).toBe(true)
     expect(result.daily_archive_limit_bytes).toBe(214748364800)
+    expect(result.reclaim_legacy_by_upload_record).toBe(true)
+    expect(result.auto_reclaim_days).toBe(2.5)
     expect(result.tasks[0]).toMatchObject({
       id: 'task-1',
       archive_layout: 'flat',
@@ -75,6 +79,10 @@ describe('ArchiveManager config normalization', () => {
 
   it('keeps an empty config valid', () => {
     expect(normalizeArchiveConfig({})).toEqual(configDefaults)
+  })
+
+  it('keeps automatic reclaim disabled for negative day values', () => {
+    expect(normalizeArchiveConfig({ auto_reclaim_days: -1 }).auto_reclaim_days).toBe(0)
   })
 
   it('preserves an explicitly empty notification selection', () => {

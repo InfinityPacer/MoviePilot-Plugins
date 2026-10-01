@@ -24,8 +24,10 @@ import type {
   ArchiveTask,
   Batch,
   BatchPage,
+  CloudAttestationStatus,
   FilePage,
   PreviewData,
+  ReclaimSkipCounts,
   SummaryPayload,
 } from '../config/types'
 import { cloneTask, createArchiveTask, normalizeArchiveConfig } from '../config/values'
@@ -152,6 +154,9 @@ const changedItems = computed(() => {
   if (draft.value.notify !== original.value.notify) items.push('发送通知')
   if (JSON.stringify(draft.value.notify_events) !== JSON.stringify(original.value.notify_events)) items.push('通知事件')
   if (draft.value.daily_archive_limit_bytes !== original.value.daily_archive_limit_bytes) items.push('每日归档额度')
+  if (draft.value.reclaim_legacy_by_upload_record !== original.value.reclaim_legacy_by_upload_record)
+    items.push('旧批次按上传记录认定')
+  if (draft.value.auto_reclaim_days !== original.value.auto_reclaim_days) items.push('确认上云后自动回收天数')
   const originalTasks = new Map(original.value.tasks.map(task => [task.id, task]))
   for (const task of draft.value.tasks) {
     const previous = originalTasks.get(task.id)
@@ -516,6 +521,14 @@ function formatBytes(value: number): string {
   return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
 }
 
+function reclaimSkippedSummary(counts: ReclaimSkipCounts, separator = '\n'): string {
+  return [
+    `未确认上云 ${formatNumber(Number(counts.skipped_unconfirmed ?? 0))} 个批次`,
+    `云端冲突 ${formatNumber(Number(counts.skipped_conflict ?? 0))} 个批次`,
+    `旧批次未启用上传记录认定 ${formatNumber(Number(counts.skipped_legacy_disabled ?? 0))} 个批次`,
+  ].join(separator)
+}
+
 function formatDate(value: string): string {
   if (!value) return '-'
   const timestamp = new Date(value)
@@ -549,6 +562,23 @@ function statusColor(status?: string): string {
   if (['failed', 'cleanup_failed', 'missing', 'changed'].includes(normalized)) return 'error'
   if (['cancelled', 'interrupted', 'superseded'].includes(normalized)) return 'warning'
   return 'primary'
+}
+
+function cloudStatusLabel(status?: CloudAttestationStatus): string {
+  if (!status) return '无记录'
+  return {
+    verified: '已核验',
+    legacy: '旧批次',
+    conflict: '冲突',
+    unproven: '未确认',
+  }[status]
+}
+
+function cloudStatusColor(status?: CloudAttestationStatus): string {
+  if (status === 'verified') return 'success'
+  if (status === 'conflict') return 'error'
+  if (status === 'legacy' || status === 'unproven') return 'warning'
+  return 'default'
 }
 
 function batchFileStatus(file: ArchiveFile, batch: Batch): string {
@@ -627,10 +657,13 @@ async function executeReclaim(): Promise<void> {
   const stagingCount = Number(preview.staging_count ?? 0)
   const stagingBytes = Number(preview.staging_bytes ?? 0)
   if (estimated <= 0) {
-    setNotice('暂无需要回收的空间。', 'info')
+    const skipped = [preview.skipped_unconfirmed, preview.skipped_conflict, preview.skipped_legacy_disabled].some(
+      value => Number(value ?? 0) > 0,
+    )
+    setNotice(skipped ? `暂无可回收空间。${reclaimSkippedSummary(preview, '，')}` : '暂无需要回收的空间。', 'info')
     return
   }
-  const content = `将扫描所有已完成的归档批次，并回收仍保留且校验通过的源文件，同时清理不可恢复的旧暂存。\n\n可回收批次：${batchCount} 个\n可回收文件：${fileCount} 个\n旧暂存目录：${stagingCount} 个\n预计释放空间：${formatBytes(estimated)}${stagingBytes > 0 ? `（其中旧暂存 ${formatBytes(stagingBytes)}）` : ''}`
+  const content = `将扫描所有符合条件的归档批次，并回收仍保留且校验通过的源文件，同时清理不可恢复的旧暂存。\n\n可回收批次 ${batchCount} 个\n可回收文件 ${fileCount} 个\n${reclaimSkippedSummary(preview)}\n旧暂存目录 ${stagingCount} 个\n预计释放空间 ${formatBytes(estimated)}${stagingBytes > 0 ? `（其中旧暂存 ${formatBytes(stagingBytes)}）` : ''}`
   const confirmed = hostConfirm
     ? await hostConfirm({ type: 'warn', title: '回收空间', content, confirmText: '开始回收', cancelText: '取消' })
     : window.confirm(`${content}\n\n是否继续？`)
@@ -1259,6 +1292,35 @@ onBeforeUnmount(() => {
                         min="0"
                         step="1"
                         suffix="GiB"
+                        type="number"
+                        variant="outlined"
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow
+                      label="旧批次按上传记录认定"
+                      hint="开启后，旧批次需同时满足归档体积一致且上传 SHA-1 与云端 SHA-1 一致，才可按云端证据回收"
+                      switch-field
+                    >
+                      <VSwitch
+                        v-model="draft.reclaim_legacy_by_upload_record"
+                        aria-label="旧批次按上传记录认定"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </ArchiveFieldRow>
+                    <ArchiveFieldRow
+                      label="确认上云后自动回收天数"
+                      hint="0 表示关闭。云端首次确认达到指定天数后加入回收队列，每日检查一次"
+                    >
+                      <VTextField
+                        v-model.number="draft.auto_reclaim_days"
+                        aria-label="确认上云后自动回收天数"
+                        density="compact"
+                        hide-details
+                        min="0"
+                        step="any"
+                        suffix="天"
                         type="number"
                         variant="outlined"
                       />
@@ -2301,6 +2363,12 @@ onBeforeUnmount(() => {
                 <span>本地成品</span
                 ><VChip :color="selectedBatch.archive_available ? 'success' : 'warning'" size="small" variant="tonal">{{
                   selectedBatch.archive_available ? '可用' : '已不在本地'
+                }}</VChip>
+              </div>
+              <div>
+                <span>云端状态</span
+                ><VChip :color="cloudStatusColor(selectedBatch.cloud?.status)" size="small" variant="tonal">{{
+                  cloudStatusLabel(selectedBatch.cloud?.status)
                 }}</VChip>
               </div>
               <div>

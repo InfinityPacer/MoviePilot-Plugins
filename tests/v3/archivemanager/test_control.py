@@ -260,6 +260,8 @@ def test_archive_manager_constructs_real_plugin_and_declares_persistence_contrac
             "notify": False,
             "notify_events": ["failure"],
             "daily_archive_limit_bytes": 0,
+            "reclaim_legacy_by_upload_record": False,
+            "auto_reclaim_days": 0,
             "reset_data": False,
             "tasks": [],
         },

@@ -81,6 +81,60 @@ describe('ArchiveManager federated config', () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ daily_archive_limit_bytes: 200 * 1024 ** 3 }))
   })
 
+  it('saves the legacy cloud reclaim option and automatic reclaim delay', async () => {
+    const { api } = createHostApi()
+    const save = vi.fn()
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig(), onSave: save } })
+
+    const legacy = screen.getByRole('checkbox', { name: '旧批次按上传记录认定' })
+    const days = screen.getByRole('spinbutton', { name: '确认上云后自动回收天数' })
+    expect(legacy).not.toBeChecked()
+    expect(days).toHaveValue(0)
+    await user.click(legacy)
+    await fireEvent.update(days, '1.5')
+    await user.click(document.querySelector<HTMLButtonElement>('.archive-header__save') as HTMLButtonElement)
+
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ reclaim_legacy_by_upload_record: true, auto_reclaim_days: 1.5 }),
+    )
+  })
+
+  it('shows cloud evidence skip counts in the reclaim confirmation', async () => {
+    const { api, post } = createHostApi()
+    post.mockResolvedValueOnce({
+      success: true,
+      message: '',
+      data: {
+        batch_count: 1,
+        file_count: 2,
+        estimated_bytes: 1024,
+        staging_count: 0,
+        staging_bytes: 0,
+        skipped_unconfirmed: 3,
+        skipped_conflict: 4,
+        skipped_legacy_disabled: 5,
+      },
+    })
+    let confirmationContent = ''
+    const confirm = vi.fn(async (options?: { content?: string }) => {
+      confirmationContent = options?.content || ''
+      return false
+    })
+    const user = userEvent.setup()
+    renderWithHost(Config, {
+      props: { api, initialConfig: createConfig() },
+      global: { provide: { 'moviepilot:confirm': confirm } },
+    })
+
+    await user.click(screen.getByRole('button', { name: '回收空间' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledOnce())
+    expect(confirmationContent).toContain('未确认上云 3 个批次')
+    expect(confirmationContent).toContain('云端冲突 4 个批次')
+    expect(confirmationContent).toContain('旧批次未启用上传记录认定 5 个批次')
+  })
+
   it('creates a task, forces verification for source deletion, and emits a complete config', async () => {
     const { api } = createHostApi()
     const save = vi.fn()
@@ -418,6 +472,15 @@ describe('ArchiveManager federated config', () => {
       file_count: 2,
       verified: true,
       archive_sha256: 'archive-sha',
+      cloud: {
+        status: 'verified',
+        sha1: 'cloud-sha1',
+        size: 1024,
+        cloud_path: '/Home/archive.7z',
+        source: 'muvyo-115',
+        attested_at: '2026-09-10T12:00:00Z',
+        confirmed_at: '2026-09-10T12:00:00Z',
+      },
       error: '',
       archive_available: false,
       manifest_available: true,
@@ -442,6 +505,7 @@ describe('ArchiveManager federated config', () => {
     await user.click(await screen.findByRole('button', { name: '查看批次详情' }))
 
     expect(await screen.findByText('已不在本地')).toBeInTheDocument()
+    expect(screen.getByText('已核验')).toBeInTheDocument()
     const fileRows = Array.from(document.querySelectorAll<HTMLTableRowElement>('.archive-table tbody tr')).filter(row =>
       row.textContent?.includes('.mkv'),
     )
@@ -450,5 +514,61 @@ describe('ArchiveManager federated config', () => {
     if (!keptRow || !deletedRow) throw new Error('批次详情文件行未渲染')
     expect(within(keptRow).getByText('已归档')).toBeInTheDocument()
     expect(within(deletedRow).getByText('已删除源文件')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['verified', '已核验'],
+    ['legacy', '旧批次'],
+    ['conflict', '冲突'],
+    ['unproven', '未确认'],
+    [undefined, '无记录'],
+  ])('shows the cloud status %s as %s', async (cloudStatus, label) => {
+    const { api, get } = createHostApi()
+    const task = createArchiveTask({ id: 'task-1', name: '媒体归档' })
+    const batch = {
+      id: 'batch-1',
+      task_id: task.id,
+      task_name: task.name,
+      status: 'completed',
+      created_at: '2026-09-10T12:00:00Z',
+      archive_path: '/archive/batch-1.7z',
+      manifest_path: '/manifest/batch-1.md',
+      archive_size: 1024,
+      source_bytes: 2048,
+      file_count: 1,
+      verified: true,
+      archive_sha256: 'archive-sha',
+      error: '',
+      archive_available: false,
+      manifest_available: true,
+      cleanup: {},
+      ...(cloudStatus
+        ? {
+            cloud: {
+              status: cloudStatus,
+              sha1: 'cloud-sha1',
+              size: 1024,
+              cloud_path: '/Home/archive.7z',
+              source: 'muvyo-115',
+              attested_at: '2026-09-10T12:00:00Z',
+              confirmed_at: '2026-09-10T12:00:00Z',
+            },
+          }
+        : {}),
+    }
+    get.mockImplementation(async (path: string) => {
+      if (path === 'plugin/ArchiveManager/summary') return { success: true, message: '', data: createSummary() }
+      if (path.startsWith('plugin/ArchiveManager/batches'))
+        return { success: true, message: '', data: { items: [batch], total: 1 } }
+      if (path.startsWith('plugin/ArchiveManager/batch')) return { success: true, message: '', data: batch }
+      return { success: true, message: '', data: { items: [], directories: [], total: 0 } }
+    })
+    const user = userEvent.setup()
+    renderWithHost(Config, { props: { api, initialConfig: createConfig({ tasks: [task] }) } })
+
+    await user.click(screen.getByText('批次'))
+    await user.click(await screen.findByRole('button', { name: '查看批次详情' }))
+
+    expect(await screen.findByText(label)).toBeInTheDocument()
   })
 })
