@@ -85,7 +85,7 @@ class ArchiveManager(_PluginBase):
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.10"
+    plugin_version = "0.1.11"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
@@ -909,19 +909,25 @@ class ArchiveManager(_PluginBase):
         return count, total
 
     @staticmethod
-    def _reclaim_estimated_bytes(batches: list[dict]) -> int:
-        return sum(
-            int(entry.get("size", 0))
+    def _reclaim_remaining(batches: list[dict]) -> list[dict]:
+        """批次清单中仍待回收的文件；已删除或已不存在的文件不再计入预览和估算。"""
+        return [
+            entry
             for batch in batches
             for entry in (batch.get("manifest") or {}).get("files", [])
-        )
+            if (batch.get("cleanup") or {}).get(entry["relative_path"]) not in ("deleted", "missing")
+        ]
+
+    @classmethod
+    def _reclaim_estimated_bytes(cls, batches: list[dict]) -> int:
+        return sum(int(entry.get("size", 0)) for entry in cls._reclaim_remaining(batches))
 
     def api_reclaim_preview(self, request: ReclaimRequest):
         """只统计可回收源文件，供确认框展示，不加入队列。"""
         del request
         try:
             batches, skipped = self._store().reclaim_selection(self._settings.reclaim_legacy_by_upload_record)
-            files = sum(len((batch.get("manifest") or {}).get("files", [])) for batch in batches)
+            files = len(self._reclaim_remaining(batches))
             staging_count, staging_bytes = self._staging_reclaim_preview()
             return self._response(
                 {
