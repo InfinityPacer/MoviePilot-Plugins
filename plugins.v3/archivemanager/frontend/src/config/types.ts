@@ -5,6 +5,7 @@ export type GroupingMode = 'none' | 'directory' | 'date' | 'directory_date'
 export type ArchiveLayout = 'directory' | 'flat'
 export type TimeGrain = 'hour' | 'day' | 'month'
 export type NotificationEvent = 'success' | 'failure' | 'other'
+export type CloudAttestationStatus = 'verified' | 'legacy' | 'conflict' | 'unproven'
 
 export type BatchStatus =
   | 'building'
@@ -72,6 +73,10 @@ export interface ArchiveConfig {
   notify_events: NotificationEvent[]
   /** 所有任务每天发布的归档包总字节上限，0 表示不限。 */
   daily_archive_limit_bytes: number
+  /** 允许以匹配的上传 SHA-1 和云端 SHA-1 确认旧批次。 */
+  reclaim_legacy_by_upload_record: boolean
+  /** 云端首次确认达到的天数后自动加入回收队列，0 表示关闭。 */
+  auto_reclaim_days: number
   /** 保存时触发一次运行数据重置，宿主配置随后自动复位。 */
   reset_data: boolean
   tasks: ArchiveTask[]
@@ -152,8 +157,10 @@ export interface Batch {
   file_count: number
   verified: boolean
   archive_sha256: string
-  /** 归档包 SHA-1，仅用于与 115 等网盘元数据对账；0.1.6 之前的批次可能为空。 */
+  /** 云端核验成品的 SHA-1。0.1.6 之前批次可能为空，本地成品仍以 SHA-256 校验。 */
   archive_sha1?: string
+  /** 最近一次云端对账结果；旧批次或尚未对账的批次可能没有记录。 */
+  cloud?: BatchCloudAttestation
   error: string
   archive_available: boolean
   manifest_available: boolean
@@ -161,6 +168,32 @@ export interface Batch {
   superseded?: boolean
   files?: ArchiveFile[]
   cleanup: Record<string, 'retained' | 'deleted' | 'missing' | 'changed' | 'failed' | string>
+}
+
+/** 云端对账的最近结果和首次确认时间。 */
+export interface BatchCloudAttestation {
+  status: CloudAttestationStatus
+  sha1: string
+  size: number
+  cloud_path: string
+  source: string
+  attested_at: string
+  confirmed_at: string | null
+}
+
+/** 回收预览中因缺少足够云端证据而跳过的批次数量。 */
+export interface ReclaimSkipCounts {
+  skipped_unconfirmed?: number
+  skipped_conflict?: number
+  skipped_legacy_disabled?: number
+}
+
+export interface ReclaimPreview extends ReclaimSkipCounts {
+  batch_count?: number
+  file_count?: number
+  estimated_bytes?: number
+  staging_count?: number
+  staging_bytes?: number
 }
 
 export interface BatchPage {
@@ -213,6 +246,9 @@ export interface ActionResult {
   staging_count?: number
   staging_bytes?: number
   staging_removed?: number
+  skipped_unconfirmed?: number
+  skipped_conflict?: number
+  skipped_legacy_disabled?: number
   directory_count?: number
   task_state_count?: number
 }

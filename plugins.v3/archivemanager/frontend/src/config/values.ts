@@ -107,6 +107,11 @@ export function normalizeArchiveConfig(value: unknown): ArchiveConfig {
       source.daily_archive_limit_bytes,
       configDefaults.daily_archive_limit_bytes,
     ),
+    reclaim_legacy_by_upload_record: toBoolean(
+      source.reclaim_legacy_by_upload_record,
+      configDefaults.reclaim_legacy_by_upload_record,
+    ),
+    auto_reclaim_days: Math.max(0, toFiniteNumber(source.auto_reclaim_days, configDefaults.auto_reclaim_days)),
     reset_data: toBoolean(source.reset_data, configDefaults.reset_data),
     tasks,
   }

@@ -19,7 +19,7 @@ from app.sdk.logging import logger
 
 from .capacity import CapacityWait, allowance
 from .catalog import atomic_write, write_catalog
-from .config import TaskConfig, validate_paths
+from .config import TaskConfig, reclaim_precondition, validate_paths
 from .naming import batch_relative_directory
 from .scanner import Cancelled, identity, identity_matches
 
@@ -190,16 +190,23 @@ class Runner:
         phase,
         cleanup_cancelled: Callable[[], bool] | None = None,
         daily_archive_limit_bytes: int = 0,
+        reclaim_legacy_by_upload_record: bool = False,
     ):
         self.store = store
         self.stop = stop
         self.phase = phase
         self.cleanup_cancelled = cleanup_cancelled or (lambda: False)
         self.daily_archive_limit_bytes = daily_archive_limit_bytes
+        self.reclaim_legacy_by_upload_record = reclaim_legacy_by_upload_record
 
     def reclaim(self, batch: dict, current_task: TaskConfig) -> None:
         """独立回收入口：复用已发布批次的逐文件校验，不重新打包或删除归档产物。"""
-        task = TaskConfig.model_validate({**batch["task"], "password": current_task.password})
+        if reclaim_precondition(batch, self.reclaim_legacy_by_upload_record).startswith("skipped_"):
+            raise ValueError("本地归档不存在且没有获准的云端证明，不能回收源文件")
+        # 回收只读取路径和明文清单，不解密归档，因此不要求历史密码仍可用。
+        task = TaskConfig.model_validate(
+            {**batch["task"], "password": "", "encryption": "none", "encrypt_names": False}
+        )
         self._cleanup(batch, task)
 
     def execute(self, batch: dict, current_task: TaskConfig) -> None:
@@ -443,12 +450,17 @@ class Runner:
         if not batch["verified"]:
             raise ValueError("清理源文件需要完整校验通过")
         archive = Path(batch["archive_path"])
-        batch = self._match_archive(archive, batch, "清理前归档摘要不匹配")
-        archive_identity = identity(archive)
+        precondition = reclaim_precondition(batch, self.reclaim_legacy_by_upload_record)
+        if precondition.startswith("skipped_"):
+            raise ValueError("本地归档不存在且没有获准的云端证明，不能回收源文件")
+        archive_identity = None
+        if precondition == "local":
+            batch = self._match_archive(archive, batch, "清理前归档摘要不匹配")
+            archive_identity = identity(archive)
         batch = self.store.save(batch["id"], status="cleaning")
         self.phase("cleaning", batch["id"])
         context = f"task={task.name}({task.id[:6]}) batch={batch['id'][:6]}"
-        logger.info(f"压缩归档源文件清理开始：{context} files={len(batch['manifest']['files'])}")
+        logger.info(f"压缩归档源文件清理开始：{context} precondition={precondition} files={len(batch['manifest']['files'])}")
         failed = False
         source_root = Path(task.source_dir)
         pending_results: dict[str, str] = {}
@@ -487,14 +499,14 @@ class Runner:
                         batch["cleanup"][relative] = "deleting"
                         check_stop(self.stop)
                         if (
-                            identity(archive) != archive_identity
+                            (precondition == "local" and identity(archive) != archive_identity)
                             or not identity_matches(source, entry)
                         ):
                             raise ValueError("清理前源文件或归档包已变化")
                         source.unlink()
                         result = "deleted"
                 except FileNotFoundError:
-                    if not archive.exists():
+                    if precondition == "local" and not archive.exists():
                         raise ValueError("成品已被外部移走，停止源文件清理") from None
                     result = "missing"
                     logger.warning(f"压缩归档源文件清理跳过：{context} path={relative} reason=missing")
