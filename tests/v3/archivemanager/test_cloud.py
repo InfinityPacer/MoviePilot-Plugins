@@ -623,3 +623,64 @@ def test_auto_reclaim_queues_only_old_confirmations_and_respects_legacy_setting(
         batches["old-legacy"]["id"],
     }
     assert batches["old-unconfirmed"]["id"] not in {job["batch_id"] for job in manager._queue}
+
+
+def test_reclaim_round_sends_one_summary_notification_after_the_queue_drains(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    first = _published_batch(store, task, "summary-a", "summary-a.txt", archive_sha1="a" * 40)
+    second = _published_batch(store, task, "summary-b", "summary-b.txt", archive_sha1="b" * 40)
+    pending = _published_batch(store, task, "summary-c", "summary-c.txt", archive_sha1="c" * 40)
+    manager = manager_module.ArchiveManager()
+    manager._settings = PluginConfig(notify=True, notify_events=["success", "failure"])
+    manager._enabled = True
+    manager._tasks = [task]
+    messages: list[dict] = []
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    monkeypatch.setattr(manager, "post_message", lambda **message: messages.append(message))
+    monkeypatch.setattr(manager, "_start_worker", lambda: None)
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+    _attest(manager, "muvyo-115", [_attest_item(first, sha1="a" * 40), _attest_item(second, sha1="b" * 40)])
+    # 第二个批次的源文件在回收前被改写，应保留并计入"内容有变化"。
+    (Path(task.source_dir) / "summary-b.txt").write_bytes(b"rewritten")
+
+    queued = manager.api_reclaim(manager_module.ReclaimRequest())
+    assert queued.data["queued"] == 2
+    manager._work()
+
+    assert len(messages) == 1
+    assert messages[0]["title"] == "压缩归档：空间回收完成"
+    text = messages[0]["text"]
+    assert "来源：手动回收" in text
+    assert "回收批次：2，跳过 0，失败 0" in text
+    assert f"删除源文件：1 个，释放 {len(b'source:summary-a')} B" in text
+    assert "未删除：内容有变化 1，已不存在 0，无权限 0" in text
+    assert (Path(task.source_dir) / "summary-c.txt").exists()
+    assert pending["id"] not in {job["batch_id"] for job in manager._queue}
+
+
+def test_reclaim_summary_reports_failed_batches_as_failure(store: Store, tmp_path: Path, monkeypatch) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "summary-fail", "summary-fail.txt", archive_sha1="a" * 40)
+    manager = manager_module.ArchiveManager()
+    manager._settings = PluginConfig(notify=True, notify_events=["failure"])
+    manager._enabled = True
+    manager._tasks = [task]
+    messages: list[dict] = []
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    monkeypatch.setattr(manager, "post_message", lambda **message: messages.append(message))
+    monkeypatch.setattr(manager, "_start_worker", lambda: None)
+    _attest(manager, "muvyo-115", [_attest_item(batch, sha1="a" * 40)])
+    manager.api_reclaim(manager_module.ReclaimRequest())
+
+    def broken(*_args, **_kwargs):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(runner_module.Runner, "reclaim", broken)
+    manager._work()
+
+    titles = [message["title"] for message in messages]
+    assert "压缩归档：空间回收有失败" in titles
+    summary = next(message for message in messages if message["title"] == "压缩归档：空间回收有失败")
+    assert "回收批次：0，跳过 0，失败 1" in summary["text"]
