@@ -85,7 +85,7 @@ class ArchiveManager(_PluginBase):
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.9"
+    plugin_version = "0.1.10"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
@@ -102,6 +102,8 @@ class ArchiveManager(_PluginBase):
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._queue: deque = deque()
+        # 一轮回收（从入队到队列中不再有回收作业）的汇总，完成时发送一条通知，避免逐批刷屏。
+        self._reclaim_summary: dict | None = None
         self._running: dict | None = None
         self._previews: dict[str, dict] = {}
         self._closing = False
@@ -383,12 +385,14 @@ class ArchiveManager(_PluginBase):
                     batch = store.get(job["batch_id"])
                     # 排队后证明可能被新对账撤销；此时安静跳过，不改任务状态。
                     if reclaim_precondition(batch, self._settings.reclaim_legacy_by_upload_record).startswith("skipped_"):
+                        self._count_reclaim(skipped=1)
                         continue
                     runner = Runner(
                         store, self._stop, self._phase,
                         reclaim_legacy_by_upload_record=self._settings.reclaim_legacy_by_upload_record,
                     )
                     runner.reclaim(batch, task)
+                    self._count_reclaim_batch(batch, store.get(batch["id"]))
                     logger.info(
                         f"压缩归档空间回收完成：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
                         f"batch={batch['id'][:6]}"
@@ -450,6 +454,8 @@ class ArchiveManager(_PluginBase):
                 message = self._safe_error(exc)
                 if task.password:
                     message = message.replace(task.password, "***")
+                if job["kind"] == "reclaim":
+                    self._count_reclaim(failed_batches=1)
                 if job["kind"] == "preview":
                     with self._lock:
                         self._previews[job["id"]] = {"status": "failed", "data": None, "message": message}
@@ -481,6 +487,11 @@ class ArchiveManager(_PluginBase):
                 with self._lock:
                     self._running = None
                     self._manual_stop_tasks.discard(task.id)
+                    summary = None
+                    if job["kind"] == "reclaim" and not any(item["kind"] == "reclaim" for item in self._queue):
+                        summary, self._reclaim_summary = self._reclaim_summary, None
+                if summary:
+                    self._notify_reclaim(task, summary)
             if job["kind"] != "preview":
                 state = self._store().task_state(task.id)
                 if state["phase"] == "waiting_capacity" and previous_phase != "waiting_capacity":
@@ -766,8 +777,11 @@ class ArchiveManager(_PluginBase):
             self._notify_event("failure", task, "云端对账冲突", detail)
         return self._response(counts)
 
-    def _queue_reclaim(self, batches: list[dict]) -> int:
-        """人工和每日自动回收共用串行队列，并合并重复批次。"""
+    def _queue_reclaim(self, batches: list[dict], trigger: str = "手动回收") -> int:
+        """人工和每日自动回收共用串行队列，并合并重复批次。
+
+        trigger 写入本轮回收汇总通知；队列中仍有回收作业时追加的批次并入同一轮汇总。
+        """
         with self._lock:
             queued = {job["batch_id"] for job in self._queue if job["kind"] == "reclaim"}
             running = self._running.get("batch_id") if self._running else ""
@@ -779,8 +793,50 @@ class ArchiveManager(_PluginBase):
                 jobs.append({"id": uuid4().hex, "kind": "reclaim", "task": task, "batch_id": batch["id"]})
             self._queue.extend(jobs)
             if jobs:
+                if self._reclaim_summary is None:
+                    self._reclaim_summary = {
+                        "triggers": [], "batches": 0, "skipped": 0, "failed_batches": 0,
+                        "deleted": 0, "deleted_bytes": 0, "changed": 0, "missing": 0, "failed": 0,
+                    }
+                if trigger not in self._reclaim_summary["triggers"]:
+                    self._reclaim_summary["triggers"].append(trigger)
                 self._start_worker()
             return len(jobs)
+
+    def _count_reclaim(self, **delta: int) -> None:
+        with self._lock:
+            if self._reclaim_summary is not None:
+                for key, value in delta.items():
+                    self._reclaim_summary[key] += value
+
+    def _count_reclaim_batch(self, before: dict, after: dict) -> None:
+        """按本次作业前后的逐文件清理结果累计，已在之前回收过的文件不重复计数。"""
+        sizes = {entry["relative_path"]: int(entry.get("size", 0)) for entry in (after.get("manifest") or {}).get("files", [])}
+        delta = {"batches": 1, "deleted": 0, "deleted_bytes": 0, "changed": 0, "missing": 0, "failed": 0}
+        previous = before.get("cleanup") or {}
+        for relative, result in (after.get("cleanup") or {}).items():
+            if previous.get(relative) == result or result not in delta:
+                continue
+            delta[result] += 1
+            if result == "deleted":
+                delta["deleted_bytes"] += sizes.get(relative, 0)
+        self._count_reclaim(**delta)
+
+    def _notify_reclaim(self, task: TaskConfig, summary: dict) -> None:
+        """一轮回收结束后汇总通知；有失败批次或无权限文件时按失败事件发送。"""
+        problems = summary["failed_batches"] or summary["failed"]
+        lines = [
+            f"来源：{'、'.join(summary['triggers'])}",
+            f"回收批次：{summary['batches']}，跳过 {summary['skipped']}，失败 {summary['failed_batches']}",
+            f"删除源文件：{summary['deleted']} 个，释放 {_format_bytes(summary['deleted_bytes'])}",
+        ]
+        if summary["changed"] or summary["missing"] or summary["failed"]:
+            lines.append(
+                f"未删除：内容有变化 {summary['changed']}，已不存在 {summary['missing']}，无权限 {summary['failed']}"
+            )
+        logger.info(f"压缩归档空间回收汇总：{' '.join(lines)}")
+        self._notify_event("failure" if problems else "success", task,
+                           "空间回收有失败" if problems else "空间回收完成", "\n".join(lines))
 
     def _auto_reclaim(self):
         """每日调度仅回收超过等待期的获准云端证明，不以本地存在代替上云。"""
@@ -800,7 +856,7 @@ class ArchiveManager(_PluginBase):
                     batches.append(batch)
             except (ValueError, TypeError):
                 continue
-        queued = self._queue_reclaim(batches)
+        queued = self._queue_reclaim(batches, "每日自动回收")
         logger.info(f"压缩归档每日自动回收：queued={queued}")
 
     @staticmethod
@@ -1080,3 +1136,13 @@ class ArchiveManager(_PluginBase):
             }
             for path, method, endpoint, title in routes
         ]
+
+
+def _format_bytes(value: int) -> str:
+    """通知中的容量按 1024 进位显示。"""
+    size = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if size < 1024:
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{size:.2f} TiB"
