@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
 from app.plugins.brushflowlowfreq import BrushConfig, BrushFlowLowFreq
+from app.schemas import TorrentInfo
 from app.schemas.types import MediaSource, MediaType
 from app.sdk.queries import QueryPage, SubscriptionSnapshot
 from .torrent_sdk_fixtures import force_transmission_plugin, make_tr_legacy_torrent, make_tr_v7_torrent
@@ -243,7 +244,7 @@ def test_v2_and_v3_filter_sources_normalize_optional_text():
 
 
 def test_v3_plugin_version_increments_minor_version():
-    assert BrushFlowLowFreq.plugin_version == "4.9"
+    assert BrushFlowLowFreq.plugin_version == "4.10"
 
 
 def test_v3_plugin_uses_stable_sdk_imports():
@@ -320,3 +321,46 @@ class TestBrushSiteBrowseDomain:
 
     def test_registered_domain_is_kept(self):
         assert self._browse_domain("hdhome.org") == "hdhome.org"
+
+
+def test_added_v3_torrent_is_recorded_without_legacy_imdbid():
+    """V3 TorrentInfo 不再携带 imdbid，新增刷流种子后仍应写入任务记录并发送事件。"""
+    plugin = object.__new__(BrushFlowLowFreq)
+    torrent = TorrentInfo(title="测试种子", description="测试描述", size=1024, page_url="https://site/details/1")
+    plugin.torrents_chain = MagicMock()
+    plugin.torrents_chain.browse.return_value = [torrent]
+    plugin.eventmanager = MagicMock()
+    passed = MagicMock(return_value=(True, None))
+    prefix = "_BrushFlowLowFreq__"
+    torrent_tasks = {}
+    statistic_info = {"count": 0}
+
+    with patch.multiple(
+        BrushFlowLowFreq,
+        **{
+            f"{prefix}get_configured_site": MagicMock(
+                return_value={"id": 1, "name": "测试站点", "domain": "https://site.example/"}
+            ),
+            f"{prefix}get_brush_config": MagicMock(
+                return_value=SimpleNamespace(site_hr_active=False, except_subscribe=False)
+            ),
+            f"{prefix}calculate_seeding_torrents_size": MagicMock(return_value=0),
+            f"{prefix}evaluate_pre_conditions_for_brush": passed,
+            f"{prefix}evaluate_size_condition_for_brush": passed,
+            f"{prefix}evaluate_conditions_for_brush": passed,
+            f"{prefix}log_brush_conditions": MagicMock(),
+            f"{prefix}download": MagicMock(return_value="hash_1"),
+            f"{prefix}send_add_message": MagicMock(),
+        },
+    ), patch.object(
+        BrushFlowLowFreq, "service_info", new_callable=PropertyMock, return_value=SimpleNamespace(name="qb")
+    ):
+        result = plugin._BrushFlowLowFreq__brush_site_torrents(
+            siteid=1, torrent_tasks=torrent_tasks, statistic_info=statistic_info, subscribe_titles=set()
+        )
+
+    assert result is True
+    assert torrent_tasks["hash_1"]["title"] == "测试种子"
+    assert "imdbid" not in torrent_tasks["hash_1"]
+    assert statistic_info["count"] == 1
+    plugin.eventmanager.send_event.assert_called_once()
