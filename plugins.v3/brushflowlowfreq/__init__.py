@@ -249,7 +249,7 @@ class BrushFlowLowFreq(_PluginBase):
     # 插件图标
     plugin_icon = "brush.jpg"
     # 插件版本
-    plugin_version = "4.9"
+    plugin_version = "4.10"
     # 插件作者
     plugin_author = "jxxghp,InfinityPacer"
     # 作者主页
@@ -2202,7 +2202,6 @@ class BrushFlowLowFreq(_PluginBase):
                 # "site_proxy": torrent.site_proxy,
                 # "site_order": torrent.site_order,
                 "description": torrent.description,
-                "imdbid": torrent.imdbid,
                 # "enclosure": torrent.enclosure,
                 "page_url": torrent.page_url,
                 # "seeders": torrent.seeders,
@@ -2960,7 +2959,6 @@ class BrushFlowLowFreq(_PluginBase):
             "size": torrent_info.get("total_size", 0),  # 假设total_size对应于size
             "pubdate": None,
             "description": None,
-            "imdbid": None,
             "page_url": None,
             "date_elapsed": None,
             "freedate": None,
