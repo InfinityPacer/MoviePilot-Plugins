@@ -63,11 +63,10 @@ class _PagingPlex:
         """返回所有分页请求的起始位置。"""
         return [call[1] for call in self.calls]
 
-    def get_data(self, *, endpoint, headers=None, timeout):
+    def get_data(self, *, endpoint, params, timeout):
         """调用页处理器，None 表示请求失败。"""
-        headers = headers or {}
-        start = int(headers.get("X-Plex-Container-Start", 0))
-        size = int(headers.get("X-Plex-Container-Size", 0))
+        start = int(params["X-Plex-Container-Start"])
+        size = int(params["X-Plex-Container-Size"])
         self.calls.append((endpoint, start, size, timeout))
         result = self._handler(endpoint, start)
         if result is None:

@@ -41,9 +41,9 @@ def test_v3_version_and_legacy_index_disable_fallback():
     package_v2 = json.loads((repo_root / "package.v2.json").read_text(encoding="utf-8"))
 
     metadata = package_v3["PlexLocalization"]
-    assert PlexLocalization.plugin_version == "3.0.0"
+    assert PlexLocalization.plugin_version == "3.0.1"
     assert metadata["version"] == PlexLocalization.plugin_version
-    assert list(metadata["history"]) == ["v3.0.0"]
+    assert list(metadata["history"]) == ["v3.0.1", "v3.0.0"]
     assert metadata["system_version"] == ">=3.0.0"
     assert package_v2["PlexLocalization"]["v3"] is False
 

@@ -43,12 +43,13 @@
         "name": "PlexEdition",
         "description": "根据入库记录修改Edition为电影版本/资源类型/特效信息。",
         "labels": "Plex",
-        "version": "1.5",
+        "version": "1.6",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexedition.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v1.6": "配置页新增 Cirvel 推荐入口，方便了解更多 Plex 增强功能。",
             "v1.5": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v1.4": "适配 V3 SDK 导入规范，迁移至 app.sdk 体系"
         },
@@ -58,12 +59,13 @@
         "name": "Plex演职人员刮削",
         "description": "实现刮削演职人员中文名称及角色。",
         "labels": "Plex,刮削",
-        "version": "2.8",
+        "version": "2.9",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexpersonmeta.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.9": "配置页新增 Cirvel 推荐入口，方便了解更多 Plex 增强功能。",
             "v2.8": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v2.7": "迁移至 MoviePilot V3 app.sdk 稳定接口，并修复媒体服务器实例异常路径。"
         },
@@ -73,12 +75,13 @@
         "name": "PlexMatch",
         "description": "实现入库时添加 .plexmatch 文件，提高识别准确率。",
         "labels": "Plex,刮削",
-        "version": "1.7",
+        "version": "1.8",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexmatch.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v1.8": "配置页新增 Cirvel 推荐入口，方便了解更多 Plex 增强功能。",
             "v1.7": "修复插件没有详情页时点击卡片仍弹出空白详情窗口的问题，改为直接打开配置页。",
             "v1.6": "通过统一查询 SDK 读取整理历史，移除对宿主数据库模型与会话的依赖。"
         },
@@ -118,12 +121,13 @@
         "name": "Plex元数据刷新",
         "description": "定时通知Plex刷新最近入库元数据。",
         "labels": "Plex,刮削",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "icon": "Plex_A.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.0.1": "配置页新增 Cirvel 推荐入口，方便了解更多 Plex 增强功能。",
             "v2.0.0": "适配 MoviePilot V3 媒体服务与事件接口，保持最近媒体刷新流程。"
         },
         "release": true
@@ -174,12 +178,13 @@
         "name": "Plex自动语言",
         "description": "实现自动选择Plex电视节目的音轨和字幕语言。",
         "labels": "Plex",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexautolanguages.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v1.0.1": "配置页新增 Cirvel 推荐入口，方便了解更多 Plex 增强功能。",
             "v1.0.0": "迁移至 MoviePilot V3 媒体服务与工具接口，修正插件数据目录与内部导入。"
         },
         "release": true
@@ -188,12 +193,13 @@
         "name": "Plex中文本地化",
         "description": "实现拼音排序、搜索及类型标签中文本地化功能。",
         "labels": "Plex",
-        "version": "3.0.0",
+        "version": "3.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexlocalization.png",
         "author": "InfinityPacer",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
+            "v3.0.1": "修复分页读取电影、剧集和合集时认证信息丢失，配置页新增 Cirvel 推荐入口，方便了解更多 Plex 增强功能。",
             "v3.0.0": "迁移至 MoviePilot V3 配置、事件、媒体服务与工具接口，保持 Plex 中文本地化流程。"
         },
         "release": true

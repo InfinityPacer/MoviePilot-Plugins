@@ -100,7 +100,7 @@ def test_v3_metadata_and_empty_capabilities_contract() -> None:
     """插件元数据、空 API/命令/服务和空详情页能力保持明确。"""
     plugin = _plugin(Path("/tmp/plexautolanguages-test"))
 
-    assert PlexAutoLanguages.plugin_version == "1.0.0"
+    assert PlexAutoLanguages.plugin_version == "1.0.1"
     assert plugin.get_command() == []
     assert plugin.get_api() == []
     assert plugin.get_service() == []

@@ -44,7 +44,7 @@ class PlexLocalization(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexlocalization.png"
     # 插件版本
-    plugin_version = "3.0.0"
+    plugin_version = "3.0.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -474,130 +474,153 @@ class PlexLocalization(_PluginBase):
                         'content': [
                             {
                                 'component': 'VCol',
+                                'props': {'cols': 12},
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {'type': 'info', 'variant': 'tonal'},
+                                        'content': [
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://cirvel.tidewren.com',
+                                                    'target': '_blank',
+                                                    'rel': 'noopener noreferrer',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'text': '了解 Cirvel'
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': '，为 Plex 带来 STRM 直连播放、媒体信息补全、片头片尾优化、演职人员中文化、拼音排序与中文搜索，让播放与媒体库管理更顺手。'
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
                                 'props': {
                                     'cols': 12,
                                 },
                                 'content': [
                                     {
-                                        'component': 'VCol',
+                                        'component': 'VAlert',
                                         'props': {
-                                            'cols': 12,
+                                            'type': 'info',
+                                            'variant': 'tonal'
                                         },
                                         'content': [
                                             {
-                                                'component': 'VAlert',
+                                                'component': 'span',
+                                                'text': '基于 '
+                                            },
+                                            {
+                                                'component': 'a',
                                                 'props': {
-                                                    'type': 'info',
-                                                    'variant': 'tonal'
+                                                    'href': 'https://github.com/sqkkyzx/plex_localization_zhcn',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
                                                 },
                                                 'content': [
                                                     {
-                                                        'component': 'span',
-                                                        'text': '基于 '
-                                                    },
+                                                        'component': 'u',
+                                                        'text': 'plex_localization_zhcn'
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': '、'
+                                            },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/x1ao4/plex-localization-zh',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
                                                     {
-                                                        'component': 'a',
-                                                        'props': {
-                                                            'href': 'https://github.com/sqkkyzx/plex_localization_zhcn',
-                                                            'target': '_blank',
-                                                            'style': 'text-decoration: underline;'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'u',
-                                                                'text': 'plex_localization_zhcn'
-                                                            }
-                                                        ]
-                                                    },
+                                                        'component': 'u',
+                                                        'text': 'plex-localization-zh'
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': ' 项目编写，特此感谢 '
+                                            },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/timmy0209',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
                                                     {
-                                                        'component': 'span',
-                                                        'text': '、'
-                                                    },
+                                                        'component': 'u',
+                                                        'text': 'timmy0209'
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': '、'
+                                            },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/sqkkyzx',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
                                                     {
-                                                        'component': 'a',
-                                                        'props': {
-                                                            'href': 'https://github.com/x1ao4/plex-localization-zh',
-                                                            'target': '_blank',
-                                                            'style': 'text-decoration: underline;'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'u',
-                                                                'text': 'plex-localization-zh'
-                                                            }
-                                                        ]
-                                                    },
+                                                        'component': 'u',
+                                                        'text': 'sqkkyzx'
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': '、'
+                                            },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/x1ao4',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
                                                     {
-                                                        'component': 'span',
-                                                        'text': ' 项目编写，特此感谢 '
-                                                    },
+                                                        'component': 'u',
+                                                        'text': 'x1ao4'
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': '、'
+                                            },
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://github.com/anooki-c',
+                                                    'target': '_blank',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'content': [
                                                     {
-                                                        'component': 'a',
-                                                        'props': {
-                                                            'href': 'https://github.com/timmy0209',
-                                                            'target': '_blank',
-                                                            'style': 'text-decoration: underline;'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'u',
-                                                                'text': 'timmy0209'
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        'component': 'span',
-                                                        'text': '、'
-                                                    },
-                                                    {
-                                                        'component': 'a',
-                                                        'props': {
-                                                            'href': 'https://github.com/sqkkyzx',
-                                                            'target': '_blank',
-                                                            'style': 'text-decoration: underline;'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'u',
-                                                                'text': 'sqkkyzx'
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        'component': 'span',
-                                                        'text': '、'
-                                                    },
-                                                    {
-                                                        'component': 'a',
-                                                        'props': {
-                                                            'href': 'https://github.com/x1ao4',
-                                                            'target': '_blank',
-                                                            'style': 'text-decoration: underline;'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'u',
-                                                                'text': 'x1ao4'
-                                                            }
-                                                        ]
-                                                    },
-                                                    {
-                                                        'component': 'span',
-                                                        'text': '、'
-                                                    },
-                                                    {
-                                                        'component': 'a',
-                                                        'props': {
-                                                            'href': 'https://github.com/anooki-c',
-                                                            'target': '_blank',
-                                                            'style': 'text-decoration: underline;'
-                                                        },
-                                                        'content': [
-                                                            {
-                                                                'component': 'u',
-                                                                'text': 'anooki-c'
-                                                            }
-                                                        ]
+                                                        'component': 'u',
+                                                        'text': 'anooki-c'
                                                     }
                                                 ]
                                             }
@@ -702,7 +725,7 @@ class PlexLocalization(_PluginBase):
                                 ]
                             }
                         ]
-                    }
+                    },
                 ],
             }
         ], {
@@ -1014,9 +1037,10 @@ class PlexLocalization(_PluginBase):
             if self._event.is_set():
                 return rating_keys, "stopped"
 
+            # 分页参数放入查询串，避免自定义 headers 覆盖主程序的 Plex 认证头。
             response = plex.get_data(
                 endpoint=endpoint,
-                headers={
+                params={
                     "X-Plex-Container-Start": str(offset),
                     "X-Plex-Container-Size": str(self._page_size)
                 },

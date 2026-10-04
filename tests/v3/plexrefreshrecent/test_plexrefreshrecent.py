@@ -75,7 +75,7 @@ def test_v3_entry_uses_sdk_boundaries_and_version() -> None:
         if isinstance(node, ast.ImportFrom) and node.module
     }
 
-    assert PLUGIN.plugin_version == "2.0.0"
+    assert PLUGIN.plugin_version == "2.0.1"
     assert "app.sdk.config" in imported_modules
     assert "app.sdk.events" in imported_modules
     assert "app.sdk.logging" in imported_modules
