@@ -22,6 +22,9 @@ class VolatilityTracker:
     def record(self, total: int, subscribe_id: Optional[int] = None,
                subscribe=None):
         """记录 total_episode；提供订阅对象时同时校验媒体身份。"""
+        # 零值或非正数表示集数尚未就绪，不覆盖有效基线，也不延长观察窗口。
+        if total is None or total <= 0:
+            return
         if subscribe is not None:
             subscribe_id = subscribe.id
         if subscribe_id is None:
@@ -47,14 +50,16 @@ class VolatilityTracker:
                     entry = {"records": entry}
                 elif not isinstance(entry, dict):
                     entry = {"records": []}
-            buf = _records_from_entry(entry)
+            # 采样回退判定也只比较有效集数，避免旧零值样本重新制造变化。
+            buf = [record for record in _records_from_entry(entry) if (record.get("total") or 0) > 0]
             entry["records"] = buf
             _ensure_change_state(entry, self._window_seconds)
             _sync_unstable_until(entry, self._window_seconds)
             last_total = entry.get("last_total")
             if last_total is None and buf:
                 last_total = buf[-1].get("total")
-            if last_total is not None and last_total != total:
+            # 旧记录可能留下零值基线，首次有效集数不应被识别成真实变化。
+            if last_total is not None and last_total > 0 and last_total != total:
                 entry["last_total_changed_at"] = now
                 entry["unstable_until"] = now + self._window_seconds
                 entry["last_total_before_change"] = last_total

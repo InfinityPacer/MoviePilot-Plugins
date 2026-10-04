@@ -395,6 +395,31 @@ class TestCheckExit:
         assert store["subscribes"]["1"]["source"] == "pending_judge"
         j._timeout.clear_observation.assert_not_called()
 
+    def test_empty_episode_refresh_keeps_pending_without_recovery_notification(self):
+        """有效分集、空结果、恢复分集的往返不应产生虚假的恢复通知。"""
+        notify = MagicMock()
+        sig = CompletionSignal(stable=False, scope_total=47, volatility_detail="0 -> 47")
+        j = _judge(
+            evaluate_result=sig,
+            notify=notify,
+            config=PluginConfig({"pending_use_volatility": True, "auto_tv_pending_episodes": 0}),
+        )
+        subscribe = _sub(total_episode=47)
+        subscribe.lack_episode = 6
+        episodes = [_ep(i, air_date=date.today().isoformat()) for i in range(1, 48)]
+        should_enter, reason = j.should_enter_pending(subscribe, _mi(), episodes)
+        assert should_enter is True
+        j.mark_pending(subscribe, reason=reason)
+        subscribe.state = "P"
+        j._subscribe_oper.update.reset_mock()
+        notify.reset_mock()
+
+        for refreshed in ([], None, episodes):
+            assert j.check_exit(subscribe, _mi(), lambda *args, **kwargs: refreshed) is False
+            assert j._store["subscribes"]["1"]["state"] == "P"
+        j._subscribe_oper.update.assert_not_called()
+        notify.assert_not_called()
+
     def test_pending_judge_exits_when_conditions_clear(self):
         """pending_judge P：条件不再满足 → 退出。"""
         store = {"subscribes": {"1": {"state": "P", "source": "pending_judge"}}}

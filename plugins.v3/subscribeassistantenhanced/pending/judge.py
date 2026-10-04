@@ -134,6 +134,9 @@ class PendingJudge:
                 subscribe.season,
                 episode_group=subscribe.episode_group,
             ) if tmdb_id is not None else []
+            # 分集取数为空不能证明待定条件已解除，保留状态等待下一轮有效数据。
+            if not episodes:
+                return False
             should_stay, _ = self.should_enter_pending(subscribe, mediainfo, episodes, signal)
             if not should_stay:
                 self._exit_pending(subscribe, "待定条件不再满足", source=active_source)

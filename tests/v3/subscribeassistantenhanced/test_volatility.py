@@ -44,6 +44,34 @@ class TestVolatilityTracker:
         self.tracker.record(total=12, subscribe_id=1)
         assert self.tracker.is_stable(subscribe_id=1) is True
 
+    def test_invalid_totals_do_not_create_or_extend_change_window(self):
+        """未知集数不污染有效基线，旧零值基线恢复后只记录真实的正数变化。"""
+        from copy import deepcopy
+
+        for total in (None, 0, -1):
+            self.tracker.record(total=total, subscribe_id=1)
+        assert "volatility" not in self.store
+
+        self.store["volatility"] = {"1": {
+            "last_total": 0,
+            "records": [{"total": 0, "ts": time.time() - 1}],
+        }}
+        self.tracker.record(total=47, subscribe_id=1)
+        entry = self.store["volatility"]["1"]
+        assert entry["last_total"] == 47
+        assert not entry.get("last_total_changed_at")
+        assert not entry.get("unstable_until")
+        assert self.tracker.is_stable(subscribe_id=1) is True
+        assert self.tracker.recent_change_detail(subscribe_id=1) is None
+
+        self.tracker.record(total=48, subscribe_id=1)
+        assert self.tracker.recent_change_detail(subscribe_id=1) == "47 -> 48"
+        assert self.tracker.is_stable(subscribe_id=1) is False
+        snapshot = deepcopy(self.store)
+        for total in (None, 0, -1):
+            self.tracker.record(total=total, subscribe_id=1)
+        assert self.store == snapshot
+
     def test_changed_value_is_unstable(self):
         """值变化 → 不稳定。"""
         self.tracker.record(total=12, subscribe_id=1)
