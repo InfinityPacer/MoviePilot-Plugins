@@ -18,7 +18,6 @@ import app.plugins.archivemanager as manager_module
 import app.plugins.archivemanager.capacity as capacity_module
 import app.plugins.archivemanager.scanner as scanner_module
 import pytest
-from app.sdk.config import settings
 from app.db.plugin.container import PluginDatabaseHandle
 from app.plugins.archivemanager import runner as runner_module
 from app.plugins.archivemanager.capacity import allowance, fit_batch
@@ -27,6 +26,7 @@ from app.plugins.archivemanager.config import TaskConfig, parse_config
 from app.plugins.archivemanager.runner import Runner, run_engine
 from app.plugins.archivemanager.scanner import Cancelled, identity, partition, scan
 from app.plugins.archivemanager.store import Base, FileRow, Store, TaskRow
+from app.sdk.config import settings
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import scoped_session, sessionmaker
 
@@ -732,6 +732,44 @@ def test_runner_real_engine_completes_archive_and_manifest_chain(store: Store, t
     task.archive_name_template = "changed_{id}"
     Runner(store, Event(), lambda *_: None).execute(final, task)
     assert Path(store.get(batch["id"])["archive_path"]) == archive
+
+
+@requires_archive_backend
+def test_real_archive_reclaim_after_device_renumbering_keeps_modified_sources(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path, id="device-renumbering")
+    source = Path(task.source_dir)
+    batch = _create_batch(store, task, source, ["same.txt", "edited.txt"], "device-renumbering-batch")
+    runner = Runner(store, Event(), lambda *_args: None)
+    runner.execute(batch, task)
+    published = store.get(batch["id"])
+    assert published["verified"] is True
+    archive = Path(published["archive_path"])
+    archive_bytes = archive.read_bytes()
+    (source / "edited.txt").write_bytes(b"new recording after archive")
+
+    def remounted_identity(path):
+        current = identity(path)
+        if path.is_relative_to(source):
+            current["device"] += 1
+        return current
+
+    def no_source_digest(*_args, **_kwargs):
+        raise AssertionError("设备号变化不应触发源文件完整读取")
+
+    # 使用真实归档、摘要、账本和删除，仅模拟系统重启后的设备编号变化。
+    monkeypatch.setattr(scanner_module, "identity", remounted_identity)
+    monkeypatch.setattr(runner_module, "identity", remounted_identity)
+    monkeypatch.setattr(runner_module, "digest", no_source_digest)
+    runner.reclaim(published, task)
+
+    final = store.get(batch["id"])
+    assert final["cleanup"] == {"same.txt": "deleted", "edited.txt": "changed"}
+    assert not (source / "same.txt").exists()
+    assert (source / "edited.txt").read_bytes() == b"new recording after archive"
+    assert archive.read_bytes() == archive_bytes
+    assert run_engine({"action": "verify", "path": str(archive), "password": task.password}, Event()) == published["manifest"]
 
 
 def test_runner_failure_log_and_persisted_error_hide_password(store: Store, tmp_path: Path, monkeypatch) -> None:

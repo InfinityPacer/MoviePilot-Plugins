@@ -704,13 +704,17 @@ def test_reclaim_checks_identity_without_rereading_sources_by_default(
     assert store.get(rewritten["id"])["cleanup"]["rewritten.txt"] == "changed"
 
 
+@pytest.mark.parametrize("device_changed", [False, True])
 def test_ctime_only_change_is_reclaimed_after_matching_sha256_and_rechecked_later(
-    store: Store, tmp_path: Path, monkeypatch
+    store: Store, tmp_path: Path, monkeypatch, device_changed: bool
 ) -> None:
     task = _task(tmp_path)
     same = _published_batch(store, task, "ctime-same", "same.txt", archive_sha1="a" * 40, content=b"same bytes")
     edited = _published_batch(store, task, "ctime-edited", "edited.txt", archive_sha1="b" * 40, content=b"old bytes")
     for batch in (same, edited):
+        if device_changed:
+            batch["manifest"]["files"][0]["device"] += 1
+            store.save(batch["id"], manifest=batch["manifest"])
         assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1=batch["archive_sha1"])])[0]["verified"] == 1
     monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
     same_path = Path(task.source_dir) / "same.txt"
@@ -737,6 +741,99 @@ def test_ctime_only_change_is_reclaimed_after_matching_sha256_and_rechecked_late
 
     assert not edited_path.exists()
     assert store.get(edited["id"])["cleanup"]["edited.txt"] == "deleted"
+
+
+def test_reclaim_retries_device_only_change_without_reading_content(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "device-retry", "clip.mp4")
+    # 历史清单保留上次挂载的设备号，模拟重启后已被旧逻辑判为 changed 的文件。
+    batch["manifest"]["files"][0]["device"] += 1
+    store.save(batch["id"], manifest=batch["manifest"])
+    store.cleanup_results(batch["id"], {"clip.mp4": "changed"})
+    assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1=batch["archive_sha1"])])[0]["verified"] == 1
+
+    def no_digest(*_args, **_kwargs):
+        raise AssertionError("仅历史设备号变化不应重读源文件")
+
+    monkeypatch.setattr(runner_module, "digest", no_digest)
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+    assert batch["id"] in {item["id"] for item in store.reclaimable_batches()}
+    _runner(store).reclaim(store.get(batch["id"]), task)
+
+    assert not (Path(task.source_dir) / "clip.mp4").exists()
+    assert store.get(batch["id"])["cleanup"]["clip.mp4"] == "deleted"
+
+
+@pytest.mark.parametrize("field", ["size", "mtime_ns", "inode", "mode", "birthtime_ns"])
+def test_device_change_does_not_bypass_other_file_identity_checks(
+    store: Store, tmp_path: Path, monkeypatch, field: str
+) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "device-other", "clip.mp4")
+    entry = batch["manifest"]["files"][0]
+    entry["device"] += 1
+    entry[field] = (entry[field] or 0) + 1
+    store.save(batch["id"], manifest=batch["manifest"])
+    assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1=batch["archive_sha1"])])[0]["verified"] == 1
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+
+    _runner(store).reclaim(store.get(batch["id"]), task)
+
+    assert (Path(task.source_dir) / "clip.mp4").read_bytes() == b"source:device-other"
+    assert store.get(batch["id"])["cleanup"]["clip.mp4"] == "changed"
+
+
+def test_device_change_still_honors_explicit_source_sha256_verification(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "device-hash", "clip.mp4")
+    entry = batch["manifest"]["files"][0]
+    entry["device"] += 1
+    entry["sha256"] = hashlib.sha256(b"different archived content").hexdigest()
+    store.save(batch["id"], manifest=batch["manifest"])
+    assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1=batch["archive_sha1"])])[0]["verified"] == 1
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+    runner = _runner(store)
+    runner.reclaim_verify_sha256 = True
+
+    runner.reclaim(store.get(batch["id"]), task)
+
+    assert (Path(task.source_dir) / "clip.mp4").read_bytes() == b"source:device-hash"
+    assert store.get(batch["id"])["cleanup"]["clip.mp4"] == "changed"
+
+
+@pytest.mark.parametrize("change", ["replace", "device"])
+def test_reclaim_rechecks_live_identity_after_recording_delete_intent(
+    store: Store, tmp_path: Path, monkeypatch, change: str
+) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "device-race", "clip.mp4")
+    batch["manifest"]["files"][0]["device"] += 1
+    store.save(batch["id"], manifest=batch["manifest"])
+    assert store.attest_cloud("muvyo-115", [_attest_item(batch, sha1=batch["archive_sha1"])])[0]["verified"] == 1
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+    original_intent = store.cleanup_intent
+    source = Path(task.source_dir) / "clip.mp4"
+
+    def change_after_intent(batch_id, relative):
+        original_intent(batch_id, relative)
+        if change == "replace":
+            replacement = source.with_suffix(".new")
+            replacement.write_bytes(b"replacement recording")
+            replacement.replace(source)
+        else:
+            # 不改动测试机挂载，只模拟删除前观察到设备切换。
+            monkeypatch.setattr(runner_module, "identity", lambda path: {**identity(path), "device": -1})
+
+    monkeypatch.setattr(store, "cleanup_intent", change_after_intent)
+    with pytest.raises(ValueError, match="清理前源文件或归档包已变化"):
+        _runner(store).reclaim(store.get(batch["id"]), task)
+
+    assert source.exists()
+    assert store.get(batch["id"])["cleanup"]["clip.mp4"] == "deleting"
 
 
 def test_reclaim_preview_counts_only_files_still_waiting(store: Store, tmp_path: Path, monkeypatch) -> None:
