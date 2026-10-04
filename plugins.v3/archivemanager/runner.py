@@ -436,14 +436,15 @@ class Runner:
     def _source_unchanged(self, source: Path, entry: dict) -> bool:
         """判断源文件是否仍是归档时的内容。
 
-        身份含 size、mtime、ctime、device、inode，改写、替换或重建都会改变其中一项，ctime 也无法由
-        普通程序回拨，所以身份一致即视为未变；开启 reclaim_verify_sha256 时再比对内容。只有 ctime
-        不同而其余身份一致时，通常是 chmod、chown 或扩展属性等元数据操作，此时比对 SHA-256，
-        一致才认为内容未变。
+        跨运行比较 size、mtime、ctime、inode 及清单已有的权限和创建时间。设备号可能在重启后
+        重新分配，不单独作为历史内容变化的依据；读取期间和删除前仍比较包含设备号的完整身份。
+        开启 reclaim_verify_sha256 时再比对内容。只有 ctime 不同而其余身份一致时，通常是
+        chmod、chown 或扩展属性等元数据操作，此时比对 SHA-256，一致才认为内容未变。
         """
         if any(part.is_symlink() for part in (source, *source.parents)):
             return False
         before, differences = identity_differences(source, entry)
+        differences.discard("device")
         if differences - {"ctime_ns"}:
             return False
         if not differences and not self.reclaim_verify_sha256:
