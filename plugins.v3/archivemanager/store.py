@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from app.sdk.database import plugin_declarative_base
 from app.sdk.config import settings
+from app.sdk.database import plugin_declarative_base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -24,7 +24,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .config import reclaim_precondition
 from .naming import frozen_names
-from .scanner import fingerprint, identity
+from .scanner import device_drift_matches, fingerprint, identity
 
 Base = plugin_declarative_base()
 # 文件账本按块查询与写入的条目数；低于 SQLite 旧版 999 个绑定参数上限。
@@ -149,6 +149,7 @@ class Store:
                 chunk = entries[offset : offset + INVENTORY_CHUNK]
                 keys = [fingerprint(entry) for entry in chunk]
                 known = {}
+                known_ids = {}
                 stale_ids = []
                 for row_id, key, reserved, present, historical, status in session.execute(
                     select(
@@ -161,13 +162,43 @@ class Store:
                     ).where(FileRow.task_id == task_id, FileRow.fingerprint.in_(keys))
                 ):
                     known[key] = (reserved, historical, status)
+                    known_ids[key] = row_id
                     seen_ids.add(row_id)
                     if not present or (fresh and not historical):
                         stale_ids.append(row_id)
+                # 已发布版本可证明设备重编号没有产生新内容，包括旧扫描留下的未预留重复索引。
+                # 仅移除无批次所有权的 pending 索引，历史批次、清单与实际源文件均不受影响。
+                aliases = self._device_drift_rows(
+                    session, task_id, [
+                        entry for key, entry in zip(keys, chunk)
+                        if key not in known or (not known[key][0] and known[key][2] == "pending")
+                    ]
+                )
+                duplicate_ids = {known_ids[key] for key in aliases if key in known_ids}
+                if duplicate_ids:
+                    session.execute(
+                        delete(FileRow).where(
+                            FileRow.task_id == task_id, FileRow.id.in_(duplicate_ids),
+                            FileRow.batch_id.is_(None), FileRow.status == "pending",
+                        )
+                    )
+                    seen_ids.difference_update(duplicate_ids)
+                    stale_ids = [row_id for row_id in stale_ids if row_id not in duplicate_ids]
+                for matches in aliases.values():
+                    for row_id, _key, present in matches:
+                        seen_ids.add(row_id)
+                        if not present or fresh:
+                            stale_ids.append(row_id)
                 if stale_ids:
-                    self._bulk_update(session, FileRow.id.in_(stale_ids), **seen_values)
+                    stale_ids = list(set(stale_ids))
+                    for start in range(0, len(stale_ids), INVENTORY_CHUNK):
+                        self._bulk_update(
+                            session, FileRow.id.in_(stale_ids[start : start + INVENTORY_CHUNK]), **seen_values
+                        )
                 created = []
                 for key, entry in zip(keys, chunk):
+                    if key in aliases:
+                        continue
                     flags = known.get(key)
                     if flags is None:
                         created.append(
@@ -208,6 +239,35 @@ class Store:
                 return historical_eligible
             state.data = {**state.data, "phase": "incremental"}
             return pending
+
+    @staticmethod
+    def _device_drift_rows(session, task_id: str, entries: list[Mapping], model=FileRow) -> dict:
+        """按相对路径批量查已发布身份，为未知或未预留待处理成员返回设备漂移证据。
+
+        调用方每次至多传入 INVENTORY_CHUNK 条，避免逐文件 SQL 和全账本 JSON 常驻。
+        发布摘要存在后才可复用，尚未打包的预留快照必须继续遵守 worker 的严格设备校验。
+        """
+        if not entries:
+            return {}
+        by_path = {}
+        for entry in entries:
+            by_path.setdefault(entry["relative_path"], []).append((fingerprint(entry), entry))
+        matches = {}
+        candidates = session.execute(
+            select(model.id, model.fingerprint, model.data, model.present)
+            .join(BatchRow, model.batch_id == BatchRow.id)
+            .where(
+                model.task_id == task_id,
+                BatchRow.task_id == task_id,
+                model.relative_path.in_(by_path),
+                BatchRow.data["archive_sha256"].as_string() != "",
+            )
+        )
+        for row_id, stored_key, archived, present in candidates:
+            for key, entry in by_path.get(archived.get("relative_path"), []):
+                if device_drift_matches(entry, archived, directory=model is DirectoryRow):
+                    matches.setdefault(key, []).append((row_id, stored_key, present))
+        return matches
 
     @staticmethod
     def _bulk_update(session, *conditions, **values) -> None:
@@ -295,6 +355,28 @@ class Store:
                         .where(DirectoryRow.batch_id == batch.id)
                         .values(batch_id=None, status="pending")
                     )
+            aliases = {}
+            unknown = [
+                entry for entry in directories
+                if fingerprint(entry) not in rows or (
+                    not rows[fingerprint(entry)].batch_id and rows[fingerprint(entry)].status == "pending"
+                )
+            ]
+            for offset in range(0, len(unknown), INVENTORY_CHUNK):
+                aliases.update(self._device_drift_rows(
+                    session, task_id, unknown[offset : offset + INVENTORY_CHUNK], DirectoryRow
+                ))
+            duplicate_ids = [rows.pop(key).id for key in aliases if key in rows]
+            for offset in range(0, len(duplicate_ids), INVENTORY_CHUNK):
+                # 已发布目录版本提供完整身份依据，只删除仍未预留的重复扫描索引。
+                session.execute(
+                    delete(DirectoryRow).where(
+                        DirectoryRow.task_id == task_id,
+                        DirectoryRow.id.in_(duplicate_ids[offset : offset + INVENTORY_CHUNK]),
+                        DirectoryRow.batch_id.is_(None), DirectoryRow.status == "pending",
+                    )
+                )
+            current.update(stored_key for matches in aliases.values() for _row_id, stored_key, _present in matches)
             # 只改写可见性实际变化的目录行，未变化的行不产生新的行版本。
             for key, row in rows.items():
                 if row.present and key not in current:
@@ -302,6 +384,10 @@ class Store:
             pending = []
             for entry in directories:
                 key = fingerprint(entry)
+                if key in aliases:
+                    for _row_id, stored_key, _present in aliases[key]:
+                        rows[stored_key].present = True
+                    continue
                 row = rows.get(key)
                 if row is None:
                     row = DirectoryRow(
@@ -429,16 +515,25 @@ class Store:
             for offset in range(0, len(entries), INVENTORY_CHUNK):
                 chunk = entries[offset : offset + INVENTORY_CHUNK]
                 keys = [fingerprint(entry) for entry in chunk]
-                reserved = set(
-                    session.scalars(
-                        select(FileRow.fingerprint).where(
+                known = {
+                    key: (reserved, status)
+                    for key, reserved, status in session.execute(
+                        select(FileRow.fingerprint, FileRow.batch_id.is_not(None), FileRow.status).where(
                             FileRow.task_id == task_id,
-                            FileRow.batch_id.is_not(None),
                             FileRow.fingerprint.in_(keys),
                         )
                     )
+                }
+                aliases = self._device_drift_rows(
+                    session, task_id, [
+                        entry for key, entry in zip(keys, chunk)
+                        if key not in known or (not known[key][0] and known[key][1] == "pending")
+                    ]
                 )
-                result.extend(entry for key, entry in zip(keys, chunk) if key not in reserved)
+                result.extend(
+                    entry for key, entry in zip(keys, chunk)
+                    if not known.get(key, (False, ""))[0] and key not in aliases
+                )
         return result
 
     def create(

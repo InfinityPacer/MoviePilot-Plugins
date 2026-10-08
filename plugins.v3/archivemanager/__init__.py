@@ -1,6 +1,8 @@
 """压缩归档：任务配置、认证 API 和单工作队列的宿主适配入口。"""
 
 import copy
+import os
+import stat
 import threading
 import traceback
 from collections import deque
@@ -85,7 +87,7 @@ class ArchiveManager(_PluginBase):
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.12"
+    plugin_version = "0.1.13"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
@@ -831,7 +833,7 @@ class ArchiveManager(_PluginBase):
         problems = summary["failed_batches"] or summary["failed"]
         lines = [
             f"来源：{'、'.join(summary['triggers'])}",
-            f"回收批次：{summary['batches']}，跳过 {summary['skipped']}，失败 {summary['failed_batches']}",
+            f"处理批次：{summary['batches']}，跳过 {summary['skipped']}，失败 {summary['failed_batches']}",
             f"删除源文件：{summary['deleted']} 个，释放 {_format_bytes(summary['deleted_bytes'])}",
         ]
         if summary["changed"] or summary["missing"] or summary["failed"]:
@@ -839,8 +841,11 @@ class ArchiveManager(_PluginBase):
                 f"未删除：内容有变化 {summary['changed']}，已不存在 {summary['missing']}，无权限 {summary['failed']}"
             )
         logger.info(f"压缩归档空间回收汇总：{' '.join(lines)}")
-        self._notify_event("failure" if problems else "success", task,
-                           "空间回收有失败" if problems else "空间回收完成", "\n".join(lines))
+        title = "空间回收有失败" if problems else "空间回收完成"
+        if not problems and not summary["deleted"]:
+            title = "回收检查完成"
+            lines.append("本次未释放空间")
+        self._notify_event("failure" if problems else "success", task, title, "\n".join(lines))
 
     def _auto_reclaim(self):
         """每日调度仅回收超过等待期的获准云端证明，不以本地存在代替上云。"""
@@ -899,7 +904,7 @@ class ArchiveManager(_PluginBase):
         count = 0
         total = 0
         for task, keep_ids in self._staging_tasks():
-            item_count, item_bytes = staging_size(task, keep_ids)
+            _item_count, item_bytes = staging_size(task, keep_ids)
             removed = cleanup_stale_staging(task, keep_ids)
             if removed:
                 count += removed
@@ -910,31 +915,50 @@ class ArchiveManager(_PluginBase):
         return count, total
 
     @staticmethod
-    def _reclaim_remaining(batches: list[dict]) -> list[dict]:
-        """批次清单中仍待回收的文件；已删除或已不存在的文件不再计入预览和估算。"""
-        return [
-            entry
-            for batch in batches
-            for entry in (batch.get("manifest") or {}).get("files", [])
-            if (batch.get("cleanup") or {}).get(entry["relative_path"]) not in ("deleted", "missing")
-        ]
+    def _reclaim_source_preview(batches: list[dict]) -> dict[str, int]:
+        """按仍存在的普通源文件估算空间，同一路径只计一次，不改变清理账本。
+
+        历史批次可能指向同一源文件；清单大小并不代表当前仍占用的空间。
+        这里只读取元数据，实际删除仍由工作队列核对完整身份及归档证明。
+        """
+        seen: set[str] = set()
+        result = {"batch_count": 0, "file_count": 0, "estimated_bytes": 0}
+        for batch in batches:
+            found = False
+            for entry in (batch.get("manifest") or {}).get("files", []):
+                if (batch.get("cleanup") or {}).get(entry["relative_path"]) in ("deleted", "missing"):
+                    continue
+                source = os.path.abspath(os.path.join(batch["task"]["source_dir"], entry["relative_path"]))
+                if source in seen:
+                    continue
+                seen.add(source)
+                try:
+                    info = os.lstat(source)
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                found = True
+                result["file_count"] += 1
+                result["estimated_bytes"] += info.st_size
+            result["batch_count"] += int(found)
+        return result
 
     @classmethod
     def _reclaim_estimated_bytes(cls, batches: list[dict]) -> int:
-        return sum(int(entry.get("size", 0)) for entry in cls._reclaim_remaining(batches))
+        return cls._reclaim_source_preview(batches)["estimated_bytes"]
 
     def api_reclaim_preview(self, request: ReclaimRequest):
         """只统计可回收源文件，供确认框展示，不加入队列。"""
         del request
         try:
             batches, skipped = self._store().reclaim_selection(self._settings.reclaim_legacy_by_upload_record)
-            files = len(self._reclaim_remaining(batches))
+            sources = self._reclaim_source_preview(batches)
             staging_count, staging_bytes = self._staging_reclaim_preview()
             return self._response(
                 {
-                    "batch_count": len(batches),
-                    "file_count": files,
-                    "estimated_bytes": self._reclaim_estimated_bytes(batches) + staging_bytes,
+                    **sources,
+                    "estimated_bytes": sources["estimated_bytes"] + staging_bytes,
                     "staging_count": staging_count,
                     "staging_bytes": staging_bytes,
                     **skipped,
@@ -949,8 +973,8 @@ class ArchiveManager(_PluginBase):
         try:
             batches, skipped = self._store().reclaim_selection(self._settings.reclaim_legacy_by_upload_record)
             staging_count, staging_bytes = self._cleanup_reclaimable_staging()
-            queued = self._queue_reclaim(batches)
             estimated_bytes = self._reclaim_estimated_bytes(batches)
+            queued = self._queue_reclaim(batches)
             return self._response(
                 {
                     "queued": queued,

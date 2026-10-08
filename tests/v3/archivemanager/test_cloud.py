@@ -645,7 +645,7 @@ def test_reclaim_round_sends_one_summary_notification_after_the_queue_drains(
     assert messages[0]["title"] == "压缩归档：空间回收完成"
     text = messages[0]["text"]
     assert "来源：手动回收" in text
-    assert "回收批次：2，跳过 0，失败 0" in text
+    assert "处理批次：2，跳过 0，失败 0" in text
     assert f"删除源文件：1 个，释放 {len(b'source:summary-a')} B" in text
     assert "未删除：内容有变化 1，已不存在 0，无权限 0" in text
     assert (Path(task.source_dir) / "summary-c.txt").exists()
@@ -675,7 +675,7 @@ def test_reclaim_summary_reports_failed_batches_as_failure(store: Store, tmp_pat
     titles = [message["title"] for message in messages]
     assert "压缩归档：空间回收有失败" in titles
     summary = next(message for message in messages if message["title"] == "压缩归档：空间回收有失败")
-    assert "回收批次：0，跳过 0，失败 1" in summary["text"]
+    assert "处理批次：0，跳过 0，失败 1" in summary["text"]
 
 
 def test_reclaim_checks_identity_without_rereading_sources_by_default(
@@ -875,3 +875,80 @@ def test_reclaim_candidates_read_only_batches_with_files_left(store: Store, tmp_
     store.cleanup_results(done["id"], {"done.txt": "deleted"})
 
     assert [batch["id"] for batch in store.reclaim_candidates()] == [left["id"]]
+
+
+def test_reclaim_preview_uses_existing_unique_paths_without_changing_ledger(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    present = _published_batch(store, task, "preview-present", "present.txt")
+    absent = _published_batch(store, task, "preview-absent", "absent.txt")
+    (Path(task.source_dir) / "absent.txt").unlink()
+    manager = manager_module.ArchiveManager()
+    manager._settings = PluginConfig()
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    # 两份历史归档可能指向同一个源文件，预览不得按归档份数重复计算。
+    monkeypatch.setattr(store, "reclaim_selection", lambda *_: ([present, dict(present, id="duplicate"), absent], {}))
+    before = [store.get(batch["id"]) for batch in (present, absent)]
+
+    preview = manager.api_reclaim_preview(manager_module.ReclaimRequest()).data
+
+    assert (preview["batch_count"], preview["file_count"], preview["estimated_bytes"]) == (
+        1, 1, (Path(task.source_dir) / "present.txt").stat().st_size,
+    )
+    assert [store.get(batch["id"]) for batch in (present, absent)] == before
+
+
+def test_reclaim_preview_does_not_follow_replaced_symlink_or_hide_access_errors(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "preview-link", "link.txt")
+    source = Path(task.source_dir) / "link.txt"
+    target = tmp_path / "other.txt"
+    target.write_text("unrelated data")
+    source.unlink()
+    source.symlink_to(target)
+    manager = manager_module.ArchiveManager()
+    manager._settings = PluginConfig()
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    monkeypatch.setattr(store, "reclaim_selection", lambda *_: ([batch], {}))
+    preview = manager.api_reclaim_preview(manager_module.ReclaimRequest()).data
+    assert (preview["file_count"], preview["estimated_bytes"]) == (0, 0)
+
+    def denied(_path):
+        raise PermissionError("source access denied")
+
+    monkeypatch.setattr(manager_module.os, "lstat", denied)
+    assert manager.api_reclaim_preview(manager_module.ReclaimRequest()).success is False
+
+
+def test_reclaim_missing_sources_finishes_once_without_claiming_space_freed(
+    store: Store, tmp_path: Path, monkeypatch
+) -> None:
+    task = _task(tmp_path)
+    batch = _published_batch(store, task, "summary-missing", "missing.txt")
+    store.attest_cloud("muvyo-115", [_attest_item(batch, sha1="a" * 40)])
+    (Path(task.source_dir) / "missing.txt").unlink()
+    manager = manager_module.ArchiveManager()
+    manager._settings = PluginConfig(notify=True, notify_events=["success", "failure"])
+    manager._enabled = True
+    manager._tasks = [task]
+    messages = []
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    monkeypatch.setattr(manager, "post_message", lambda **message: messages.append(message))
+    monkeypatch.setattr(manager, "_start_worker", lambda: None)
+    monkeypatch.setattr(runner_module, "write_catalog", lambda _batch: None)
+
+    preview = manager.api_reclaim_preview(manager_module.ReclaimRequest()).data
+    assert (preview["batch_count"], preview["file_count"], preview["estimated_bytes"]) == (0, 0, 0)
+    assert manager.api_reclaim(manager_module.ReclaimRequest()).data["queued"] == 1
+    manager._work()
+
+    assert store.get(batch["id"])["cleanup"] == {"missing.txt": "missing"}
+    assert len(messages) == 1
+    assert messages[0]["title"] == "压缩归档：回收检查完成"
+    assert "处理批次：1" in messages[0]["text"]
+    assert "已不存在 1" in messages[0]["text"]
+    assert "本次未释放空间" in messages[0]["text"]
+    assert manager.api_reclaim(manager_module.ReclaimRequest()).data["queued"] == 0
