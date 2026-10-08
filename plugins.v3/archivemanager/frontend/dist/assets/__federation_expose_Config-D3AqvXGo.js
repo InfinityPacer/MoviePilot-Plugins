@@ -1075,13 +1075,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         setNotice(skipped ? `暂无可回收空间。${reclaimSkippedSummary(preview, "，")}` : "暂无需要回收的空间。", "info");
         return;
       }
-      const content = `将扫描所有符合条件的归档批次，并回收仍保留且校验通过的源文件，同时清理不可恢复的旧暂存。
+      const content = `手工回收不受自动回收等待天数限制。本地归档可用或已获准上云的批次可参与回收，源文件通过校验后才会删除，同时清理不可恢复的旧暂存。
 
 可回收批次 ${batchCount} 个
 可回收文件 ${fileCount} 个
 ${reclaimSkippedSummary(preview)}
 旧暂存目录 ${stagingCount} 个
-预计释放空间 ${formatBytes(estimated)}${stagingBytes > 0 ? `（其中旧暂存 ${formatBytes(stagingBytes)}）` : ""}`;
+预计释放空间 ${formatBytes(estimated)}（按当前存在的源文件估算，实际以删除结果为准）${stagingBytes > 0 ? `（其中旧暂存 ${formatBytes(stagingBytes)}）` : ""}`;
       const confirmed = hostConfirm ? await hostConfirm({ type: "warn", title: "回收空间", content, confirmText: "开始回收", cancelText: "取消" }) : window.confirm(`${content}
 
 是否继续？`);
@@ -3894,6 +3894,6 @@ ${reclaimSkippedSummary(preview)}
   }
 });
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-1af394ed"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-394ca8b2"]]);
 
 export { Config as default };

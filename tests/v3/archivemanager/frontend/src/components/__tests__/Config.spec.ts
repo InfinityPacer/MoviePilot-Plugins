@@ -130,6 +130,8 @@ describe('ArchiveManager federated config', () => {
     await user.click(screen.getByRole('button', { name: '回收空间' }))
 
     await waitFor(() => expect(confirm).toHaveBeenCalledOnce())
+    expect(confirmationContent).toContain('手工回收不受自动回收等待天数限制')
+    expect(confirmationContent).toContain('按当前存在的源文件估算，实际以删除结果为准')
     expect(confirmationContent).toContain('未确认上云 3 个批次')
     expect(confirmationContent).toContain('云端冲突 4 个批次')
     expect(confirmationContent).toContain('旧批次未启用上传记录认定 5 个批次')

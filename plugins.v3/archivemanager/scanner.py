@@ -145,6 +145,20 @@ def fingerprint(entry: dict) -> str:
     return hashlib.sha256(json.dumps(fields, ensure_ascii=True).encode()).hexdigest()
 
 
+def device_drift_matches(actual: Mapping, archived: Mapping, *, directory: bool = False) -> bool:
+    """仅去重时兼容设备重新编号，缺少任何身份字段的旧清单不作推断。
+
+    历史指纹和归档快照保持不变；扫描稳定性、打包及删除前检查仍使用各自严格身份契约。
+    """
+    fields = tuple(key for key in FILE_ENTRY_FIELDS if key != "device" and (not directory or key != "size"))
+    required = (*fields, "device")
+    return (
+        all(key in actual and key in archived for key in required)
+        and actual["device"] != archived["device"]
+        and all(actual[key] == archived[key] for key in fields)
+    )
+
+
 def scan_tree(
     task: TaskConfig, stop: Event, *, stable: bool = False
 ) -> tuple[list[FileEntry], list[dict], int]:
