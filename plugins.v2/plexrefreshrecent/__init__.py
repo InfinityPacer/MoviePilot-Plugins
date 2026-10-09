@@ -25,7 +25,7 @@ class PlexRefreshRecent(_PluginBase):
     # 插件图标
     plugin_icon = "Plex_A.png"
     # 插件版本
-    plugin_version = "1.6"
+    plugin_version = "1.7"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -312,6 +312,37 @@ class PlexRefreshRecent(_PluginBase):
                                             'hint': '选择媒体服务器',
                                             'persistent-hint': True
                                         }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {'cols': 12},
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {'type': 'info', 'variant': 'tonal'},
+                                        'content': [
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': 'https://cirvel.tidewren.com',
+                                                    'target': '_blank',
+                                                    'rel': 'noopener noreferrer',
+                                                    'style': 'text-decoration: underline;'
+                                                },
+                                                'text': '了解 Cirvel'
+                                            },
+                                            {
+                                                'component': 'span',
+                                                'text': '，为 Plex 带来 STRM 直连播放、虚拟库、媒体信息补全、片头片尾优化、演职人员中文化、拼音排序与中文搜索，让播放与媒体库管理更顺手。'
+                                            }
+                                        ]
                                     }
                                 ]
                             }
