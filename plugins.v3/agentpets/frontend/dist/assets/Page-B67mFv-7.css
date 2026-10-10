@@ -1,0 +1,49 @@
+
+.agent-pet-sprites-page__layout[data-v-a89095dc] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+/* 与宿主入口触发区等大。 */
+.agent-pet-sprites-page__stage[data-v-a89095dc] {
+  position: relative;
+  width: 5.4rem;
+  height: 5.1rem;
+  border: 1px dashed rgba(var(--v-theme-on-surface), 0.24);
+  border-radius: 12px;
+}
+.agent-pet-sprites-page__stage--large[data-v-a89095dc] {
+  width: 10.8rem;
+  height: 10.2rem;
+}
+
+.agent-pet-ying-page__panel[data-v-94f40276] {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(var(--v-theme-on-surface), 0.3);
+  border-radius: 16px;
+  background: rgba(var(--v-theme-surface), 0.85);
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  pointer-events: none;
+}
+.agent-pet-ying-page__bubble[data-v-94f40276] {
+  position: fixed;
+  max-width: 220px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+.agent-pet-ying-page__stage[data-v-94f40276] {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  pointer-events: none;
+}

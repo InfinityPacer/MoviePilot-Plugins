@@ -204,19 +204,15 @@ PLUGIN_MARKET=https://github.com/jxxghp/MoviePilot-Plugins/,https://github.com/I
 
 ### Agent 助手形象
 
-#### [小映桌宠](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v3/agentpetying/README.md)
+#### [助手形象](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v3/agentpets/README.md)
 
-- 原创 Q 版看板娘，替换 Agent 助手入口的机器人，点击打开助手面板。
-- 可拖拽、下落、沿屏幕底边散步和探头，按思考、调用工具、完成、出错等状态换动作，角色大小和移动速度可调。
-
-#### [助手形象素材包](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v3/agentpetsprites/README.md)
-
-- 用一张精灵图和一份动作映射 JSON 定制助手形象，内置戴贝雷帽的橘猫「放映猫」。
-- 管理员可在配置页上传精灵图或填写图片 URL 添加素材包，每个素材包都是一个可选形象。
+- 替换 Agent 助手入口的机器人，一个插件提供多个可选形象。
+- 小映是原创 Q 版看板娘，在整个页面上活动，可拖拽，会站在卡片和对话框上散步、跳下，也可以只在屏幕底边或自由停放，角色大小、移动速度和活动范围可调。
+- 素材包只替换右下角入口的画面，内置戴贝雷帽的橘猫「放映猫」，管理员可上传精灵图或填写图片 URL 添加更多素材包。
 
 ## V2 插件
 
-`plugins.v2/` 中的插件继续保留给 MoviePilot V2 用户，配置和行为以 V2 时的版本为准。除压缩归档、WebDAV备份、历史记录清理和 Agent 助手形象插件外，上面的插件在 V2 中都有对应实现。另有两款插件只在 V2 中提供。
+`plugins.v2/` 中的插件继续保留给 MoviePilot V2 用户，配置和行为以 V2 时的版本为准。除压缩归档、WebDAV备份、历史记录清理和助手形象外，上面的插件在 V2 中都有对应实现。另有两款插件只在 V2 中提供。
 
 - [订阅助手](https://github.com/InfinityPacer/MoviePilot-Plugins/blob/main/plugins.v2/subscribeassistant/README.md)，多场景管理订阅，实现订阅种子删除以及自动待定、暂停、洗版。V3 请使用订阅助手（增强版）。
 - 插件自定义排序，支持将插件按自定义顺序排序。

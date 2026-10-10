@@ -1,0 +1,14 @@
+
+.agent-pet-sprites-config__thumb[data-v-c522eb2b] {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+.agent-pet-sprites-config__json[data-v-c522eb2b] textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+}
+
+.agent-pets-stage-settings__value[data-v-dc25a3ab] {
+  min-width: 3.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
