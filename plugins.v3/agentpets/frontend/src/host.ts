@@ -103,3 +103,11 @@ export interface PluginApi {
 
 /** 宿主提供 `moviepilot:agent` 的注入键。 */
 export const AGENT_HOST_KEY = 'moviepilot:agent'
+
+/**
+ * 主程序缺少 `moviepilot:agent` 时的提示。
+ *
+ * 插件仓版本门禁把 V3 插件的 `system_version` 固定为 `>=3.0.0`，挡不住旧主程序；
+ * 旧主程序能安装插件但不会显示形象，因此在配置页和预览页顶部说明需要的版本。
+ */
+export const HOST_UNSUPPORTED_MESSAGE = '当前主程序版本不支持助手形象，请升级到 v3.1.4 及以上'

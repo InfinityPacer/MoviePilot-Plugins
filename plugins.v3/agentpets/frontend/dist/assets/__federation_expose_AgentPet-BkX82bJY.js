@@ -277,6 +277,7 @@ const DEFAULT_RATIO = 0.88;
 const SURFACE_CHECK_INTERVAL = 500;
 const DROP_CLEAR_DELAY = 1500;
 const RESIZE_CLEAR_DELAY = 300;
+const CLEARANCE_POLL_EVERY = 4;
 const FRAME_RETRY_AFTER = 5e3;
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "AgentPet",
@@ -326,6 +327,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let surfaceFrame = 0;
     let surfaceObserver = null;
     let surfacePoll = 0;
+    let standPollTicks = 0;
     let disposed = false;
     let droppedByUser = false;
     let initialPlacement = true;
@@ -747,12 +749,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       syncSurfacePoll();
     }
     function syncSurfacePoll() {
-      const wanted = !!surface && !!surfaceObserver && visible() && motionAllowed();
-      if (wanted && !surfacePoll) surfacePoll = window.setInterval(checkSurface, SURFACE_CHECK_INTERVAL);
+      const wanted = ready.value && !disposed && visible() && motionAllowed() && motion.value !== "drag";
+      if (wanted && !surfacePoll) surfacePoll = window.setInterval(onStandPoll, SURFACE_CHECK_INTERVAL);
       if (!wanted && surfacePoll) {
         window.clearInterval(surfacePoll);
         surfacePoll = 0;
       }
+    }
+    function onStandPoll() {
+      standPollTicks += 1;
+      if (surface && surfaceObserver) checkSurface();
+      if (standPollTicks % CLEARANCE_POLL_EVERY === 0 && !timers.has("clearance")) checkClearance();
     }
     function detachSurface() {
       surface = null;
@@ -973,6 +980,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         velocity = 0;
         fallTarget = null;
         motion.value = "drag";
+        syncSurfacePoll();
         props.pet?.setInteracting?.(true);
       }
       event.preventDefault();
@@ -992,6 +1000,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       droppedByUser = true;
       x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value));
       motion.value = "idle";
+      syncSurfacePoll();
       startFall();
     }
     function onPointerUp(event) {
@@ -1081,6 +1090,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       settings.value = loaded;
       restorePosition(stored);
       ready.value = true;
+      syncSurfacePoll();
       reportAnchor();
       scheduleBlink();
       markActivity();
@@ -1144,6 +1154,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-ef991ab8"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-d5ddceaa"]]);
 
 export { AgentPet as default };

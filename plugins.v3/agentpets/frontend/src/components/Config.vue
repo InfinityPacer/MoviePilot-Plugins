@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { inject, onBeforeUnmount, ref, watch } from 'vue'
 
-import { AGENT_HOST_KEY, type MoviePilotAgentHost, type PluginApi } from '@/host'
+import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import PackManager from '@/sprites/PackManager.vue'
 import { normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
 import StageSettings from '@/stage/StageSettings.vue'
@@ -52,6 +52,9 @@ onBeforeUnmount(() => {
 <template>
   <v-card flat class="agent-pets-config">
     <v-card-text>
+      <v-alert v-if="!agent" type="warning" variant="tonal" density="compact" class="mb-4">
+        {{ HOST_UNSUPPORTED_MESSAGE }}
+      </v-alert>
       <v-switch v-model="enabled" label="启用插件" color="primary" hide-details class="mb-2" />
       <div class="text-caption text-medium-emphasis mb-6">
         启用后，小映和每个素材包都会出现在个人设置的「助手形象」里，由用户自行选择。

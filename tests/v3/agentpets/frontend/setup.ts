@@ -3,6 +3,32 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/vue'
 import { afterEach, vi } from 'vitest'
 
+// Vuetify 组件依赖这两个浏览器接口，jsdom 没有提供。
+class ResizeObserverStub implements ResizeObserver {
+  disconnect() {}
+  observe() {}
+  unobserve() {}
+}
+
+class IntersectionObserverStub implements IntersectionObserver {
+  readonly root = null
+  readonly rootMargin = '0px'
+  readonly thresholds = [0]
+
+  disconnect() {}
+  observe() {}
+  takeRecords(): IntersectionObserverEntry[] {
+    return []
+  }
+  unobserve() {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: ResizeObserverStub, writable: true })
+Object.defineProperty(globalThis, 'IntersectionObserver', {
+  configurable: true,
+  value: IntersectionObserverStub,
+  writable: true,
+})
 Object.defineProperty(window, 'matchMedia', {
   configurable: true,
   value: (query: string): MediaQueryList => ({

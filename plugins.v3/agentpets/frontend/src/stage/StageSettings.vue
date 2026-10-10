@@ -74,12 +74,9 @@ function reset() {
       @update:model-value="(value: RoamMode) => update({ roam: value })"
     />
     <div class="d-flex align-center mt-3">
-      <span class="text-caption text-medium-emphasis">
-        {{
-          props.livePreview
-            ? '调整时页面上正在运行的小映会实时变化，保存后对所有用户生效。'
-            : '当前主程序不支持实时预览，保存后刷新页面生效。'
-        }}
+      <!-- 没有宿主对象时配置页顶部已提示升级主程序，这里不再重复。 -->
+      <span v-if="props.livePreview" class="text-caption text-medium-emphasis">
+        调整时页面上正在运行的小映会实时变化，保存后对所有用户生效。
       </span>
       <v-spacer />
       <v-btn variant="text" size="small" @click="reset">恢复默认</v-btn>
