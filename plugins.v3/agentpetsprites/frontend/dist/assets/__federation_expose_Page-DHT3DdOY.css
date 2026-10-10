@@ -1,0 +1,20 @@
+
+.agent-pet-sprites-page__layout[data-v-4692ee38] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+/* 与宿主入口触发区等大。 */
+.agent-pet-sprites-page__stage[data-v-4692ee38] {
+  position: relative;
+  width: 5.4rem;
+  height: 5.1rem;
+  border: 1px dashed rgba(var(--v-theme-on-surface), 0.24);
+  border-radius: 12px;
+}
+.agent-pet-sprites-page__stage--large[data-v-4692ee38] {
+  width: 10.8rem;
+  height: 10.2rem;
+}
