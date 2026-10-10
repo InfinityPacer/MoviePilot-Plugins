@@ -1,12 +1,12 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY } from './host-BuCMr8PM.js';
+import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE } from './host-D_jurk-V.js';
 import { v as validatePack, a as BUILTIN_PACK_ID, b as builtinAsset } from './schema-CBvuTKe0.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, n as normalizeSettings, S as SETTINGS_EVENT } from './settings-_v7SC99m.js';
 
 const {defineComponent:_defineComponent$2} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode$2,resolveComponent:_resolveComponent$2,openBlock:_openBlock$2,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode,renderList:_renderList,Fragment:_Fragment,createElementBlock:_createElementBlock$1,withCtx:_withCtx$2,createVNode:_createVNode$2,toDisplayString:_toDisplayString$1,createTextVNode:_createTextVNode$2,createSlots:_createSlots,unref:_unref$2} = await importShared('vue');
+const {createElementVNode:_createElementVNode$2,resolveComponent:_resolveComponent$2,openBlock:_openBlock$2,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$2,renderList:_renderList,Fragment:_Fragment,createElementBlock:_createElementBlock$1,withCtx:_withCtx$2,createVNode:_createVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,createSlots:_createSlots,unref:_unref$2} = await importShared('vue');
 
 const _hoisted_1$1 = { class: "agent-pet-sprites-config" };
 const _hoisted_2$1 = { class: "d-flex align-center mt-3" };
@@ -158,7 +158,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
           key: 0,
           indeterminate: "",
           class: "mb-2"
-        })) : _createCommentVNode("", true),
+        })) : _createCommentVNode$2("", true),
         _createVNode$2(_component_v_list, {
           density: "comfortable",
           class: "mb-6",
@@ -192,13 +192,13 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
                 default: _withCtx$2(() => [
                   _createVNode$2(_component_v_list_item_title, null, {
                     default: _withCtx$2(() => [
-                      _createTextVNode$2(_toDisplayString$1(pack.name), 1)
+                      _createTextVNode$2(_toDisplayString$2(pack.name), 1)
                     ]),
                     _: 2
                   }, 1024),
                   _createVNode$2(_component_v_list_item_subtitle, null, {
                     default: _withCtx$2(() => [
-                      _createTextVNode$2(_toDisplayString$1(pack.id) + " · " + _toDisplayString$1(pack.builtin ? "内置" : pack.source === "upload" ? "已上传" : "远程图片") + " · " + _toDisplayString$1(pack.frame_count) + " 帧 · " + _toDisplayString$1(pack.action_count) + " 个动作 ", 1)
+                      _createTextVNode$2(_toDisplayString$2(pack.id) + " · " + _toDisplayString$2(pack.builtin ? "内置" : pack.source === "upload" ? "已上传" : "远程图片") + " · " + _toDisplayString$2(pack.frame_count) + " 帧 · " + _toDisplayString$2(pack.action_count) + " 个动作 ", 1)
                     ]),
                     _: 2
                   }, 1024)
@@ -223,13 +223,13 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
               default: _withCtx$2(() => [
                 _createVNode$2(_component_v_list_item_title, { class: "text-medium-emphasis" }, {
                   default: _withCtx$2(() => [
-                    _createTextVNode$2(_toDisplayString$1(props.api ? "暂无素材包" : "当前环境无法读取素材包"), 1)
+                    _createTextVNode$2(_toDisplayString$2(props.api ? "暂无素材包" : "当前环境无法读取素材包"), 1)
                   ]),
                   _: 1
                 })
               ]),
               _: 1
-            })) : _createCommentVNode("", true)
+            })) : _createCommentVNode$2("", true)
           ]),
           _: 1
         }),
@@ -284,7 +284,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
           "prepend-icon": "mdi-image-outline",
           "error-messages": imageError.value ? [imageError.value] : [],
           "hide-details": "auto"
-        }, null, 8, ["modelValue", "error-messages"])) : _createCommentVNode("", true),
+        }, null, 8, ["modelValue", "error-messages"])) : _createCommentVNode$2("", true),
         clientErrors.value.length || serverError.value ? (_openBlock$2(), _createBlock$1(_component_v_alert, {
           key: 2,
           type: "error",
@@ -294,13 +294,13 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
         }, {
           default: _withCtx$2(() => [
             (_openBlock$2(true), _createElementBlock$1(_Fragment, null, _renderList([...clientErrors.value, ...serverError.value ? [serverError.value] : []], (error) => {
-              return _openBlock$2(), _createElementBlock$1("div", { key: error }, _toDisplayString$1(error), 1);
+              return _openBlock$2(), _createElementBlock$1("div", { key: error }, _toDisplayString$2(error), 1);
             }), 128))
           ]),
           _: 1
-        })) : _createCommentVNode("", true),
+        })) : _createCommentVNode$2("", true),
         _createElementVNode$2("div", _hoisted_2$1, [
-          _createElementVNode$2("span", _hoisted_3$1, " 格式说明见插件 README；ID " + _toDisplayString$1(_unref$2(BUILTIN_PACK_ID)) + " 和 ying 留给内置形象。 ", 1),
+          _createElementVNode$2("span", _hoisted_3$1, " 格式说明见插件 README；ID " + _toDisplayString$2(_unref$2(BUILTIN_PACK_ID)) + " 和 ying 留给内置形象。 ", 1),
           _createVNode$2(_component_v_spacer),
           _createVNode$2(_component_v_btn, {
             color: "primary",
@@ -324,13 +324,16 @@ const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "dat
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode$1,unref:_unref$1,toDisplayString:_toDisplayString,resolveComponent:_resolveComponent$1,withCtx:_withCtx$1,createVNode:_createVNode$1,createTextVNode:_createTextVNode$1,openBlock:_openBlock$1,createElementBlock:_createElementBlock} = await importShared('vue');
+const {createElementVNode:_createElementVNode$1,unref:_unref$1,toDisplayString:_toDisplayString$1,resolveComponent:_resolveComponent$1,withCtx:_withCtx$1,createVNode:_createVNode$1,openBlock:_openBlock$1,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode$1,createTextVNode:_createTextVNode$1} = await importShared('vue');
 
 const _hoisted_1 = { class: "agent-pets-stage-settings" };
 const _hoisted_2 = { class: "agent-pets-stage-settings__value" };
 const _hoisted_3 = { class: "agent-pets-stage-settings__value" };
 const _hoisted_4 = { class: "d-flex align-center mt-3" };
-const _hoisted_5 = { class: "text-caption text-medium-emphasis" };
+const _hoisted_5 = {
+  key: 0,
+  class: "text-caption text-medium-emphasis"
+};
 const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   __name: "StageSettings",
   props: {
@@ -371,7 +374,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           "onUpdate:modelValue": _cache[0] || (_cache[0] = (value) => update({ scale: Number(value) }))
         }, {
           append: _withCtx$1(() => [
-            _createElementVNode$1("span", _hoisted_2, _toDisplayString(props.modelValue.scale.toFixed(2)) + "×", 1)
+            _createElementVNode$1("span", _hoisted_2, _toDisplayString$1(props.modelValue.scale.toFixed(2)) + "×", 1)
           ]),
           _: 1
         }, 8, ["model-value", "min", "max"]),
@@ -388,7 +391,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           "onUpdate:modelValue": _cache[1] || (_cache[1] = (value) => update({ speed: Number(value) }))
         }, {
           append: _withCtx$1(() => [
-            _createElementVNode$1("span", _hoisted_3, _toDisplayString(props.modelValue.speed.toFixed(2)) + "×", 1)
+            _createElementVNode$1("span", _hoisted_3, _toDisplayString$1(props.modelValue.speed.toFixed(2)) + "×", 1)
           ]),
           _: 1
         }, 8, ["model-value", "min", "max"]),
@@ -406,7 +409,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           "onUpdate:modelValue": _cache[2] || (_cache[2] = (value) => update({ roam: value }))
         }, null, 8, ["model-value", "hint"]),
         _createElementVNode$1("div", _hoisted_4, [
-          _createElementVNode$1("span", _hoisted_5, _toDisplayString(props.livePreview ? "调整时页面上正在运行的小映会实时变化，保存后对所有用户生效。" : "当前主程序不支持实时预览，保存后刷新页面生效。"), 1),
+          props.livePreview ? (_openBlock$1(), _createElementBlock("span", _hoisted_5, " 调整时页面上正在运行的小映会实时变化，保存后对所有用户生效。 ")) : _createCommentVNode$1("", true),
           _createVNode$1(_component_v_spacer),
           _createVNode$1(_component_v_btn, {
             variant: "text",
@@ -424,11 +427,11 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-dc25a3ab"]]);
+const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-a7e3100d"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,unref:_unref,withCtx:_withCtx,createTextVNode:_createTextVNode,openBlock:_openBlock,createBlock:_createBlock} = await importShared('vue');
+const {unref:_unref,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,resolveComponent:_resolveComponent,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createVNode:_createVNode,createElementVNode:_createElementVNode} = await importShared('vue');
 
 const {inject,onBeforeUnmount,ref,watch} = await importShared('vue');
 const _sfc_main = /* @__PURE__ */ _defineComponent({
@@ -456,6 +459,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!committed) agent?.emit?.(SETTINGS_EVENT, { ...saved });
     });
     return (_ctx, _cache) => {
+      const _component_v_alert = _resolveComponent("v-alert");
       const _component_v_switch = _resolveComponent("v-switch");
       const _component_v_divider = _resolveComponent("v-divider");
       const _component_v_card_text = _resolveComponent("v-card-text");
@@ -470,6 +474,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         default: _withCtx(() => [
           _createVNode(_component_v_card_text, null, {
             default: _withCtx(() => [
+              !_unref(agent) ? (_openBlock(), _createBlock(_component_v_alert, {
+                key: 0,
+                type: "warning",
+                variant: "tonal",
+                density: "compact",
+                class: "mb-4"
+              }, {
+                default: _withCtx(() => [
+                  _createTextVNode(_toDisplayString(_unref(HOST_UNSUPPORTED_MESSAGE)), 1)
+                ]),
+                _: 1
+              })) : _createCommentVNode("", true),
               _createVNode(_component_v_switch, {
                 modelValue: enabled.value,
                 "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => enabled.value = $event),

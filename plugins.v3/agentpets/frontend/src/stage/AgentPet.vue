@@ -74,6 +74,8 @@ const SURFACE_CHECK_INTERVAL = 500
 const DROP_CLEAR_DELAY = 1500
 /** 窗口尺寸变化后合并多久再检查是否挡住控件（毫秒）。 */
 const RESIZE_CLEAR_DELAY = 300
+/** 站立时每隔几拍（每拍 500ms）复查一次是否挡住控件。 */
+const CLEARANCE_POLL_EVERY = 4
 /** 同一帧加载失败后，至少隔这么久（毫秒）才再次请求。 */
 const FRAME_RETRY_AFTER = 5000
 
@@ -129,6 +131,7 @@ let surface: DomSurface | null = null
 let surfaceFrame = 0
 let surfaceObserver: MutationObserver | null = null
 let surfacePoll = 0
+let standPollTicks = 0
 let disposed = false
 /** 最近一次落地来自用户拖拽放下。 */
 let droppedByUser = false
@@ -647,18 +650,29 @@ function attachSurface(next: DomSurface) {
 }
 
 /**
- * 站立时每 500ms 兜底校验一次脚下元素。
+ * 站立时的低频复查定时器，每 500ms 一拍。
  *
- * 只靠 CSS 动画或过渡移动的元素既不触发滚动也不产生 DOM 变化，观察器发现不了；
- * 页面不可见或不允许动画时停掉，此时角色本来也不该跟着动。
+ * - 站在元素上时每拍校验一次脚下元素：只靠 CSS 动画或过渡移动的元素既不触发滚动也不产生
+ *   DOM 变化，观察器发现不了。
+ * - 每 4 拍（约 2 秒）复查一次是否挡住可点击控件：悬浮按钮这类控件可能在页面数据加载后
+ *   才出现，晚于落地时那一次检查。
+ *
+ * 拖拽中、页面不可见或不允许动画时停掉，此时角色本来也不该自己移动。
  */
 function syncSurfacePoll() {
-  const wanted = !!surface && !!surfaceObserver && visible() && motionAllowed()
-  if (wanted && !surfacePoll) surfacePoll = window.setInterval(checkSurface, SURFACE_CHECK_INTERVAL)
+  const wanted = ready.value && !disposed && visible() && motionAllowed() && motion.value !== 'drag'
+  if (wanted && !surfacePoll) surfacePoll = window.setInterval(onStandPoll, SURFACE_CHECK_INTERVAL)
   if (!wanted && surfacePoll) {
     window.clearInterval(surfacePoll)
     surfacePoll = 0
   }
+}
+
+function onStandPoll() {
+  standPollTicks += 1
+  if (surface && surfaceObserver) checkSurface()
+  // 用户刚放下时等它自己的延迟检查，复查不抢先。
+  if (standPollTicks % CLEARANCE_POLL_EVERY === 0 && !timers.has('clearance')) checkClearance()
 }
 
 function detachSurface() {
@@ -914,6 +928,7 @@ function onPointerMove(event: PointerEvent) {
     velocity = 0
     fallTarget = null
     motion.value = 'drag'
+    syncSurfacePoll()
     props.pet?.setInteracting?.(true)
   }
   event.preventDefault()
@@ -934,7 +949,9 @@ function finishDrag() {
   props.pet?.setInteracting?.(false)
   droppedByUser = true
   x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value))
+  // 先离开拖拽状态，站立复查随之恢复。
   motion.value = 'idle'
+  syncSurfacePoll()
   startFall()
 }
 
@@ -1038,6 +1055,7 @@ onMounted(async () => {
   settings.value = loaded
   restorePosition(stored)
   ready.value = true
+  syncSurfacePoll()
   reportAnchor()
   scheduleBlink()
   markActivity()

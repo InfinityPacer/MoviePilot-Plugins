@@ -218,6 +218,38 @@ describe('AgentPet roam and frame fallback', () => {
     expect(moved.x + moved.width * 0.75).toBeLessThanOrEqual(600)
   })
 
+  it('walks away within about 2s when a control appears under her later', async () => {
+    const host = createMockHost('AgentPets')
+    const anchors: Array<{ x: number; y: number; width: number; height: number } | null> = []
+    const pet = createMockPet('stage', 'ying', { onAnchor: rect => anchors.push(rect) })
+    const api = { get: vi.fn().mockResolvedValue({ success: true, data: { scale: 1, speed: 1, roam: 'floor' } }) }
+    const view = render(AgentPet, { props: { agent: host, pet, api, pluginId: 'AgentPets' } })
+    await flush()
+    const root = view.container.querySelector('.agent-pet-ying') as HTMLElement
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(root.dataset.motion).toBe('idle')
+
+    // 悬浮按钮在页面数据加载后才出现，正好压在她身后。
+    const fab = document.createElement('button')
+    document.body.appendChild(fab)
+    const start = anchors.at(-1)!
+    stubControlsRightOf(start.x - 1, fab)
+    await new Promise(resolve => setTimeout(resolve, 2100))
+    expect(root.dataset.motion).toBe('walk')
+    expect(anchors.at(-1)!.x).toBeLessThan(start.x)
+  })
+
+  it('stops the control recheck while motion is not allowed', async () => {
+    const { anchors } = await mountStill(null, 'floor')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const fab = document.createElement('button')
+    document.body.appendChild(fab)
+    const start = anchors.at(-1)!
+    stubControlsRightOf(start.x - 1, fab)
+    await new Promise(resolve => setTimeout(resolve, 2200))
+    expect(anchors.at(-1)!.x).toBe(start.x)
+  })
+
   it('shrinks on narrow screens on top of the user scale', async () => {
     const { host, anchors } = await mountStill(null, 'floor')
     host.patch({ isMobile: true })

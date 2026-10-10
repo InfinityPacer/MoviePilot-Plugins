@@ -1,10 +1,10 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY } from './host-BuCMr8PM.js';
+import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE } from './host-D_jurk-V.js';
 import { B as BUILTIN_PACK, a as BUILTIN_PACK_ID, H as HOST_ACTIONS, c as HOST_INTENTS } from './schema-CBvuTKe0.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-CPsTLCKC.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import { D as DEFAULT_SETTINGS, a as SCALE_RANGE, b as SPEED_RANGE, R as ROAM_MODES, S as SETTINGS_EVENT } from './settings-_v7SC99m.js';
-import AgentPet from './__federation_expose_AgentPet-C0nyVfSu.js';
+import AgentPet from './__federation_expose_AgentPet-BkX82bJY.js';
 
 function windowViewport() {
   return {
@@ -315,7 +315,7 @@ const SpritePreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "d
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
-const {createTextVNode:_createTextVNode$1,resolveComponent:_resolveComponent$1,withCtx:_withCtx$1,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode,unref:_unref$1,createElementVNode:_createElementVNode,renderList:_renderList,Fragment:_Fragment,createElementBlock:_createElementBlock,toDisplayString:_toDisplayString$1,createVNode:_createVNode$1,normalizeStyle:_normalizeStyle,Teleport:_Teleport} = await importShared('vue');
+const {createTextVNode:_createTextVNode$1,resolveComponent:_resolveComponent$1,withCtx:_withCtx$1,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$1,unref:_unref$1,createElementVNode:_createElementVNode,renderList:_renderList,Fragment:_Fragment,createElementBlock:_createElementBlock,toDisplayString:_toDisplayString$1,createVNode:_createVNode$1,normalizeStyle:_normalizeStyle,Teleport:_Teleport} = await importShared('vue');
 
 const _hoisted_1 = { class: "agent-pet-ying-page" };
 const _hoisted_2 = { class: "d-flex flex-wrap ga-2 mb-4" };
@@ -523,7 +523,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
               _createTextVNode$1("打开真实助手面板", -1)
             ])]),
             _: 1
-          })) : _createCommentVNode("", true)
+          })) : _createCommentVNode$1("", true)
         ]),
         _cache[11] || (_cache[11] = _createElementVNode("div", { class: "text-subtitle-2 mb-2" }, "宿主事件", -1)),
         _createElementVNode("div", _hoisted_3, [
@@ -659,7 +659,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                 width: `${panelRect.value.width}px`,
                 height: `${panelRect.value.height}px`
               })
-            }, " 模拟面板 ", 4)) : _createCommentVNode("", true),
+            }, " 模拟面板 ", 4)) : _createCommentVNode$1("", true),
             _createVNode$1(AgentPet, {
               agent: _unref$1(host),
               pet: _unref$1(pet),
@@ -670,9 +670,9 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
               key: 1,
               class: "agent-pet-ying-page__bubble",
               style: _normalizeStyle(bubbleStyle.value)
-            }, _toDisplayString$1(bubbleText.value), 5)) : _createCommentVNode("", true)
+            }, _toDisplayString$1(bubbleText.value), 5)) : _createCommentVNode$1("", true)
           ])
-        ])) : _createCommentVNode("", true)
+        ])) : _createCommentVNode$1("", true)
       ]);
     };
   }
@@ -682,7 +682,7 @@ const StagePreview = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "da
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {createTextVNode:_createTextVNode,resolveComponent:_resolveComponent,withCtx:_withCtx,createVNode:_createVNode,unref:_unref,toDisplayString:_toDisplayString,openBlock:_openBlock,createBlock:_createBlock} = await importShared('vue');
+const {unref:_unref,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,resolveComponent:_resolveComponent,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createVNode:_createVNode} = await importShared('vue');
 
 const {inject,ref} = await importShared('vue');
 const _sfc_main = /* @__PURE__ */ _defineComponent({
@@ -698,6 +698,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const realHost = inject(AGENT_HOST_KEY, null);
     const tab = ref("stage");
     return (_ctx, _cache) => {
+      const _component_v_alert = _resolveComponent("v-alert");
       const _component_v_card_title = _resolveComponent("v-card-title");
       const _component_v_card_subtitle = _resolveComponent("v-card-subtitle");
       const _component_v_card_item = _resolveComponent("v-card-item");
@@ -713,6 +714,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         class: "agent-pets-page"
       }, {
         default: _withCtx(() => [
+          !_unref(realHost) ? (_openBlock(), _createBlock(_component_v_alert, {
+            key: 0,
+            type: "warning",
+            variant: "tonal",
+            density: "compact",
+            class: "ma-4 mb-0"
+          }, {
+            default: _withCtx(() => [
+              _createTextVNode(_toDisplayString(_unref(HOST_UNSUPPORTED_MESSAGE)), 1)
+            ]),
+            _: 1
+          })) : _createCommentVNode("", true),
           _createVNode(_component_v_card_item, null, {
             default: _withCtx(() => [
               _createVNode(_component_v_card_title, null, {

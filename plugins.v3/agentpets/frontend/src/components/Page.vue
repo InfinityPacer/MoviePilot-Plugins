@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { inject, ref } from 'vue'
 
-import { AGENT_HOST_KEY, type MoviePilotAgentHost, type PluginApi } from '@/host'
+import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import SpritePreview from '@/sprites/SpritePreview.vue'
 import StagePreview from '@/stage/StagePreview.vue'
 
@@ -23,6 +23,9 @@ const tab = ref<'stage' | 'sprites'>('stage')
 
 <template>
   <v-card flat class="agent-pets-page">
+    <v-alert v-if="!realHost" type="warning" variant="tonal" density="compact" class="ma-4 mb-0">
+      {{ HOST_UNSUPPORTED_MESSAGE }}
+    </v-alert>
     <v-card-item>
       <v-card-title>助手形象 · 开发预览</v-card-title>
       <v-card-subtitle>
