@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { coversControl, querySurfaces, surfaceUnobstructed } from '@/stage/surfaces'
+import { collectControls, querySurfaces, surfaceUnobstructed } from '@/stage/surfaces'
 
 const viewport = { width: 1000, height: 800, keyboardInset: 0, safeArea: { top: 0, right: 0, bottom: 0, left: 0 } }
 const box = { left: 100, top: 400, right: 700 }
@@ -66,42 +66,74 @@ describe('surface occlusion', () => {
   })
 })
 
-describe('control coverage', () => {
-  it('detects a clickable control under any probe point', () => {
-    const button = document.createElement('button')
-    const icon = document.createElement('i')
-    button.appendChild(icon)
-    document.body.appendChild(button)
-    stubHits(({ x }) => (x > 150 ? [icon, button, document.body] : [document.body]))
-    expect(coversControl([{ x: 100, y: 100 }], null)).toBe(false)
-    expect(
-      coversControl(
-        [
-          { x: 100, y: 100 },
-          { x: 200, y: 100 },
-        ],
-        null,
-      ),
-    ).toBe(true)
+function withRect<T extends Element>(el: T, rect: { left: number; top: number; width: number; height: number }): T {
+  el.getBoundingClientRect = () =>
+    ({
+      ...rect,
+      x: rect.left,
+      y: rect.top,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      toJSON: () => rect,
+    }) as DOMRect
+  return el
+}
+
+describe('surface query on long pages', () => {
+  it('filters by viewport before applying the candidate limit', () => {
+    // 3000 张卡片，往下滚后前 2990 张都在视口上方。
+    for (let index = 0; index < 3000; index += 1) {
+      const card = withRect(document.createElement('div'), {
+        left: 100,
+        top: index < 2990 ? -10000 + index : 300 + (index - 2990) * 40,
+        width: 600,
+        height: 30,
+      })
+      card.className = 'v-card'
+      document.body.appendChild(card)
+    }
+    const styleSpy = vi.spyOn(window, 'getComputedStyle')
+    const surfaces = querySurfaces(null, viewport, 120, null)
+    expect(surfaces.length).toBeGreaterThan(0)
+    expect(surfaces.every(surface => surface.top >= 120)).toBe(true)
+    // 样式读取只发生在视口内的候选上，耗时与页面长度无关。
+    expect(styleSpy.mock.calls.length).toBeLessThanOrEqual(10)
+  })
+})
+
+describe('control rectangles', () => {
+  const view = { width: 1000, height: 800 }
+
+  it('collects visible controls in the viewport, including list items and focusable elements', () => {
+    const link = withRect(document.createElement('a'), { left: 0, top: 100, width: 256, height: 48 })
+    const item = withRect(document.createElement('div'), { left: 0, top: 160, width: 256, height: 48 })
+    item.className = 'v-list-item'
+    const focusable = withRect(document.createElement('div'), { left: 300, top: 100, width: 80, height: 40 })
+    focusable.setAttribute('tabindex', '0')
+    const scriptOnly = withRect(document.createElement('div'), { left: 400, top: 100, width: 80, height: 40 })
+    scriptOnly.setAttribute('tabindex', '-1')
+    const offscreen = withRect(document.createElement('button'), { left: 0, top: 2000, width: 80, height: 40 })
+    const layout = withRect(document.createElement('main'), { left: 0, top: 0, width: 1000, height: 800 })
+    layout.setAttribute('tabindex', '0')
+    document.body.append(link, item, focusable, scriptOnly, offscreen, layout)
+
+    expect(collectControls(null, view, null)).toEqual([
+      { x: 0, y: 100, width: 256, height: 48 },
+      { x: 0, y: 160, width: 256, height: 48 },
+      { x: 300, y: 100, width: 80, height: 40 },
+    ])
   })
 
-  it('matches links, inputs and vuetify buttons but ignores the stage layer', () => {
+  it('skips the stage layer and the link card she stands on', () => {
     const layer = document.createElement('div')
-    const character = document.createElement('button')
+    const character = withRect(document.createElement('button'), { left: 10, top: 10, width: 80, height: 100 })
     layer.appendChild(character)
-    const link = document.createElement('a')
-    const vbtn = document.createElement('div')
-    vbtn.className = 'v-btn'
-    document.body.append(layer, link, vbtn)
-    stubHits(() => [character, document.body])
-    expect(coversControl([{ x: 10, y: 10 }], layer)).toBe(false)
-    stubHits(() => [character, link])
-    expect(coversControl([{ x: 10, y: 10 }], layer)).toBe(true)
-    stubHits(() => [vbtn])
-    expect(coversControl([{ x: 10, y: 10 }], layer)).toBe(true)
-  })
+    const linkCard = withRect(document.createElement('div'), { left: 0, top: 110, width: 400, height: 200 })
+    linkCard.className = 'v-card v-card--link'
+    const other = withRect(document.createElement('div'), { left: 500, top: 110, width: 400, height: 200 })
+    other.className = 'v-card v-card--link'
+    document.body.append(layer, linkCard, other)
 
-  it('treats browsers without elementsFromPoint as not covering', () => {
-    expect(coversControl([{ x: 10, y: 10 }], null)).toBe(false)
+    expect(collectControls(layer, view, linkCard)).toEqual([{ x: 500, y: 110, width: 400, height: 200 }])
   })
 })

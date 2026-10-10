@@ -114,11 +114,18 @@ describe('AgentPet roam and frame fallback', () => {
   })
 
   /** 模拟 x 大于 `edge` 的区域都被一个可点击控件占着。 */
+  /** 让控件占据底边一带 x 大于 `edge` 的区域（矩形判定，不依赖命中测试）。 */
   function stubControlsRightOf(edge: number, control: Element) {
-    Object.defineProperty(document, 'elementsFromPoint', {
-      configurable: true,
-      value: (x: number) => (x > edge ? [control, document.body] : [document.body]),
-    })
+    const rect = { left: edge, top: window.innerHeight - 200, width: window.innerWidth - edge, height: 200 }
+    control.getBoundingClientRect = () =>
+      ({
+        ...rect,
+        x: rect.left,
+        y: rect.top,
+        right: rect.left + rect.width,
+        bottom: rect.top + rect.height,
+        toJSON: () => rect,
+      }) as DOMRect
   }
 
   function addCard(rect: { left: number; top: number; width: number; height: number }) {
@@ -158,7 +165,8 @@ describe('AgentPet roam and frame fallback', () => {
     await new Promise(resolve => setTimeout(resolve, 650))
     await flush()
     expect(anchors.at(-1)).toMatchObject({ y: window.innerHeight - 120 })
-    expect(await pet.storage.get()).toMatchObject({ roam: 'surfaces', yRatio: 1 })
+    // 自己掉落不写服务端，存储仍是启动前的值。
+    expect(await pet.storage.get()).toEqual({ roam: 'surfaces', xRatio: 0.3, yRatio: 0 })
   })
 
   it('polls the surface every 500ms while visible, including reduced motion', async () => {
@@ -266,6 +274,48 @@ describe('AgentPet roam and frame fallback', () => {
     stubControlsRightOf(start.x - 1, fab)
     await new Promise(resolve => setTimeout(resolve, 2200))
     expect(anchors.at(-1)!.x).toBe(start.x)
+  })
+
+  it('saves the position only on drop, roam change and page hide, at most once per 30s', async () => {
+    const { host, pet, view } = await mountStill({ roam: 'floor', xRatio: 0.2, yRatio: 1 }, 'floor')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const save = vi.spyOn(pet.storage, 'set')
+    const button = view.container.querySelector('button') as HTMLButtonElement
+
+    async function drag(toX: number) {
+      const rect = button.getBoundingClientRect()
+      button.dispatchEvent(pointer('pointerdown', { pointerId: 9, clientX: rect.left + 5, clientY: rect.top + 5 }))
+      window.dispatchEvent(pointer('pointermove', { pointerId: 9, clientX: toX, clientY: 200 }))
+      window.dispatchEvent(pointer('pointerup', { pointerId: 9, clientX: toX, clientY: 200 }))
+      await flush()
+    }
+
+    // 自己避让、站立复查都不写。
+    await new Promise(resolve => setTimeout(resolve, 600))
+    expect(save).not.toHaveBeenCalled()
+
+    await drag(500)
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save.mock.calls[0][0]).toMatchObject({ roam: 'floor', yRatio: 1 })
+
+    // 30 秒内再次放下只排队，不立即写。
+    await drag(300)
+    expect(save).toHaveBeenCalledTimes(1)
+
+    // 页面变为隐藏时立即写出最新位置。
+    host.patch({ pageVisible: false })
+    await flush()
+    expect(save).toHaveBeenCalledTimes(2)
+  })
+
+  it('saves after switching roam mode', async () => {
+    const { host, pet } = await mountStill({ roam: 'floor', xRatio: 0.2, yRatio: 1 }, 'floor')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const save = vi.spyOn(pet.storage, 'set')
+    host.emit('agentpets.settings', { scale: 1, speed: 1, roam: 'free' })
+    await flush()
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save.mock.calls[0][0]).toMatchObject({ roam: 'free' })
   })
 
   it('shrinks on narrow screens on top of the user scale', async () => {

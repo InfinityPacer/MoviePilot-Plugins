@@ -1,5 +1,5 @@
 import type { AgentRect } from '@/host'
-import { standable, type StageViewport, type SurfaceBox } from '@/stage/geometry'
+import { floorLine, standable, type StageViewport, type SurfaceBox } from '@/stage/geometry'
 
 /**
  * 小映可以站上去的页面容器。
@@ -8,7 +8,12 @@ import { standable, type StageViewport, type SurfaceBox } from '@/stage/geometry
  */
 export const SURFACE_SELECTOR = '.v-card, .v-sheet, .v-overlay__content, [role="dialog"]'
 
-/** 一次查询最多检查的元素数，避免超长列表页的单次查询过慢。 */
+/**
+ * 一次查询最多做样式与遮挡判断的候选数。
+ *
+ * 上限只计视口内、几何上可站的元素：长页面滚到下方时，排在文档前面的大量元素已在视口外，
+ * 若先截取再判断会一个可站面都找不到。矩形读取很便宜，样式和命中测试才是主要耗时。
+ */
 export const MAX_SURFACE_CANDIDATES = 400
 
 /** 带 DOM 元素的可站表面。 */
@@ -62,35 +67,55 @@ export function querySurfaces(
   charHeight: number,
   panel: AgentRect | null,
 ): DomSurface[] {
-  const result: DomSurface[] = []
-  const elements = document.querySelectorAll(SURFACE_SELECTOR)
-  const count = Math.min(elements.length, MAX_SURFACE_CANDIDATES)
-  for (let index = 0; index < count; index += 1) {
-    const el = elements[index]
-    if (layer && (layer.contains(el) || el.contains(layer))) continue
+  const floor = floorLine(viewport)
+  const candidates: DomSurface[] = []
+  for (const el of Array.from(document.querySelectorAll(SURFACE_SELECTOR))) {
     const box = measureSurface(el)
-    if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue
-    if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue
-    result.push({ ...box, el })
+    // 先按矩形筛掉视口外和几何上不可站的元素，它们不计入上限。
+    if (!box || box.right <= 0 || box.left >= viewport.width || box.top >= floor) continue
+    if (!standable(box, viewport, charHeight, panel)) continue
+    if (layer && (layer.contains(el) || el.contains(layer))) continue
+    candidates.push({ ...box, el })
+    if (candidates.length >= MAX_SURFACE_CANDIDATES) break
   }
-  return result
+  return candidates.filter(
+    candidate => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width),
+  )
 }
 
-/** 小映不应停留在其上方的可点击控件；调整范围时只改这一处。 */
-export const CONTROL_SELECTOR = 'a, button, [role="button"], input, textarea, select, .v-btn'
+/**
+ * 小映不应停留在其上方的可点击控件；调整范围时只改这一处。
+ *
+ * 包括链接卡片、列表项（侧栏菜单）和可聚焦元素，`tabindex="-1"` 只能脚本聚焦，不算。
+ */
+export const CONTROL_SELECTOR =
+  'a, button, [role="button"], input, textarea, select, .v-btn, .v-card--link, .v-list-item, [tabindex]:not([tabindex="-1"])'
 
 /**
- * 角色矩形是否挡住了可点击控件。
+ * 收集视口内可点击控件的矩形，供一次遮挡判断里的多个候选位置复用。
  *
- * 在取样点调用 `elementsFromPoint`，跳过小映自己的图层，看第一个命中的元素是否落在控件里。
- * 只在落地、站定和窗口尺寸变化时调用，不在动画帧里调用；浏览器不支持时视为不遮挡。
+ * - 排除小映自己的图层及其祖先，以及她正站着的元素和包住它的控件：她脚底在那张卡片上沿，
+ *   本来就不算挡住它。
+ * - 超过视口一半面积的可聚焦容器视为页面布局，不当作控件，否则她在哪里都算挡住。
+ *
+ * 只在落地、站定、窗口尺寸变化和站立低频复查时调用，不在动画帧里调用。
  */
-export function coversControl(points: Array<{ x: number; y: number }>, layer: Element | null): boolean {
-  if (typeof document.elementsFromPoint !== 'function') return false
-  for (const point of points) {
-    if (point.x < 0 || point.y < 0 || point.x > window.innerWidth || point.y > window.innerHeight) continue
-    const hit = document.elementsFromPoint(point.x, point.y).find(item => !layer?.contains(item))
-    if (hit?.closest(CONTROL_SELECTOR)) return true
+export function collectControls(
+  layer: Element | null,
+  viewport: { width: number; height: number },
+  standingOn: Element | null,
+): AgentRect[] {
+  const viewportArea = viewport.width * viewport.height
+  const rects: AgentRect[] = []
+  for (const el of Array.from(document.querySelectorAll(CONTROL_SELECTOR))) {
+    if (layer && (layer.contains(el) || el.contains(layer))) continue
+    if (standingOn && (el === standingOn || el.contains(standingOn))) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) continue
+    if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= viewport.width || rect.top >= viewport.height) continue
+    if (rect.width * rect.height > viewportArea / 2) continue
+    if (!surfaceVisible(el)) continue
+    rects.push({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
   }
-  return false
+  return rects
 }

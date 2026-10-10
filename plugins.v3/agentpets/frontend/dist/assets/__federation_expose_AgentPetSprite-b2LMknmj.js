@@ -1,10 +1,10 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { B as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, a as BUILTIN_PACK_ID, v as validatePack } from './schema-CBvuTKe0.js';
+import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, v as validatePack } from './schema-7sDr2_vp.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
+const {normalizeStyle:_normalizeStyle,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode} = await importShared('vue');
 
 const _hoisted_1 = ["data-pack", "data-action", "data-frame"];
 const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
@@ -23,8 +23,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   },
   setup(__props) {
     const props = __props;
+    const packKey = props.pet?.key || BUILTIN_PACK_ID;
     const pack = ref(BUILTIN_PACK);
     const sheetSrc = ref(builtinAsset("sheet.webp"));
+    const ready = ref(packKey === BUILTIN_PACK_ID);
     const cellRatio = ref(1);
     const frameIndex = ref(0);
     let timer = 0;
@@ -75,7 +77,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       image.src = src;
     }
     async function loadPack(key) {
-      if (key === BUILTIN_PACK_ID || !props.api?.get) return;
+      if (key === BUILTIN_PACK_ID) return;
+      if (!props.api?.get) {
+        ready.value = true;
+        return;
+      }
       const instanceId = props.pluginId || "AgentPets";
       try {
         const response = await props.api.get(
@@ -89,16 +95,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       } catch {
         console.warn(`[AgentPets] pack ${key} unavailable, using builtin`);
       }
+      if (!disposed) ready.value = true;
     }
     watch(
       () => [resolved.value.key, props.motionActive, pack.value],
       () => play()
     );
     watch(sheetSrc, (src) => measure(src));
+    watch(ready, (value) => {
+      if (value) measure(sheetSrc.value);
+    });
     onMounted(async () => {
-      measure(sheetSrc.value);
+      if (ready.value) measure(sheetSrc.value);
       play();
-      await loadPack(props.pet?.key || BUILTIN_PACK_ID);
+      await loadPack(packKey);
     });
     onBeforeUnmount(() => {
       disposed = true;
@@ -108,19 +118,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return _openBlock(), _createElementBlock("div", {
         class: "agent-pet-sprites",
         "aria-hidden": "true",
-        "data-pack": pack.value.id,
+        "data-pack": ready.value ? pack.value.id : void 0,
         "data-action": resolved.value.key,
         "data-frame": frame.value
       }, [
-        _createElementVNode("div", {
+        ready.value ? (_openBlock(), _createElementBlock("div", {
+          key: 0,
           class: "agent-pet-sprites__frame",
           style: _normalizeStyle(frameStyle.value)
-        }, null, 4)
+        }, null, 4)) : _createCommentVNode("", true)
       ], 8, _hoisted_1);
     };
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-d1bc6823"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-fda94a0c"]]);
 
 export { AgentPetSprite as default };

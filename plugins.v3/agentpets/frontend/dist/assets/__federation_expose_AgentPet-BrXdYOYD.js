@@ -127,12 +127,15 @@ const MOBILE_SCALE = 0.8;
 function effectiveScale(scale, isMobile) {
   return isMobile ? scale * MOBILE_SCALE : scale;
 }
-function probePoints(rect) {
-  return [
-    { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
-    { x: rect.x + rect.width * 0.25, y: rect.y + rect.height * 0.75 },
-    { x: rect.x + rect.width * 0.75, y: rect.y + rect.height * 0.75 }
-  ];
+function intersectionArea(a, b) {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return width > 0 && height > 0 ? width * height : 0;
+}
+const CONTROL_COVER_RATIO = 0.1;
+function coversAny(rect, controls, ratio = CONTROL_COVER_RATIO) {
+  const limit = rect.width * rect.height * ratio;
+  return controls.some((control) => intersectionArea(rect, control) > limit);
 }
 function pickClearX(current, bounds, isClear, step) {
   const [min, max] = bounds;
@@ -231,28 +234,35 @@ function surfaceUnobstructed(el, box, layer, viewportWidth) {
   return !!hit && (hit === el || el.contains(hit));
 }
 function querySurfaces(layer, viewport, charHeight, panel) {
-  const result = [];
-  const elements = document.querySelectorAll(SURFACE_SELECTOR);
-  const count = Math.min(elements.length, MAX_SURFACE_CANDIDATES);
-  for (let index = 0; index < count; index += 1) {
-    const el = elements[index];
-    if (layer && (layer.contains(el) || el.contains(layer))) continue;
+  const floor = floorLine(viewport);
+  const candidates = [];
+  for (const el of Array.from(document.querySelectorAll(SURFACE_SELECTOR))) {
     const box = measureSurface(el);
-    if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue;
-    if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue;
-    result.push({ ...box, el });
+    if (!box || box.right <= 0 || box.left >= viewport.width || box.top >= floor) continue;
+    if (!standable(box, viewport, charHeight, panel)) continue;
+    if (layer && (layer.contains(el) || el.contains(layer))) continue;
+    candidates.push({ ...box, el });
+    if (candidates.length >= MAX_SURFACE_CANDIDATES) break;
   }
-  return result;
+  return candidates.filter(
+    (candidate) => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width)
+  );
 }
-const CONTROL_SELECTOR = 'a, button, [role="button"], input, textarea, select, .v-btn';
-function coversControl(points, layer) {
-  if (typeof document.elementsFromPoint !== "function") return false;
-  for (const point of points) {
-    if (point.x < 0 || point.y < 0 || point.x > window.innerWidth || point.y > window.innerHeight) continue;
-    const hit = document.elementsFromPoint(point.x, point.y).find((item) => !layer?.contains(item));
-    if (hit?.closest(CONTROL_SELECTOR)) return true;
+const CONTROL_SELECTOR = 'a, button, [role="button"], input, textarea, select, .v-btn, .v-card--link, .v-list-item, [tabindex]:not([tabindex="-1"])';
+function collectControls(layer, viewport, standingOn) {
+  const viewportArea = viewport.width * viewport.height;
+  const rects = [];
+  for (const el of Array.from(document.querySelectorAll(CONTROL_SELECTOR))) {
+    if (layer && (layer.contains(el) || el.contains(layer))) continue;
+    if (standingOn && (el === standingOn || el.contains(standingOn))) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= viewport.width || rect.top >= viewport.height) continue;
+    if (rect.width * rect.height > viewportArea / 2) continue;
+    if (!surfaceVisible(el)) continue;
+    rects.push({ x: rect.left, y: rect.top, width: rect.width, height: rect.height });
   }
-  return false;
+  return rects;
 }
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -277,6 +287,7 @@ const DEFAULT_RATIO = 0.88;
 const SURFACE_CHECK_INTERVAL = 500;
 const DROP_CLEAR_DELAY = 1500;
 const RESIZE_CLEAR_DELAY = 300;
+const SAVE_THROTTLE = 3e4;
 const CLEARANCE_POLL_EVERY = 4;
 const FRAME_RETRY_AFTER = 5e3;
 const _sfc_main = /* @__PURE__ */ _defineComponent({
@@ -320,6 +331,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let fallTarget = null;
     let peekTarget = 0;
     let lastSaved = "";
+    let lastSaveAt = 0;
+    let saveOnLand = false;
     let suppressClick = false;
     let pendingPeek = false;
     let pendingStepOff = false;
@@ -556,7 +569,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const stepOff = pendingStepOff;
       pendingPeek = false;
       pendingStepOff = false;
-      savePosition();
       scheduleClearance(0);
       if (stepOff && surface) stepOffEdge();
       else if (peek) beginPeek();
@@ -587,7 +599,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         walkTarget = null;
         walkPhase.value = 0;
         motion.value = "idle";
-        savePosition();
       }
       if (motion.value === "peek") {
         clearTimer("peek");
@@ -728,7 +739,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         motion.value = "idle";
         scheduleBehavior();
       }
-      savePosition();
+      if (saveOnLand) {
+        saveOnLand = false;
+        requestSave();
+      }
       queueAnchor();
       const delay = droppedByUser ? DROP_CLEAR_DELAY : 0;
       droppedByUser = false;
@@ -805,13 +819,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (motion.value !== "peek") y.value = result.y;
       queueAnchor();
     }
-    function coversAt(left) {
-      return coversControl(probePoints({ ...currentRect(), x: left }), rootEl.value);
-    }
     function checkClearance() {
       if (disposed || !ready.value || motion.value !== "idle" || !visible()) return;
       const instant = initialPlacement || !motionAllowed();
       initialPlacement = false;
+      const controls = collectControls(rootEl.value, viewport(), surface?.el ?? null);
+      const coversAt = (left) => coversAny({ ...currentRect(), x: left }, controls);
       if (!coversAt(x.value)) return;
       const span = panelSpan();
       const target = pickClearX(x.value, bounds(), (left) => !isBlocked(left, span) && !coversAt(left), charWidth.value / 2);
@@ -825,7 +838,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (instant) {
         facingLeft.value = target < x.value;
         x.value = target;
-        savePosition();
         queueAnchor();
         scheduleBehavior();
         return;
@@ -835,7 +847,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function scheduleClearance(delay) {
       setTimer("clearance", delay, checkClearance);
     }
-    function savePosition() {
+    function requestSave(immediate = false) {
+      if (immediate) {
+        clearTimer("save");
+        writePosition();
+        return;
+      }
+      const wait = lastSaveAt + SAVE_THROTTLE - Date.now();
+      if (wait <= 0) writePosition();
+      else if (!timers.has("save")) setTimer("save", wait, writePosition);
+    }
+    function writePosition() {
+      if (!ready.value || motion.value === "drag" || motion.value === "fall") return;
       const view = viewport();
       const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1e3) / 1e3;
       const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1e3) / 1e3;
@@ -843,6 +866,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const key = JSON.stringify(value);
       if (key === lastSaved) return;
       lastSaved = key;
+      lastSaveAt = Date.now();
       props.pet?.storage?.set?.(value)?.catch?.(() => console.warn("[AgentPets] position not saved"));
     }
     function relayout() {
@@ -879,6 +903,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       settings.value = normalizeSettings(value);
       if (ready.value && settings.value.roam !== before && motion.value !== "drag") {
         settle();
+        saveOnLand = true;
         startFall();
         return;
       }
@@ -920,7 +945,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (motion.value === "fall") land(false);
       else if (motion.value === "walk" || motion.value === "peek") {
         motion.value = "idle";
-        savePosition();
         queueAnchor();
       }
     }
@@ -930,6 +954,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         clearTimer("behavior");
         pauseSurfaceWatch();
         if (motion.value === "fall") land(false);
+        requestSave(true);
         return;
       }
       if (surface && !surfaceObserver) {
@@ -998,6 +1023,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function finishDrag() {
       props.pet?.setInteracting?.(false);
       droppedByUser = true;
+      saveOnLand = true;
       x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value));
       motion.value = "idle";
       syncSurfacePoll();
@@ -1097,6 +1123,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       scheduleBehavior();
     });
     onBeforeUnmount(() => {
+      if (timers.has("save")) writePosition();
       disposed = true;
       stopLoop();
       pauseSurfaceWatch();
@@ -1154,6 +1181,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-944d12ab"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-584721a1"]]);
 
 export { AgentPet as default };

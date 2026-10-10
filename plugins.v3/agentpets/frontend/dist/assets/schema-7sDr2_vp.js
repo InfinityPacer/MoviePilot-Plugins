@@ -378,4 +378,4 @@ function framePosition(pack, frame) {
   return { x: cols > 1 ? col / (cols - 1) * 100 : 0, y: rows > 1 ? row / (rows - 1) * 100 : 0 };
 }
 
-export { BUILTIN_PACK as B, HOST_ACTIONS as H, BUILTIN_PACK_ID as a, builtinAsset as b, HOST_INTENTS as c, framePosition as f, resolveAction as r, validatePack as v };
+export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, HOST_INTENTS as c, framePosition as f, resolveAction as r, validatePack as v };

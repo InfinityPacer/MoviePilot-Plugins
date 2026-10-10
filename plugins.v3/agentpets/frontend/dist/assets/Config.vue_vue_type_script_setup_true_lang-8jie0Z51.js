@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE } from './host-D_jurk-V.js';
-import { v as validatePack, a as BUILTIN_PACK_ID, b as builtinAsset } from './schema-CBvuTKe0.js';
+import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE } from './host-CDE6kQPw.js';
+import { v as validatePack, B as BUILTIN_PACK_ID, b as builtinAsset } from './schema-7sDr2_vp.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, n as normalizeSettings, S as SETTINGS_EVENT } from './settings-_v7SC99m.js';
 
