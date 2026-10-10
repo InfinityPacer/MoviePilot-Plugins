@@ -8,6 +8,7 @@ const {normalizeStyle:_normalizeStyle,openBlock:_openBlock,createElementBlock:_c
 
 const _hoisted_1 = ["data-pack", "data-action", "data-frame"];
 const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
+const PACK_LOAD_TIMEOUT = 5e3;
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "AgentPetSprite",
   props: {
@@ -76,6 +77,21 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       };
       image.src = src;
     }
+    function withTimeout(promise, timeout) {
+      return new Promise((resolve, reject) => {
+        const id = window.setTimeout(() => reject(new Error("pack load timeout")), timeout);
+        promise.then(
+          (value) => {
+            window.clearTimeout(id);
+            resolve(value);
+          },
+          (error) => {
+            window.clearTimeout(id);
+            reject(error);
+          }
+        );
+      });
+    }
     async function loadPack(key) {
       if (key === BUILTIN_PACK_ID) return;
       if (!props.api?.get) {
@@ -84,8 +100,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       const instanceId = props.pluginId || "AgentPets";
       try {
-        const response = await props.api.get(
-          `plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`
+        const response = await withTimeout(
+          props.api.get(`plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`),
+          PACK_LOAD_TIMEOUT
         );
         const { pack: parsed } = validatePack(response?.data?.pack);
         if (!response?.success || !parsed || !response.data?.sheet_src) throw new Error(response?.message || "invalid pack");
@@ -132,6 +149,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-fda94a0c"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b6455b20"]]);
 
 export { AgentPetSprite as default };

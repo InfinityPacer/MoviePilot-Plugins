@@ -7,7 +7,6 @@ import {
   checkSupport,
   clamp,
   computeLanding,
-  coversAny,
   effectiveScale,
   pickClearX,
   escapeSpan,
@@ -27,7 +26,7 @@ import {
 } from '@/stage/geometry'
 import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
 import { DEFAULT_SETTINGS, loadSettings, normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
-import { collectControls, measureSurface, querySurfaces, surfaceVisible, type DomSurface } from '@/stage/surfaces'
+import { coversControlAt, measureSurface, querySurfaces, surfaceVisible, type DomSurface } from '@/stage/surfaces'
 
 /**
  * 小映 stage 形象。
@@ -742,9 +741,13 @@ function checkClearance() {
   if (disposed || !ready.value || motion.value !== 'idle' || !visible()) return
   const instant = initialPlacement || !motionAllowed()
   initialPlacement = false
-  // 一次判断只读一遍控件矩形，候选位置的试探都复用它。
-  const controls = collectControls(rootEl.value, viewport(), surface?.el ?? null)
-  const coversAt = (left: number) => coversAny({ ...currentRect(), x: left }, controls)
+  // 每个位置用命中测试取样，只看真正露在最上层的控件；候选位置数有上限。
+  const view = viewport()
+  const standingOn = surface?.el ?? null
+  const coversAt = (left: number) => {
+    const rect = { ...currentRect(), x: left }
+    return coversControlAt(rect, rootEl.value, view, standingOn)
+  }
   if (!coversAt(x.value)) return
   const span = panelSpan()
   const target = pickClearX(x.value, bounds(), left => !isBlocked(left, span) && !coversAt(left), charWidth.value / 2)

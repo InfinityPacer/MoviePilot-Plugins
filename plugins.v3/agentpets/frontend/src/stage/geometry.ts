@@ -272,6 +272,9 @@ export function intersectionArea(a: AgentRect, b: AgentRect): number {
   return width > 0 && height > 0 ? width * height : 0
 }
 
+/** 寻找空位时最多试探的候选位置数，限制单次判断的命中测试次数。 */
+export const MAX_CLEAR_CANDIDATES = 12
+
 /** 交集超过角色面积的这个比例才算挡住控件。 */
 export const CONTROL_COVER_RATIO = 0.1
 
@@ -285,21 +288,27 @@ export function coversAny(rect: AgentRect, controls: readonly AgentRect[], ratio
  * 在当前站立面上找一个不挡住控件的左边 x。
  *
  * 从当前位置开始按 `step` 向两侧交替试探，先近后远，`isClear` 由调用方做 DOM 命中判断；
- * 整个范围都被挡住时返回 null，由调用方换到别的面。
+ * 最多试探 `maxCandidates` 个位置（每个位置都要做一轮命中测试），都挡住时返回 null，
+ * 由调用方换到别的面。
  */
 export function pickClearX(
   current: number,
   bounds: [number, number],
   isClear: (x: number) => boolean,
   step: number,
+  maxCandidates = MAX_CLEAR_CANDIDATES,
 ): number | null {
   const [min, max] = bounds
   const stride = Math.max(8, step)
   const limit = Math.ceil((max - min) / stride) + 1
+  const tried = new Set<number>()
   for (let index = 1; index <= limit; index += 1) {
     for (const candidate of [current - index * stride, current + index * stride]) {
-      const x = clamp(candidate, min, max)
-      if (Math.abs(x - current) >= 1 && isClear(x)) return x
+      const x = Math.round(clamp(candidate, min, max))
+      if (Math.abs(x - current) < 1 || tried.has(x)) continue
+      if (tried.size >= maxCandidates) return null
+      tried.add(x)
+      if (isClear(x)) return x
     }
   }
   return null
