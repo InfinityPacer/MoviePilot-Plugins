@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/vue'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import AgentPet from '@/stage/AgentPet.vue'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
@@ -108,6 +108,10 @@ describe('AgentPet (ying)', () => {
 })
 
 describe('AgentPet roam and frame fallback', () => {
+  afterEach(() => {
+    document.querySelectorAll('.v-card').forEach(card => card.remove())
+  })
+
   function addCard(rect: { left: number; top: number; width: number; height: number }) {
     const card = document.createElement('div')
     card.className = 'v-card'
@@ -146,6 +150,29 @@ describe('AgentPet roam and frame fallback', () => {
     await flush()
     expect(anchors.at(-1)).toMatchObject({ y: window.innerHeight - 120 })
     expect(await pet.storage.get()).toMatchObject({ roam: 'surfaces', yRatio: 1 })
+  })
+
+  it('polls the surface every 500ms only while motion is allowed', async () => {
+    const rect = { left: 100, top: 400, width: 600, height: 200 }
+    const card = addCard(rect)
+    const { host, anchors } = await mountStill({ roam: 'surfaces', xRatio: 0.3, yRatio: 0 })
+    expect(anchors.at(-1)).toMatchObject({ y: 280 })
+
+    // 只靠 CSS 动画移动：位置变了，但没有 DOM 变化也没有滚动。
+    rect.top = 350
+    await new Promise(resolve => setTimeout(resolve, 600))
+    await flush()
+    expect(anchors.at(-1)).toMatchObject({ y: 280 })
+
+    // 恢复动画时宿主状态变化本身会触发一次校验，之后的移动只能靠定时器发现。
+    host.patch({ motionAllowed: true })
+    await flush()
+    expect(anchors.at(-1)).toMatchObject({ y: 230 })
+    rect.top = 300
+    await new Promise(resolve => setTimeout(resolve, 600))
+    await flush()
+    expect(anchors.at(-1)).toMatchObject({ y: 180 })
+    card.remove()
   })
 
   it('ignores narrow cards and lands on the floor', async () => {

@@ -199,6 +199,14 @@ function surfaceVisible(el) {
   const style = window.getComputedStyle(el);
   return style.pointerEvents !== "none" && style.visibility !== "hidden" && style.display !== "none";
 }
+function surfaceUnobstructed(el, box, layer, viewportWidth) {
+  if (typeof document.elementsFromPoint !== "function") return true;
+  const left = Math.max(box.left, 0);
+  const right = Math.min(box.right, viewportWidth);
+  if (right <= left) return false;
+  const hit = document.elementsFromPoint((left + right) / 2, box.top + 2).find((item) => !layer?.contains(item));
+  return !!hit && (hit === el || el.contains(hit));
+}
 function querySurfaces(layer, viewport, charHeight, panel) {
   const result = [];
   const elements = document.querySelectorAll(SURFACE_SELECTOR);
@@ -208,6 +216,7 @@ function querySurfaces(layer, viewport, charHeight, panel) {
     if (layer && (layer.contains(el) || el.contains(layer))) continue;
     const box = measureSurface(el);
     if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue;
+    if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue;
     result.push({ ...box, el });
   }
   return result;
@@ -279,6 +288,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let surface = null;
     let surfaceFrame = 0;
     let surfaceObserver = null;
+    let surfacePoll = 0;
     let disposed = false;
     let press = null;
     const timers = /* @__PURE__ */ new Map();
@@ -668,6 +678,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         });
         surfaceObserver.observe(document.body, { subtree: true, childList: true, attributes: true });
       }
+      syncSurfacePoll();
+    }
+    function syncSurfacePoll() {
+      const wanted = !!surface && !!surfaceObserver && visible() && motionAllowed();
+      if (wanted && !surfacePoll) surfacePoll = window.setInterval(checkSurface, SURFACE_CHECK_INTERVAL);
+      if (!wanted && surfacePoll) {
+        window.clearInterval(surfacePoll);
+        surfacePoll = 0;
+      }
     }
     function detachSurface() {
       surface = null;
@@ -677,6 +696,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       window.removeEventListener("scroll", onSurfaceScroll, { capture: true });
       surfaceObserver?.disconnect();
       surfaceObserver = null;
+      syncSurfacePoll();
       clearTimer("surface");
       if (surfaceFrame) window.cancelAnimationFrame(surfaceFrame);
       surfaceFrame = 0;
@@ -777,6 +797,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!state.motionAllowed && before?.motionAllowed !== false) freezeMotion();
       if (state.motionAllowed && before?.motionAllowed === false) scheduleBehavior();
       syncVisibility();
+      syncSurfacePoll();
       if (ready.value) relayout();
     }
     function freezeMotion() {
@@ -1027,6 +1048,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-3ead8964"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-2fd17dde"]]);
 
 export { AgentPet as default };
