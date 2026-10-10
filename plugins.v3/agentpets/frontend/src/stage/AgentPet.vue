@@ -8,7 +8,10 @@ import {
   clamp,
   computeLanding,
   effectiveScale,
+  hopVelocity,
+  nearestEdge,
   pickClearX,
+  pickShelterDepth,
   escapeSpan,
   freeBounds,
   groundTop,
@@ -26,7 +29,14 @@ import {
 } from '@/stage/geometry'
 import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
 import { DEFAULT_SETTINGS, loadSettings, normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
-import { coversControlAt, measureSurface, querySurfaces, surfaceVisible, type DomSurface } from '@/stage/surfaces'
+import {
+  coversControlAt,
+  measureSurface,
+  querySurfaces,
+  surfacesNear,
+  surfaceVisible,
+  type DomSurface,
+} from '@/stage/surfaces'
 
 /**
  * 小映 stage 形象。
@@ -66,6 +76,12 @@ const SIT_DURATION = 900
 const DOZE_AFTER = 90_000
 const PEEK_RATIO = 0.5
 const PEEK_SPEED = 160
+/** 跳到别的面时顶点比两端较高者再高出的身高比例。 */
+const HOP_LIFT_RATIO = 0.5
+/** 当前面找不到空位时，最多再尝试的其他站立面数（含底边）。 */
+const MAX_OTHER_SURFACES = 3
+/** 在其他站立面上最多试探的候选位置数。 */
+const OTHER_SURFACE_CANDIDATES = 4
 const DEFAULT_RATIO = 0.88
 /** DOM 变化后重新校验脚下元素的节流间隔（毫秒）。 */
 const SURFACE_CHECK_INTERVAL = 500
@@ -121,6 +137,13 @@ let velocity = 0
 let bounced = false
 let fallTarget: Landing<DomSurface> | null = null
 let peekTarget = 0
+/** 无处可站时在底边一侧下沉躲开控件；与随机探头不同，没有结束计时，由复查决定何时站起来。 */
+let sheltering = false
+/** 到达目的地后进入下沉躲避的深度（占身高比例）；为 null 时不躲。 */
+let pendingShelter: number | null = null
+/** 跳向另一个面时的水平速度与落点 x。 */
+let hopVx = 0
+let hopTargetX: number | null = null
 let lastSaved = ''
 let lastSaveAt = 0
 /** 下一次落地后保存落脚点：用户拖拽放下或活动范围改变时置位。 */
@@ -387,8 +410,10 @@ function stepFall(dt: number) {
   const target = fallTarget?.y ?? ground()
   velocity += GRAVITY * dt
   y.value += velocity * dt
+  x.value += hopVx * dt
   rising.value = velocity < 0
-  if (y.value < target) return
+  // 跳上更高的面时起点在落点下方，上升段不能判定着地。
+  if (velocity < 0 || y.value < target) return
   y.value = target
   // 第一次着地按速度做一次小回弹，之后直接坐下。
   if (!bounced && velocity > 500) {
@@ -425,6 +450,12 @@ function finishWalk() {
   const stepOff = pendingStepOff
   pendingPeek = false
   pendingStepOff = false
+  if (pendingShelter !== null) {
+    const depth = pendingShelter
+    pendingShelter = null
+    beginShelter(depth, false)
+    return
+  }
   scheduleClearance(0)
   if (stepOff && surface) stepOffEdge()
   else if (peek) beginPeek()
@@ -461,7 +492,7 @@ function settle() {
     walkPhase.value = 0
     motion.value = 'idle'
   }
-  if (motion.value === 'peek') {
+  if (motion.value === 'peek' && !sheltering) {
     clearTimer('peek')
     peekTarget = 0
     if (motionAllowed() && visible()) ensureLoop()
@@ -600,6 +631,8 @@ function startFall(exclude: Element | null = null) {
     land(false)
     return
   }
+  hopVx = 0
+  hopTargetX = null
   motion.value = 'fall'
   velocity = 0
   bounced = false
@@ -610,6 +643,12 @@ function land(animated: boolean) {
   velocity = 0
   rising.value = false
   sink.value = 0
+  sheltering = false
+  hopVx = 0
+  if (hopTargetX !== null) {
+    x.value = hopTargetX
+    hopTargetX = null
+  }
   const target = fallTarget
   fallTarget = null
   if (roam() !== 'free') {
@@ -632,6 +671,13 @@ function land(animated: boolean) {
     requestSave()
   }
   queueAnchor()
+  if (pendingShelter !== null) {
+    const depth = pendingShelter
+    pendingShelter = null
+    clearTimer('sit')
+    beginShelter(depth, !animated)
+    return
+  }
   const delay = droppedByUser ? DROP_CLEAR_DELAY : 0
   droppedByUser = false
   scheduleClearance(animated ? Math.max(delay, SIT_DURATION + 50) : delay)
@@ -731,41 +777,204 @@ function checkSurface() {
   queueAnchor()
 }
 
+/** 角色以完整身高站在 (left, top) 时的矩形；下沉 `depth` 时只算露出的部分。 */
+function rectAt(left: number, top: number, depth = 0): AgentRect {
+  const hidden = Math.round(charHeight.value * depth)
+  return { x: left, y: top + hidden, width: charWidth.value, height: charHeight.value - hidden }
+}
+
 /**
  * 不在可点击控件上方停留。
  *
- * 只在落地、站定和窗口尺寸变化后调用，拖拽中不做。挡住时在当前站立面上走到最近的不遮挡位置；
- * 整个面都会挡住时，站在元素上就跳下去换一个面。首次出现或不允许动画时直接放过去。
+ * 只在落地、站定、窗口尺寸变化和站立低频复查时调用，拖拽中不做。挡住时依次兜底：
+ * 1. 在当前站立面上走到最近的空位；
+ * 2. surfaces 模式换到其他可站且不遮挡的面（含底边），跳过去；free 模式在视口内另找空位；
+ * 3. 都没有时退到底边最近的一侧下沉探头，下沉到不再挡住为止。
+ * 首次出现或不允许动画时直接放过去。候选位置与候选面数都有上限，控制单次判断的耗时。
  */
 function checkClearance() {
-  if (disposed || !ready.value || motion.value !== 'idle' || !visible()) return
+  if (disposed || !ready.value || !visible()) return
+  if (sheltering) {
+    recheckShelter()
+    return
+  }
+  if (motion.value !== 'idle') return
   const instant = initialPlacement || !motionAllowed()
   initialPlacement = false
-  // 每个位置用命中测试取样，只看真正露在最上层的控件；候选位置数有上限。
   const view = viewport()
+  const body = charWidth.value * charHeight.value
+  const covers = (rect: AgentRect, standingOn: Element | null) =>
+    coversControlAt(rect, rootEl.value, view, standingOn, body)
   const standingOn = surface?.el ?? null
-  const coversAt = (left: number) => {
-    const rect = { ...currentRect(), x: left }
-    return coversControlAt(rect, rootEl.value, view, standingOn)
-  }
-  if (!coversAt(x.value)) return
-  const span = panelSpan()
-  const target = pickClearX(x.value, bounds(), left => !isBlocked(left, span) && !coversAt(left), charWidth.value / 2)
+  if (!covers(currentRect(), standingOn)) return
   settle()
   clearTimer('behavior')
-  if (target === null) {
-    if (surface) stepOffEdge()
-    else scheduleBehavior()
+
+  const span = panelSpan()
+  const here = pickClearX(
+    x.value,
+    bounds(),
+    left => !isBlocked(left, span) && !covers(rectAt(left, y.value), standingOn),
+    charWidth.value / 2,
+  )
+  if (here !== null) {
+    moveTo(here, y.value, surface, instant)
     return
   }
-  if (instant) {
-    facingLeft.value = target < x.value
-    x.value = target
+  const elsewhere = roam() === 'free' ? findFreeSpot(covers) : findOtherSurface(covers)
+  if (elsewhere) {
+    moveTo(elsewhere.x, elsewhere.y, elsewhere.surface, instant)
+    return
+  }
+  goShelter(covers, instant)
+}
+
+/** 其他可站面上的空位：按距离由近到远最多试 3 个面（含底边），每个面最多试 4 个位置。 */
+function findOtherSurface(
+  covers: (rect: AgentRect, standingOn: Element | null) => boolean,
+): { x: number; y: number; surface: DomSurface | null } | null {
+  if (roam() !== 'surfaces' && !surface) return null
+  const view = viewport()
+  const options: Array<{ y: number; bounds: [number, number]; surface: DomSurface | null }> = []
+  if (surface) options.push({ y: ground(), bounds: xBounds(view, charWidth.value), surface: null })
+  if (roam() === 'surfaces') {
+    // 用命中测试在她所在的竖线和视口左右各一条竖线上找面，避免在大页面上全页扫描。
+    const columns = [x.value + charWidth.value / 2, view.width * 0.25, view.width * 0.75]
+    for (const box of surfacesNear(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, columns)) {
+      if (box.el === surface?.el) continue
+      options.push({ y: box.top - charHeight.value, bounds: surfaceXBounds(box, view, charWidth.value), surface: box })
+    }
+  }
+  const centerX = x.value
+  options.sort((a, b) => distanceTo(a, centerX) - distanceTo(b, centerX))
+  for (const option of options.slice(0, MAX_OTHER_SURFACES)) {
+    const start = clamp(x.value, ...option.bounds)
+    const standingOn = option.surface?.el ?? null
+    const span = blockedSpan(hostState?.panelRect ?? null, option.y, charWidth.value, charHeight.value)
+    const clear = (left: number) => !isBlocked(left, span) && !covers(rectAt(left, option.y), standingOn)
+    const left = clear(start)
+      ? start
+      : pickClearX(start, option.bounds, clear, charWidth.value / 2, OTHER_SURFACE_CANDIDATES)
+    if (left !== null) return { x: left, y: option.y, surface: option.surface }
+  }
+  return null
+}
+
+function distanceTo(option: { y: number; bounds: [number, number] }, centerX: number): number {
+  const left = clamp(centerX, ...option.bounds)
+  return Math.hypot(left - centerX, option.y - y.value)
+}
+
+/** 自由停放时在视口的上、中、下三行各试少量位置。 */
+function findFreeSpot(
+  covers: (rect: AgentRect, standingOn: Element | null) => boolean,
+): { x: number; y: number; surface: null } | null {
+  const range = freeBounds(viewport(), ...sizePair())
+  for (const top of [range.y[0], (range.y[0] + range.y[1]) / 2, range.y[1]]) {
+    if (Math.abs(top - y.value) < 1) continue
+    const start = clamp(x.value, ...range.x)
+    const clear = (left: number) => !covers(rectAt(left, top), null)
+    const left = clear(start) ? start : pickClearX(start, range.x, clear, charWidth.value / 2, OTHER_SURFACE_CANDIDATES)
+    if (left !== null) return { x: left, y: top, surface: null }
+  }
+  return null
+}
+
+/** 退到底边最近的一侧，下沉到不再挡住控件的深度。 */
+function goShelter(covers: (rect: AgentRect, standingOn: Element | null) => boolean, instant: boolean) {
+  const edge = nearestEdge(x.value, xBounds(viewport(), charWidth.value))
+  const floorY = ground()
+  const depth = pickShelterDepth(level => !covers(rectAt(edge, floorY, level), null))
+  pendingShelter = depth
+  if (instant || (Math.abs(edge - x.value) < 1 && Math.abs(floorY - y.value) < 1 && !surface)) {
+    pendingShelter = null
+    detachSurface()
+    x.value = edge
+    y.value = floorY
+    beginShelter(depth, true)
+    return
+  }
+  moveTo(edge, floorY, null, false)
+}
+
+/** 进入下沉躲避；`instant` 时直接到位，否则按探头动画沉下去。 */
+function beginShelter(depth: number, instant: boolean) {
+  sheltering = true
+  motion.value = 'peek'
+  facingLeft.value = x.value > (xBounds(viewport(), charWidth.value)[0] + xBounds(viewport(), charWidth.value)[1]) / 2
+  peekTarget = Math.round(charHeight.value * depth)
+  if (instant || !motionAllowed()) {
+    sink.value = peekTarget
     queueAnchor()
-    scheduleBehavior()
+  } else ensureLoop()
+  syncSurfacePoll()
+}
+
+/** 躲避中复查：站起来不再挡住就站起来，下沉后仍挡住就再沉深一点。 */
+function recheckShelter() {
+  const view = viewport()
+  const body = charWidth.value * charHeight.value
+  const covers = (depth: number) => coversControlAt(rectAt(x.value, ground(), depth), rootEl.value, view, null, body)
+  if (!covers(0)) {
+    sheltering = false
+    peekTarget = 0
+    if (motionAllowed()) ensureLoop()
+    else {
+      sink.value = 0
+      motion.value = 'idle'
+      queueAnchor()
+      scheduleBehavior()
+    }
     return
   }
-  startWalk(target)
+  const current = peekTarget / charHeight.value
+  if (!covers(current)) return
+  const depth = pickShelterDepth(level => level > current && !covers(level))
+  if (depth <= current) return
+  peekTarget = Math.round(charHeight.value * depth)
+  if (motionAllowed()) ensureLoop()
+  else {
+    sink.value = peekTarget
+    queueAnchor()
+  }
+}
+
+/**
+ * 移动到指定站立面上的位置。
+ *
+ * 同一个面上走过去；换面时沿抛物线跳过去（跳上更高的面也一样）；首次出现或不允许动画时瞬移。
+ */
+function moveTo(targetX: number, targetY: number, target: DomSurface | null, instant: boolean) {
+  const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null)
+  if (instant) {
+    facingLeft.value = targetX < x.value
+    detachSurface()
+    x.value = targetX
+    y.value = targetY
+    fallTarget = { y: targetY, surface: target }
+    land(false)
+    return
+  }
+  if (sameLevel || roam() === 'free') {
+    if (Math.abs(targetX - x.value) < 1 && Math.abs(targetY - y.value) < 1) finishWalk()
+    else startWalk(targetX, roam() === 'free' ? targetY : null)
+    return
+  }
+  detachSurface()
+  const { vx, vy } = hopVelocity(
+    { x: x.value, y: y.value },
+    { x: targetX, y: targetY },
+    GRAVITY,
+    charHeight.value * HOP_LIFT_RATIO,
+  )
+  facingLeft.value = targetX < x.value
+  hopVx = vx
+  hopTargetX = targetX
+  velocity = vy
+  bounced = true
+  fallTarget = { y: targetY, surface: target }
+  motion.value = 'fall'
+  ensureLoop()
 }
 
 function scheduleClearance(delay: number) {
@@ -825,7 +1034,7 @@ function relayout() {
   const range = bounds()
   x.value = clamp(x.value, range[0], range[1])
   const span = panelSpan()
-  if (isBlocked(x.value, span)) {
+  if (!sheltering && isBlocked(x.value, span)) {
     const escaped = escapeSpan(x.value, span, range)
     settle()
     if (motionAllowed() && visible() && Math.abs(escaped - x.value) > 1) startWalk(escaped)
@@ -884,9 +1093,15 @@ function freezeMotion() {
   walkPhase.value = 0
   pendingPeek = false
   pendingStepOff = false
+  blinking.value = false
+  if (sheltering) {
+    // 躲避控件的下沉是静止的，不属于动画，直接停在目标深度。
+    sink.value = peekTarget
+    queueAnchor()
+    return
+  }
   sink.value = 0
   peekTarget = 0
-  blinking.value = false
   if (motion.value === 'fall') land(false)
   else if (motion.value === 'walk' || motion.value === 'peek') {
     motion.value = 'idle'
@@ -953,6 +1168,10 @@ function onPointerMove(event: PointerEvent) {
     transient.value = null
     sink.value = 0
     peekTarget = 0
+    sheltering = false
+    pendingShelter = null
+    hopVx = 0
+    hopTargetX = null
     velocity = 0
     fallTarget = null
     motion.value = 'drag'

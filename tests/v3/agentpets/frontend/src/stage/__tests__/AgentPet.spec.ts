@@ -109,7 +109,7 @@ describe('AgentPet (ying)', () => {
 
 describe('AgentPet roam and frame fallback', () => {
   afterEach(() => {
-    document.querySelectorAll('.v-card, body > button').forEach(card => card.remove())
+    document.querySelectorAll('.v-card, body > button, body > a, body > span').forEach(card => card.remove())
     delete (document as { elementsFromPoint?: unknown }).elementsFromPoint
   })
 
@@ -320,6 +320,96 @@ describe('AgentPet roam and frame fallback', () => {
     await flush()
     expect(save).toHaveBeenCalledTimes(1)
     expect(save.mock.calls[0][0]).toMatchObject({ roam: 'free' })
+  })
+
+  /**
+   * 底边一带（y > innerHeight - 200）都是可点击卡片；可选在 `card` 上方的站立位置也放一个控件。
+   * 卡片上边缘中点返回卡片本身，让它通过遮挡判断成为可站面。
+   */
+  function stubBottomBand(control: Element, card: HTMLElement | null, cardCovered = false) {
+    const band = { left: 0, top: window.innerHeight - 200, width: window.innerWidth, height: 200 }
+    control.getBoundingClientRect = () =>
+      ({ ...band, x: 0, y: band.top, right: band.width, bottom: window.innerHeight, toJSON: () => band }) as DOMRect
+    // 卡片上方站立位置的一排按钮。
+    const row = { left: 100, top: 180, width: 600, height: 120 }
+    const cardButtons = document.createElement('button')
+    cardButtons.getBoundingClientRect = () =>
+      ({ ...row, x: row.left, y: row.top, right: 700, bottom: 300, toJSON: () => row }) as DOMRect
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: (x: number, y: number) => {
+        if (y > band.top) return [control, document.body]
+        if (card && y >= 300 && y < 400 && x > 100 && x < 700) return [card, document.body]
+        if (cardCovered && y > 180 && y < 300) return [cardButtons, document.body]
+        return [document.body]
+      },
+    })
+  }
+
+  it('moves up to a clear surface when the whole bottom edge is covered', async () => {
+    const card = addCard({ left: 100, top: 300, width: 600, height: 100 })
+    const continueWatching = document.createElement('a')
+    document.body.appendChild(continueWatching)
+    stubBottomBand(continueWatching, card)
+    const { anchors } = await mountStill({ roam: 'surfaces', xRatio: 0.3, yRatio: 1 })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(anchors.at(-1)).toMatchObject({ y: 180, height: 120 })
+  })
+
+  it('hops onto the clear surface when motion is allowed', async () => {
+    const card = addCard({ left: 100, top: 300, width: 600, height: 100 })
+    const host = createMockHost('AgentPets')
+    const anchors: Array<{ x: number; y: number; width: number; height: number } | null> = []
+    const pet = createMockPet('stage', 'ying', { onAnchor: rect => anchors.push(rect) })
+    await pet.storage.set({ roam: 'surfaces', xRatio: 0.3, yRatio: 1 })
+    const api = { get: vi.fn().mockResolvedValue({ success: true, data: { scale: 1, speed: 1, roam: 'surfaces' } }) }
+    const view = render(AgentPet, { props: { agent: host, pet, api, pluginId: 'AgentPets' } })
+    await flush()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const root = view.container.querySelector('.agent-pet-ying') as HTMLElement
+    expect(anchors.at(-1)).toMatchObject({ y: window.innerHeight - 120 })
+
+    // 卡片区在数据加载后才变成可点击，低频复查发现后跳上去。
+    const continueWatching = document.createElement('a')
+    document.body.appendChild(continueWatching)
+    stubBottomBand(continueWatching, card)
+    const motions = new Set<string>()
+    const watch = window.setInterval(() => motions.add(root.dataset.motion ?? ''), 16)
+    await new Promise(resolve => setTimeout(resolve, 3500))
+    window.clearInterval(watch)
+    expect(motions.has('fall')).toBe(true)
+    expect(anchors.at(-1)).toMatchObject({ y: 180, height: 120 })
+  })
+
+  it('sinks at the nearest side when the bottom and the surfaces above are all covered', async () => {
+    const card = addCard({ left: 100, top: 300, width: 600, height: 100 })
+    const continueWatching = document.createElement('a')
+    document.body.appendChild(continueWatching)
+    stubBottomBand(continueWatching, card, true)
+    const { anchors, view } = await mountStill({ roam: 'surfaces', xRatio: 0.3, yRatio: 1 })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const root = view.container.querySelector('.agent-pet-ying') as HTMLElement
+    // 退到左侧边缘，下沉到只露出身高的 8%，不再按 10% 规则挡住卡片。
+    expect(anchors.at(-1)).toMatchObject({ x: 0, height: 120 - Math.round(120 * 0.92) })
+    expect(root.dataset.motion).toBe('peek')
+
+    // 控件消失后，低频复查让她站起来。
+    stubBottomBand(document.createElement('span'), card)
+    await new Promise(resolve => setTimeout(resolve, 2200))
+    await flush()
+    expect(anchors.at(-1)).toMatchObject({ height: 120 })
+  })
+
+  it('sinks in floor mode without looking for other surfaces', async () => {
+    const card = addCard({ left: 100, top: 300, width: 600, height: 100 })
+    const continueWatching = document.createElement('a')
+    document.body.appendChild(continueWatching)
+    stubBottomBand(continueWatching, card)
+    const { anchors } = await mountStill({ roam: 'floor', xRatio: 0.8, yRatio: 1 }, 'floor')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const last = anchors.at(-1)!
+    expect(last.x + last.width).toBeCloseTo(window.innerWidth)
+    expect(last.height).toBeLessThan(120)
   })
 
   it('shrinks on narrow screens on top of the user scale', async () => {

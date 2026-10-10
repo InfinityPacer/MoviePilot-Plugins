@@ -275,13 +275,29 @@ export function intersectionArea(a: AgentRect, b: AgentRect): number {
 /** 寻找空位时最多试探的候选位置数，限制单次判断的命中测试次数。 */
 export const MAX_CLEAR_CANDIDATES = 12
 
-/** 交集超过角色面积的这个比例才算挡住控件。 */
+/** 交集超过角色身体面积的这个比例算挡住控件。 */
 export const CONTROL_COVER_RATIO = 0.1
+/** 交集超过控件自身面积的这个比例也算挡住，覆盖被整个盖住的小图标按钮。 */
+export const CONTROL_HIDDEN_RATIO = 0.5
 
-/** 角色矩形是否挡住任一控件：与某个控件的交集面积超过角色面积的 10%。 */
-export function coversAny(rect: AgentRect, controls: readonly AgentRect[], ratio = CONTROL_COVER_RATIO): boolean {
-  const limit = rect.width * rect.height * ratio
-  return controls.some(control => intersectionArea(rect, control) > limit)
+/**
+ * 角色矩形是否挡住任一控件。
+ *
+ * 两个比例任一超限就算：交集占她身体面积超过 10%（压住大控件的一大片），或交集占控件面积
+ * 超过 50%（30×30 以内的小图标被她整个盖住时，交集只占她身体很小一部分）。
+ * `bodyArea` 是她完整身体的面积；下沉探头时露出的只是一部分，仍按完整身体计算比例。
+ */
+export function coversAny(
+  rect: AgentRect,
+  controls: readonly AgentRect[],
+  bodyArea = rect.width * rect.height,
+): boolean {
+  return controls.some(control => {
+    const overlap = intersectionArea(rect, control)
+    if (overlap <= 0) return false
+    const controlArea = control.width * control.height
+    return overlap > bodyArea * CONTROL_COVER_RATIO || (controlArea > 0 && overlap > controlArea * CONTROL_HIDDEN_RATIO)
+  })
 }
 
 /**
@@ -312,4 +328,34 @@ export function pickClearX(
     }
   }
   return null
+}
+
+/** 无处可站时下沉探头的深度档位（占身高比例），由浅到深试，直到不再挡住控件。 */
+export const SHELTER_DEPTHS = [0.5, 0.65, 0.8, 0.92] as const
+
+/** 选出第一个不挡住控件的下沉深度；都挡住时用最深一档。 */
+export function pickShelterDepth(isClear: (depth: number) => boolean): number {
+  return SHELTER_DEPTHS.find(depth => isClear(depth)) ?? SHELTER_DEPTHS[SHELTER_DEPTHS.length - 1]
+}
+
+/** 地面上离当前位置最近的一侧边缘（左边 x）。 */
+export function nearestEdge(x: number, bounds: [number, number]): number {
+  return x - bounds[0] <= bounds[1] - x ? bounds[0] : bounds[1]
+}
+
+/**
+ * 跳到另一个面的抛物线参数：起跳竖直速度与水平速度。
+ *
+ * 顶点比起点和终点中较高者再高 `lift`，保证跳上更高的面时不会穿过它的边缘。
+ */
+export function hopVelocity(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  gravity: number,
+  lift: number,
+): { vx: number; vy: number } {
+  const apex = Math.min(from.y, to.y) - lift
+  const up = Math.sqrt(2 * gravity * (from.y - apex))
+  const time = up / gravity + Math.sqrt((2 * (to.y - apex)) / gravity)
+  return { vx: (to.x - from.x) / time, vy: -up }
 }

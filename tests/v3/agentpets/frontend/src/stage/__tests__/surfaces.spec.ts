@@ -4,6 +4,8 @@ import { MAX_CLEAR_CANDIDATES, pickClearX } from '@/stage/geometry'
 import {
   controlsUnder,
   coversControlAt,
+  NEARBY_SURFACE_ROWS,
+  surfacesNear,
   querySurfaces,
   SAMPLE_COLS,
   SAMPLE_ROWS,
@@ -88,6 +90,25 @@ function withRect<T extends Element>(el: T, rect: { left: number; top: number; w
   return el
 }
 
+describe('nearby surfaces by hit testing', () => {
+  it('finds the topmost surface on a few vertical lines without scanning the page', () => {
+    const card = withRect(document.createElement('div'), { left: 100, top: 400, width: 600, height: 200 })
+    card.className = 'v-card'
+    const text = document.createElement('p')
+    card.appendChild(text)
+    const narrow = withRect(document.createElement('div'), { left: 800, top: 300, width: 90, height: 100 })
+    narrow.className = 'v-card'
+    document.body.append(card, narrow)
+    const hits = stubHits(({ x, y }) => (x > 100 && x < 700 && y >= 400 && y < 600 ? [text, card] : [document.body]))
+    const query = vi.spyOn(document, 'querySelectorAll')
+
+    const found = surfacesNear(null, viewport, 120, null, [300, 850])
+    expect(found.map(item => item.el)).toEqual([card])
+    expect(hits.mock.calls.length).toBeLessThanOrEqual(2 * NEARBY_SURFACE_ROWS + 2)
+    expect(query).not.toHaveBeenCalled()
+  })
+})
+
 describe('surface query on long pages', () => {
   it('filters by viewport before applying the candidate limit', () => {
     // 3000 张卡片，往下滚后前 2990 张都在视口上方。
@@ -169,6 +190,14 @@ describe('control hit testing', () => {
     const sliverHits = stubHits(() => [sliver])
     expect(coversControlAt(pet, null, view, null)).toBe(false)
     expect(sliverHits).toHaveBeenCalledTimes(12)
+  })
+
+  it('treats a small icon button fully under her as covered', () => {
+    // 24×24 的图标，压在 (145, 145) 这个取样点上：交集只占她身体 5%，但占图标 100%。
+    const icon = withRect(document.createElement('button'), { left: 133, top: 133, width: 24, height: 24 })
+    document.body.appendChild(icon)
+    stubHits(({ x, y }) => (x > 133 && x < 157 && y > 133 && y < 157 ? [icon] : [document.body]))
+    expect(coversControlAt(pet, null, view, null)).toBe(true)
   })
 
   it('returns nothing without elementsFromPoint', () => {

@@ -7,8 +7,11 @@ import {
   coversAny,
   effectiveScale,
   freeBounds,
+  hopVelocity,
+  nearestEdge,
   intersectionArea,
   pickClearX,
+  pickShelterDepth,
   pickFreeTarget,
   standable,
   surfaceXBounds,
@@ -153,5 +156,51 @@ describe('control clearance', () => {
 
   it('reports no position when the whole surface is covered', () => {
     expect(pickClearX(300, [200, 500], () => false, 50)).toBeNull()
+  })
+})
+
+describe('cover rules and shelter helpers', () => {
+  const pet = { x: 100, y: 100, width: 100, height: 120 }
+
+  it('counts a small icon fully covered by her even though it is a tiny part of her body', () => {
+    const icon = { x: 140, y: 150, width: 24, height: 24 }
+    // 交集 576，只占身体 4.8%，但占图标 100%。
+    expect(coversAny(pet, [icon])).toBe(true)
+    // 只盖住图标一小角：交集占图标 25%、占身体 1.2%，不算。
+    expect(coversAny(pet, [{ x: 188, y: 100, width: 24, height: 24 }])).toBe(false)
+  })
+
+  it('measures the body ratio against the full body while sunk', () => {
+    const visible = { x: 0, y: 758, width: 100, height: 10 }
+    const band = { x: 0, y: 600, width: 1000, height: 168 }
+    expect(coversAny(visible, [band])).toBe(true)
+    expect(coversAny(visible, [band], 100 * 120)).toBe(false)
+  })
+
+  it('sinks only as deep as needed and falls back to the deepest level', () => {
+    expect(pickShelterDepth(depth => depth >= 0.65)).toBe(0.65)
+    expect(pickShelterDepth(() => false)).toBe(0.92)
+  })
+
+  it('retreats to the nearest side', () => {
+    expect(nearestEdge(100, [0, 900])).toBe(0)
+    expect(nearestEdge(600, [0, 900])).toBe(900)
+  })
+
+  it('hops along an arc that lands exactly on the target, including higher surfaces', () => {
+    for (const to of [
+      { x: 500, y: 180 },
+      { x: 50, y: 650 },
+    ]) {
+      const from = { x: 300, y: 648 }
+      const { vx, vy } = hopVelocity(from, to, 2600, 60)
+      expect(vy).toBeLessThan(0)
+      // 用解析解检验：在下降段到达目标高度时，水平位置正好是目标 x。
+      const apexTime = -vy / 2600
+      const apexY = from.y + vy * apexTime + 0.5 * 2600 * apexTime ** 2
+      expect(apexY).toBeLessThan(Math.min(from.y, to.y))
+      const landTime = apexTime + Math.sqrt((2 * (to.y - apexY)) / 2600)
+      expect(from.x + vx * landTime).toBeCloseTo(to.x)
+    }
   })
 })
