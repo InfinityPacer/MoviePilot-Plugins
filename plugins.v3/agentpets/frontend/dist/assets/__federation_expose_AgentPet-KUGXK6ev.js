@@ -749,7 +749,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       syncSurfacePoll();
     }
     function syncSurfacePoll() {
-      const wanted = ready.value && !disposed && visible() && motionAllowed() && motion.value !== "drag";
+      const wanted = ready.value && !disposed && visible() && motion.value !== "drag";
       if (wanted && !surfacePoll) surfacePoll = window.setInterval(onStandPoll, SURFACE_CHECK_INTERVAL);
       if (!wanted && surfacePoll) {
         window.clearInterval(surfacePoll);
@@ -1154,6 +1154,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-d5ddceaa"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-944d12ab"]]);
 
 export { AgentPet as default };
