@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { querySurfaces, surfaceUnobstructed } from '@/stage/surfaces'
+import { coversControl, querySurfaces, surfaceUnobstructed } from '@/stage/surfaces'
 
 const viewport = { width: 1000, height: 800, keyboardInset: 0, safeArea: { top: 0, right: 0, bottom: 0, left: 0 } }
 const box = { left: 100, top: 400, right: 700 }
@@ -63,5 +63,45 @@ describe('surface occlusion', () => {
   it('treats browsers without elementsFromPoint as unobstructed', () => {
     const el = card()
     expect(surfaceUnobstructed(el, box, null, 1000)).toBe(true)
+  })
+})
+
+describe('control coverage', () => {
+  it('detects a clickable control under any probe point', () => {
+    const button = document.createElement('button')
+    const icon = document.createElement('i')
+    button.appendChild(icon)
+    document.body.appendChild(button)
+    stubHits(({ x }) => (x > 150 ? [icon, button, document.body] : [document.body]))
+    expect(coversControl([{ x: 100, y: 100 }], null)).toBe(false)
+    expect(
+      coversControl(
+        [
+          { x: 100, y: 100 },
+          { x: 200, y: 100 },
+        ],
+        null,
+      ),
+    ).toBe(true)
+  })
+
+  it('matches links, inputs and vuetify buttons but ignores the stage layer', () => {
+    const layer = document.createElement('div')
+    const character = document.createElement('button')
+    layer.appendChild(character)
+    const link = document.createElement('a')
+    const vbtn = document.createElement('div')
+    vbtn.className = 'v-btn'
+    document.body.append(layer, link, vbtn)
+    stubHits(() => [character, document.body])
+    expect(coversControl([{ x: 10, y: 10 }], layer)).toBe(false)
+    stubHits(() => [character, link])
+    expect(coversControl([{ x: 10, y: 10 }], layer)).toBe(true)
+    stubHits(() => [vbtn])
+    expect(coversControl([{ x: 10, y: 10 }], layer)).toBe(true)
+  })
+
+  it('treats browsers without elementsFromPoint as not covering', () => {
+    expect(coversControl([{ x: 10, y: 10 }], null)).toBe(false)
   })
 })

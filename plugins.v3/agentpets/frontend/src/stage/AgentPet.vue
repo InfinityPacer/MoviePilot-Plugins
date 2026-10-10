@@ -7,6 +7,9 @@ import {
   checkSupport,
   clamp,
   computeLanding,
+  effectiveScale,
+  pickClearX,
+  probePoints,
   escapeSpan,
   freeBounds,
   groundTop,
@@ -24,7 +27,7 @@ import {
 } from '@/stage/geometry'
 import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
 import { DEFAULT_SETTINGS, loadSettings, normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
-import { measureSurface, querySurfaces, surfaceVisible, type DomSurface } from '@/stage/surfaces'
+import { coversControl, measureSurface, querySurfaces, surfaceVisible, type DomSurface } from '@/stage/surfaces'
 
 /**
  * 小映 stage 形象。
@@ -67,6 +70,10 @@ const PEEK_SPEED = 160
 const DEFAULT_RATIO = 0.88
 /** DOM 变化后重新校验脚下元素的节流间隔（毫秒）。 */
 const SURFACE_CHECK_INTERVAL = 500
+/** 用户放下后过多久自己走开，让用户看得出是她主动挪开的（毫秒）。 */
+const DROP_CLEAR_DELAY = 1500
+/** 窗口尺寸变化后合并多久再检查是否挡住控件（毫秒）。 */
+const RESIZE_CLEAR_DELAY = 300
 /** 同一帧加载失败后，至少隔这么久（毫秒）才再次请求。 */
 const FRAME_RETRY_AFTER = 5000
 
@@ -96,6 +103,8 @@ const blinking = ref(false)
 const ready = ref(false)
 const rising = ref(false)
 const available = ref(true)
+/** 宿主判定的窄屏布局，窄屏时角色再缩小。 */
+const isMobile = ref(false)
 
 let hostState: AgentHostState | null = null
 let documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
@@ -121,13 +130,17 @@ let surfaceFrame = 0
 let surfaceObserver: MutationObserver | null = null
 let surfacePoll = 0
 let disposed = false
+/** 最近一次落地来自用户拖拽放下。 */
+let droppedByUser = false
+/** 首次出现时直接放到不挡控件的位置，不走过去。 */
+let initialPlacement = true
 let press: { id: number; startX: number; startY: number; offsetX: number; offsetY: number; dragging: boolean } | null =
   null
 
 const timers = new Map<string, number>()
 const cleanups: Array<() => void> = []
 
-const charHeight = computed(() => BASE_HEIGHT * settings.value.scale)
+const charHeight = computed(() => BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value))
 const charWidth = computed(() => charHeight.value * aspect.value)
 const pose = computed<Pose>(() =>
   resolvePose({
@@ -340,7 +353,10 @@ function stepWalk(dt: number) {
     return
   }
   const speed =
-    BASE_WALK_SPEED * settings.value.speed * settings.value.scale * (roam() === 'free' ? FREE_SPEED_RATIO : 1)
+    BASE_WALK_SPEED *
+    settings.value.speed *
+    (charHeight.value / BASE_HEIGHT) *
+    (roam() === 'free' ? FREE_SPEED_RATIO : 1)
   const dx = walkTarget.x - x.value
   const dy = walkTarget.y === null ? 0 : walkTarget.y - y.value
   const distance = Math.hypot(dx, dy)
@@ -403,6 +419,7 @@ function finishWalk() {
   pendingPeek = false
   pendingStepOff = false
   savePosition()
+  scheduleClearance(0)
   if (stepOff && surface) stepOffEdge()
   else if (peek) beginPeek()
   else scheduleBehavior()
@@ -607,6 +624,9 @@ function land(animated: boolean) {
   }
   savePosition()
   queueAnchor()
+  const delay = droppedByUser ? DROP_CLEAR_DELAY : 0
+  droppedByUser = false
+  scheduleClearance(animated ? Math.max(delay, SIT_DURATION + 50) : delay)
 }
 
 /** 站上元素后开始监听可能让它移动或消失的变化。 */
@@ -691,6 +711,46 @@ function checkSurface() {
   queueAnchor()
 }
 
+/** 角色左边放在 `left` 时是否挡住可点击控件。 */
+function coversAt(left: number): boolean {
+  return coversControl(probePoints({ ...currentRect(), x: left }), rootEl.value)
+}
+
+/**
+ * 不在可点击控件上方停留。
+ *
+ * 只在落地、站定和窗口尺寸变化后调用，拖拽中不做。挡住时在当前站立面上走到最近的不遮挡位置；
+ * 整个面都会挡住时，站在元素上就跳下去换一个面。首次出现或不允许动画时直接放过去。
+ */
+function checkClearance() {
+  if (disposed || !ready.value || motion.value !== 'idle' || !visible()) return
+  const instant = initialPlacement || !motionAllowed()
+  initialPlacement = false
+  if (!coversAt(x.value)) return
+  const span = panelSpan()
+  const target = pickClearX(x.value, bounds(), left => !isBlocked(left, span) && !coversAt(left), charWidth.value / 2)
+  settle()
+  clearTimer('behavior')
+  if (target === null) {
+    if (surface) stepOffEdge()
+    else scheduleBehavior()
+    return
+  }
+  if (instant) {
+    facingLeft.value = target < x.value
+    x.value = target
+    savePosition()
+    queueAnchor()
+    scheduleBehavior()
+    return
+  }
+  startWalk(target)
+}
+
+function scheduleClearance(delay: number) {
+  setTimer('clearance', delay, checkClearance)
+}
+
 function savePosition() {
   const view = viewport()
   const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1000) / 1000
@@ -749,6 +809,13 @@ function onHostState(state: AgentHostState) {
   const before = hostState
   hostState = state
   available.value = state.available
+  const resized =
+    !!before &&
+    (before.viewport.width !== state.viewport.width ||
+      before.viewport.height !== state.viewport.height ||
+      before.viewport.keyboardInset !== state.viewport.keyboardInset ||
+      before.isMobile !== state.isMobile)
+  isMobile.value = state.isMobile
   const nextSustained = phasePose(state.phase)
   if (nextSustained !== sustained.value) {
     sustained.value = nextSustained
@@ -762,6 +829,7 @@ function onHostState(state: AgentHostState) {
   if (state.motionAllowed && before?.motionAllowed === false) scheduleBehavior()
   syncVisibility()
   syncSurfacePoll()
+  if (resized) scheduleClearance(RESIZE_CLEAR_DELAY)
   if (ready.value) relayout()
 }
 
@@ -839,6 +907,7 @@ function onPointerMove(event: PointerEvent) {
     detachSurface()
     clearTimer('behavior')
     clearTimer('sit')
+    clearTimer('clearance')
     transient.value = null
     sink.value = 0
     peekTarget = 0
@@ -863,6 +932,7 @@ function releasePointer() {
 
 function finishDrag() {
   props.pet?.setInteracting?.(false)
+  droppedByUser = true
   x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value))
   motion.value = 'idle'
   startFall()
@@ -934,6 +1004,7 @@ function onVisibilityChange() {
 
 function onWindowResize() {
   if (!hostState || surface) relayout()
+  if (!hostState) scheduleClearance(RESIZE_CLEAR_DELAY)
 }
 
 onMounted(async () => {
