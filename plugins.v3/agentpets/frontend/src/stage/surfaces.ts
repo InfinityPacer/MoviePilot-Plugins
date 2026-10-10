@@ -83,6 +83,46 @@ export function querySurfaces(
   )
 }
 
+/** 用命中测试找附近可站面时的取样行数。 */
+export const NEARBY_SURFACE_ROWS = 4
+
+/**
+ * 用命中测试在几列竖线上找可站面，耗时只与取样点数有关，与页面大小无关。
+ *
+ * 只用于避让控件时的兜底换面：在给定的几个 x 上，从上到下取若干行，命中元素的
+ * `closest(SURFACE_SELECTOR)` 就是该处露在最上层的容器，再按可站规则过滤。
+ * 比 `querySurfaces` 的全页扫描便宜，代价是比列间距还窄的面可能找不到。
+ */
+export function surfacesNear(
+  layer: Element | null,
+  viewport: StageViewport,
+  charHeight: number,
+  panel: AgentRect | null,
+  columns: readonly number[],
+): DomSurface[] {
+  if (typeof document.elementsFromPoint !== 'function') return []
+  const top = viewport.safeArea.top + charHeight
+  const bottom = floorLine(viewport)
+  const seen = new Set<Element>()
+  const result: DomSurface[] = []
+  for (const x of columns) {
+    if (x < 0 || x >= viewport.width) continue
+    for (let row = 0; row < NEARBY_SURFACE_ROWS; row += 1) {
+      const y = top + ((row + 0.5) * (bottom - top)) / NEARBY_SURFACE_ROWS
+      const hit = document.elementsFromPoint(x, y).find(item => !layer?.contains(item))
+      const el = hit?.closest(SURFACE_SELECTOR)
+      if (!el || seen.has(el)) continue
+      seen.add(el)
+      if (layer && el.contains(layer)) continue
+      const box = measureSurface(el)
+      if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue
+      if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue
+      result.push({ ...box, el })
+    }
+  }
+  return result
+}
+
 /**
  * 小映不应停留在其上方的可点击控件；调整范围时只改这一处。
  *
@@ -138,9 +178,10 @@ export function coversControlAt(
   layer: Element | null,
   viewport: { width: number; height: number },
   standingOn: Element | null,
+  bodyArea = rect.width * rect.height,
 ): boolean {
   for (const control of eachControlUnder(rect, layer, viewport, standingOn)) {
-    if (coversAny(rect, [control])) return true
+    if (coversAny(rect, [control], bodyArea)) return true
   }
   return false
 }

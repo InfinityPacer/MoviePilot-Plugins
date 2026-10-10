@@ -134,9 +134,14 @@ function intersectionArea(a, b) {
 }
 const MAX_CLEAR_CANDIDATES = 12;
 const CONTROL_COVER_RATIO = 0.1;
-function coversAny(rect, controls, ratio = CONTROL_COVER_RATIO) {
-  const limit = rect.width * rect.height * ratio;
-  return controls.some((control) => intersectionArea(rect, control) > limit);
+const CONTROL_HIDDEN_RATIO = 0.5;
+function coversAny(rect, controls, bodyArea = rect.width * rect.height) {
+  return controls.some((control) => {
+    const overlap = intersectionArea(rect, control);
+    if (overlap <= 0) return false;
+    const controlArea = control.width * control.height;
+    return overlap > bodyArea * CONTROL_COVER_RATIO || controlArea > 0 && overlap > controlArea * CONTROL_HIDDEN_RATIO;
+  });
 }
 function pickClearX(current, bounds, isClear, step, maxCandidates = MAX_CLEAR_CANDIDATES) {
   const [min, max] = bounds;
@@ -153,6 +158,19 @@ function pickClearX(current, bounds, isClear, step, maxCandidates = MAX_CLEAR_CA
     }
   }
   return null;
+}
+const SHELTER_DEPTHS = [0.5, 0.65, 0.8, 0.92];
+function pickShelterDepth(isClear) {
+  return SHELTER_DEPTHS.find((depth) => isClear(depth)) ?? SHELTER_DEPTHS[SHELTER_DEPTHS.length - 1];
+}
+function nearestEdge(x, bounds) {
+  return x - bounds[0] <= bounds[1] - x ? bounds[0] : bounds[1];
+}
+function hopVelocity(from, to, gravity, lift) {
+  const apex = Math.min(from.y, to.y) - lift;
+  const up = Math.sqrt(2 * gravity * (from.y - apex));
+  const time = up / gravity + Math.sqrt(2 * (to.y - apex) / gravity);
+  return { vx: (to.x - from.x) / time, vy: -up };
 }
 
 const POSES = [
@@ -253,6 +271,30 @@ function querySurfaces(layer, viewport, charHeight, panel) {
     (candidate) => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width)
   );
 }
+const NEARBY_SURFACE_ROWS = 4;
+function surfacesNear(layer, viewport, charHeight, panel, columns) {
+  if (typeof document.elementsFromPoint !== "function") return [];
+  const top = viewport.safeArea.top + charHeight;
+  const bottom = floorLine(viewport);
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const x of columns) {
+    if (x < 0 || x >= viewport.width) continue;
+    for (let row = 0; row < NEARBY_SURFACE_ROWS; row += 1) {
+      const y = top + (row + 0.5) * (bottom - top) / NEARBY_SURFACE_ROWS;
+      const hit = document.elementsFromPoint(x, y).find((item) => !layer?.contains(item));
+      const el = hit?.closest(SURFACE_SELECTOR);
+      if (!el || seen.has(el)) continue;
+      seen.add(el);
+      if (layer && el.contains(layer)) continue;
+      const box = measureSurface(el);
+      if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue;
+      if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue;
+      result.push({ ...box, el });
+    }
+  }
+  return result;
+}
 const CONTROL_SELECTOR = 'a, button, [role="button"], input, textarea, select, .v-btn, .v-card--link, .v-list-item, [tabindex]:not([tabindex="-1"])';
 const SAMPLE_COLS = 3;
 const SAMPLE_ROWS = 4;
@@ -265,9 +307,9 @@ function samplePoints(rect, cols = SAMPLE_COLS, rows = SAMPLE_ROWS) {
   }
   return points;
 }
-function coversControlAt(rect, layer, viewport, standingOn) {
+function coversControlAt(rect, layer, viewport, standingOn, bodyArea = rect.width * rect.height) {
   for (const control of eachControlUnder(rect, layer, viewport, standingOn)) {
-    if (coversAny(rect, [control])) return true;
+    if (coversAny(rect, [control], bodyArea)) return true;
   }
   return false;
 }
@@ -307,6 +349,9 @@ const SIT_DURATION = 900;
 const DOZE_AFTER = 9e4;
 const PEEK_RATIO = 0.5;
 const PEEK_SPEED = 160;
+const HOP_LIFT_RATIO = 0.5;
+const MAX_OTHER_SURFACES = 3;
+const OTHER_SURFACE_CANDIDATES = 4;
 const DEFAULT_RATIO = 0.88;
 const SURFACE_CHECK_INTERVAL = 500;
 const DROP_CLEAR_DELAY = 1500;
@@ -354,6 +399,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let bounced = false;
     let fallTarget = null;
     let peekTarget = 0;
+    let sheltering = false;
+    let pendingShelter = null;
+    let hopVx = 0;
+    let hopTargetX = null;
     let lastSaved = "";
     let lastSaveAt = 0;
     let saveOnLand = false;
@@ -560,8 +609,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const target = fallTarget?.y ?? ground();
       velocity += GRAVITY * dt;
       y.value += velocity * dt;
+      x.value += hopVx * dt;
       rising.value = velocity < 0;
-      if (y.value < target) return;
+      if (velocity < 0 || y.value < target) return;
       y.value = target;
       if (!bounced && velocity > 500) {
         bounced = true;
@@ -593,6 +643,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const stepOff = pendingStepOff;
       pendingPeek = false;
       pendingStepOff = false;
+      if (pendingShelter !== null) {
+        const depth = pendingShelter;
+        pendingShelter = null;
+        beginShelter(depth, false);
+        return;
+      }
       scheduleClearance(0);
       if (stepOff && surface) stepOffEdge();
       else if (peek) beginPeek();
@@ -624,7 +680,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         walkPhase.value = 0;
         motion.value = "idle";
       }
-      if (motion.value === "peek") {
+      if (motion.value === "peek" && !sheltering) {
         clearTimer("peek");
         peekTarget = 0;
         if (motionAllowed() && visible()) ensureLoop();
@@ -737,6 +793,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         land(false);
         return;
       }
+      hopVx = 0;
+      hopTargetX = null;
       motion.value = "fall";
       velocity = 0;
       bounced = false;
@@ -746,6 +804,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       velocity = 0;
       rising.value = false;
       sink.value = 0;
+      sheltering = false;
+      hopVx = 0;
+      if (hopTargetX !== null) {
+        x.value = hopTargetX;
+        hopTargetX = null;
+      }
       const target = fallTarget;
       fallTarget = null;
       if (roam() !== "free") {
@@ -768,6 +832,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         requestSave();
       }
       queueAnchor();
+      if (pendingShelter !== null) {
+        const depth = pendingShelter;
+        pendingShelter = null;
+        clearTimer("sit");
+        beginShelter(depth, !animated);
+        return;
+      }
       const delay = droppedByUser ? DROP_CLEAR_DELAY : 0;
       droppedByUser = false;
       scheduleClearance(animated ? Math.max(delay, SIT_DURATION + 50) : delay);
@@ -843,34 +914,167 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (motion.value !== "peek") y.value = result.y;
       queueAnchor();
     }
+    function rectAt(left, top, depth = 0) {
+      const hidden = Math.round(charHeight.value * depth);
+      return { x: left, y: top + hidden, width: charWidth.value, height: charHeight.value - hidden };
+    }
     function checkClearance() {
-      if (disposed || !ready.value || motion.value !== "idle" || !visible()) return;
+      if (disposed || !ready.value || !visible()) return;
+      if (sheltering) {
+        recheckShelter();
+        return;
+      }
+      if (motion.value !== "idle") return;
       const instant = initialPlacement || !motionAllowed();
       initialPlacement = false;
       const view = viewport();
+      const body = charWidth.value * charHeight.value;
+      const covers = (rect, standingOn2) => coversControlAt(rect, rootEl.value, view, standingOn2, body);
       const standingOn = surface?.el ?? null;
-      const coversAt = (left) => {
-        const rect = { ...currentRect(), x: left };
-        return coversControlAt(rect, rootEl.value, view, standingOn);
-      };
-      if (!coversAt(x.value)) return;
-      const span = panelSpan();
-      const target = pickClearX(x.value, bounds(), (left) => !isBlocked(left, span) && !coversAt(left), charWidth.value / 2);
+      if (!covers(currentRect(), standingOn)) return;
       settle();
       clearTimer("behavior");
-      if (target === null) {
-        if (surface) stepOffEdge();
-        else scheduleBehavior();
+      const span = panelSpan();
+      const here = pickClearX(
+        x.value,
+        bounds(),
+        (left) => !isBlocked(left, span) && !covers(rectAt(left, y.value), standingOn),
+        charWidth.value / 2
+      );
+      if (here !== null) {
+        moveTo(here, y.value, surface, instant);
         return;
       }
-      if (instant) {
-        facingLeft.value = target < x.value;
-        x.value = target;
+      const elsewhere = roam() === "free" ? findFreeSpot(covers) : findOtherSurface(covers);
+      if (elsewhere) {
+        moveTo(elsewhere.x, elsewhere.y, elsewhere.surface, instant);
+        return;
+      }
+      goShelter(covers, instant);
+    }
+    function findOtherSurface(covers) {
+      if (roam() !== "surfaces" && !surface) return null;
+      const view = viewport();
+      const options = [];
+      if (surface) options.push({ y: ground(), bounds: xBounds(view, charWidth.value), surface: null });
+      if (roam() === "surfaces") {
+        const columns = [x.value + charWidth.value / 2, view.width * 0.25, view.width * 0.75];
+        for (const box of surfacesNear(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, columns)) {
+          if (box.el === surface?.el) continue;
+          options.push({ y: box.top - charHeight.value, bounds: surfaceXBounds(box, view, charWidth.value), surface: box });
+        }
+      }
+      const centerX = x.value;
+      options.sort((a, b) => distanceTo(a, centerX) - distanceTo(b, centerX));
+      for (const option of options.slice(0, MAX_OTHER_SURFACES)) {
+        const start = clamp(x.value, ...option.bounds);
+        const standingOn = option.surface?.el ?? null;
+        const span = blockedSpan(hostState?.panelRect ?? null, option.y, charWidth.value, charHeight.value);
+        const clear = (left2) => !isBlocked(left2, span) && !covers(rectAt(left2, option.y), standingOn);
+        const left = clear(start) ? start : pickClearX(start, option.bounds, clear, charWidth.value / 2, OTHER_SURFACE_CANDIDATES);
+        if (left !== null) return { x: left, y: option.y, surface: option.surface };
+      }
+      return null;
+    }
+    function distanceTo(option, centerX) {
+      const left = clamp(centerX, ...option.bounds);
+      return Math.hypot(left - centerX, option.y - y.value);
+    }
+    function findFreeSpot(covers) {
+      const range = freeBounds(viewport(), ...sizePair());
+      for (const top of [range.y[0], (range.y[0] + range.y[1]) / 2, range.y[1]]) {
+        if (Math.abs(top - y.value) < 1) continue;
+        const start = clamp(x.value, ...range.x);
+        const clear = (left2) => !covers(rectAt(left2, top), null);
+        const left = clear(start) ? start : pickClearX(start, range.x, clear, charWidth.value / 2, OTHER_SURFACE_CANDIDATES);
+        if (left !== null) return { x: left, y: top, surface: null };
+      }
+      return null;
+    }
+    function goShelter(covers, instant) {
+      const edge = nearestEdge(x.value, xBounds(viewport(), charWidth.value));
+      const floorY = ground();
+      const depth = pickShelterDepth((level) => !covers(rectAt(edge, floorY, level), null));
+      pendingShelter = depth;
+      if (instant || Math.abs(edge - x.value) < 1 && Math.abs(floorY - y.value) < 1 && !surface) {
+        pendingShelter = null;
+        detachSurface();
+        x.value = edge;
+        y.value = floorY;
+        beginShelter(depth, true);
+        return;
+      }
+      moveTo(edge, floorY, null, false);
+    }
+    function beginShelter(depth, instant) {
+      sheltering = true;
+      motion.value = "peek";
+      facingLeft.value = x.value > (xBounds(viewport(), charWidth.value)[0] + xBounds(viewport(), charWidth.value)[1]) / 2;
+      peekTarget = Math.round(charHeight.value * depth);
+      if (instant || !motionAllowed()) {
+        sink.value = peekTarget;
         queueAnchor();
-        scheduleBehavior();
+      } else ensureLoop();
+      syncSurfacePoll();
+    }
+    function recheckShelter() {
+      const view = viewport();
+      const body = charWidth.value * charHeight.value;
+      const covers = (depth2) => coversControlAt(rectAt(x.value, ground(), depth2), rootEl.value, view, null, body);
+      if (!covers(0)) {
+        sheltering = false;
+        peekTarget = 0;
+        if (motionAllowed()) ensureLoop();
+        else {
+          sink.value = 0;
+          motion.value = "idle";
+          queueAnchor();
+          scheduleBehavior();
+        }
         return;
       }
-      startWalk(target);
+      const current = peekTarget / charHeight.value;
+      if (!covers(current)) return;
+      const depth = pickShelterDepth((level) => level > current && !covers(level));
+      if (depth <= current) return;
+      peekTarget = Math.round(charHeight.value * depth);
+      if (motionAllowed()) ensureLoop();
+      else {
+        sink.value = peekTarget;
+        queueAnchor();
+      }
+    }
+    function moveTo(targetX, targetY, target, instant) {
+      const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null);
+      if (instant) {
+        facingLeft.value = targetX < x.value;
+        detachSurface();
+        x.value = targetX;
+        y.value = targetY;
+        fallTarget = { y: targetY, surface: target };
+        land(false);
+        return;
+      }
+      if (sameLevel || roam() === "free") {
+        if (Math.abs(targetX - x.value) < 1 && Math.abs(targetY - y.value) < 1) finishWalk();
+        else startWalk(targetX, roam() === "free" ? targetY : null);
+        return;
+      }
+      detachSurface();
+      const { vx, vy } = hopVelocity(
+        { x: x.value, y: y.value },
+        { x: targetX, y: targetY },
+        GRAVITY,
+        charHeight.value * HOP_LIFT_RATIO
+      );
+      facingLeft.value = targetX < x.value;
+      hopVx = vx;
+      hopTargetX = targetX;
+      velocity = vy;
+      bounced = true;
+      fallTarget = { y: targetY, surface: target };
+      motion.value = "fall";
+      ensureLoop();
     }
     function scheduleClearance(delay) {
       setTimer("clearance", delay, checkClearance);
@@ -918,7 +1122,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const range = bounds();
       x.value = clamp(x.value, range[0], range[1]);
       const span = panelSpan();
-      if (isBlocked(x.value, span)) {
+      if (!sheltering && isBlocked(x.value, span)) {
         const escaped = escapeSpan(x.value, span, range);
         settle();
         if (motionAllowed() && visible() && Math.abs(escaped - x.value) > 1) startWalk(escaped);
@@ -967,9 +1171,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       walkPhase.value = 0;
       pendingPeek = false;
       pendingStepOff = false;
+      blinking.value = false;
+      if (sheltering) {
+        sink.value = peekTarget;
+        queueAnchor();
+        return;
+      }
       sink.value = 0;
       peekTarget = 0;
-      blinking.value = false;
       if (motion.value === "fall") land(false);
       else if (motion.value === "walk" || motion.value === "peek") {
         motion.value = "idle";
@@ -1030,6 +1239,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         transient.value = null;
         sink.value = 0;
         peekTarget = 0;
+        sheltering = false;
+        pendingShelter = null;
+        hopVx = 0;
+        hopTargetX = null;
         velocity = 0;
         fallTarget = null;
         motion.value = "drag";
@@ -1209,6 +1422,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-8a2ecf5a"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-ba0cde33"]]);
 
 export { AgentPet as default };
