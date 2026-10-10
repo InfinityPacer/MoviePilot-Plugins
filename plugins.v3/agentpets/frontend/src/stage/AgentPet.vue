@@ -140,35 +140,68 @@ const pose = computed<Pose>(() =>
     rising: rising.value,
   }),
 )
-const src = computed(() => frameUrl(pose.value))
 const label = computed(() => (available.value ? '打开助手（小映）' : '小映（助手未启用）'))
 
-/** img 实际使用的地址；加载失败时停在上一帧成功显示的图上。 */
-const shownSrc = ref('')
-/** 是否已有一帧成功显示；在此之前隐藏 img，避免浏览器画出破图框。 */
-const hasFrame = ref(false)
-let lastGoodSrc = ''
-const failedAt = new Map<string, number>()
+/** 单帧图片的加载状态。 */
+type FrameStatus = 'pending' | 'loaded' | 'error'
 
-function pickFrame(next: string) {
-  const failed = failedAt.get(next)
-  if (failed !== undefined && Date.now() - failed < FRAME_RETRY_AFTER) return
-  shownSrc.value = next
+/**
+ * 所有姿态帧同时渲染成叠放的 img，换帧只切换哪一张可见。
+ *
+ * 宿主的插件静态文件接口不返回缓存头，若换帧时改 img 的 src，每次都会重新请求并等待解码，
+ * 走路时会闪；叠放后换帧不发请求，也不等解码。只有加载失败的帧在重试时才改它自己的 src。
+ */
+const frameStatus = ref<Record<Pose, FrameStatus>>(
+  Object.fromEntries(POSES.map(name => [name, 'pending'])) as Record<Pose, FrameStatus>,
+)
+/** 每帧的地址；失败重试时在该帧地址后追加序号。 */
+const frameSrc = ref<Record<Pose, string>>(
+  Object.fromEntries(POSES.map(name => [name, frameUrl(name)])) as Record<Pose, string>,
+)
+/** 当前可见的帧；目标帧未就绪时停在上一帧成功显示的图上，一帧都没有时为 null。 */
+const displayed = ref<Pose | null>(null)
+const failedAt = new Map<Pose, number>()
+const retries = new Map<Pose, number>()
+
+/** 目标帧就绪就显示它；还没加载好或加载失败时保留上一帧，失败满重试间隔后重新请求该帧。 */
+function syncDisplayed() {
+  const target = pose.value
+  if (frameStatus.value[target] === 'loaded') {
+    displayed.value = target
+    return
+  }
+  const failed = failedAt.get(target)
+  if (frameStatus.value[target] === 'error' && failed !== undefined && Date.now() - failed >= FRAME_RETRY_AFTER) {
+    const attempt = (retries.get(target) ?? 0) + 1
+    retries.set(target, attempt)
+    failedAt.delete(target)
+    frameStatus.value[target] = 'pending'
+    frameSrc.value[target] = `${frameUrl(target)}?retry=${attempt}`
+  }
+  if (displayed.value && frameStatus.value[displayed.value] !== 'loaded') displayed.value = null
 }
 
-watch(src, pickFrame, { immediate: true })
+watch(pose, syncDisplayed)
 
-function onFrameLoad() {
-  lastGoodSrc = shownSrc.value
-  failedAt.delete(shownSrc.value)
-  hasFrame.value = true
+function onFrameLoad(name: Pose, event: Event) {
+  frameStatus.value[name] = 'loaded'
+  failedAt.delete(name)
+  if (name === 'idle') {
+    const image = event.target as HTMLImageElement
+    if (image.naturalWidth && image.naturalHeight) {
+      aspect.value = image.naturalWidth / image.naturalHeight
+      relayout()
+    }
+  }
+  if (name === pose.value) displayed.value = name
 }
 
-/** 服务停掉或网络中断时帧图会加载失败；退回上一帧成功的图，没有可退的就隐藏。 */
-function onFrameError() {
-  failedAt.set(shownSrc.value, Date.now())
-  if (lastGoodSrc && lastGoodSrc !== shownSrc.value) shownSrc.value = lastGoodSrc
-  else hasFrame.value = false
+/** 服务停掉或网络中断时帧图会加载失败；记下时间，显示上保留上一帧。 */
+function onFrameError(name: Pose) {
+  frameStatus.value[name] = 'error'
+  failedAt.set(name, Date.now())
+  if (displayed.value === name) displayed.value = null
+  syncDisplayed()
 }
 
 const buttonStyle = computed(() => ({
@@ -867,21 +900,6 @@ function onActivate() {
   props.agent?.open?.()
 }
 
-function preloadFrames() {
-  for (const name of POSES) {
-    const image = new Image()
-    image.src = frameUrl(name)
-    if (name === 'idle') {
-      image.onload = () => {
-        if (image.naturalWidth && image.naturalHeight) {
-          aspect.value = image.naturalWidth / image.naturalHeight
-          relayout()
-        }
-      }
-    }
-  }
-}
-
 /** 读取上次的落脚点；按当前活动范围重新落位由调用方完成。 */
 async function readStoredPosition(): Promise<StoredPosition | null> {
   try {
@@ -919,7 +937,6 @@ function onWindowResize() {
 }
 
 onMounted(async () => {
-  preloadFrames()
   const agent = props.agent
   if (agent?.subscribe) cleanups.push(agent.subscribe(onHostState))
   if (agent?.on) {
@@ -984,15 +1001,24 @@ onBeforeUnmount(() => {
       @click="onActivate"
       @dragstart.prevent
     >
-      <img
-        class="agent-pet-ying__frame"
-        :class="{ 'agent-pet-ying__frame--flip': facingLeft, 'agent-pet-ying__frame--pending': !hasFrame }"
-        :src="shownSrc"
-        alt=""
-        draggable="false"
-        @load="onFrameLoad"
-        @error="onFrameError"
-      />
+      <span
+        class="agent-pet-ying__frames"
+        :class="{ 'agent-pet-ying__frames--flip': facingLeft, 'agent-pet-ying__frames--pending': !displayed }"
+        :data-frame="displayed ?? undefined"
+      >
+        <img
+          v-for="name in POSES"
+          :key="name"
+          class="agent-pet-ying__frame"
+          :class="{ 'agent-pet-ying__frame--visible': name === displayed }"
+          :src="frameSrc[name]"
+          :data-pose="name"
+          alt=""
+          draggable="false"
+          @load="onFrameLoad(name, $event)"
+          @error="onFrameError(name)"
+        />
+      </span>
     </button>
   </div>
 </template>
@@ -1030,20 +1056,36 @@ onBeforeUnmount(() => {
   border-radius: 12px;
 }
 
+/* 翻转作用在容器上，所有帧表现一致；下沉的 clip-path 在按钮上。 */
+.agent-pet-ying__frames {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+.agent-pet-ying__frames--pending {
+  visibility: hidden;
+}
+
+.agent-pet-ying__frames--flip {
+  transform: scaleX(-1);
+}
+
+/* 不可见帧用 opacity 0 而不是 display none，保持已解码，切换时不用等待。 */
 .agent-pet-ying__frame {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   object-position: bottom center;
+  opacity: 0;
   pointer-events: none;
 }
 
-.agent-pet-ying__frame--pending {
-  visibility: hidden;
-}
-
-.agent-pet-ying__frame--flip {
-  transform: scaleX(-1);
+.agent-pet-ying__frame--visible {
+  opacity: 1;
 }
 </style>

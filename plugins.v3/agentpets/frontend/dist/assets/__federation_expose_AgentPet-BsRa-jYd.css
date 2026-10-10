@@ -1,0 +1,59 @@
+
+.agent-pet-ying[data-v-471dcba9] {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.agent-pet-ying__character[data-v-471dcba9] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+.agent-pet-ying[data-motion='drag'] .agent-pet-ying__character[data-v-471dcba9] {
+  cursor: grabbing;
+}
+.agent-pet-ying__character[data-v-471dcba9]:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary, 145 85 253));
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+/* 翻转作用在容器上，所有帧表现一致；下沉的 clip-path 在按钮上。 */
+.agent-pet-ying__frames[data-v-471dcba9] {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+.agent-pet-ying__frames--pending[data-v-471dcba9] {
+  visibility: hidden;
+}
+.agent-pet-ying__frames--flip[data-v-471dcba9] {
+  transform: scaleX(-1);
+}
+
+/* 不可见帧用 opacity 0 而不是 display none，保持已解码，切换时不用等待。 */
+.agent-pet-ying__frame[data-v-471dcba9] {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: bottom center;
+  opacity: 0;
+  pointer-events: none;
+}
+.agent-pet-ying__frame--visible[data-v-471dcba9] {
+  opacity: 1;
+}

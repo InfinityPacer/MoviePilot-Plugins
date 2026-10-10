@@ -4,7 +4,7 @@ import { B as BUILTIN_PACK, a as BUILTIN_PACK_ID, H as HOST_ACTIONS, c as HOST_I
 import AgentPetSprite from './__federation_expose_AgentPetSprite-CPsTLCKC.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import { D as DEFAULT_SETTINGS, a as SCALE_RANGE, b as SPEED_RANGE, R as ROAM_MODES, S as SETTINGS_EVENT } from './settings-_v7SC99m.js';
-import AgentPet from './__federation_expose_AgentPet-C2o_2-db.js';
+import AgentPet from './__federation_expose_AgentPet-DsVUmVgt.js';
 
 function windowViewport() {
   return {
