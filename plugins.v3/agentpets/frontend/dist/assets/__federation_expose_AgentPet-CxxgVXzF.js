@@ -691,6 +691,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       pendingPeek = false;
       pendingStepOff = false;
+      pendingShelter = null;
     }
     function calm() {
       return motion.value === "idle" && !transient.value && !sustained.value && !dozing.value && motionAllowed() && visible();
@@ -1171,6 +1172,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       walkPhase.value = 0;
       pendingPeek = false;
       pendingStepOff = false;
+      pendingShelter = null;
       blinking.value = false;
       if (sheltering) {
         sink.value = peekTarget;
@@ -1422,6 +1424,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-ba0cde33"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-6be633d5"]]);
 
 export { AgentPet as default };
