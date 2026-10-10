@@ -31,9 +31,30 @@ export function surfaceVisible(el: Element): boolean {
 }
 
 /**
+ * 上边缘是否露在最上层：在可见部分的中点往下 2px 取命中元素，跳过小映自己的图层，
+ * 第一个命中的必须是该元素本身或其后代。被遮罩、弹窗或其他元素压住的卡片因此不算。
+ *
+ * 浏览器不支持 `elementsFromPoint` 时不做遮挡判断。
+ */
+export function surfaceUnobstructed(
+  el: Element,
+  box: SurfaceBox,
+  layer: Element | null,
+  viewportWidth: number,
+): boolean {
+  if (typeof document.elementsFromPoint !== 'function') return true
+  const left = Math.max(box.left, 0)
+  const right = Math.min(box.right, viewportWidth)
+  if (right <= left) return false
+  const hit = document.elementsFromPoint((left + right) / 2, box.top + 2).find(item => !layer?.contains(item))
+  return !!hit && (hit === el || el.contains(hit))
+}
+
+/**
  * 查询当前视口里所有可站表面。
  *
- * 只在开始下落或开始走动时调用一次，不在动画帧里调用；排除小映自己的图层及其祖先。
+ * 只在开始下落或开始走动时调用一次，不在动画帧里调用；排除小映自己的图层及其祖先，
+ * 以及上边缘被其他元素盖住的元素（遮挡判断只在这里做，站立后的重新校验不再做）。
  */
 export function querySurfaces(
   layer: Element | null,
@@ -49,6 +70,7 @@ export function querySurfaces(
     if (layer && (layer.contains(el) || el.contains(layer))) continue
     const box = measureSurface(el)
     if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue
+    if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue
     result.push({ ...box, el })
   }
   return result

@@ -119,6 +119,7 @@ let pendingStepOff = false
 let surface: DomSurface | null = null
 let surfaceFrame = 0
 let surfaceObserver: MutationObserver | null = null
+let surfacePoll = 0
 let disposed = false
 let press: { id: number; startX: number; startY: number; offsetX: number; offsetY: number; dragging: boolean } | null =
   null
@@ -589,6 +590,22 @@ function attachSurface(next: DomSurface) {
     })
     surfaceObserver.observe(document.body, { subtree: true, childList: true, attributes: true })
   }
+  syncSurfacePoll()
+}
+
+/**
+ * 站立时每 500ms 兜底校验一次脚下元素。
+ *
+ * 只靠 CSS 动画或过渡移动的元素既不触发滚动也不产生 DOM 变化，观察器发现不了；
+ * 页面不可见或不允许动画时停掉，此时角色本来也不该跟着动。
+ */
+function syncSurfacePoll() {
+  const wanted = !!surface && !!surfaceObserver && visible() && motionAllowed()
+  if (wanted && !surfacePoll) surfacePoll = window.setInterval(checkSurface, SURFACE_CHECK_INTERVAL)
+  if (!wanted && surfacePoll) {
+    window.clearInterval(surfacePoll)
+    surfacePoll = 0
+  }
 }
 
 function detachSurface() {
@@ -600,6 +617,7 @@ function pauseSurfaceWatch() {
   window.removeEventListener('scroll', onSurfaceScroll, { capture: true })
   surfaceObserver?.disconnect()
   surfaceObserver = null
+  syncSurfacePoll()
   clearTimer('surface')
   if (surfaceFrame) window.cancelAnimationFrame(surfaceFrame)
   surfaceFrame = 0
@@ -710,6 +728,7 @@ function onHostState(state: AgentHostState) {
   if (!state.motionAllowed && before?.motionAllowed !== false) freezeMotion()
   if (state.motionAllowed && before?.motionAllowed === false) scheduleBehavior()
   syncVisibility()
+  syncSurfacePoll()
   if (ready.value) relayout()
 }
 
