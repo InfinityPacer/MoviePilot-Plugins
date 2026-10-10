@@ -1,0 +1,8 @@
+
+.agent-pet-sprites-config__thumb[data-v-4ec33170] {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+.agent-pet-sprites-config__json[data-v-4ec33170] textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+}

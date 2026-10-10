@@ -349,5 +349,33 @@
             "v0.1.0": "新增通用文件分批压缩、可选加密、完整校验与独立归档清单。"
         },
         "release": true
+    },
+    "AgentPetYing": {
+        "name": "小映桌宠",
+        "description": "原创 Q 版看板娘助手形象，可拖拽、下落、沿屏幕底边散步，并随 Agent 状态播放动作。",
+        "labels": "Agent,形象",
+        "version": "0.1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpetying.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v0.1.0": "新增 stage 模式助手形象小映：点击打开助手面板，可拖拽、下落、沿屏幕底边散步和探头，按 Agent 状态播放动作，支持调整角色大小与移动速度并实时预览。"
+        },
+        "release": true
+    },
+    "AgentPetSprites": {
+        "name": "助手形象素材包",
+        "description": "用精灵图和动作映射 JSON 定制 Agent 助手形象，内置放映猫素材包，可在配置页添加更多素材包。",
+        "labels": "Agent,形象",
+        "version": "0.1.0",
+        "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpetsprites.png",
+        "author": "InfinityPacer",
+        "level": 1,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v0.1.0": "新增 renderer 模式助手形象素材包：内置放映猫，可在配置页上传精灵图或填写图片 URL 添加素材包，按宿主动作与状态播放帧动画。"
+        },
+        "release": true
     }
 }
