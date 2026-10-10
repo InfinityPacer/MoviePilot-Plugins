@@ -1,11 +1,11 @@
 
-.agent-pet-ying[data-v-471dcba9] {
+.agent-pet-ying[data-v-ef991ab8] {
   position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
 }
-.agent-pet-ying__character[data-v-471dcba9] {
+.agent-pet-ying__character[data-v-ef991ab8] {
   position: absolute;
   top: 0;
   left: 0;
@@ -19,31 +19,31 @@
   -webkit-tap-highlight-color: transparent;
   will-change: transform;
 }
-.agent-pet-ying[data-motion='drag'] .agent-pet-ying__character[data-v-471dcba9] {
+.agent-pet-ying[data-motion='drag'] .agent-pet-ying__character[data-v-ef991ab8] {
   cursor: grabbing;
 }
-.agent-pet-ying__character[data-v-471dcba9]:focus-visible {
+.agent-pet-ying__character[data-v-ef991ab8]:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary, 145 85 253));
   outline-offset: 2px;
   border-radius: 12px;
 }
 
 /* 翻转作用在容器上，所有帧表现一致；下沉的 clip-path 在按钮上。 */
-.agent-pet-ying__frames[data-v-471dcba9] {
+.agent-pet-ying__frames[data-v-ef991ab8] {
   position: absolute;
   inset: 0;
   display: block;
   pointer-events: none;
 }
-.agent-pet-ying__frames--pending[data-v-471dcba9] {
+.agent-pet-ying__frames--pending[data-v-ef991ab8] {
   visibility: hidden;
 }
-.agent-pet-ying__frames--flip[data-v-471dcba9] {
+.agent-pet-ying__frames--flip[data-v-ef991ab8] {
   transform: scaleX(-1);
 }
 
 /* 不可见帧用 opacity 0 而不是 display none，保持已解码，切换时不用等待。 */
-.agent-pet-ying__frame[data-v-471dcba9] {
+.agent-pet-ying__frame[data-v-ef991ab8] {
   position: absolute;
   inset: 0;
   display: block;
@@ -54,6 +54,6 @@
   opacity: 0;
   pointer-events: none;
 }
-.agent-pet-ying__frame--visible[data-v-471dcba9] {
+.agent-pet-ying__frame--visible[data-v-ef991ab8] {
   opacity: 1;
 }

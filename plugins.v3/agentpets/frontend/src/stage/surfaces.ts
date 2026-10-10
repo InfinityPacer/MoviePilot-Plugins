@@ -75,3 +75,22 @@ export function querySurfaces(
   }
   return result
 }
+
+/** 小映不应停留在其上方的可点击控件；调整范围时只改这一处。 */
+export const CONTROL_SELECTOR = 'a, button, [role="button"], input, textarea, select, .v-btn'
+
+/**
+ * 角色矩形是否挡住了可点击控件。
+ *
+ * 在取样点调用 `elementsFromPoint`，跳过小映自己的图层，看第一个命中的元素是否落在控件里。
+ * 只在落地、站定和窗口尺寸变化时调用，不在动画帧里调用；浏览器不支持时视为不遮挡。
+ */
+export function coversControl(points: Array<{ x: number; y: number }>, layer: Element | null): boolean {
+  if (typeof document.elementsFromPoint !== 'function') return false
+  for (const point of points) {
+    if (point.x < 0 || point.y < 0 || point.x > window.innerWidth || point.y > window.innerHeight) continue
+    const hit = document.elementsFromPoint(point.x, point.y).find(item => !layer?.contains(item))
+    if (hit?.closest(CONTROL_SELECTOR)) return true
+  }
+  return false
+}

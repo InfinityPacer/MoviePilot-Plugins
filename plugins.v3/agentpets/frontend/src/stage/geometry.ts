@@ -256,3 +256,44 @@ export function pickFreeTarget(
   }
   return null
 }
+
+/** 窄屏（宿主 `isMobile`）时在用户设置的大小上再乘的系数。 */
+export const MOBILE_SCALE = 0.8
+
+/** 实际显示倍率：用户设置的大小，窄屏再缩小，滑块仍然有效。 */
+export function effectiveScale(scale: number, isMobile: boolean): number {
+  return isMobile ? scale * MOBILE_SCALE : scale
+}
+
+/** 检查是否挡住可点击控件时的取样点：中心，以及下半部左右各一点。 */
+export function probePoints(rect: AgentRect): Array<{ x: number; y: number }> {
+  return [
+    { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+    { x: rect.x + rect.width * 0.25, y: rect.y + rect.height * 0.75 },
+    { x: rect.x + rect.width * 0.75, y: rect.y + rect.height * 0.75 },
+  ]
+}
+
+/**
+ * 在当前站立面上找一个不挡住控件的左边 x。
+ *
+ * 从当前位置开始按 `step` 向两侧交替试探，先近后远，`isClear` 由调用方做 DOM 命中判断；
+ * 整个范围都被挡住时返回 null，由调用方换到别的面。
+ */
+export function pickClearX(
+  current: number,
+  bounds: [number, number],
+  isClear: (x: number) => boolean,
+  step: number,
+): number | null {
+  const [min, max] = bounds
+  const stride = Math.max(8, step)
+  const limit = Math.ceil((max - min) / stride) + 1
+  for (let index = 1; index <= limit; index += 1) {
+    for (const candidate of [current - index * stride, current + index * stride]) {
+      const x = clamp(candidate, min, max)
+      if (Math.abs(x - current) >= 1 && isClear(x)) return x
+    }
+  }
+  return null
+}

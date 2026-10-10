@@ -4,8 +4,11 @@ import {
   blockedSpan,
   checkSupport,
   computeLanding,
+  effectiveScale,
   freeBounds,
+  pickClearX,
   pickFreeTarget,
+  probePoints,
   standable,
   surfaceXBounds,
   escapeSpan,
@@ -119,5 +122,32 @@ describe('roam landing', () => {
     const target = pickFreeTarget(() => 0.9, { x: 0, y: 0 }, freeBounds(viewport, 100, 120))
     expect(target).toEqual({ x: 810, y: 594 })
     expect(blockedSpan({ x: 600, y: 100, width: 200, height: 200 }, 660, 100, 120)).toBeNull()
+  })
+})
+
+describe('control clearance', () => {
+  it('shrinks on mobile on top of the user scale', () => {
+    expect(effectiveScale(1.5, false)).toBe(1.5)
+    expect(effectiveScale(1.5, true)).toBeCloseTo(1.2)
+  })
+
+  it('probes the center and both sides of the lower half', () => {
+    expect(probePoints({ x: 100, y: 200, width: 80, height: 120 })).toEqual([
+      { x: 140, y: 260 },
+      { x: 120, y: 290 },
+      { x: 160, y: 290 },
+    ])
+  })
+
+  it('walks to the nearest clear position on the current surface', () => {
+    const blocked = (x: number) => x >= 500 && x <= 700
+    expect(pickClearX(600, [0, 900], x => !blocked(x), 50)).toBe(450)
+    expect(pickClearX(690, [0, 900], x => !blocked(x), 50)).toBe(740)
+    // 只能往一侧走时贴着范围边界停下。
+    expect(pickClearX(880, [0, 900], x => x < 820, 50)).toBe(780)
+  })
+
+  it('reports no position when the whole surface is covered', () => {
+    expect(pickClearX(300, [200, 500], () => false, 50)).toBeNull()
   })
 })

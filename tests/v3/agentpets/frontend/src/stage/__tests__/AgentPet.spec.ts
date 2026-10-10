@@ -109,8 +109,17 @@ describe('AgentPet (ying)', () => {
 
 describe('AgentPet roam and frame fallback', () => {
   afterEach(() => {
-    document.querySelectorAll('.v-card').forEach(card => card.remove())
+    document.querySelectorAll('.v-card, body > button').forEach(card => card.remove())
+    delete (document as { elementsFromPoint?: unknown }).elementsFromPoint
   })
+
+  /** 模拟 x 大于 `edge` 的区域都被一个可点击控件占着。 */
+  function stubControlsRightOf(edge: number, control: Element) {
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: (x: number) => (x > edge ? [control, document.body] : [document.body]),
+    })
+  }
 
   function addCard(rect: { left: number; top: number; width: number; height: number }) {
     const card = document.createElement('div')
@@ -131,7 +140,7 @@ describe('AgentPet roam and frame fallback', () => {
   async function mountStill(stored: unknown, roam = 'surfaces') {
     const host = createMockHost('AgentPets')
     host.patch({ motionAllowed: false })
-    const anchors: Array<{ x: number; y: number } | null> = []
+    const anchors: Array<{ x: number; y: number; width: number; height: number } | null> = []
     const pet = createMockPet('stage', 'ying', { onAnchor: rect => anchors.push(rect) })
     await pet.storage.set(stored)
     const api = { get: vi.fn().mockResolvedValue({ success: true, data: { scale: 1, speed: 1, roam } }) }
@@ -173,6 +182,47 @@ describe('AgentPet roam and frame fallback', () => {
     await flush()
     expect(anchors.at(-1)).toMatchObject({ y: 180 })
     card.remove()
+  })
+
+  it('starts away from clickable controls', async () => {
+    const fab = document.createElement('button')
+    document.body.appendChild(fab)
+    stubControlsRightOf(600, fab)
+    const { anchors } = await mountStill(null, 'floor')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const rect = anchors.at(-1)!
+    expect(rect.x + rect.width * 0.75).toBeLessThanOrEqual(600)
+  })
+
+  it('walks away about 1.5s after the user drops her on a control', async () => {
+    const fab = document.createElement('button')
+    document.body.appendChild(fab)
+    const { anchors, view } = await mountStill({ roam: 'floor', xRatio: 0, yRatio: 1 }, 'floor')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    stubControlsRightOf(600, fab)
+
+    const button = view.container.querySelector('button') as HTMLButtonElement
+    const start = anchors.at(-1)!
+    button.dispatchEvent(pointer('pointerdown', { pointerId: 7, clientX: start.x + 10, clientY: start.y + 10 }))
+    window.dispatchEvent(pointer('pointermove', { pointerId: 7, clientX: 800, clientY: 300 }))
+    window.dispatchEvent(pointer('pointerup', { pointerId: 7, clientX: 800, clientY: 300 }))
+    await flush()
+    const dropped = anchors.at(-1)!
+    expect(dropped.x + dropped.width / 2).toBeGreaterThan(600)
+
+    await new Promise(resolve => setTimeout(resolve, 800))
+    expect(anchors.at(-1)!.x).toBe(dropped.x)
+    await new Promise(resolve => setTimeout(resolve, 900))
+    await flush()
+    const moved = anchors.at(-1)!
+    expect(moved.x + moved.width * 0.75).toBeLessThanOrEqual(600)
+  })
+
+  it('shrinks on narrow screens on top of the user scale', async () => {
+    const { host, anchors } = await mountStill(null, 'floor')
+    host.patch({ isMobile: true })
+    await flush()
+    expect(anchors.at(-1)).toMatchObject({ height: 96 })
   })
 
   it('ignores narrow cards and lands on the floor', async () => {
