@@ -161,26 +161,25 @@ describe('AgentPet roam and frame fallback', () => {
     expect(await pet.storage.get()).toMatchObject({ roam: 'surfaces', yRatio: 1 })
   })
 
-  it('polls the surface every 500ms only while motion is allowed', async () => {
+  it('polls the surface every 500ms while visible, including reduced motion', async () => {
     const rect = { left: 100, top: 400, width: 600, height: 200 }
     const card = addCard(rect)
     const { host, anchors } = await mountStill({ roam: 'surfaces', xRatio: 0.3, yRatio: 0 })
     expect(anchors.at(-1)).toMatchObject({ y: 280 })
 
-    // 只靠 CSS 动画移动：位置变了，但没有 DOM 变化也没有滚动。
+    // 只靠 CSS 动画移动：位置变了，但没有 DOM 变化也没有滚动；减少动态效果时也要跟上。
     rect.top = 350
     await new Promise(resolve => setTimeout(resolve, 600))
     await flush()
-    expect(anchors.at(-1)).toMatchObject({ y: 280 })
-
-    // 恢复动画时宿主状态变化本身会触发一次校验，之后的移动只能靠定时器发现。
-    host.patch({ motionAllowed: true })
-    await flush()
     expect(anchors.at(-1)).toMatchObject({ y: 230 })
+
+    // 页面不可见时定时器停掉。
+    host.patch({ pageVisible: false })
+    await flush()
     rect.top = 300
     await new Promise(resolve => setTimeout(resolve, 600))
     await flush()
-    expect(anchors.at(-1)).toMatchObject({ y: 180 })
+    expect(anchors.at(-1)).toMatchObject({ y: 230 })
     card.remove()
   })
 
@@ -239,9 +238,28 @@ describe('AgentPet roam and frame fallback', () => {
     expect(anchors.at(-1)!.x).toBeLessThan(start.x)
   })
 
-  it('stops the control recheck while motion is not allowed', async () => {
-    const { anchors } = await mountStill(null, 'floor')
+  it('teleports off a late control under reduced motion while the page is visible', async () => {
+    const { anchors, view } = await mountStill(null, 'floor')
     await new Promise(resolve => setTimeout(resolve, 20))
+    const root = view.container.querySelector('.agent-pet-ying') as HTMLElement
+    const fab = document.createElement('button')
+    document.body.appendChild(fab)
+    const start = anchors.at(-1)!
+    stubControlsRightOf(start.x - 1, fab)
+    const motions = new Set<string>()
+    const watch = window.setInterval(() => motions.add(root.dataset.motion ?? ''), 20)
+    await new Promise(resolve => setTimeout(resolve, 2200))
+    window.clearInterval(watch)
+    const moved = anchors.at(-1)!
+    expect(moved.x + moved.width * 0.75).toBeLessThanOrEqual(start.x - 1)
+    expect(motions.has('walk')).toBe(false)
+  })
+
+  it('does not recheck controls while the page is hidden', async () => {
+    const { host, anchors } = await mountStill(null, 'floor')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    host.patch({ pageVisible: false })
+    await flush()
     const fab = document.createElement('button')
     document.body.appendChild(fab)
     const start = anchors.at(-1)!

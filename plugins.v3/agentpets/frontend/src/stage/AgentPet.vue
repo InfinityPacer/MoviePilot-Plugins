@@ -657,10 +657,11 @@ function attachSurface(next: DomSurface) {
  * - 每 4 拍（约 2 秒）复查一次是否挡住可点击控件：悬浮按钮这类控件可能在页面数据加载后
  *   才出现，晚于落地时那一次检查。
  *
- * 拖拽中、页面不可见或不允许动画时停掉，此时角色本来也不该自己移动。
+ * 只在拖拽中或页面不可见时停掉。不允许动画（减少动态效果）时仍然复查：校验脚下元素只是
+ * 跟随位置，发现挡住控件时直接瞬移到空位，不播走路，否则她会一直挡着悬浮按钮。
  */
 function syncSurfacePoll() {
-  const wanted = ready.value && !disposed && visible() && motionAllowed() && motion.value !== 'drag'
+  const wanted = ready.value && !disposed && visible() && motion.value !== 'drag'
   if (wanted && !surfacePoll) surfacePoll = window.setInterval(onStandPoll, SURFACE_CHECK_INTERVAL)
   if (!wanted && surfacePoll) {
     window.clearInterval(surfacePoll)
