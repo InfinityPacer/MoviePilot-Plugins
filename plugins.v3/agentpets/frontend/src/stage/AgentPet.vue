@@ -503,6 +503,8 @@ function settle() {
   }
   pendingPeek = false
   pendingStepOff = false
+  // 打断后不再执行走向底边途中的下沉，否则会在别处的落点沉下去，交给下一次复查重新判断。
+  pendingShelter = null
 }
 
 function calm(): boolean {
@@ -1093,6 +1095,7 @@ function freezeMotion() {
   walkPhase.value = 0
   pendingPeek = false
   pendingStepOff = false
+  pendingShelter = null
   blinking.value = false
   if (sheltering) {
     // 躲避控件的下沉是静止的，不属于动画，直接停在目标深度。
