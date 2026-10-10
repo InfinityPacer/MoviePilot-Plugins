@@ -132,19 +132,24 @@ function intersectionArea(a, b) {
   const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
   return width > 0 && height > 0 ? width * height : 0;
 }
+const MAX_CLEAR_CANDIDATES = 12;
 const CONTROL_COVER_RATIO = 0.1;
 function coversAny(rect, controls, ratio = CONTROL_COVER_RATIO) {
   const limit = rect.width * rect.height * ratio;
   return controls.some((control) => intersectionArea(rect, control) > limit);
 }
-function pickClearX(current, bounds, isClear, step) {
+function pickClearX(current, bounds, isClear, step, maxCandidates = MAX_CLEAR_CANDIDATES) {
   const [min, max] = bounds;
   const stride = Math.max(8, step);
   const limit = Math.ceil((max - min) / stride) + 1;
+  const tried = /* @__PURE__ */ new Set();
   for (let index = 1; index <= limit; index += 1) {
     for (const candidate of [current - index * stride, current + index * stride]) {
-      const x = clamp(candidate, min, max);
-      if (Math.abs(x - current) >= 1 && isClear(x)) return x;
+      const x = Math.round(clamp(candidate, min, max));
+      if (Math.abs(x - current) < 1 || tried.has(x)) continue;
+      if (tried.size >= maxCandidates) return null;
+      tried.add(x);
+      if (isClear(x)) return x;
     }
   }
   return null;
@@ -249,20 +254,39 @@ function querySurfaces(layer, viewport, charHeight, panel) {
   );
 }
 const CONTROL_SELECTOR = 'a, button, [role="button"], input, textarea, select, .v-btn, .v-card--link, .v-list-item, [tabindex]:not([tabindex="-1"])';
-function collectControls(layer, viewport, standingOn) {
-  const viewportArea = viewport.width * viewport.height;
-  const rects = [];
-  for (const el of Array.from(document.querySelectorAll(CONTROL_SELECTOR))) {
-    if (layer && (layer.contains(el) || el.contains(layer))) continue;
-    if (standingOn && (el === standingOn || el.contains(standingOn))) continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) continue;
-    if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= viewport.width || rect.top >= viewport.height) continue;
-    if (rect.width * rect.height > viewportArea / 2) continue;
-    if (!surfaceVisible(el)) continue;
-    rects.push({ x: rect.left, y: rect.top, width: rect.width, height: rect.height });
+const SAMPLE_COLS = 3;
+const SAMPLE_ROWS = 4;
+function samplePoints(rect, cols = SAMPLE_COLS, rows = SAMPLE_ROWS) {
+  const points = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      points.push({ x: rect.x + (col + 0.5) * rect.width / cols, y: rect.y + (row + 0.5) * rect.height / rows });
+    }
   }
-  return rects;
+  return points;
+}
+function coversControlAt(rect, layer, viewport, standingOn) {
+  for (const control of eachControlUnder(rect, layer, viewport, standingOn)) {
+    if (coversAny(rect, [control])) return true;
+  }
+  return false;
+}
+function* eachControlUnder(rect, layer, viewport, standingOn) {
+  if (typeof document.elementsFromPoint !== "function") return;
+  const viewportArea = viewport.width * viewport.height;
+  const seen = /* @__PURE__ */ new Set();
+  for (const point of samplePoints(rect)) {
+    if (point.x < 0 || point.y < 0 || point.x >= viewport.width || point.y >= viewport.height) continue;
+    const hit = document.elementsFromPoint(point.x, point.y).find((item) => !layer?.contains(item));
+    const control = hit?.closest(CONTROL_SELECTOR);
+    if (!control || seen.has(control)) continue;
+    seen.add(control);
+    if (layer && control.contains(layer)) continue;
+    if (standingOn && (control === standingOn || control.contains(standingOn))) continue;
+    const box = control.getBoundingClientRect();
+    if (box.width * box.height > viewportArea / 2) continue;
+    yield { x: box.left, y: box.top, width: box.width, height: box.height };
+  }
 }
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -823,8 +847,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (disposed || !ready.value || motion.value !== "idle" || !visible()) return;
       const instant = initialPlacement || !motionAllowed();
       initialPlacement = false;
-      const controls = collectControls(rootEl.value, viewport(), surface?.el ?? null);
-      const coversAt = (left) => coversAny({ ...currentRect(), x: left }, controls);
+      const view = viewport();
+      const standingOn = surface?.el ?? null;
+      const coversAt = (left) => {
+        const rect = { ...currentRect(), x: left };
+        return coversControlAt(rect, rootEl.value, view, standingOn);
+      };
       if (!coversAt(x.value)) return;
       const span = panelSpan();
       const target = pickClearX(x.value, bounds(), (left) => !isBlocked(left, span) && !coversAt(left), charWidth.value / 2);
@@ -1181,6 +1209,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-584721a1"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-8a2ecf5a"]]);
 
 export { AgentPet as default };

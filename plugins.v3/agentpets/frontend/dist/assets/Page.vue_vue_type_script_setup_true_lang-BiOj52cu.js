@@ -1,10 +1,10 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE } from './host-CDE6kQPw.js';
 import { a as BUILTIN_PACK, B as BUILTIN_PACK_ID, H as HOST_ACTIONS, c as HOST_INTENTS } from './schema-7sDr2_vp.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-b2LMknmj.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-BYBm-9yx.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import { D as DEFAULT_SETTINGS, a as SCALE_RANGE, b as SPEED_RANGE, R as ROAM_MODES, S as SETTINGS_EVENT } from './settings-_v7SC99m.js';
-import AgentPet from './__federation_expose_AgentPet-BrXdYOYD.js';
+import AgentPet from './__federation_expose_AgentPet-6_Be15M6.js';
 
 function windowViewport() {
   return {

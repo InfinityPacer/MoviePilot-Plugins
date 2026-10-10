@@ -1,5 +1,5 @@
 import type { AgentRect } from '@/host'
-import { floorLine, standable, type StageViewport, type SurfaceBox } from '@/stage/geometry'
+import { coversAny, floorLine, standable, type StageViewport, type SurfaceBox } from '@/stage/geometry'
 
 /**
  * 小映可以站上去的页面容器。
@@ -91,31 +91,79 @@ export function querySurfaces(
 export const CONTROL_SELECTOR =
   'a, button, [role="button"], input, textarea, select, .v-btn, .v-card--link, .v-list-item, [tabindex]:not([tabindex="-1"])'
 
+/** 命中测试的取样网格：角色矩形内 3 列 × 4 行共 12 个点。 */
+export const SAMPLE_COLS = 3
+export const SAMPLE_ROWS = 4
+
+/** 角色矩形内均匀分布的取样点（各格中心）。 */
+export function samplePoints(rect: AgentRect, cols = SAMPLE_COLS, rows = SAMPLE_ROWS): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = []
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      points.push({ x: rect.x + ((col + 0.5) * rect.width) / cols, y: rect.y + ((row + 0.5) * rect.height) / rows })
+    }
+  }
+  return points
+}
+
 /**
- * 收集视口内可点击控件的矩形，供一次遮挡判断里的多个候选位置复用。
+ * 角色放在 `rect` 时，她身后实际露在最上层的可点击控件矩形。
  *
- * - 排除小映自己的图层及其祖先，以及她正站着的元素和包住它的控件：她脚底在那张卡片上沿，
- *   本来就不算挡住它。
+ * 在 12 个取样点调用 `elementsFromPoint`，跳过小映自己的图层，取第一个命中元素，再用
+ * `closest(CONTROL_SELECTOR)` 找到所属控件。只看命中结果，所以遮罩底下、被溢出裁掉的控件
+ * 不会算进来，耗时也只与取样点数有关，与页面大小无关。
+ *
+ * - 她正站着的元素以及包住它的控件不算：她脚底在那张卡片上沿，本来就不算挡住它。
  * - 超过视口一半面积的可聚焦容器视为页面布局，不当作控件，否则她在哪里都算挡住。
  *
- * 只在落地、站定、窗口尺寸变化和站立低频复查时调用，不在动画帧里调用。
+ * 浏览器不支持 `elementsFromPoint` 时返回空列表。
  */
-export function collectControls(
+export function controlsUnder(
+  rect: AgentRect,
   layer: Element | null,
   viewport: { width: number; height: number },
   standingOn: Element | null,
 ): AgentRect[] {
-  const viewportArea = viewport.width * viewport.height
-  const rects: AgentRect[] = []
-  for (const el of Array.from(document.querySelectorAll(CONTROL_SELECTOR))) {
-    if (layer && (layer.contains(el) || el.contains(layer))) continue
-    if (standingOn && (el === standingOn || el.contains(standingOn))) continue
-    const rect = el.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) continue
-    if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= viewport.width || rect.top >= viewport.height) continue
-    if (rect.width * rect.height > viewportArea / 2) continue
-    if (!surfaceVisible(el)) continue
-    rects.push({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+  return Array.from(eachControlUnder(rect, layer, viewport, standingOn))
+}
+
+/**
+ * 角色放在 `rect` 时是否挡住控件：与某个命中控件的交集超过角色面积的 10%。
+ *
+ * 逐点取样，发现挡住就立即返回。寻找空位时多数候选位置在前几个点就能判定，
+ * 单次判断的命中测试次数因此远低于“取样点数 × 候选数”的上界。
+ */
+export function coversControlAt(
+  rect: AgentRect,
+  layer: Element | null,
+  viewport: { width: number; height: number },
+  standingOn: Element | null,
+): boolean {
+  for (const control of eachControlUnder(rect, layer, viewport, standingOn)) {
+    if (coversAny(rect, [control])) return true
   }
-  return rects
+  return false
+}
+
+function* eachControlUnder(
+  rect: AgentRect,
+  layer: Element | null,
+  viewport: { width: number; height: number },
+  standingOn: Element | null,
+): Generator<AgentRect> {
+  if (typeof document.elementsFromPoint !== 'function') return
+  const viewportArea = viewport.width * viewport.height
+  const seen = new Set<Element>()
+  for (const point of samplePoints(rect)) {
+    if (point.x < 0 || point.y < 0 || point.x >= viewport.width || point.y >= viewport.height) continue
+    const hit = document.elementsFromPoint(point.x, point.y).find(item => !layer?.contains(item))
+    const control = hit?.closest(CONTROL_SELECTOR)
+    if (!control || seen.has(control)) continue
+    seen.add(control)
+    if (layer && control.contains(layer)) continue
+    if (standingOn && (control === standingOn || control.contains(standingOn))) continue
+    const box = control.getBoundingClientRect()
+    if (box.width * box.height > viewportArea / 2) continue
+    yield { x: box.left, y: box.top, width: box.width, height: box.height }
+  }
 }

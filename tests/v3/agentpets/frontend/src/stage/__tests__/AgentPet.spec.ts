@@ -114,9 +114,13 @@ describe('AgentPet roam and frame fallback', () => {
   })
 
   /** 模拟 x 大于 `edge` 的区域都被一个可点击控件占着。 */
-  /** 让控件占据底边一带 x 大于 `edge` 的区域（矩形判定，不依赖命中测试）。 */
+  /** 让控件占据底边一带 x 大于 `edge` 的区域：命中测试在这里返回它，矩形也与之一致。 */
   function stubControlsRightOf(edge: number, control: Element) {
     const rect = { left: edge, top: window.innerHeight - 200, width: window.innerWidth - edge, height: 200 }
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: (x: number, y: number) => (x > edge && y > rect.top ? [control, document.body] : [document.body]),
+    })
     control.getBoundingClientRect = () =>
       ({
         ...rect,

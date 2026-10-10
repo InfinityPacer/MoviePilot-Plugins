@@ -70,6 +70,20 @@ describe('AgentPet (sprites)', () => {
     expect(root.querySelector('.agent-pet-sprites__frame')).not.toBeNull()
   })
 
+  it('falls back to the builtin pack when loading hangs for 5 seconds', async () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const api = { get: vi.fn().mockReturnValue(new Promise(() => undefined)), post: vi.fn() }
+    const view = render(AgentPet, { props: { pet: createMockPet('renderer', 'stuck'), api } })
+    const root = view.container.querySelector('.agent-pet-sprites') as HTMLElement
+    await vi.advanceTimersByTimeAsync(4900)
+    expect(root.querySelector('.agent-pet-sprites__frame')).toBeNull()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(root.dataset.pack).toBe('projector-cat')
+    expect(root.querySelector('.agent-pet-sprites__frame')).not.toBeNull()
+    expect(warn).toHaveBeenCalled()
+  })
+
   it('draws the builtin pack immediately', () => {
     const view = render(AgentPet, { props: { pet: createMockPet('renderer', 'projector-cat') } })
     expect(view.container.querySelector('.agent-pet-sprites__frame')).not.toBeNull()
