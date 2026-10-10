@@ -191,22 +191,70 @@ describe('AgentPet roam and frame fallback', () => {
     expect(anchors.at(-1)).toMatchObject({ y: window.innerHeight - 120 })
   })
 
-  it('keeps the last good frame when a frame fails to load', async () => {
+  it('switches frames without touching any img src', async () => {
     const { host, view } = await mountStill(null)
-    const img = view.container.querySelector('img') as HTMLImageElement
-    expect(img).toHaveClass('agent-pet-ying__frame--pending')
-    img.dispatchEvent(new Event('load'))
+    const images = Array.from(view.container.querySelectorAll<HTMLImageElement>('img'))
+    expect(images).toHaveLength(18)
+    const before = images.map(img => img.getAttribute('src'))
+    images.forEach(img => img.dispatchEvent(new Event('load')))
     await flush()
-    const good = img.getAttribute('src')
-    expect(good).toContain('ying/idle.webp')
-    expect(img).not.toHaveClass('agent-pet-ying__frame--pending')
+    const frames = view.container.querySelector('.agent-pet-ying__frames') as HTMLElement
+    expect(frames.dataset.frame).toBe('idle')
+
+    host.patch({ phase: 'thinking', thinking: true })
+    host.fire('agent.done')
+    await flush()
+    expect(frames.dataset.frame).toBe('victory')
+    host.patch({ phase: 'idle', thinking: false })
+    await flush()
+    expect(images.map(img => img.getAttribute('src'))).toEqual(before)
+    expect(view.container.querySelectorAll('.agent-pet-ying__frame--visible')).toHaveLength(1)
+  })
+
+  it('keeps the last good frame when the target frame fails or is still loading', async () => {
+    const { host, view } = await mountStill(null)
+    const image = (pose: string) => view.container.querySelector(`img[data-pose="${pose}"]`) as HTMLImageElement
+    const frames = view.container.querySelector('.agent-pet-ying__frames') as HTMLElement
+    image('idle').dispatchEvent(new Event('load'))
+    await flush()
+    expect(frames.dataset.frame).toBe('idle')
 
     host.fire('agent.done')
     await flush()
-    expect(img.getAttribute('src')).toContain('ying/victory.webp')
-    img.dispatchEvent(new Event('error'))
+    expect(frames.dataset.frame).toBe('idle')
+    image('victory').dispatchEvent(new Event('error'))
     await flush()
-    expect(img.getAttribute('src')).toBe(good)
-    expect(img).not.toHaveClass('agent-pet-ying__frame--pending')
+    expect(frames.dataset.frame).toBe('idle')
+    expect(frames).not.toHaveClass('agent-pet-ying__frames--pending')
+    expect(image('victory').getAttribute('src')).not.toContain('retry')
+  })
+
+  it('retries only the failed frame after the retry interval', async () => {
+    const { host, view } = await mountStill(null)
+    const image = (pose: string) => view.container.querySelector(`img[data-pose="${pose}"]`) as HTMLImageElement
+    image('idle').dispatchEvent(new Event('load'))
+    host.fire('agent.done')
+    await flush()
+    image('victory').dispatchEvent(new Event('error'))
+    const idleSrc = image('idle').getAttribute('src')
+
+    const now = Date.now()
+    vi.spyOn(Date, 'now').mockReturnValue(now + 6000)
+    host.fire('agent.error')
+    await flush()
+    host.fire('agent.done')
+    await flush()
+    expect(image('victory').getAttribute('src')).toContain('victory.webp?retry=1')
+    expect(image('idle').getAttribute('src')).toBe(idleSrc)
+  })
+
+  it('hides the character until any frame has loaded', async () => {
+    const { view } = await mountStill(null)
+    const frames = view.container.querySelector('.agent-pet-ying__frames') as HTMLElement
+    expect(frames).toHaveClass('agent-pet-ying__frames--pending')
+    expect(frames.dataset.frame).toBeUndefined()
+    ;(view.container.querySelector('img[data-pose="idle"]') as HTMLImageElement).dispatchEvent(new Event('error'))
+    await flush()
+    expect(frames).toHaveClass('agent-pet-ying__frames--pending')
   })
 })

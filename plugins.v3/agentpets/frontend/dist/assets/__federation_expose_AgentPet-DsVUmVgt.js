@@ -224,11 +224,12 @@ function querySurfaces(layer, viewport, charHeight, panel) {
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {normalizeClass:_normalizeClass,createElementVNode:_createElementVNode,vShow:_vShow,withModifiers:_withModifiers,normalizeStyle:_normalizeStyle,withDirectives:_withDirectives,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
+const {unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,createElementVNode:_createElementVNode,vShow:_vShow,withModifiers:_withModifiers,normalizeStyle:_normalizeStyle,withDirectives:_withDirectives} = await importShared('vue');
 
 const _hoisted_1 = ["data-pose", "data-motion", "data-roam"];
 const _hoisted_2 = ["aria-label"];
-const _hoisted_3 = ["src"];
+const _hoisted_3 = ["data-frame"];
+const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
 const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
 const BASE_HEIGHT = 120;
 const BASE_WALK_SPEED = 70;
@@ -306,27 +307,50 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         rising: rising.value
       })
     );
-    const src = computed(() => frameUrl(pose.value));
     const label = computed(() => available.value ? "打开助手（小映）" : "小映（助手未启用）");
-    const shownSrc = ref("");
-    const hasFrame = ref(false);
-    let lastGoodSrc = "";
+    const frameStatus = ref(
+      Object.fromEntries(POSES.map((name) => [name, "pending"]))
+    );
+    const frameSrc = ref(
+      Object.fromEntries(POSES.map((name) => [name, frameUrl(name)]))
+    );
+    const displayed = ref(null);
     const failedAt = /* @__PURE__ */ new Map();
-    function pickFrame(next) {
-      const failed = failedAt.get(next);
-      if (failed !== void 0 && Date.now() - failed < FRAME_RETRY_AFTER) return;
-      shownSrc.value = next;
+    const retries = /* @__PURE__ */ new Map();
+    function syncDisplayed() {
+      const target = pose.value;
+      if (frameStatus.value[target] === "loaded") {
+        displayed.value = target;
+        return;
+      }
+      const failed = failedAt.get(target);
+      if (frameStatus.value[target] === "error" && failed !== void 0 && Date.now() - failed >= FRAME_RETRY_AFTER) {
+        const attempt = (retries.get(target) ?? 0) + 1;
+        retries.set(target, attempt);
+        failedAt.delete(target);
+        frameStatus.value[target] = "pending";
+        frameSrc.value[target] = `${frameUrl(target)}?retry=${attempt}`;
+      }
+      if (displayed.value && frameStatus.value[displayed.value] !== "loaded") displayed.value = null;
     }
-    watch(src, pickFrame, { immediate: true });
-    function onFrameLoad() {
-      lastGoodSrc = shownSrc.value;
-      failedAt.delete(shownSrc.value);
-      hasFrame.value = true;
+    watch(pose, syncDisplayed);
+    function onFrameLoad(name, event) {
+      frameStatus.value[name] = "loaded";
+      failedAt.delete(name);
+      if (name === "idle") {
+        const image = event.target;
+        if (image.naturalWidth && image.naturalHeight) {
+          aspect.value = image.naturalWidth / image.naturalHeight;
+          relayout();
+        }
+      }
+      if (name === pose.value) displayed.value = name;
     }
-    function onFrameError() {
-      failedAt.set(shownSrc.value, Date.now());
-      if (lastGoodSrc && lastGoodSrc !== shownSrc.value) shownSrc.value = lastGoodSrc;
-      else hasFrame.value = false;
+    function onFrameError(name) {
+      frameStatus.value[name] = "error";
+      failedAt.set(name, Date.now());
+      if (displayed.value === name) displayed.value = null;
+      syncDisplayed();
     }
     const buttonStyle = computed(() => ({
       width: `${charWidth.value}px`,
@@ -920,20 +944,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       markActivity();
       props.agent?.open?.();
     }
-    function preloadFrames() {
-      for (const name of POSES) {
-        const image = new Image();
-        image.src = frameUrl(name);
-        if (name === "idle") {
-          image.onload = () => {
-            if (image.naturalWidth && image.naturalHeight) {
-              aspect.value = image.naturalWidth / image.naturalHeight;
-              relayout();
-            }
-          };
-        }
-      }
-    }
     async function readStoredPosition() {
       try {
         const stored = await props.pet?.storage?.get?.();
@@ -964,7 +974,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!hostState || surface) relayout();
     }
     onMounted(async () => {
-      preloadFrames();
       const agent = props.agent;
       if (agent?.subscribe) cleanups.push(agent.subscribe(onHostState));
       if (agent?.on) {
@@ -1032,14 +1041,23 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           onDragstart: _cache[0] || (_cache[0] = _withModifiers(() => {
           }, ["prevent"]))
         }, [
-          _createElementVNode("img", {
-            class: _normalizeClass(["agent-pet-ying__frame", { "agent-pet-ying__frame--flip": facingLeft.value, "agent-pet-ying__frame--pending": !hasFrame.value }]),
-            src: shownSrc.value,
-            alt: "",
-            draggable: "false",
-            onLoad: onFrameLoad,
-            onError: onFrameError
-          }, null, 42, _hoisted_3)
+          _createElementVNode("span", {
+            class: _normalizeClass(["agent-pet-ying__frames", { "agent-pet-ying__frames--flip": facingLeft.value, "agent-pet-ying__frames--pending": !displayed.value }]),
+            "data-frame": displayed.value ?? void 0
+          }, [
+            (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(POSES), (name) => {
+              return _openBlock(), _createElementBlock("img", {
+                key: name,
+                class: _normalizeClass(["agent-pet-ying__frame", { "agent-pet-ying__frame--visible": name === displayed.value }]),
+                src: frameSrc.value[name],
+                "data-pose": name,
+                alt: "",
+                draggable: "false",
+                onLoad: ($event) => onFrameLoad(name, $event),
+                onError: ($event) => onFrameError(name)
+              }, null, 42, _hoisted_4);
+            }), 128))
+          ], 10, _hoisted_3)
         ], 44, _hoisted_2), [
           [_vShow, ready.value]
         ])
@@ -1048,6 +1066,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-2fd17dde"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-471dcba9"]]);
 
 export { AgentPet as default };
