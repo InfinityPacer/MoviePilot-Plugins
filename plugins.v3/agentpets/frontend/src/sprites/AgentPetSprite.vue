@@ -46,8 +46,15 @@ const props = withDefaults(
   },
 )
 
+const packKey = props.pet?.key || BUILTIN_PACK_ID
 const pack = ref<SpritePack>(BUILTIN_PACK)
 const sheetSrc = ref(builtinAsset('sheet.webp'))
+/**
+ * 素材包是否已就绪可画。
+ *
+ * 用户素材包在读取完成前什么都不画，避免先闪一下放映猫；读取失败才退回内置素材包。
+ */
+const ready = ref(packKey === BUILTIN_PACK_ID)
 const cellRatio = ref(1)
 const frameIndex = ref(0)
 let timer = 0
@@ -104,7 +111,11 @@ function measure(src: string) {
 }
 
 async function loadPack(key: string) {
-  if (key === BUILTIN_PACK_ID || !props.api?.get) return
+  if (key === BUILTIN_PACK_ID) return
+  if (!props.api?.get) {
+    ready.value = true
+    return
+  }
   const instanceId = props.pluginId || 'AgentPets'
   try {
     const response = await props.api.get<{ pack: unknown; sheet_src: string }>(
@@ -118,6 +129,7 @@ async function loadPack(key: string) {
   } catch {
     console.warn(`[AgentPets] pack ${key} unavailable, using builtin`)
   }
+  if (!disposed) ready.value = true
 }
 
 watch(
@@ -125,11 +137,14 @@ watch(
   () => play(),
 )
 watch(sheetSrc, src => measure(src))
+watch(ready, value => {
+  if (value) measure(sheetSrc.value)
+})
 
 onMounted(async () => {
-  measure(sheetSrc.value)
+  if (ready.value) measure(sheetSrc.value)
   play()
-  await loadPack(props.pet?.key || BUILTIN_PACK_ID)
+  await loadPack(packKey)
 })
 
 onBeforeUnmount(() => {
@@ -142,11 +157,11 @@ onBeforeUnmount(() => {
   <div
     class="agent-pet-sprites"
     aria-hidden="true"
-    :data-pack="pack.id"
+    :data-pack="ready ? pack.id : undefined"
     :data-action="resolved.key"
     :data-frame="frame"
   >
-    <div class="agent-pet-sprites__frame" :style="frameStyle" />
+    <div v-if="ready" class="agent-pet-sprites__frame" :style="frameStyle" />
   </div>
 </template>
 

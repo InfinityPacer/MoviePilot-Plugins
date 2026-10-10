@@ -27,7 +27,9 @@ describe('host support notice', () => {
   ])('%s warns when the host has no agent capability', (_name, component) => {
     mount(component, false)
     expect(screen.getByText(HOST_UNSUPPORTED_MESSAGE)).toBeInTheDocument()
-    expect(HOST_UNSUPPORTED_MESSAGE).toBe('当前主程序版本不支持助手形象，请升级到 v3.1.4 及以上')
+    expect(HOST_UNSUPPORTED_MESSAGE).toBe('当前主程序版本不支持助手形象，请将主程序升级到最新版本')
+    // 同号前端版本已发布但不含该功能，提示里不写具体版本号。
+    expect(HOST_UNSUPPORTED_MESSAGE).not.toMatch(/\d\.\d/)
   })
 
   it.each([

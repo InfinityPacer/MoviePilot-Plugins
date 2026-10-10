@@ -7,9 +7,9 @@ import {
   checkSupport,
   clamp,
   computeLanding,
+  coversAny,
   effectiveScale,
   pickClearX,
-  probePoints,
   escapeSpan,
   freeBounds,
   groundTop,
@@ -27,7 +27,7 @@ import {
 } from '@/stage/geometry'
 import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
 import { DEFAULT_SETTINGS, loadSettings, normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
-import { coversControl, measureSurface, querySurfaces, surfaceVisible, type DomSurface } from '@/stage/surfaces'
+import { collectControls, measureSurface, querySurfaces, surfaceVisible, type DomSurface } from '@/stage/surfaces'
 
 /**
  * 小映 stage 形象。
@@ -74,6 +74,8 @@ const SURFACE_CHECK_INTERVAL = 500
 const DROP_CLEAR_DELAY = 1500
 /** 窗口尺寸变化后合并多久再检查是否挡住控件（毫秒）。 */
 const RESIZE_CLEAR_DELAY = 300
+/** 写回落脚点的最短间隔（毫秒），避免频繁写服务端。 */
+const SAVE_THROTTLE = 30_000
 /** 站立时每隔几拍（每拍 500ms）复查一次是否挡住控件。 */
 const CLEARANCE_POLL_EVERY = 4
 /** 同一帧加载失败后，至少隔这么久（毫秒）才再次请求。 */
@@ -121,6 +123,9 @@ let bounced = false
 let fallTarget: Landing<DomSurface> | null = null
 let peekTarget = 0
 let lastSaved = ''
+let lastSaveAt = 0
+/** 下一次落地后保存落脚点：用户拖拽放下或活动范围改变时置位。 */
+let saveOnLand = false
 let suppressClick = false
 /** 散步到底边一侧后接着探头。 */
 let pendingPeek = false
@@ -421,7 +426,6 @@ function finishWalk() {
   const stepOff = pendingStepOff
   pendingPeek = false
   pendingStepOff = false
-  savePosition()
   scheduleClearance(0)
   if (stepOff && surface) stepOffEdge()
   else if (peek) beginPeek()
@@ -457,7 +461,6 @@ function settle() {
     walkTarget = null
     walkPhase.value = 0
     motion.value = 'idle'
-    savePosition()
   }
   if (motion.value === 'peek') {
     clearTimer('peek')
@@ -625,7 +628,10 @@ function land(animated: boolean) {
     motion.value = 'idle'
     scheduleBehavior()
   }
-  savePosition()
+  if (saveOnLand) {
+    saveOnLand = false
+    requestSave()
+  }
   queueAnchor()
   const delay = droppedByUser ? DROP_CLEAR_DELAY : 0
   droppedByUser = false
@@ -726,11 +732,6 @@ function checkSurface() {
   queueAnchor()
 }
 
-/** 角色左边放在 `left` 时是否挡住可点击控件。 */
-function coversAt(left: number): boolean {
-  return coversControl(probePoints({ ...currentRect(), x: left }), rootEl.value)
-}
-
 /**
  * 不在可点击控件上方停留。
  *
@@ -741,6 +742,9 @@ function checkClearance() {
   if (disposed || !ready.value || motion.value !== 'idle' || !visible()) return
   const instant = initialPlacement || !motionAllowed()
   initialPlacement = false
+  // 一次判断只读一遍控件矩形，候选位置的试探都复用它。
+  const controls = collectControls(rootEl.value, viewport(), surface?.el ?? null)
+  const coversAt = (left: number) => coversAny({ ...currentRect(), x: left }, controls)
   if (!coversAt(x.value)) return
   const span = panelSpan()
   const target = pickClearX(x.value, bounds(), left => !isBlocked(left, span) && !coversAt(left), charWidth.value / 2)
@@ -754,7 +758,6 @@ function checkClearance() {
   if (instant) {
     facingLeft.value = target < x.value
     x.value = target
-    savePosition()
     queueAnchor()
     scheduleBehavior()
     return
@@ -766,7 +769,26 @@ function scheduleClearance(delay: number) {
   setTimer('clearance', delay, checkClearance)
 }
 
-function savePosition() {
+/**
+ * 请求把落脚点写回 `pet.storage`。
+ *
+ * 只在三种情况下写服务端：用户拖拽放下、活动范围改变（都在随后落地时写）和页面变为隐藏。
+ * 散步、自己落地和避让控件都不写。前两种 30 秒内最多写一次，期间的变化推迟到间隔结束再写；
+ * 页面隐藏时立即写，因为这可能是最后的机会。
+ */
+function requestSave(immediate = false) {
+  if (immediate) {
+    clearTimer('save')
+    writePosition()
+    return
+  }
+  const wait = lastSaveAt + SAVE_THROTTLE - Date.now()
+  if (wait <= 0) writePosition()
+  else if (!timers.has('save')) setTimer('save', wait, writePosition)
+}
+
+function writePosition() {
+  if (!ready.value || motion.value === 'drag' || motion.value === 'fall') return
   const view = viewport()
   const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1000) / 1000
   const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1000) / 1000
@@ -774,6 +796,7 @@ function savePosition() {
   const key = JSON.stringify(value)
   if (key === lastSaved) return
   lastSaved = key
+  lastSaveAt = Date.now()
   props.pet?.storage?.set?.(value)?.catch?.(() => console.warn('[AgentPets] position not saved'))
 }
 
@@ -814,6 +837,7 @@ function applySettings(value: unknown) {
   settings.value = normalizeSettings(value)
   if (ready.value && settings.value.roam !== before && motion.value !== 'drag') {
     settle()
+    saveOnLand = true
     startFall()
     return
   }
@@ -863,7 +887,6 @@ function freezeMotion() {
   if (motion.value === 'fall') land(false)
   else if (motion.value === 'walk' || motion.value === 'peek') {
     motion.value = 'idle'
-    savePosition()
     queueAnchor()
   }
 }
@@ -875,6 +898,7 @@ function syncVisibility() {
     clearTimer('behavior')
     pauseSurfaceWatch()
     if (motion.value === 'fall') land(false)
+    requestSave(true)
     return
   }
   if (surface && !surfaceObserver) {
@@ -949,6 +973,7 @@ function releasePointer() {
 function finishDrag() {
   props.pet?.setInteracting?.(false)
   droppedByUser = true
+  saveOnLand = true
   x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value))
   // 先离开拖拽状态，站立复查随之恢复。
   motion.value = 'idle'
@@ -1064,6 +1089,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // 还有推迟的保存时在卸载前写掉（例如切换形象）。
+  if (timers.has('save')) writePosition()
   disposed = true
   stopLoop()
   pauseSurfaceWatch()

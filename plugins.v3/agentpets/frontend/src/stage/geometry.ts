@@ -265,13 +265,20 @@ export function effectiveScale(scale: number, isMobile: boolean): number {
   return isMobile ? scale * MOBILE_SCALE : scale
 }
 
-/** 检查是否挡住可点击控件时的取样点：中心，以及下半部左右各一点。 */
-export function probePoints(rect: AgentRect): Array<{ x: number; y: number }> {
-  return [
-    { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
-    { x: rect.x + rect.width * 0.25, y: rect.y + rect.height * 0.75 },
-    { x: rect.x + rect.width * 0.75, y: rect.y + rect.height * 0.75 },
-  ]
+/** 两个矩形的交集面积。 */
+export function intersectionArea(a: AgentRect, b: AgentRect): number {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  return width > 0 && height > 0 ? width * height : 0
+}
+
+/** 交集超过角色面积的这个比例才算挡住控件。 */
+export const CONTROL_COVER_RATIO = 0.1
+
+/** 角色矩形是否挡住任一控件：与某个控件的交集面积超过角色面积的 10%。 */
+export function coversAny(rect: AgentRect, controls: readonly AgentRect[], ratio = CONTROL_COVER_RATIO): boolean {
+  const limit = rect.width * rect.height * ratio
+  return controls.some(control => intersectionArea(rect, control) > limit)
 }
 
 /**

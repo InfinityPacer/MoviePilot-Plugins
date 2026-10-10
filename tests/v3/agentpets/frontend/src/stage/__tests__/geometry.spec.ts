@@ -4,11 +4,12 @@ import {
   blockedSpan,
   checkSupport,
   computeLanding,
+  coversAny,
   effectiveScale,
   freeBounds,
+  intersectionArea,
   pickClearX,
   pickFreeTarget,
-  probePoints,
   standable,
   surfaceXBounds,
   escapeSpan,
@@ -131,12 +132,15 @@ describe('control clearance', () => {
     expect(effectiveScale(1.5, true)).toBeCloseTo(1.2)
   })
 
-  it('probes the center and both sides of the lower half', () => {
-    expect(probePoints({ x: 100, y: 200, width: 80, height: 120 })).toEqual([
-      { x: 140, y: 260 },
-      { x: 120, y: 290 },
-      { x: 160, y: 290 },
-    ])
+  it('treats more than 10% overlap with a control as covering', () => {
+    const pet = { x: 100, y: 100, width: 100, height: 100 }
+    expect(intersectionArea(pet, { x: 150, y: 150, width: 100, height: 100 })).toBe(2500)
+    expect(intersectionArea(pet, { x: 200, y: 100, width: 50, height: 50 })).toBe(0)
+    // 侧栏菜单项从她身后穿过：交集 100x20，正好 20%。
+    expect(coversAny(pet, [{ x: 0, y: 160, width: 300, height: 20 }])).toBe(true)
+    // 只擦到一点边：交集 10x50，5%。
+    expect(coversAny(pet, [{ x: 190, y: 120, width: 80, height: 50 }])).toBe(false)
+    expect(coversAny(pet, [])).toBe(false)
   })
 
   it('walks to the nearest clear position on the current surface', () => {

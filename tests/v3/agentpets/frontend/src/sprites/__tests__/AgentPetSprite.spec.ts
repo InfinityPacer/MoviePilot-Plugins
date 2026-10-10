@@ -49,12 +49,39 @@ describe('AgentPet (sprites)', () => {
     expect(view.container.querySelector('.agent-pet-sprites')).toHaveAttribute('data-pack', 'mine')
   })
 
+  it('draws nothing for a user pack until it has loaded', async () => {
+    let resolve: (value: unknown) => void = () => undefined
+    const api = { get: vi.fn().mockReturnValue(new Promise(done => (resolve = done))), post: vi.fn() }
+    const view = render(AgentPet, { props: { pet: createMockPet('renderer', 'mine'), api, pluginId: 'AgentPets' } })
+    await flush()
+    const root = view.container.querySelector('.agent-pet-sprites') as HTMLElement
+    expect(root.querySelector('.agent-pet-sprites__frame')).toBeNull()
+    expect(root.dataset.pack).toBeUndefined()
+
+    resolve({
+      success: true,
+      data: {
+        pack: { id: 'mine', name: '我的', grid: { cols: 1, rows: 1 }, frames: { idle: 0 }, actions: {} },
+        sheet_src: 'data:image/png;base64,AAAA',
+      },
+    })
+    await flush()
+    expect(root.dataset.pack).toBe('mine')
+    expect(root.querySelector('.agent-pet-sprites__frame')).not.toBeNull()
+  })
+
+  it('draws the builtin pack immediately', () => {
+    const view = render(AgentPet, { props: { pet: createMockPet('renderer', 'projector-cat') } })
+    expect(view.container.querySelector('.agent-pet-sprites__frame')).not.toBeNull()
+  })
+
   it('falls back to the builtin pack when the api fails', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const api = { get: vi.fn().mockResolvedValue({ success: false, message: 'gone' }), post: vi.fn() }
     const view = render(AgentPet, { props: { pet: createMockPet('renderer', 'gone'), api } })
     await flush()
     expect(view.container.querySelector('.agent-pet-sprites')).toHaveAttribute('data-pack', 'projector-cat')
+    expect(view.container.querySelector('.agent-pet-sprites__frame')).not.toBeNull()
     expect(warn).toHaveBeenCalled()
   })
 })

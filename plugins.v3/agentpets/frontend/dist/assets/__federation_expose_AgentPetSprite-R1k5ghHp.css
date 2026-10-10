@@ -1,5 +1,5 @@
 
-.agent-pet-sprites[data-v-d1bc6823] {
+.agent-pet-sprites[data-v-fda94a0c] {
   container-type: size;
   display: flex;
   align-items: flex-end;
@@ -10,7 +10,7 @@
   min-height: 3rem;
   pointer-events: none;
 }
-.agent-pet-sprites__frame[data-v-d1bc6823] {
+.agent-pet-sprites__frame[data-v-fda94a0c] {
   width: min(100cqw, 100cqh * var(--agent-pet-sprites-ratio));
   aspect-ratio: var(--agent-pet-sprites-ratio);
   background-repeat: no-repeat;
