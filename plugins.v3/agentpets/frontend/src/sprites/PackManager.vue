@@ -2,7 +2,7 @@
 import { computed, inject, onMounted, ref } from 'vue'
 
 import type { PluginApi } from '@/host'
-import { BUILTIN_PACK_ID, builtinAsset, validatePack } from '@/sprites/schema'
+import { buildCodexPetPack, BUILTIN_PACK_ID, builtinAsset, validatePack } from '@/sprites/schema'
 
 /** 素材包列表项，与后端 `_summary` 一致。 */
 interface PackSummary {
@@ -61,11 +61,14 @@ const instanceId = computed(() => props.pluginId || 'AgentPets')
 const packs = ref<PackSummary[]>([])
 const loading = ref(false)
 const submitting = ref(false)
+const codexImporting = ref(false)
 const packText = ref('')
 const imageMode = ref<'upload' | 'url'>('upload')
 const imageFile = ref<File | null>(null)
 const fileModel = ref<File[]>([])
 const imageError = ref('')
+const importMessage = ref('')
+const importError = ref('')
 const serverError = ref('')
 
 const validation = computed(() => (packText.value.trim() ? validatePack(packText.value) : null))
@@ -110,9 +113,38 @@ function onImage(value: File | File[] | null | undefined) {
   const file = Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
   imageFile.value = file
   imageError.value = ''
+  importMessage.value = ''
+  importError.value = ''
+  serverError.value = ''
   if (!file) return
   if (!IMAGE_TYPES.includes(file.type)) imageError.value = '只支持 PNG、WebP、GIF 或 JPEG'
   else if (file.size > MAX_IMAGE_BYTES) imageError.value = '精灵图不能超过 4MB'
+}
+
+async function importCodexPet() {
+  const file = imageFile.value
+  if (!file || imageError.value) return
+  codexImporting.value = true
+  imageError.value = ''
+  importMessage.value = ''
+  importError.value = ''
+  try {
+    if (file.type !== 'image/png' && file.type !== 'image/webp') {
+      throw new Error('Codex Pet 导入只支持 PNG 或 WebP')
+    }
+    const bitmap = await createImageBitmap(file)
+    const { width, height } = bitmap
+    bitmap.close()
+    const result = buildCodexPetPack(file.name, width, height)
+    imageMode.value = 'upload'
+    packText.value = JSON.stringify(result.pack, null, 2)
+    serverError.value = ''
+    importMessage.value = '已识别 Codex Pet ' + result.version + '，动作映射已生成'
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : '无法读取 Codex Pet 精灵图'
+  } finally {
+    codexImporting.value = false
+  }
 }
 
 function readDataUrl(file: File): Promise<string> {
@@ -142,6 +174,8 @@ async function addPack() {
     packText.value = ''
     imageFile.value = null
     fileModel.value = []
+    importMessage.value = ''
+    importError.value = ''
     await refresh()
   } catch {
     serverError.value = '添加失败，请检查网络或稍后重试'
@@ -226,8 +260,34 @@ onMounted(refresh)
       hide-details="auto"
       @update:model-value="onImage"
     />
-    <v-alert v-if="clientErrors.length || serverError" type="error" variant="tonal" density="compact" class="mt-3">
-      <div v-for="error in [...clientErrors, ...(serverError ? [serverError] : [])]" :key="error">{{ error }}</div>
+    <v-btn
+      v-if="imageMode === 'upload'"
+      class="mt-2"
+      color="secondary"
+      variant="tonal"
+      prepend-icon="mdi-file-import-outline"
+      :loading="codexImporting"
+      :disabled="!imageFile || !!imageError || codexImporting"
+      @click="importCodexPet"
+    >
+      从 Codex Pet 生成素材包
+    </v-btn>
+    <v-alert v-if="importMessage" type="success" variant="tonal" density="compact" class="mt-2">
+      {{ importMessage }}
+    </v-alert>
+    <v-alert
+      v-if="importError || clientErrors.length || serverError"
+      type="error"
+      variant="tonal"
+      density="compact"
+      class="mt-3"
+    >
+      <div
+        v-for="error in [...(importError ? [importError] : []), ...clientErrors, ...(serverError ? [serverError] : [])]"
+        :key="error"
+      >
+        {{ error }}
+      </div>
     </v-alert>
     <div class="d-flex align-center mt-3">
       <span class="text-caption text-medium-emphasis">

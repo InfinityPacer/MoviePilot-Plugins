@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE } from './host-CDE6kQPw.js';
-import { v as validatePack, B as BUILTIN_PACK_ID, b as builtinAsset } from './schema-7sDr2_vp.js';
+import { v as validatePack, B as BUILTIN_PACK_ID, b as builtinAsset, c as buildCodexPetPack } from './schema-B1R339xC.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, n as normalizeSettings, S as SETTINGS_EVENT } from './settings-_v7SC99m.js';
 
@@ -45,11 +45,14 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     const packs = ref$1([]);
     const loading = ref$1(false);
     const submitting = ref$1(false);
+    const codexImporting = ref$1(false);
     const packText = ref$1("");
     const imageMode = ref$1("upload");
     const imageFile = ref$1(null);
     const fileModel = ref$1([]);
     const imageError = ref$1("");
+    const importMessage = ref$1("");
+    const importError = ref$1("");
     const serverError = ref$1("");
     const validation = computed(() => packText.value.trim() ? validatePack(packText.value) : null);
     const clientErrors = computed(() => {
@@ -85,9 +88,37 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       const file = Array.isArray(value) ? value[0] ?? null : value ?? null;
       imageFile.value = file;
       imageError.value = "";
+      importMessage.value = "";
+      importError.value = "";
+      serverError.value = "";
       if (!file) return;
       if (!IMAGE_TYPES.includes(file.type)) imageError.value = "只支持 PNG、WebP、GIF 或 JPEG";
       else if (file.size > MAX_IMAGE_BYTES) imageError.value = "精灵图不能超过 4MB";
+    }
+    async function importCodexPet() {
+      const file = imageFile.value;
+      if (!file || imageError.value) return;
+      codexImporting.value = true;
+      imageError.value = "";
+      importMessage.value = "";
+      importError.value = "";
+      try {
+        if (file.type !== "image/png" && file.type !== "image/webp") {
+          throw new Error("Codex Pet 导入只支持 PNG 或 WebP");
+        }
+        const bitmap = await createImageBitmap(file);
+        const { width, height } = bitmap;
+        bitmap.close();
+        const result = buildCodexPetPack(file.name, width, height);
+        imageMode.value = "upload";
+        packText.value = JSON.stringify(result.pack, null, 2);
+        serverError.value = "";
+        importMessage.value = "已识别 Codex Pet " + result.version + "，动作映射已生成";
+      } catch (error) {
+        importError.value = error instanceof Error ? error.message : "无法读取 Codex Pet 精灵图";
+      } finally {
+        codexImporting.value = false;
+      }
     }
     function readDataUrl(file) {
       return new Promise((resolve, reject) => {
@@ -115,6 +146,8 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
         packText.value = "";
         imageFile.value = null;
         fileModel.value = [];
+        importMessage.value = "";
+        importError.value = "";
         await refresh();
       } catch {
         serverError.value = "添加失败，请检查网络或稍后重试";
@@ -153,7 +186,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       const _component_v_alert = _resolveComponent$2("v-alert");
       const _component_v_spacer = _resolveComponent$2("v-spacer");
       return _openBlock$2(), _createElementBlock$1("div", _hoisted_1$1, [
-        _cache[6] || (_cache[6] = _createElementVNode$2("div", { class: "text-subtitle-2 mb-2" }, "已有素材包", -1)),
+        _cache[7] || (_cache[7] = _createElementVNode$2("div", { class: "text-subtitle-2 mb-2" }, "已有素材包", -1)),
         loading.value ? (_openBlock$2(), _createBlock$1(_component_v_progress_linear, {
           key: 0,
           indeterminate: "",
@@ -233,7 +266,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
           ]),
           _: 1
         }),
-        _cache[7] || (_cache[7] = _createElementVNode$2("div", { class: "text-subtitle-2 mb-2" }, "添加素材包", -1)),
+        _cache[8] || (_cache[8] = _createElementVNode$2("div", { class: "text-subtitle-2 mb-2" }, "添加素材包", -1)),
         _createVNode$2(_component_v_textarea, {
           modelValue: packText.value,
           "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => packText.value = $event),
@@ -285,15 +318,42 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
           "error-messages": imageError.value ? [imageError.value] : [],
           "hide-details": "auto"
         }, null, 8, ["modelValue", "error-messages"])) : _createCommentVNode$2("", true),
-        clientErrors.value.length || serverError.value ? (_openBlock$2(), _createBlock$1(_component_v_alert, {
+        imageMode.value === "upload" ? (_openBlock$2(), _createBlock$1(_component_v_btn, {
           key: 2,
+          class: "mt-2",
+          color: "secondary",
+          variant: "tonal",
+          "prepend-icon": "mdi-file-import-outline",
+          loading: codexImporting.value,
+          disabled: !imageFile.value || !!imageError.value || codexImporting.value,
+          onClick: importCodexPet
+        }, {
+          default: _withCtx$2(() => [..._cache[5] || (_cache[5] = [
+            _createTextVNode$2(" 从 Codex Pet 生成素材包 ", -1)
+          ])]),
+          _: 1
+        }, 8, ["loading", "disabled"])) : _createCommentVNode$2("", true),
+        importMessage.value ? (_openBlock$2(), _createBlock$1(_component_v_alert, {
+          key: 3,
+          type: "success",
+          variant: "tonal",
+          density: "compact",
+          class: "mt-2"
+        }, {
+          default: _withCtx$2(() => [
+            _createTextVNode$2(_toDisplayString$2(importMessage.value), 1)
+          ]),
+          _: 1
+        })) : _createCommentVNode$2("", true),
+        importError.value || clientErrors.value.length || serverError.value ? (_openBlock$2(), _createBlock$1(_component_v_alert, {
+          key: 4,
           type: "error",
           variant: "tonal",
           density: "compact",
           class: "mt-3"
         }, {
           default: _withCtx$2(() => [
-            (_openBlock$2(true), _createElementBlock$1(_Fragment, null, _renderList([...clientErrors.value, ...serverError.value ? [serverError.value] : []], (error) => {
+            (_openBlock$2(true), _createElementBlock$1(_Fragment, null, _renderList([...importError.value ? [importError.value] : [], ...clientErrors.value, ...serverError.value ? [serverError.value] : []], (error) => {
               return _openBlock$2(), _createElementBlock$1("div", { key: error }, _toDisplayString$2(error), 1);
             }), 128))
           ]),
@@ -309,7 +369,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
             disabled: !canSubmit.value,
             onClick: addPack
           }, {
-            default: _withCtx$2(() => [..._cache[5] || (_cache[5] = [
+            default: _withCtx$2(() => [..._cache[6] || (_cache[6] = [
               _createTextVNode$2(" 校验并添加 ", -1)
             ])]),
             _: 1
@@ -320,7 +380,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-c522eb2b"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-a80175f5"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
@@ -427,7 +487,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-a7e3100d"]]);
+const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-ed0d1437"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 

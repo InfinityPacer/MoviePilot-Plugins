@@ -265,6 +265,120 @@ const HOST_INTENTS = [
 ];
 const BUILTIN_PACK_ID = "projector-cat";
 const DEFAULT_FRAME_MS = 160;
+const CODEX_PET_LAYOUTS = [
+  { version: "v1", width: 1536, height: 1872, rows: 9 },
+  { version: "v2", width: 1536, height: 2288, rows: 11 }
+];
+const CODEX_ANIMATION_ROWS = [
+  { id: "idle", count: 6 },
+  { id: "running-right", count: 8 },
+  { id: "running-left", count: 8 },
+  { id: "waving", count: 4 },
+  { id: "jumping", count: 5 },
+  { id: "failed", count: 8 },
+  { id: "waiting", count: 6 },
+  { id: "running", count: 6 },
+  { id: "review", count: 6 }
+];
+const CODEX_LOOK_DIRECTIONS = [
+  "000",
+  "022-5",
+  "045",
+  "067-5",
+  "090",
+  "112-5",
+  "135",
+  "157-5",
+  "180",
+  "202-5",
+  "225",
+  "247-5",
+  "270",
+  "292-5",
+  "315",
+  "337-5"
+];
+function buildCodexPetPack(filename, width, height) {
+  const layout = CODEX_PET_LAYOUTS.find((item) => item.width === width && item.height === height);
+  if (!layout) {
+    throw new Error("只支持 Codex Pet v1（1536×1872）或 v2（1536×2288）精灵图");
+  }
+  const separatorIndex = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+  const basename = filename.slice(separatorIndex + 1);
+  const extensionIndex = basename.lastIndexOf(".");
+  const stem = (extensionIndex > 0 ? basename.slice(0, extensionIndex) : basename).trim() || "Codex Pet";
+  const slugChars = [];
+  for (const character of stem.toLowerCase()) {
+    const code = character.charCodeAt(0);
+    const allowed = code >= 48 && code <= 57 || code >= 97 && code <= 122 || character === "_" || character === "-";
+    if (allowed) slugChars.push(character);
+    else if (slugChars[slugChars.length - 1] !== "-") slugChars.push("-");
+  }
+  let slugStart = 0;
+  while (slugStart < slugChars.length && slugChars[slugStart] === "-") slugStart += 1;
+  let slugEnd = slugChars.length;
+  while (slugEnd > slugStart && slugChars[slugEnd - 1] === "-") slugEnd -= 1;
+  const id = slugChars.slice(slugStart, slugEnd).join("").slice(0, 32) || "codex-pet";
+  const frames = {};
+  const rowFrames = {};
+  CODEX_ANIMATION_ROWS.forEach((row, rowIndex) => {
+    rowFrames[row.id] = Array.from({ length: row.count }, (_, column) => {
+      const frame = row.id === "idle" && column === 0 ? "idle" : row.id + "-" + (column + 1);
+      frames[frame] = rowIndex * 8 + column;
+      return frame;
+    });
+  });
+  const lookFrames = [];
+  if (layout.version === "v2") {
+    CODEX_LOOK_DIRECTIONS.forEach((direction, index) => {
+      const frame = "look-" + direction;
+      frames[frame] = (9 + Math.floor(index / 8)) * 8 + index % 8;
+      lookFrames.push(frame);
+    });
+  }
+  const action = (sequence, frame_ms = 160, loop = false) => ({
+    frames: [...sequence],
+    frame_ms,
+    loop
+  });
+  const scanFrames = layout.version === "v2" ? [...lookFrames, lookFrames[0]] : rowFrames.review;
+  const actions = {
+    idle: action(rowFrames.idle, 360, true),
+    "running-right": action(rowFrames["running-right"], 140, true),
+    "running-left": action(rowFrames["running-left"], 140, true),
+    waving: action(rowFrames.waving, 160),
+    jumping: action(rowFrames.jumping, 160),
+    failed: action(rowFrames.failed, 180),
+    waiting: action(rowFrames.waiting, 220, true),
+    running: action(rowFrames.running, 160, true),
+    review: action(rowFrames.review, 180),
+    wave: action(rowFrames.waving, 160),
+    notify: action(rowFrames.waving, 160),
+    "happy-jump": action(rowFrames.jumping, 160),
+    success: action(rowFrames.jumping, 180),
+    faint: action(rowFrames.failed, 180),
+    error: action(rowFrames.failed, 180),
+    thinking: action(rowFrames.waiting, 220, true),
+    charge: action(rowFrames.running, 160, true),
+    speaking: action(rowFrames.running, 160, true),
+    warning: action(rowFrames.review, 180),
+    "eye-roll": action(rowFrames.review, 180),
+    scan: action(scanFrames, 140)
+  };
+  return {
+    version: layout.version,
+    pack: {
+      id,
+      name: stem.slice(0, 40),
+      description: "从 Codex Pet " + layout.version + " 精灵图导入",
+      sheet: "",
+      grid: { cols: 8, rows: layout.rows },
+      frames,
+      actions,
+      random_actions: ["wave"]
+    }
+  };
+}
 const NAME = /^[a-z0-9_-]{1,32}$/;
 function integer(value, field, low, high, errors) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < low || value > high) {
@@ -378,4 +492,4 @@ function framePosition(pack, frame) {
   return { x: cols > 1 ? col / (cols - 1) * 100 : 0, y: rows > 1 ? row / (rows - 1) * 100 : 0 };
 }
 
-export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, HOST_INTENTS as c, framePosition as f, resolveAction as r, validatePack as v };
+export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, buildCodexPetPack as c, HOST_INTENTS as d, framePosition as f, resolveAction as r, validatePack as v };

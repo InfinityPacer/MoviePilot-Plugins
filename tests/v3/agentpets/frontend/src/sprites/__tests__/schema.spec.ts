@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import builtinJson from '@/assets/packs/projector-cat/pack.json'
-import { BUILTIN_PACK, builtinAsset, framePosition, HOST_ACTIONS, resolveAction, validatePack } from '@/sprites/schema'
+import {
+  buildCodexPetPack,
+  BUILTIN_PACK,
+  builtinAsset,
+  framePosition,
+  HOST_ACTIONS,
+  resolveAction,
+  validatePack,
+} from '@/sprites/schema'
 
 const minimal = {
   name: '测试',
@@ -34,6 +42,37 @@ describe('sprite pack schema', () => {
     const { pack, errors } = validatePack(JSON.stringify(minimal))
     expect(errors).toEqual([])
     expect(pack?.actions.idle).toEqual({ frames: ['idle'], frame_ms: 160, loop: false })
+  })
+
+  it('converts Codex Pet v1 and v2 sheets into valid AgentPets packs', () => {
+    const v1 = buildCodexPetPack('Kurisu.png', 1536, 1872)
+    expect(v1.version).toBe('v1')
+    expect(v1.pack).toMatchObject({
+      id: 'kurisu',
+      name: 'Kurisu',
+      grid: { cols: 8, rows: 9 },
+    })
+    expect(Object.keys(v1.pack.frames as object)).toHaveLength(57)
+    expect(validatePack(v1.pack).errors).toEqual([])
+
+    const v2 = buildCodexPetPack('C:\\Pets\\Kurisu v2.webp', 1536, 2288)
+    const validation = validatePack(v2.pack)
+    expect(v2.version).toBe('v2')
+    expect(validation.errors).toEqual([])
+    expect(v2.pack).toMatchObject({
+      id: 'kurisu-v2',
+      grid: { cols: 8, rows: 11 },
+    })
+    expect((v2.pack.frames as Record<string, number>)['look-000']).toBe(72)
+    expect((v2.pack.frames as Record<string, number>)['look-337-5']).toBe(87)
+    expect(validation.pack?.actions.scan.frames).toHaveLength(17)
+    expect(validation.pack?.actions.scan.frames[16]).toBe('look-000')
+    expect(validation.pack?.actions.thinking.frames[0]).toBe('waiting-1')
+    expect(validation.pack?.actions.error.frames[0]).toBe('failed-1')
+  })
+
+  it('rejects unsupported Codex Pet sheet dimensions', () => {
+    expect(() => buildCodexPetPack('pet.png', 512, 512)).toThrow('只支持 Codex Pet v1')
   })
 
   it('reports structural errors', () => {
