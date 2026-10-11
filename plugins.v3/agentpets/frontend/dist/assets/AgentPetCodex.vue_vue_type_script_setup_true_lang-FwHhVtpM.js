@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-CAYJLhMd.js';
-import AgentPet from './__federation_expose_AgentPet-JWuaBblH.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-BbJu4Dqb.js';
+import AgentPet from './__federation_expose_AgentPet-zjW_Xv2Q.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -14,10 +14,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     pet: { default: null },
     api: { default: null },
     pluginId: { default: "" },
-    sourcePluginId: { default: "" }
+    sourcePluginId: { default: "" },
+    previewRoot: {},
+    settingsOverride: {},
+    previewPose: {}
   },
-  setup(__props) {
+  emits: ["load-state"],
+  setup(__props, { emit: __emit }) {
     const props = __props;
+    const emit = __emit;
     const appearance = ref({ name: "Codex Pet", aspectRatio: 192 / 208 });
     const POSE_ACTIONS = {
       wave: "wave",
@@ -45,8 +50,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(AgentPetSprite, _mergeProps(props, {
             action: actionForPose(pose, facingLeft),
             "motion-active": motionActive,
-            onAppearance: _cache[0] || (_cache[0] = ($event) => appearance.value = $event)
-          }), null, 16, ["action", "motion-active"])
+            "strict-preview": !!props.previewRoot,
+            onLoadState: _cache[0] || (_cache[0] = ($event) => emit("load-state", $event)),
+            onAppearance: _cache[1] || (_cache[1] = ($event) => appearance.value = $event)
+          }), null, 16, ["action", "motion-active", "strict-preview"])
         ]),
         _: 1
       }, 16, ["character-name", "aspect-ratio"]);
@@ -54,4 +61,4 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-export { _sfc_main as default };
+export { _sfc_main as _ };

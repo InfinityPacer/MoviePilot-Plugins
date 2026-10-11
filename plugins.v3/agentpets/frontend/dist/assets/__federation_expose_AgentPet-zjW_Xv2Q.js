@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { D as DEFAULT_SETTINGS, S as SETTINGS_EVENT, l as loadSettings, n as normalizeSettings } from './settings-_v7SC99m.js';
+import { D as DEFAULT_SETTINGS, S as SETTINGS_EVENT, l as loadSettings, n as normalizeSettings } from './settings-CQFXVfMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 function readViewport(state) {
@@ -238,29 +238,35 @@ function walkFrame(distance, charHeight) {
 
 const SURFACE_SELECTOR = '.v-card, .v-sheet, .v-overlay__content, [role="dialog"]';
 const MAX_SURFACE_CANDIDATES = 400;
-function measureSurface(el) {
+function measureSurface(el, scope = null) {
   if (!el.isConnected) return null;
   const rect = el.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
-  return { left: rect.left, top: rect.top, right: rect.right };
+  const origin = scope?.getBoundingClientRect();
+  return {
+    left: rect.left - (origin?.left ?? 0),
+    top: rect.top - (origin?.top ?? 0),
+    right: rect.right - (origin?.left ?? 0)
+  };
 }
 function surfaceVisible(el) {
   const style = window.getComputedStyle(el);
   return style.pointerEvents !== "none" && style.visibility !== "hidden" && style.display !== "none";
 }
-function surfaceUnobstructed(el, box, layer, viewportWidth) {
+function surfaceUnobstructed(el, box, layer, viewportWidth, scope = null) {
   if (typeof document.elementsFromPoint !== "function") return true;
   const left = Math.max(box.left, 0);
   const right = Math.min(box.right, viewportWidth);
   if (right <= left) return false;
-  const hit = document.elementsFromPoint((left + right) / 2, box.top + 2).find((item) => !layer?.contains(item));
+  const origin = scope?.getBoundingClientRect();
+  const hit = document.elementsFromPoint((left + right) / 2 + (origin?.left ?? 0), box.top + 2 + (origin?.top ?? 0)).find((item) => !layer?.contains(item));
   return !!hit && (hit === el || el.contains(hit));
 }
-function querySurfaces(layer, viewport, charHeight, panel) {
+function querySurfaces(layer, viewport, charHeight, panel, scope = null) {
   const floor = floorLine(viewport);
   const candidates = [];
-  for (const el of Array.from(document.querySelectorAll(SURFACE_SELECTOR))) {
-    const box = measureSurface(el);
+  for (const el of Array.from((scope ?? document).querySelectorAll(SURFACE_SELECTOR))) {
+    const box = measureSurface(el, scope);
     if (!box || box.right <= 0 || box.left >= viewport.width || box.top >= floor) continue;
     if (!standable(box, viewport, charHeight, panel)) continue;
     if (layer && (layer.contains(el) || el.contains(layer))) continue;
@@ -268,11 +274,12 @@ function querySurfaces(layer, viewport, charHeight, panel) {
     if (candidates.length >= MAX_SURFACE_CANDIDATES) break;
   }
   return candidates.filter(
-    (candidate) => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width)
+    (candidate) => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width, scope)
   );
 }
 const NEARBY_SURFACE_ROWS = 4;
-function surfacesNear(layer, viewport, charHeight, panel, columns) {
+function surfacesNear(layer, viewport, charHeight, panel, columns, scope = null) {
+  if (scope) return querySurfaces(layer, viewport, charHeight, panel, scope);
   if (typeof document.elementsFromPoint !== "function") return [];
   const top = viewport.safeArea.top + charHeight;
   const bottom = floorLine(viewport);
@@ -287,7 +294,7 @@ function surfacesNear(layer, viewport, charHeight, panel, columns) {
       if (!el || seen.has(el)) continue;
       seen.add(el);
       if (layer && el.contains(layer)) continue;
-      const box = measureSurface(el);
+      const box = measureSurface(el, scope);
       if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue;
       if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue;
       result.push({ ...box, el });
@@ -307,27 +314,28 @@ function samplePoints(rect, cols = SAMPLE_COLS, rows = SAMPLE_ROWS) {
   }
   return points;
 }
-function coversControlAt(rect, layer, viewport, standingOn, bodyArea = rect.width * rect.height) {
-  for (const control of eachControlUnder(rect, layer, viewport, standingOn)) {
+function coversControlAt(rect, layer, viewport, standingOn, bodyArea = rect.width * rect.height, scope = null) {
+  for (const control of eachControlUnder(rect, layer, viewport, standingOn, scope)) {
     if (coversAny(rect, [control], bodyArea)) return true;
   }
   return false;
 }
-function* eachControlUnder(rect, layer, viewport, standingOn) {
+function* eachControlUnder(rect, layer, viewport, standingOn, scope = null) {
   if (typeof document.elementsFromPoint !== "function") return;
   const viewportArea = viewport.width * viewport.height;
+  const origin = scope?.getBoundingClientRect();
   const seen = /* @__PURE__ */ new Set();
   for (const point of samplePoints(rect)) {
     if (point.x < 0 || point.y < 0 || point.x >= viewport.width || point.y >= viewport.height) continue;
-    const hit = document.elementsFromPoint(point.x, point.y).find((item) => !layer?.contains(item));
+    const hit = document.elementsFromPoint(point.x + (origin?.left ?? 0), point.y + (origin?.top ?? 0)).find((item) => !layer?.contains(item));
     const control = hit?.closest(CONTROL_SELECTOR);
-    if (!control || seen.has(control)) continue;
+    if (!control || seen.has(control) || scope && !scope.contains(control)) continue;
     seen.add(control);
     if (layer && control.contains(layer)) continue;
     if (standingOn && (control === standingOn || control.contains(standingOn))) continue;
     const box = control.getBoundingClientRect();
     if (box.width * box.height > viewportArea / 2) continue;
-    yield { x: box.left, y: box.top, width: box.width, height: box.height };
+    yield { x: box.left - (origin?.left ?? 0), y: box.top - (origin?.top ?? 0), width: box.width, height: box.height };
   }
 }
 
@@ -368,7 +376,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     pluginId: { default: "" },
     sourcePluginId: { default: "" },
     characterName: { default: "小映" },
-    aspectRatio: { default: 0 }
+    aspectRatio: { default: 0 },
+    previewRoot: { default: null },
+    settingsOverride: {},
+    previewPose: {}
   },
   setup(__props) {
     const props = __props;
@@ -427,7 +438,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const charHeight = computed(() => BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value));
     const charWidth = computed(() => charHeight.value * aspect.value);
     const pose = computed(
-      () => resolvePose({
+      () => props.previewRoot && props.previewPose ? props.previewPose : resolvePose({
         motion: motion.value,
         walkPhase: walkPhase.value,
         transient: transient.value,
@@ -787,7 +798,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function landing(exclude = null) {
       const view = viewport();
-      const boxes = roam() === "surfaces" ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null).filter(
+      const boxes = roam() === "surfaces" ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, props.previewRoot).filter(
         (box) => box.el !== exclude
       ) : [];
       return computeLanding(roam(), boxes, { x: x.value, y: y.value }, view, size());
@@ -866,7 +877,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           if (records.every((record) => rootEl.value?.contains(record.target))) return;
           if (!timers.has("surface")) setTimer("surface", SURFACE_CHECK_INTERVAL, checkSurface);
         });
-        surfaceObserver.observe(document.body, { subtree: true, childList: true, attributes: true });
+        surfaceObserver.observe(props.previewRoot ?? document.body, { subtree: true, childList: true, attributes: true });
       }
       syncSurfacePoll();
     }
@@ -906,7 +917,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function checkSurface() {
       if (!surface || !onGround()) return;
       const current = surface;
-      const box = measureSurface(current.el);
+      const box = measureSurface(current.el, props.previewRoot);
       const result = checkSupport(
         current,
         box && surfaceVisible(current.el) ? box : null,
@@ -942,7 +953,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       initialPlacement = false;
       const view = viewport();
       const body = charWidth.value * charHeight.value;
-      const covers = (rect, standingOn2) => coversControlAt(rect, rootEl.value, view, standingOn2, body);
+      const covers = (rect, standingOn2) => coversControlAt(rect, rootEl.value, view, standingOn2, body, props.previewRoot);
       const standingOn = surface?.el ?? null;
       if (!covers(currentRect(), standingOn)) return;
       settle();
@@ -972,7 +983,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (surface) options.push({ y: ground(), bounds: xBounds(view, charWidth.value), surface: null });
       if (roam() === "surfaces") {
         const columns = [x.value + charWidth.value / 2, view.width * 0.25, view.width * 0.75];
-        for (const box of surfacesNear(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, columns)) {
+        for (const box of surfacesNear(
+          rootEl.value,
+          view,
+          charHeight.value,
+          hostState?.panelRect ?? null,
+          columns,
+          props.previewRoot
+        )) {
           if (box.el === surface?.el) continue;
           options.push({ y: box.top - charHeight.value, bounds: surfaceXBounds(box, view, charWidth.value), surface: box });
         }
@@ -1033,7 +1051,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function recheckShelter() {
       const view = viewport();
       const body = charWidth.value * charHeight.value;
-      const covers = (depth2) => coversControlAt(rectAt(x.value, ground(), depth2), rootEl.value, view, null, body);
+      const covers = (depth2) => coversControlAt(rectAt(x.value, ground(), depth2), rootEl.value, view, null, body, props.previewRoot);
       if (!covers(0)) {
         sheltering = false;
         peekTarget = 0;
@@ -1225,6 +1243,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (props.pluginId && event.source !== props.pluginId) return;
       applySettings(event.data);
     }
+    function pointerPosition(event) {
+      const origin = props.previewRoot?.getBoundingClientRect();
+      return { x: event.clientX - (origin?.left ?? 0), y: event.clientY - (origin?.top ?? 0) };
+    }
+    watch(
+      () => props.settingsOverride,
+      (value) => {
+        if (value) applySettings(value);
+      },
+      { deep: true }
+    );
     function onPointerDown(event) {
       if (event.button !== 0 || press) return;
       markActivity();
@@ -1232,8 +1261,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         id: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
-        offsetX: event.clientX - x.value,
-        offsetY: event.clientY - (y.value + sink.value),
+        offsetX: pointerPosition(event).x - x.value,
+        offsetY: pointerPosition(event).y - (y.value + sink.value),
         dragging: false
       };
       window.addEventListener("pointermove", onPointerMove);
@@ -1266,8 +1295,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       event.preventDefault();
       const view = viewport();
-      x.value = clamp(event.clientX - press.offsetX, 0, Math.max(0, view.width - charWidth.value));
-      y.value = clamp(event.clientY - press.offsetY, 0, ground());
+      x.value = clamp(pointerPosition(event).x - press.offsetX, 0, Math.max(0, view.width - charWidth.value));
+      y.value = clamp(pointerPosition(event).y - press.offsetY, 0, ground());
       facingLeft.value = false;
       queueAnchor();
     }
@@ -1367,9 +1396,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       window.addEventListener("resize", onWindowResize);
       cleanups.push(() => document.removeEventListener("visibilitychange", onVisibilityChange));
       cleanups.push(() => window.removeEventListener("resize", onWindowResize));
-      const [loaded, stored] = await Promise.all([loadSettings(props.api, props.pluginId), readStoredPosition()]);
+      const [loaded, stored] = await Promise.all([
+        props.settingsOverride ?? loadSettings(props.api, props.pluginId),
+        readStoredPosition()
+      ]);
       if (disposed) return;
-      settings.value = loaded;
+      settings.value = normalizeSettings(props.settingsOverride ?? loaded);
       restorePosition(stored);
       ready.value = true;
       syncVisibility();
@@ -1398,7 +1430,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return _openBlock(), _createElementBlock("div", {
         ref_key: "rootEl",
         ref: rootEl,
-        class: "agent-pet-ying",
+        class: _normalizeClass(["agent-pet-ying", { "agent-pet-ying--contained": !!props.previewRoot }]),
         "data-pose": pose.value,
         "data-motion": motion.value,
         "data-roam": settings.value.roam
@@ -1439,11 +1471,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         ], 44, _hoisted_2), [
           [_vShow, ready.value]
         ])
-      ], 8, _hoisted_1);
+      ], 10, _hoisted_1);
     };
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-7526db33"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-8e0b176c"]]);
 
 export { AgentPet as default };

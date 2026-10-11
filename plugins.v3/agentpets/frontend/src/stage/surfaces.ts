@@ -22,11 +22,16 @@ export interface DomSurface extends SurfaceBox {
 }
 
 /** 读取元素当前的上边缘；元素已脱离文档或没有尺寸时返回 null。 */
-export function measureSurface(el: Element): SurfaceBox | null {
+export function measureSurface(el: Element, scope: Element | null = null): SurfaceBox | null {
   if (!el.isConnected) return null
   const rect = el.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return null
-  return { left: rect.left, top: rect.top, right: rect.right }
+  const origin = scope?.getBoundingClientRect()
+  return {
+    left: rect.left - (origin?.left ?? 0),
+    top: rect.top - (origin?.top ?? 0),
+    right: rect.right - (origin?.left ?? 0),
+  }
 }
 
 /** 不接收指针或不可见的元素不算可站表面。 */
@@ -46,12 +51,16 @@ export function surfaceUnobstructed(
   box: SurfaceBox,
   layer: Element | null,
   viewportWidth: number,
+  scope: Element | null = null,
 ): boolean {
   if (typeof document.elementsFromPoint !== 'function') return true
   const left = Math.max(box.left, 0)
   const right = Math.min(box.right, viewportWidth)
   if (right <= left) return false
-  const hit = document.elementsFromPoint((left + right) / 2, box.top + 2).find(item => !layer?.contains(item))
+  const origin = scope?.getBoundingClientRect()
+  const hit = document
+    .elementsFromPoint((left + right) / 2 + (origin?.left ?? 0), box.top + 2 + (origin?.top ?? 0))
+    .find(item => !layer?.contains(item))
   return !!hit && (hit === el || el.contains(hit))
 }
 
@@ -66,11 +75,12 @@ export function querySurfaces(
   viewport: StageViewport,
   charHeight: number,
   panel: AgentRect | null,
+  scope: Element | null = null,
 ): DomSurface[] {
   const floor = floorLine(viewport)
   const candidates: DomSurface[] = []
-  for (const el of Array.from(document.querySelectorAll(SURFACE_SELECTOR))) {
-    const box = measureSurface(el)
+  for (const el of Array.from((scope ?? document).querySelectorAll(SURFACE_SELECTOR))) {
+    const box = measureSurface(el, scope)
     // 先按矩形筛掉视口外和几何上不可站的元素，它们不计入上限。
     if (!box || box.right <= 0 || box.left >= viewport.width || box.top >= floor) continue
     if (!standable(box, viewport, charHeight, panel)) continue
@@ -79,7 +89,8 @@ export function querySurfaces(
     if (candidates.length >= MAX_SURFACE_CANDIDATES) break
   }
   return candidates.filter(
-    candidate => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width),
+    candidate =>
+      surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width, scope),
   )
 }
 
@@ -99,7 +110,9 @@ export function surfacesNear(
   charHeight: number,
   panel: AgentRect | null,
   columns: readonly number[],
+  scope: Element | null = null,
 ): DomSurface[] {
+  if (scope) return querySurfaces(layer, viewport, charHeight, panel, scope)
   if (typeof document.elementsFromPoint !== 'function') return []
   const top = viewport.safeArea.top + charHeight
   const bottom = floorLine(viewport)
@@ -114,7 +127,7 @@ export function surfacesNear(
       if (!el || seen.has(el)) continue
       seen.add(el)
       if (layer && el.contains(layer)) continue
-      const box = measureSurface(el)
+      const box = measureSurface(el, scope)
       if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue
       if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue
       result.push({ ...box, el })
@@ -179,8 +192,9 @@ export function coversControlAt(
   viewport: { width: number; height: number },
   standingOn: Element | null,
   bodyArea = rect.width * rect.height,
+  scope: Element | null = null,
 ): boolean {
-  for (const control of eachControlUnder(rect, layer, viewport, standingOn)) {
+  for (const control of eachControlUnder(rect, layer, viewport, standingOn, scope)) {
     if (coversAny(rect, [control], bodyArea)) return true
   }
   return false
@@ -191,20 +205,24 @@ function* eachControlUnder(
   layer: Element | null,
   viewport: { width: number; height: number },
   standingOn: Element | null,
+  scope: Element | null = null,
 ): Generator<AgentRect> {
   if (typeof document.elementsFromPoint !== 'function') return
   const viewportArea = viewport.width * viewport.height
+  const origin = scope?.getBoundingClientRect()
   const seen = new Set<Element>()
   for (const point of samplePoints(rect)) {
     if (point.x < 0 || point.y < 0 || point.x >= viewport.width || point.y >= viewport.height) continue
-    const hit = document.elementsFromPoint(point.x, point.y).find(item => !layer?.contains(item))
+    const hit = document
+      .elementsFromPoint(point.x + (origin?.left ?? 0), point.y + (origin?.top ?? 0))
+      .find(item => !layer?.contains(item))
     const control = hit?.closest(CONTROL_SELECTOR)
-    if (!control || seen.has(control)) continue
+    if (!control || seen.has(control) || (scope && !scope.contains(control))) continue
     seen.add(control)
     if (layer && control.contains(layer)) continue
     if (standingOn && (control === standingOn || control.contains(standingOn))) continue
     const box = control.getBoundingClientRect()
     if (box.width * box.height > viewportArea / 2) continue
-    yield { x: box.left, y: box.top, width: box.width, height: box.height }
+    yield { x: box.left - (origin?.left ?? 0), y: box.top - (origin?.top ?? 0), width: box.width, height: box.height }
   }
 }

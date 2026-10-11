@@ -7,6 +7,8 @@ const props = defineProps<{
   modelValue: YingSettings
   /** 主程序是否提供 `moviepilot:agent`，决定能否实时预览。 */
   livePreview: boolean
+  disabled?: boolean
+  previewOnly?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [YingSettings] }>()
@@ -36,6 +38,7 @@ function reset() {
       :step="0.05"
       color="primary"
       thumb-label
+      :disabled="props.disabled"
       hide-details
       aria-label="角色大小"
       @update:model-value="(value: number) => update({ scale: Number(value) })"
@@ -52,6 +55,7 @@ function reset() {
       :step="0.05"
       color="primary"
       thumb-label
+      :disabled="props.disabled"
       hide-details
       aria-label="移动速度"
       @update:model-value="(value: number) => update({ speed: Number(value) })"
@@ -67,19 +71,24 @@ function reset() {
       item-value="value"
       label="活动范围"
       variant="outlined"
-      density="comfortable"
+      density="compact"
+      :disabled="props.disabled"
       class="mt-5"
       :hint="ROAM_OPTIONS.find(option => option.value === props.modelValue.roam)?.hint"
       persistent-hint
       @update:model-value="(value: RoamMode) => update({ roam: value })"
     />
-    <div class="d-flex align-center mt-3">
+    <div class="d-flex align-start flex-column ga-2 mt-3">
       <!-- 没有宿主对象时配置页顶部已提示升级主程序，这里不再重复。 -->
       <span v-if="props.livePreview" class="text-caption text-medium-emphasis">
-        调整时页面上正在运行的小映或 Codex Pet 会实时变化，保存后对所有用户生效。
+        {{
+          props.previewOnly
+            ? '仅在预览区试调。小映与 Codex Pet 共用活动设置，保存后对所有用户生效。'
+            : '调整时页面上正在运行的小映或 Codex Pet 会实时变化，保存后对所有用户生效。'
+        }}
       </span>
       <v-spacer />
-      <v-btn variant="text" size="small" @click="reset">恢复默认</v-btn>
+      <v-btn variant="text" size="small" :disabled="props.disabled" @click="reset">恢复默认</v-btn>
     </div>
   </div>
 </template>

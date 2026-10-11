@@ -59,8 +59,22 @@ const props = withDefaults(
     /** 使用自定义外观时的名称与格子宽高比。 */
     characterName?: string
     aspectRatio?: number
+    /** 详情页局部预览边界；缺省仍在整个页面活动。 */
+    previewRoot?: HTMLElement | null
+    /** 预览草稿直接传入，不读取或写入已保存设置。 */
+    settingsOverride?: YingSettings
+    previewPose?: Pose
   }>(),
-  { agent: null, pet: null, api: null, pluginId: '', sourcePluginId: '', characterName: '小映', aspectRatio: 0 },
+  {
+    agent: null,
+    pet: null,
+    api: null,
+    pluginId: '',
+    sourcePluginId: '',
+    characterName: '小映',
+    aspectRatio: 0,
+    previewRoot: null,
+  },
 )
 
 /** 设置为 1 倍时的角色高度（CSS 像素）。 */
@@ -178,15 +192,17 @@ const cleanups: Array<() => void> = []
 const charHeight = computed(() => BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value))
 const charWidth = computed(() => charHeight.value * aspect.value)
 const pose = computed<Pose>(() =>
-  resolvePose({
-    motion: motion.value,
-    walkPhase: walkPhase.value,
-    transient: transient.value,
-    sustained: sustained.value,
-    dozing: dozing.value,
-    blinking: blinking.value,
-    rising: rising.value,
-  }),
+  props.previewRoot && props.previewPose
+    ? props.previewPose
+    : resolvePose({
+        motion: motion.value,
+        walkPhase: walkPhase.value,
+        transient: transient.value,
+        sustained: sustained.value,
+        dozing: dozing.value,
+        blinking: blinking.value,
+        rising: rising.value,
+      }),
 )
 const label = computed(() =>
   available.value ? `打开助手（${props.characterName}）` : `${props.characterName}（助手未启用）`,
@@ -620,7 +636,7 @@ function landing(exclude: Element | null = null): Landing<DomSurface> {
   const view = viewport()
   const boxes =
     roam() === 'surfaces'
-      ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null).filter(
+      ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, props.previewRoot).filter(
           box => box.el !== exclude,
         )
       : []
@@ -710,7 +726,7 @@ function attachSurface(next: DomSurface) {
       if (records.every(record => rootEl.value?.contains(record.target))) return
       if (!timers.has('surface')) setTimer('surface', SURFACE_CHECK_INTERVAL, checkSurface)
     })
-    surfaceObserver.observe(document.body, { subtree: true, childList: true, attributes: true })
+    surfaceObserver.observe(props.previewRoot ?? document.body, { subtree: true, childList: true, attributes: true })
   }
   syncSurfacePoll()
 }
@@ -770,7 +786,7 @@ function onSurfaceScroll() {
 function checkSurface() {
   if (!surface || !onGround()) return
   const current = surface
-  const box = measureSurface(current.el)
+  const box = measureSurface(current.el, props.previewRoot)
   const result = checkSupport(
     current,
     box && surfaceVisible(current.el) ? box : null,
@@ -819,7 +835,7 @@ function checkClearance() {
   const view = viewport()
   const body = charWidth.value * charHeight.value
   const covers = (rect: AgentRect, standingOn: Element | null) =>
-    coversControlAt(rect, rootEl.value, view, standingOn, body)
+    coversControlAt(rect, rootEl.value, view, standingOn, body, props.previewRoot)
   const standingOn = surface?.el ?? null
   if (!covers(currentRect(), standingOn)) return
   settle()
@@ -855,7 +871,14 @@ function findOtherSurface(
   if (roam() === 'surfaces') {
     // 用命中测试在她所在的竖线和视口左右各一条竖线上找面，避免在大页面上全页扫描。
     const columns = [x.value + charWidth.value / 2, view.width * 0.25, view.width * 0.75]
-    for (const box of surfacesNear(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, columns)) {
+    for (const box of surfacesNear(
+      rootEl.value,
+      view,
+      charHeight.value,
+      hostState?.panelRect ?? null,
+      columns,
+      props.previewRoot,
+    )) {
       if (box.el === surface?.el) continue
       options.push({ y: box.top - charHeight.value, bounds: surfaceXBounds(box, view, charWidth.value), surface: box })
     }
@@ -929,7 +952,8 @@ function beginShelter(depth: number, instant: boolean) {
 function recheckShelter() {
   const view = viewport()
   const body = charWidth.value * charHeight.value
-  const covers = (depth: number) => coversControlAt(rectAt(x.value, ground(), depth), rootEl.value, view, null, body)
+  const covers = (depth: number) =>
+    coversControlAt(rectAt(x.value, ground(), depth), rootEl.value, view, null, body, props.previewRoot)
   if (!covers(0)) {
     sheltering = false
     peekTarget = 0
@@ -1155,6 +1179,19 @@ function onSettingsEvent(event: AgentHostEvent) {
   applySettings(event.data)
 }
 
+function pointerPosition(event: PointerEvent) {
+  const origin = props.previewRoot?.getBoundingClientRect()
+  return { x: event.clientX - (origin?.left ?? 0), y: event.clientY - (origin?.top ?? 0) }
+}
+
+watch(
+  () => props.settingsOverride,
+  value => {
+    if (value) applySettings(value)
+  },
+  { deep: true },
+)
+
 function onPointerDown(event: PointerEvent) {
   if (event.button !== 0 || press) return
   markActivity()
@@ -1162,8 +1199,8 @@ function onPointerDown(event: PointerEvent) {
     id: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
-    offsetX: event.clientX - x.value,
-    offsetY: event.clientY - (y.value + sink.value),
+    offsetX: pointerPosition(event).x - x.value,
+    offsetY: pointerPosition(event).y - (y.value + sink.value),
     dragging: false,
   }
   window.addEventListener('pointermove', onPointerMove)
@@ -1197,8 +1234,8 @@ function onPointerMove(event: PointerEvent) {
   }
   event.preventDefault()
   const view = viewport()
-  x.value = clamp(event.clientX - press.offsetX, 0, Math.max(0, view.width - charWidth.value))
-  y.value = clamp(event.clientY - press.offsetY, 0, ground())
+  x.value = clamp(pointerPosition(event).x - press.offsetX, 0, Math.max(0, view.width - charWidth.value))
+  y.value = clamp(pointerPosition(event).y - press.offsetY, 0, ground())
   facingLeft.value = false
   queueAnchor()
 }
@@ -1315,9 +1352,12 @@ onMounted(async () => {
   cleanups.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
   cleanups.push(() => window.removeEventListener('resize', onWindowResize))
 
-  const [loaded, stored] = await Promise.all([loadSettings(props.api, props.pluginId), readStoredPosition()])
+  const [loaded, stored] = await Promise.all([
+    props.settingsOverride ?? loadSettings(props.api, props.pluginId),
+    readStoredPosition(),
+  ])
   if (disposed) return
-  settings.value = loaded
+  settings.value = normalizeSettings(props.settingsOverride ?? loaded)
   restorePosition(stored)
   ready.value = true
   syncVisibility()
@@ -1347,7 +1387,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="rootEl" class="agent-pet-ying" :data-pose="pose" :data-motion="motion" :data-roam="settings.roam">
+  <div
+    ref="rootEl"
+    class="agent-pet-ying"
+    :class="{ 'agent-pet-ying--contained': !!props.previewRoot }"
+    :data-pose="pose"
+    :data-motion="motion"
+    :data-roam="settings.roam"
+  >
     <button
       v-show="ready"
       type="button"
@@ -1388,6 +1435,10 @@ onBeforeUnmount(() => {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+.agent-pet-ying--contained {
+  position: absolute;
 }
 
 .agent-pet-ying__character {

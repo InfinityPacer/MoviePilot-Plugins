@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import schemas
 from app.plugins import _PluginBase
@@ -61,6 +61,15 @@ def require_admin(payload=Depends(verify_token)):
     if not payload.super_user:
         raise HTTPException(status_code=403, detail="用户权限不足")
     return payload
+
+
+class SaveSettingsRequest(BaseModel):
+    """仅接受活动参数，避免详情页覆盖启用状态或其他插件配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+    scale: float = Field(ge=SCALE_RANGE[0], le=SCALE_RANGE[1], allow_inf_nan=False)
+    speed: float = Field(ge=SPEED_RANGE[0], le=SPEED_RANGE[1], allow_inf_nan=False)
+    roam: Literal["surfaces", "floor", "free"]
 
 
 class AddPackRequest(BaseModel):
@@ -182,6 +191,42 @@ class AgentPets(_PluginBase):
     def api_settings(self):
         return schemas.Response(success=True, data=self.settings())
 
+    def api_editor(self):
+        """编辑页只取得必要的状态与形象，不暴露其他配置。"""
+        pets = [
+            {
+                "key": pet["key"],
+                "name": pet["name"],
+                "description": pet.get("description", ""),
+                "mode": pet["mode"],
+                "preview": pet.get("avatar") or pet.get("preview") or "",
+                "builtin": pet["key"] in (STAGE_KEY, BUILTIN_PACK_ID),
+            }
+            for pet in self.get_agent_pets()
+        ]
+        return schemas.Response(success=True, data={
+            "enabled": self._enabled, "settings": self.settings(), "pets": pets,
+        })
+
+    def api_save_settings(self, request: SaveSettingsRequest):
+        """合并并回读活动设置；持久化失败时不改变运行中的参数。"""
+        values = request.model_dump()
+        values["scale"] = round(values["scale"], 2)
+        values["speed"] = round(values["speed"], 2)
+        config = dict(self.get_config() or {})
+        config.update(values)
+        try:
+            if self.update_config(config) is False:
+                return schemas.Response(success=False, message="活动设置保存失败，请重试")
+            persisted = self.get_config() or {}
+            if any(persisted.get(key) != value for key, value in values.items()):
+                return schemas.Response(success=False, message="活动设置回读不一致，请刷新后重试")
+        except (OSError, RuntimeError, ValueError):
+            logger.exception("助手形象：保存活动设置失败")
+            return schemas.Response(success=False, message="活动设置保存失败，请查看插件日志")
+        self._settings = values
+        return schemas.Response(success=True, data=self.settings())
+
     @staticmethod
     def _summary(record: dict[str, Any], builtin: bool = False) -> dict[str, Any]:
         return {
@@ -242,6 +287,23 @@ class AgentPets(_PluginBase):
         admin = [Depends(require_admin)]
         return [
             {
+                "path": "/editor",
+                "endpoint": self.api_editor,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "读取形象编辑页",
+                "response_model": schemas.Response[dict],
+            },
+            {
+                "path": "/settings",
+                "endpoint": self.api_save_settings,
+                "methods": ["POST"],
+                "auth": "bear",
+                "dependencies": list(admin),
+                "summary": "保存全屏角色活动设置",
+                "response_model": schemas.Response[dict],
+            },
+            {
                 "path": "/settings",
                 "endpoint": self.api_settings,
                 "methods": ["GET"],
@@ -290,7 +352,7 @@ class AgentPets(_PluginBase):
         return [], {"enabled": False, **DEFAULT_SETTINGS}
 
     def get_page(self):
-        """详情页由联邦组件 ``./Page`` 提供开发预览，返回值不被使用。"""
+        """详情页由联邦组件 ``./Page`` 提供形象调整、实时预览与应用，返回值不被使用。"""
         return None
 
     def stop_service(self):
