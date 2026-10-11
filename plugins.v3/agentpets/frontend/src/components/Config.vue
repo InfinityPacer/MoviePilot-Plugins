@@ -176,8 +176,8 @@ function save() {
                 ><span class="ap-muted">在详情页边调边看</span>
               </div>
               <div class="ap-flow__step">
-                <v-icon icon="mdi-check-circle-outline" color="primary" /><strong>立即生效</strong
-                ><span class="ap-muted">设为默认助手形象</span>
+                <v-icon icon="mdi-check-circle-outline" color="primary" /><strong>选择形象</strong
+                ><span class="ap-muted">在 MP 设置中选择</span>
               </div>
             </div>
             <div class="ap-inline">
@@ -231,7 +231,7 @@ function save() {
             </v-card>
             <div class="ap-setting-row">
               <h3>形象调整</h3>
-              <p class="ap-muted">角色大小、移动速度和活动范围在详情页统一调整，预览满意后再保存或立即生效。</p>
+              <p class="ap-muted">角色大小、移动速度和活动范围在详情页统一调整，预览满意后点击「保存调整」。</p>
               <v-btn class="mt-3" color="primary" variant="tonal" prepend-icon="mdi-tune" @click="emit('switch')"
                 >打开详情页</v-btn
               >
@@ -239,8 +239,7 @@ function save() {
             <div class="ap-setting-row">
               <h3>选择优先级</h3>
               <p class="ap-muted">
-                个人指定的形象优先；选择“跟随系统默认”的用户会使用系统默认
-                Pet。详情页的“立即生效”可同时让当前用户跟随默认。
+                个人指定的形象优先；选择“跟随系统默认”的用户会使用系统默认 Pet。请在 MP 的智能助手配置中选择形象。
               </p>
             </div>
           </template>

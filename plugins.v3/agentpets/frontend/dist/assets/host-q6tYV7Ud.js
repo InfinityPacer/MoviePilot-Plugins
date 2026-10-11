@@ -70,47 +70,8 @@ async function loadHostSelection(api) {
   const [defaultId, user] = await Promise.all([readDefaultPet(api), readUserPet(api)]);
   return { defaultId, user };
 }
-async function checkAvailablePet(api, pluginId, key) {
-  const pets = unwrap(await api.get("plugin/agent_pets"));
-  if (!Array.isArray(pets) || !pets.some((pet) => pet.plugin_id === pluginId && pet.key === key)) {
-    throw new Error("此 Pet 当前不可用，请先启用插件或刷新形象列表");
-  }
-}
-async function applyDefaultPet(api, pluginId, key, followDefault, isCurrent = () => true) {
-  const guard = () => {
-    if (!isCurrent()) throw new DOMException("页面已关闭", "AbortError");
-  };
-  const id = `${pluginId}:${key}`;
-  try {
-    guard();
-    const current = await readDefaultPet(api);
-    guard();
-    if (current !== id) unwrap(await api.post("system/env", { AI_AGENT_PET: id }));
-    if (await readDefaultPet(api) !== id) throw new Error("默认形象回读不一致");
-  } catch (error) {
-    if (!isCurrent()) throw error;
-    throw new Error("系统默认形象尚未确认生效，请重试；活动调整已保存", { cause: error });
-  }
-  try {
-    guard();
-    let user = await readUserPet(api);
-    guard();
-    if (followDefault && user !== null) {
-      unwrap(await api.post("user/config/AgentPet", null));
-      user = await readUserPet(api);
-      if (user !== null) throw new Error("个人选择回读不一致");
-    }
-    return { defaultId: id, user };
-  } catch (error) {
-    if (!isCurrent()) throw error;
-    throw new Error("系统默认形象已设置；当前用户选择未确认，请重试", { cause: error });
-  }
-}
-function reloadForPet() {
-  window.location.reload();
-}
 
 const AGENT_HOST_KEY = "moviepilot:agent";
 const HOST_UNSUPPORTED_MESSAGE = "当前主程序版本不支持助手形象，请将主程序升级到最新版本";
 
-export { AGENT_HOST_KEY as A, HOST_UNSUPPORTED_MESSAGE as H, loadHostSelection as a, builtinAvatar as b, checkAvailablePet as c, saveSettings as d, applyDefaultPet as e, loadEditor as l, petImage as p, reloadForPet as r, sameSettings as s };
+export { AGENT_HOST_KEY as A, HOST_UNSUPPORTED_MESSAGE as H, loadHostSelection as a, builtinAvatar as b, saveSettings as c, loadEditor as l, petImage as p, sameSettings as s };

@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { b as builtinAvatar, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor } from './host-CwtDFHL9.js';
+import { b as builtinAvatar, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor } from './host-q6tYV7Ud.js';
 import { v as validatePack, c as buildCodexPetPack } from './schema-Jsrk9aRO.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
@@ -1448,8 +1448,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       icon: "mdi-check-circle-outline",
                       color: "primary"
                     }),
-                    _cache[14] || (_cache[14] = _createElementVNode("strong", null, "立即生效", -1)),
-                    _cache[15] || (_cache[15] = _createElementVNode("span", { class: "ap-muted" }, "设为默认助手形象", -1))
+                    _cache[14] || (_cache[14] = _createElementVNode("strong", null, "选择形象", -1)),
+                    _cache[15] || (_cache[15] = _createElementVNode("span", { class: "ap-muted" }, "在 MP 设置中选择", -1))
                   ])
                 ]),
                 _createElementVNode("div", _hoisted_15, [
@@ -1543,7 +1543,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }),
                 _createElementVNode("div", _hoisted_21, [
                   _cache[24] || (_cache[24] = _createElementVNode("h3", null, "形象调整", -1)),
-                  _cache[25] || (_cache[25] = _createElementVNode("p", { class: "ap-muted" }, "角色大小、移动速度和活动范围在详情页统一调整，预览满意后再保存或立即生效。", -1)),
+                  _cache[25] || (_cache[25] = _createElementVNode("p", { class: "ap-muted" }, "角色大小、移动速度和活动范围在详情页统一调整，预览满意后点击「保存调整」。", -1)),
                   _createVNode(_component_v_btn, {
                     class: "mt-3",
                     color: "primary",
@@ -1559,7 +1559,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 ]),
                 _cache[26] || (_cache[26] = _createElementVNode("div", { class: "ap-setting-row" }, [
                   _createElementVNode("h3", null, "选择优先级"),
-                  _createElementVNode("p", { class: "ap-muted" }, " 个人指定的形象优先；选择“跟随系统默认”的用户会使用系统默认 Pet。详情页的“立即生效”可同时让当前用户跟随默认。 ")
+                  _createElementVNode("p", { class: "ap-muted" }, " 个人指定的形象优先；选择“跟随系统默认”的用户会使用系统默认 Pet。请在 MP 的智能助手配置中选择形象。 ")
                 ], -1))
               ], 64)) : _createCommentVNode("", true),
               visitedPacks.value ? _withDirectives((_openBlock(), _createBlock(PackManager, {
