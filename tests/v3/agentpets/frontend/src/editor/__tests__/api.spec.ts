@@ -30,7 +30,7 @@ function mockHost() {
 }
 
 describe('Pet editor API', () => {
-  it('resolves builtin images from the federation asset directory and keeps uploaded previews intact', () => {
+  it('uses bundled builtin avatars and keeps uploaded previews intact', () => {
     const pet = {
       key: 'ying',
       name: '小映',

@@ -2,6 +2,7 @@
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 
 import { loadEditor, type EditorSnapshot } from '@/editor/api'
+import { builtinAvatar } from '@/editor/avatars'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import PackManager from '@/sprites/PackManager.vue'
@@ -32,8 +33,8 @@ const changed = computed(() => enabled.value !== baseline.value)
 const snapshot = ref<EditorSnapshot | null>(null)
 const loading = ref(false)
 const error = ref('')
-const avatarPath = './ying/avatar.png'
-const avatar = new URL(avatarPath, import.meta.url).href
+const avatar = builtinAvatar('ying')
+const avatarFailed = ref(false)
 const groups = [
   {
     key: 'overview',
@@ -111,7 +112,10 @@ function save() {
     <div class="ap-shell">
       <header class="ap-header">
         <div class="ap-brand">
-          <img :src="avatar" alt="" class="ap-brand__avatar" />
+          <img v-if="!avatarFailed" :src="avatar" alt="" class="ap-brand__avatar" @error="avatarFailed = true" />
+          <span v-else class="ap-brand__avatar d-flex align-center justify-center" aria-hidden="true">
+            <v-icon icon="mdi-paw-outline" color="primary" size="28" />
+          </span>
           <div>
             <div class="ap-eyebrow">MoviePilot / 插件设置</div>
             <h1>助手形象</h1>

@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor } from './host-CWGwTQ_8.js';
-import { v as validatePack, b as builtinAsset, c as buildCodexPetPack } from './schema-Jsrk9aRO.js';
+import { b as builtinAvatar, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor } from './host-Buq7ACTH.js';
+import { v as validatePack, c as buildCodexPetPack } from './schema-Jsrk9aRO.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 // DEFLATE is a complex format; to read this code, you should probably check the RFC first:
@@ -729,7 +729,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       () => !!validation.value?.pack && !clientErrors.value.length && !submitting.value && (imageMode.value === "url" || !!imageFile.value && !imageError.value)
     );
     function previewSrc(pack) {
-      if (pack.builtin) return builtinAsset("preview.png");
+      if (pack.builtin) return builtinAvatar(pack.id);
       return pack.preview;
     }
     function notify(kind, message) {
@@ -1187,48 +1187,52 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-f284c895"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-c37030dd"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {unref:_unref,createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,resolveComponent:_resolveComponent,withCtx:_withCtx,createVNode:_createVNode,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,vShow:_vShow,withDirectives:_withDirectives,normalizeClass:_normalizeClass} = await importShared('vue');
+const {unref:_unref,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,renderList:_renderList,Fragment:_Fragment,createBlock:_createBlock,vShow:_vShow,withDirectives:_withDirectives,normalizeClass:_normalizeClass} = await importShared('vue');
 
 const _hoisted_1 = { class: "ap-config" };
 const _hoisted_2 = { class: "ap-shell" };
 const _hoisted_3 = { class: "ap-header" };
 const _hoisted_4 = { class: "ap-brand" };
 const _hoisted_5 = ["src"];
-const _hoisted_6 = { class: "ap-config__body" };
-const _hoisted_7 = {
+const _hoisted_6 = {
+  key: 1,
+  class: "ap-brand__avatar d-flex align-center justify-center",
+  "aria-hidden": "true"
+};
+const _hoisted_7 = { class: "ap-config__body" };
+const _hoisted_8 = {
   class: "ap-nav",
   "aria-label": "配置分组"
 };
-const _hoisted_8 = { class: "ap-section-heading" };
-const _hoisted_9 = { class: "ap-flow" };
-const _hoisted_10 = { class: "ap-flow__step" };
+const _hoisted_9 = { class: "ap-section-heading" };
+const _hoisted_10 = { class: "ap-flow" };
 const _hoisted_11 = { class: "ap-flow__step" };
 const _hoisted_12 = { class: "ap-flow__step" };
 const _hoisted_13 = { class: "ap-flow__step" };
-const _hoisted_14 = { class: "ap-inline" };
-const _hoisted_15 = { class: "ap-metrics" };
-const _hoisted_16 = { class: "ap-metric" };
+const _hoisted_14 = { class: "ap-flow__step" };
+const _hoisted_15 = { class: "ap-inline" };
+const _hoisted_16 = { class: "ap-metrics" };
 const _hoisted_17 = { class: "ap-metric" };
 const _hoisted_18 = { class: "ap-metric" };
-const _hoisted_19 = { class: "ap-note" };
-const _hoisted_20 = { class: "ap-setting-row" };
-const _hoisted_21 = { class: "ap-footer" };
-const _hoisted_22 = {
+const _hoisted_19 = { class: "ap-metric" };
+const _hoisted_20 = { class: "ap-note" };
+const _hoisted_21 = { class: "ap-setting-row" };
+const _hoisted_22 = { class: "ap-footer" };
+const _hoisted_23 = {
   key: 0,
   class: "ap-change",
   role: "status"
 };
-const _hoisted_23 = {
+const _hoisted_24 = {
   key: 1,
   class: "ap-muted"
 };
-const _hoisted_24 = { class: "ap-footer__actions" };
+const _hoisted_25 = { class: "ap-footer__actions" };
 const {computed,inject,onBeforeUnmount,ref,watch} = await importShared('vue');
-const avatarPath = "./ying/avatar.png";
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "Config",
   props: {
@@ -1251,7 +1255,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const snapshot = ref(null);
     const loading = ref(false);
     const error = ref("");
-    const avatar = new URL(avatarPath, import.meta.url).href;
+    const avatar = builtinAvatar("ying");
+    const avatarFailed = ref(false);
     const groups = [
       {
         key: "overview",
@@ -1318,11 +1323,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       emit("save", { ...props.initialConfig, enabled: enabled.value });
     }
     return (_ctx, _cache) => {
+      const _component_v_icon = _resolveComponent("v-icon");
       const _component_v_chip = _resolveComponent("v-chip");
       const _component_v_btn = _resolveComponent("v-btn");
       const _component_v_list_item = _resolveComponent("v-list-item");
       const _component_v_list = _resolveComponent("v-list");
-      const _component_v_icon = _resolveComponent("v-icon");
       const _component_v_alert = _resolveComponent("v-alert");
       const _component_v_spacer = _resolveComponent("v-spacer");
       const _component_v_switch = _resolveComponent("v-switch");
@@ -1332,12 +1337,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         _createElementVNode("div", _hoisted_2, [
           _createElementVNode("header", _hoisted_3, [
             _createElementVNode("div", _hoisted_4, [
-              _createElementVNode("img", {
+              !avatarFailed.value ? (_openBlock(), _createElementBlock("img", {
+                key: 0,
                 src: _unref(avatar),
                 alt: "",
-                class: "ap-brand__avatar"
-              }, null, 8, _hoisted_5),
-              _cache[5] || (_cache[5] = _createElementVNode("div", null, [
+                class: "ap-brand__avatar",
+                onError: _cache[0] || (_cache[0] = ($event) => avatarFailed.value = true)
+              }, null, 40, _hoisted_5)) : (_openBlock(), _createElementBlock("span", _hoisted_6, [
+                _createVNode(_component_v_icon, {
+                  icon: "mdi-paw-outline",
+                  color: "primary",
+                  size: "28"
+                })
+              ])),
+              _cache[6] || (_cache[6] = _createElementVNode("div", null, [
                 _createElementVNode("div", { class: "ap-eyebrow" }, "MoviePilot / 插件设置"),
                 _createElementVNode("h1", null, "助手形象")
               ], -1)),
@@ -1357,12 +1370,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               "aria-label": "关闭配置页",
               variant: "text",
               size: "small",
-              onClick: _cache[0] || (_cache[0] = ($event) => emit("close"))
+              onClick: _cache[1] || (_cache[1] = ($event) => emit("close"))
             })
           ]),
-          _createElementVNode("div", _hoisted_6, [
-            _createElementVNode("nav", _hoisted_7, [
-              _cache[6] || (_cache[6] = _createElementVNode("div", { class: "ap-nav__label" }, "PET 设置", -1)),
+          _createElementVNode("div", _hoisted_7, [
+            _createElementVNode("nav", _hoisted_8, [
+              _cache[7] || (_cache[7] = _createElementVNode("div", { class: "ap-nav__label" }, "PET 设置", -1)),
               _createVNode(_component_v_list, {
                 density: "compact",
                 nav: ""
@@ -1386,7 +1399,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createElementVNode("main", {
               class: _normalizeClass(["ap-pane", { "ap-pane--overview": activeMain.value === "overview" }])
             }, [
-              _createElementVNode("div", _hoisted_8, [
+              _createElementVNode("div", _hoisted_9, [
                 _createVNode(_component_v_icon, {
                   icon: group.value.icon,
                   color: "primary",
@@ -1410,43 +1423,43 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 _: 1
               })) : _createCommentVNode("", true),
               activeMain.value === "overview" ? (_openBlock(), _createElementBlock(_Fragment, { key: 1 }, [
-                _cache[21] || (_cache[21] = _createElementVNode("h3", { class: "ap-section-title" }, "从形象到陪伴", -1)),
-                _createElementVNode("div", _hoisted_9, [
-                  _createElementVNode("div", _hoisted_10, [
+                _cache[22] || (_cache[22] = _createElementVNode("h3", { class: "ap-section-title" }, "从形象到陪伴", -1)),
+                _createElementVNode("div", _hoisted_10, [
+                  _createElementVNode("div", _hoisted_11, [
                     _createVNode(_component_v_icon, {
                       icon: "mdi-power",
                       color: "primary"
                     }),
-                    _cache[7] || (_cache[7] = _createElementVNode("strong", null, "启用插件", -1)),
-                    _cache[8] || (_cache[8] = _createElementVNode("span", { class: "ap-muted" }, "让 MP 发现可选形象", -1))
+                    _cache[8] || (_cache[8] = _createElementVNode("strong", null, "启用插件", -1)),
+                    _cache[9] || (_cache[9] = _createElementVNode("span", { class: "ap-muted" }, "让 MP 发现可选形象", -1))
                   ]),
-                  _createElementVNode("div", _hoisted_11, [
+                  _createElementVNode("div", _hoisted_12, [
                     _createVNode(_component_v_icon, {
                       icon: "mdi-package-down",
                       color: "primary"
                     }),
-                    _cache[9] || (_cache[9] = _createElementVNode("strong", null, "准备 Pet", -1)),
-                    _cache[10] || (_cache[10] = _createElementVNode("span", { class: "ap-muted" }, "使用内置或导入素材", -1))
+                    _cache[10] || (_cache[10] = _createElementVNode("strong", null, "准备 Pet", -1)),
+                    _cache[11] || (_cache[11] = _createElementVNode("span", { class: "ap-muted" }, "使用内置或导入素材", -1))
                   ]),
-                  _createElementVNode("div", _hoisted_12, [
+                  _createElementVNode("div", _hoisted_13, [
                     _createVNode(_component_v_icon, {
                       icon: "mdi-tune",
                       color: "primary"
                     }),
-                    _cache[11] || (_cache[11] = _createElementVNode("strong", null, "调整预览", -1)),
-                    _cache[12] || (_cache[12] = _createElementVNode("span", { class: "ap-muted" }, "在详情页边调边看", -1))
+                    _cache[12] || (_cache[12] = _createElementVNode("strong", null, "调整预览", -1)),
+                    _cache[13] || (_cache[13] = _createElementVNode("span", { class: "ap-muted" }, "在详情页边调边看", -1))
                   ]),
-                  _createElementVNode("div", _hoisted_13, [
+                  _createElementVNode("div", _hoisted_14, [
                     _createVNode(_component_v_icon, {
                       icon: "mdi-check-circle-outline",
                       color: "primary"
                     }),
-                    _cache[13] || (_cache[13] = _createElementVNode("strong", null, "立即生效", -1)),
-                    _cache[14] || (_cache[14] = _createElementVNode("span", { class: "ap-muted" }, "设为默认助手形象", -1))
+                    _cache[14] || (_cache[14] = _createElementVNode("strong", null, "立即生效", -1)),
+                    _cache[15] || (_cache[15] = _createElementVNode("span", { class: "ap-muted" }, "设为默认助手形象", -1))
                   ])
                 ]),
-                _createElementVNode("div", _hoisted_14, [
-                  _cache[15] || (_cache[15] = _createElementVNode("h3", { class: "ap-section-title mb-0" }, "当前状态", -1)),
+                _createElementVNode("div", _hoisted_15, [
+                  _cache[16] || (_cache[16] = _createElementVNode("h3", { class: "ap-section-title mb-0" }, "当前状态", -1)),
                   _createVNode(_component_v_spacer),
                   _createVNode(_component_v_btn, {
                     icon: "mdi-refresh",
@@ -1468,27 +1481,27 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   ]),
                   _: 1
                 })) : _createCommentVNode("", true),
-                _createElementVNode("div", _hoisted_15, [
-                  _createElementVNode("div", _hoisted_16, [
-                    _cache[16] || (_cache[16] = _createElementVNode("span", { class: "ap-muted" }, "可选 Pet", -1)),
+                _createElementVNode("div", _hoisted_16, [
+                  _createElementVNode("div", _hoisted_17, [
+                    _cache[17] || (_cache[17] = _createElementVNode("span", { class: "ap-muted" }, "可选 Pet", -1)),
                     _createElementVNode("strong", null, _toDisplayString(snapshot.value?.pets.length ?? "—"), 1)
                   ]),
-                  _createElementVNode("div", _hoisted_17, [
-                    _cache[17] || (_cache[17] = _createElementVNode("span", { class: "ap-muted" }, "自由活动", -1)),
+                  _createElementVNode("div", _hoisted_18, [
+                    _cache[18] || (_cache[18] = _createElementVNode("span", { class: "ap-muted" }, "自由活动", -1)),
                     _createElementVNode("strong", null, _toDisplayString(snapshot.value ? stageCount.value : "—"), 1)
                   ]),
-                  _createElementVNode("div", _hoisted_18, [
-                    _cache[18] || (_cache[18] = _createElementVNode("span", { class: "ap-muted" }, "入口形象", -1)),
+                  _createElementVNode("div", _hoisted_19, [
+                    _cache[19] || (_cache[19] = _createElementVNode("span", { class: "ap-muted" }, "入口形象", -1)),
                     _createElementVNode("strong", null, _toDisplayString(snapshot.value ? snapshot.value.pets.length - stageCount.value : "—"), 1)
                   ])
                 ]),
-                _createElementVNode("div", _hoisted_19, [
+                _createElementVNode("div", _hoisted_20, [
                   _createVNode(_component_v_icon, {
                     icon: "mdi-information-outline",
                     color: "primary",
                     size: "18"
                   }),
-                  _cache[19] || (_cache[19] = _createElementVNode("div", null, [
+                  _cache[20] || (_cache[20] = _createElementVNode("div", null, [
                     _createTextVNode(" 插件没有后台任务。素材暂时不可用时，MP 会回退到内置形象；检查素材并重新选择即可。"),
                     _createElementVNode("br"),
                     _createTextVNode("当前配置页管理开关和素材，Pet 的大小、活动与实时预览集中在详情页。 ")
@@ -1499,9 +1512,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   color: "primary",
                   variant: "tonal",
                   "prepend-icon": "mdi-paw-outline",
-                  onClick: _cache[1] || (_cache[1] = ($event) => emit("switch"))
+                  onClick: _cache[2] || (_cache[2] = ($event) => emit("switch"))
                 }, {
-                  default: _withCtx(() => [..._cache[20] || (_cache[20] = [
+                  default: _withCtx(() => [..._cache[21] || (_cache[21] = [
                     _createTextVNode("前往调整与预览", -1)
                   ])]),
                   _: 1
@@ -1521,7 +1534,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                       append: _withCtx(() => [
                         _createVNode(_component_v_switch, {
                           modelValue: enabled.value,
-                          "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => enabled.value = $event),
+                          "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => enabled.value = $event),
                           "aria-label": "启用助手形象",
                           color: "success",
                           inset: "",
@@ -1534,23 +1547,23 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   ]),
                   _: 1
                 }),
-                _createElementVNode("div", _hoisted_20, [
-                  _cache[23] || (_cache[23] = _createElementVNode("h3", null, "形象调整", -1)),
-                  _cache[24] || (_cache[24] = _createElementVNode("p", { class: "ap-muted" }, "角色大小、移动速度和活动范围在详情页统一调整，预览满意后再保存或立即生效。", -1)),
+                _createElementVNode("div", _hoisted_21, [
+                  _cache[24] || (_cache[24] = _createElementVNode("h3", null, "形象调整", -1)),
+                  _cache[25] || (_cache[25] = _createElementVNode("p", { class: "ap-muted" }, "角色大小、移动速度和活动范围在详情页统一调整，预览满意后再保存或立即生效。", -1)),
                   _createVNode(_component_v_btn, {
                     class: "mt-3",
                     color: "primary",
                     variant: "tonal",
                     "prepend-icon": "mdi-tune",
-                    onClick: _cache[3] || (_cache[3] = ($event) => emit("switch"))
+                    onClick: _cache[4] || (_cache[4] = ($event) => emit("switch"))
                   }, {
-                    default: _withCtx(() => [..._cache[22] || (_cache[22] = [
+                    default: _withCtx(() => [..._cache[23] || (_cache[23] = [
                       _createTextVNode("打开详情页", -1)
                     ])]),
                     _: 1
                   })
                 ]),
-                _cache[25] || (_cache[25] = _createElementVNode("div", { class: "ap-setting-row" }, [
+                _cache[26] || (_cache[26] = _createElementVNode("div", { class: "ap-setting-row" }, [
                   _createElementVNode("h3", null, "选择优先级"),
                   _createElementVNode("p", { class: "ap-muted" }, " 个人指定的形象优先；选择“跟随系统默认”的用户会使用系统默认 Pet。详情页的“立即生效”可同时让当前用户跟随默认。 ")
                 ], -1))
@@ -1565,20 +1578,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               ]) : _createCommentVNode("", true)
             ], 2)
           ]),
-          _createElementVNode("footer", _hoisted_21, [
-            changed.value ? (_openBlock(), _createElementBlock("span", _hoisted_22, [
+          _createElementVNode("footer", _hoisted_22, [
+            changed.value ? (_openBlock(), _createElementBlock("span", _hoisted_23, [
               _createVNode(_component_v_icon, {
                 icon: "mdi-circle",
                 size: "7"
               }),
-              _cache[26] || (_cache[26] = _createTextVNode("1 项未保存 · 启用助手形象", -1))
-            ])) : (_openBlock(), _createElementBlock("span", _hoisted_23, _toDisplayString(activeMain.value === "packs" ? "素材的导入与删除即时保存" : "修改配置后点击保存"), 1)),
-            _createElementVNode("div", _hoisted_24, [
+              _cache[27] || (_cache[27] = _createTextVNode("1 项未保存 · 启用助手形象", -1))
+            ])) : (_openBlock(), _createElementBlock("span", _hoisted_24, _toDisplayString(activeMain.value === "packs" ? "素材的导入与删除即时保存" : "修改配置后点击保存"), 1)),
+            _createElementVNode("div", _hoisted_25, [
               _createVNode(_component_v_btn, {
                 variant: "text",
-                onClick: _cache[4] || (_cache[4] = ($event) => emit("close"))
+                onClick: _cache[5] || (_cache[5] = ($event) => emit("close"))
               }, {
-                default: _withCtx(() => [..._cache[27] || (_cache[27] = [
+                default: _withCtx(() => [..._cache[28] || (_cache[28] = [
                   _createTextVNode("取消", -1)
                 ])]),
                 _: 1
@@ -1590,7 +1603,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 disabled: !changed.value,
                 onClick: save
               }, {
-                default: _withCtx(() => [..._cache[28] || (_cache[28] = [
+                default: _withCtx(() => [..._cache[29] || (_cache[29] = [
                   _createTextVNode("保存配置", -1)
                 ])]),
                 _: 1
