@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import builtinJson from '@/assets/packs/projector-cat/pack.json'
+import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
 import {
   buildCodexPetPack,
   BUILTIN_PACK,
@@ -9,6 +10,7 @@ import {
   HOST_ACTIONS,
   resolveAction,
   validatePack,
+  withCodexStageActions,
 } from '@/sprites/schema'
 
 const minimal = {
@@ -112,5 +114,35 @@ describe('sprite pack schema', () => {
     expect(builtinAsset('sheet.webp', 'https://h/plugin/file/x/frontend/dist/assets/a.js')).toBe(
       'https://h/plugin/file/x/frontend/dist/assets/packs/projector-cat/sheet.webp',
     )
+  })
+})
+
+describe('Codex stage compatibility', () => {
+  it('retains v1 and v2 markers through frontend validation', () => {
+    for (const height of [1872, 2288]) {
+      const generated = buildCodexPetPack('pet.png', 1536, height)
+      expect(validatePack(generated.pack).pack?.codex_version).toBe(generated.version)
+    }
+    expect(validatePack({ ...minimal, codex_version: 'v2' }).errors.join()).toContain('网格不匹配')
+    expect(validatePack({ ...minimal, codex_version: 'v3' }).errors.join()).toContain('只支持')
+  })
+
+  it('fills directional runs for the legacy pack while preserving its custom actions', () => {
+    const legacy = validatePack({ ...legacyJson, codex_version: 'v2' }).pack!
+    const before = JSON.stringify(legacy)
+    const completed = withCodexStageActions(legacy)
+    expect(completed.actions.thinking).toEqual(legacy.actions.thinking)
+    expect(completed.frames.thinking).toBe(43)
+    expect(completed.actions.wave).toEqual(legacy.actions.wave)
+    expect(completed.actions['running-right'].frames.map(name => completed.frames[name])).toEqual([
+      8, 9, 10, 11, 12, 13, 14, 15,
+    ])
+    expect(completed.actions['running-left'].frames.map(name => completed.frames[name])).toEqual([
+      16, 17, 18, 19, 20, 21, 22, 23,
+    ])
+    expect(completed.actions.speaking.frames.map(name => completed.frames[name])).toEqual([56, 57, 58, 59, 60, 61])
+    expect(JSON.stringify(legacy)).toBe(before)
+    expect(validatePack(completed).errors).toEqual([])
+    expect(withCodexStageActions(BUILTIN_PACK)).toBe(BUILTIN_PACK)
   })
 })

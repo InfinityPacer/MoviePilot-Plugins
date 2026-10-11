@@ -116,6 +116,36 @@ def _action(key: str, value: Any, frames: dict[str, int]) -> dict[str, Any]:
     return {"frames": list(sequence), "frame_ms": frame_ms, "loop": loop}
 
 
+def codex_pet_version(pack: dict[str, Any]) -> str | None:
+    """识别显式 Codex 标记或旧导入包的关键动作布局，不仅凭网格猜测来源。"""
+    grid = pack.get("grid")
+    if not isinstance(grid, dict) or grid.get("cols") != 8:
+        return None
+    rows = grid.get("rows")
+    if not isinstance(rows, int):
+        return None
+    version = {9: "v1", 11: "v2"}.get(rows)
+    if version is None:
+        return None
+    declared = pack.get("codex_version")
+    if declared is not None:
+        return version if declared == version else None
+    frames, actions = pack.get("frames"), pack.get("actions")
+    if not isinstance(frames, dict) or not isinstance(actions, dict):
+        return None
+    # 兼容早期精简素材包和旧导入器，帧名可不同，但原生行与关键动画必须一致。
+    for key, indices in (("idle", range(6)), ("wave", range(24, 28)), ("happy-jump", range(32, 37))):
+        action = actions.get(key)
+        sequence = action.get("frames") if isinstance(action, dict) else action
+        if not isinstance(sequence, list) or len(sequence) < len(indices):
+            return None
+        if any(not isinstance(name, str) for name in sequence):
+            return None
+        if [frames.get(name) for name in sequence[:len(indices)]] != list(indices):
+            return None
+    return version
+
+
 def parse_pack(raw: Any) -> dict[str, Any]:
     """校验并规整素材包 JSON（字符串或已解析对象），返回规范结构。
 
@@ -177,7 +207,7 @@ def parse_pack(raw: Any) -> dict[str, Any]:
     if sheet not in ("", None) and (not isinstance(sheet, str) or len(sheet) > 2048):
         raise PackError("sheet 必须是不超过 2048 个字符的图片路径或 URL")
 
-    return {
+    pack = {
         "id": pack_id or "",
         "name": _text(raw.get("name"), "name", 40),
         "description": _text(raw.get("description"), "description", 120, required=False),
@@ -189,6 +219,17 @@ def parse_pack(raw: Any) -> dict[str, Any]:
         "preview": _image_ref(raw.get("preview"), "preview"),
         "avatar": _image_ref(raw.get("avatar"), "avatar"),
     }
+    declared = raw.get("codex_version")
+    if declared is not None:
+        if declared not in ("v1", "v2"):
+            raise PackError("codex_version 只支持 v1 或 v2")
+        pack["codex_version"] = declared
+        if codex_pet_version(pack) is None:
+            raise PackError("codex_version 与网格不匹配，v1 为 8×9，v2 为 8×11")
+    version = codex_pet_version(pack)
+    if version:
+        pack["codex_version"] = version
+    return pack
 
 
 def decode_image(data_url: str) -> tuple[bytes, str, str]:
@@ -338,6 +379,8 @@ class PackStore:
             key: pack[key] for key in ("name", "description", "grid", "frames", "actions", "random_actions")
         }
         record.update(id=pack_id, preview=pack["preview"], avatar=pack["avatar"], created_at=int(time.time()))
+        if pack.get("codex_version"):
+            record["codex_version"] = pack["codex_version"]
         if image:
             content, _, _ = decode_image(image)
             mime, ext = validate_sheet(content, pack)

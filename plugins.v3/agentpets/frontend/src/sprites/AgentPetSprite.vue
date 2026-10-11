@@ -9,6 +9,7 @@ import {
   framePosition,
   resolveAction,
   validatePack,
+  withCodexStageActions,
   type SpritePack,
 } from '@/sprites/schema'
 
@@ -45,6 +46,8 @@ const props = withDefaults(
     motionActive: true,
   },
 )
+
+const emit = defineEmits<{ appearance: [{ name: string; aspectRatio: number }] }>()
 
 const packKey = props.pet?.key || BUILTIN_PACK_ID
 const pack = ref<SpritePack>(BUILTIN_PACK)
@@ -144,7 +147,8 @@ async function loadPack(key: string) {
     const { pack: parsed } = validatePack(response?.data?.pack)
     if (!response?.success || !parsed || !response.data?.sheet_src) throw new Error(response?.message || 'invalid pack')
     if (disposed) return
-    pack.value = parsed
+    pack.value = props.pet?.mode === 'stage' ? withCodexStageActions(parsed) : parsed
+    cellRatio.value = parsed.codex_version ? 192 / 208 : 1
     sheetSrc.value = response.data.sheet_src
   } catch {
     console.warn(`[AgentPets] pack ${key} unavailable, using builtin`)
@@ -155,6 +159,13 @@ async function loadPack(key: string) {
 watch(
   () => [resolved.value.key, props.motionActive, pack.value] as const,
   () => play(),
+)
+watch(
+  [ready, pack, cellRatio],
+  () => {
+    if (ready.value) emit('appearance', { name: pack.value.name, aspectRatio: cellRatio.value })
+  },
+  { immediate: true },
 )
 watch(sheetSrc, src => measure(src))
 watch(ready, value => {

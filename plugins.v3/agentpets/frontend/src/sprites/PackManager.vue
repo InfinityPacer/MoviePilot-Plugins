@@ -14,6 +14,7 @@ interface PackSummary {
   builtin: boolean
   /** builtin、upload 或 url。 */
   source: string
+  mode?: 'stage' | 'renderer'
   /** 预览图：内置为相对联邦产物目录的路径，其余为 data/http URL，可能为空。 */
   preview: string
   grid: { cols: number; rows: number } | null
@@ -242,7 +243,8 @@ onMounted(refresh)
         <v-list-item-title>{{ pack.name }}</v-list-item-title>
         <v-list-item-subtitle>
           {{ pack.id }} · {{ pack.builtin ? '内置' : pack.source === 'upload' ? '已上传' : '远程图片' }} ·
-          {{ pack.frame_count }} 帧 · {{ pack.action_count }} 个动作
+          {{ pack.mode === 'stage' ? '全屏角色' : '入口外观' }} · {{ pack.frame_count }} 帧 ·
+          {{ pack.action_count }} 个动作
         </v-list-item-subtitle>
         <template v-if="!pack.builtin" #append>
           <v-btn icon="mdi-delete-outline" variant="text" :aria-label="`删除 ${pack.name}`" @click="removePack(pack)" />

@@ -373,6 +373,7 @@ function buildCodexPetPack(filename, width, height, metadata) {
     version: layout.version,
     pack: {
       id,
+      codex_version: layout.version,
       name: displayName.slice(0, 40),
       description: metadata?.description?.trim().slice(0, 120) || "从 Codex Pet " + layout.version + " 精灵图导入",
       sheet: "",
@@ -415,6 +416,13 @@ function validatePack(raw) {
   const grid = data.grid ?? {};
   const cols = integer(grid.cols, "grid.cols", 1, 16, errors);
   const rows = integer(grid.rows, "grid.rows", 1, 16, errors);
+  const codexVersion = data.codex_version;
+  if (codexVersion != null) {
+    if (codexVersion !== "v1" && codexVersion !== "v2") errors.push("codex_version 只支持 v1 或 v2");
+    else if (cols !== 8 || rows !== (codexVersion === "v1" ? 9 : 11)) {
+      errors.push("codex_version 与网格不匹配，v1 为 8×9，v2 为 8×11");
+    }
+  }
   const frames = {};
   const rawFrames = data.frames;
   if (!rawFrames || typeof rawFrames !== "object" || Array.isArray(rawFrames)) {
@@ -461,6 +469,7 @@ function validatePack(raw) {
   return {
     pack: {
       id: typeof id === "string" ? id : "",
+      ...codexVersion === "v1" || codexVersion === "v2" ? { codex_version: codexVersion } : {},
       name,
       description: typeof data.description === "string" ? data.description.trim() : "",
       sheet,
@@ -471,6 +480,28 @@ function validatePack(raw) {
     },
     errors
   };
+}
+function withCodexStageActions(pack) {
+  const layout = CODEX_PET_LAYOUTS.find((item) => item.version === pack.codex_version);
+  if (!layout) return pack;
+  const defaults = buildCodexPetPack(pack.id, layout.width, layout.height).pack;
+  const frames = { ...pack.frames };
+  const actions = { ...pack.actions };
+  const namesByIndex = new Map(Object.entries(frames).map(([name, index]) => [index, name]));
+  function frameName(index) {
+    const existing = namesByIndex.get(index);
+    if (existing) return existing;
+    let name = `codex-${index}`;
+    for (let suffix = 1; name in frames; suffix += 1) name = `codex-${index}-${suffix}`;
+    frames[name] = index;
+    namesByIndex.set(index, name);
+    return name;
+  }
+  for (const [key, action] of Object.entries(defaults.actions)) {
+    if (actions[key]) continue;
+    actions[key] = { ...action, frames: action.frames.map((name) => frameName(defaults.frames[name])) };
+  }
+  return { ...pack, frames, actions };
 }
 const BUILTIN_PACK = (() => {
   const { pack } = validatePack(builtinPackJson);
@@ -496,4 +527,4 @@ function framePosition(pack, frame) {
   return { x: cols > 1 ? col / (cols - 1) * 100 : 0, y: rows > 1 ? row / (rows - 1) * 100 : 0 };
 }
 
-export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, HOST_INTENTS as c, buildCodexPetPack as d, framePosition as f, resolveAction as r, validatePack as v };
+export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, HOST_INTENTS as c, buildCodexPetPack as d, framePosition as f, resolveAction as r, validatePack as v, withCodexStageActions as w };
