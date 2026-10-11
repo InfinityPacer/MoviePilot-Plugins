@@ -1,6 +1,7 @@
 """暂停补搜跨插件 Timer、宿主持久队列和下载命中恢复的回归测试。"""
 
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -15,7 +16,7 @@ from app.application.subscription.execution import SubscriptionExecutionAdmissio
 from app.application.subscription.mutation import SubscriptionMutation
 from app.chain.download import DownloadChain
 from app.chain.media import MediaChain
-from app.chain.search.facade import SearchChain
+from app.chain.search.scan import SearchScan, search_targets
 from app.chain.subscribe.facade import SubscribeChain
 from app.db.adapters.subscription import TransactionalSubscriptionRepository
 from app.db.adapters.subscriptionsearch import TransactionalSubscriptionSearchRepository
@@ -156,10 +157,19 @@ def probe_runtime(tmp_path, monkeypatch):
         season=1, episodes=list(range(1, 13)), total_episode=12, start_episode=1,
     )}}
     search = Mock(return_value=[])
+
+    def scan_run(scan, submit):
+        """影视订阅经分页扫描提交候选；站点分页由宿主测试覆盖，这里把搜索结果按全部缺集目标交给真实提交回调。"""
+        contexts = search(plan=scan.plan)
+        if contexts:
+            submit(contexts, search_targets(scan.plan))
+
     monkeypatch.setattr(MediaChain, "recognize_media", lambda _self, **_kwargs: media)
-    monkeypatch.setattr(SearchChain, "process", search)
-    # 媒体库查询属于外部边界，固定未下载范围；搜索处理、下载复核与完成进度仍真实执行。
-    monkeypatch.setattr(chain, "check_and_handle_existing_media", lambda **_kwargs: (False, missing))
+    monkeypatch.setattr(SearchScan, "run", scan_run)
+    # 媒体库查询属于外部边界，固定库内全缺；已下载集扣减、搜索处理、下载复核与完成进度仍真实执行。
+    monkeypatch.setattr(
+        DownloadChain, "get_no_exists_info", lambda _self, **_kwargs: (False, deepcopy(missing)),
+    )
     download = Mock()
     monkeypatch.setattr(DownloadChain, "batch_download", download)
     try:
