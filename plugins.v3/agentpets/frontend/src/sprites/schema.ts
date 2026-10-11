@@ -74,11 +74,33 @@ const CODEX_LOOK_DIRECTIONS = [
   '337-5',
 ] as const
 
+export interface CodexPetMetadata {
+  id?: string
+  displayName?: string
+  description?: string
+}
+
+function codexPetId(value: string): string {
+  const slugChars: string[] = []
+  for (const character of value.toLowerCase()) {
+    const code = character.charCodeAt(0)
+    const allowed = (code >= 48 && code <= 57) || (code >= 97 && code <= 122) || character === '_' || character === '-'
+    if (allowed) slugChars.push(character)
+    else if (slugChars[slugChars.length - 1] !== '-') slugChars.push('-')
+  }
+  let start = 0
+  while (start < slugChars.length && slugChars[start] === '-') start += 1
+  let end = slugChars.length
+  while (end > start && slugChars[end - 1] === '-') end -= 1
+  return slugChars.slice(start, end).join('').slice(0, 32)
+}
+
 /** 将 Codex Pet 原生精灵图布局映射成 AgentPets 可保存的素材包。 */
 export function buildCodexPetPack(
   filename: string,
   width: number,
   height: number,
+  metadata?: CodexPetMetadata,
 ): { version: 'v1' | 'v2'; pack: Record<string, unknown> } {
   const layout = CODEX_PET_LAYOUTS.find(item => item.width === width && item.height === height)
   if (!layout) {
@@ -89,18 +111,8 @@ export function buildCodexPetPack(
   const basename = filename.slice(separatorIndex + 1)
   const extensionIndex = basename.lastIndexOf('.')
   const stem = (extensionIndex > 0 ? basename.slice(0, extensionIndex) : basename).trim() || 'Codex Pet'
-  const slugChars: string[] = []
-  for (const character of stem.toLowerCase()) {
-    const code = character.charCodeAt(0)
-    const allowed = (code >= 48 && code <= 57) || (code >= 97 && code <= 122) || character === '_' || character === '-'
-    if (allowed) slugChars.push(character)
-    else if (slugChars[slugChars.length - 1] !== '-') slugChars.push('-')
-  }
-  let slugStart = 0
-  while (slugStart < slugChars.length && slugChars[slugStart] === '-') slugStart += 1
-  let slugEnd = slugChars.length
-  while (slugEnd > slugStart && slugChars[slugEnd - 1] === '-') slugEnd -= 1
-  const id = slugChars.slice(slugStart, slugEnd).join('').slice(0, 32) || 'codex-pet'
+  const displayName = metadata?.displayName?.trim() || stem
+  const id = codexPetId(metadata?.id?.trim() || '') || codexPetId(displayName) || codexPetId(stem) || 'codex-pet'
   const frames: Record<string, number> = {}
   const rowFrames: Record<string, string[]> = {}
 
@@ -155,8 +167,8 @@ export function buildCodexPetPack(
     version: layout.version,
     pack: {
       id,
-      name: stem.slice(0, 40),
-      description: '从 Codex Pet ' + layout.version + ' 精灵图导入',
+      name: displayName.slice(0, 40),
+      description: metadata?.description?.trim().slice(0, 120) || '从 Codex Pet ' + layout.version + ' 精灵图导入',
       sheet: '',
       grid: { cols: 8, rows: layout.rows },
       frames,
