@@ -41,9 +41,9 @@ def test_v3_version_and_legacy_index_disable_fallback():
     package_v2 = json.loads((repo_root / "package.v2.json").read_text(encoding="utf-8"))
 
     metadata = package_v3["PlexLocalization"]
-    assert PlexLocalization.plugin_version == "3.0.1"
+    assert PlexLocalization.plugin_version == "3.0.2"
     assert metadata["version"] == PlexLocalization.plugin_version
-    assert list(metadata["history"]) == ["v3.0.1", "v3.0.0"]
+    assert list(metadata["history"]) == ["v3.0.2", "v3.0.1", "v3.0.0"]
     assert metadata["system_version"] == ">=3.0.0"
     assert package_v2["PlexLocalization"]["v3"] is False
 
@@ -77,6 +77,34 @@ def test_transfer_event_uses_typed_snapshot_payload():
         {
             "meta": {"season_episode": "S01E02"},
             "mediainfo": {"title_year": "测试 (2026)"},
+        },
+    )
+
+    with patch("app.plugins.plexlocalization.BackgroundScheduler", return_value=scheduler):
+        plugin.execute_transfer(event)
+
+    scheduler.add_job.assert_called_once()
+    assert plugin._transfer_time is not None
+
+
+def test_music_transfer_event_schedules_localization_without_season_episode():
+    """音乐入库快照没有季集字段，仍应安排本地化以覆盖 Plex 音乐库。"""
+    plugin = object.__new__(PlexLocalization)
+    plugin._enabled = True
+    plugin._execute_transfer = True
+    plugin._delay = 0
+    plugin._transfer_time = None
+    plugin._scheduler = None
+    plugin._scheduler_lock = threading.Lock()
+    plugin._event = threading.Event()
+    scheduler = MagicMock()
+    scheduler.running = False
+    scheduler.get_jobs.return_value = [object()]
+    event = Event(
+        EventType.TransferComplete,
+        {
+            "meta": {"type": "音乐", "title": "梁静茹精选", "album": "梁静茹精选"},
+            "mediainfo": {"type": "音乐", "title": "梁静茹精选", "title_year": "梁静茹精选 (2004)"},
         },
     )
 
