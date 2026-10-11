@@ -76,6 +76,7 @@ export default defineConfig(({ mode }) => {
         exposes: {
           './AgentPet': './src/stage/AgentPet.vue',
           './AgentPetSprite': './src/sprites/AgentPetSprite.vue',
+          './AgentPetCodex': './src/stage/AgentPetCodex.vue',
           './Config': './src/components/Config.vue',
           './Page': './src/components/Page.vue',
         },

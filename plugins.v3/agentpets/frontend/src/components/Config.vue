@@ -35,7 +35,7 @@ const enabled = ref(Boolean(props.initialConfig?.enabled))
 const stage = ref<YingSettings>({ ...saved })
 let committed = false
 
-// 调整时把未保存的值推给页面上运行中的小映。
+// 调整时把未保存的值推给页面上运行中的全屏角色。
 watch(stage, value => agent?.emit?.(SETTINGS_EVENT, { ...value }), { deep: true })
 
 function save() {
@@ -43,7 +43,7 @@ function save() {
   emit('save', { enabled: enabled.value, ...normalizeSettings(stage.value) })
 }
 
-// 未保存就离开时把运行中的小映恢复为已保存的值。
+// 未保存就离开时把运行中的全屏角色恢复为已保存的值。
 onBeforeUnmount(() => {
   if (!committed) agent?.emit?.(SETTINGS_EVENT, { ...saved })
 })
@@ -60,15 +60,17 @@ onBeforeUnmount(() => {
         启用后，小映和每个素材包都会出现在个人设置的「助手形象」里，由用户自行选择。
       </div>
 
-      <div class="text-subtitle-1 mb-1">小映（全屏角色）</div>
-      <div class="text-caption text-medium-emphasis mb-4">在整个页面上活动，可拖拽、站在页面元素上、散步和探头。</div>
+      <div class="text-subtitle-1 mb-1">全屏角色（小映与 Codex Pet）</div>
+      <div class="text-caption text-medium-emphasis mb-4">
+        小映与导入的 Codex Pet 共用以下设置，可拖拽、站在页面元素上、散步和探头。
+      </div>
       <StageSettings v-model="stage" :live-preview="!!agent" />
 
       <v-divider class="my-6" />
 
-      <div class="text-subtitle-1 mb-1">素材包（入口外观）</div>
+      <div class="text-subtitle-1 mb-1">素材包</div>
       <div class="text-caption text-medium-emphasis mb-4">
-        替换右下角助手入口的画面，拖拽和气泡仍由主程序负责。每个素材包都是一个可选形象。
+        Codex Pet 可在整个页面上活动；普通素材包替换右下角助手入口的画面。每个素材包都是一个可选形象。
       </div>
       <PackManager :api="props.api" :plugin-id="props.pluginId" />
     </v-card-text>

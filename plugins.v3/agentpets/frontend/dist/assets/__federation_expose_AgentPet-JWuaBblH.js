@@ -333,7 +333,7 @@ function* eachControlUnder(rect, layer, viewport, standingOn) {
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,createElementVNode:_createElementVNode,vShow:_vShow,withModifiers:_withModifiers,normalizeStyle:_normalizeStyle,withDirectives:_withDirectives} = await importShared('vue');
+const {renderSlot:_renderSlot,unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,createElementVNode:_createElementVNode,vShow:_vShow,withModifiers:_withModifiers,normalizeStyle:_normalizeStyle,withDirectives:_withDirectives} = await importShared('vue');
 
 const _hoisted_1 = ["data-pose", "data-motion", "data-roam"];
 const _hoisted_2 = ["aria-label"];
@@ -366,13 +366,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     pet: { default: null },
     api: { default: null },
     pluginId: { default: "" },
-    sourcePluginId: { default: "" }
+    sourcePluginId: { default: "" },
+    characterName: { default: "小映" },
+    aspectRatio: { default: 0 }
   },
   setup(__props) {
     const props = __props;
     const rootEl = ref(null);
     const settings = ref({ ...DEFAULT_SETTINGS });
-    const aspect = ref(198 / 240);
+    const imageAspect = ref(198 / 240);
+    const aspect = computed(() => props.aspectRatio > 0 ? props.aspectRatio : imageAspect.value);
     const x = ref(0);
     const y = ref(0);
     const sink = ref(0);
@@ -387,6 +390,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const rising = ref(false);
     const available = ref(true);
     const isMobile = ref(false);
+    const animationActive = ref(false);
     let hostState = null;
     let documentVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
     let rafId = 0;
@@ -433,7 +437,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         rising: rising.value
       })
     );
-    const label = computed(() => available.value ? "打开助手（小映）" : "小映（助手未启用）");
+    const label = computed(
+      () => available.value ? `打开助手（${props.characterName}）` : `${props.characterName}（助手未启用）`
+    );
+    watch(
+      () => props.aspectRatio,
+      () => {
+        if (ready.value) relayout();
+      }
+    );
     const frameStatus = ref(
       Object.fromEntries(POSES.map((name) => [name, "pending"]))
     );
@@ -466,7 +478,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (name === "idle") {
         const image = event.target;
         if (image.naturalWidth && image.naturalHeight) {
-          aspect.value = image.naturalWidth / image.naturalHeight;
+          imageAspect.value = image.naturalWidth / image.naturalHeight;
           relayout();
         }
       }
@@ -1188,6 +1200,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function syncVisibility() {
+      animationActive.value = motionAllowed() && visible();
       if (!visible()) {
         stopLoop();
         clearTimer("behavior");
@@ -1359,6 +1372,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       settings.value = loaded;
       restorePosition(stored);
       ready.value = true;
+      syncVisibility();
       syncSurfacePoll();
       reportAnchor();
       scheduleBlink();
@@ -1399,23 +1413,29 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           onDragstart: _cache[0] || (_cache[0] = _withModifiers(() => {
           }, ["prevent"]))
         }, [
-          _createElementVNode("span", {
-            class: _normalizeClass(["agent-pet-ying__frames", { "agent-pet-ying__frames--flip": facingLeft.value, "agent-pet-ying__frames--pending": !displayed.value }]),
-            "data-frame": displayed.value ?? void 0
-          }, [
-            (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(POSES), (name) => {
-              return _openBlock(), _createElementBlock("img", {
-                key: name,
-                class: _normalizeClass(["agent-pet-ying__frame", { "agent-pet-ying__frame--visible": name === displayed.value }]),
-                src: frameSrc.value[name],
-                "data-pose": name,
-                alt: "",
-                draggable: "false",
-                onLoad: ($event) => onFrameLoad(name, $event),
-                onError: ($event) => onFrameError(name)
-              }, null, 42, _hoisted_4);
-            }), 128))
-          ], 10, _hoisted_3)
+          _renderSlot(_ctx.$slots, "default", {
+            pose: pose.value,
+            facingLeft: facingLeft.value,
+            motionActive: animationActive.value
+          }, () => [
+            _createElementVNode("span", {
+              class: _normalizeClass(["agent-pet-ying__frames", { "agent-pet-ying__frames--flip": facingLeft.value, "agent-pet-ying__frames--pending": !displayed.value }]),
+              "data-frame": displayed.value ?? void 0
+            }, [
+              (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(POSES), (name) => {
+                return _openBlock(), _createElementBlock("img", {
+                  key: name,
+                  class: _normalizeClass(["agent-pet-ying__frame", { "agent-pet-ying__frame--visible": name === displayed.value }]),
+                  src: frameSrc.value[name],
+                  "data-pose": name,
+                  alt: "",
+                  draggable: "false",
+                  onLoad: ($event) => onFrameLoad(name, $event),
+                  onError: ($event) => onFrameError(name)
+                }, null, 42, _hoisted_4);
+              }), 128))
+            ], 10, _hoisted_3)
+          ], true)
         ], 44, _hoisted_2), [
           [_vShow, ready.value]
         ])
@@ -1424,6 +1444,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-0d2067e3"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-7526db33"]]);
 
 export { AgentPet as default };

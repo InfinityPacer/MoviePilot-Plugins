@@ -56,8 +56,11 @@ const props = withDefaults(
     api?: Pick<PluginApi, 'get'> | null
     pluginId?: string
     sourcePluginId?: string
+    /** 使用自定义外观时的名称与格子宽高比。 */
+    characterName?: string
+    aspectRatio?: number
   }>(),
-  { agent: null, pet: null, api: null, pluginId: '', sourcePluginId: '' },
+  { agent: null, pet: null, api: null, pluginId: '', sourcePluginId: '', characterName: '小映', aspectRatio: 0 },
 )
 
 /** 设置为 1 倍时的角色高度（CSS 像素）。 */
@@ -108,7 +111,8 @@ interface StoredPosition {
 
 const rootEl = ref<HTMLElement | null>(null)
 const settings = ref<YingSettings>({ ...DEFAULT_SETTINGS })
-const aspect = ref(198 / 240)
+const imageAspect = ref(198 / 240)
+const aspect = computed(() => (props.aspectRatio > 0 ? props.aspectRatio : imageAspect.value))
 const x = ref(0)
 const y = ref(0)
 const sink = ref(0)
@@ -124,6 +128,7 @@ const rising = ref(false)
 const available = ref(true)
 /** 宿主判定的窄屏布局，窄屏时角色再缩小。 */
 const isMobile = ref(false)
+const animationActive = ref(false)
 
 let hostState: AgentHostState | null = null
 let documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
@@ -183,7 +188,15 @@ const pose = computed<Pose>(() =>
     rising: rising.value,
   }),
 )
-const label = computed(() => (available.value ? '打开助手（小映）' : '小映（助手未启用）'))
+const label = computed(() =>
+  available.value ? `打开助手（${props.characterName}）` : `${props.characterName}（助手未启用）`,
+)
+watch(
+  () => props.aspectRatio,
+  () => {
+    if (ready.value) relayout()
+  },
+)
 
 /** 单帧图片的加载状态。 */
 type FrameStatus = 'pending' | 'loaded' | 'error'
@@ -232,7 +245,7 @@ function onFrameLoad(name: Pose, event: Event) {
   if (name === 'idle') {
     const image = event.target as HTMLImageElement
     if (image.naturalWidth && image.naturalHeight) {
-      aspect.value = image.naturalWidth / image.naturalHeight
+      imageAspect.value = image.naturalWidth / image.naturalHeight
       relayout()
     }
   }
@@ -1114,6 +1127,7 @@ function freezeMotion() {
 
 /** 页面不可见时停掉 rAF、行为计时与元素观察；回到可见后继续并重新校验脚下。 */
 function syncVisibility() {
+  animationActive.value = motionAllowed() && visible()
   if (!visible()) {
     stopLoop()
     clearTimer('behavior')
@@ -1306,6 +1320,7 @@ onMounted(async () => {
   settings.value = loaded
   restorePosition(stored)
   ready.value = true
+  syncVisibility()
   syncSurfacePoll()
   reportAnchor()
   scheduleBlink()
@@ -1343,24 +1358,26 @@ onBeforeUnmount(() => {
       @click="onActivate"
       @dragstart.prevent
     >
-      <span
-        class="agent-pet-ying__frames"
-        :class="{ 'agent-pet-ying__frames--flip': facingLeft, 'agent-pet-ying__frames--pending': !displayed }"
-        :data-frame="displayed ?? undefined"
-      >
-        <img
-          v-for="name in POSES"
-          :key="name"
-          class="agent-pet-ying__frame"
-          :class="{ 'agent-pet-ying__frame--visible': name === displayed }"
-          :src="frameSrc[name]"
-          :data-pose="name"
-          alt=""
-          draggable="false"
-          @load="onFrameLoad(name, $event)"
-          @error="onFrameError(name)"
-        />
-      </span>
+      <slot :pose="pose" :facing-left="facingLeft" :motion-active="animationActive">
+        <span
+          class="agent-pet-ying__frames"
+          :class="{ 'agent-pet-ying__frames--flip': facingLeft, 'agent-pet-ying__frames--pending': !displayed }"
+          :data-frame="displayed ?? undefined"
+        >
+          <img
+            v-for="name in POSES"
+            :key="name"
+            class="agent-pet-ying__frame"
+            :class="{ 'agent-pet-ying__frame--visible': name === displayed }"
+            :src="frameSrc[name]"
+            :data-pose="name"
+            alt=""
+            draggable="false"
+            @load="onFrameLoad(name, $event)"
+            @error="onFrameError(name)"
+          />
+        </span>
+      </slot>
     </button>
   </div>
 </template>

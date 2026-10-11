@@ -2,7 +2,7 @@
 import type { RoamMode } from '@/stage/geometry'
 import { DEFAULT_SETTINGS, SCALE_RANGE, SPEED_RANGE, type YingSettings } from '@/stage/settings'
 
-/** 小映的外观与活动范围设置；值的保存和实时预览由配置页统一处理。 */
+/** 全屏角色的外观与活动范围设置；值的保存和实时预览由配置页统一处理。 */
 const props = defineProps<{
   modelValue: YingSettings
   /** 主程序是否提供 `moviepilot:agent`，决定能否实时预览。 */
@@ -76,7 +76,7 @@ function reset() {
     <div class="d-flex align-center mt-3">
       <!-- 没有宿主对象时配置页顶部已提示升级主程序，这里不再重复。 -->
       <span v-if="props.livePreview" class="text-caption text-medium-emphasis">
-        调整时页面上正在运行的小映会实时变化，保存后对所有用户生效。
+        调整时页面上正在运行的小映或 Codex Pet 会实时变化，保存后对所有用户生效。
       </span>
       <v-spacer />
       <v-btn variant="text" size="small" @click="reset">恢复默认</v-btn>

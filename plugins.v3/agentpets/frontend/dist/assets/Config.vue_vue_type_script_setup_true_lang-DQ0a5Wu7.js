@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE } from './host-CDE6kQPw.js';
-import { v as validatePack, B as BUILTIN_PACK_ID, b as builtinAsset, d as buildCodexPetPack } from './schema-CK60w35o.js';
+import { v as validatePack, B as BUILTIN_PACK_ID, b as builtinAsset, d as buildCodexPetPack } from './schema-C8VvGZ5b.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, n as normalizeSettings, S as SETTINGS_EVENT } from './settings-_v7SC99m.js';
 
@@ -898,7 +898,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
                   }, 1024),
                   _createVNode$2(_component_v_list_item_subtitle, null, {
                     default: _withCtx$2(() => [
-                      _createTextVNode$2(_toDisplayString$2(pack.id) + " · " + _toDisplayString$2(pack.builtin ? "内置" : pack.source === "upload" ? "已上传" : "远程图片") + " · " + _toDisplayString$2(pack.frame_count) + " 帧 · " + _toDisplayString$2(pack.action_count) + " 个动作 ", 1)
+                      _createTextVNode$2(_toDisplayString$2(pack.id) + " · " + _toDisplayString$2(pack.builtin ? "内置" : pack.source === "upload" ? "已上传" : "远程图片") + " · " + _toDisplayString$2(pack.mode === "stage" ? "全屏角色" : "入口外观") + " · " + _toDisplayString$2(pack.frame_count) + " 帧 · " + _toDisplayString$2(pack.action_count) + " 个动作 ", 1)
                     ]),
                     _: 2
                   }, 1024)
@@ -1047,7 +1047,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-750f2ce9"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-8fb2c2be"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
@@ -1136,7 +1136,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           "onUpdate:modelValue": _cache[2] || (_cache[2] = (value) => update({ roam: value }))
         }, null, 8, ["model-value", "hint"]),
         _createElementVNode$1("div", _hoisted_4, [
-          props.livePreview ? (_openBlock$1(), _createElementBlock("span", _hoisted_5, " 调整时页面上正在运行的小映会实时变化，保存后对所有用户生效。 ")) : _createCommentVNode$1("", true),
+          props.livePreview ? (_openBlock$1(), _createElementBlock("span", _hoisted_5, " 调整时页面上正在运行的小映或 Codex Pet 会实时变化，保存后对所有用户生效。 ")) : _createCommentVNode$1("", true),
           _createVNode$1(_component_v_spacer),
           _createVNode$1(_component_v_btn, {
             variant: "text",
@@ -1154,7 +1154,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-ed0d1437"]]);
+const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-a238247d"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -1222,16 +1222,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 class: "mb-2"
               }, null, 8, ["modelValue"]),
               _cache[3] || (_cache[3] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-6" }, " 启用后，小映和每个素材包都会出现在个人设置的「助手形象」里，由用户自行选择。 ", -1)),
-              _cache[4] || (_cache[4] = _createElementVNode("div", { class: "text-subtitle-1 mb-1" }, "小映（全屏角色）", -1)),
-              _cache[5] || (_cache[5] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-4" }, "在整个页面上活动，可拖拽、站在页面元素上、散步和探头。", -1)),
+              _cache[4] || (_cache[4] = _createElementVNode("div", { class: "text-subtitle-1 mb-1" }, "全屏角色（小映与 Codex Pet）", -1)),
+              _cache[5] || (_cache[5] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-4" }, " 小映与导入的 Codex Pet 共用以下设置，可拖拽、站在页面元素上、散步和探头。 ", -1)),
               _createVNode(StageSettings, {
                 modelValue: stage.value,
                 "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => stage.value = $event),
                 "live-preview": !!_unref(agent)
               }, null, 8, ["modelValue", "live-preview"]),
               _createVNode(_component_v_divider, { class: "my-6" }),
-              _cache[6] || (_cache[6] = _createElementVNode("div", { class: "text-subtitle-1 mb-1" }, "素材包（入口外观）", -1)),
-              _cache[7] || (_cache[7] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-4" }, " 替换右下角助手入口的画面，拖拽和气泡仍由主程序负责。每个素材包都是一个可选形象。 ", -1)),
+              _cache[6] || (_cache[6] = _createElementVNode("div", { class: "text-subtitle-1 mb-1" }, "素材包", -1)),
+              _cache[7] || (_cache[7] = _createElementVNode("div", { class: "text-caption text-medium-emphasis mb-4" }, " Codex Pet 可在整个页面上活动；普通素材包替换右下角助手入口的画面。每个素材包都是一个可选形象。 ", -1)),
               _createVNode(PackManager, {
                 api: props.api,
                 "plugin-id": props.pluginId

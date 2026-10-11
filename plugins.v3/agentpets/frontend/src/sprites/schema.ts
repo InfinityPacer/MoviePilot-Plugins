@@ -101,7 +101,7 @@ export function buildCodexPetPack(
   width: number,
   height: number,
   metadata?: CodexPetMetadata,
-): { version: 'v1' | 'v2'; pack: Record<string, unknown> } {
+): { version: 'v1' | 'v2'; pack: SpritePack } {
   const layout = CODEX_PET_LAYOUTS.find(item => item.width === width && item.height === height)
   if (!layout) {
     throw new Error('只支持 Codex Pet v1（1536×1872）或 v2（1536×2288）精灵图')
@@ -167,6 +167,7 @@ export function buildCodexPetPack(
     version: layout.version,
     pack: {
       id,
+      codex_version: layout.version,
       name: displayName.slice(0, 40),
       description: metadata?.description?.trim().slice(0, 120) || '从 Codex Pet ' + layout.version + ' 精灵图导入',
       sheet: '',
@@ -193,6 +194,8 @@ export interface SpritePack {
   id: string
   name: string
   description: string
+  /** Codex 原生布局；旧包由后端按动作布局识别后补充。 */
+  codex_version?: 'v1' | 'v2'
   /** 图片路径或 URL；上传方式添加的素材包由后端改为 data URL 提供。 */
   sheet: string
   grid: { cols: number; rows: number }
@@ -243,6 +246,13 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
   const grid = (data.grid ?? {}) as Record<string, unknown>
   const cols = integer(grid.cols, 'grid.cols', 1, 16, errors)
   const rows = integer(grid.rows, 'grid.rows', 1, 16, errors)
+  const codexVersion = data.codex_version
+  if (codexVersion != null) {
+    if (codexVersion !== 'v1' && codexVersion !== 'v2') errors.push('codex_version 只支持 v1 或 v2')
+    else if (cols !== 8 || rows !== (codexVersion === 'v1' ? 9 : 11)) {
+      errors.push('codex_version 与网格不匹配，v1 为 8×9，v2 为 8×11')
+    }
+  }
 
   const frames: Record<string, number> = {}
   const rawFrames = data.frames
@@ -293,6 +303,7 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
   return {
     pack: {
       id: typeof id === 'string' ? id : '',
+      ...(codexVersion === 'v1' || codexVersion === 'v2' ? { codex_version: codexVersion } : {}),
       name,
       description: typeof data.description === 'string' ? data.description.trim() : '',
       sheet,
@@ -303,6 +314,32 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
     },
     errors,
   }
+}
+
+/** 补齐旧 Codex 包缺少的舞台动作；只生成显示副本，保留原有帧名和自定义动作。 */
+export function withCodexStageActions(pack: SpritePack): SpritePack {
+  const layout = CODEX_PET_LAYOUTS.find(item => item.version === pack.codex_version)
+  if (!layout) return pack
+  const defaults = buildCodexPetPack(pack.id, layout.width, layout.height).pack
+  const frames = { ...pack.frames }
+  const actions = { ...pack.actions }
+  const namesByIndex = new Map(Object.entries(frames).map(([name, index]) => [index, name]))
+
+  function frameName(index: number): string {
+    const existing = namesByIndex.get(index)
+    if (existing) return existing
+    let name = `codex-${index}`
+    for (let suffix = 1; name in frames; suffix += 1) name = `codex-${index}-${suffix}`
+    frames[name] = index
+    namesByIndex.set(index, name)
+    return name
+  }
+
+  for (const [key, action] of Object.entries(defaults.actions)) {
+    if (actions[key]) continue
+    actions[key] = { ...action, frames: action.frames.map(name => frameName(defaults.frames[name])) }
+  }
+  return { ...pack, frames, actions }
 }
 
 /** 内置放映猫素材包；精灵图随构建原名复制到 `assets/packs/projector-cat/`。 */

@@ -18,6 +18,7 @@ from app.plugins.agentpets.pack import (
     HOST_ACTIONS,
     MAX_PACKS,
     PackError,
+    codex_pet_version,
     decode_image,
     parse_pack,
     sniff_image,
@@ -267,3 +268,58 @@ def test_packs_api_lists_builtin_first(plugin: AgentPets) -> None:
         ("pixel-dog", False, "url"),
     ]
     assert packs[1]["frame_count"] == 2 and packs[1]["action_count"] == 2
+
+
+@pytest.mark.parametrize("version, rows", [("v1", 9), ("v2", 11)])
+def test_codex_marker_survives_save_and_registers_stage(plugin: AgentPets, version: str, rows: int) -> None:
+    """显式标记持久化后仍进入舞台，停用与重新启用不丢失形象。"""
+    raw = _pack(codex_version=version, grid={"cols": 8, "rows": rows}, sheet="https://example.com/s.png")
+    response = plugin.api_add_pack(SimpleNamespace(pack=raw, image=None))
+    assert response.success, response.message
+    assert plugin.get_data("packs")[0]["codex_version"] == version
+    plugin.init_plugin({"enabled": False})
+    assert plugin.get_state() is False
+    plugin.init_plugin({"enabled": True, "scale": 1.25})
+    declared = next(pet for pet in plugin.get_agent_pets() if pet["key"] == raw["id"])
+    assert declared["mode"] == "stage"
+    assert declared["component"] == "AgentPetCodex"
+    assert declared["bubbles"] == "host"
+    assert "random_actions" not in declared
+    assert plugin.api_pack(raw["id"]).data["pack"]["codex_version"] == version
+    assert plugin.settings()["scale"] == 1.25
+
+
+def _legacy_codex_pack() -> dict:
+    return json.loads((Path(__file__).parent / "fixtures" / "legacy-codex-v2.json").read_text(encoding="utf-8"))
+
+
+def test_legacy_codex_pack_becomes_stage_without_rewriting_saved_data(plugin: AgentPets) -> None:
+    """旧精简包没有标记和行走帧，读取时识别，保留已保存动作与素材。"""
+    raw = _legacy_codex_pack()
+    record = {**raw, "source": "url", "sheet_url": raw["sheet"]}
+    plugin.save_data("packs", [record])
+    before = json.dumps(plugin.get_data("packs"), sort_keys=True)
+    assert codex_pet_version(record) == "v2"
+    assert parse_pack(raw)["codex_version"] == "v2"
+    declared = next(pet for pet in plugin.get_agent_pets() if pet["key"] == raw["id"])
+    assert (declared["mode"], declared["component"]) == ("stage", "AgentPetCodex")
+    served = plugin.api_pack(raw["id"]).data["pack"]
+    assert served["codex_version"] == "v2"
+    assert served["actions"] == record["actions"]
+    assert plugin.api_packs().data[-1]["mode"] == "stage"
+    assert json.dumps(plugin.get_data("packs"), sort_keys=True) == before
+
+
+def test_codex_detection_requires_animation_layout_not_just_grid() -> None:
+    """同尺寸普通包与动作布局不符的包保持入口外观。"""
+    assert codex_pet_version(_pack(grid={"cols": 8, "rows": 11})) is None
+    raw = _legacy_codex_pack()
+    raw["frames"]["wave-ready"] = 0
+    assert codex_pet_version(raw) is None
+    assert codex_pet_version({"grid": {"cols": 8, "rows": []}}) is None
+
+
+@pytest.mark.parametrize("marker, rows", [("v3", 11), ("v1", 11), ("v2", 9), (True, 9)])
+def test_codex_marker_must_match_supported_layout(marker, rows: int) -> None:
+    with pytest.raises(PackError, match="codex_version"):
+        parse_pack(_pack(codex_version=marker, grid={"cols": 8, "rows": rows}))

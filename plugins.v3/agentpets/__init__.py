@@ -2,8 +2,9 @@
 
 - 小映（key ``ying``）是 stage 模式的全屏角色，插件拥有整个视口图层里的角色：
   拖拽、下落、站在页面元素上、散步和探头都由联邦组件 ``./AgentPet`` 完成。
-- 素材包是 renderer 模式的入口外观，内置放映猫（key ``projector-cat``）和用户添加的
-  每个素材包各是一个形象，共用联邦组件 ``./AgentPetSprite``，组件按 ``pet.key`` 读取素材包。
+- Codex Pet 素材包由 ``./AgentPetCodex`` 复用小映舞台，支持缩放、拖拽与自主漫游。
+- 普通素材包是 renderer 模式的入口外观，共用 ``./AgentPetSprite``；内置放映猫与用户
+  素材包各是一个形象，组件按 ``pet.key`` 读取素材包。
 
 宿主保留 Agent 面板、会话、模型和回退；插件只决定形象的外观与动作。
 """
@@ -22,7 +23,7 @@ from app.plugins import _PluginBase
 from app.sdk.logging import logger
 from app.sdk.security import verify_token
 
-from .pack import BUILTIN_PACK_ID, PackError, PackStore, load_builtin_pack
+from .pack import BUILTIN_PACK_ID, PackError, PackStore, codex_pet_version, load_builtin_pack
 
 PLUGIN_DIR = Path(__file__).resolve().parent
 DIST_PATH = "frontend/dist/assets"
@@ -35,7 +36,7 @@ STAGE_AVATAR = "ying/avatar.png"
 BUILTIN_PREVIEW = f"packs/{BUILTIN_PACK_ID}/preview.png"
 BUILTIN_AVATAR = f"packs/{BUILTIN_PACK_ID}/avatar.png"
 
-# 小映的角色大小与移动速度范围；前端设置页与形象组件使用同一组边界。
+# 全屏角色的大小与移动速度范围；小映与 Codex Pet 使用同一组设置。
 SCALE_RANGE = (0.6, 1.6)
 SPEED_RANGE = (0.5, 2.0)
 # 活动范围：surfaces 站在页面元素上，floor 只在底边，free 没有重力、自由停放。
@@ -95,7 +96,7 @@ class AgentPets(_PluginBase):
         self._builtin: dict[str, Any] | None = None
 
     def init_plugin(self, config: dict | None = None):
-        """读取启用状态与小映设置，越界值按边界收敛。"""
+        """读取启用状态与全屏角色设置，越界值按边界收敛。"""
         config = config or {}
         self._enabled = bool(config.get("enabled", False))
         roam = config.get("roam")
@@ -154,25 +155,28 @@ class AgentPets(_PluginBase):
 
     @staticmethod
     def _sprite_pet(key: str, pack: dict[str, Any], preview: str | None, avatar: str | None) -> dict[str, Any]:
-        """素材包形象共用 ``./AgentPetSprite``；URL 方式的素材包没写头像时不声明 avatar。"""
+        """Codex Pet 进入舞台；普通素材包保留入口外观，形象 key 不变。"""
+        stage = codex_pet_version(pack) is not None
         item: dict[str, Any] = {
             "key": key,
             "name": pack["name"],
             "description": pack.get("description") or "",
-            "mode": "renderer",
-            "component": "AgentPetSprite",
+            "mode": "stage" if stage else "renderer",
+            "component": "AgentPetCodex" if stage else "AgentPetSprite",
             "api_version": 1,
         }
         if preview:
             item["preview"] = preview
         if avatar:
             item["avatar"] = avatar
-        if pack.get("random_actions"):
+        if stage:
+            item["bubbles"] = "host"
+        elif pack.get("random_actions"):
             item["random_actions"] = list(pack["random_actions"])
         return item
 
     def settings(self) -> dict[str, Any]:
-        """小映启动时读取的已保存设置。"""
+        """全屏角色启动时读取的已保存设置。"""
         return dict(self._settings)
 
     def api_settings(self):
@@ -185,6 +189,7 @@ class AgentPets(_PluginBase):
             "name": record["name"],
             "description": record.get("description") or "",
             "builtin": builtin,
+            "mode": "stage" if codex_pet_version(record) else "renderer",
             "source": "builtin" if builtin else record.get("source", ""),
             "preview": BUILTIN_PREVIEW if builtin else record.get("preview", ""),
             "grid": record.get("grid"),
@@ -211,6 +216,9 @@ class AgentPets(_PluginBase):
         except PackError as exc:
             return schemas.Response(success=False, message=str(exc))
         pack = {name: record.get(name) for name in ("id", "name", "description", "grid", "frames", "actions", "random_actions")}
+        version = codex_pet_version(record)
+        if version:
+            pack["codex_version"] = version
         return schemas.Response(success=True, data={"pack": pack, "builtin": False, "sheet_src": sheet_src})
 
     def api_add_pack(self, request: AddPackRequest):
@@ -238,7 +246,7 @@ class AgentPets(_PluginBase):
                 "endpoint": self.api_settings,
                 "methods": ["GET"],
                 "auth": "bear",
-                "summary": "读取小映设置",
+                "summary": "读取全屏角色设置",
                 "response_model": schemas.Response[dict],
             },
             {

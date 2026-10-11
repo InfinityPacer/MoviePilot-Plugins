@@ -1,0 +1,57 @@
+{
+  "id": "legacy-pet",
+  "name": "旧版素材包",
+  "description": "早期转换的 Codex v2 布局",
+  "sheet": "https://example.com/legacy.png",
+  "grid": { "cols": 8, "rows": 11 },
+  "frames": {
+    "idle": 0,
+    "idle-1": 1,
+    "blink": 2,
+    "idle-2": 3,
+    "idle-3": 4,
+    "idle-4": 5,
+    "wave-ready": 24,
+    "wave-1": 25,
+    "wave-2": 26,
+    "wave-3": 27,
+    "cheer-ready": 32,
+    "cheer-1": 33,
+    "cheer-2": 34,
+    "cheer-3": 35,
+    "cheer-4": 36,
+    "confused": 41,
+    "skeptical": 42,
+    "thinking": 43,
+    "facepalm": 44,
+    "sleep": 46,
+    "gesture-1": 50,
+    "gesture-2": 51,
+    "gesture-3": 52
+  },
+  "actions": {
+    "idle": { "frames": ["idle", "idle-1", "blink", "idle-2", "idle-3", "idle-4"], "frame_ms": 700, "loop": true },
+    "thinking": { "frames": ["thinking"], "frame_ms": 160, "loop": false },
+    "wave": {
+      "frames": ["wave-ready", "wave-1", "wave-2", "wave-3", "wave-2", "wave-1", "wave-ready"],
+      "frame_ms": 220,
+      "loop": false
+    },
+    "happy-jump": {
+      "frames": ["cheer-ready", "cheer-1", "cheer-2", "cheer-3", "cheer-4"],
+      "frame_ms": 220,
+      "loop": false
+    },
+    "success": {
+      "frames": ["cheer-ready", "cheer-1", "cheer-2", "cheer-3", "cheer-4"],
+      "frame_ms": 220,
+      "loop": false
+    },
+    "confused": { "frames": ["confused"], "frame_ms": 160, "loop": false },
+    "warning": { "frames": ["skeptical"], "frame_ms": 160, "loop": false },
+    "error": { "frames": ["facepalm"], "frame_ms": 160, "loop": false },
+    "sleep": { "frames": ["sleep"], "frame_ms": 160, "loop": false },
+    "scan": { "frames": ["gesture-1", "gesture-2", "gesture-3"], "frame_ms": 320, "loop": true }
+  },
+  "random_actions": ["wave"]
+}

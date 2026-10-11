@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, v as validatePack } from './schema-CK60w35o.js';
+import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, v as validatePack, w as withCodexStageActions } from './schema-C8VvGZ5b.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -22,8 +22,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     thinking: { type: Boolean, default: false },
     motionActive: { type: Boolean, default: true }
   },
-  setup(__props) {
+  emits: ["appearance"],
+  setup(__props, { emit: __emit }) {
     const props = __props;
+    const emit = __emit;
     const packKey = props.pet?.key || BUILTIN_PACK_ID;
     const pack = ref(BUILTIN_PACK);
     const sheetSrc = ref(builtinAsset("sheet.webp"));
@@ -107,7 +109,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         const { pack: parsed } = validatePack(response?.data?.pack);
         if (!response?.success || !parsed || !response.data?.sheet_src) throw new Error(response?.message || "invalid pack");
         if (disposed) return;
-        pack.value = parsed;
+        pack.value = props.pet?.mode === "stage" ? withCodexStageActions(parsed) : parsed;
+        cellRatio.value = parsed.codex_version ? 192 / 208 : 1;
         sheetSrc.value = response.data.sheet_src;
       } catch {
         console.warn(`[AgentPets] pack ${key} unavailable, using builtin`);
@@ -117,6 +120,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     watch(
       () => [resolved.value.key, props.motionActive, pack.value],
       () => play()
+    );
+    watch(
+      [ready, pack, cellRatio],
+      () => {
+        if (ready.value) emit("appearance", { name: pack.value.name, aspectRatio: cellRatio.value });
+      },
+      { immediate: true }
     );
     watch(sheetSrc, (src) => measure(src));
     watch(ready, (value) => {
@@ -149,6 +159,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-54e25773"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f62c436b"]]);
 
 export { AgentPetSprite as default };
