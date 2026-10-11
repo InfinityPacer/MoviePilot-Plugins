@@ -23,7 +23,7 @@ interface ArchiveEntry {
 }
 
 export function isCodexPetArchive(file: File): boolean {
-  return file.name.toLowerCase().endsWith('.codex-pet.zip')
+  return file.name.toLowerCase().endsWith('.zip')
 }
 
 function normalizeEntryPath(path: string): string | null {
@@ -138,7 +138,7 @@ function readFileBytes(file: File): Promise<Uint8Array> {
 }
 
 export async function extractCodexPetArchive(file: File): Promise<ExtractedCodexPet> {
-  if (!isCodexPetArchive(file)) throw new Error('压缩包文件名必须以 .codex-pet.zip 结尾')
+  if (!isCodexPetArchive(file)) throw new Error('压缩包文件名必须以 .zip 结尾')
   if (file.size > MAX_CODEX_PET_ARCHIVE_BYTES) throw new Error('Codex Pet 压缩包不能超过 8MB')
 
   let archive: Uint8Array

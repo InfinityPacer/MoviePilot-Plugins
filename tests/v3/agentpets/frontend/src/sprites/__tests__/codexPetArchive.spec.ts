@@ -24,7 +24,7 @@ function petArchive(
     [manifestPath]: strToU8(JSON.stringify(manifest)),
     [sheetEntryPath]: spritesheet,
   })
-  return new File([archive], 'cute-rem.codex-pet.zip', { type: 'application/zip' })
+  return new File([archive], 'kurisu.zip', { type: 'application/zip' })
 }
 
 describe('Codex Pet ZIP importer', () => {
@@ -63,7 +63,7 @@ describe('Codex Pet ZIP importer', () => {
   })
 
   it('rejects missing or ambiguous manifests', async () => {
-    const missingManifest = new File([zipSync({ 'cute-rem/spritesheet.webp': WEBP_BYTES })], 'cute-rem.codex-pet.zip')
+    const missingManifest = new File([zipSync({ 'cute-rem/spritesheet.webp': WEBP_BYTES })], 'kurisu.zip')
     const duplicateManifests = new File(
       [
         zipSync({
@@ -73,7 +73,7 @@ describe('Codex Pet ZIP importer', () => {
           'b/spritesheet.webp': WEBP_BYTES,
         }),
       ],
-      'cute-rem.codex-pet.zip',
+      'kurisu.zip',
     )
 
     await expect(extractCodexPetArchive(missingManifest)).rejects.toThrow('缺少 pet.json')
@@ -87,7 +87,7 @@ describe('Codex Pet ZIP importer', () => {
   })
 
   it('rejects oversized archives and extracted sheets', async () => {
-    const oversizedArchive = new File([new Uint8Array(8 * 1024 * 1024 + 1)], 'cute-rem.codex-pet.zip')
+    const oversizedArchive = new File([new Uint8Array(8 * 1024 * 1024 + 1)], 'kurisu.zip')
     const oversizedSheet = petArchive(
       { spritesheetPath: 'spritesheet.webp' },
       new Uint8Array(4 * 1024 * 1024 + 1),

@@ -127,7 +127,7 @@ function onImage(value: File | File[] | null | undefined) {
   }
   if (!IMAGE_TYPES.includes(file.type)) {
     imageFile.value = null
-    imageError.value = '只支持 PNG、WebP、GIF、JPEG 或 .codex-pet.zip'
+    imageError.value = '只支持 PNG、WebP、GIF、JPEG 或 ZIP'
   } else if (file.size > MAX_IMAGE_BYTES) {
     imageFile.value = null
     imageError.value = '精灵图不能超过 4MB'
@@ -275,7 +275,7 @@ onMounted(refresh)
       v-if="imageMode === 'upload'"
       v-model="fileModel"
       label="精灵图（不超过 4MB）或 Codex Pet ZIP（不超过 8MB）"
-      accept=".codex-pet.zip,image/png,image/webp,image/gif,image/jpeg"
+      accept="image/png,image/webp,image/gif,image/jpeg,.zip"
       variant="outlined"
       prepend-icon="mdi-image-outline"
       :error-messages="imageError ? [imageError] : []"
