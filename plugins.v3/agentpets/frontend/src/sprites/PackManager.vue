@@ -274,7 +274,7 @@ onMounted(refresh)
     <v-file-input
       v-if="imageMode === 'upload'"
       v-model="fileModel"
-      label="精灵图（不超过 4MB）或 Codex Pet ZIP（不超过 8MB）"
+      label="精灵图（不超过 4MB）或 ZIP（不超过 8MB）"
       accept="image/png,image/webp,image/gif,image/jpeg,.zip"
       variant="outlined"
       prepend-icon="mdi-image-outline"

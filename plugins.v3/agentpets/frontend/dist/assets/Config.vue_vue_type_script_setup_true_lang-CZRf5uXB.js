@@ -978,7 +978,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
             _cache[2] || (_cache[2] = ($event) => fileModel.value = $event),
             onImage
           ],
-          label: "精灵图（不超过 4MB）或 Codex Pet ZIP（不超过 8MB）",
+          label: "精灵图（不超过 4MB）或 ZIP（不超过 8MB）",
           accept: "image/png,image/webp,image/gif,image/jpeg,.zip",
           variant: "outlined",
           "prepend-icon": "mdi-image-outline",
@@ -1047,7 +1047,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-19632977"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-750f2ce9"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
