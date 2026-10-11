@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, p as petImage, l as loadEditor, a as loadHostSelection, c as checkAvailablePet, d as saveSettings, e as applyDefaultPet, r as reloadForPet } from './host-CwtDFHL9.js';
+import { A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, p as petImage, l as loadEditor, a as loadHostSelection, c as saveSettings } from './host-q6tYV7Ud.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-BbJu4Dqb.js';
 import AgentPet from './__federation_expose_AgentPet-zjW_Xv2Q.js';
 import { _ as _sfc_main$3 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-FwHhVtpM.js';
@@ -524,23 +524,19 @@ const _hoisted_13 = {
 };
 const _hoisted_14 = { class: "ap-control-panel" };
 const _hoisted_15 = {
-  key: 1,
-  class: "ap-muted mt-2 mb-0"
-};
-const _hoisted_16 = {
   key: 6,
   class: "ap-empty"
 };
-const _hoisted_17 = { class: "ap-footer" };
-const _hoisted_18 = {
+const _hoisted_16 = { class: "ap-footer" };
+const _hoisted_17 = {
   key: 0,
   class: "ap-change"
 };
-const _hoisted_19 = {
+const _hoisted_18 = {
   key: 1,
   class: "ap-muted"
 };
-const _hoisted_20 = { class: "ap-footer__actions" };
+const _hoisted_19 = { class: "ap-footer__actions" };
 const {computed,inject,onBeforeUnmount,ref,watch} = await importShared('vue');
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "Page",
@@ -566,8 +562,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const hostError = ref("");
     const feedback = ref("");
     const feedbackType = ref("success");
-    const followDefault = ref(true);
-    const previewFailed = ref(false);
     const currentPet = computed(() => snapshot.value?.pets.find((pet) => pet.key === selectedKey.value) ?? null);
     const dirty = computed(() => !sameSettings(draft.value, saved.value));
     const changedNames = computed(
@@ -577,7 +571,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         draft.value.roam !== saved.value.roam ? "活动范围" : ""
       ].filter(Boolean)
     );
-    const hasPersonalChoice = computed(() => selection.value?.user != null);
     const blocked = computed(() => loading.value || busy.value || !props.api || !currentPet.value || !!error.value);
     const defaultName = computed(() => {
       if (!selection.value) return "暂不可读";
@@ -603,7 +596,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (host.status === "fulfilled") selection.value = host.value;
       else {
         selection.value = null;
-        hostError.value = "无法读取系统默认或个人选择；管理员连接恢复后可保存和立即生效。";
+        hostError.value = "当前系统默认形象暂不可读，仍可预览和保存调整。";
       }
       if (editor.status === "fulfilled") {
         const preserveDraft = !reset && dirty.value;
@@ -624,7 +617,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         snapshot.value = null;
         selection.value = null;
         selectedKey.value = "";
-        previewFailed.value = false;
         feedback.value = "";
         void refresh(true);
       },
@@ -639,38 +631,24 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       draft.value = { ...saved.value };
       feedback.value = "";
     }
-    async function commit(apply) {
-      if (blocked.value || !props.api || !currentPet.value || !selection.value) return;
+    async function save() {
+      if (blocked.value || !props.api || !currentPet.value) return;
       const api = props.api;
       const id = props.pluginId;
-      const key = currentPet.value.key;
-      const name = currentPet.value.name;
       const values = { ...draft.value };
-      const shouldFollow = hasPersonalChoice.value && followDefault.value;
       const version = ++operationVersion;
       const current = () => !disposed && version === operationVersion && id === props.pluginId;
       busy.value = true;
       feedback.value = "";
       try {
-        if (apply) await checkAvailablePet(api, id, key);
-        if (!current()) return;
         if (!sameSettings(values, saved.value)) {
           const result = await saveSettings(api, id, values);
           if (!current()) return;
           saved.value = { ...result };
           agent?.emit?.(SETTINGS_EVENT, { ...result });
         }
-        if (apply) {
-          const result = await applyDefaultPet(api, id, key, shouldFollow, current);
-          if (!current()) return;
-          selection.value = result;
-          feedbackType.value = "success";
-          feedback.value = `已将 ${name} 设为系统默认形象，正在刷新页面。`;
-          reloadForPet();
-        } else {
-          feedbackType.value = "success";
-          feedback.value = agent ? "活动调整已保存，并已通知当前页面更新。" : "活动调整已保存。";
-        }
+        feedbackType.value = "success";
+        feedback.value = agent ? "活动调整已保存，并已通知当前页面更新。" : "活动调整已保存。";
       } catch (reason) {
         if (!current()) return;
         feedbackType.value = "error";
@@ -687,7 +665,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const _component_v_alert = _resolveComponent("v-alert");
       const _component_v_progress_circular = _resolveComponent("v-progress-circular");
       const _component_v_select = _resolveComponent("v-select");
-      const _component_v_switch = _resolveComponent("v-switch");
       return _openBlock(), _createElementBlock("section", _hoisted_1, [
         _createVNode(_component_v_toolbar, {
           class: "ap-page__toolbar",
@@ -702,7 +679,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               class: "mr-3"
             }),
             _createVNode(_component_v_toolbar_title, { class: "text-subtitle-1 font-weight-bold" }, {
-              default: _withCtx(() => [..._cache[10] || (_cache[10] = [
+              default: _withCtx(() => [..._cache[6] || (_cache[6] = [
                 _createTextVNode("助手形象 · 调整与预览", -1)
               ])]),
               _: 1
@@ -787,11 +764,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               indeterminate: "",
               color: "primary"
             }),
-            _cache[11] || (_cache[11] = _createElementVNode("span", { class: "ap-muted" }, "正在准备你的 Pet…", -1))
+            _cache[7] || (_cache[7] = _createElementVNode("span", { class: "ap-muted" }, "正在准备你的 Pet…", -1))
           ])) : snapshot.value && currentPet.value ? (_openBlock(), _createElementBlock("div", _hoisted_4, [
             _createElementVNode("aside", _hoisted_5, [
               _createElementVNode("section", _hoisted_6, [
-                _cache[12] || (_cache[12] = _createElementVNode("h2", { class: "ap-section-title" }, "选择 Pet", -1)),
+                _cache[8] || (_cache[8] = _createElementVNode("h2", { class: "ap-section-title" }, "选择 Pet", -1)),
                 _createVNode(_component_v_select, {
                   modelValue: selectedKey.value,
                   "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => selectedKey.value = $event),
@@ -826,35 +803,22 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   "live-preview": true,
                   disabled: blocked.value,
                   "preview-only": true
-                }, null, 8, ["modelValue", "disabled"])) : (_openBlock(), _createElementBlock("p", _hoisted_13, " 此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，并设为默认形象。 "))
+                }, null, 8, ["modelValue", "disabled"])) : (_openBlock(), _createElementBlock("p", _hoisted_13, " 此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。 "))
               ]),
               _createElementVNode("section", _hoisted_14, [
-                _cache[14] || (_cache[14] = _createElementVNode("h2", { class: "ap-section-title" }, "应用到 MP", -1)),
-                _cache[15] || (_cache[15] = _createElementVNode("div", { class: "ap-muted" }, "当前系统默认", -1)),
+                _cache[10] || (_cache[10] = _createElementVNode("h2", { class: "ap-section-title" }, "在 MP 中使用", -1)),
+                _cache[11] || (_cache[11] = _createElementVNode("div", { class: "ap-muted" }, "当前系统默认", -1)),
                 _createElementVNode("strong", null, _toDisplayString(defaultName.value), 1),
-                hasPersonalChoice.value ? (_openBlock(), _createBlock(_component_v_switch, {
-                  key: 0,
-                  modelValue: followDefault.value,
-                  "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => followDefault.value = $event),
-                  label: "当前用户跟随系统默认",
-                  color: "primary",
-                  density: "compact",
-                  inset: "",
-                  "hide-details": "",
-                  class: "mt-2",
-                  disabled: blocked.value
-                }, null, 8, ["modelValue", "disabled"])) : _createCommentVNode("", true),
-                hasPersonalChoice.value && !followDefault.value ? (_openBlock(), _createElementBlock("p", _hoisted_15, "当前用户仍使用个人选择的形象。")) : _createCommentVNode("", true),
-                _cache[16] || (_cache[16] = _createElementVNode("p", { class: "ap-muted mt-3 mb-0" }, " “立即生效”会保存调整、设置系统默认形象，并刷新当前页面。其他用户的个人选择保持有效。 ", -1)),
+                _cache[12] || (_cache[12] = _createElementVNode("p", { class: "ap-muted mt-3 mb-0" }, "保存调整后，在「设定 → 系统 → 智能助手配置 → 助手形象」中选择 Pet。", -1)),
                 !snapshot.value.enabled ? (_openBlock(), _createBlock(_component_v_alert, {
-                  key: 2,
+                  key: 0,
                   type: "info",
                   variant: "tonal",
                   density: "compact",
                   class: "mt-3"
                 }, {
-                  default: _withCtx(() => [..._cache[13] || (_cache[13] = [
-                    _createTextVNode("先在配置页启用插件，再使用“立即生效”。", -1)
+                  default: _withCtx(() => [..._cache[9] || (_cache[9] = [
+                    _createTextVNode("先在配置页启用插件，形象才会出现在 MP 的可选列表中。", -1)
                   ])]),
                   _: 1
                 })) : _createCommentVNode("", true)
@@ -865,10 +829,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               pet: currentPet.value,
               settings: draft.value,
               api: props.api,
-              "plugin-id": props.pluginId,
-              onError: _cache[6] || (_cache[6] = ($event) => previewFailed.value = $event)
+              "plugin-id": props.pluginId
             }, null, 8, ["pet", "settings", "api", "plugin-id"]))
-          ])) : !loading.value ? (_openBlock(), _createElementBlock("div", _hoisted_16, [
+          ])) : !loading.value ? (_openBlock(), _createElementBlock("div", _hoisted_15, [
             _createVNode(_component_v_icon, {
               icon: "mdi-paw-outline",
               size: "44",
@@ -878,7 +841,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createVNode(_component_v_btn, {
               variant: "tonal",
               color: "primary",
-              onClick: _cache[7] || (_cache[7] = ($event) => error.value ? refresh() : emit("switch"))
+              onClick: _cache[5] || (_cache[5] = ($event) => error.value ? refresh() : emit("switch"))
             }, {
               default: _withCtx(() => [
                 _createTextVNode(_toDisplayString(error.value ? "重新加载" : "前往素材管理"), 1)
@@ -887,47 +850,35 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             })
           ])) : _createCommentVNode("", true)
         ]),
-        _createElementVNode("footer", _hoisted_17, [
-          dirty.value ? (_openBlock(), _createElementBlock("span", _hoisted_18, [
+        _createElementVNode("footer", _hoisted_16, [
+          dirty.value ? (_openBlock(), _createElementBlock("span", _hoisted_17, [
             _createVNode(_component_v_icon, {
               icon: "mdi-circle",
               size: "7"
             }),
             _createTextVNode("未保存 · " + _toDisplayString(changedNames.value.join("、")), 1)
-          ])) : (_openBlock(), _createElementBlock("span", _hoisted_19, "预览中的调整不会自动保存")),
-          _createElementVNode("div", _hoisted_20, [
+          ])) : (_openBlock(), _createElementBlock("span", _hoisted_18, "预览中的调整不会自动保存")),
+          _createElementVNode("div", _hoisted_19, [
             _createVNode(_component_v_btn, {
               variant: "text",
               disabled: blocked.value || !dirty.value,
               onClick: restore
             }, {
-              default: _withCtx(() => [..._cache[17] || (_cache[17] = [
+              default: _withCtx(() => [..._cache[13] || (_cache[13] = [
                 _createTextVNode("撤销", -1)
               ])]),
               _: 1
             }, 8, ["disabled"]),
             _createVNode(_component_v_btn, {
-              variant: "tonal",
-              color: "primary",
-              disabled: blocked.value || !dirty.value || !selection.value,
-              loading: busy.value,
-              onClick: _cache[8] || (_cache[8] = ($event) => commit(false))
-            }, {
-              default: _withCtx(() => [..._cache[18] || (_cache[18] = [
-                _createTextVNode("保存调整", -1)
-              ])]),
-              _: 1
-            }, 8, ["disabled", "loading"]),
-            _createVNode(_component_v_btn, {
-              color: "primary",
               variant: "flat",
-              "prepend-icon": "mdi-check",
-              disabled: blocked.value || !selection.value || !snapshot.value?.enabled || !_unref(agent) || previewFailed.value,
+              color: "primary",
+              "prepend-icon": "mdi-content-save-outline",
+              disabled: blocked.value || !dirty.value,
               loading: busy.value,
-              onClick: _cache[9] || (_cache[9] = ($event) => commit(true))
+              onClick: save
             }, {
-              default: _withCtx(() => [..._cache[19] || (_cache[19] = [
-                _createTextVNode("立即生效", -1)
+              default: _withCtx(() => [..._cache[14] || (_cache[14] = [
+                _createTextVNode("保存调整", -1)
               ])]),
               _: 1
             }, 8, ["disabled", "loading"])
