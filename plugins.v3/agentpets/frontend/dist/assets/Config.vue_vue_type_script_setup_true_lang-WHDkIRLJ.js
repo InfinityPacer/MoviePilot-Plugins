@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { b as builtinAvatar, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor } from './host-Buq7ACTH.js';
+import { b as builtinAvatar, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor } from './host-CwtDFHL9.js';
 import { v as validatePack, c as buildCodexPetPack } from './schema-Jsrk9aRO.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
@@ -1359,6 +1359,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               }, 8, ["color"])
             ]),
             _createVNode(_component_v_btn, {
+              class: "ap-header__close",
               icon: "mdi-close",
               "aria-label": "关闭配置页",
               variant: "text",

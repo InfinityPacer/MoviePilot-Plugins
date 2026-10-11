@@ -5,9 +5,11 @@
   background: transparent;
   font-size: 14px;
 }
+/* 宿主负责弹窗宽度和外框，插件只布局内部内容。 */
 .ap-config {
-  width: min(1120px, calc(100vw - 48px));
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
 }
 .ap-shell {
   display: flex;
@@ -15,8 +17,8 @@
   height: min(860px, calc(100dvh - 96px));
   min-height: 360px;
   overflow: hidden;
-  border: 1px solid var(--ap-border);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 0;
   background: transparent;
 }
 .ap-header {
@@ -28,6 +30,10 @@
   padding: 16px 20px;
   border-bottom: 1px solid var(--ap-border);
   background: transparent;
+}
+.ap-header__close {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
 }
 .ap-brand {
   display: flex;
@@ -273,9 +279,6 @@
   }
 }
 @media (max-width: 760px) {
-  .ap-config {
-    width: min(100%, calc(100vw - 16px));
-  }
   .ap-shell {
     height: min(860px, calc(100dvh - 32px));
   }

@@ -124,7 +124,14 @@ function save() {
             snapshot ? (snapshot.enabled ? '运行中' : '未启用') : '待读取'
           }}</v-chip>
         </div>
-        <v-btn icon="mdi-close" aria-label="关闭配置页" variant="text" size="small" @click="emit('close')" />
+        <v-btn
+          class="ap-header__close"
+          icon="mdi-close"
+          aria-label="关闭配置页"
+          variant="text"
+          size="small"
+          @click="emit('close')"
+        />
       </header>
       <div class="ap-config__body">
         <nav class="ap-nav" aria-label="配置分组">
