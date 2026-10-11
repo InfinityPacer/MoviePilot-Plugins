@@ -18,6 +18,7 @@ from apscheduler.triggers.cron import CronTrigger
 from plexapi.library import LibrarySection
 
 from app.plugins import _PluginBase
+from app.schemas.music import MusicMeta
 from app.schemas.system import ServiceInfo
 from app.schemas.types import EventType, MessageType
 from app.sdk.config import settings
@@ -44,7 +45,7 @@ class PlexLocalization(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/plexlocalization.png"
     # 插件版本
-    plugin_version = "3.0.1"
+    plugin_version = "3.0.2"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -874,8 +875,10 @@ class PlexLocalization(_PluginBase):
         if not mediainfo or not meta:
             return
 
-        # 获取媒体信息，确定季度和集数信息，如果存在则添加前缀空格
-        season_episode = f" {meta.season_episode}" if meta.season_episode else ""
+        # 影视元数据才有季集信息，存在时添加前缀空格；音乐快照没有该字段，仍需安排本地化以覆盖音乐库
+        season_episode = ""
+        if not isinstance(meta, MusicMeta) and meta.season_episode:
+            season_episode = f" {meta.season_episode}"
         media_desc = f"{mediainfo.title_year}{season_episode}"
 
         # 如果最近一次入库时间为None，这里才进行赋值，否则可能是存在尚未执行的任务待执行
