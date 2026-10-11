@@ -2,8 +2,9 @@
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { PluginApi } from '@/host'
+import { builtinAvatar } from '@/editor/avatars'
 import { extractCodexPetArchive, isCodexPetArchive, MAX_CODEX_PET_ARCHIVE_BYTES } from '@/sprites/codexPetArchive'
-import { buildCodexPetPack, builtinAsset, validatePack, type CodexPetMetadata } from '@/sprites/schema'
+import { buildCodexPetPack, validatePack, type CodexPetMetadata } from '@/sprites/schema'
 
 /** 素材包列表项，与后端 `_summary` 一致。 */
 interface PackSummary {
@@ -105,7 +106,7 @@ const canSubmit = computed(
 )
 
 function previewSrc(pack: PackSummary): string {
-  if (pack.builtin) return builtinAsset('preview.png')
+  if (pack.builtin) return builtinAvatar(pack.id)
   return pack.preview
 }
 

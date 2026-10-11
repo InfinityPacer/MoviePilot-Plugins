@@ -1,4 +1,5 @@
 import type { PluginApi } from '@/host'
+import { builtinAvatar } from './avatars'
 import { normalizeSettings, type YingSettings } from '@/stage/settings'
 
 export interface PetChoice {
@@ -49,10 +50,7 @@ export async function loadEditor(api: PluginApi | null | undefined, pluginId: st
 
 export function petImage(pet: PetChoice): string {
   if (!pet.preview) return ''
-  if (!pet.builtin) return pet.preview
-  // 构建后本模块与 remoteEntry 同在 assets 下，保留素材的固定相对路径。
-  const relativePath = `./${pet.preview}`
-  return new URL(relativePath, import.meta.url).href
+  return pet.builtin ? builtinAvatar(pet.key) : pet.preview
 }
 
 export function sameSettings(a: YingSettings, b: YingSettings): boolean {

@@ -11,6 +11,10 @@ const REPOSITORY_ROOT = normalizePath(fileURLToPath(new URL('../../..', import.m
 const ASSET_DIR = fileURLToPath(new URL('./src/assets', import.meta.url))
 /** 按原名复制进联邦产物的素材目录：小映逐帧图与内置素材包。 */
 const STATIC_DIRS = ['ying', 'packs']
+// 小头像随组件内联，避免独立静态图片请求失败；动画帧和精灵图仍按原路径提供。
+const UI_AVATAR_FILES = new Set(
+  ['ying/avatar.png', 'packs/projector-cat/avatar.png'].map(file => normalizePath(`${ASSET_DIR}/${file}`)),
+)
 
 const isTestMode = (mode: string): boolean => mode === 'test' || process.env.VITEST === 'true'
 
@@ -110,6 +114,7 @@ export default defineConfig(({ mode }) => {
       ],
     },
     build: {
+      assetsInlineLimit: file => (UI_AVATAR_FILES.has(normalizePath(file)) ? true : undefined),
       target: 'esnext',
       minify: false,
       cssCodeSplit: true,
