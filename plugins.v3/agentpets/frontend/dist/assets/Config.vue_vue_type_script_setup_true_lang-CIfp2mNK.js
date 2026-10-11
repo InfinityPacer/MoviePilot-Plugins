@@ -504,7 +504,7 @@ const MAX_SPRITESHEET_BYTES = 4 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_ARCHIVE_ENTRIES = 256;
 function isCodexPetArchive(file) {
-  return file.name.toLowerCase().endsWith(".codex-pet.zip");
+  return file.name.toLowerCase().endsWith(".zip");
 }
 function normalizeEntryPath(path) {
   const normalized = path.replace(/\\/g, "/");
@@ -597,7 +597,7 @@ function readFileBytes(file) {
   });
 }
 async function extractCodexPetArchive(file) {
-  if (!isCodexPetArchive(file)) throw new Error("压缩包文件名必须以 .codex-pet.zip 结尾");
+  if (!isCodexPetArchive(file)) throw new Error("压缩包文件名必须以 .zip 结尾");
   if (file.size > MAX_CODEX_PET_ARCHIVE_BYTES) throw new Error("Codex Pet 压缩包不能超过 8MB");
   let archive;
   try {
@@ -748,7 +748,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       }
       if (!IMAGE_TYPES.includes(file.type)) {
         imageFile.value = null;
-        imageError.value = "只支持 PNG、WebP、GIF、JPEG 或 .codex-pet.zip";
+        imageError.value = "只支持 PNG、WebP、GIF、JPEG 或 ZIP";
       } else if (file.size > MAX_IMAGE_BYTES) {
         imageFile.value = null;
         imageError.value = "精灵图不能超过 4MB";
@@ -979,7 +979,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
             onImage
           ],
           label: "精灵图（不超过 4MB）或 Codex Pet ZIP（不超过 8MB）",
-          accept: ".codex-pet.zip,image/png,image/webp,image/gif,image/jpeg",
+          accept: "image/png,image/webp,image/gif,image/jpeg,.zip",
           variant: "outlined",
           "prepend-icon": "mdi-image-outline",
           "error-messages": imageError.value ? [imageError.value] : [],
@@ -1047,7 +1047,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-1f3d2ed7"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-19632977"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
