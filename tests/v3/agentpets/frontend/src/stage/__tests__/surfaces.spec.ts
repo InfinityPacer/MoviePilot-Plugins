@@ -234,3 +234,58 @@ describe('control hit testing', () => {
     expect(elapsed).toBeLessThan(5)
   })
 })
+
+describe('contained Pet previews', () => {
+  it('only uses preview platforms and translates their screen coordinates to the local canvas', () => {
+    const outside = card()
+    const scope = withRect(document.createElement('section'), {
+      left: 200,
+      top: 100,
+      width: 500,
+      height: 400,
+    })
+    const platform = withRect(document.createElement('div'), {
+      left: 230,
+      top: 370,
+      width: 240,
+      height: 40,
+    })
+    platform.className = 'v-sheet'
+    scope.appendChild(platform)
+    document.body.appendChild(scope)
+    stubHits(() => [platform])
+    const localView = { ...viewport, width: 500, height: 400 }
+    const result = querySurfaces(null, localView, 120, null, scope)
+    expect(result.map(item => item.el)).toEqual([platform])
+    expect(result[0]).toMatchObject({ left: 30, top: 270, right: 270 })
+    expect(result.map(item => item.el)).not.toContain(outside)
+    expect(surfacesNear(null, localView, 120, null, [100], scope)).toEqual(result)
+  })
+
+  it('ignores page controls outside the preview and converts local hit points correctly', () => {
+    const scope = withRect(document.createElement('section'), {
+      left: 200,
+      top: 100,
+      width: 500,
+      height: 400,
+    })
+    const button = withRect(document.createElement('button'), {
+      left: 240,
+      top: 150,
+      width: 80,
+      height: 80,
+    })
+    document.body.append(scope, button)
+    const calls: Array<[number, number]> = []
+    stubHits(({ x, y }) => {
+      calls.push([x, y])
+      return [button]
+    })
+    const localView = { width: 500, height: 400 }
+    const rect = { x: 40, y: 50, width: 80, height: 80 }
+    expect(coversControlAt(rect, null, localView, null, 6400, scope)).toBe(false)
+    scope.appendChild(button)
+    expect(coversControlAt(rect, null, localView, null, 6400, scope)).toBe(true)
+    expect(calls.every(([x, y]) => x >= 240 && y >= 150)).toBe(true)
+  })
+})

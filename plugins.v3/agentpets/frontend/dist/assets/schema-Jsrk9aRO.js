@@ -250,19 +250,6 @@ const HOST_ACTIONS = [
   "nod",
   "wake"
 ];
-const HOST_INTENTS = [
-  "idle",
-  "thinking",
-  "speaking",
-  "notify",
-  "success",
-  "warning",
-  "error",
-  "dragging",
-  "docked",
-  "sleeping",
-  "reaction"
-];
 const BUILTIN_PACK_ID = "projector-cat";
 const DEFAULT_FRAME_MS = 160;
 const CODEX_PET_LAYOUTS = [
@@ -527,4 +514,4 @@ function framePosition(pack, frame) {
   return { x: cols > 1 ? col / (cols - 1) * 100 : 0, y: rows > 1 ? row / (rows - 1) * 100 : 0 };
 }
 
-export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, HOST_INTENTS as c, buildCodexPetPack as d, framePosition as f, resolveAction as r, validatePack as v, withCodexStageActions as w };
+export { BUILTIN_PACK_ID as B, BUILTIN_PACK as a, builtinAsset as b, buildCodexPetPack as c, framePosition as f, resolveAction as r, validatePack as v, withCodexStageActions as w };

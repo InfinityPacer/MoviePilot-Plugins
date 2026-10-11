@@ -27,4 +27,4 @@ async function loadSettings(api, pluginId) {
   return { ...DEFAULT_SETTINGS };
 }
 
-export { DEFAULT_SETTINGS as D, ROAM_MODES as R, SETTINGS_EVENT as S, SCALE_RANGE as a, SPEED_RANGE as b, loadSettings as l, normalizeSettings as n };
+export { DEFAULT_SETTINGS as D, SETTINGS_EVENT as S, SCALE_RANGE as a, SPEED_RANGE as b, loadSettings as l, normalizeSettings as n };

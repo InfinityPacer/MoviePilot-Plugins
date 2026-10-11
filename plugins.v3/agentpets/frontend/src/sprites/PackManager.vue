@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { PluginApi } from '@/host'
 import { extractCodexPetArchive, isCodexPetArchive, MAX_CODEX_PET_ARCHIVE_BYTES } from '@/sprites/codexPetArchive'
-import { buildCodexPetPack, BUILTIN_PACK_ID, builtinAsset, validatePack, type CodexPetMetadata } from '@/sprites/schema'
+import { buildCodexPetPack, builtinAsset, validatePack, type CodexPetMetadata } from '@/sprites/schema'
 
 /** 素材包列表项，与后端 `_summary` 一致。 */
 interface PackSummary {
@@ -37,6 +37,17 @@ const props = withDefaults(
   { api: null, pluginId: '' },
 )
 
+const emit = defineEmits<{ changed: [] }>()
+const importMode = ref<'codex' | 'custom'>('codex')
+const listError = ref('')
+const deleting = ref('')
+let alive = true
+let listVersion = 0
+onBeforeUnmount(() => {
+  alive = false
+  listVersion++
+})
+
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 const IMAGE_TYPES = ['image/png', 'image/webp', 'image/gif', 'image/jpeg']
 const EXAMPLE = JSON.stringify(
@@ -66,6 +77,9 @@ const submitting = ref(false)
 const codexImporting = ref(false)
 const packText = ref('')
 const imageMode = ref<'upload' | 'url'>('upload')
+watch(importMode, value => {
+  if (value === 'codex') imageMode.value = 'upload'
+})
 const selectedFile = ref<File | null>(null)
 const imageFile = ref<File | null>(null)
 const fileModel = ref<File[]>([])
@@ -100,15 +114,22 @@ function notify(kind: 'success' | 'error', message: string) {
 }
 
 async function refresh() {
-  if (!props.api?.get) return
+  if (!props.api?.get) {
+    listError.value = '页面连接尚未就绪'
+    return
+  }
+  const version = ++listVersion
   loading.value = true
+  listError.value = ''
   try {
     const response = await props.api.get<PackSummary[]>(`plugin/${instanceId.value}/packs`)
-    if (response?.success && Array.isArray(response.data)) packs.value = response.data
+    if (!alive || version !== listVersion) return
+    if (!response?.success || !Array.isArray(response.data)) throw new Error('invalid packs')
+    packs.value = response.data
   } catch {
-    console.warn('[AgentPets] packs unavailable')
+    if (alive && version === listVersion) listError.value = '素材列表读取失败，请刷新重试'
   } finally {
-    loading.value = false
+    if (alive && version === listVersion) loading.value = false
   }
 }
 
@@ -155,6 +176,7 @@ async function importCodexPet() {
     const bitmap = await createImageBitmap(image)
     const { width, height } = bitmap
     bitmap.close()
+    if (!alive) return
     const result = buildCodexPetPack(image.name, width, height, metadata)
     imageMode.value = 'upload'
     imageFile.value = image
@@ -163,6 +185,7 @@ async function importCodexPet() {
     importMessage.value =
       (metadata ? '已从 Codex Pet 包读取精灵图，' : '已识别 Codex Pet ') + result.version + '，动作映射已生成'
   } catch (error) {
+    if (!alive) return
     importError.value = error instanceof Error ? error.message : '无法读取 Codex Pet 精灵图'
   } finally {
     codexImporting.value = false
@@ -184,15 +207,18 @@ async function addPack() {
   serverError.value = ''
   try {
     const image = imageMode.value === 'upload' && imageFile.value ? await readDataUrl(imageFile.value) : null
+    if (!alive) return
     const response = await props.api.post<PackSummary>(`plugin/${instanceId.value}/packs`, {
       pack: packText.value,
       image,
     })
+    if (!alive) return
     if (!response?.success) {
       serverError.value = response?.message || '添加失败'
       return
     }
-    notify('success', `已添加素材包 ${response.data?.name ?? ''}`)
+    notify('success', `已添加 Pet ${response.data?.name ?? ''}`)
+    emit('changed')
     packText.value = ''
     selectedFile.value = null
     imageFile.value = null
@@ -216,122 +242,195 @@ async function removePack(pack: PackSummary) {
         content: `删除「${pack.name}」后，选择它的用户会回到内置机器人。`,
       })
     : window.confirm(`删除素材包「${pack.name}」？`)
-  if (!accepted) return
-  const response = await props.api.post(`plugin/${instanceId.value}/packs/delete`, { id: pack.id })
-  if (response?.success) {
-    notify('success', `已删除素材包 ${pack.name}`)
-    await refresh()
-  } else notify('error', response?.message || '删除失败')
+  if (!accepted || !alive) return
+  deleting.value = pack.id
+  listError.value = ''
+  try {
+    const response = await props.api.post(`plugin/${instanceId.value}/packs/delete`, { id: pack.id })
+    if (!alive) return
+    if (response?.success) {
+      notify('success', `已删除素材包 ${pack.name}`)
+      emit('changed')
+      await refresh()
+    } else listError.value = response?.message || '删除失败'
+  } catch {
+    if (alive) listError.value = '删除未完成，请刷新核对后重试'
+  } finally {
+    if (alive) deleting.value = ''
+  }
 }
 
 onMounted(refresh)
 </script>
 
 <template>
-  <!-- 素材包不属于插件配置：添加和删除经插件接口立即生效，不需要再点保存。 -->
   <div class="agent-pet-sprites-config">
-    <div class="text-subtitle-2 mb-2">已有素材包</div>
-    <v-progress-linear v-if="loading" indeterminate class="mb-2" />
-    <v-list density="comfortable" class="mb-6" border rounded>
-      <v-list-item v-for="pack in packs" :key="pack.id">
-        <template #prepend>
-          <v-avatar rounded="lg" size="48" class="agent-pet-sprites-config__thumb">
-            <v-img v-if="previewSrc(pack)" :src="previewSrc(pack)" :alt="pack.name" />
-            <v-icon v-else icon="mdi-image-outline" />
-          </v-avatar>
-        </template>
-        <v-list-item-title>{{ pack.name }}</v-list-item-title>
-        <v-list-item-subtitle>
-          {{ pack.id }} · {{ pack.builtin ? '内置' : pack.source === 'upload' ? '已上传' : '远程图片' }} ·
-          {{ pack.mode === 'stage' ? '全屏角色' : '入口外观' }} · {{ pack.frame_count }} 帧 ·
-          {{ pack.action_count }} 个动作
-        </v-list-item-subtitle>
-        <template v-if="!pack.builtin" #append>
-          <v-btn icon="mdi-delete-outline" variant="text" :aria-label="`删除 ${pack.name}`" @click="removePack(pack)" />
-        </template>
+    <div class="ap-inline mb-2">
+      <h3 class="ap-section-title mb-0">我的素材</h3>
+      <v-spacer /><v-btn
+        icon="mdi-refresh"
+        aria-label="刷新素材列表"
+        variant="text"
+        size="small"
+        :loading="loading"
+        @click="refresh"
+      />
+    </div>
+    <v-alert v-if="listError" type="error" variant="tonal" density="compact" class="mb-3">{{ listError }}</v-alert>
+    <v-progress-linear v-if="loading" indeterminate color="primary" />
+    <v-list density="compact" class="agent-pet-sprites-config__list mb-6" border rounded="lg">
+      <v-list-item v-for="pack in packs" :key="pack.id" class="py-2">
+        <template #prepend
+          ><v-avatar rounded="lg" size="44" class="agent-pet-sprites-config__thumb"
+            ><v-img v-if="previewSrc(pack)" :src="previewSrc(pack)" :alt="pack.name" /><v-icon
+              v-else
+              icon="mdi-image-outline" /></v-avatar
+        ></template>
+        <v-list-item-title class="text-body-2 font-weight-medium">{{ pack.name }}</v-list-item-title>
+        <v-list-item-subtitle
+          >{{ pack.builtin ? '内置素材' : '已导入' }} · {{ pack.mode === 'stage' ? '自由活动' : '入口形象' }} ·
+          {{ pack.action_count }} 个动作</v-list-item-subtitle
+        >
+        <template #append
+          ><v-chip v-if="pack.builtin" size="x-small" variant="tonal">内置</v-chip
+          ><v-btn
+            v-else
+            icon="mdi-delete-outline"
+            variant="text"
+            size="small"
+            :aria-label="`删除 ${pack.name}`"
+            :loading="deleting === pack.id"
+            :disabled="!!deleting || submitting"
+            @click="removePack(pack)"
+        /></template>
       </v-list-item>
-      <v-list-item v-if="!packs.length && !loading">
-        <v-list-item-title class="text-medium-emphasis">
-          {{ props.api ? '暂无素材包' : '当前环境无法读取素材包' }}
-        </v-list-item-title>
-      </v-list-item>
+      <v-list-item v-if="!packs.length && !loading && !listError" title="暂无素材，导入一个 Pet 开始吧" />
     </v-list>
-
-    <div class="text-subtitle-2 mb-2">添加素材包</div>
-    <v-textarea
-      v-model="packText"
-      label="素材包 JSON"
-      :placeholder="EXAMPLE"
-      rows="8"
-      auto-grow
-      variant="outlined"
-      class="agent-pet-sprites-config__json"
-      persistent-placeholder
-      hide-details="auto"
-    />
-    <v-btn-toggle v-model="imageMode" mandatory density="comfortable" variant="outlined" class="my-3" divided>
-      <v-btn value="upload">上传精灵图</v-btn>
-      <v-btn value="url">使用 JSON 中的图片 URL</v-btn>
-    </v-btn-toggle>
-    <v-file-input
-      v-if="imageMode === 'upload'"
-      v-model="fileModel"
-      label="精灵图（不超过 4MB）或 ZIP（不超过 8MB）"
-      accept="image/png,image/webp,image/gif,image/jpeg,.zip"
-      variant="outlined"
-      prepend-icon="mdi-image-outline"
-      :error-messages="imageError ? [imageError] : []"
-      hide-details="auto"
-      @update:model-value="onImage"
-    />
-    <v-btn
-      v-if="imageMode === 'upload'"
-      class="mt-2"
-      color="secondary"
-      variant="tonal"
-      prepend-icon="mdi-file-import-outline"
-      :loading="codexImporting"
-      :disabled="!selectedFile || !!imageError || codexImporting"
-      @click="importCodexPet"
-    >
-      从 Codex Pet 生成素材包
-    </v-btn>
-    <v-alert v-if="importMessage" type="success" variant="tonal" density="compact" class="mt-2">
-      {{ importMessage }}
-    </v-alert>
-    <v-alert
-      v-if="importError || clientErrors.length || serverError"
-      type="error"
-      variant="tonal"
-      density="compact"
-      class="mt-3"
-    >
-      <div
-        v-for="error in [...(importError ? [importError] : []), ...clientErrors, ...(serverError ? [serverError] : [])]"
-        :key="error"
-      >
-        {{ error }}
+    <div class="agent-pet-sprites-config__import">
+      <div class="ap-section-heading">
+        <v-icon icon="mdi-package-down" color="primary" />
+        <div>
+          <h2>导入 Pet</h2>
+          <p>支持 Codex Pet ZIP 包和原生精灵图，读取后即可添加。</p>
+        </div>
       </div>
-    </v-alert>
-    <div class="d-flex align-center mt-3">
-      <span class="text-caption text-medium-emphasis">
-        格式说明见插件 README；ID {{ BUILTIN_PACK_ID }} 和 ying 留给内置形象。
-      </span>
-      <v-spacer />
-      <v-btn color="primary" variant="tonal" :loading="submitting" :disabled="!canSubmit" @click="addPack">
-        校验并添加
-      </v-btn>
+      <v-btn-toggle
+        v-model="importMode"
+        mandatory
+        density="compact"
+        color="primary"
+        variant="tonal"
+        class="mb-4"
+        :disabled="submitting || codexImporting"
+        ><v-btn value="codex">Codex Pet</v-btn><v-btn value="custom">自定义素材</v-btn></v-btn-toggle
+      >
+      <template v-if="importMode === 'custom'">
+        <v-textarea
+          v-model="packText"
+          label="素材包 JSON"
+          :placeholder="EXAMPLE"
+          rows="6"
+          variant="outlined"
+          density="compact"
+          class="agent-pet-sprites-config__json"
+          hide-details="auto"
+          :disabled="submitting"
+        />
+        <v-btn-toggle v-model="imageMode" mandatory density="compact" variant="outlined" class="my-3"
+          ><v-btn value="upload">上传精灵图</v-btn><v-btn value="url">使用图片 URL</v-btn></v-btn-toggle
+        >
+      </template>
+      <v-file-input
+        v-if="imageMode === 'upload'"
+        v-model="fileModel"
+        label="选择精灵图或 ZIP"
+        accept="image/png,image/webp,image/gif,image/jpeg,.zip"
+        variant="outlined"
+        density="compact"
+        prepend-icon=""
+        prepend-inner-icon="mdi-paperclip"
+        :error-messages="imageError ? [imageError] : []"
+        hint="图片不超过 4MB，ZIP 不超过 8MB"
+        persistent-hint
+        :disabled="submitting || codexImporting"
+        @update:model-value="onImage"
+      />
+      <v-alert v-if="importMessage" type="success" variant="tonal" density="compact" class="mt-3"
+        >{{ validation?.pack?.name }} · 已准备好，可以添加到我的素材。</v-alert
+      >
+      <v-expansion-panels v-if="importMode === 'codex' && packText" variant="accordion" class="mt-3"
+        ><v-expansion-panel title="编辑名称与动作映射"
+          ><v-expansion-panel-text
+            ><v-textarea
+              v-model="packText"
+              label="素材包 JSON"
+              rows="6"
+              variant="outlined"
+              density="compact"
+              hide-details
+              class="agent-pet-sprites-config__json"
+              :disabled="submitting" /></v-expansion-panel-text></v-expansion-panel
+      ></v-expansion-panels>
+      <v-alert
+        v-if="importError || clientErrors.length || serverError"
+        type="error"
+        variant="tonal"
+        density="compact"
+        class="mt-3"
+        ><div
+          v-for="message in [
+            ...(importError ? [importError] : []),
+            ...clientErrors,
+            ...(serverError ? [serverError] : []),
+          ]"
+          :key="message"
+        >
+          {{ message }}
+        </div></v-alert
+      >
+      <div class="d-flex align-center justify-end flex-wrap ga-2 mt-4">
+        <v-btn
+          v-if="imageMode === 'upload'"
+          color="primary"
+          variant="tonal"
+          prepend-icon="mdi-file-find-outline"
+          :loading="codexImporting"
+          :disabled="!selectedFile || !!imageError || codexImporting || submitting"
+          @click="importCodexPet"
+          >读取 Codex Pet</v-btn
+        >
+        <v-btn
+          color="primary"
+          variant="flat"
+          prepend-icon="mdi-plus"
+          :loading="submitting"
+          :disabled="!canSubmit || codexImporting"
+          @click="addPack"
+          >添加 Pet</v-btn
+        >
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .agent-pet-sprites-config__thumb {
-  background: rgba(var(--v-theme-on-surface), 0.04);
+  background: rgba(var(--v-theme-on-surface), 0.025);
 }
-
+.agent-pet-sprites-config__list {
+  background: transparent;
+}
+.agent-pet-sprites-config__import {
+  padding: 18px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+}
 .agent-pet-sprites-config__json :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8125rem;
+  font-size: 12px;
+}
+.agent-pet-sprites-config__list :deep(.v-list-item-subtitle) {
+  font-size: 11px;
+  margin-top: 3px;
 }
 </style>

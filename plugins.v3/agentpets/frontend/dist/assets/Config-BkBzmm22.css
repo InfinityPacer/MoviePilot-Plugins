@@ -1,0 +1,20 @@
+
+.agent-pet-sprites-config__thumb[data-v-f284c895] {
+  background: rgba(var(--v-theme-on-surface), 0.025);
+}
+.agent-pet-sprites-config__list[data-v-f284c895] {
+  background: transparent;
+}
+.agent-pet-sprites-config__import[data-v-f284c895] {
+  padding: 18px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+}
+.agent-pet-sprites-config__json[data-v-f284c895] textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.agent-pet-sprites-config__list[data-v-f284c895] .v-list-item-subtitle {
+  font-size: 11px;
+  margin-top: 3px;
+}

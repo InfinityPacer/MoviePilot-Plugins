@@ -33,6 +33,8 @@ const props = withDefaults(
     thinking?: boolean
     /** 为 false 时只显示当前动作的第一帧。 */
     motionActive?: boolean
+    /** 预览加载失败时显示错误，不用其他宠物冒充选中项。 */
+    strictPreview?: boolean
   }>(),
   {
     agent: null,
@@ -47,7 +49,10 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ appearance: [{ name: string; aspectRatio: number }] }>()
+const emit = defineEmits<{
+  appearance: [{ name: string; aspectRatio: number }]
+  'load-state': ['loading' | 'ready' | 'error']
+}>()
 
 const packKey = props.pet?.key || BUILTIN_PACK_ID
 const pack = ref<SpritePack>(BUILTIN_PACK)
@@ -135,9 +140,12 @@ function withTimeout<T>(promise: Promise<T>, timeout: number): Promise<T> {
 async function loadPack(key: string) {
   if (key === BUILTIN_PACK_ID) return
   if (!props.api?.get) {
-    ready.value = true
+    ready.value = !props.strictPreview
+    emit('load-state', 'error')
     return
   }
+  emit('load-state', 'loading')
+  let failed = false
   const instanceId = props.pluginId || 'AgentPets'
   try {
     const response = await withTimeout(
@@ -151,9 +159,13 @@ async function loadPack(key: string) {
     cellRatio.value = parsed.codex_version ? 192 / 208 : 1
     sheetSrc.value = response.data.sheet_src
   } catch {
-    console.warn(`[AgentPets] pack ${key} unavailable, using builtin`)
+    failed = true
+    console.warn(`[AgentPets] pack ${key} unavailable`)
   }
-  if (!disposed) ready.value = true
+  if (!disposed) {
+    ready.value = !failed || !props.strictPreview
+    emit('load-state', failed ? 'error' : 'ready')
+  }
 }
 
 watch(
@@ -173,7 +185,10 @@ watch(ready, value => {
 })
 
 onMounted(async () => {
-  if (ready.value) measure(sheetSrc.value)
+  if (ready.value) {
+    measure(sheetSrc.value)
+    emit('load-state', 'ready')
+  }
   play()
   await loadPack(packKey)
 })

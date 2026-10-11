@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, v as validatePack, w as withCodexStageActions } from './schema-C8VvGZ5b.js';
+import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, v as validatePack, w as withCodexStageActions } from './schema-Jsrk9aRO.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -20,9 +20,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     action: { default: null },
     intent: { default: "idle" },
     thinking: { type: Boolean, default: false },
-    motionActive: { type: Boolean, default: true }
+    motionActive: { type: Boolean, default: true },
+    strictPreview: { type: Boolean }
   },
-  emits: ["appearance"],
+  emits: ["appearance", "load-state"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
@@ -97,9 +98,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     async function loadPack(key) {
       if (key === BUILTIN_PACK_ID) return;
       if (!props.api?.get) {
-        ready.value = true;
+        ready.value = !props.strictPreview;
+        emit("load-state", "error");
         return;
       }
+      emit("load-state", "loading");
+      let failed = false;
       const instanceId = props.pluginId || "AgentPets";
       try {
         const response = await withTimeout(
@@ -113,9 +117,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         cellRatio.value = parsed.codex_version ? 192 / 208 : 1;
         sheetSrc.value = response.data.sheet_src;
       } catch {
-        console.warn(`[AgentPets] pack ${key} unavailable, using builtin`);
+        failed = true;
+        console.warn(`[AgentPets] pack ${key} unavailable`);
       }
-      if (!disposed) ready.value = true;
+      if (!disposed) {
+        ready.value = !failed || !props.strictPreview;
+        emit("load-state", failed ? "error" : "ready");
+      }
     }
     watch(
       () => [resolved.value.key, props.motionActive, pack.value],
@@ -133,7 +141,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (value) measure(sheetSrc.value);
     });
     onMounted(async () => {
-      if (ready.value) measure(sheetSrc.value);
+      if (ready.value) {
+        measure(sheetSrc.value);
+        emit("load-state", "ready");
+      }
       play();
       await loadPack(packKey);
     });
@@ -159,6 +170,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f62c436b"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b85f496e"]]);
 
 export { AgentPetSprite as default };
