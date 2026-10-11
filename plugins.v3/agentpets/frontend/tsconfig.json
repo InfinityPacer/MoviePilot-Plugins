@@ -17,6 +17,7 @@
       "@/*": ["src/*"],
       "@tests/*": ["../../../tests/v3/agentpets/frontend/*"],
       "@testing-library/*": ["node_modules/@testing-library/*"],
+      "fflate": ["node_modules/fflate"],
       "vitest": ["node_modules/vitest"],
       "vue": ["node_modules/vue"],
       "vuetify": ["node_modules/vuetify"],

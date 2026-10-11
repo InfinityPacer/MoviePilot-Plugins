@@ -298,7 +298,21 @@ const CODEX_LOOK_DIRECTIONS = [
   "315",
   "337-5"
 ];
-function buildCodexPetPack(filename, width, height) {
+function codexPetId(value) {
+  const slugChars = [];
+  for (const character of value.toLowerCase()) {
+    const code = character.charCodeAt(0);
+    const allowed = code >= 48 && code <= 57 || code >= 97 && code <= 122 || character === "_" || character === "-";
+    if (allowed) slugChars.push(character);
+    else if (slugChars[slugChars.length - 1] !== "-") slugChars.push("-");
+  }
+  let start = 0;
+  while (start < slugChars.length && slugChars[start] === "-") start += 1;
+  let end = slugChars.length;
+  while (end > start && slugChars[end - 1] === "-") end -= 1;
+  return slugChars.slice(start, end).join("").slice(0, 32);
+}
+function buildCodexPetPack(filename, width, height, metadata) {
   const layout = CODEX_PET_LAYOUTS.find((item) => item.width === width && item.height === height);
   if (!layout) {
     throw new Error("只支持 Codex Pet v1（1536×1872）或 v2（1536×2288）精灵图");
@@ -307,18 +321,8 @@ function buildCodexPetPack(filename, width, height) {
   const basename = filename.slice(separatorIndex + 1);
   const extensionIndex = basename.lastIndexOf(".");
   const stem = (extensionIndex > 0 ? basename.slice(0, extensionIndex) : basename).trim() || "Codex Pet";
-  const slugChars = [];
-  for (const character of stem.toLowerCase()) {
-    const code = character.charCodeAt(0);
-    const allowed = code >= 48 && code <= 57 || code >= 97 && code <= 122 || character === "_" || character === "-";
-    if (allowed) slugChars.push(character);
-    else if (slugChars[slugChars.length - 1] !== "-") slugChars.push("-");
-  }
-  let slugStart = 0;
-  while (slugStart < slugChars.length && slugChars[slugStart] === "-") slugStart += 1;
-  let slugEnd = slugChars.length;
-  while (slugEnd > slugStart && slugChars[slugEnd - 1] === "-") slugEnd -= 1;
-  const id = slugChars.slice(slugStart, slugEnd).join("").slice(0, 32) || "codex-pet";
+  const displayName = metadata?.displayName?.trim() || stem;
+  const id = codexPetId(metadata?.id?.trim() || "") || codexPetId(displayName) || codexPetId(stem) || "codex-pet";
   const frames = {};
   const rowFrames = {};
   CODEX_ANIMATION_ROWS.forEach((row, rowIndex) => {
@@ -369,8 +373,8 @@ function buildCodexPetPack(filename, width, height) {
     version: layout.version,
     pack: {
       id,
-      name: stem.slice(0, 40),
-      description: "从 Codex Pet " + layout.version + " 精灵图导入",
+      name: displayName.slice(0, 40),
+      description: metadata?.description?.trim().slice(0, 120) || "从 Codex Pet " + layout.version + " 精灵图导入",
       sheet: "",
       grid: { cols: 8, rows: layout.rows },
       frames,
@@ -492,4 +496,4 @@ function framePosition(pack, frame) {
   return { x: cols > 1 ? col / (cols - 1) * 100 : 0, y: rows > 1 ? row / (rows - 1) * 100 : 0 };
 }
 
-export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, buildCodexPetPack as c, HOST_INTENTS as d, framePosition as f, resolveAction as r, validatePack as v };
+export { BUILTIN_PACK_ID as B, HOST_ACTIONS as H, BUILTIN_PACK as a, builtinAsset as b, HOST_INTENTS as c, buildCodexPetPack as d, framePosition as f, resolveAction as r, validatePack as v };

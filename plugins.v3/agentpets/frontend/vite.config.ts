@@ -101,6 +101,7 @@ export default defineConfig(({ mode }) => {
         '@testing-library/jest-dom',
         '@testing-library/user-event',
         '@testing-library/vue',
+        'fflate',
         'vitest',
         'vue',
         'vuetify',

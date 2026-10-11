@@ -2,7 +2,8 @@
 import { computed, inject, onMounted, ref } from 'vue'
 
 import type { PluginApi } from '@/host'
-import { buildCodexPetPack, BUILTIN_PACK_ID, builtinAsset, validatePack } from '@/sprites/schema'
+import { extractCodexPetArchive, isCodexPetArchive, MAX_CODEX_PET_ARCHIVE_BYTES } from '@/sprites/codexPetArchive'
+import { buildCodexPetPack, BUILTIN_PACK_ID, builtinAsset, validatePack, type CodexPetMetadata } from '@/sprites/schema'
 
 /** 素材包列表项，与后端 `_summary` 一致。 */
 interface PackSummary {
@@ -64,6 +65,7 @@ const submitting = ref(false)
 const codexImporting = ref(false)
 const packText = ref('')
 const imageMode = ref<'upload' | 'url'>('upload')
+const selectedFile = ref<File | null>(null)
 const imageFile = ref<File | null>(null)
 const fileModel = ref<File[]>([])
 const imageError = ref('')
@@ -111,35 +113,54 @@ async function refresh() {
 
 function onImage(value: File | File[] | null | undefined) {
   const file = Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
+  selectedFile.value = file
   imageFile.value = file
   imageError.value = ''
   importMessage.value = ''
   importError.value = ''
   serverError.value = ''
   if (!file) return
-  if (!IMAGE_TYPES.includes(file.type)) imageError.value = '只支持 PNG、WebP、GIF 或 JPEG'
-  else if (file.size > MAX_IMAGE_BYTES) imageError.value = '精灵图不能超过 4MB'
+  if (isCodexPetArchive(file)) {
+    imageFile.value = null
+    if (file.size > MAX_CODEX_PET_ARCHIVE_BYTES) imageError.value = 'Codex Pet 压缩包不能超过 8MB'
+    return
+  }
+  if (!IMAGE_TYPES.includes(file.type)) {
+    imageFile.value = null
+    imageError.value = '只支持 PNG、WebP、GIF、JPEG 或 .codex-pet.zip'
+  } else if (file.size > MAX_IMAGE_BYTES) {
+    imageFile.value = null
+    imageError.value = '精灵图不能超过 4MB'
+  }
 }
 
 async function importCodexPet() {
-  const file = imageFile.value
+  const file = selectedFile.value
   if (!file || imageError.value) return
   codexImporting.value = true
   imageError.value = ''
   importMessage.value = ''
   importError.value = ''
   try {
-    if (file.type !== 'image/png' && file.type !== 'image/webp') {
+    let image = file
+    let metadata: CodexPetMetadata | undefined
+    if (isCodexPetArchive(file)) {
+      const extracted = await extractCodexPetArchive(file)
+      image = extracted.spritesheet
+      metadata = extracted.manifest
+    } else if (file.type !== 'image/png' && file.type !== 'image/webp') {
       throw new Error('Codex Pet 导入只支持 PNG 或 WebP')
     }
-    const bitmap = await createImageBitmap(file)
+    const bitmap = await createImageBitmap(image)
     const { width, height } = bitmap
     bitmap.close()
-    const result = buildCodexPetPack(file.name, width, height)
+    const result = buildCodexPetPack(image.name, width, height, metadata)
     imageMode.value = 'upload'
+    imageFile.value = image
     packText.value = JSON.stringify(result.pack, null, 2)
     serverError.value = ''
-    importMessage.value = '已识别 Codex Pet ' + result.version + '，动作映射已生成'
+    importMessage.value =
+      (metadata ? '已从 Codex Pet 包读取精灵图，' : '已识别 Codex Pet ') + result.version + '，动作映射已生成'
   } catch (error) {
     importError.value = error instanceof Error ? error.message : '无法读取 Codex Pet 精灵图'
   } finally {
@@ -172,6 +193,7 @@ async function addPack() {
     }
     notify('success', `已添加素材包 ${response.data?.name ?? ''}`)
     packText.value = ''
+    selectedFile.value = null
     imageFile.value = null
     fileModel.value = []
     importMessage.value = ''
@@ -252,8 +274,8 @@ onMounted(refresh)
     <v-file-input
       v-if="imageMode === 'upload'"
       v-model="fileModel"
-      label="精灵图（PNG、WebP、GIF、JPEG，不超过 4MB）"
-      accept="image/png,image/webp,image/gif,image/jpeg"
+      label="精灵图（不超过 4MB）或 Codex Pet ZIP（不超过 8MB）"
+      accept=".codex-pet.zip,image/png,image/webp,image/gif,image/jpeg"
       variant="outlined"
       prepend-icon="mdi-image-outline"
       :error-messages="imageError ? [imageError] : []"
@@ -267,7 +289,7 @@ onMounted(refresh)
       variant="tonal"
       prepend-icon="mdi-file-import-outline"
       :loading="codexImporting"
-      :disabled="!imageFile || !!imageError || codexImporting"
+      :disabled="!selectedFile || !!imageError || codexImporting"
       @click="importCodexPet"
     >
       从 Codex Pet 生成素材包

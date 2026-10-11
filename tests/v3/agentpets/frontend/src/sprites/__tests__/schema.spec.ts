@@ -71,6 +71,17 @@ describe('sprite pack schema', () => {
     expect(validation.pack?.actions.error.frames[0]).toBe('failed-1')
   })
 
+  it('uses Codex Pet manifest metadata when generating a pack', () => {
+    const result = buildCodexPetPack('spritesheet.webp', 1536, 1872, {
+      id: 'cute-rem',
+      displayName: 'Cute Rem',
+      description: 'A community pet',
+    })
+
+    expect(result.pack).toMatchObject({ id: 'cute-rem', name: 'Cute Rem', description: 'A community pet' })
+    expect(validatePack(result.pack).errors).toEqual([])
+  })
+
   it('rejects unsupported Codex Pet sheet dimensions', () => {
     expect(() => buildCodexPetPack('pet.png', 512, 512)).toThrow('只支持 Codex Pet v1')
   })
