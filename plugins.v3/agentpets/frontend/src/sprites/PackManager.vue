@@ -279,22 +279,23 @@ onMounted(refresh)
     </div>
     <v-alert v-if="listError" type="error" variant="tonal" density="compact" class="mb-3">{{ listError }}</v-alert>
     <v-progress-linear v-if="loading" indeterminate color="primary" />
-    <v-list density="compact" class="agent-pet-sprites-config__list mb-6" border rounded="lg">
-      <v-list-item v-for="pack in packs" :key="pack.id" class="py-2">
-        <template #prepend
-          ><v-avatar rounded="lg" size="44" class="agent-pet-sprites-config__thumb"
-            ><v-img v-if="previewSrc(pack)" :src="previewSrc(pack)" :alt="pack.name" /><v-icon
-              v-else
-              icon="mdi-image-outline" /></v-avatar
-        ></template>
-        <v-list-item-title class="text-body-2 font-weight-medium">{{ pack.name }}</v-list-item-title>
-        <v-list-item-subtitle
-          >{{ pack.builtin ? '内置素材' : '已导入' }} · {{ pack.mode === 'stage' ? '自由活动' : '入口形象' }} ·
-          {{ pack.action_count }} 个动作</v-list-item-subtitle
-        >
-        <template #append
-          ><v-chip v-if="pack.builtin" size="x-small" variant="tonal">内置</v-chip
-          ><v-btn
+    <div class="agent-pet-sprites-config__list mb-6" role="list" aria-label="已有 Pet 素材">
+      <article v-for="pack in packs" :key="pack.id" class="agent-pet-sprites-config__card" role="listitem">
+        <v-avatar rounded="lg" size="52" class="agent-pet-sprites-config__thumb">
+          <v-img v-if="previewSrc(pack)" :src="previewSrc(pack)" :alt="pack.name" />
+          <v-icon v-else icon="mdi-image-outline" />
+        </v-avatar>
+        <div class="agent-pet-sprites-config__info">
+          <div class="agent-pet-sprites-config__name" :title="pack.name">{{ pack.name }}</div>
+          <div class="agent-pet-sprites-config__meta">
+            <span>{{ pack.builtin ? '内置素材' : '已导入' }}</span>
+            <span>{{ pack.mode === 'stage' ? '自由活动' : '入口形象' }}</span>
+            <span>{{ pack.action_count }} 个动作</span>
+          </div>
+        </div>
+        <div class="agent-pet-sprites-config__actions">
+          <v-chip v-if="pack.builtin" size="x-small" variant="tonal">内置</v-chip>
+          <v-btn
             v-else
             icon="mdi-delete-outline"
             variant="text"
@@ -303,10 +304,13 @@ onMounted(refresh)
             :loading="deleting === pack.id"
             :disabled="!!deleting || submitting"
             @click="removePack(pack)"
-        /></template>
-      </v-list-item>
-      <v-list-item v-if="!packs.length && !loading && !listError" title="暂无素材，导入一个 Pet 开始吧" />
-    </v-list>
+          />
+        </div>
+      </article>
+      <p v-if="!packs.length && !loading && !listError" class="agent-pet-sprites-config__empty ap-muted">
+        暂无素材，导入一个 Pet 开始吧
+      </p>
+    </div>
     <div class="agent-pet-sprites-config__import">
       <div class="ap-section-heading">
         <v-icon icon="mdi-package-down" color="primary" />
@@ -419,7 +423,56 @@ onMounted(refresh)
   background: rgba(var(--v-theme-on-surface), 0.025);
 }
 .agent-pet-sprites-config__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+  gap: 12px;
   background: transparent;
+}
+.agent-pet-sprites-config__card {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+  background: transparent;
+}
+.agent-pet-sprites-config__info {
+  min-width: 0;
+}
+.agent-pet-sprites-config__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.agent-pet-sprites-config__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 5px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.agent-pet-sprites-config__meta span {
+  white-space: nowrap;
+}
+.agent-pet-sprites-config__actions {
+  align-self: start;
+}
+.agent-pet-sprites-config__empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 20px 12px;
+  text-align: center;
 }
 .agent-pet-sprites-config__import {
   padding: 18px;
@@ -429,9 +482,5 @@ onMounted(refresh)
 .agent-pet-sprites-config__json :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
-}
-.agent-pet-sprites-config__list :deep(.v-list-item-subtitle) {
-  font-size: 11px;
-  margin-top: 3px;
 }
 </style>

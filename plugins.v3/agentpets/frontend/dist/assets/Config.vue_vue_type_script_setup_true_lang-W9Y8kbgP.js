@@ -656,9 +656,22 @@ const {createElementVNode:_createElementVNode$1,resolveComponent:_resolveCompone
 
 const _hoisted_1$1 = { class: "agent-pet-sprites-config" };
 const _hoisted_2$1 = { class: "ap-inline mb-2" };
-const _hoisted_3$1 = { class: "agent-pet-sprites-config__import" };
-const _hoisted_4$1 = { class: "ap-section-heading" };
-const _hoisted_5$1 = { class: "d-flex align-center justify-end flex-wrap ga-2 mt-4" };
+const _hoisted_3$1 = {
+  class: "agent-pet-sprites-config__list mb-6",
+  role: "list",
+  "aria-label": "已有 Pet 素材"
+};
+const _hoisted_4$1 = { class: "agent-pet-sprites-config__info" };
+const _hoisted_5$1 = ["title"];
+const _hoisted_6$1 = { class: "agent-pet-sprites-config__meta" };
+const _hoisted_7$1 = { class: "agent-pet-sprites-config__actions" };
+const _hoisted_8$1 = {
+  key: 0,
+  class: "agent-pet-sprites-config__empty ap-muted"
+};
+const _hoisted_9$1 = { class: "agent-pet-sprites-config__import" };
+const _hoisted_10$1 = { class: "ap-section-heading" };
+const _hoisted_11$1 = { class: "d-flex align-center justify-end flex-wrap ga-2 mt-4" };
 const {computed: computed$1,inject: inject$1,onBeforeUnmount: onBeforeUnmount$1,onMounted,ref: ref$1,watch: watch$1} = await importShared('vue');
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
@@ -882,11 +895,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       const _component_v_img = _resolveComponent$1("v-img");
       const _component_v_icon = _resolveComponent$1("v-icon");
       const _component_v_avatar = _resolveComponent$1("v-avatar");
-      const _component_v_list_item_title = _resolveComponent$1("v-list-item-title");
-      const _component_v_list_item_subtitle = _resolveComponent$1("v-list-item-subtitle");
       const _component_v_chip = _resolveComponent$1("v-chip");
-      const _component_v_list_item = _resolveComponent$1("v-list-item");
-      const _component_v_list = _resolveComponent$1("v-list");
       const _component_v_btn_toggle = _resolveComponent$1("v-btn-toggle");
       const _component_v_textarea = _resolveComponent$1("v-textarea");
       const _component_v_file_input = _resolveComponent$1("v-file-input");
@@ -923,84 +932,68 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           indeterminate: "",
           color: "primary"
         })) : _createCommentVNode$1("", true),
-        _createVNode$1(_component_v_list, {
-          density: "compact",
-          class: "agent-pet-sprites-config__list mb-6",
-          border: "",
-          rounded: "lg"
-        }, {
-          default: _withCtx$1(() => [
-            (_openBlock$1(true), _createElementBlock$1(_Fragment$1, null, _renderList$1(packs.value, (pack) => {
-              return _openBlock$1(), _createBlock$1(_component_v_list_item, {
-                key: pack.id,
-                class: "py-2"
+        _createElementVNode$1("div", _hoisted_3$1, [
+          (_openBlock$1(true), _createElementBlock$1(_Fragment$1, null, _renderList$1(packs.value, (pack) => {
+            return _openBlock$1(), _createElementBlock$1("article", {
+              key: pack.id,
+              class: "agent-pet-sprites-config__card",
+              role: "listitem"
+            }, [
+              _createVNode$1(_component_v_avatar, {
+                rounded: "lg",
+                size: "52",
+                class: "agent-pet-sprites-config__thumb"
               }, {
-                prepend: _withCtx$1(() => [
-                  _createVNode$1(_component_v_avatar, {
-                    rounded: "lg",
-                    size: "44",
-                    class: "agent-pet-sprites-config__thumb"
-                  }, {
-                    default: _withCtx$1(() => [
-                      previewSrc(pack) ? (_openBlock$1(), _createBlock$1(_component_v_img, {
-                        key: 0,
-                        src: previewSrc(pack),
-                        alt: pack.name
-                      }, null, 8, ["src", "alt"])) : (_openBlock$1(), _createBlock$1(_component_v_icon, {
-                        key: 1,
-                        icon: "mdi-image-outline"
-                      }))
-                    ]),
-                    _: 2
-                  }, 1024)
-                ]),
-                append: _withCtx$1(() => [
-                  pack.builtin ? (_openBlock$1(), _createBlock$1(_component_v_chip, {
-                    key: 0,
-                    size: "x-small",
-                    variant: "tonal"
-                  }, {
-                    default: _withCtx$1(() => [..._cache[6] || (_cache[6] = [
-                      _createTextVNode$1("内置", -1)
-                    ])]),
-                    _: 1
-                  })) : (_openBlock$1(), _createBlock$1(_component_v_btn, {
-                    key: 1,
-                    icon: "mdi-delete-outline",
-                    variant: "text",
-                    size: "small",
-                    "aria-label": `删除 ${pack.name}`,
-                    loading: deleting.value === pack.id,
-                    disabled: !!deleting.value || submitting.value,
-                    onClick: ($event) => removePack(pack)
-                  }, null, 8, ["aria-label", "loading", "disabled", "onClick"]))
-                ]),
                 default: _withCtx$1(() => [
-                  _createVNode$1(_component_v_list_item_title, { class: "text-body-2 font-weight-medium" }, {
-                    default: _withCtx$1(() => [
-                      _createTextVNode$1(_toDisplayString$1(pack.name), 1)
-                    ]),
-                    _: 2
-                  }, 1024),
-                  _createVNode$1(_component_v_list_item_subtitle, null, {
-                    default: _withCtx$1(() => [
-                      _createTextVNode$1(_toDisplayString$1(pack.builtin ? "内置素材" : "已导入") + " · " + _toDisplayString$1(pack.mode === "stage" ? "自由活动" : "入口形象") + " · " + _toDisplayString$1(pack.action_count) + " 个动作", 1)
-                    ]),
-                    _: 2
-                  }, 1024)
+                  previewSrc(pack) ? (_openBlock$1(), _createBlock$1(_component_v_img, {
+                    key: 0,
+                    src: previewSrc(pack),
+                    alt: pack.name
+                  }, null, 8, ["src", "alt"])) : (_openBlock$1(), _createBlock$1(_component_v_icon, {
+                    key: 1,
+                    icon: "mdi-image-outline"
+                  }))
                 ]),
                 _: 2
-              }, 1024);
-            }), 128)),
-            !packs.value.length && !loading.value && !listError.value ? (_openBlock$1(), _createBlock$1(_component_v_list_item, {
-              key: 0,
-              title: "暂无素材，导入一个 Pet 开始吧"
-            })) : _createCommentVNode$1("", true)
-          ]),
-          _: 1
-        }),
-        _createElementVNode$1("div", _hoisted_3$1, [
-          _createElementVNode$1("div", _hoisted_4$1, [
+              }, 1024),
+              _createElementVNode$1("div", _hoisted_4$1, [
+                _createElementVNode$1("div", {
+                  class: "agent-pet-sprites-config__name",
+                  title: pack.name
+                }, _toDisplayString$1(pack.name), 9, _hoisted_5$1),
+                _createElementVNode$1("div", _hoisted_6$1, [
+                  _createElementVNode$1("span", null, _toDisplayString$1(pack.builtin ? "内置素材" : "已导入"), 1),
+                  _createElementVNode$1("span", null, _toDisplayString$1(pack.mode === "stage" ? "自由活动" : "入口形象"), 1),
+                  _createElementVNode$1("span", null, _toDisplayString$1(pack.action_count) + " 个动作", 1)
+                ])
+              ]),
+              _createElementVNode$1("div", _hoisted_7$1, [
+                pack.builtin ? (_openBlock$1(), _createBlock$1(_component_v_chip, {
+                  key: 0,
+                  size: "x-small",
+                  variant: "tonal"
+                }, {
+                  default: _withCtx$1(() => [..._cache[6] || (_cache[6] = [
+                    _createTextVNode$1("内置", -1)
+                  ])]),
+                  _: 1
+                })) : (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                  key: 1,
+                  icon: "mdi-delete-outline",
+                  variant: "text",
+                  size: "small",
+                  "aria-label": `删除 ${pack.name}`,
+                  loading: deleting.value === pack.id,
+                  disabled: !!deleting.value || submitting.value,
+                  onClick: ($event) => removePack(pack)
+                }, null, 8, ["aria-label", "loading", "disabled", "onClick"]))
+              ])
+            ]);
+          }), 128)),
+          !packs.value.length && !loading.value && !listError.value ? (_openBlock$1(), _createElementBlock$1("p", _hoisted_8$1, " 暂无素材，导入一个 Pet 开始吧 ")) : _createCommentVNode$1("", true)
+        ]),
+        _createElementVNode$1("div", _hoisted_9$1, [
+          _createElementVNode$1("div", _hoisted_10$1, [
             _createVNode$1(_component_v_icon, {
               icon: "mdi-package-down",
               color: "primary"
@@ -1152,7 +1145,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
             ]),
             _: 1
           })) : _createCommentVNode$1("", true),
-          _createElementVNode$1("div", _hoisted_5$1, [
+          _createElementVNode$1("div", _hoisted_11$1, [
             imageMode.value === "upload" ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
               key: 0,
               color: "primary",
@@ -1187,7 +1180,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-c37030dd"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-81c7f7de"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 

@@ -1,0 +1,65 @@
+
+.agent-pet-sprites-config__thumb[data-v-81c7f7de] {
+  background: rgba(var(--v-theme-on-surface), 0.025);
+}
+.agent-pet-sprites-config__list[data-v-81c7f7de] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+  gap: 12px;
+  background: transparent;
+}
+.agent-pet-sprites-config__card[data-v-81c7f7de] {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+  background: transparent;
+}
+.agent-pet-sprites-config__info[data-v-81c7f7de] {
+  min-width: 0;
+}
+.agent-pet-sprites-config__name[data-v-81c7f7de] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.agent-pet-sprites-config__meta[data-v-81c7f7de] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 5px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.agent-pet-sprites-config__meta span[data-v-81c7f7de] {
+  white-space: nowrap;
+}
+.agent-pet-sprites-config__actions[data-v-81c7f7de] {
+  align-self: start;
+}
+.agent-pet-sprites-config__empty[data-v-81c7f7de] {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 20px 12px;
+  text-align: center;
+}
+.agent-pet-sprites-config__import[data-v-81c7f7de] {
+  padding: 18px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+}
+.agent-pet-sprites-config__json[data-v-81c7f7de] textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
