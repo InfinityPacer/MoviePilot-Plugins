@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createMockHost } from '@/dev/mockHost'
 
 import {
   blockedSpan,
+  readViewport,
+  shelterSink,
   checkSupport,
   computeLanding,
   coversAny,
@@ -33,6 +36,38 @@ const viewport: StageViewport = {
 }
 
 describe('stage geometry', () => {
+  it('intersects the host and visual viewport without subtracting the keyboard twice', () => {
+    vi.stubGlobal('innerHeight', 800)
+    vi.stubGlobal('innerWidth', 1000)
+    vi.stubGlobal('visualViewport', { offsetTop: 0, offsetLeft: 0, width: 1000, height: 500 })
+    const host = createMockHost('AgentPets')
+    host.patch({ viewport: { ...viewport, keyboardInset: 300 } })
+    expect(groundTop(readViewport(host.getState()), 120)).toBe(360)
+    expect(readViewport(host.getState(), false)).toEqual({ ...viewport, keyboardInset: 300 })
+    host.dispose()
+  })
+
+  it('keeps safe margins within a panned visual viewport and handles missing visualViewport', () => {
+    vi.stubGlobal('innerHeight', 800)
+    vi.stubGlobal('innerWidth', 1000)
+    vi.stubGlobal('visualViewport', { offsetTop: 100, offsetLeft: 50, width: 400, height: 500 })
+    const host = createMockHost('AgentPets')
+    host.patch({ viewport: { ...viewport, safeArea: { top: 10, left: 12, right: 12, bottom: 20 } } })
+    const view = readViewport(host.getState())
+    expect(freeBounds(view, 100, 120)).toEqual({ x: [62, 338], y: [110, 460] })
+    vi.stubGlobal('visualViewport', undefined)
+    expect(groundTop(readViewport(host.getState()), 120)).toBe(660)
+    host.dispose()
+  })
+
+  it.each([0.6, 1, 1.3, 1.6])('preserves 48 visible pixels at scale %s for both random and shelter peeks', scale => {
+    const height = 120 * effectiveScale(scale, true)
+    for (const depth of [0.5, 0.65, 0.8, 0.92]) {
+      expect(height - shelterSink(height, depth, true)).toBeGreaterThanOrEqual(48)
+      expect(shelterSink(height, depth, false)).toBe(Math.round(height * depth))
+    }
+  })
+
   it('places the ground above the safe area and the soft keyboard', () => {
     expect(groundTop(viewport, 120)).toBe(660)
     expect(groundTop({ ...viewport, keyboardInset: 300 }, 120)).toBe(360)

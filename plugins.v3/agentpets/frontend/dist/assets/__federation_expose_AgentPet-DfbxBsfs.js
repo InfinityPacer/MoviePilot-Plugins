@@ -65,13 +65,26 @@ function walkFrame(distance, charHeight) {
   return Math.floor(Math.max(0, distance) / stride) % WALK_CYCLE.length;
 }
 
-function readViewport(state) {
-  if (state?.viewport) return state.viewport;
-  return {
+function readViewport(state, browserBounds = true) {
+  const base = state?.viewport ?? {
     width: window.innerWidth,
     height: window.innerHeight,
     keyboardInset: 0,
     safeArea: { top: 0, right: 0, bottom: 0, left: 0 }
+  };
+  if (!browserBounds) return base;
+  const visual = window.visualViewport;
+  const width = Math.min(base.width, window.innerWidth);
+  const height = Math.min(base.height, window.innerHeight);
+  const left = Math.max(base.safeArea.left, (visual?.offsetLeft ?? 0) + base.safeArea.left);
+  const top = Math.max(base.safeArea.top, (visual?.offsetTop ?? 0) + base.safeArea.top);
+  const right = Math.min(width, visual ? visual.offsetLeft + visual.width : width) - base.safeArea.right;
+  const bottom = Math.min(base.height - base.keyboardInset, height, visual ? visual.offsetTop + visual.height : height) - base.safeArea.bottom;
+  return {
+    width,
+    height,
+    keyboardInset: 0,
+    safeArea: { left, top, right: Math.max(0, width - right), bottom: Math.max(0, height - bottom) }
   };
 }
 function groundTop(viewport, charHeight) {
@@ -222,6 +235,11 @@ function pickClearX(current, bounds, isClear, step, maxCandidates = MAX_CLEAR_CA
   }
   return null;
 }
+const MIN_MOBILE_VISIBLE_HEIGHT = 48;
+function shelterSink(height, depth, isMobile) {
+  const maximum = isMobile ? Math.max(0, height - MIN_MOBILE_VISIBLE_HEIGHT) : height;
+  return clamp(Math.round(height * depth), 0, maximum);
+}
 const SHELTER_DEPTHS = [0.5, 0.65, 0.8, 0.92];
 function pickShelterDepth(isClear) {
   return SHELTER_DEPTHS.find((depth) => isClear(depth)) ?? SHELTER_DEPTHS[SHELTER_DEPTHS.length - 1];
@@ -276,6 +294,34 @@ function querySurfaces(layer, viewport, charHeight, panel, scope = null) {
   return candidates.filter(
     (candidate) => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width, scope)
   );
+}
+function bottomFixedFloor(layer, viewport) {
+  const floor = floorLine(viewport);
+  if (typeof document.elementsFromPoint !== "function") return floor;
+  const left = viewport.safeArea.left;
+  const width = viewport.width - viewport.safeArea.right - left;
+  const seen = /* @__PURE__ */ new Set();
+  let result = floor;
+  for (const ratio of [0.1, 0.5, 0.9]) {
+    for (const depth of [2, 24, 60]) {
+      const y = floor - depth;
+      if (y <= viewport.safeArea.top) continue;
+      let el = document.elementsFromPoint(left + width * ratio, y).find((item) => !layer?.contains(item)) ?? null;
+      for (let level = 0; el && level < 8; level += 1, el = el.parentElement) {
+        if (seen.has(el)) break;
+        seen.add(el);
+        if (layer && el.contains(layer)) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < width * 0.5 || rect.height <= 0 || rect.height > Math.min(200, (floor - viewport.safeArea.top) * 0.35) || rect.bottom < floor - 8 || rect.top <= viewport.safeArea.top)
+          continue;
+        const style = window.getComputedStyle(el);
+        if ((style.position === "fixed" || style.position === "sticky") && surfaceVisible(el)) {
+          result = Math.min(result, rect.top - 8);
+        }
+      }
+    }
+  }
+  return result;
 }
 const NEARBY_SURFACE_ROWS = 4;
 function surfacesNear(layer, viewport, charHeight, panel, columns, scope = null) {
@@ -403,6 +449,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const isMobile = ref(false);
     const animationActive = ref(false);
     let hostState = null;
+    let mobileFloor = null;
     let documentVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
     let rafId = 0;
     let lastFrame = 0;
@@ -529,7 +576,21 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return settings.value.roam;
     }
     function viewport() {
-      return readViewport(hostState);
+      const view = readViewport(hostState, !props.previewRoot);
+      if (mobileFloor === null || !isMobile.value || props.previewRoot) return view;
+      return {
+        ...view,
+        safeArea: { ...view.safeArea, bottom: Math.max(view.safeArea.bottom, view.height - mobileFloor) }
+      };
+    }
+    function refreshMobileFloor() {
+      const next = isMobile.value && !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null;
+      const changed = next !== mobileFloor;
+      mobileFloor = next;
+      return changed;
+    }
+    function hiddenHeight(depth) {
+      return shelterSink(charHeight.value, depth, isMobile.value);
     }
     function ground() {
       return groundTop(viewport(), charHeight.value);
@@ -681,7 +742,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!motionAllowed() || !onFloor()) return;
       facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2;
       motion.value = "peek";
-      peekTarget = Math.round(charHeight.value * PEEK_RATIO);
+      peekTarget = hiddenHeight(PEEK_RATIO);
       ensureLoop();
       setTimer("peek", randomBetween(4e3, 7e3), endPeek);
     }
@@ -805,6 +866,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function startFall(exclude = null) {
       detachSurface();
+      hopVx = 0;
+      hopTargetX = null;
       if (roam() === "free") {
         const view = freeBounds(viewport(), ...sizePair());
         x.value = clamp(x.value, ...view.x);
@@ -817,8 +880,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         land(false);
         return;
       }
-      hopVx = 0;
-      hopTargetX = null;
       motion.value = "fall";
       velocity = 0;
       bounced = false;
@@ -939,11 +1000,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       queueAnchor();
     }
     function rectAt(left, top, depth = 0) {
-      const hidden = Math.round(charHeight.value * depth);
+      const hidden = hiddenHeight(depth);
       return { x: left, y: top + hidden, width: charWidth.value, height: charHeight.value - hidden };
     }
     function checkClearance() {
       if (disposed || !ready.value || !visible()) return;
+      if (refreshMobileFloor()) relayout();
       if (sheltering) {
         recheckShelter();
         return;
@@ -1041,7 +1103,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       sheltering = true;
       motion.value = "peek";
       facingLeft.value = x.value > (xBounds(viewport(), charWidth.value)[0] + xBounds(viewport(), charWidth.value)[1]) / 2;
-      peekTarget = Math.round(charHeight.value * depth);
+      peekTarget = hiddenHeight(depth);
       if (instant || !motionAllowed()) {
         sink.value = peekTarget;
         queueAnchor();
@@ -1068,7 +1130,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!covers(current)) return;
       const depth = pickShelterDepth((level) => level > current && !covers(level));
       if (depth <= current) return;
-      peekTarget = Math.round(charHeight.value * depth);
+      peekTarget = hiddenHeight(depth);
       if (motionAllowed()) ensureLoop();
       else {
         sink.value = peekTarget;
@@ -1133,16 +1195,31 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       props.pet?.storage?.set?.(value)?.catch?.(() => console.warn("[AgentPets] position not saved"));
     }
     function relayout() {
+      const view = freeBounds(viewport(), ...sizePair());
+      const maxSink = hiddenHeight(1);
+      sink.value = Math.min(sink.value, maxSink);
+      peekTarget = Math.min(peekTarget, maxSink);
+      if (walkTarget) {
+        walkTarget.x = clamp(walkTarget.x, ...view.x);
+        if (walkTarget.y !== null) walkTarget.y = clamp(walkTarget.y, ...view.y);
+      }
       if (motion.value === "drag" || motion.value === "fall") {
-        x.value = clamp(x.value, 0, Math.max(0, viewport().width - charWidth.value));
-        y.value = clamp(y.value, 0, ground());
+        const outside = x.value < view.x[0] || x.value > view.x[1] || y.value > view.y[1];
+        const targetOutside = fallTarget && (fallTarget.y < view.y[0] || fallTarget.y > view.y[1]);
+        const hopOutside = hopTargetX !== null && (hopTargetX < view.x[0] || hopTargetX > view.x[1]);
+        x.value = clamp(x.value, ...view.x);
+        y.value = clamp(y.value, ...view.y);
+        if (motion.value === "fall" && (outside || targetOutside || hopOutside)) {
+          pendingShelter = null;
+          startFall();
+        }
         queueAnchor();
         return;
       }
       if (roam() === "free") {
-        const view = freeBounds(viewport(), ...sizePair());
-        x.value = clamp(x.value, ...view.x);
-        y.value = clamp(y.value, ...view.y);
+        const view2 = freeBounds(viewport(), ...sizePair());
+        x.value = clamp(x.value, ...view2.x);
+        y.value = clamp(y.value, ...view2.y);
         queueAnchor();
         return;
       }
@@ -1178,6 +1255,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
+      if (resized) refreshMobileFloor();
       const nextSustained = phasePose(state.phase);
       if (nextSustained !== sustained.value) {
         sustained.value = nextSustained;
@@ -1294,9 +1372,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         props.pet?.setInteracting?.(true);
       }
       event.preventDefault();
-      const view = viewport();
-      x.value = clamp(pointerPosition(event).x - press.offsetX, 0, Math.max(0, view.width - charWidth.value));
-      y.value = clamp(pointerPosition(event).y - press.offsetY, 0, ground());
+      const view = freeBounds(viewport(), ...sizePair());
+      x.value = clamp(pointerPosition(event).x - press.offsetX, ...view.x);
+      y.value = clamp(pointerPosition(event).y - press.offsetY, ...view.y);
       facingLeft.value = false;
       queueAnchor();
     }
@@ -1368,8 +1446,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       syncVisibility();
     }
     function onWindowResize() {
-      if (!hostState || surface) relayout();
-      if (!hostState) scheduleClearance(RESIZE_CLEAR_DELAY);
+      if (!ready.value || props.previewRoot) return;
+      refreshMobileFloor();
+      relayout();
+      scheduleClearance(RESIZE_CLEAR_DELAY);
     }
     onMounted(async () => {
       const agent = props.agent;
@@ -1396,12 +1476,22 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       window.addEventListener("resize", onWindowResize);
       cleanups.push(() => document.removeEventListener("visibilitychange", onVisibilityChange));
       cleanups.push(() => window.removeEventListener("resize", onWindowResize));
+      const visual = window.visualViewport;
+      if (visual && !props.previewRoot) {
+        visual.addEventListener("resize", onWindowResize);
+        visual.addEventListener("scroll", onWindowResize);
+        cleanups.push(() => {
+          visual.removeEventListener("resize", onWindowResize);
+          visual.removeEventListener("scroll", onWindowResize);
+        });
+      }
       const [loaded, stored] = await Promise.all([
         props.settingsOverride ?? loadSettings(props.api, props.pluginId),
         readStoredPosition()
       ]);
       if (disposed) return;
       settings.value = normalizeSettings(props.settingsOverride ?? loaded);
+      refreshMobileFloor();
       restorePosition(stored);
       ready.value = true;
       syncVisibility();
@@ -1476,6 +1566,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a24668c6"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-2ece2f8f"]]);
 
 export { POSES as P, AgentPet as default };

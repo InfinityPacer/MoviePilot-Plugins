@@ -8,14 +8,30 @@ export interface StageViewport {
   safeArea: { top: number; right: number; bottom: number; left: number }
 }
 
-/** 从宿主状态读取视口；宿主缺失时退回浏览器窗口尺寸。 */
-export function readViewport(state: AgentHostState | null): StageViewport {
-  if (state?.viewport) return state.viewport
-  return {
+/** 与浏览器实际可视区域取交集；局部预览只使用自己的宿主坐标。 */
+export function readViewport(state: AgentHostState | null, browserBounds = true): StageViewport {
+  const base = state?.viewport ?? {
     width: window.innerWidth,
     height: window.innerHeight,
     keyboardInset: 0,
     safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+  }
+  if (!browserBounds) return base
+  const visual = window.visualViewport
+  const width = Math.min(base.width, window.innerWidth)
+  const height = Math.min(base.height, window.innerHeight)
+  const left = Math.max(base.safeArea.left, (visual?.offsetLeft ?? 0) + base.safeArea.left)
+  const top = Math.max(base.safeArea.top, (visual?.offsetTop ?? 0) + base.safeArea.top)
+  const right = Math.min(width, visual ? visual.offsetLeft + visual.width : width) - base.safeArea.right
+  // 宿主键盘边界与 visualViewport 的底边取较小值，不能再重复扣一次键盘高度。
+  const bottom =
+    Math.min(base.height - base.keyboardInset, height, visual ? visual.offsetTop + visual.height : height) -
+    base.safeArea.bottom
+  return {
+    width,
+    height,
+    keyboardInset: 0,
+    safeArea: { left, top, right: Math.max(0, width - right), bottom: Math.max(0, height - bottom) },
   }
 }
 
@@ -328,6 +344,15 @@ export function pickClearX(
     }
   }
   return null
+}
+
+/** 移动端下沉时至少保留的可见、可拖拽高度（CSS 像素）。 */
+export const MIN_MOBILE_VISIBLE_HEIGHT = 48
+
+/** 所有探头路径共用限制，避免小号角色、动态缩放或旧下沉值只留下几像素。 */
+export function shelterSink(height: number, depth: number, isMobile: boolean): number {
+  const maximum = isMobile ? Math.max(0, height - MIN_MOBILE_VISIBLE_HEIGHT) : height
+  return clamp(Math.round(height * depth), 0, maximum)
 }
 
 /** 无处可站时下沉探头的深度档位（占身高比例），由浅到深试，直到不再挡住控件。 */

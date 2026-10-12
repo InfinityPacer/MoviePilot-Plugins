@@ -37,6 +37,20 @@ async function setup(motionAllowed = true) {
 }
 
 describe('Codex Pet stage', () => {
+  it('shares mobile viewport recovery with the built-in stage', async () => {
+    const visual = Object.assign(new EventTarget(), { width: 390, height: 700, offsetTop: 0, offsetLeft: 0 })
+    vi.stubGlobal('visualViewport', visual)
+    const { host, anchors } = await setup(false)
+    host.patch({ isMobile: true })
+    visual.height = 360
+    visual.dispatchEvent(new Event('resize'))
+    await vi.advanceTimersByTimeAsync(64)
+    const anchor = anchors.at(-1)!
+    expect(anchor.height).toBeCloseTo(120 * 1.2 * 0.8)
+    expect(anchor.x + anchor.width).toBeLessThanOrEqual(390)
+    expect(anchor.y + anchor.height).toBeCloseTo(360)
+  })
+
   it('loads the selected legacy pet and applies saved and live sizes through the stage', async () => {
     const { host, api, view, anchors } = await setup()
     expect(api.get).toHaveBeenCalledWith('plugin/Clone1/pack?key=legacy-pet')
