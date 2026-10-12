@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import type { PluginApi } from '@/host'
+import { AGENT_HOST_KEY, type MoviePilotAgentHost, type PluginApi } from '@/host'
+import { PACK_UPDATED_EVENT } from '@/sprites/mappings'
 import { builtinAvatar } from '@/editor/avatars'
 import { extractCodexPetArchive, isCodexPetArchive, MAX_CODEX_PET_ARCHIVE_BYTES } from '@/sprites/codexPetArchive'
 import { buildCodexPetPack, validatePack, type CodexPetMetadata } from '@/sprites/schema'
@@ -42,6 +43,12 @@ const emit = defineEmits<{ changed: [] }>()
 const importMode = ref<'codex' | 'custom'>('codex')
 const listError = ref('')
 const deleting = ref('')
+const renameTarget = ref<PackSummary | null>(null)
+const renameName = ref('')
+const renameError = ref('')
+const renaming = ref(false)
+const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
+const renameValid = computed(() => !!renameName.value.trim() && [...renameName.value.trim()].length <= 40)
 let alive = true
 let listVersion = 0
 onBeforeUnmount(() => {
@@ -261,6 +268,44 @@ async function removePack(pack: PackSummary) {
   }
 }
 
+function startRename(pack: PackSummary) {
+  renameTarget.value = pack
+  renameName.value = pack.name
+  renameError.value = ''
+}
+async function renamePack() {
+  if (renaming.value || !renameValid.value || !props.api || !renameTarget.value) return
+  const target = renameTarget.value
+  const id = instanceId.value
+  const name = renameName.value.trim()
+  renaming.value = true
+  renameError.value = ''
+  try {
+    const response = await props.api.post<PackSummary>(`plugin/${id}/packs/rename`, {
+      id: target.id,
+      name,
+      expected_name: target.name,
+    })
+    if (!alive || id !== instanceId.value) return
+    if (!response?.success || response.data?.id !== target.id || response.data?.name !== name) {
+      renameError.value = response?.message || '重命名未确认，请刷新后核对'
+      return
+    }
+    packs.value = packs.value.map(pack => (pack.id === target.id ? response.data! : pack))
+    renameTarget.value = null
+    agent?.emit?.(PACK_UPDATED_EVENT, { key: target.id })
+    emit('changed')
+  } catch {
+    if (alive && id === instanceId.value) renameError.value = '重命名未完成，请刷新核对后重试'
+  } finally {
+    if (alive && id === instanceId.value) renaming.value = false
+  }
+}
+watch(instanceId, () => {
+  renameTarget.value = null
+  renaming.value = false
+  void refresh()
+})
 onMounted(refresh)
 </script>
 
@@ -290,19 +335,28 @@ onMounted(refresh)
           <div class="agent-pet-sprites-config__meta">
             <span>{{ pack.builtin ? '内置素材' : '已导入' }}</span>
             <span>{{ pack.mode === 'stage' ? '自由活动' : '入口形象' }}</span>
-            <span>{{ pack.action_count }} 个动作</span>
+            <span>{{ pack.action_count }} 项动作定义</span>
           </div>
         </div>
         <div class="agent-pet-sprites-config__actions">
           <v-chip v-if="pack.builtin" size="x-small" variant="tonal">内置</v-chip>
           <v-btn
-            v-else
+            v-if="!pack.builtin && pack.mode === 'stage'"
+            icon="mdi-pencil-outline"
+            variant="text"
+            size="small"
+            :aria-label="`重命名 ${pack.name}`"
+            :disabled="!!deleting || submitting || renaming"
+            @click="startRename(pack)"
+          />
+          <v-btn
+            v-if="!pack.builtin"
             icon="mdi-delete-outline"
             variant="text"
             size="small"
             :aria-label="`删除 ${pack.name}`"
             :loading="deleting === pack.id"
-            :disabled="!!deleting || submitting"
+            :disabled="!!deleting || submitting || renaming"
             @click="removePack(pack)"
           />
         </div>
@@ -311,6 +365,39 @@ onMounted(refresh)
         暂无素材，导入一个 Pet 开始吧
       </p>
     </div>
+    <v-dialog
+      :model-value="!!renameTarget"
+      max-width="420"
+      :persistent="renaming"
+      @update:model-value="!$event && !renaming && (renameTarget = null)"
+    >
+      <v-card title="重命名 Pet">
+        <v-card-text>
+          <v-text-field
+            v-model="renameName"
+            label="显示名称"
+            density="compact"
+            variant="outlined"
+            counter="40"
+            :disabled="renaming"
+            :error-messages="renameError || (!renameValid ? '请输入 1～40 个字符的名称' : '')"
+            @keydown.enter.prevent="renamePack"
+          />
+          <p class="ap-muted mb-0">只修改名称，当前选择、动作映射和位置保持不变。</p>
+        </v-card-text>
+        <v-card-actions
+          ><v-spacer /><v-btn variant="text" :disabled="renaming" @click="renameTarget = null">取消</v-btn>
+          <v-btn
+            variant="flat"
+            color="primary"
+            :disabled="!renameValid || renameName.trim() === renameTarget?.name"
+            :loading="renaming"
+            @click="renamePack"
+            >保存名称</v-btn
+          >
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
     <div class="agent-pet-sprites-config__import">
       <div class="ap-section-heading">
         <v-icon icon="mdi-package-down" color="primary" />

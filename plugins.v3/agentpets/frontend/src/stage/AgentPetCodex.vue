@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 
 import type { AgentPetContext, MoviePilotAgentHost, PluginApi } from '@/host'
+import { stageAction, type ActionMappings } from '@/sprites/mappings'
+import type { SpritePack } from '@/sprites/schema'
 import AgentPetSprite from '@/sprites/AgentPetSprite.vue'
 import type { Pose } from '@/stage/poses'
 import type { YingSettings } from '@/stage/settings'
@@ -18,31 +20,16 @@ const props = withDefaults(
     previewRoot?: HTMLElement | null
     settingsOverride?: YingSettings
     previewPose?: Pose
+    mappingsOverride?: ActionMappings
+    nativeAction?: string
+    replay?: number
   }>(),
   { agent: null, pet: null, api: null, pluginId: '', sourcePluginId: '' },
 )
 
-const emit = defineEmits<{ 'load-state': ['loading' | 'ready' | 'error'] }>()
+const emit = defineEmits<{ 'load-state': ['loading' | 'ready' | 'error']; 'pack-ready': [SpritePack] }>()
 
 const appearance = ref({ name: 'Codex Pet', aspectRatio: 192 / 208 })
-const POSE_ACTIONS: Partial<Record<Pose, string>> = {
-  wave: 'wave',
-  held: 'thinking',
-  fall: 'jumping',
-  jump: 'jumping',
-  talk: 'speaking',
-  think: 'thinking',
-  busy: 'charge',
-  victory: 'success',
-  confused: 'error',
-  alert: 'warning',
-  doze: 'sleep',
-}
-
-function actionForPose(pose: Pose, facingLeft: boolean): string {
-  if (pose.startsWith('walk')) return facingLeft ? 'running-left' : 'running-right'
-  return POSE_ACTIONS[pose] ?? 'idle'
-}
 </script>
 
 <template>
@@ -50,10 +37,12 @@ function actionForPose(pose: Pose, facingLeft: boolean): string {
     <template #default="{ pose, facingLeft, motionActive }">
       <AgentPetSprite
         v-bind="props"
-        :action="actionForPose(pose, facingLeft)"
+        :action="stageAction(pose, facingLeft).action"
+        :mapping-key="stageAction(pose, facingLeft).key"
         :motion-active="motionActive"
         :strict-preview="!!props.previewRoot"
         @load-state="emit('load-state', $event)"
+        @pack-ready="emit('pack-ready', $event)"
         @appearance="appearance = $event"
       />
     </template>

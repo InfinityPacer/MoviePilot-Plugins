@@ -250,6 +250,19 @@ const HOST_ACTIONS = [
   "nod",
   "wake"
 ];
+const HOST_INTENTS = [
+  "idle",
+  "thinking",
+  "speaking",
+  "notify",
+  "success",
+  "warning",
+  "error",
+  "dragging",
+  "docked",
+  "sleeping",
+  "reaction"
+];
 const BUILTIN_PACK_ID = "projector-cat";
 const DEFAULT_FRAME_MS = 160;
 const CODEX_PET_LAYOUTS = [
@@ -354,7 +367,8 @@ function buildCodexPetPack(filename, width, height, metadata) {
     speaking: action(rowFrames.running, 160, true),
     warning: action(rowFrames.review, 180),
     "eye-roll": action(rowFrames.review, 180),
-    scan: action(scanFrames, 140)
+    scan: action(scanFrames, 140),
+    ...Object.fromEntries(lookFrames.map((frame) => [frame, action([frame])]))
   };
   return {
     version: layout.version,
@@ -463,7 +477,12 @@ function validatePack(raw) {
       grid: { cols, rows },
       frames,
       actions,
-      random_actions: [...new Set(randomActions)]
+      random_actions: [...new Set(randomActions)],
+      action_mappings: Object.fromEntries(
+        Object.entries(data.action_mappings ?? {}).filter(
+          (entry) => typeof entry[1] === "string"
+        )
+      )
     },
     errors
   };
@@ -499,8 +518,17 @@ const ASSET_BASE = import.meta.url;
 function builtinAsset(file, base = ASSET_BASE) {
   return new URL(`packs/${BUILTIN_PACK_ID}/${file}`, base).href;
 }
-function resolveAction(pack, action, intent, thinking) {
-  const candidates = [action, intent, thinking ? "thinking" : null, "idle"];
+function resolveAction(pack, action, intent, thinking, options = {}) {
+  if (options.nativeAction && pack.actions[options.nativeAction])
+    return { key: options.nativeAction, action: pack.actions[options.nativeAction] };
+  const mappings = options.mappings ?? pack.action_mappings ?? {};
+  const candidates = [
+    options.mappingKey ? mappings[options.mappingKey] : null,
+    action ? mappings[`action.${action}`] ?? action : null,
+    intent ? mappings[`intent.${intent}`] ?? intent : null,
+    thinking ? mappings["intent.thinking"] ?? "thinking" : null,
+    "idle"
+  ];
   for (const key of candidates) {
     if (key && pack.actions[key]) return { key, action: pack.actions[key] };
   }
@@ -514,4 +542,109 @@ function framePosition(pack, frame) {
   return { x: cols > 1 ? col / (cols - 1) * 100 : 0, y: rows > 1 ? row / (rows - 1) * 100 : 0 };
 }
 
-export { BUILTIN_PACK_ID as B, BUILTIN_PACK as a, builtinAsset as b, buildCodexPetPack as c, framePosition as f, resolveAction as r, validatePack as v, withCodexStageActions as w };
+const PACK_UPDATED_EVENT = "agentpets.pack.updated";
+const ACTION_LABELS = {
+  idle: "待机",
+  wave: "招手",
+  sit: "坐下",
+  "eye-roll": "翻白眼",
+  faint: "晕倒",
+  disassemble: "散架",
+  "happy-jump": "开心跳跃",
+  sleep: "睡眠",
+  stretch: "伸懒腰",
+  peek: "探头",
+  scan: "扫视",
+  charge: "蓄力",
+  "spin-cheer": "旋转欢呼",
+  shy: "害羞",
+  confused: "疑惑",
+  nod: "点头",
+  wake: "醒来",
+  thinking: "思考",
+  speaking: "说话",
+  notify: "通知",
+  success: "成功",
+  warning: "警告",
+  error: "错误",
+  dragging: "拖动",
+  docked: "贴边",
+  sleeping: "睡眠状态",
+  reaction: "反应",
+  "running-right": "向右跑",
+  "running-left": "向左跑",
+  waving: "原生招手",
+  jumping: "原生跳跃",
+  failed: "失败反应",
+  waiting: "等待",
+  running: "工作",
+  review: "审阅"
+};
+const STAGE_ACTIONS = {
+  idle: { label: "待机", action: "idle", group: "日常" },
+  blink: { label: "眨眼", action: "idle", group: "日常" },
+  wave: { label: "打开助手／招手", action: "wave", group: "会话" },
+  talk: { label: "说话／气泡", action: "speaking", group: "会话" },
+  think: { label: "思考", action: "thinking", group: "会话" },
+  busy: { label: "执行工具", action: "charge", group: "会话" },
+  alert: { label: "等待用户", action: "warning", group: "会话" },
+  victory: { label: "完成", action: "success", group: "会话" },
+  confused: { label: "出错", action: "error", group: "会话" },
+  doze: { label: "打盹", action: "sleep", group: "日常" },
+  held: { label: "被拖起", action: "thinking", group: "移动交互" },
+  fall: { label: "下落", action: "jumping", group: "移动交互" },
+  jump: { label: "跳起", action: "jumping", group: "移动交互" },
+  sit: { label: "落地坐下", action: "idle", group: "移动交互" },
+  "walk-left": { label: "向左行走", action: "running-left", group: "移动交互" },
+  "walk-right": { label: "向右行走", action: "running-right", group: "移动交互" }
+};
+const NATIVE_ACTIONS = [
+  "idle",
+  "running-right",
+  "running-left",
+  "waving",
+  "jumping",
+  "failed",
+  "waiting",
+  "running",
+  "review"
+];
+function stageAction(pose, facingLeft) {
+  const key = pose.startsWith("walk") ? facingLeft ? "walk-left" : "walk-right" : pose;
+  return { key: `stage.${key}`, action: STAGE_ACTIONS[key]?.action ?? "idle" };
+}
+function nativeChoices(pack) {
+  const keys = pack.codex_version ? NATIVE_ACTIONS.filter((key) => pack.actions[key]) : [];
+  const signature = (key) => pack.actions[key].frames.map((frame) => pack.frames[frame]).join(",");
+  const seen = new Set(keys.map(signature));
+  for (const key of Object.keys(pack.actions)) {
+    if (key.startsWith("look-") || keys.includes(key)) continue;
+    const sequence = signature(key);
+    if (pack.codex_version && seen.has(sequence)) continue;
+    keys.push(key);
+    seen.add(sequence);
+  }
+  return keys.map((value) => ({ value, title: `${ACTION_LABELS[value] ?? value} · ${value}` }));
+}
+function mappingRows(mode) {
+  if (mode === "stage") return Object.entries(STAGE_ACTIONS).map(([key, value]) => ({ key: `stage.${key}`, ...value }));
+  return [
+    ...HOST_ACTIONS.map((action) => ({
+      key: `action.${action}`,
+      action,
+      label: ACTION_LABELS[action],
+      group: "入口动作"
+    })),
+    ...HOST_INTENTS.map((action) => ({
+      key: `intent.${action}`,
+      action,
+      label: ACTION_LABELS[action],
+      group: "入口状态"
+    }))
+  ];
+}
+function sameMappings(a, b) {
+  return Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value);
+}
+
+export { ACTION_LABELS as A, BUILTIN_PACK_ID as B, HOST_ACTIONS as H, PACK_UPDATED_EVENT as P, BUILTIN_PACK as a, builtinAsset as b, buildCodexPetPack as c, sameMappings as d, HOST_INTENTS as e, framePosition as f, mappingRows as m, nativeChoices as n, resolveAction as r, stageAction as s, validatePack as v, withCodexStageActions as w };

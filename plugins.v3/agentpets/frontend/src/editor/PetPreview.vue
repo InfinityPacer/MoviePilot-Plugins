@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
+import ActionMappingEditor from '@/editor/ActionMappings.vue'
+import { ACTION_LABELS, nativeChoices, type ActionMappings } from '@/sprites/mappings'
+import { HOST_ACTIONS, HOST_INTENTS, type SpritePack } from '@/sprites/schema'
+import { POSES } from '@/stage/poses'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import type { PluginApi } from '@/host'
 import AgentPetSprite from '@/sprites/AgentPetSprite.vue'
@@ -15,9 +19,18 @@ const props = defineProps<{
   settings: YingSettings
   api: PluginApi | null
   pluginId: string
+  mappings?: ActionMappings
+  disabled?: boolean
 }>()
 
-const emit = defineEmits<{ error: [boolean] }>()
+const emit = defineEmits<{ error: [boolean]; 'pack-ready': [SpritePack]; mappings: [ActionMappings] }>()
+const loadedPack = ref<SpritePack | null>(null)
+const replay = ref(0)
+const previewGroup = ref(props.pet.key === 'ying' ? 'poses' : 'native')
+function onPackReady(pack: SpritePack) {
+  loadedPack.value = pack
+  emit('pack-ready', pack)
+}
 const failed = ref(false)
 function onLoadState(state: 'loading' | 'ready' | 'error') {
   failed.value = state === 'error'
@@ -31,16 +44,83 @@ const action = ref('auto')
 const positionVersion = ref(0)
 const host = createMockHost(props.pluginId)
 const context = shallowRef(createMockPet(props.pet.mode, props.pet.key))
-const actions: Record<string, string> = {
-  auto: 'idle',
-  wave: 'wave',
-  thinking: 'thinking',
-  speaking: 'speaking',
-  happy: 'happy-jump',
+const poseLabels: Record<string, string> = {
+  idle: '待机',
+  blink: '眨眼',
+  talk: '说话',
+  think: '思考',
+  jump: '跳起',
+  wave: '招手',
+  held: '被拖起',
+  fall: '下落',
+  sit: '坐下',
+  walk1: '行走第1帧',
+  walk2: '行走第2帧',
+  walk3: '行走第3帧',
+  walk4: '行走第4帧',
+  doze: '打盹',
+  confused: '疑惑',
+  alert: '提醒',
+  victory: '开心',
+  busy: '执行工具',
 }
-const poses: Record<string, Pose> = { wave: 'wave', thinking: 'think', speaking: 'talk', happy: 'victory' }
-const rendererAction = computed(() => actions[action.value] ?? 'idle')
-const previewPose = computed(() => poses[action.value])
+const animations = computed(() => (loadedPack.value ? nativeChoices(loadedPack.value) : []))
+const choices = computed(() => {
+  if (previewGroup.value === 'poses') return POSES.map(value => ({ value: `pose:${value}`, title: poseLabels[value] }))
+  if (previewGroup.value === 'actions')
+    return HOST_ACTIONS.map(value => ({ value: `action:${value}`, title: ACTION_LABELS[value] }))
+  if (previewGroup.value === 'intents')
+    return HOST_INTENTS.map(value => ({ value: `intent:${value}`, title: ACTION_LABELS[value] }))
+  if (previewGroup.value === 'directions')
+    return Object.keys(loadedPack.value?.actions ?? {})
+      .filter(key => key.startsWith('look-'))
+      .map(key => ({ value: `native:${key}`, title: key.slice(5).replace('-', '.') + '°' }))
+  return animations.value.map(item => ({ value: `native:${item.value}`, title: item.title }))
+})
+const nativeAction = computed(() => (action.value.startsWith('native:') ? action.value.slice(7) : undefined))
+const rendererAction = computed(() => (action.value.startsWith('action:') ? action.value.slice(7) : null))
+const rendererIntent = computed(() => (action.value.startsWith('intent:') ? action.value.slice(7) : 'idle'))
+const previewPose = computed(() =>
+  nativeAction.value ? 'idle' : action.value.startsWith('pose:') ? (action.value.slice(5) as Pose) : undefined,
+)
+const events = [
+  ['panel.open', '打开助手'],
+  ['panel.close', '关闭助手'],
+  ['thinking.start', '开始思考'],
+  ['thinking.end', '结束思考'],
+  ['tool.start', '开始执行工具'],
+  ['tool.end', '工具结束'],
+  ['awaiting', '等待用户'],
+  ['done', '任务完成'],
+  ['error', '任务出错'],
+  ['preview', '回复预览'],
+  ['bubble', '通知气泡'],
+]
+function playNative(name: string) {
+  choose(`native:${name}`)
+}
+function choose(value: string) {
+  action.value = value
+  updateAction()
+  replay.value++
+}
+function fireHost(name: string) {
+  action.value = 'auto'
+  const phase =
+    name === 'thinking.start'
+      ? 'thinking'
+      : name === 'tool.start'
+        ? 'tool'
+        : name === 'awaiting'
+          ? 'awaiting'
+          : name === 'done'
+            ? 'done'
+            : name === 'error'
+              ? 'error'
+              : 'idle'
+  host.patch({ phase, thinking: phase === 'thinking', panelOpen: name === 'panel.open' })
+  host.fire(`agent.${name}`, { name: 'preview_tool', text: '预览消息' })
+}
 const stageComponent = computed(() => (props.pet.key === 'ying' ? AgentPet : AgentPetCodex))
 const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 const reducedMotion = ref(mediaQuery.matches)
@@ -66,22 +146,21 @@ function updateMotion() {
 }
 
 function updateAction() {
-  host.patch({ phase: action.value === 'auto' ? 'idle' : 'thinking' })
-  if (action.value === 'wave') host.fire('agent.panel.open')
-  if (action.value === 'happy') host.fire('agent.done')
-  if (action.value === 'speaking') host.fire('agent.preview')
+  host.patch({ phase: action.value === 'auto' ? 'idle' : 'thinking', thinking: false, panelOpen: false })
 }
+watch(previewGroup, () => choose('auto'))
 
 // 重置或切换 Pet 时使用新的内存存储，避免重新挂载后恢复旧的拖拽位置。
 watch([() => props.pet.mode, () => props.pet.key, positionVersion], () => {
   context.value = createMockPet(props.pet.mode, props.pet.key)
 })
 watch(paused, updateMotion)
-watch(action, updateAction)
 watch(
   () => props.pet.key,
   () => {
     onLoadState('loading')
+    loadedPack.value = null
+    previewGroup.value = props.pet.key === 'ying' ? 'poses' : 'native'
     action.value = 'auto'
     updateAction()
   },
@@ -140,6 +219,10 @@ onBeforeUnmount(() => {
         :preview-root="canvas"
         :settings-override="settings"
         :preview-pose="previewPose"
+        :native-action="nativeAction"
+        :mappings-override="mappings"
+        :replay="replay"
+        @pack-ready="onPackReady"
         @load-state="onLoadState"
       />
       <div v-else-if="mounted" class="ap-preview__entry">
@@ -150,6 +233,11 @@ onBeforeUnmount(() => {
           :api="api"
           :plugin-id="pluginId"
           :action="rendererAction"
+          :intent="rendererIntent"
+          :native-action="nativeAction"
+          :mappings-override="mappings"
+          :replay="replay"
+          @pack-ready="onPackReady"
           :motion-active="!paused && !reducedMotion"
           strict-preview
           @load-state="onLoadState"
@@ -162,27 +250,71 @@ onBeforeUnmount(() => {
         pet.mode === 'stage' ? '拖动 Pet 试试 · 调整会即时显示' : '助手入口外观 · 试试下方动作'
       }}</span>
     </div>
-    <footer class="ap-preview__actions">
-      <span class="ap-muted">预览动作</span>
-      <v-btn-toggle
-        v-model="action"
-        mandatory
-        density="compact"
-        variant="text"
-        color="primary"
-        class="ap-preview__toggle"
-      >
-        <v-btn value="auto" size="small">自主活动</v-btn>
-        <v-btn value="wave" size="small">招手</v-btn>
-        <v-btn value="thinking" size="small">思考</v-btn>
-        <v-btn value="speaking" size="small">说话</v-btn>
-        <v-btn value="happy" size="small">开心</v-btn>
-      </v-btn-toggle>
+    <footer class="ap-preview__library">
+      <div class="ap-inline mb-2">
+        <strong>完整动作预览</strong><v-spacer />
+        <v-btn size="small" :variant="action === 'auto' ? 'tonal' : 'text'" @click="choose('auto')">自主活动</v-btn>
+      </div>
+      <v-tabs v-model="previewGroup" density="compact" color="primary">
+        <v-tab v-if="pet.key !== 'ying'" value="native">原生动画</v-tab>
+        <v-tab v-if="loadedPack?.codex_version === 'v2'" value="directions">视线方向</v-tab>
+        <v-tab v-if="pet.mode === 'stage'" value="poses">活动姿态</v-tab>
+        <v-tab v-if="pet.mode === 'stage'" value="events">MP 事件</v-tab>
+        <v-tab v-if="pet.mode === 'renderer'" value="actions">MP 动作</v-tab>
+        <v-tab v-if="pet.mode === 'renderer'" value="intents">入口状态</v-tab>
+      </v-tabs>
+      <div class="ap-preview__choices">
+        <template v-if="previewGroup === 'events'">
+          <v-btn v-for="[key, label] in events" :key="key" size="small" variant="tonal" @click="fireHost(key)">{{
+            label
+          }}</v-btn>
+        </template>
+        <template v-else>
+          <v-btn
+            v-for="item in choices"
+            :key="item.value"
+            size="small"
+            :variant="action === item.value ? 'flat' : 'tonal'"
+            :color="action === item.value ? 'primary' : undefined"
+            :disabled="failed"
+            @click="choose(item.value)"
+            >{{ item.title }}</v-btn
+          >
+        </template>
+      </div>
+      <p class="ap-muted mb-0">
+        {{
+          previewGroup === 'native' || previewGroup === 'directions'
+            ? '直接播放素材原始动画，不受动作映射影响。'
+            : '按当前映射预览；自主活动时可拖动 Pet 验证移动交互。'
+        }}
+      </p>
     </footer>
+    <ActionMappingEditor
+      v-if="loadedPack?.codex_version && !pet.builtin"
+      :pack="loadedPack"
+      :mode="pet.mode"
+      :model-value="mappings ?? loadedPack.action_mappings ?? {}"
+      :disabled="disabled"
+      @update:model-value="emit('mappings', $event)"
+      @preview="playNative"
+    />
   </section>
 </template>
 
 <style scoped>
+.ap-preview__library {
+  padding: 12px 16px;
+}
+.ap-preview__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
 .ap-preview {
   display: flex;
   flex-direction: column;

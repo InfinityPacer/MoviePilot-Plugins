@@ -97,4 +97,22 @@ describe('Codex Pet stage', () => {
     expect(anchors.at(-1)).toBeNull()
     expect(vi.getTimerCount()).toBe(0)
   })
+  it('reloads saved mappings only for its own instance and pet and uses them on real host phases', async () => {
+    const { host, api, sprite } = await setup()
+    const original = api.get.getMockImplementation()!
+    api.get.mockImplementation(async (path: string) => {
+      const result = await original(path)
+      if (!path.endsWith('/settings')) result.data.pack.action_mappings = { 'stage.think': 'review' }
+      return result
+    })
+    const count = api.get.mock.calls.length
+    host.emit('agentpets.pack.updated', { key: 'other' })
+    await vi.advanceTimersByTimeAsync(32)
+    expect(api.get.mock.calls).toHaveLength(count)
+    host.emit('agentpets.pack.updated', { key: 'legacy-pet' })
+    await vi.advanceTimersByTimeAsync(32)
+    host.patch({ phase: 'thinking', thinking: true })
+    await vi.advanceTimersByTimeAsync(32)
+    expect(sprite.dataset.action).toBe('review')
+  })
 })

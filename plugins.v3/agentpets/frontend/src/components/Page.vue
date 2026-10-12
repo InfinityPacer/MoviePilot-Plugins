@@ -7,9 +7,12 @@ import {
   petImage,
   sameSettings,
   saveSettings,
+  saveMappings,
   type EditorSnapshot,
   type HostSelection,
 } from '@/editor/api'
+import { PACK_UPDATED_EVENT, sameMappings, type ActionMappings } from '@/sprites/mappings'
+import type { SpritePack } from '@/sprites/schema'
 import PetPreview from '@/editor/PetPreview.vue'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
@@ -36,12 +39,28 @@ const hostError = ref('')
 const feedback = ref('')
 const feedbackType = ref<'success' | 'warning' | 'error'>('success')
 const currentPet = computed(() => snapshot.value?.pets.find(pet => pet.key === selectedKey.value) ?? null)
-const dirty = computed(() => !sameSettings(draft.value, saved.value))
+const previewVersion = ref(0)
+const mappingDrafts = ref<Record<string, ActionMappings>>({})
+const mappingSaved = ref<Record<string, ActionMappings>>({})
+const mappingDirtyKeys = computed(() =>
+  Object.keys(mappingDrafts.value).filter(
+    key => !sameMappings(mappingDrafts.value[key], mappingSaved.value[key] ?? {}),
+  ),
+)
+function onPackReady(pack: SpritePack) {
+  const key = selectedKey.value
+  if (!pack.codex_version) return
+  const preserve = mappingSaved.value[key] && !sameMappings(mappingDrafts.value[key] ?? {}, mappingSaved.value[key])
+  mappingSaved.value[key] = { ...pack.action_mappings }
+  if (!preserve) mappingDrafts.value[key] = { ...pack.action_mappings }
+}
+const dirty = computed(() => !sameSettings(draft.value, saved.value) || mappingDirtyKeys.value.length > 0)
 const changedNames = computed(() =>
   [
     draft.value.scale !== saved.value.scale ? '大小' : '',
     draft.value.speed !== saved.value.speed ? '速度' : '',
     draft.value.roam !== saved.value.roam ? '活动范围' : '',
+    mappingDirtyKeys.value.length ? `${mappingDirtyKeys.value.length} 只 Pet 的动作映射` : '',
   ].filter(Boolean),
 )
 const blocked = computed(() => loading.value || busy.value || !props.api || !currentPet.value || !!error.value)
@@ -78,6 +97,13 @@ async function refresh(reset = false) {
   if (editor.status === 'fulfilled') {
     const preserveDraft = !reset && dirty.value
     snapshot.value = editor.value
+    for (const key of Object.keys(mappingDrafts.value)) {
+      if (!editor.value.pets.some(pet => pet.key === key)) {
+        delete mappingDrafts.value[key]
+        delete mappingSaved.value[key]
+      }
+    }
+    previewVersion.value++
     saved.value = { ...editor.value.settings }
     if (!preserveDraft) draft.value = { ...saved.value }
     if (!editor.value.pets.some(pet => pet.key === selectedKey.value)) {
@@ -98,6 +124,8 @@ watch(
     snapshot.value = null
     selection.value = null
     selectedKey.value = ''
+    mappingDrafts.value = {}
+    mappingSaved.value = {}
     feedback.value = ''
     void refresh(true)
   },
@@ -111,6 +139,9 @@ onBeforeUnmount(() => {
 
 function restore() {
   draft.value = { ...saved.value }
+  mappingDrafts.value = Object.fromEntries(
+    Object.entries(mappingSaved.value).map(([key, value]) => [key, { ...value }]),
+  )
   feedback.value = ''
 }
 
@@ -119,6 +150,11 @@ async function save() {
   const api = props.api
   const id = props.pluginId
   const values = { ...draft.value }
+  const mappings = mappingDirtyKeys.value.map(key => ({
+    key,
+    values: { ...mappingDrafts.value[key] },
+    expected: { ...mappingSaved.value[key] },
+  }))
   const version = ++operationVersion
   const current = () => !disposed && version === operationVersion && id === props.pluginId
   busy.value = true
@@ -130,8 +166,15 @@ async function save() {
       saved.value = { ...result }
       agent?.emit?.(SETTINGS_EVENT, { ...result })
     }
+    for (const item of mappings) {
+      if (!current()) return
+      const result = await saveMappings(api, id, item.key, item.values, item.expected)
+      if (!current()) return
+      mappingSaved.value[item.key] = { ...result }
+      agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key })
+    }
     feedbackType.value = 'success'
-    feedback.value = agent ? '活动调整已保存，并已通知当前页面更新。' : '活动调整已保存。'
+    feedback.value = agent ? '调整已保存，并已通知当前页面更新。' : '调整已保存。'
   } catch (reason) {
     if (!current()) return
     feedbackType.value = 'error'
@@ -223,11 +266,15 @@ async function save() {
           </section>
         </aside>
         <PetPreview
-          :key="props.pluginId"
+          :key="`${props.pluginId}:${previewVersion}`"
           :pet="currentPet"
           :settings="draft"
           :api="props.api"
           :plugin-id="props.pluginId"
+          :mappings="mappingDrafts[selectedKey]"
+          :disabled="blocked"
+          @pack-ready="onPackReady"
+          @mappings="mappingDrafts[selectedKey] = $event"
         />
       </div>
       <div v-else-if="!loading" class="ap-empty">
