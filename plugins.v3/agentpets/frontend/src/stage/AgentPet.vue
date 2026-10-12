@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { withLoadTimeout } from '@/loading'
 
 import type { AgentHostEvent, AgentHostState, AgentPetContext, AgentRect, MoviePilotAgentHost, PluginApi } from '@/host'
 import {
@@ -191,6 +192,8 @@ let press: { id: number; startX: number; startY: number; offsetX: number; offset
 
 const timers = new Map<string, number>()
 const cleanups: Array<() => void> = []
+const startup = new AbortController()
+let settingsRevision = 0
 
 const charHeight = computed(() => BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value))
 const charWidth = computed(() => charHeight.value * aspect.value)
@@ -669,6 +672,7 @@ function landing(exclude: Element | null = null): Landing<DomSurface> {
  * free 模式没有重力，原地停下；减少动态效果或页面不可见时直接瞬移到落点。
  */
 function startFall(exclude: Element | null = null) {
+  x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value))
   detachSurface()
   hopVx = 0
   hopTargetX = null
@@ -814,6 +818,7 @@ function checkSurface() {
     viewport(),
     charHeight.value,
     hostState?.panelRect ?? null,
+    charWidth.value,
   )
   if (result.kind === 'fall') {
     settle()
@@ -1121,6 +1126,7 @@ function relayout() {
 
 /** 设置变化（含设置页实时预览）；活动范围改变时按新模式重新落位。 */
 function applySettings(value: unknown) {
+  settingsRevision++
   const before = settings.value.roam
   settings.value = normalizeSettings(value)
   if (ready.value && settings.value.roam !== before && motion.value !== 'drag') {
@@ -1401,12 +1407,16 @@ onMounted(async () => {
     })
   }
 
+  const revision = settingsRevision
   const [loaded, stored] = await Promise.all([
-    props.settingsOverride ?? loadSettings(props.api, props.pluginId),
-    readStoredPosition(),
+    withLoadTimeout(
+      Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId)),
+      startup.signal,
+    ).catch(() => DEFAULT_SETTINGS),
+    withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null),
   ])
   if (disposed) return
-  settings.value = normalizeSettings(props.settingsOverride ?? loaded)
+  if (revision === settingsRevision) settings.value = normalizeSettings(props.settingsOverride ?? loaded)
   refreshMobileFloor()
   restorePosition(stored)
   ready.value = true
@@ -1422,6 +1432,7 @@ onBeforeUnmount(() => {
   // 还有推迟的保存时在卸载前写掉（例如切换形象）。
   if (timers.has('save')) writePosition()
   disposed = true
+  startup.abort()
   stopLoop()
   pauseSurfaceWatch()
   if (anchorFrame) window.cancelAnimationFrame(anchorFrame)

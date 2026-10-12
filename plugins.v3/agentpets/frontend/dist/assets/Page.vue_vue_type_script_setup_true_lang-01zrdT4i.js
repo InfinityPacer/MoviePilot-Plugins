@@ -2,9 +2,9 @@ import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, a as petImage, l as loadEditor, c as loadHostSelection, d as saveSettings, e as saveMappings } from './host-CnBDiPMJ.js';
 import { m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, e as HOST_INTENTS, d as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-CoSijLMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
-import AgentPet, { P as POSES } from './__federation_expose_AgentPet-DfbxBsfs.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-CFVBb8K4.js';
-import { _ as _sfc_main$4 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-DEVAY7Aa.js';
+import AgentPet, { P as POSES } from './__federation_expose_AgentPet-BUcYvy4d.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-BOwfr7hB.js';
+import { _ as _sfc_main$4 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BWxy5yX3.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, S as SETTINGS_EVENT } from './settings-CQFXVfMf.js';
 
 const {defineComponent:_defineComponent$3} = await importShared('vue');

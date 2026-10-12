@@ -1,4 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
+import { w as withLoadTimeout, l as loadImage } from './loading-BHLkYAXO.js';
 import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './mappings-CoSijLMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
@@ -8,7 +9,6 @@ const {normalizeStyle:_normalizeStyle,openBlock:_openBlock,createElementBlock:_c
 
 const _hoisted_1 = ["data-pack", "data-action", "data-frame"];
 const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
-const PACK_LOAD_TIMEOUT = 5e3;
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "AgentPetSprite",
   props: {
@@ -40,6 +40,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let timer = 0;
     let disposed = false;
     let loadVersion = 0;
+    let loadController = null;
     let unsubscribe;
     const resolved = computed(
       () => resolveAction(pack.value, props.action, props.intent, props.thinking, {
@@ -69,7 +70,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function play() {
       stop();
       frameIndex.value = 0;
-      if (!props.motionActive || disposed) return;
+      if (!props.motionActive || !ready.value || disposed) return;
       const { frames, frame_ms: frameMs, loop } = resolved.value.action;
       if (frames.length < 2) return;
       const advance = () => {
@@ -83,64 +84,58 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       };
       timer = window.setTimeout(advance, frameMs);
     }
-    function measure(src) {
-      const image = new Image();
-      image.onload = () => {
-        if (disposed || sheetSrc.value !== src || !image.naturalWidth) return;
-        const { cols, rows } = pack.value.grid;
-        cellRatio.value = image.naturalWidth / cols / (image.naturalHeight / rows);
-      };
-      image.src = src;
-    }
-    function withTimeout(promise, timeout) {
-      return new Promise((resolve, reject) => {
-        const id = window.setTimeout(() => reject(new Error("pack load timeout")), timeout);
-        promise.then(
-          (value) => {
-            window.clearTimeout(id);
-            resolve(value);
-          },
-          (error) => {
-            window.clearTimeout(id);
-            reject(error);
-          }
-        );
-      });
-    }
     async function loadPack(key) {
-      if (key === BUILTIN_PACK_ID) return;
-      if (!props.api?.get) {
-        ready.value = !props.strictPreview;
-        emit("load-state", "error");
-        return;
-      }
+      loadController?.abort();
+      const controller = new AbortController();
+      loadController = controller;
+      const signal = controller.signal;
       const version = ++loadVersion;
+      const current = () => !disposed && version === loadVersion && !signal.aborted;
       emit("load-state", "loading");
-      let failed = false;
-      const instanceId = props.pluginId || "AgentPets";
       try {
-        const response = await withTimeout(
-          props.api.get(`plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`),
-          PACK_LOAD_TIMEOUT
-        );
-        const { pack: parsed } = validatePack(response?.data?.pack);
-        if (!response?.success || !parsed || !response.data?.sheet_src) throw new Error(response?.message || "invalid pack");
-        if (disposed || version !== loadVersion) return;
-        pack.value = props.pet?.mode === "stage" ? withCodexStageActions(parsed) : parsed;
-        cellRatio.value = parsed.codex_version ? 192 / 208 : 1;
-        sheetSrc.value = response.data.sheet_src;
+        let nextPack = BUILTIN_PACK;
+        let nextSheet = builtinAsset("sheet.webp");
+        if (key !== BUILTIN_PACK_ID) {
+          if (!props.api?.get) throw new Error("pack API unavailable");
+          const instanceId = props.pluginId || "AgentPets";
+          const response = await withLoadTimeout(
+            props.api.get(`plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`),
+            signal
+          );
+          const { pack: parsed } = validatePack(response?.data?.pack);
+          if (!response?.success || !parsed || !response.data?.sheet_src)
+            throw new Error(response?.message || "invalid pack");
+          nextPack = props.pet?.mode === "stage" ? withCodexStageActions(parsed) : parsed;
+          nextSheet = response.data.sheet_src;
+        }
+        const dimensions = await loadImage(nextSheet, signal);
+        if (!current()) return;
+        pack.value = nextPack;
+        sheetSrc.value = nextSheet;
+        cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows);
+        ready.value = true;
+        emit("pack-ready", nextPack);
+        emit("load-state", "ready");
       } catch {
-        failed = true;
+        if (!current()) return;
         console.warn(`[AgentPets] pack ${key} unavailable`);
-      }
-      if (!disposed && version === loadVersion) {
-        if (!failed) emit("pack-ready", pack.value);
-        ready.value = !failed || !props.strictPreview;
-        emit("load-state", failed ? "error" : "ready");
+        ready.value = false;
+        emit("load-state", "error");
+        if (props.strictPreview || key === BUILTIN_PACK_ID) return;
+        try {
+          const src = builtinAsset("sheet.webp");
+          const dimensions = await loadImage(src, signal);
+          if (!current()) return;
+          pack.value = BUILTIN_PACK;
+          sheetSrc.value = src;
+          cellRatio.value = dimensions.width / BUILTIN_PACK.grid.cols / (dimensions.height / BUILTIN_PACK.grid.rows);
+          ready.value = true;
+        } catch {
+        }
       }
     }
     watch(
-      () => [resolved.value.key, props.motionActive, pack.value, props.replay],
+      () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay],
       () => play()
     );
     watch(
@@ -150,16 +145,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       },
       { immediate: true }
     );
-    watch(sheetSrc, (src) => measure(src));
-    watch(ready, (value) => {
-      if (value) measure(sheetSrc.value);
-    });
     onMounted(async () => {
-      if (ready.value) {
-        measure(sheetSrc.value);
-        emit("load-state", "ready");
-        emit("pack-ready", pack.value);
-      }
       if (!props.strictPreview)
         unsubscribe = props.agent?.on(PACK_UPDATED_EVENT, (event) => {
           if (event.source === props.pluginId && event.data.key === packKey) void loadPack(packKey);
@@ -170,6 +156,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     onBeforeUnmount(() => {
       disposed = true;
       loadVersion++;
+      loadController?.abort();
       unsubscribe?.();
       stop();
     });
@@ -191,6 +178,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-47741fab"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-313dd0fb"]]);
 
 export { AgentPetSprite as default };

@@ -1,4 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
+import { w as withLoadTimeout } from './loading-BHLkYAXO.js';
 import { D as DEFAULT_SETTINGS, S as SETTINGS_EVENT, l as loadSettings, n as normalizeSettings } from './settings-CQFXVfMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
@@ -149,6 +150,7 @@ function floorLine(viewport) {
 }
 function standable(box, viewport, charHeight, panel) {
   if (box.right - box.left < MIN_SURFACE_WIDTH) return false;
+  if (box.right <= viewport.safeArea.left || box.left >= viewport.width - viewport.safeArea.right) return false;
   if (box.top - charHeight < viewport.safeArea.top) return false;
   if (box.top >= floorLine(viewport)) return false;
   if (panel && box.left >= panel.x && box.right <= panel.x + panel.width && box.top >= panel.y && box.top <= panel.y + panel.height) {
@@ -179,11 +181,13 @@ function surfaceXBounds(box, viewport, charWidth) {
   const max = Math.min(maxX, box.right - charWidth / 2);
   return [min, Math.max(min, max)];
 }
-function checkSupport(previous, next, centerX, viewport, charHeight, panel) {
+function checkSupport(previous, next, centerX, viewport, charHeight, panel, charWidth = 0) {
   if (!next || !standable(next, viewport, charHeight, panel)) return { kind: "fall" };
   const dx = next.left - previous.left;
   const center = centerX + dx;
-  if (center < next.left || center > next.right) return { kind: "fall" };
+  const [minX, maxX] = xBounds(viewport, charWidth);
+  if (center < next.left || center > next.right || center - charWidth / 2 < minX || center - charWidth / 2 > maxX)
+    return { kind: "fall" };
   return { kind: "follow", dx, y: next.top - charHeight };
 }
 function freeBounds(viewport, charWidth, charHeight) {
@@ -482,6 +486,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let press = null;
     const timers = /* @__PURE__ */ new Map();
     const cleanups = [];
+    const startup = new AbortController();
+    let settingsRevision = 0;
     const charHeight = computed(() => BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value));
     const charWidth = computed(() => charHeight.value * aspect.value);
     const pose = computed(
@@ -865,6 +871,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return computeLanding(roam(), boxes, { x: x.value, y: y.value }, view, size());
     }
     function startFall(exclude = null) {
+      x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value));
       detachSurface();
       hopVx = 0;
       hopTargetX = null;
@@ -985,7 +992,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         x.value + charWidth.value / 2,
         viewport(),
         charHeight.value,
-        hostState?.panelRect ?? null
+        hostState?.panelRect ?? null,
+        charWidth.value
       );
       if (result.kind === "fall") {
         settle();
@@ -1239,6 +1247,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       queueAnchor();
     }
     function applySettings(value) {
+      settingsRevision++;
       const before = settings.value.roam;
       settings.value = normalizeSettings(value);
       if (ready.value && settings.value.roam !== before && motion.value !== "drag") {
@@ -1485,12 +1494,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           visual.removeEventListener("scroll", onWindowResize);
         });
       }
+      const revision = settingsRevision;
       const [loaded, stored] = await Promise.all([
-        props.settingsOverride ?? loadSettings(props.api, props.pluginId),
-        readStoredPosition()
+        withLoadTimeout(
+          Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId)),
+          startup.signal
+        ).catch(() => DEFAULT_SETTINGS),
+        withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null)
       ]);
       if (disposed) return;
-      settings.value = normalizeSettings(props.settingsOverride ?? loaded);
+      if (revision === settingsRevision) settings.value = normalizeSettings(props.settingsOverride ?? loaded);
       refreshMobileFloor();
       restorePosition(stored);
       ready.value = true;
@@ -1504,6 +1517,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     onBeforeUnmount(() => {
       if (timers.has("save")) writePosition();
       disposed = true;
+      startup.abort();
       stopLoop();
       pauseSurfaceWatch();
       if (anchorFrame) window.cancelAnimationFrame(anchorFrame);
@@ -1566,6 +1580,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-2ece2f8f"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-64a658b7"]]);
 
 export { POSES as P, AgentPet as default };
