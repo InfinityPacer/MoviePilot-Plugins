@@ -8,6 +8,10 @@
 
 ## 版本更新日志
 
+- v0.1.2
+  - 修复宿主形象选择卡片中小映与放映猫的预览图和头像显示
+  - 内置小图压缩后以内嵌图片提供并缓存，避免额外静态请求与重复编码
+
 - v0.1.1
   - 支持导入 Codex Pet 格式的 ZIP 包并沿用清单信息
   - Codex Pet 支持角色缩放、拖拽与自主漫游，兼容已导入的精简包与旧导入器素材
@@ -95,7 +99,7 @@
 | Codex Pet 素材包 ID | `stage` | `AgentPetCodex` | 复用小映舞台与设置 |
 | 普通素材包 ID | `renderer` | `AgentPetSprite` | 用户添加的每个普通素材包各一项 |
 
-同一个联邦组件可以服务多个形象。Codex Pet 声明 `AgentPetCodex`，普通素材包声明 `AgentPetSprite`，组件从宿主传入的 `pet.key` 得知要画哪个素材包。形象列表随插件数据变化，添加或删除素材包后主程序重新读取声明即可看到。`preview` 和 `avatar` 写相对联邦产物目录（`remoteEntry.js` 所在目录）的路径，或 `http(s)`、`data:` URL。
+同一个联邦组件可以服务多个形象。Codex Pet 声明 `AgentPetCodex`，普通素材包声明 `AgentPetSprite`，组件从宿主传入的 `pet.key` 得知要画哪个素材包。形象列表随插件数据变化，添加或删除素材包后主程序重新读取声明即可看到。`preview` 和 `avatar` 支持相对联邦产物目录（`remoteEntry.js` 所在目录）的路径，或 `http(s)`、`data:` URL。内置形象使用缓存的轻量 `data:` 图片，供宿主选择卡片和消息头像直接显示；动画仍从联邦产物加载。
 
 ## 命令 / API
 
