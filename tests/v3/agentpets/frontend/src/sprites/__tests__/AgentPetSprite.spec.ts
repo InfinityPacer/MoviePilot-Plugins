@@ -1,11 +1,12 @@
 import { render } from '@testing-library/vue'
+import { flushPromises } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import AgentPet from '@/sprites/AgentPetSprite.vue'
 import { createMockPet } from '@/dev/mockHost'
 
 async function flush() {
-  for (let index = 0; index < 4; index += 1) await Promise.resolve()
+  await flushPromises()
 }
 
 describe('AgentPet (sprites)', () => {

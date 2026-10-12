@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 
 import { cleanup } from '@testing-library/vue'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 
 // Vuetify 组件依赖这两个浏览器接口，jsdom 没有提供。
 class ResizeObserverStub implements ResizeObserver {
@@ -49,4 +49,22 @@ afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+// jsdom 不解码图片；普通用例模拟成功加载，故障测试按需覆盖 Image。
+beforeEach(() => {
+  class LoadedImage {
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    naturalWidth = 1536
+    naturalHeight = 2288
+    set src(value: string) {
+      if (value.includes('projector-cat')) {
+        this.naturalWidth = 512
+        this.naturalHeight = 256
+      }
+      void Promise.resolve().then(() => this.onload?.())
+    }
+  }
+  vi.stubGlobal('Image', LoadedImage)
 })

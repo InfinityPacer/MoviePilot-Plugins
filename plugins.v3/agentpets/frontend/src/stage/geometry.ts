@@ -160,6 +160,7 @@ export function standable(
   panel: AgentRect | null,
 ): boolean {
   if (box.right - box.left < MIN_SURFACE_WIDTH) return false
+  if (box.right <= viewport.safeArea.left || box.left >= viewport.width - viewport.safeArea.right) return false
   if (box.top - charHeight < viewport.safeArea.top) return false
   if (box.top >= floorLine(viewport)) return false
   if (
@@ -239,11 +240,14 @@ export function checkSupport(
   viewport: StageViewport,
   charHeight: number,
   panel: AgentRect | null,
+  charWidth = 0,
 ): SupportResult {
   if (!next || !standable(next, viewport, charHeight, panel)) return { kind: 'fall' }
   const dx = next.left - previous.left
   const center = centerX + dx
-  if (center < next.left || center > next.right) return { kind: 'fall' }
+  const [minX, maxX] = xBounds(viewport, charWidth)
+  if (center < next.left || center > next.right || center - charWidth / 2 < minX || center - charWidth / 2 > maxX)
+    return { kind: 'fall' }
   return { kind: 'follow', dx, y: next.top - charHeight }
 }
 

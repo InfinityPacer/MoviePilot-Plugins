@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { loadImage, withLoadTimeout } from '@/loading'
 
 import { PACK_UPDATED_EVENT, type ActionMappings } from '@/sprites/mappings'
 import type { AgentPetContext, MoviePilotAgentHost, PluginApi } from '@/host'
@@ -74,6 +75,7 @@ const frameIndex = ref(0)
 let timer = 0
 let disposed = false
 let loadVersion = 0
+let loadController: AbortController | null = null
 let unsubscribe: (() => void) | undefined
 
 const resolved = computed(() =>
@@ -107,7 +109,7 @@ function stop() {
 function play() {
   stop()
   frameIndex.value = 0
-  if (!props.motionActive || disposed) return
+  if (!props.motionActive || !ready.value || disposed) return
   const { frames, frame_ms: frameMs, loop } = resolved.value.action
   if (frames.length < 2) return
   const advance = () => {
@@ -122,70 +124,60 @@ function play() {
   timer = window.setTimeout(advance, frameMs)
 }
 
-function measure(src: string) {
-  const image = new Image()
-  image.onload = () => {
-    if (disposed || sheetSrc.value !== src || !image.naturalWidth) return
-    const { cols, rows } = pack.value.grid
-    cellRatio.value = image.naturalWidth / cols / (image.naturalHeight / rows)
-  }
-  image.src = src
-}
-
-/** 读取用户素材包的上限（毫秒）；超时与失败一样退回放映猫，避免入口一直空白。 */
-const PACK_LOAD_TIMEOUT = 5000
-
-function withTimeout<T>(promise: Promise<T>, timeout: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const id = window.setTimeout(() => reject(new Error('pack load timeout')), timeout)
-    promise.then(
-      value => {
-        window.clearTimeout(id)
-        resolve(value)
-      },
-      error => {
-        window.clearTimeout(id)
-        reject(error)
-      },
-    )
-  })
-}
-
 async function loadPack(key: string) {
-  if (key === BUILTIN_PACK_ID) return
-  if (!props.api?.get) {
-    ready.value = !props.strictPreview
-    emit('load-state', 'error')
-    return
-  }
+  loadController?.abort()
+  const controller = new AbortController()
+  loadController = controller
+  const signal = controller.signal
   const version = ++loadVersion
+  const current = () => !disposed && version === loadVersion && !signal.aborted
   emit('load-state', 'loading')
-  let failed = false
-  const instanceId = props.pluginId || 'AgentPets'
   try {
-    const response = await withTimeout(
-      props.api.get<{ pack: unknown; sheet_src: string }>(`plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`),
-      PACK_LOAD_TIMEOUT,
-    )
-    const { pack: parsed } = validatePack(response?.data?.pack)
-    if (!response?.success || !parsed || !response.data?.sheet_src) throw new Error(response?.message || 'invalid pack')
-    if (disposed || version !== loadVersion) return
-    pack.value = props.pet?.mode === 'stage' ? withCodexStageActions(parsed) : parsed
-    cellRatio.value = parsed.codex_version ? 192 / 208 : 1
-    sheetSrc.value = response.data.sheet_src
+    let nextPack = BUILTIN_PACK
+    let nextSheet = builtinAsset('sheet.webp')
+    if (key !== BUILTIN_PACK_ID) {
+      if (!props.api?.get) throw new Error('pack API unavailable')
+      const instanceId = props.pluginId || 'AgentPets'
+      const response = await withLoadTimeout(
+        props.api.get<{ pack: unknown; sheet_src: string }>(`plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`),
+        signal,
+      )
+      const { pack: parsed } = validatePack(response?.data?.pack)
+      if (!response?.success || !parsed || !response.data?.sheet_src)
+        throw new Error(response?.message || 'invalid pack')
+      nextPack = props.pet?.mode === 'stage' ? withCodexStageActions(parsed) : parsed
+      nextSheet = response.data.sheet_src
+    }
+    const dimensions = await loadImage(nextSheet, signal)
+    if (!current()) return
+    pack.value = nextPack
+    sheetSrc.value = nextSheet
+    cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows)
+    ready.value = true
+    emit('pack-ready', nextPack)
+    emit('load-state', 'ready')
   } catch {
-    failed = true
+    if (!current()) return
     console.warn(`[AgentPets] pack ${key} unavailable`)
-  }
-  if (!disposed && version === loadVersion) {
-    if (!failed) emit('pack-ready', pack.value)
-    ready.value = !failed || !props.strictPreview
-    emit('load-state', failed ? 'error' : 'ready')
+    ready.value = false
+    emit('load-state', 'error')
+    if (props.strictPreview || key === BUILTIN_PACK_ID) return
+    try {
+      const src = builtinAsset('sheet.webp')
+      const dimensions = await loadImage(src, signal)
+      if (!current()) return
+      pack.value = BUILTIN_PACK
+      sheetSrc.value = src
+      cellRatio.value = dimensions.width / BUILTIN_PACK.grid.cols / (dimensions.height / BUILTIN_PACK.grid.rows)
+      ready.value = true
+    } catch {
+      // 内置图片也不可达时保留错误状态，宿主按钮仍可操作。
+    }
   }
 }
 
 watch(
-  () => [resolved.value.key, props.motionActive, pack.value, props.replay] as const,
+  () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay] as const,
   () => play(),
 )
 watch(
@@ -195,17 +187,8 @@ watch(
   },
   { immediate: true },
 )
-watch(sheetSrc, src => measure(src))
-watch(ready, value => {
-  if (value) measure(sheetSrc.value)
-})
 
 onMounted(async () => {
-  if (ready.value) {
-    measure(sheetSrc.value)
-    emit('load-state', 'ready')
-    emit('pack-ready', pack.value)
-  }
   if (!props.strictPreview)
     unsubscribe = props.agent?.on(PACK_UPDATED_EVENT, event => {
       if (event.source === props.pluginId && event.data.key === packKey) void loadPack(packKey)
@@ -217,6 +200,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true
   loadVersion++
+  loadController?.abort()
   unsubscribe?.()
   stop()
 })

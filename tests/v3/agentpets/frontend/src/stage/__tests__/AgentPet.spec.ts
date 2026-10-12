@@ -375,10 +375,19 @@ describe('AgentPet roam and frame fallback', () => {
     stubBottomBand(continueWatching, card)
     const motions = new Set<string>()
     const watch = window.setInterval(() => motions.add(root.dataset.motion ?? ''), 16)
-    await new Promise(resolve => setTimeout(resolve, 3500))
-    window.clearInterval(watch)
-    expect(motions.has('fall')).toBe(true)
-    expect(anchors.at(-1)).toMatchObject({ y: 180, height: 120 })
+    try {
+      // 等待实际落稳；固定延时可能恰好取到最后一帧回弹。
+      await vi.waitFor(
+        () => {
+          expect(motions.has('fall')).toBe(true)
+          expect(root.dataset.motion).not.toBe('fall')
+          expect(anchors.at(-1)).toMatchObject({ y: 180, height: 120 })
+        },
+        { timeout: 4500, interval: 32 },
+      )
+    } finally {
+      window.clearInterval(watch)
+    }
   })
 
   it('sinks at the nearest side when the bottom and the surfaces above are all covered', async () => {
