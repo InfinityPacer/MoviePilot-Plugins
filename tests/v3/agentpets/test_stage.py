@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import re
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from PIL import Image
 
+import app.plugins.agentpets as agentpets
 from app.plugins.agentpets import AgentPets
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 
@@ -35,27 +41,77 @@ def test_registers_stage_and_builtin_sprite_pets() -> None:
     ]
     stage = pets[0]
     assert stage["bubbles"] == "host"
-    assert stage["preview"] == "ying/preview.png"
-    assert stage["avatar"] == "ying/avatar.png"
-    assert pets[1]["avatar"] == "packs/projector-cat/avatar.png"
     for pet in pets:
         assert re.fullmatch(r"[a-z0-9_-]{1,32}", pet["key"])
         assert pet["api_version"] == 1
     assert supports_plugin_hook(AgentPets(), "get_agent_pets")
 
 
-def test_declared_images_exist_in_the_federation_dist() -> None:
-    """预览图和头像相对 remoteEntry 所在目录，且构建产物里真实存在；头像是方图。"""
-    _, dist_path = AgentPets.get_render_mode()
-    assert dist_path == "frontend/dist/assets"
+def test_builtin_images_are_small_decodable_inline_images() -> None:
+    """宿主无需请求静态图片即可显示两只角色，保留透明背景与头像尺寸。"""
     assert (DIST / "remoteEntry.js").is_file()
+    total = 0
     for pet in _plugin().get_agent_pets():
         for field in ("preview", "avatar"):
-            path = pet[field]
-            assert not path.startswith("/") and ".." not in path
-            assert (PLUGIN_ROOT / dist_path / path).is_file(), path
-        with Image.open(PLUGIN_ROOT / dist_path / pet["avatar"]) as avatar:
-            assert avatar.width == avatar.height
+            header, payload = pet[field].split(",", 1)
+            assert header == "data:image/webp;base64"
+            total += len(pet[field])
+            content = base64.b64decode(payload, validate=True)
+            with Image.open(BytesIO(content)) as image:
+                image.load()
+                assert image.format == "WEBP"
+                assert image.mode == "RGBA" and image.getextrema()[3][0] == 0
+                bound = 128 if field == "avatar" else 320
+                assert 0 < max(image.size) <= bound
+                if field == "avatar":
+                    assert image.width == image.height
+    assert total < 64 * 1024
+
+
+def test_builtin_images_are_encoded_once_across_declaration_reads(monkeypatch) -> None:
+    agentpets._builtin_image.cache_clear()
+    original = Image.open
+    opened = []
+
+    def track_open(path):
+        opened.append(path)
+        return original(path)
+
+    monkeypatch.setattr(Image, "open", track_open)
+    try:
+        first = _plugin().get_agent_pets()
+        assert _plugin().get_agent_pets() == first
+        assert len(opened) == 4
+    finally:
+        agentpets._builtin_image.cache_clear()
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_unreadable_builtin_image_preserves_registration(monkeypatch, tmp_path, corrupt) -> None:
+    monkeypatch.setattr(agentpets, "PLUGIN_DIR", tmp_path)
+    path = tmp_path / agentpets.DIST_PATH / agentpets.STAGE_PREVIEW
+    if corrupt:
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"broken PNG")
+    agentpets._builtin_image.cache_clear()
+    try:
+        pets = _plugin().get_agent_pets()
+        assert [pet["key"] for pet in pets] == ["ying", "projector-cat"]
+        assert pets[0]["preview"] == agentpets.STAGE_PREVIEW
+        assert pets[1]["avatar"] == agentpets.BUILTIN_AVATAR
+    finally:
+        agentpets._builtin_image.cache_clear()
+
+
+def test_user_images_are_not_replaced_by_builtin_images() -> None:
+    record = {"id": "custom", "name": "用户角色", "preview": "https://example.com/pet.png",
+              "avatar": "data:image/png;base64,user-image"}
+    plugin = _plugin()
+    plugin._store = lambda: SimpleNamespace(list=lambda: [record])
+    pet = plugin.get_agent_pets()[-1]
+    assert pet["key"] == record["id"]
+    assert pet["preview"] == record["preview"]
+    assert pet["avatar"] == record["avatar"]
 
 
 def test_every_pose_frame_is_shipped() -> None:

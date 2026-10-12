@@ -11,7 +11,10 @@
 
 from __future__ import annotations
 
+import base64
 import math
+from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
 
@@ -42,6 +45,24 @@ SPEED_RANGE = (0.5, 2.0)
 # 活动范围：surfaces 站在页面元素上，floor 只在底边，free 没有重力、自由停放。
 ROAM_MODES = ("surfaces", "floor", "free")
 DEFAULT_SETTINGS = {"scale": 1.0, "speed": 1.0, "roam": "surfaces"}
+
+
+@lru_cache(maxsize=4)
+def _builtin_image(path: str, size: int) -> str:
+    """缓存内置小图的 data URL，供宿主卡片和消息头像直接显示。"""
+    from PIL import Image
+
+    try:
+        with Image.open(PLUGIN_DIR / DIST_PATH / path) as source:
+            image = source.convert("RGBA")
+        image.thumbnail((size, size), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        image.save(output, format="WEBP", quality=85, method=6)
+        return "data:image/webp;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+    except (OSError, ValueError) as exc:
+        # 缺图不影响其他形象注册；保留原路径，插件重载后重新尝试生成。
+        logger.warning(f"助手形象：内置图片读取失败，保留原路径 {path}：{exc}")
+        return path
 
 
 def _clamp(value: Any, bounds: tuple[float, float], default: float) -> float:
@@ -105,7 +126,7 @@ class AgentPets(_PluginBase):
     plugin_name = "助手形象"
     plugin_desc = "为 Agent 助手换上小映或自定义精灵图形象。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png"
-    plugin_version = "0.1.1"
+    plugin_version = "0.1.2"
     plugin_author = "z2561221,InfinityPacer"
     author_url = "https://github.com/z2561221"
     plugin_config_prefix = "agentpets_"
@@ -164,11 +185,14 @@ class AgentPets(_PluginBase):
                 "mode": "stage",
                 "component": "AgentPet",
                 "api_version": 1,
-                "preview": STAGE_PREVIEW,
-                "avatar": STAGE_AVATAR,
+                "preview": _builtin_image(STAGE_PREVIEW, 320),
+                "avatar": _builtin_image(STAGE_AVATAR, 128),
                 "bubbles": "host",
             },
-            self._sprite_pet(BUILTIN_PACK_ID, self.builtin_pack(), BUILTIN_PREVIEW, BUILTIN_AVATAR),
+            self._sprite_pet(
+                BUILTIN_PACK_ID, self.builtin_pack(),
+                _builtin_image(BUILTIN_PREVIEW, 320), _builtin_image(BUILTIN_AVATAR, 128),
+            ),
         ]
         for record in self._store().list():
             pets.append(

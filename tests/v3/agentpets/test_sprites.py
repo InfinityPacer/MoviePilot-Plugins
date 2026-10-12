@@ -12,7 +12,7 @@ import pytest
 from fastapi import HTTPException
 from PIL import Image
 
-from app.plugins.agentpets import BUILTIN_AVATAR, BUILTIN_PREVIEW, AgentPets, require_admin
+from app.plugins.agentpets import BUILTIN_PREVIEW, AgentPets, require_admin
 from app.plugins.agentpets.pack import (
     BUILTIN_PACK_ID,
     HOST_ACTIONS,
@@ -85,16 +85,15 @@ def test_builtin_pack_is_valid_and_shipped() -> None:
 
 
 def test_declares_builtin_pet_by_default(plugin: AgentPets) -> None:
-    """未添加素材包时只声明内置素材包，preview 和 avatar 指向联邦产物内的固定路径。"""
+    """未添加素材包时只声明内置素材包，宿主预览与头像使用内嵌图片。"""
     pets = _sprites(plugin)
 
     assert len(pets) == 1
     assert pets[0]["key"] == BUILTIN_PACK_ID
     assert pets[0]["component"] == "AgentPetSprite"
     assert pets[0]["api_version"] == 1
-    assert pets[0]["preview"] == "packs/projector-cat/preview.png"
-    assert pets[0]["avatar"] == BUILTIN_AVATAR
-    assert not pets[0]["preview"].startswith("/") and ".." not in pets[0]["preview"]
+    assert pets[0]["preview"].startswith("data:image/webp;base64,")
+    assert pets[0]["avatar"].startswith("data:image/webp;base64,")
     assert set(pets[0]["random_actions"]) <= set(HOST_ACTIONS)
     assert "bubbles" not in pets[0]
 
