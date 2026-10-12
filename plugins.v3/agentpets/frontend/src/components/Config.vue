@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 
-import { loadEditor, type EditorSnapshot } from '@/editor/api'
+import { loadEditor, prepareEnabledConfig, type EditorSnapshot } from '@/editor/api'
 import { builtinAvatar } from '@/editor/avatars'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
@@ -32,6 +32,8 @@ const baseline = ref(Boolean(props.initialConfig?.enabled))
 const changed = computed(() => enabled.value !== baseline.value)
 const snapshot = ref<EditorSnapshot | null>(null)
 const loading = ref(false)
+const saving = ref(false)
+const saveError = ref('')
 const error = ref('')
 const avatar = builtinAvatar('ying')
 const avatarFailed = ref(false)
@@ -92,6 +94,8 @@ watch(
   () => props.pluginId,
   () => {
     snapshot.value = null
+    saving.value = false
+    saveError.value = ''
     void refresh()
   },
   { immediate: true },
@@ -101,9 +105,20 @@ onBeforeUnmount(() => {
   requestVersion++
 })
 
-function save() {
-  // 仅编辑启用状态；活动设置由详情页单独保存，保留宿主传入的其余配置。
-  emit('save', { ...props.initialConfig, enabled: enabled.value })
+async function save() {
+  if (saving.value || !changed.value) return
+  const id = props.pluginId
+  saving.value = true
+  saveError.value = ''
+  try {
+    const config = await prepareEnabledConfig(props.api, id, enabled.value, baseline.value)
+    if (!disposed && id === props.pluginId) emit('save', config)
+  } catch (reason) {
+    if (!disposed && id === props.pluginId)
+      saveError.value = reason instanceof Error ? reason.message : '无法读取最新配置，未提交修改，请重试'
+  } finally {
+    if (!disposed && id === props.pluginId) saving.value = false
+  }
 }
 </script>
 
@@ -159,6 +174,9 @@ function save() {
           </div>
           <v-alert v-if="!agent" type="warning" variant="tonal" density="compact" class="mb-4">{{
             HOST_UNSUPPORTED_MESSAGE
+          }}</v-alert>
+          <v-alert v-if="saveError" type="error" variant="tonal" density="compact" class="mb-4">{{
+            saveError
           }}</v-alert>
           <template v-if="activeMain === 'overview'">
             <h3 class="ap-section-title">从形象到陪伴</h3>
@@ -221,6 +239,7 @@ function save() {
                 <template #append
                   ><v-switch
                     v-model="enabled"
+                    :disabled="saving"
                     aria-label="启用助手形象"
                     color="success"
                     inset
@@ -266,7 +285,8 @@ function save() {
             color="primary"
             variant="flat"
             prepend-icon="mdi-content-save-outline"
-            :disabled="!changed"
+            :disabled="!changed || saving"
+            :loading="saving"
             @click="save"
             >保存配置</v-btn
           >

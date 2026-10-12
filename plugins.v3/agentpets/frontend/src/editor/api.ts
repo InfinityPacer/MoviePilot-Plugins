@@ -49,6 +49,21 @@ export async function loadEditor(api: PluginApi | null | undefined, pluginId: st
   return { ...data, settings: normalizeSettings(data.settings) }
 }
 
+/** 开关仍交给宿主保存并刷新注册；提交前合并最新完整配置，避免回写旧活动参数。 */
+export async function prepareEnabledConfig(
+  api: PluginApi | null | undefined,
+  pluginId: string,
+  enabled: boolean,
+  expectedEnabled: boolean,
+): Promise<Record<string, unknown>> {
+  if (!pluginId) throw new Error('未取得插件实例，请重新打开')
+  const current = unwrap<Record<string, unknown>>(await requireApi(api).get(`plugin/${pluginId}`))
+  if (!current || typeof current !== 'object' || Array.isArray(current))
+    throw new Error('无法读取最新配置，未提交修改，请重试')
+  if (Boolean(current.enabled) !== expectedEnabled) throw new Error('启用状态已在其他页面更改，请重新打开配置页后再试')
+  return { ...current, enabled }
+}
+
 export function petImage(pet: PetChoice): string {
   if (!pet.preview) return ''
   return pet.builtin ? builtinAvatar(pet.key) : pet.preview

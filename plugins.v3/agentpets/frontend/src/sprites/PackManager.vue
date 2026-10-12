@@ -86,9 +86,15 @@ const codexImporting = ref(false)
 const packText = ref('')
 const imageMode = ref<'upload' | 'url'>('upload')
 watch(importMode, value => {
-  if (value === 'codex') imageMode.value = 'upload'
+  if (value === 'codex') {
+    imageMode.value = 'upload'
+    parsedCodexFile.value = null
+    packText.value = ''
+    importMessage.value = ''
+  }
 })
 const selectedFile = ref<File | null>(null)
+const parsedCodexFile = ref<File | null>(null)
 const imageFile = ref<File | null>(null)
 const fileModel = ref<File[]>([])
 const imageError = ref('')
@@ -109,6 +115,7 @@ const canSubmit = computed(
     !!validation.value?.pack &&
     !clientErrors.value.length &&
     !submitting.value &&
+    (importMode.value !== 'codex' || (!!selectedFile.value && parsedCodexFile.value === selectedFile.value)) &&
     (imageMode.value === 'url' || (!!imageFile.value && !imageError.value)),
 )
 
@@ -144,6 +151,8 @@ async function refresh() {
 function onImage(value: File | File[] | null | undefined) {
   const file = Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
   selectedFile.value = file
+  parsedCodexFile.value = null
+  if (importMode.value === 'codex') packText.value = ''
   imageFile.value = file
   imageError.value = ''
   importMessage.value = ''
@@ -168,6 +177,8 @@ async function importCodexPet() {
   const file = selectedFile.value
   if (!file || imageError.value) return
   codexImporting.value = true
+  parsedCodexFile.value = null
+  if (importMode.value === 'codex') packText.value = ''
   imageError.value = ''
   importMessage.value = ''
   importError.value = ''
@@ -189,6 +200,7 @@ async function importCodexPet() {
     imageMode.value = 'upload'
     imageFile.value = image
     packText.value = JSON.stringify(result.pack, null, 2)
+    parsedCodexFile.value = file
     serverError.value = ''
     importMessage.value =
       (metadata ? '已从 Codex Pet 包读取精灵图，' : '已识别 Codex Pet ') + result.version + '，动作映射已生成'
@@ -229,6 +241,7 @@ async function addPack() {
     emit('changed')
     packText.value = ''
     selectedFile.value = null
+    parsedCodexFile.value = null
     imageFile.value = null
     fileModel.value = []
     importMessage.value = ''

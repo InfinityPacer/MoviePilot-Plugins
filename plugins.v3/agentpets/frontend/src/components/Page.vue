@@ -42,6 +42,10 @@ const currentPet = computed(() => snapshot.value?.pets.find(pet => pet.key === s
 const previewVersion = ref(0)
 const mappingDrafts = ref<Record<string, ActionMappings>>({})
 const mappingSaved = ref<Record<string, ActionMappings>>({})
+const mappingConflicts = ref<Record<string, ActionMappings>>({})
+const conflictingNames = computed(() =>
+  Object.keys(mappingConflicts.value).map(key => snapshot.value?.pets.find(pet => pet.key === key)?.name ?? key),
+)
 const mappingDirtyKeys = computed(() =>
   Object.keys(mappingDrafts.value).filter(
     key => !sameMappings(mappingDrafts.value[key], mappingSaved.value[key] ?? {}),
@@ -50,9 +54,18 @@ const mappingDirtyKeys = computed(() =>
 function onPackReady(pack: SpritePack) {
   const key = selectedKey.value
   if (!pack.codex_version) return
-  const preserve = mappingSaved.value[key] && !sameMappings(mappingDrafts.value[key] ?? {}, mappingSaved.value[key])
-  mappingSaved.value[key] = { ...pack.action_mappings }
-  if (!preserve) mappingDrafts.value[key] = { ...pack.action_mappings }
+  const latest = { ...pack.action_mappings }
+  const baseline = mappingSaved.value[key]
+  const preserve = baseline && !sameMappings(mappingDrafts.value[key] ?? {}, baseline)
+  if (preserve) {
+    // 草稿仍以最初读取的版本为基准，重新加载不能悄悄绕过后端旧值检查。
+    if (!sameMappings(latest, baseline)) mappingConflicts.value[key] = latest
+    else delete mappingConflicts.value[key]
+    return
+  }
+  delete mappingConflicts.value[key]
+  mappingSaved.value[key] = latest
+  mappingDrafts.value[key] = { ...latest }
 }
 const dirty = computed(() => !sameSettings(draft.value, saved.value) || mappingDirtyKeys.value.length > 0)
 const changedNames = computed(() =>
@@ -101,6 +114,7 @@ async function refresh(reset = false) {
       if (!editor.value.pets.some(pet => pet.key === key)) {
         delete mappingDrafts.value[key]
         delete mappingSaved.value[key]
+        delete mappingConflicts.value[key]
       }
     }
     previewVersion.value++
@@ -126,6 +140,7 @@ watch(
     selectedKey.value = ''
     mappingDrafts.value = {}
     mappingSaved.value = {}
+    mappingConflicts.value = {}
     feedback.value = ''
     void refresh(true)
   },
@@ -138,6 +153,8 @@ onBeforeUnmount(() => {
 })
 
 function restore() {
+  mappingSaved.value = { ...mappingSaved.value, ...mappingConflicts.value }
+  mappingConflicts.value = {}
   draft.value = { ...saved.value }
   mappingDrafts.value = Object.fromEntries(
     Object.entries(mappingSaved.value).map(([key, value]) => [key, { ...value }]),
@@ -146,7 +163,7 @@ function restore() {
 }
 
 async function save() {
-  if (blocked.value || !props.api || !currentPet.value) return
+  if (blocked.value || conflictingNames.value.length || !props.api || !currentPet.value) return
   const api = props.api
   const id = props.pluginId
   const values = { ...draft.value }
@@ -209,6 +226,10 @@ async function save() {
       <v-alert v-if="hostError" type="warning" variant="tonal" density="compact" class="ap-result">{{
         hostError
       }}</v-alert>
+      <v-alert v-if="conflictingNames.length" type="warning" variant="tonal" density="compact" class="ap-result">
+        {{ conflictingNames.join('、') }}
+        的动作映射已在其他页面更改。已保留你的草稿；请点击「撤销」载入最新映射后重新调整。
+      </v-alert>
       <v-alert v-if="feedback" :type="feedbackType" variant="tonal" density="compact" class="ap-result" role="status">{{
         feedback
       }}</v-alert>
@@ -292,12 +313,12 @@ async function save() {
       >
       <span v-else class="ap-muted">预览中的调整不会自动保存</span>
       <div class="ap-footer__actions">
-        <v-btn variant="text" :disabled="blocked || !dirty" @click="restore">撤销</v-btn>
+        <v-btn variant="text" :disabled="blocked || (!dirty && !conflictingNames.length)" @click="restore">撤销</v-btn>
         <v-btn
           variant="flat"
           color="primary"
           prepend-icon="mdi-content-save-outline"
-          :disabled="blocked || !dirty"
+          :disabled="blocked || !dirty || conflictingNames.length > 0"
           :loading="busy"
           @click="save"
           >保存调整</v-btn

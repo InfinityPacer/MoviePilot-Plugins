@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor } from './host-C3C56gXa.js';
+import { A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-CnBDiPMJ.js';
 import { v as validatePack, c as buildCodexPetPack, P as PACK_UPDATED_EVENT } from './mappings-CoSijLMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
@@ -727,9 +727,15 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     const packText = ref$1("");
     const imageMode = ref$1("upload");
     watch$1(importMode, (value) => {
-      if (value === "codex") imageMode.value = "upload";
+      if (value === "codex") {
+        imageMode.value = "upload";
+        parsedCodexFile.value = null;
+        packText.value = "";
+        importMessage.value = "";
+      }
     });
     const selectedFile = ref$1(null);
+    const parsedCodexFile = ref$1(null);
     const imageFile = ref$1(null);
     const fileModel = ref$1([]);
     const imageError = ref$1("");
@@ -745,7 +751,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       return errors;
     });
     const canSubmit = computed$1(
-      () => !!validation.value?.pack && !clientErrors.value.length && !submitting.value && (imageMode.value === "url" || !!imageFile.value && !imageError.value)
+      () => !!validation.value?.pack && !clientErrors.value.length && !submitting.value && (importMode.value !== "codex" || !!selectedFile.value && parsedCodexFile.value === selectedFile.value) && (imageMode.value === "url" || !!imageFile.value && !imageError.value)
     );
     function previewSrc(pack) {
       if (pack.builtin) return builtinAvatar(pack.id);
@@ -776,6 +782,8 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     function onImage(value) {
       const file = Array.isArray(value) ? value[0] ?? null : value ?? null;
       selectedFile.value = file;
+      parsedCodexFile.value = null;
+      if (importMode.value === "codex") packText.value = "";
       imageFile.value = file;
       imageError.value = "";
       importMessage.value = "";
@@ -799,6 +807,8 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       const file = selectedFile.value;
       if (!file || imageError.value) return;
       codexImporting.value = true;
+      parsedCodexFile.value = null;
+      if (importMode.value === "codex") packText.value = "";
       imageError.value = "";
       importMessage.value = "";
       importError.value = "";
@@ -820,6 +830,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
         imageMode.value = "upload";
         imageFile.value = image;
         packText.value = JSON.stringify(result.pack, null, 2);
+        parsedCodexFile.value = file;
         serverError.value = "";
         importMessage.value = (metadata ? "已从 Codex Pet 包读取精灵图，" : "已识别 Codex Pet ") + result.version + "，动作映射已生成";
       } catch (error) {
@@ -857,6 +868,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
         emit("changed");
         packText.value = "";
         selectedFile.value = null;
+        parsedCodexFile.value = null;
         imageFile.value = null;
         fileModel.value = [];
         importMessage.value = "";
@@ -1299,7 +1311,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-16778c72"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-c74b840c"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -1366,6 +1378,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const changed = computed(() => enabled.value !== baseline.value);
     const snapshot = ref(null);
     const loading = ref(false);
+    const saving = ref(false);
+    const saveError = ref("");
     const error = ref("");
     const avatar = builtinAvatar("ying");
     const avatarFailed = ref(false);
@@ -1423,6 +1437,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => props.pluginId,
       () => {
         snapshot.value = null;
+        saving.value = false;
+        saveError.value = "";
         void refresh();
       },
       { immediate: true }
@@ -1431,8 +1447,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       disposed = true;
       requestVersion++;
     });
-    function save() {
-      emit("save", { ...props.initialConfig, enabled: enabled.value });
+    async function save() {
+      if (saving.value || !changed.value) return;
+      const id = props.pluginId;
+      saving.value = true;
+      saveError.value = "";
+      try {
+        const config = await prepareEnabledConfig(props.api, id, enabled.value, baseline.value);
+        if (!disposed && id === props.pluginId) emit("save", config);
+      } catch (reason) {
+        if (!disposed && id === props.pluginId)
+          saveError.value = reason instanceof Error ? reason.message : "无法读取最新配置，未提交修改，请重试";
+      } finally {
+        if (!disposed && id === props.pluginId) saving.value = false;
+      }
     }
     return (_ctx, _cache) => {
       const _component_v_icon = _resolveComponent("v-icon");
@@ -1535,7 +1563,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 ]),
                 _: 1
               })) : _createCommentVNode("", true),
-              activeMain.value === "overview" ? (_openBlock(), _createElementBlock(_Fragment, { key: 1 }, [
+              saveError.value ? (_openBlock(), _createBlock(_component_v_alert, {
+                key: 1,
+                type: "error",
+                variant: "tonal",
+                density: "compact",
+                class: "mb-4"
+              }, {
+                default: _withCtx(() => [
+                  _createTextVNode(_toDisplayString(saveError.value), 1)
+                ]),
+                _: 1
+              })) : _createCommentVNode("", true),
+              activeMain.value === "overview" ? (_openBlock(), _createElementBlock(_Fragment, { key: 2 }, [
                 _cache[22] || (_cache[22] = _createElementVNode("h3", { class: "ap-section-title" }, "从形象到陪伴", -1)),
                 _createElementVNode("div", _hoisted_10, [
                   _createElementVNode("div", _hoisted_11, [
@@ -1633,7 +1673,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   _: 1
                 })
               ], 64)) : _createCommentVNode("", true),
-              activeMain.value === "basic" ? (_openBlock(), _createElementBlock(_Fragment, { key: 2 }, [
+              activeMain.value === "basic" ? (_openBlock(), _createElementBlock(_Fragment, { key: 3 }, [
                 _createVNode(_component_v_card, {
                   variant: "outlined",
                   class: "mb-4",
@@ -1648,12 +1688,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                         _createVNode(_component_v_switch, {
                           modelValue: enabled.value,
                           "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => enabled.value = $event),
+                          disabled: saving.value,
                           "aria-label": "启用助手形象",
                           color: "success",
                           inset: "",
                           "hide-details": "",
                           density: "compact"
-                        }, null, 8, ["modelValue"])
+                        }, null, 8, ["modelValue", "disabled"])
                       ]),
                       _: 1
                     })
@@ -1713,14 +1754,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 color: "primary",
                 variant: "flat",
                 "prepend-icon": "mdi-content-save-outline",
-                disabled: !changed.value,
+                disabled: !changed.value || saving.value,
+                loading: saving.value,
                 onClick: save
               }, {
                 default: _withCtx(() => [..._cache[29] || (_cache[29] = [
                   _createTextVNode("保存配置", -1)
                 ])]),
                 _: 1
-              }, 8, ["disabled"])
+              }, 8, ["disabled", "loading"])
             ])
           ])
         ])

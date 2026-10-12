@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { applyDefaultPet, checkAvailablePet, loadEditor, petImage, saveSettings } from '@/editor/api'
+import {
+  applyDefaultPet,
+  checkAvailablePet,
+  loadEditor,
+  petImage,
+  prepareEnabledConfig,
+  saveSettings,
+} from '@/editor/api'
 
 const settings = { scale: 1, speed: 1, roam: 'floor' as const }
 
@@ -128,5 +135,20 @@ describe('Pet editor API', () => {
     const api = mockHost()
     api.post.mockResolvedValue({ success: false, message: '不能保存' })
     await expect(saveSettings(api, 'Clone1', settings)).rejects.toThrow('不能保存')
+  })
+})
+
+describe('enable configuration preparation', () => {
+  it.each([null, [], 'invalid'])('rejects invalid full configuration: %j', async value => {
+    const api = { get: vi.fn().mockResolvedValue(value), post: vi.fn() }
+    await expect(prepareEnabledConfig(api, 'Clone1', false, true)).rejects.toThrow()
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('preserves opaque fields and supports an unset enable flag', async () => {
+    const latest = { scale: 1.3, future: { keep: true } }
+    const api = { get: vi.fn().mockResolvedValue(latest), post: vi.fn() }
+    expect(await prepareEnabledConfig(api, 'Clone1', true, false)).toEqual({ ...latest, enabled: true })
+    expect(api.post).not.toHaveBeenCalled()
   })
 })
