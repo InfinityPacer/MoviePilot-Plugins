@@ -21,6 +21,7 @@ import {
   ratioToX,
   readViewport,
   sameRect,
+  shelterSink,
   surfaceXBounds,
   xBounds,
   xToRatio,
@@ -31,6 +32,7 @@ import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Mot
 import { DEFAULT_SETTINGS, loadSettings, normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
 import {
   coversControlAt,
+  bottomFixedFloor,
   measureSurface,
   querySurfaces,
   surfacesNear,
@@ -145,6 +147,7 @@ const isMobile = ref(false)
 const animationActive = ref(false)
 
 let hostState: AgentHostState | null = null
+let mobileFloor: number | null = null
 let documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
 let rafId = 0
 let lastFrame = 0
@@ -309,7 +312,24 @@ function roam(): RoamMode {
 }
 
 function viewport() {
-  return readViewport(hostState)
+  const view = readViewport(hostState, !props.previewRoot)
+  if (mobileFloor === null || !isMobile.value || props.previewRoot) return view
+  return {
+    ...view,
+    safeArea: { ...view.safeArea, bottom: Math.max(view.safeArea.bottom, view.height - mobileFloor) },
+  }
+}
+
+/** 只在布局变化和低频避让检查中测量固定底栏。 */
+function refreshMobileFloor(): boolean {
+  const next = isMobile.value && !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null
+  const changed = next !== mobileFloor
+  mobileFloor = next
+  return changed
+}
+
+function hiddenHeight(depth: number): number {
+  return shelterSink(charHeight.value, depth, isMobile.value)
 }
 
 function ground(): number {
@@ -496,7 +516,7 @@ function beginPeek() {
   // 探头时面朝屏幕内侧。
   facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2
   motion.value = 'peek'
-  peekTarget = Math.round(charHeight.value * PEEK_RATIO)
+  peekTarget = hiddenHeight(PEEK_RATIO)
   ensureLoop()
   setTimer('peek', randomBetween(4000, 7000), endPeek)
 }
@@ -650,6 +670,8 @@ function landing(exclude: Element | null = null): Landing<DomSurface> {
  */
 function startFall(exclude: Element | null = null) {
   detachSurface()
+  hopVx = 0
+  hopTargetX = null
   if (roam() === 'free') {
     const view = freeBounds(viewport(), ...sizePair())
     x.value = clamp(x.value, ...view.x)
@@ -662,8 +684,6 @@ function startFall(exclude: Element | null = null) {
     land(false)
     return
   }
-  hopVx = 0
-  hopTargetX = null
   motion.value = 'fall'
   velocity = 0
   bounced = false
@@ -810,7 +830,7 @@ function checkSurface() {
 
 /** 角色以完整身高站在 (left, top) 时的矩形；下沉 `depth` 时只算露出的部分。 */
 function rectAt(left: number, top: number, depth = 0): AgentRect {
-  const hidden = Math.round(charHeight.value * depth)
+  const hidden = hiddenHeight(depth)
   return { x: left, y: top + hidden, width: charWidth.value, height: charHeight.value - hidden }
 }
 
@@ -825,6 +845,7 @@ function rectAt(left: number, top: number, depth = 0): AgentRect {
  */
 function checkClearance() {
   if (disposed || !ready.value || !visible()) return
+  if (refreshMobileFloor()) relayout()
   if (sheltering) {
     recheckShelter()
     return
@@ -940,7 +961,7 @@ function beginShelter(depth: number, instant: boolean) {
   sheltering = true
   motion.value = 'peek'
   facingLeft.value = x.value > (xBounds(viewport(), charWidth.value)[0] + xBounds(viewport(), charWidth.value)[1]) / 2
-  peekTarget = Math.round(charHeight.value * depth)
+  peekTarget = hiddenHeight(depth)
   if (instant || !motionAllowed()) {
     sink.value = peekTarget
     queueAnchor()
@@ -970,7 +991,7 @@ function recheckShelter() {
   if (!covers(current)) return
   const depth = pickShelterDepth(level => level > current && !covers(level))
   if (depth <= current) return
-  peekTarget = Math.round(charHeight.value * depth)
+  peekTarget = hiddenHeight(depth)
   if (motionAllowed()) ensureLoop()
   else {
     sink.value = peekTarget
@@ -1053,9 +1074,25 @@ function writePosition() {
 
 /** 视口、面板或尺寸变化后把角色放回合法位置。 */
 function relayout() {
+  const view = freeBounds(viewport(), ...sizePair())
+  const maxSink = hiddenHeight(1)
+  sink.value = Math.min(sink.value, maxSink)
+  peekTarget = Math.min(peekTarget, maxSink)
+  if (walkTarget) {
+    walkTarget.x = clamp(walkTarget.x, ...view.x)
+    if (walkTarget.y !== null) walkTarget.y = clamp(walkTarget.y, ...view.y)
+  }
   if (motion.value === 'drag' || motion.value === 'fall') {
-    x.value = clamp(x.value, 0, Math.max(0, viewport().width - charWidth.value))
-    y.value = clamp(y.value, 0, ground())
+    const outside = x.value < view.x[0] || x.value > view.x[1] || y.value > view.y[1]
+    const targetOutside = fallTarget && (fallTarget.y < view.y[0] || fallTarget.y > view.y[1])
+    const hopOutside = hopTargetX !== null && (hopTargetX < view.x[0] || hopTargetX > view.x[1])
+    x.value = clamp(x.value, ...view.x)
+    y.value = clamp(y.value, ...view.y)
+    // 收回当前位置还不够：取消越界的旧抛物线和落点，防止下一帧再次离屏。
+    if (motion.value === 'fall' && (outside || targetOutside || hopOutside)) {
+      pendingShelter = null
+      startFall()
+    }
     queueAnchor()
     return
   }
@@ -1106,6 +1143,7 @@ function onHostState(state: AgentHostState) {
       before.viewport.keyboardInset !== state.viewport.keyboardInset ||
       before.isMobile !== state.isMobile)
   isMobile.value = state.isMobile
+  if (resized) refreshMobileFloor()
   const nextSustained = phasePose(state.phase)
   if (nextSustained !== sustained.value) {
     sustained.value = nextSustained
@@ -1233,9 +1271,9 @@ function onPointerMove(event: PointerEvent) {
     props.pet?.setInteracting?.(true)
   }
   event.preventDefault()
-  const view = viewport()
-  x.value = clamp(pointerPosition(event).x - press.offsetX, 0, Math.max(0, view.width - charWidth.value))
-  y.value = clamp(pointerPosition(event).y - press.offsetY, 0, ground())
+  const view = freeBounds(viewport(), ...sizePair())
+  x.value = clamp(pointerPosition(event).x - press.offsetX, ...view.x)
+  y.value = clamp(pointerPosition(event).y - press.offsetY, ...view.y)
   facingLeft.value = false
   queueAnchor()
 }
@@ -1322,8 +1360,10 @@ function onVisibilityChange() {
 }
 
 function onWindowResize() {
-  if (!hostState || surface) relayout()
-  if (!hostState) scheduleClearance(RESIZE_CLEAR_DELAY)
+  if (!ready.value || props.previewRoot) return
+  refreshMobileFloor()
+  relayout()
+  scheduleClearance(RESIZE_CLEAR_DELAY)
 }
 
 onMounted(async () => {
@@ -1351,6 +1391,15 @@ onMounted(async () => {
   window.addEventListener('resize', onWindowResize)
   cleanups.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
   cleanups.push(() => window.removeEventListener('resize', onWindowResize))
+  const visual = window.visualViewport
+  if (visual && !props.previewRoot) {
+    visual.addEventListener('resize', onWindowResize)
+    visual.addEventListener('scroll', onWindowResize)
+    cleanups.push(() => {
+      visual.removeEventListener('resize', onWindowResize)
+      visual.removeEventListener('scroll', onWindowResize)
+    })
+  }
 
   const [loaded, stored] = await Promise.all([
     props.settingsOverride ?? loadSettings(props.api, props.pluginId),
@@ -1358,6 +1407,7 @@ onMounted(async () => {
   ])
   if (disposed) return
   settings.value = normalizeSettings(props.settingsOverride ?? loaded)
+  refreshMobileFloor()
   restorePosition(stored)
   ready.value = true
   syncVisibility()

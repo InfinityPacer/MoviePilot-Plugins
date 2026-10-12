@@ -59,6 +59,19 @@ async function setup() {
 }
 
 describe('contained live Pet preview', () => {
+  it('keeps canvas coordinates when the phone visual viewport is resized and panned', async () => {
+    const visual = Object.assign(new EventTarget(), { offsetTop: 300, offsetLeft: 40, width: 200, height: 200 })
+    vi.stubGlobal('visualViewport', visual)
+    const { view } = await setup()
+    const character = view.container.querySelector('.agent-pet-ying__character') as HTMLElement
+    expect(character.style.transform).toContain('264px')
+    const initial = character.style.transform
+    visual.height = 100
+    visual.dispatchEvent(new Event('resize'))
+    await vi.advanceTimersByTimeAsync(48)
+    expect(character.style.transform).toBe(initial)
+  })
+
   it('renders the selected Codex pet inside the canvas and responds to scale and roam drafts without saving', async () => {
     const { view, api } = await setup()
     const canvas = view.container.querySelector('.ap-preview__canvas')!

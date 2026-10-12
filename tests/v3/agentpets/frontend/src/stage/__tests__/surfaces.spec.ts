@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_CLEAR_CANDIDATES, pickClearX } from '@/stage/geometry'
 import {
   controlsUnder,
+  bottomFixedFloor,
   coversControlAt,
   NEARBY_SURFACE_ROWS,
   surfacesNear,
@@ -34,6 +35,38 @@ function stubHits(hits: (point: { x: number; y: number }) => Element[]) {
 afterEach(() => {
   delete (document as { elementsFromPoint?: unknown }).elementsFromPoint
   document.body.innerHTML = ''
+})
+
+describe('mobile bottom navigation', () => {
+  it.each(['fixed', 'sticky'])('reserves the measured %s bar with bounded hit testing', position => {
+    const bar = withRect(document.createElement('nav'), { left: 0, top: 724, width: 1000, height: 76 })
+    bar.style.position = position
+    const child = document.createElement('button')
+    bar.appendChild(child)
+    document.body.appendChild(bar)
+    const layer = document.createElement('div')
+    const pet = document.createElement('button')
+    layer.appendChild(pet)
+    document.body.appendChild(layer)
+    const hits = stubHits(() => [pet, child, bar, document.body])
+    const scan = vi.spyOn(document, 'querySelectorAll')
+    expect(bottomFixedFloor(layer, viewport)).toBe(716)
+    expect(hits).toHaveBeenCalledTimes(9)
+    expect(scan).not.toHaveBeenCalled()
+  })
+
+  it('ignores document content, full-screen overlays and hidden bottom bars', () => {
+    const bar = withRect(document.createElement('nav'), { left: 0, top: 724, width: 1000, height: 76 })
+    document.body.appendChild(bar)
+    stubHits(() => [bar, document.body])
+    expect(bottomFixedFloor(null, viewport)).toBe(800)
+    bar.style.position = 'fixed'
+    bar.style.visibility = 'hidden'
+    expect(bottomFixedFloor(null, viewport)).toBe(800)
+    bar.style.visibility = 'visible'
+    withRect(bar, { left: 0, top: 0, width: 1000, height: 800 })
+    expect(bottomFixedFloor(null, viewport)).toBe(800)
+  })
 })
 
 describe('surface occlusion', () => {
