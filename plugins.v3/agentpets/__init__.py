@@ -251,16 +251,16 @@ class AgentPets(_PluginBase):
         values = request.model_dump()
         values["scale"] = round(values["scale"], 2)
         values["speed"] = round(values["speed"], 2)
-        config = dict(self.get_config() or {})
-        config.update(values)
         try:
+            config = dict(self.get_config() or {})
+            config.update(values)
             if self.update_config(config) is False:
                 return schemas.Response(success=False, message="活动设置保存失败，请重试")
             persisted = self.get_config() or {}
             if any(persisted.get(key) != value for key, value in values.items()):
                 return schemas.Response(success=False, message="活动设置回读不一致，请刷新后重试")
         except (OSError, RuntimeError, ValueError):
-            logger.exception("助手形象：保存活动设置失败")
+            logger.error("助手形象：保存活动设置失败")
             return schemas.Response(success=False, message="活动设置保存失败，请查看插件日志")
         self._settings = values
         return schemas.Response(success=True, data=self.settings())
@@ -310,6 +310,9 @@ class AgentPets(_PluginBase):
             record = self._store().add(request.pack, request.image)
         except PackError as exc:
             return schemas.Response(success=False, message=str(exc))
+        except (OSError, RuntimeError):
+            logger.error("助手形象：添加素材包失败")
+            return schemas.Response(success=False, message="添加素材包失败，请刷新核对后重试")
         logger.info(f"助手形象：已添加素材包 {record['id']}（{record['source']}）")
         return schemas.Response(success=True, data=self._summary(record))
 
@@ -331,8 +334,14 @@ class AgentPets(_PluginBase):
     def api_delete_pack(self, request: DeletePackRequest):
         if request.id == BUILTIN_PACK_ID:
             return schemas.Response(success=False, message="内置素材包不能删除")
-        if not self._store().remove(request.id):
-            return schemas.Response(success=False, message=f"素材包 {request.id} 不存在")
+        try:
+            if not self._store().remove(request.id):
+                return schemas.Response(success=False, message=f"素材包 {request.id} 不存在")
+        except PackError as exc:
+            return schemas.Response(success=False, message=str(exc))
+        except (OSError, RuntimeError):
+            logger.error("助手形象：删除素材包失败")
+            return schemas.Response(success=False, message="删除素材包失败，请刷新核对后重试")
         logger.info(f"助手形象：已删除素材包 {request.id}")
         return schemas.Response(success=True)
 
