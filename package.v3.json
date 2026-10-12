@@ -357,7 +357,7 @@
         "labels": "Agent,形象",
         "version": "0.1.1.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png",
-        "author": "z2561221,InfinityPacer",
+        "author": "InfinityPacer,Kurisu",
         "level": 1,
         "system_version": ">=3.0.0",
         "history": {
