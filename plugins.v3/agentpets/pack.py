@@ -12,6 +12,9 @@ import io
 import json
 import re
 import time
+from copy import deepcopy
+from functools import wraps
+from threading import RLock
 from pathlib import Path
 from typing import Any
 
@@ -337,6 +340,38 @@ def validate_sheet(content: bytes, pack: dict[str, Any]) -> tuple[str, str]:
     return mime, ext
 
 
+_PACKS_LOCK = RLock()
+
+
+def _serialized(method):
+    """每个进程串行更新素材列表，避免不同字段的保存互相覆盖。"""
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        with _PACKS_LOCK:
+            return method(*args, **kwargs)
+    return wrapped
+
+
+STAGE_TRIGGERS = (
+    "idle", "blink", "talk", "think", "jump", "wave", "held", "fall", "sit",
+    "walk-left", "walk-right", "doze", "confused", "alert", "victory", "busy",
+)
+MAPPING_KEYS = frozenset(
+    [f"action.{key}" for key in HOST_ACTIONS]
+    + [f"intent.{key}" for key in HOST_INTENTS]
+    + [f"stage.{key}" for key in STAGE_TRIGGERS]
+)
+CODEX_ACTIONS = (
+    "idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review",
+    "wave", "notify", "happy-jump", "success", "faint", "error", "thinking", "charge", "speaking", "warning",
+    "eye-roll", "scan",
+)
+LOOK_DIRECTIONS = (
+    "000", "022-5", "045", "067-5", "090", "112-5", "135", "157-5",
+    "180", "202-5", "225", "247-5", "270", "292-5", "315", "337-5",
+)
+
+
 class PackStore:
     """用户素材包：元数据存插件数据，上传的精灵图存插件数据目录。"""
 
@@ -363,6 +398,7 @@ class PackStore:
             return None
         return path
 
+    @_serialized
     def add(self, raw_pack: Any, image: str | None = None) -> dict[str, Any]:
         """校验后保存一个素材包；带 image 时为上传方式，否则 sheet 必须是 http(s) URL。"""
         pack = parse_pack(raw_pack)
@@ -400,6 +436,40 @@ class PackStore:
         self._save_data(self.DATA_KEY, records + [record])
         return record
 
+    @_serialized
+    def update(self, pack_id: str, *, name: str | None = None, expected_name: str | None = None,
+               mappings: dict[str, str] | None = None, expected_mappings: dict[str, str] | None = None) -> dict[str, Any]:
+        """只更新显示名称或映射；原始动画、图片、ID 与其他字段保持原样。"""
+        records = deepcopy(self.list())
+        target = next((record for record in records if record["id"] == pack_id), None)
+        if not target or pack_id in RESERVED_IDS:
+            raise PackError("此 Pet 不存在或属于内置形象")
+        version = codex_pet_version(target)
+        if version is None:
+            raise PackError("当前仅支持编辑导入的 Codex Pet")
+        if name is not None:
+            if target["name"] != expected_name:
+                raise PackError("名称已在其他页面更改，请刷新后重试")
+            target["name"] = _text(name, "名称", 40)
+        if mappings is not None:
+            if target.get("action_mappings", {}) != expected_mappings:
+                raise PackError("动作映射已在其他页面更改，请刷新后重试")
+            available = set(target.get("actions", {})) | set(CODEX_ACTIONS)
+            if version == "v2":
+                available.update(f"look-{direction}" for direction in LOOK_DIRECTIONS)
+            if any(key not in MAPPING_KEYS or value not in available for key, value in mappings.items()):
+                raise PackError("动作映射包含不支持的触发条件或动画")
+            if mappings:
+                target["action_mappings"] = dict(mappings)
+            else:
+                target.pop("action_mappings", None)
+        if self._save_data(self.DATA_KEY, records) is False:
+            raise PackError("保存失败，请重试")
+        if self.get(pack_id) != target:
+            raise PackError("保存回读不一致，请刷新后核对")
+        return target
+
+    @_serialized
     def remove(self, pack_id: str) -> bool:
         records = self.list()
         target = next((record for record in records if record["id"] == pack_id), None)

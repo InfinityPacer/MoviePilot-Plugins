@@ -85,6 +85,20 @@ class DeletePackRequest(BaseModel):
     id: str = Field(min_length=1, max_length=32)  # 素材包 ID
 
 
+class RenamePackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=40)
+    expected_name: str = Field(min_length=1, max_length=40)
+
+
+class SaveMappingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=32)
+    mappings: dict[str, str] = Field(max_length=43)
+    expected_mappings: dict[str, str] = Field(max_length=43)
+
+
 class AgentPets(_PluginBase):
     """为 Agent 助手提供小映全屏角色和精灵图素材包两类形象。"""
 
@@ -261,6 +275,7 @@ class AgentPets(_PluginBase):
         except PackError as exc:
             return schemas.Response(success=False, message=str(exc))
         pack = {name: record.get(name) for name in ("id", "name", "description", "grid", "frames", "actions", "random_actions")}
+        pack["action_mappings"] = record.get("action_mappings", {})
         version = codex_pet_version(record)
         if version:
             pack["codex_version"] = version
@@ -274,6 +289,21 @@ class AgentPets(_PluginBase):
         logger.info(f"助手形象：已添加素材包 {record['id']}（{record['source']}）")
         return schemas.Response(success=True, data=self._summary(record))
 
+    def api_rename_pack(self, request: RenamePackRequest):
+        try:
+            record = self._store().update(request.id, name=request.name, expected_name=request.expected_name)
+        except (PackError, OSError, RuntimeError) as exc:
+            return schemas.Response(success=False, message=str(exc))
+        return schemas.Response(success=True, data=self._summary(record))
+
+    def api_save_mappings(self, request: SaveMappingsRequest):
+        try:
+            record = self._store().update(request.id, mappings=request.mappings,
+                                         expected_mappings=request.expected_mappings)
+        except (PackError, OSError, RuntimeError) as exc:
+            return schemas.Response(success=False, message=str(exc))
+        return schemas.Response(success=True, data={"id": record["id"], "mappings": record.get("action_mappings", {})})
+
     def api_delete_pack(self, request: DeletePackRequest):
         if request.id == BUILTIN_PACK_ID:
             return schemas.Response(success=False, message="内置素材包不能删除")
@@ -286,6 +316,16 @@ class AgentPets(_PluginBase):
         """形象对所有登录用户显示，读取接口只要求登录；素材包写接口额外要求管理员。"""
         admin = [Depends(require_admin)]
         return [
+            {
+                "path": "/packs/rename", "endpoint": self.api_rename_pack, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "重命名导入的 Codex Pet",
+                "response_model": schemas.Response[dict],
+            },
+            {
+                "path": "/packs/mappings", "endpoint": self.api_save_mappings, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "保存 Codex Pet 动作映射",
+                "response_model": schemas.Response[dict],
+            },
             {
                 "path": "/editor",
                 "endpoint": self.api_editor,
