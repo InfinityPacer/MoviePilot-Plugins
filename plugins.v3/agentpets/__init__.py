@@ -107,7 +107,7 @@ class AgentPets(_PluginBase):
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png"
     plugin_version = "0.1.0.1"
     plugin_author = "InfinityPacer"
-    author_url = "https://github.com/z2561221"
+    author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "agentpets_"
     plugin_order = 60
     auth_level = 1

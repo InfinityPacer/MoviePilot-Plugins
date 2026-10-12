@@ -213,7 +213,7 @@ describe('Pet workspace', () => {
     expect(preview.props('mappings')).toEqual({ 'stage.think': 'review' })
   })
 
-  it('keeps a failed mapping draft and refreshes its old-value precondition', async () => {
+  it('keeps a failed mapping draft and requires discarding it after an external update', async () => {
     const { view, api, click, broadcast } = await setup()
     view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
     await flushPromises()
@@ -231,7 +231,71 @@ describe('Pet workspace', () => {
     preview().vm.$emit('pack-ready', { codex_version: 'v2', action_mappings: { 'stage.think': 'waving' } })
     await flushPromises()
     expect(preview().props('mappings')).toEqual({ 'stage.think': 'review' })
+    expect(view.text()).toContain('动作映射已在其他页面更改')
+    expect(
+      view
+        .findAll('button')
+        .find(button => button.text() === '保存调整')!
+        .attributes('disabled'),
+    ).toBeDefined()
+    expect(api.post).toHaveBeenCalledTimes(1)
+    await click('撤销')
+    expect(preview().props('mappings')).toEqual({ 'stage.think': 'waving' })
+    preview().vm.$emit('mappings', { 'stage.think': 'running' })
+    await flushPromises()
     await click('保存调整')
     expect(api.post.mock.calls.at(-1)?.[1]).toMatchObject({ expected_mappings: { 'stage.think': 'waving' } })
   })
+
+  it.each([{ 'stage.wave': 'jumping' }, { 'stage.think': 'waving' }])(
+    'keeps the old baseline and reports conflicting changes after reselecting a Pet: %j',
+    async latest => {
+      const { view, api, click } = await setup()
+      const selector = view.findComponent({ name: 'VSelect' })
+      const preview = () => view.findComponent({ name: 'PetPreview' })
+      selector.vm.$emit('update:modelValue', 'kurisu')
+      await flushPromises()
+      preview().vm.$emit('pack-ready', { codex_version: 'v2', action_mappings: {} })
+      preview().vm.$emit('mappings', { 'stage.think': 'review' })
+      await flushPromises()
+      selector.vm.$emit('update:modelValue', 'ying')
+      await flushPromises()
+      selector.vm.$emit('update:modelValue', 'kurisu')
+      await flushPromises()
+      preview().vm.$emit('pack-ready', { codex_version: 'v2', action_mappings: latest })
+      await flushPromises()
+      expect(preview().props('mappings')).toEqual({ 'stage.think': 'review' })
+      expect(view.text()).toContain('Kurisu 的动作映射已在其他页面更改')
+      expect(
+        view
+          .findAll('button')
+          .find(button => button.text() === '保存调整')!
+          .attributes('disabled'),
+      ).toBeDefined()
+      expect(api.post).not.toHaveBeenCalled()
+      preview().vm.$emit('mappings', {})
+      await flushPromises()
+      expect(
+        view
+          .findAll('button')
+          .find(button => button.text() === '撤销')!
+          .attributes('disabled'),
+      ).toBeUndefined()
+      await click('撤销')
+      expect(preview().props('mappings')).toEqual(latest)
+      expect(view.text()).not.toContain('动作映射已在其他页面更改')
+      preview().vm.$emit('mappings', { ...latest, 'stage.busy': 'running' })
+      await flushPromises()
+      api.post.mockImplementation(async (_path, body) => ({
+        success: true,
+        data: { id: 'kurisu', mappings: (body as { mappings: unknown }).mappings },
+      }))
+      await click('保存调整')
+      expect(api.post.mock.calls[0][1]).toEqual({
+        id: 'kurisu',
+        mappings: { ...latest, 'stage.busy': 'running' },
+        expected_mappings: latest,
+      })
+    },
+  )
 })

@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, p as petImage, l as loadEditor, a as loadHostSelection, c as saveSettings, d as saveMappings } from './host-C3C56gXa.js';
+import { A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, a as petImage, l as loadEditor, c as loadHostSelection, d as saveSettings, e as saveMappings } from './host-CnBDiPMJ.js';
 import { m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, e as HOST_INTENTS, d as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-CoSijLMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import AgentPet, { P as POSES } from './__federation_expose_AgentPet-sud2lC8K.js';
@@ -755,11 +755,11 @@ const {resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNo
 const _hoisted_1 = { class: "ap-page" };
 const _hoisted_2 = { class: "ap-page__content" };
 const _hoisted_3 = {
-  key: 4,
+  key: 5,
   class: "ap-empty"
 };
 const _hoisted_4 = {
-  key: 5,
+  key: 6,
   class: "ap-editor-grid"
 };
 const _hoisted_5 = { class: "ap-controls" };
@@ -779,7 +779,7 @@ const _hoisted_13 = {
 };
 const _hoisted_14 = { class: "ap-control-panel" };
 const _hoisted_15 = {
-  key: 6,
+  key: 7,
   class: "ap-empty"
 };
 const _hoisted_16 = { class: "ap-footer" };
@@ -821,6 +821,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const previewVersion = ref(0);
     const mappingDrafts = ref({});
     const mappingSaved = ref({});
+    const mappingConflicts = ref({});
+    const conflictingNames = computed(
+      () => Object.keys(mappingConflicts.value).map((key) => snapshot.value?.pets.find((pet) => pet.key === key)?.name ?? key)
+    );
     const mappingDirtyKeys = computed(
       () => Object.keys(mappingDrafts.value).filter(
         (key) => !sameMappings(mappingDrafts.value[key], mappingSaved.value[key] ?? {})
@@ -829,9 +833,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function onPackReady(pack) {
       const key = selectedKey.value;
       if (!pack.codex_version) return;
-      const preserve = mappingSaved.value[key] && !sameMappings(mappingDrafts.value[key] ?? {}, mappingSaved.value[key]);
-      mappingSaved.value[key] = { ...pack.action_mappings };
-      if (!preserve) mappingDrafts.value[key] = { ...pack.action_mappings };
+      const latest = { ...pack.action_mappings };
+      const baseline = mappingSaved.value[key];
+      const preserve = baseline && !sameMappings(mappingDrafts.value[key] ?? {}, baseline);
+      if (preserve) {
+        if (!sameMappings(latest, baseline)) mappingConflicts.value[key] = latest;
+        else delete mappingConflicts.value[key];
+        return;
+      }
+      delete mappingConflicts.value[key];
+      mappingSaved.value[key] = latest;
+      mappingDrafts.value[key] = { ...latest };
     }
     const dirty = computed(() => !sameSettings(draft.value, saved.value) || mappingDirtyKeys.value.length > 0);
     const changedNames = computed(
@@ -876,6 +888,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           if (!editor.value.pets.some((pet) => pet.key === key)) {
             delete mappingDrafts.value[key];
             delete mappingSaved.value[key];
+            delete mappingConflicts.value[key];
           }
         }
         previewVersion.value++;
@@ -897,6 +910,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         selectedKey.value = "";
         mappingDrafts.value = {};
         mappingSaved.value = {};
+        mappingConflicts.value = {};
         feedback.value = "";
         void refresh(true);
       },
@@ -908,6 +922,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       operationVersion++;
     });
     function restore() {
+      mappingSaved.value = { ...mappingSaved.value, ...mappingConflicts.value };
+      mappingConflicts.value = {};
       draft.value = { ...saved.value };
       mappingDrafts.value = Object.fromEntries(
         Object.entries(mappingSaved.value).map(([key, value]) => [key, { ...value }])
@@ -915,7 +931,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       feedback.value = "";
     }
     async function save() {
-      if (blocked.value || !props.api || !currentPet.value) return;
+      if (blocked.value || conflictingNames.value.length || !props.api || !currentPet.value) return;
       const api = props.api;
       const id = props.pluginId;
       const values = { ...draft.value };
@@ -1041,8 +1057,20 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             ]),
             _: 1
           })) : _createCommentVNode("", true),
-          feedback.value ? (_openBlock(), _createBlock(_component_v_alert, {
+          conflictingNames.value.length ? (_openBlock(), _createBlock(_component_v_alert, {
             key: 3,
+            type: "warning",
+            variant: "tonal",
+            density: "compact",
+            class: "ap-result"
+          }, {
+            default: _withCtx(() => [
+              _createTextVNode(_toDisplayString(conflictingNames.value.join("、")) + " 的动作映射已在其他页面更改。已保留你的草稿；请点击「撤销」载入最新映射后重新调整。 ", 1)
+            ]),
+            _: 1
+          })) : _createCommentVNode("", true),
+          feedback.value ? (_openBlock(), _createBlock(_component_v_alert, {
+            key: 4,
             type: feedbackType.value,
             variant: "tonal",
             density: "compact",
@@ -1160,7 +1188,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createElementVNode("div", _hoisted_19, [
             _createVNode(_component_v_btn, {
               variant: "text",
-              disabled: blocked.value || !dirty.value,
+              disabled: blocked.value || !dirty.value && !conflictingNames.value.length,
               onClick: restore
             }, {
               default: _withCtx(() => [..._cache[14] || (_cache[14] = [
@@ -1172,7 +1200,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               variant: "flat",
               color: "primary",
               "prepend-icon": "mdi-content-save-outline",
-              disabled: blocked.value || !dirty.value,
+              disabled: blocked.value || !dirty.value || conflictingNames.value.length > 0,
               loading: busy.value,
               onClick: save
             }, {

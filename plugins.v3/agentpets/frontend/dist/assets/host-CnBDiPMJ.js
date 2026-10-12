@@ -34,6 +34,14 @@ async function loadEditor(api, pluginId) {
   }
   return { ...data, settings: normalizeSettings(data.settings) };
 }
+async function prepareEnabledConfig(api, pluginId, enabled, expectedEnabled) {
+  if (!pluginId) throw new Error("未取得插件实例，请重新打开");
+  const current = unwrap(await requireApi(api).get(`plugin/${pluginId}`));
+  if (!current || typeof current !== "object" || Array.isArray(current))
+    throw new Error("无法读取最新配置，未提交修改，请重试");
+  if (Boolean(current.enabled) !== expectedEnabled) throw new Error("启用状态已在其他页面更改，请重新打开配置页后再试");
+  return { ...current, enabled };
+}
 function petImage(pet) {
   if (!pet.preview) return "";
   return pet.builtin ? builtinAvatar(pet.key) : pet.preview;
@@ -83,4 +91,4 @@ async function loadHostSelection(api) {
 const AGENT_HOST_KEY = "moviepilot:agent";
 const HOST_UNSUPPORTED_MESSAGE = "当前主程序版本不支持助手形象，请将主程序升级到最新版本";
 
-export { AGENT_HOST_KEY as A, HOST_UNSUPPORTED_MESSAGE as H, loadHostSelection as a, builtinAvatar as b, saveSettings as c, saveMappings as d, loadEditor as l, petImage as p, sameSettings as s };
+export { AGENT_HOST_KEY as A, HOST_UNSUPPORTED_MESSAGE as H, petImage as a, builtinAvatar as b, loadHostSelection as c, saveSettings as d, saveMappings as e, loadEditor as l, prepareEnabledConfig as p, sameSettings as s };
