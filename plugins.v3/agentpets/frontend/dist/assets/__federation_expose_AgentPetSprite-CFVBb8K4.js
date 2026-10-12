@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, v as validatePack, w as withCodexStageActions } from './schema-Jsrk9aRO.js';
+import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './mappings-CoSijLMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -21,9 +21,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     intent: { default: "idle" },
     thinking: { type: Boolean, default: false },
     motionActive: { type: Boolean, default: true },
-    strictPreview: { type: Boolean }
+    strictPreview: { type: Boolean },
+    mappingsOverride: {},
+    mappingKey: {},
+    nativeAction: {},
+    replay: {}
   },
-  emits: ["appearance", "load-state"],
+  emits: ["appearance", "load-state", "pack-ready"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
@@ -35,7 +39,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const frameIndex = ref(0);
     let timer = 0;
     let disposed = false;
-    const resolved = computed(() => resolveAction(pack.value, props.action, props.intent, props.thinking));
+    let loadVersion = 0;
+    let unsubscribe;
+    const resolved = computed(
+      () => resolveAction(pack.value, props.action, props.intent, props.thinking, {
+        mappings: props.mappingsOverride,
+        mappingKey: props.mappingKey,
+        nativeAction: props.nativeAction
+      })
+    );
     const frame = computed(() => {
       const frames = resolved.value.action.frames;
       return frames[Math.min(frameIndex.value, frames.length - 1)] ?? "idle";
@@ -102,6 +114,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         emit("load-state", "error");
         return;
       }
+      const version = ++loadVersion;
       emit("load-state", "loading");
       let failed = false;
       const instanceId = props.pluginId || "AgentPets";
@@ -112,7 +125,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         );
         const { pack: parsed } = validatePack(response?.data?.pack);
         if (!response?.success || !parsed || !response.data?.sheet_src) throw new Error(response?.message || "invalid pack");
-        if (disposed) return;
+        if (disposed || version !== loadVersion) return;
         pack.value = props.pet?.mode === "stage" ? withCodexStageActions(parsed) : parsed;
         cellRatio.value = parsed.codex_version ? 192 / 208 : 1;
         sheetSrc.value = response.data.sheet_src;
@@ -120,13 +133,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         failed = true;
         console.warn(`[AgentPets] pack ${key} unavailable`);
       }
-      if (!disposed) {
+      if (!disposed && version === loadVersion) {
+        if (!failed) emit("pack-ready", pack.value);
         ready.value = !failed || !props.strictPreview;
         emit("load-state", failed ? "error" : "ready");
       }
     }
     watch(
-      () => [resolved.value.key, props.motionActive, pack.value],
+      () => [resolved.value.key, props.motionActive, pack.value, props.replay],
       () => play()
     );
     watch(
@@ -144,12 +158,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (ready.value) {
         measure(sheetSrc.value);
         emit("load-state", "ready");
+        emit("pack-ready", pack.value);
       }
+      if (!props.strictPreview)
+        unsubscribe = props.agent?.on(PACK_UPDATED_EVENT, (event) => {
+          if (event.source === props.pluginId && event.data.key === packKey) void loadPack(packKey);
+        });
       play();
       await loadPack(packKey);
     });
     onBeforeUnmount(() => {
       disposed = true;
+      loadVersion++;
+      unsubscribe?.();
       stop();
     });
     return (_ctx, _cache) => {
@@ -170,6 +191,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b85f496e"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-47741fab"]]);
 
 export { AgentPetSprite as default };

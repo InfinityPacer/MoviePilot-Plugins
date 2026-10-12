@@ -1,3 +1,4 @@
+import { sameMappings, type ActionMappings } from '@/sprites/mappings'
 import type { PluginApi } from '@/host'
 import { builtinAvatar } from './avatars'
 import { normalizeSettings, type YingSettings } from '@/stage/settings'
@@ -62,6 +63,21 @@ export async function saveSettings(api: PluginApi, pluginId: string, settings: Y
   const saved = unwrap<YingSettings>(await api.post(`plugin/${pluginId}/settings`, values))
   if (!saved || !sameSettings(saved, values)) throw new Error('活动设置回读不一致，请刷新后核对')
   return { ...saved }
+}
+
+export async function saveMappings(
+  api: PluginApi,
+  pluginId: string,
+  key: string,
+  mappings: ActionMappings,
+  expected: ActionMappings,
+): Promise<ActionMappings> {
+  const result = unwrap<{ id: string; mappings: ActionMappings }>(
+    await api.post(`plugin/${pluginId}/packs/mappings`, { id: key, mappings, expected_mappings: expected }),
+  )
+  if (result?.id !== key || !result.mappings || !sameMappings(result.mappings, mappings))
+    throw new Error('动作映射回读不一致，请刷新后核对')
+  return { ...result.mappings }
 }
 
 /** 只查询所需字段，不读取系统环境或其他用户设置。 */

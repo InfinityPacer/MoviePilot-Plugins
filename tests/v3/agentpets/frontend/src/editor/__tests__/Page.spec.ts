@@ -75,7 +75,8 @@ async function setup() {
       provide: { [AGENT_HOST_KEY]: host },
       stubs: {
         PetPreview: {
-          props: ['pet', 'settings'],
+          name: 'PetPreview',
+          props: ['pet', 'settings', 'mappings'],
           template: '<div class="preview-stub" :data-scale="settings.scale" :data-pet="pet.key" />',
         },
       },
@@ -132,7 +133,7 @@ describe('Pet workspace', () => {
       speed: 1.5,
       roam: 'free',
     })
-    expect(view.text()).toContain('活动调整已保存')
+    expect(view.text()).toContain('调整已保存')
   })
 
   it('keeps the draft and avoids broadcasts when persistence fails', async () => {
@@ -157,7 +158,7 @@ describe('Pet workspace', () => {
     await change()
     await click('保存调整')
     expect(api.post.mock.calls).toEqual([['plugin/AgentPets/settings', { scale: 1.3, speed: 1.5, roam: 'free' }]])
-    expect(view.text()).toContain('活动调整已保存')
+    expect(view.text()).toContain('调整已保存')
   })
 
   it('does not broadcast a save result after the page has closed', async () => {
@@ -176,5 +177,61 @@ describe('Pet workspace', () => {
     await flushPromises()
     expect(api.post).toHaveBeenCalledTimes(1)
     expect(broadcast).not.toHaveBeenCalled()
+  })
+  it('keeps mapping drafts per pet, saves only verified mappings and supports undo', async () => {
+    const { view, api, click, broadcast } = await setup()
+    const selector = view.findComponent({ name: 'VSelect' })
+    selector.vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    const preview = view.findComponent({ name: 'PetPreview' })
+    preview.vm.$emit('pack-ready', { codex_version: 'v2', action_mappings: {} })
+    preview.vm.$emit('mappings', { 'stage.think': 'review' })
+    await flushPromises()
+    expect(api.post).not.toHaveBeenCalled()
+    expect(broadcast).not.toHaveBeenCalled()
+    selector.vm.$emit('update:modelValue', 'ying')
+    await flushPromises()
+    expect(preview.props('mappings')).toBeUndefined()
+    selector.vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    expect(preview.props('mappings')).toEqual({ 'stage.think': 'review' })
+    api.post.mockImplementation(async (_path, body) => ({
+      success: true,
+      data: { id: 'kurisu', mappings: (body as { mappings: unknown }).mappings },
+    }))
+    await click('保存调整')
+    expect(api.post.mock.calls).toEqual([
+      [
+        'plugin/AgentPets/packs/mappings',
+        { id: 'kurisu', mappings: { 'stage.think': 'review' }, expected_mappings: {} },
+      ],
+    ])
+    expect(broadcast).toHaveBeenCalledWith('agentpets.pack.updated', { key: 'kurisu' })
+    preview.vm.$emit('mappings', {})
+    await flushPromises()
+    await click('撤销')
+    expect(preview.props('mappings')).toEqual({ 'stage.think': 'review' })
+  })
+
+  it('keeps a failed mapping draft and refreshes its old-value precondition', async () => {
+    const { view, api, click, broadcast } = await setup()
+    view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    const preview = () => view.findComponent({ name: 'PetPreview' })
+    preview().vm.$emit('pack-ready', { codex_version: 'v2', action_mappings: {} })
+    preview().vm.$emit('mappings', { 'stage.think': 'review' })
+    await flushPromises()
+    api.post.mockResolvedValue({ success: false, message: '动作映射已在其他页面更改' })
+    await click('保存调整')
+    expect(view.text()).toContain('动作映射已在其他页面更改')
+    expect(preview().props('mappings')).toEqual({ 'stage.think': 'review' })
+    expect(broadcast).not.toHaveBeenCalled()
+    await view.find('[aria-label="刷新形象列表"]').trigger('click')
+    await flushPromises()
+    preview().vm.$emit('pack-ready', { codex_version: 'v2', action_mappings: { 'stage.think': 'waving' } })
+    await flushPromises()
+    expect(preview().props('mappings')).toEqual({ 'stage.think': 'review' })
+    await click('保存调整')
+    expect(api.post.mock.calls.at(-1)?.[1]).toMatchObject({ expected_mappings: { 'stage.think': 'waving' } })
   })
 })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { PACK_UPDATED_EVENT, type ActionMappings } from '@/sprites/mappings'
 import type { AgentPetContext, MoviePilotAgentHost, PluginApi } from '@/host'
 import {
   BUILTIN_PACK,
@@ -35,6 +36,10 @@ const props = withDefaults(
     motionActive?: boolean
     /** 预览加载失败时显示错误，不用其他宠物冒充选中项。 */
     strictPreview?: boolean
+    mappingsOverride?: ActionMappings
+    mappingKey?: string
+    nativeAction?: string
+    replay?: number
   }>(),
   {
     agent: null,
@@ -52,6 +57,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   appearance: [{ name: string; aspectRatio: number }]
   'load-state': ['loading' | 'ready' | 'error']
+  'pack-ready': [SpritePack]
 }>()
 
 const packKey = props.pet?.key || BUILTIN_PACK_ID
@@ -67,8 +73,16 @@ const cellRatio = ref(1)
 const frameIndex = ref(0)
 let timer = 0
 let disposed = false
+let loadVersion = 0
+let unsubscribe: (() => void) | undefined
 
-const resolved = computed(() => resolveAction(pack.value, props.action, props.intent, props.thinking))
+const resolved = computed(() =>
+  resolveAction(pack.value, props.action, props.intent, props.thinking, {
+    mappings: props.mappingsOverride,
+    mappingKey: props.mappingKey,
+    nativeAction: props.nativeAction,
+  }),
+)
 const frame = computed(() => {
   const frames = resolved.value.action.frames
   return frames[Math.min(frameIndex.value, frames.length - 1)] ?? 'idle'
@@ -144,6 +158,7 @@ async function loadPack(key: string) {
     emit('load-state', 'error')
     return
   }
+  const version = ++loadVersion
   emit('load-state', 'loading')
   let failed = false
   const instanceId = props.pluginId || 'AgentPets'
@@ -154,7 +169,7 @@ async function loadPack(key: string) {
     )
     const { pack: parsed } = validatePack(response?.data?.pack)
     if (!response?.success || !parsed || !response.data?.sheet_src) throw new Error(response?.message || 'invalid pack')
-    if (disposed) return
+    if (disposed || version !== loadVersion) return
     pack.value = props.pet?.mode === 'stage' ? withCodexStageActions(parsed) : parsed
     cellRatio.value = parsed.codex_version ? 192 / 208 : 1
     sheetSrc.value = response.data.sheet_src
@@ -162,14 +177,15 @@ async function loadPack(key: string) {
     failed = true
     console.warn(`[AgentPets] pack ${key} unavailable`)
   }
-  if (!disposed) {
+  if (!disposed && version === loadVersion) {
+    if (!failed) emit('pack-ready', pack.value)
     ready.value = !failed || !props.strictPreview
     emit('load-state', failed ? 'error' : 'ready')
   }
 }
 
 watch(
-  () => [resolved.value.key, props.motionActive, pack.value] as const,
+  () => [resolved.value.key, props.motionActive, pack.value, props.replay] as const,
   () => play(),
 )
 watch(
@@ -188,13 +204,20 @@ onMounted(async () => {
   if (ready.value) {
     measure(sheetSrc.value)
     emit('load-state', 'ready')
+    emit('pack-ready', pack.value)
   }
+  if (!props.strictPreview)
+    unsubscribe = props.agent?.on(PACK_UPDATED_EVENT, event => {
+      if (event.source === props.pluginId && event.data.key === packKey) void loadPack(packKey)
+    })
   play()
   await loadPack(packKey)
 })
 
 onBeforeUnmount(() => {
   disposed = true
+  loadVersion++
+  unsubscribe?.()
   stop()
 })
 </script>

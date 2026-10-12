@@ -1,10 +1,131 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, p as petImage, l as loadEditor, a as loadHostSelection, c as saveSettings } from './host-q6tYV7Ud.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-BbJu4Dqb.js';
-import AgentPet from './__federation_expose_AgentPet-zjW_Xv2Q.js';
-import { _ as _sfc_main$3 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-FwHhVtpM.js';
+import { A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, p as petImage, l as loadEditor, a as loadHostSelection, c as saveSettings, d as saveMappings } from './host-C3C56gXa.js';
+import { m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, e as HOST_INTENTS, d as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-CoSijLMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
+import AgentPet, { P as POSES } from './__federation_expose_AgentPet-sud2lC8K.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-CFVBb8K4.js';
+import { _ as _sfc_main$4 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-pKSoQjx0.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, S as SETTINGS_EVENT } from './settings-CQFXVfMf.js';
+
+const {defineComponent:_defineComponent$3} = await importShared('vue');
+
+const {toDisplayString:_toDisplayString$3,createElementVNode:_createElementVNode$3,resolveComponent:_resolveComponent$3,createVNode:_createVNode$3,createTextVNode:_createTextVNode$3,withCtx:_withCtx$3,renderList:_renderList$1,Fragment:_Fragment$1,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3,unref:_unref$3,createBlock:_createBlock$2} = await importShared('vue');
+
+const _hoisted_1$3 = { class: "ap-mappings" };
+const _hoisted_2$3 = { class: "ap-inline mb-2" };
+const _hoisted_3$3 = { class: "ap-section-title mb-0" };
+const {computed: computed$2} = await importShared('vue');
+const _sfc_main$3 = /* @__PURE__ */ _defineComponent$3({
+  __name: "ActionMappings",
+  props: {
+    pack: {},
+    mode: {},
+    modelValue: {},
+    disabled: { type: Boolean }
+  },
+  emits: ["update:modelValue", "preview"],
+  setup(__props, { emit: __emit }) {
+    const props = __props;
+    const emit = __emit;
+    const rows = computed$2(() => mappingRows(props.mode));
+    const groups = computed$2(() => [...new Set(rows.value.map((row) => row.group))]);
+    const animations = computed$2(
+      () => Object.keys(props.pack.actions).map((value) => ({
+        value,
+        title: ACTION_LABELS[value] ? `${ACTION_LABELS[value]} · ${value}` : value
+      }))
+    );
+    function set(key, value) {
+      const next = { ...props.modelValue };
+      if (value) next[key] = value;
+      else delete next[key];
+      emit("update:modelValue", next);
+    }
+    function defaultAction(action) {
+      return props.pack.actions[action] ? action : "idle";
+    }
+    return (_ctx, _cache) => {
+      const _component_v_spacer = _resolveComponent$3("v-spacer");
+      const _component_v_btn = _resolveComponent$3("v-btn");
+      const _component_v_select = _resolveComponent$3("v-select");
+      const _component_v_expansion_panel_text = _resolveComponent$3("v-expansion-panel-text");
+      const _component_v_expansion_panel = _resolveComponent$3("v-expansion-panel");
+      const _component_v_expansion_panels = _resolveComponent$3("v-expansion-panels");
+      return _openBlock$3(), _createElementBlock$3("section", _hoisted_1$3, [
+        _createElementVNode$3("div", _hoisted_2$3, [
+          _createElementVNode$3("h2", _hoisted_3$3, "动作映射 · " + _toDisplayString$3(__props.pack.name), 1),
+          _createVNode$3(_component_v_spacer),
+          _createVNode$3(_component_v_btn, {
+            size: "small",
+            variant: "text",
+            disabled: __props.disabled || !Object.keys(__props.modelValue).length,
+            onClick: _cache[0] || (_cache[0] = ($event) => emit("update:modelValue", {}))
+          }, {
+            default: _withCtx$3(() => [..._cache[1] || (_cache[1] = [
+              _createTextVNode$3("恢复全部默认", -1)
+            ])]),
+            _: 1
+          }, 8, ["disabled"])
+        ]),
+        _cache[2] || (_cache[2] = _createElementVNode$3("p", { class: "ap-muted" }, "选择触发时播放的动画。留空使用原有映射，修改后可试播，点击底部「保存调整」保存。", -1)),
+        _createVNode$3(_component_v_expansion_panels, {
+          variant: "accordion",
+          multiple: ""
+        }, {
+          default: _withCtx$3(() => [
+            (_openBlock$3(true), _createElementBlock$3(_Fragment$1, null, _renderList$1(groups.value, (group) => {
+              return _openBlock$3(), _createBlock$2(_component_v_expansion_panel, {
+                key: group,
+                title: group
+              }, {
+                default: _withCtx$3(() => [
+                  _createVNode$3(_component_v_expansion_panel_text, null, {
+                    default: _withCtx$3(() => [
+                      (_openBlock$3(true), _createElementBlock$3(_Fragment$1, null, _renderList$1(rows.value.filter((item) => item.group === group), (row) => {
+                        return _openBlock$3(), _createElementBlock$3("div", {
+                          key: row.key,
+                          class: "ap-mappings__row"
+                        }, [
+                          _createVNode$3(_component_v_select, {
+                            "model-value": __props.modelValue[row.key] ?? null,
+                            items: animations.value,
+                            label: row.label,
+                            placeholder: `默认：${_unref$3(ACTION_LABELS)[defaultAction(row.action)] ?? defaultAction(row.action)}`,
+                            hint: !__props.pack.actions[row.action] && !__props.modelValue[row.key] ? "素材没有专用动画，默认使用待机" : void 0,
+                            "persistent-placeholder": "",
+                            "persistent-hint": "",
+                            clearable: "",
+                            density: "compact",
+                            variant: "outlined",
+                            disabled: __props.disabled,
+                            "onUpdate:modelValue": ($event) => set(row.key, $event)
+                          }, null, 8, ["model-value", "items", "label", "placeholder", "hint", "disabled", "onUpdate:modelValue"]),
+                          _createVNode$3(_component_v_btn, {
+                            icon: "mdi-play-outline",
+                            "aria-label": `试播${row.label}`,
+                            variant: "text",
+                            size: "small",
+                            disabled: __props.disabled,
+                            onClick: ($event) => emit("preview", __props.modelValue[row.key] ?? defaultAction(row.action))
+                          }, null, 8, ["aria-label", "disabled", "onClick"])
+                        ]);
+                      }), 128))
+                    ]),
+                    _: 2
+                  }, 1024)
+                ]),
+                _: 2
+              }, 1032, ["title"]);
+            }), 128))
+          ]),
+          _: 1
+        })
+      ]);
+    };
+  }
+});
+
+const ActionMappingEditor = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-45110de7"]]);
 
 function windowViewport() {
   return {
@@ -110,7 +231,7 @@ function createMockPet(mode, key, hooks = {}) {
 
 const {defineComponent:_defineComponent$2} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString$2,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,Fragment:_Fragment,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,unref:_unref$2,resolveDynamicComponent:_resolveDynamicComponent,createBlock:_createBlock$1,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2} = await importShared('vue');
+const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString$2,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,Fragment:_Fragment,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,unref:_unref$2,resolveDynamicComponent:_resolveDynamicComponent,createBlock:_createBlock$1,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2,renderList:_renderList} = await importShared('vue');
 
 const _hoisted_1$2 = {
   class: "ap-preview",
@@ -130,7 +251,10 @@ const _hoisted_8$1 = {
   class: "ap-preview__entry"
 };
 const _hoisted_9$1 = { class: "ap-preview__hint" };
-const _hoisted_10$1 = { class: "ap-preview__actions" };
+const _hoisted_10$1 = { class: "ap-preview__library" };
+const _hoisted_11$1 = { class: "ap-inline mb-2" };
+const _hoisted_12$1 = { class: "ap-preview__choices" };
+const _hoisted_13$1 = { class: "ap-muted mb-0" };
 const {computed: computed$1,onBeforeUnmount: onBeforeUnmount$1,onMounted,ref: ref$1,shallowRef,watch: watch$1} = await importShared('vue');
 const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   __name: "PetPreview",
@@ -138,12 +262,21 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     pet: {},
     settings: {},
     api: {},
-    pluginId: {}
+    pluginId: {},
+    mappings: {},
+    disabled: { type: Boolean }
   },
-  emits: ["error"],
+  emits: ["error", "pack-ready", "mappings"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
+    const loadedPack = ref$1(null);
+    const replay = ref$1(0);
+    const previewGroup = ref$1(props.pet.key === "ying" ? "poses" : "native");
+    function onPackReady(pack) {
+      loadedPack.value = pack;
+      emit("pack-ready", pack);
+    }
     const failed = ref$1(false);
     function onLoadState(state) {
       failed.value = state === "error";
@@ -156,17 +289,71 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     const positionVersion = ref$1(0);
     const host = createMockHost(props.pluginId);
     const context = shallowRef(createMockPet(props.pet.mode, props.pet.key));
-    const actions = {
-      auto: "idle",
-      wave: "wave",
-      thinking: "thinking",
-      speaking: "speaking",
-      happy: "happy-jump"
+    const poseLabels = {
+      idle: "待机",
+      blink: "眨眼",
+      talk: "说话",
+      think: "思考",
+      jump: "跳起",
+      wave: "招手",
+      held: "被拖起",
+      fall: "下落",
+      sit: "坐下",
+      walk1: "行走第1帧",
+      walk2: "行走第2帧",
+      walk3: "行走第3帧",
+      walk4: "行走第4帧",
+      doze: "打盹",
+      confused: "疑惑",
+      alert: "提醒",
+      victory: "开心",
+      busy: "执行工具"
     };
-    const poses = { wave: "wave", thinking: "think", speaking: "talk", happy: "victory" };
-    const rendererAction = computed$1(() => actions[action.value] ?? "idle");
-    const previewPose = computed$1(() => poses[action.value]);
-    const stageComponent = computed$1(() => props.pet.key === "ying" ? AgentPet : _sfc_main$3);
+    const animations = computed$1(() => loadedPack.value ? nativeChoices(loadedPack.value) : []);
+    const choices = computed$1(() => {
+      if (previewGroup.value === "poses") return POSES.map((value) => ({ value: `pose:${value}`, title: poseLabels[value] }));
+      if (previewGroup.value === "actions")
+        return HOST_ACTIONS.map((value) => ({ value: `action:${value}`, title: ACTION_LABELS[value] }));
+      if (previewGroup.value === "intents")
+        return HOST_INTENTS.map((value) => ({ value: `intent:${value}`, title: ACTION_LABELS[value] }));
+      if (previewGroup.value === "directions")
+        return Object.keys(loadedPack.value?.actions ?? {}).filter((key) => key.startsWith("look-")).map((key) => ({ value: `native:${key}`, title: key.slice(5).replace("-", ".") + "°" }));
+      return animations.value.map((item) => ({ value: `native:${item.value}`, title: item.title }));
+    });
+    const nativeAction = computed$1(() => action.value.startsWith("native:") ? action.value.slice(7) : void 0);
+    const rendererAction = computed$1(() => action.value.startsWith("action:") ? action.value.slice(7) : null);
+    const rendererIntent = computed$1(() => action.value.startsWith("intent:") ? action.value.slice(7) : "idle");
+    const previewPose = computed$1(
+      () => nativeAction.value ? "idle" : action.value.startsWith("pose:") ? action.value.slice(5) : void 0
+    );
+    const events = [
+      ["panel.open", "打开助手"],
+      ["panel.close", "关闭助手"],
+      ["thinking.start", "开始思考"],
+      ["thinking.end", "结束思考"],
+      ["tool.start", "开始执行工具"],
+      ["tool.end", "工具结束"],
+      ["awaiting", "等待用户"],
+      ["done", "任务完成"],
+      ["error", "任务出错"],
+      ["preview", "回复预览"],
+      ["bubble", "通知气泡"]
+    ];
+    function playNative(name) {
+      choose(`native:${name}`);
+    }
+    function choose(value) {
+      action.value = value;
+      updateAction();
+      replay.value++;
+    }
+    function fireHost(name) {
+      action.value = "auto";
+      const phase = name === "thinking.start" ? "thinking" : name === "tool.start" ? "tool" : name === "awaiting" ? "awaiting" : name === "done" ? "done" : name === "error" ? "error" : "idle";
+      host.patch({ phase, thinking: phase === "thinking", panelOpen: name === "panel.open" });
+      host.fire(`agent.${name}`, { name: "preview_tool", text: "预览消息" });
+    }
+    const stageComponent = computed$1(() => props.pet.key === "ying" ? AgentPet : _sfc_main$4);
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedMotion = ref$1(mediaQuery.matches);
     let observer;
@@ -188,20 +375,19 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       host.patch({ motionAllowed: !paused.value && !reducedMotion.value, reducedMotion: reducedMotion.value });
     }
     function updateAction() {
-      host.patch({ phase: action.value === "auto" ? "idle" : "thinking" });
-      if (action.value === "wave") host.fire("agent.panel.open");
-      if (action.value === "happy") host.fire("agent.done");
-      if (action.value === "speaking") host.fire("agent.preview");
+      host.patch({ phase: action.value === "auto" ? "idle" : "thinking", thinking: false, panelOpen: false });
     }
+    watch$1(previewGroup, () => choose("auto"));
     watch$1([() => props.pet.mode, () => props.pet.key, positionVersion], () => {
       context.value = createMockPet(props.pet.mode, props.pet.key);
     });
     watch$1(paused, updateMotion);
-    watch$1(action, updateAction);
     watch$1(
       () => props.pet.key,
       () => {
         onLoadState("loading");
+        loadedPack.value = null;
+        previewGroup.value = props.pet.key === "ying" ? "poses" : "native";
         action.value = "auto";
         updateAction();
       }
@@ -225,12 +411,14 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       const _component_v_btn = _resolveComponent$2("v-btn");
       const _component_v_icon = _resolveComponent$2("v-icon");
       const _component_v_alert = _resolveComponent$2("v-alert");
-      const _component_v_btn_toggle = _resolveComponent$2("v-btn-toggle");
+      const _component_v_spacer = _resolveComponent$2("v-spacer");
+      const _component_v_tab = _resolveComponent$2("v-tab");
+      const _component_v_tabs = _resolveComponent$2("v-tabs");
       return _openBlock$2(), _createElementBlock$2("section", _hoisted_1$2, [
         _createElementVNode$2("header", _hoisted_2$2, [
           _createElementVNode$2("div", _hoisted_3$2, [
-            _cache[3] || (_cache[3] = _createElementVNode$2("span", { class: "ap-live-dot" }, null, -1)),
-            _cache[4] || (_cache[4] = _createElementVNode$2("strong", null, "实时预览", -1)),
+            _cache[5] || (_cache[5] = _createElementVNode$2("span", { class: "ap-live-dot" }, null, -1)),
+            _cache[6] || (_cache[6] = _createElementVNode$2("strong", null, "实时预览", -1)),
             _createElementVNode$2("span", _hoisted_4$2, _toDisplayString$2(__props.pet.name), 1)
           ]),
           _createElementVNode$2("div", _hoisted_5$2, [
@@ -261,17 +449,17 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
               icon: "mdi-paw-outline",
               size: "40"
             }),
-            _cache[5] || (_cache[5] = _createElementVNode$2("span", null, "你的 Pet，在这里活动", -1))
+            _cache[7] || (_cache[7] = _createElementVNode$2("span", null, "你的 Pet，在这里活动", -1))
           ]),
           __props.pet.mode === "stage" && __props.settings.roam === "surfaces" ? (_openBlock$2(), _createElementBlock$2(_Fragment, { key: 0 }, [
-            _cache[6] || (_cache[6] = _createElementVNode$2("div", { class: "v-sheet ap-preview__surface ap-preview__surface--left" }, [
+            _cache[8] || (_cache[8] = _createElementVNode$2("div", { class: "v-sheet ap-preview__surface ap-preview__surface--left" }, [
               _createElementVNode$2("span", null, "小平台")
             ], -1)),
-            _cache[7] || (_cache[7] = _createElementVNode$2("div", { class: "v-sheet ap-preview__surface ap-preview__surface--right" }, [
+            _cache[9] || (_cache[9] = _createElementVNode$2("div", { class: "v-sheet ap-preview__surface ap-preview__surface--right" }, [
               _createElementVNode$2("span", null, "休息台")
             ], -1))
           ], 64)) : _createCommentVNode$2("", true),
-          _cache[9] || (_cache[9] = _createElementVNode$2("div", {
+          _cache[11] || (_cache[11] = _createElementVNode$2("div", {
             class: "ap-preview__floor",
             "aria-hidden": "true"
           }, null, -1)),
@@ -284,8 +472,12 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
             "preview-root": canvas.value,
             "settings-override": __props.settings,
             "preview-pose": previewPose.value,
+            "native-action": nativeAction.value,
+            "mappings-override": __props.mappings,
+            replay: replay.value,
+            onPackReady,
             onLoadState
-          }, null, 40, ["agent", "pet", "api", "plugin-id", "preview-root", "settings-override", "preview-pose"])) : mounted.value ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_8$1, [
+          }, null, 40, ["agent", "pet", "api", "plugin-id", "preview-root", "settings-override", "preview-pose", "native-action", "mappings-override", "replay"])) : mounted.value ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_8$1, [
             (_openBlock$2(), _createBlock$1(AgentPetSprite, {
               key: `${__props.pluginId}:${__props.pet.key}:${positionVersion.value}`,
               agent: _unref$2(host),
@@ -293,10 +485,15 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
               api: __props.api,
               "plugin-id": __props.pluginId,
               action: rendererAction.value,
+              intent: rendererIntent.value,
+              "native-action": nativeAction.value,
+              "mappings-override": __props.mappings,
+              replay: replay.value,
+              onPackReady,
               "motion-active": !paused.value && !reducedMotion.value,
               "strict-preview": "",
               onLoadState
-            }, null, 8, ["agent", "pet", "api", "plugin-id", "action", "motion-active"]))
+            }, null, 8, ["agent", "pet", "api", "plugin-id", "action", "intent", "native-action", "mappings-override", "replay", "motion-active"]))
           ])) : _createCommentVNode$2("", true),
           failed.value ? (_openBlock$2(), _createBlock$1(_component_v_alert, {
             key: 3,
@@ -305,7 +502,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
             density: "compact",
             class: "ap-preview__error"
           }, {
-            default: _withCtx$2(() => [..._cache[8] || (_cache[8] = [
+            default: _withCtx$2(() => [..._cache[10] || (_cache[10] = [
               _createTextVNode$2("此 Pet 加载失败，请点击右上角重置重试。", -1)
             ])]),
             _: 1
@@ -313,72 +510,130 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
           _createElementVNode$2("span", _hoisted_9$1, _toDisplayString$2(__props.pet.mode === "stage" ? "拖动 Pet 试试 · 调整会即时显示" : "助手入口外观 · 试试下方动作"), 1)
         ], 8, _hoisted_6$1),
         _createElementVNode$2("footer", _hoisted_10$1, [
-          _cache[15] || (_cache[15] = _createElementVNode$2("span", { class: "ap-muted" }, "预览动作", -1)),
-          _createVNode$2(_component_v_btn_toggle, {
-            modelValue: action.value,
-            "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => action.value = $event),
-            mandatory: "",
+          _createElementVNode$2("div", _hoisted_11$1, [
+            _cache[13] || (_cache[13] = _createElementVNode$2("strong", null, "完整动作预览", -1)),
+            _createVNode$2(_component_v_spacer),
+            _createVNode$2(_component_v_btn, {
+              size: "small",
+              variant: action.value === "auto" ? "tonal" : "text",
+              onClick: _cache[2] || (_cache[2] = ($event) => choose("auto"))
+            }, {
+              default: _withCtx$2(() => [..._cache[12] || (_cache[12] = [
+                _createTextVNode$2("自主活动", -1)
+              ])]),
+              _: 1
+            }, 8, ["variant"])
+          ]),
+          _createVNode$2(_component_v_tabs, {
+            modelValue: previewGroup.value,
+            "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => previewGroup.value = $event),
             density: "compact",
-            variant: "text",
-            color: "primary",
-            class: "ap-preview__toggle"
+            color: "primary"
           }, {
             default: _withCtx$2(() => [
-              _createVNode$2(_component_v_btn, {
-                value: "auto",
-                size: "small"
-              }, {
-                default: _withCtx$2(() => [..._cache[10] || (_cache[10] = [
-                  _createTextVNode$2("自主活动", -1)
-                ])]),
-                _: 1
-              }),
-              _createVNode$2(_component_v_btn, {
-                value: "wave",
-                size: "small"
-              }, {
-                default: _withCtx$2(() => [..._cache[11] || (_cache[11] = [
-                  _createTextVNode$2("招手", -1)
-                ])]),
-                _: 1
-              }),
-              _createVNode$2(_component_v_btn, {
-                value: "thinking",
-                size: "small"
-              }, {
-                default: _withCtx$2(() => [..._cache[12] || (_cache[12] = [
-                  _createTextVNode$2("思考", -1)
-                ])]),
-                _: 1
-              }),
-              _createVNode$2(_component_v_btn, {
-                value: "speaking",
-                size: "small"
-              }, {
-                default: _withCtx$2(() => [..._cache[13] || (_cache[13] = [
-                  _createTextVNode$2("说话", -1)
-                ])]),
-                _: 1
-              }),
-              _createVNode$2(_component_v_btn, {
-                value: "happy",
-                size: "small"
+              __props.pet.key !== "ying" ? (_openBlock$2(), _createBlock$1(_component_v_tab, {
+                key: 0,
+                value: "native"
               }, {
                 default: _withCtx$2(() => [..._cache[14] || (_cache[14] = [
-                  _createTextVNode$2("开心", -1)
+                  _createTextVNode$2("原生动画", -1)
                 ])]),
                 _: 1
-              })
+              })) : _createCommentVNode$2("", true),
+              loadedPack.value?.codex_version === "v2" ? (_openBlock$2(), _createBlock$1(_component_v_tab, {
+                key: 1,
+                value: "directions"
+              }, {
+                default: _withCtx$2(() => [..._cache[15] || (_cache[15] = [
+                  _createTextVNode$2("视线方向", -1)
+                ])]),
+                _: 1
+              })) : _createCommentVNode$2("", true),
+              __props.pet.mode === "stage" ? (_openBlock$2(), _createBlock$1(_component_v_tab, {
+                key: 2,
+                value: "poses"
+              }, {
+                default: _withCtx$2(() => [..._cache[16] || (_cache[16] = [
+                  _createTextVNode$2("活动姿态", -1)
+                ])]),
+                _: 1
+              })) : _createCommentVNode$2("", true),
+              __props.pet.mode === "stage" ? (_openBlock$2(), _createBlock$1(_component_v_tab, {
+                key: 3,
+                value: "events"
+              }, {
+                default: _withCtx$2(() => [..._cache[17] || (_cache[17] = [
+                  _createTextVNode$2("MP 事件", -1)
+                ])]),
+                _: 1
+              })) : _createCommentVNode$2("", true),
+              __props.pet.mode === "renderer" ? (_openBlock$2(), _createBlock$1(_component_v_tab, {
+                key: 4,
+                value: "actions"
+              }, {
+                default: _withCtx$2(() => [..._cache[18] || (_cache[18] = [
+                  _createTextVNode$2("MP 动作", -1)
+                ])]),
+                _: 1
+              })) : _createCommentVNode$2("", true),
+              __props.pet.mode === "renderer" ? (_openBlock$2(), _createBlock$1(_component_v_tab, {
+                key: 5,
+                value: "intents"
+              }, {
+                default: _withCtx$2(() => [..._cache[19] || (_cache[19] = [
+                  _createTextVNode$2("入口状态", -1)
+                ])]),
+                _: 1
+              })) : _createCommentVNode$2("", true)
             ]),
             _: 1
-          }, 8, ["modelValue"])
-        ])
+          }, 8, ["modelValue"]),
+          _createElementVNode$2("div", _hoisted_12$1, [
+            previewGroup.value === "events" ? (_openBlock$2(), _createElementBlock$2(_Fragment, { key: 0 }, _renderList(events, ([key, label]) => {
+              return _createVNode$2(_component_v_btn, {
+                key,
+                size: "small",
+                variant: "tonal",
+                onClick: ($event) => fireHost(key)
+              }, {
+                default: _withCtx$2(() => [
+                  _createTextVNode$2(_toDisplayString$2(label), 1)
+                ]),
+                _: 2
+              }, 1032, ["onClick"]);
+            }), 64)) : (_openBlock$2(true), _createElementBlock$2(_Fragment, { key: 1 }, _renderList(choices.value, (item) => {
+              return _openBlock$2(), _createBlock$1(_component_v_btn, {
+                key: item.value,
+                size: "small",
+                variant: action.value === item.value ? "flat" : "tonal",
+                color: action.value === item.value ? "primary" : void 0,
+                disabled: failed.value,
+                onClick: ($event) => choose(item.value)
+              }, {
+                default: _withCtx$2(() => [
+                  _createTextVNode$2(_toDisplayString$2(item.title), 1)
+                ]),
+                _: 2
+              }, 1032, ["variant", "color", "disabled", "onClick"]);
+            }), 128))
+          ]),
+          _createElementVNode$2("p", _hoisted_13$1, _toDisplayString$2(previewGroup.value === "native" || previewGroup.value === "directions" ? "直接播放素材原始动画，不受动作映射影响。" : "按当前映射预览；自主活动时可拖动 Pet 验证移动交互。"), 1)
+        ]),
+        loadedPack.value?.codex_version && !__props.pet.builtin ? (_openBlock$2(), _createBlock$1(ActionMappingEditor, {
+          key: 0,
+          pack: loadedPack.value,
+          mode: __props.pet.mode,
+          "model-value": __props.mappings ?? loadedPack.value.action_mappings ?? {},
+          disabled: __props.disabled,
+          "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => emit("mappings", $event)),
+          onPreview: playNative
+        }, null, 8, ["pack", "mode", "model-value", "disabled"])) : _createCommentVNode$2("", true)
       ]);
     };
   }
 });
 
-const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-3c5112ac"]]);
+const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-14a3e01a"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
@@ -563,12 +818,28 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const feedback = ref("");
     const feedbackType = ref("success");
     const currentPet = computed(() => snapshot.value?.pets.find((pet) => pet.key === selectedKey.value) ?? null);
-    const dirty = computed(() => !sameSettings(draft.value, saved.value));
+    const previewVersion = ref(0);
+    const mappingDrafts = ref({});
+    const mappingSaved = ref({});
+    const mappingDirtyKeys = computed(
+      () => Object.keys(mappingDrafts.value).filter(
+        (key) => !sameMappings(mappingDrafts.value[key], mappingSaved.value[key] ?? {})
+      )
+    );
+    function onPackReady(pack) {
+      const key = selectedKey.value;
+      if (!pack.codex_version) return;
+      const preserve = mappingSaved.value[key] && !sameMappings(mappingDrafts.value[key] ?? {}, mappingSaved.value[key]);
+      mappingSaved.value[key] = { ...pack.action_mappings };
+      if (!preserve) mappingDrafts.value[key] = { ...pack.action_mappings };
+    }
+    const dirty = computed(() => !sameSettings(draft.value, saved.value) || mappingDirtyKeys.value.length > 0);
     const changedNames = computed(
       () => [
         draft.value.scale !== saved.value.scale ? "大小" : "",
         draft.value.speed !== saved.value.speed ? "速度" : "",
-        draft.value.roam !== saved.value.roam ? "活动范围" : ""
+        draft.value.roam !== saved.value.roam ? "活动范围" : "",
+        mappingDirtyKeys.value.length ? `${mappingDirtyKeys.value.length} 只 Pet 的动作映射` : ""
       ].filter(Boolean)
     );
     const blocked = computed(() => loading.value || busy.value || !props.api || !currentPet.value || !!error.value);
@@ -601,6 +872,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (editor.status === "fulfilled") {
         const preserveDraft = !reset && dirty.value;
         snapshot.value = editor.value;
+        for (const key of Object.keys(mappingDrafts.value)) {
+          if (!editor.value.pets.some((pet) => pet.key === key)) {
+            delete mappingDrafts.value[key];
+            delete mappingSaved.value[key];
+          }
+        }
+        previewVersion.value++;
         saved.value = { ...editor.value.settings };
         if (!preserveDraft) draft.value = { ...saved.value };
         if (!editor.value.pets.some((pet) => pet.key === selectedKey.value)) {
@@ -617,6 +895,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         snapshot.value = null;
         selection.value = null;
         selectedKey.value = "";
+        mappingDrafts.value = {};
+        mappingSaved.value = {};
         feedback.value = "";
         void refresh(true);
       },
@@ -629,6 +909,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     });
     function restore() {
       draft.value = { ...saved.value };
+      mappingDrafts.value = Object.fromEntries(
+        Object.entries(mappingSaved.value).map(([key, value]) => [key, { ...value }])
+      );
       feedback.value = "";
     }
     async function save() {
@@ -636,6 +919,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const api = props.api;
       const id = props.pluginId;
       const values = { ...draft.value };
+      const mappings = mappingDirtyKeys.value.map((key) => ({
+        key,
+        values: { ...mappingDrafts.value[key] },
+        expected: { ...mappingSaved.value[key] }
+      }));
       const version = ++operationVersion;
       const current = () => !disposed && version === operationVersion && id === props.pluginId;
       busy.value = true;
@@ -647,8 +935,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           saved.value = { ...result };
           agent?.emit?.(SETTINGS_EVENT, { ...result });
         }
+        for (const item of mappings) {
+          if (!current()) return;
+          const result = await saveMappings(api, id, item.key, item.values, item.expected);
+          if (!current()) return;
+          mappingSaved.value[item.key] = { ...result };
+          agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key });
+        }
         feedbackType.value = "success";
-        feedback.value = agent ? "活动调整已保存，并已通知当前页面更新。" : "活动调整已保存。";
+        feedback.value = agent ? "调整已保存，并已通知当前页面更新。" : "调整已保存。";
       } catch (reason) {
         if (!current()) return;
         feedbackType.value = "error";
@@ -679,7 +974,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               class: "mr-3"
             }),
             _createVNode(_component_v_toolbar_title, { class: "text-subtitle-1 font-weight-bold" }, {
-              default: _withCtx(() => [..._cache[6] || (_cache[6] = [
+              default: _withCtx(() => [..._cache[7] || (_cache[7] = [
                 _createTextVNode("助手形象 · 调整与预览", -1)
               ])]),
               _: 1
@@ -764,11 +1059,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               indeterminate: "",
               color: "primary"
             }),
-            _cache[7] || (_cache[7] = _createElementVNode("span", { class: "ap-muted" }, "正在准备你的 Pet…", -1))
+            _cache[8] || (_cache[8] = _createElementVNode("span", { class: "ap-muted" }, "正在准备你的 Pet…", -1))
           ])) : snapshot.value && currentPet.value ? (_openBlock(), _createElementBlock("div", _hoisted_4, [
             _createElementVNode("aside", _hoisted_5, [
               _createElementVNode("section", _hoisted_6, [
-                _cache[8] || (_cache[8] = _createElementVNode("h2", { class: "ap-section-title" }, "选择 Pet", -1)),
+                _cache[9] || (_cache[9] = _createElementVNode("h2", { class: "ap-section-title" }, "选择 Pet", -1)),
                 _createVNode(_component_v_select, {
                   modelValue: selectedKey.value,
                   "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => selectedKey.value = $event),
@@ -806,10 +1101,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 }, null, 8, ["modelValue", "disabled"])) : (_openBlock(), _createElementBlock("p", _hoisted_13, " 此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。 "))
               ]),
               _createElementVNode("section", _hoisted_14, [
-                _cache[10] || (_cache[10] = _createElementVNode("h2", { class: "ap-section-title" }, "在 MP 中使用", -1)),
-                _cache[11] || (_cache[11] = _createElementVNode("div", { class: "ap-muted" }, "当前系统默认", -1)),
+                _cache[11] || (_cache[11] = _createElementVNode("h2", { class: "ap-section-title" }, "在 MP 中使用", -1)),
+                _cache[12] || (_cache[12] = _createElementVNode("div", { class: "ap-muted" }, "当前系统默认", -1)),
                 _createElementVNode("strong", null, _toDisplayString(defaultName.value), 1),
-                _cache[12] || (_cache[12] = _createElementVNode("p", { class: "ap-muted mt-3 mb-0" }, "保存调整后，在「设定 → 系统 → 智能助手配置 → 助手形象」中选择 Pet。", -1)),
+                _cache[13] || (_cache[13] = _createElementVNode("p", { class: "ap-muted mt-3 mb-0" }, "保存调整后，在「设定 → 系统 → 智能助手配置 → 助手形象」中选择 Pet。", -1)),
                 !snapshot.value.enabled ? (_openBlock(), _createBlock(_component_v_alert, {
                   key: 0,
                   type: "info",
@@ -817,7 +1112,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                   density: "compact",
                   class: "mt-3"
                 }, {
-                  default: _withCtx(() => [..._cache[9] || (_cache[9] = [
+                  default: _withCtx(() => [..._cache[10] || (_cache[10] = [
                     _createTextVNode("先在配置页启用插件，形象才会出现在 MP 的可选列表中。", -1)
                   ])]),
                   _: 1
@@ -825,12 +1120,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               ])
             ]),
             (_openBlock(), _createBlock(PetPreview, {
-              key: props.pluginId,
+              key: `${props.pluginId}:${previewVersion.value}`,
               pet: currentPet.value,
               settings: draft.value,
               api: props.api,
-              "plugin-id": props.pluginId
-            }, null, 8, ["pet", "settings", "api", "plugin-id"]))
+              "plugin-id": props.pluginId,
+              mappings: mappingDrafts.value[selectedKey.value],
+              disabled: blocked.value,
+              onPackReady,
+              onMappings: _cache[5] || (_cache[5] = ($event) => mappingDrafts.value[selectedKey.value] = $event)
+            }, null, 8, ["pet", "settings", "api", "plugin-id", "mappings", "disabled"]))
           ])) : !loading.value ? (_openBlock(), _createElementBlock("div", _hoisted_15, [
             _createVNode(_component_v_icon, {
               icon: "mdi-paw-outline",
@@ -841,7 +1140,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createVNode(_component_v_btn, {
               variant: "tonal",
               color: "primary",
-              onClick: _cache[5] || (_cache[5] = ($event) => error.value ? refresh() : emit("switch"))
+              onClick: _cache[6] || (_cache[6] = ($event) => error.value ? refresh() : emit("switch"))
             }, {
               default: _withCtx(() => [
                 _createTextVNode(_toDisplayString(error.value ? "重新加载" : "前往素材管理"), 1)
@@ -864,7 +1163,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               disabled: blocked.value || !dirty.value,
               onClick: restore
             }, {
-              default: _withCtx(() => [..._cache[13] || (_cache[13] = [
+              default: _withCtx(() => [..._cache[14] || (_cache[14] = [
                 _createTextVNode("撤销", -1)
               ])]),
               _: 1
@@ -877,7 +1176,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               loading: busy.value,
               onClick: save
             }, {
-              default: _withCtx(() => [..._cache[14] || (_cache[14] = [
+              default: _withCtx(() => [..._cache[15] || (_cache[15] = [
                 _createTextVNode("保存调整", -1)
               ])]),
               _: 1

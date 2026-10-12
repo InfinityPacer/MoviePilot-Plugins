@@ -103,6 +103,7 @@ describe('contained live Pet preview', () => {
   it('previews speech and thinking on the selected sprite and pauses frames', async () => {
     const { view } = await setup()
     const sprite = view.container.querySelector('.agent-pet-sprites') as HTMLElement
+    await fireEvent.click(view.getByRole('tab', { name: '活动姿态' }))
     await fireEvent.click(view.getByRole('button', { name: '说话' }))
     await vi.advanceTimersByTimeAsync(32)
     expect(sprite.dataset.action).toBe('speaking')
@@ -137,5 +138,33 @@ describe('contained live Pet preview', () => {
     expect(view.getByText('此 Pet 加载失败，请点击右上角重置重试。')).toBeInTheDocument()
     expect(view.container.querySelector('[data-pack="projector-cat"]')).toBeNull()
     expect(view.emitted('error').at(-1)).toEqual([true])
+  })
+  it('shows the full native library and directions without changing runtime mappings', async () => {
+    const { view, api } = await setup()
+    await view.rerender({ mappings: { 'stage.idle': 'review', 'stage.think': 'failed' } })
+    const sprite = view.container.querySelector('.agent-pet-sprites') as HTMLElement
+    await fireEvent.click(view.getByRole('button', { name: '等待 · waiting' }))
+    await vi.advanceTimersByTimeAsync(32)
+    expect(sprite.dataset.action).toBe('waiting')
+    await fireEvent.click(view.getByRole('tab', { name: '视线方向' }))
+    await fireEvent.click(view.getByRole('button', { name: '337.5°' }))
+    await vi.advanceTimersByTimeAsync(32)
+    expect(sprite.dataset.action).toBe('look-337-5')
+    await fireEvent.click(view.getByRole('tab', { name: '活动姿态' }))
+    await fireEvent.click(view.getByRole('button', { name: '思考' }))
+    await vi.advanceTimersByTimeAsync(32)
+    expect(sprite.dataset.action).toBe('failed')
+    expect(api.post).not.toHaveBeenCalled()
+  })
+  it('keeps the simulated tool phase after a direct animation preview', async () => {
+    const { view } = await setup()
+    await fireEvent.click(view.getByRole('tab', { name: 'MP 事件' }))
+    await fireEvent.click(view.getByRole('button', { name: '会话' }))
+    await vi.advanceTimersByTimeAsync(350)
+    await fireEvent.click(view.getByRole('button', { name: '试播思考' }))
+    await fireEvent.click(view.getByRole('button', { name: '开始执行工具' }))
+    await vi.advanceTimersByTimeAsync(350)
+    const sprite = view.container.querySelector('.agent-pet-sprites') as HTMLElement
+    expect(sprite.dataset.action).toBe('charge')
   })
 })

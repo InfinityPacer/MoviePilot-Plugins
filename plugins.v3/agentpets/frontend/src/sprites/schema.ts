@@ -161,6 +161,7 @@ export function buildCodexPetPack(
     warning: action(rowFrames.review, 180),
     'eye-roll': action(rowFrames.review, 180),
     scan: action(scanFrames, 140),
+    ...Object.fromEntries(lookFrames.map(frame => [frame, action([frame])])),
   }
 
   return {
@@ -205,6 +206,8 @@ export interface SpritePack {
   actions: Record<string, PackAction>
   /** 宿主随机动作的候选。 */
   random_actions: string[]
+  /** 用户映射覆盖；原始 actions 保持不变。 */
+  action_mappings?: Record<string, string>
 }
 
 const NAME = /^[a-z0-9_-]{1,32}$/
@@ -311,6 +314,11 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
       frames,
       actions,
       random_actions: [...new Set(randomActions as string[])],
+      action_mappings: Object.fromEntries(
+        Object.entries((data.action_mappings ?? {}) as object).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      ),
     },
     errors,
   }
@@ -368,8 +376,18 @@ export function resolveAction(
   action: string | null | undefined,
   intent: string | null | undefined,
   thinking: boolean,
+  options: { mappings?: Record<string, string>; mappingKey?: string; nativeAction?: string } = {},
 ): { key: string; action: PackAction } {
-  const candidates = [action, intent, thinking ? 'thinking' : null, 'idle']
+  if (options.nativeAction && pack.actions[options.nativeAction])
+    return { key: options.nativeAction, action: pack.actions[options.nativeAction] }
+  const mappings = options.mappings ?? pack.action_mappings ?? {}
+  const candidates = [
+    options.mappingKey ? mappings[options.mappingKey] : null,
+    action ? (mappings[`action.${action}`] ?? action) : null,
+    intent ? (mappings[`intent.${intent}`] ?? intent) : null,
+    thinking ? (mappings['intent.thinking'] ?? 'thinking') : null,
+    'idle',
+  ]
   for (const key of candidates) {
     if (key && pack.actions[key]) return { key, action: pack.actions[key] }
   }

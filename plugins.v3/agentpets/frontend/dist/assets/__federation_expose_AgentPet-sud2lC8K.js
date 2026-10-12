@@ -2,6 +2,69 @@ import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { D as DEFAULT_SETTINGS, S as SETTINGS_EVENT, l as loadSettings, n as normalizeSettings } from './settings-CQFXVfMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
+const POSES = [
+  "idle",
+  "blink",
+  "talk",
+  "think",
+  "jump",
+  "wave",
+  "held",
+  "fall",
+  "sit",
+  "walk1",
+  "walk2",
+  "walk3",
+  "walk4",
+  "doze",
+  "confused",
+  "alert",
+  "victory",
+  "busy"
+];
+const ASSET_BASE = import.meta.url;
+function frameUrl(pose, base = ASSET_BASE) {
+  return new URL(`ying/${pose}.webp`, base).href;
+}
+function phasePose(phase) {
+  if (phase === "thinking") return "think";
+  if (phase === "tool") return "busy";
+  if (phase === "awaiting") return "alert";
+  return null;
+}
+function eventPose(name) {
+  switch (name) {
+    case "agent.done":
+      return { pose: "victory", duration: 2200 };
+    case "agent.error":
+      return { pose: "confused", duration: 2600 };
+    case "agent.preview":
+    case "agent.bubble":
+      return { pose: "talk", duration: 1600 };
+    case "agent.panel.open":
+      return { pose: "wave", duration: 1200 };
+    default:
+      return null;
+  }
+}
+function resolvePose(input) {
+  if (input.motion === "drag") return "held";
+  if (input.motion === "fall") return input.rising ? "jump" : "fall";
+  if (input.motion === "sit") return "sit";
+  if (input.transient) return input.transient;
+  if (input.sustained) return input.sustained;
+  if (input.motion === "walk") return WALK_CYCLE[(input.walkPhase % 4 + 4) % 4];
+  if (input.dozing) return "doze";
+  if (input.blinking) return "blink";
+  return "idle";
+}
+const WALK_CYCLE = ["walk1", "walk2", "walk3", "walk4"];
+const WALK_FRAME_STRIDE_PERCENT = 14;
+function walkFrame(distance, charHeight) {
+  const stride = Math.max(1, charHeight * WALK_FRAME_STRIDE_PERCENT / 100);
+  return Math.floor(Math.max(0, distance) / stride) % WALK_CYCLE.length;
+}
+
 function readViewport(state) {
   if (state?.viewport) return state.viewport;
   return {
@@ -171,69 +234,6 @@ function hopVelocity(from, to, gravity, lift) {
   const up = Math.sqrt(2 * gravity * (from.y - apex));
   const time = up / gravity + Math.sqrt(2 * (to.y - apex) / gravity);
   return { vx: (to.x - from.x) / time, vy: -up };
-}
-
-const POSES = [
-  "idle",
-  "blink",
-  "talk",
-  "think",
-  "jump",
-  "wave",
-  "held",
-  "fall",
-  "sit",
-  "walk1",
-  "walk2",
-  "walk3",
-  "walk4",
-  "doze",
-  "confused",
-  "alert",
-  "victory",
-  "busy"
-];
-const ASSET_BASE = import.meta.url;
-function frameUrl(pose, base = ASSET_BASE) {
-  return new URL(`ying/${pose}.webp`, base).href;
-}
-function phasePose(phase) {
-  if (phase === "thinking") return "think";
-  if (phase === "tool") return "busy";
-  if (phase === "awaiting") return "alert";
-  return null;
-}
-function eventPose(name) {
-  switch (name) {
-    case "agent.done":
-      return { pose: "victory", duration: 2200 };
-    case "agent.error":
-      return { pose: "confused", duration: 2600 };
-    case "agent.preview":
-    case "agent.bubble":
-      return { pose: "talk", duration: 1600 };
-    case "agent.panel.open":
-      return { pose: "wave", duration: 1200 };
-    default:
-      return null;
-  }
-}
-function resolvePose(input) {
-  if (input.motion === "drag") return "held";
-  if (input.motion === "fall") return input.rising ? "jump" : "fall";
-  if (input.motion === "sit") return "sit";
-  if (input.transient) return input.transient;
-  if (input.sustained) return input.sustained;
-  if (input.motion === "walk") return WALK_CYCLE[(input.walkPhase % 4 + 4) % 4];
-  if (input.dozing) return "doze";
-  if (input.blinking) return "blink";
-  return "idle";
-}
-const WALK_CYCLE = ["walk1", "walk2", "walk3", "walk4"];
-const WALK_FRAME_STRIDE_PERCENT = 14;
-function walkFrame(distance, charHeight) {
-  const stride = Math.max(1, charHeight * WALK_FRAME_STRIDE_PERCENT / 100);
-  return Math.floor(Math.max(0, distance) / stride) % WALK_CYCLE.length;
 }
 
 const SURFACE_SELECTOR = '.v-card, .v-sheet, .v-overlay__content, [role="dialog"]';
@@ -1478,4 +1478,4 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
 
 const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-8e0b176c"]]);
 
-export { AgentPet as default };
+export { POSES as P, AgentPet as default };
