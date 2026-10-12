@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { s as stageAction } from './mappings-CoSijLMf.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-CFVBb8K4.js';
-import AgentPet from './__federation_expose_AgentPet-sud2lC8K.js';
+import AgentPet from './__federation_expose_AgentPet-BZ8AMtup.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 

@@ -103,11 +103,11 @@ class AgentPets(_PluginBase):
     """为 Agent 助手提供小映全屏角色和精灵图素材包两类形象。"""
 
     plugin_name = "助手形象"
-    plugin_desc = "为 Agent 助手提供可替换的形象：全屏活动的看板娘小映，以及用精灵图素材包定制的入口外观。"
+    plugin_desc = "为 Agent 助手换上小映或自定义精灵图形象。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png"
-    plugin_version = "0.1.0.1"
-    plugin_author = "InfinityPacer"
-    author_url = "https://github.com/InfinityPacer"
+    plugin_version = "0.1.1"
+    plugin_author = "z2561221,InfinityPacer"
+    author_url = "https://github.com/z2561221"
     plugin_config_prefix = "agentpets_"
     plugin_order = 60
     auth_level = 1
