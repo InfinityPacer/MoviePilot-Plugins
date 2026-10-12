@@ -89,3 +89,30 @@ def test_built_preview_does_not_export_raw_vue_sources():
 
     dist = Path(__file__).parents[3] / "plugins.v3" / "agentpets" / "frontend" / "dist" / "assets"
     assert not list(dist.glob("*.vue"))
+
+
+@pytest.mark.parametrize("phase", ["read", "write", "readback"])
+def test_settings_io_errors_return_failure_without_changing_runtime(phase):
+    plugin, stored = editor()
+    before = plugin.settings()
+    original = deepcopy(stored)
+    calls = 0
+
+    def read():
+        nonlocal calls
+        calls += 1
+        if phase == "read" or (phase == "readback" and calls == 2):
+            raise OSError("settings unavailable")
+        return deepcopy(stored)
+
+    def write(_values):
+        if phase == "write":
+            raise RuntimeError("settings unavailable")
+        return True
+
+    plugin.get_config = read
+    plugin.update_config = write
+    response = plugin.api_save_settings(SaveSettingsRequest(scale=1.3, speed=1.5, roam="free"))
+    assert not response.success
+    assert plugin.settings() == before
+    assert stored == original

@@ -109,7 +109,7 @@ def _action(key: str, value: Any, frames: dict[str, int]) -> dict[str, Any]:
     if not isinstance(sequence, list) or not 1 <= len(sequence) <= MAX_SEQUENCE:
         raise PackError(f"actions.{key}.frames 必须是 1 到 {MAX_SEQUENCE} 个帧名")
     for name in sequence:
-        if name not in frames:
+        if not isinstance(name, str) or name not in frames:
             raise PackError(f"actions.{key} 引用了未定义的帧 {name!r}")
     frame_ms = value.get("frame_ms", DEFAULT_FRAME_MS)
     frame_ms = _int(frame_ms, f"actions.{key}.frame_ms", *FRAME_MS_RANGE)
@@ -277,7 +277,7 @@ def image_size(content: bytes) -> tuple[int, int]:
         with Image.open(io.BytesIO(content)) as image:
             width, height = image.size
             image.verify()
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
         raise PackError("精灵图内容无法解码") from exc
     if width > MAX_IMAGE_SIDE or height > MAX_IMAGE_SIDE:
         raise PackError(f"精灵图边长不能超过 {MAX_IMAGE_SIDE} 像素")
@@ -417,12 +417,15 @@ class PackStore:
         record.update(id=pack_id, preview=pack["preview"], avatar=pack["avatar"], created_at=int(time.time()))
         if pack.get("codex_version"):
             record["codex_version"] = pack["codex_version"]
+        image_path = None
+        previous_image = None
+        image_write_started = False
         if image:
             content, _, _ = decode_image(image)
             mime, ext = validate_sheet(content, pack)
             self._dir.mkdir(parents=True, exist_ok=True)
             file_name = f"{pack_id}.{ext}"
-            (self._dir / file_name).write_bytes(content)
+            image_path = self._dir / file_name
             record.update(source="upload", image_file=file_name, mime=mime, sheet_url="")
             if not record["preview"]:
                 record["preview"] = first_frame_preview(content, pack)
@@ -433,8 +436,33 @@ class PackStore:
             if not is_http_url(pack["sheet"]):
                 raise PackError("没有上传精灵图时，sheet 必须是 http(s) 图片地址")
             record.update(source="url", image_file="", mime="", sheet_url=pack["sheet"])
-        self._save_data(self.DATA_KEY, records + [record])
+        try:
+            if image_path is not None:
+                previous_image = image_path.read_bytes() if image_path.exists() else None
+                image_write_started = True
+                image_path.write_bytes(content)
+            self._save_records(records + [record])
+        except (PackError, OSError, RuntimeError):
+            # 提交可能已成功但回读失败；只有确认没有引用新图时才回收，不能误删已保存的素材。
+            if image_path is not None and image_write_started:
+                try:
+                    referenced = any(self.image_path(item) == image_path.resolve() for item in self.list())
+                    if not referenced:
+                        if previous_image is None:
+                            image_path.unlink(missing_ok=True)
+                        else:
+                            image_path.write_bytes(previous_image)
+                except (OSError, RuntimeError):
+                    pass  # 状态不明时保留图片，避免把可恢复数据变成永久丢失。
+            raise
         return record
+
+    def _save_records(self, records: list[dict[str, Any]]) -> None:
+        """保存后核对完整列表，拒绝未落盘或回读不一致的结果。"""
+        if self._save_data(self.DATA_KEY, records) is False:
+            raise PackError("保存失败，请重试")
+        if self.list() != records:
+            raise PackError("保存回读不一致，请刷新后核对")
 
     @_serialized
     def update(self, pack_id: str, *, name: str | None = None, expected_name: str | None = None,
@@ -476,9 +504,13 @@ class PackStore:
         if not target:
             return False
         path = self.image_path(target)
+        # 先确认元数据不再引用图片，再回收文件；持久化失败时原图必须仍然可用。
+        self._save_records([record for record in records if record["id"] != pack_id])
         if path and path.is_file():
-            path.unlink()
-        self._save_data(self.DATA_KEY, [record for record in records if record["id"] != pack_id])
+            try:
+                path.unlink()
+            except OSError as exc:
+                raise PackError("素材记录已移除，但图片清理失败，请查看插件日志") from exc
         return True
 
     def sheet_src(self, record: dict[str, Any]) -> str:
