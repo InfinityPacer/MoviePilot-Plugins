@@ -19,6 +19,7 @@ from functools import wraps
 from threading import RLock
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 # 素材包 ID 同时作为形象 key 写入用户选择，规则与宿主形象 key 一致。
 ID_PATTERN = re.compile(r"[a-z0-9_-]{1,32}")
@@ -457,6 +458,19 @@ def validate_mappings(pack: dict[str, Any], mappings: Any) -> dict[str, str]:
     return dict(mappings)
 
 
+def _write_image(path: Path, content: bytes) -> None:
+    """先完整写入同目录临时文件，再原子替换；失败不能留下半张正式图片。"""
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(content)
+        temporary.replace(path)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass  # 清理失败不覆盖原异常；临时文件不会被素材记录引用。
+
+
 class PackStore:
     """用户素材包：元数据存插件数据，上传的精灵图存插件数据目录。"""
 
@@ -529,7 +543,7 @@ class PackStore:
             if image_path is not None:
                 previous_image = image_path.read_bytes() if image_path.exists() else None
                 image_write_started = True
-                image_path.write_bytes(content)
+                _write_image(image_path, content)
             self._save_records(records + [record])
         except (PackError, OSError, RuntimeError):
             # 提交可能已成功但回读失败；只有确认没有引用新图时才回收，不能误删已保存的素材。
@@ -599,7 +613,7 @@ class PackStore:
             if path.read_bytes() != content:
                 raise PackError("目标图片校验不一致，未执行覆盖")
         else:
-            path.write_bytes(content)
+            _write_image(path, content)
         self._save_records([next_record if item["id"] == pack_id else item for item in records])
         return next_record
 
