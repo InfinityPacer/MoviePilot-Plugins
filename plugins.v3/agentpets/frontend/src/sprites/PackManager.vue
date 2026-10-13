@@ -45,7 +45,9 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{ changed: [] }>()
-const importMode = ref<'codex' | 'custom'>('codex')
+const importMode = ref<'codex' | 'archive' | 'custom'>('codex')
+const archiveBusy = ref(false)
+let previousInputMode: 'codex' | 'custom' = 'codex'
 const listError = ref('')
 const deleting = ref('')
 const exporting = ref('')
@@ -92,12 +94,14 @@ const codexImporting = ref(false)
 const packText = ref('')
 const imageMode = ref<'upload' | 'url'>('upload')
 watch(importMode, value => {
-  if (value === 'codex') {
+  if (value === 'archive') return
+  if (value === 'codex' && previousInputMode !== 'codex') {
     imageMode.value = 'upload'
     parsedCodexFile.value = null
     packText.value = ''
     importMessage.value = ''
   }
+  previousInputMode = value
 })
 const selectedFile = ref<File | null>(null)
 const parsedCodexFile = ref<File | null>(null)
@@ -118,6 +122,7 @@ const clientErrors = computed(() => {
 })
 const canSubmit = computed(
   () =>
+    importMode.value !== 'archive' &&
     !!validation.value?.pack &&
     !clientErrors.value.length &&
     !submitting.value &&
@@ -423,7 +428,6 @@ onMounted(refresh)
         暂无素材，导入一个 Pet 开始吧
       </p>
     </div>
-    <PackArchiveImport :api="api" :plugin-id="instanceId" :targets="packs" @changed="archiveImported" />
     <v-dialog
       :model-value="!!renameTarget"
       max-width="420"
@@ -462,7 +466,7 @@ onMounted(refresh)
         <v-icon icon="mdi-package-down" color="primary" />
         <div>
           <h2>导入 Pet</h2>
-          <p>支持 Codex Pet ZIP 包和原生精灵图，读取后即可添加。</p>
+          <p>支持 Codex Pet、AgentPets 导出包和自定义精灵图，读取并核对后再导入。</p>
         </div>
       </div>
       <v-btn-toggle
@@ -471,94 +475,108 @@ onMounted(refresh)
         density="compact"
         color="primary"
         variant="tonal"
-        class="mb-4"
-        :disabled="submitting || codexImporting"
-        ><v-btn value="codex">Codex Pet</v-btn><v-btn value="custom">自定义素材</v-btn></v-btn-toggle
+        class="agent-pet-sprites-config__import-modes mb-4"
+        aria-label="导入类型"
+        :disabled="submitting || codexImporting || archiveBusy"
       >
-      <template v-if="importMode === 'custom'">
-        <v-textarea
-          v-model="packText"
-          label="素材包 JSON"
-          :placeholder="EXAMPLE"
-          rows="6"
+        <v-btn value="codex">Codex Pet</v-btn>
+        <v-btn value="archive">AgentPets 素材包</v-btn>
+        <v-btn value="custom">自定义素材</v-btn>
+      </v-btn-toggle>
+      <PackArchiveImport
+        v-show="importMode === 'archive'"
+        :api="api"
+        :plugin-id="instanceId"
+        :targets="packs"
+        @busy="archiveBusy = $event"
+        @changed="archiveImported"
+      />
+      <div v-show="importMode !== 'archive'">
+        <template v-if="importMode === 'custom'">
+          <v-textarea
+            v-model="packText"
+            label="素材包 JSON"
+            :placeholder="EXAMPLE"
+            rows="6"
+            variant="outlined"
+            density="compact"
+            class="agent-pet-sprites-config__json"
+            hide-details="auto"
+            :disabled="submitting"
+          />
+          <v-btn-toggle v-model="imageMode" mandatory density="compact" variant="outlined" class="my-3"
+            ><v-btn value="upload">上传精灵图</v-btn><v-btn value="url">使用图片 URL</v-btn></v-btn-toggle
+          >
+        </template>
+        <v-file-input
+          v-if="imageMode === 'upload'"
+          v-model="fileModel"
+          label="选择精灵图或 ZIP"
+          accept="image/png,image/webp,image/gif,image/jpeg,.zip"
           variant="outlined"
           density="compact"
-          class="agent-pet-sprites-config__json"
-          hide-details="auto"
-          :disabled="submitting"
+          prepend-icon=""
+          prepend-inner-icon="mdi-paperclip"
+          :error-messages="imageError ? [imageError] : []"
+          hint="图片不超过 4MB，ZIP 不超过 8MB"
+          persistent-hint
+          :disabled="submitting || codexImporting"
+          @update:model-value="onImage"
         />
-        <v-btn-toggle v-model="imageMode" mandatory density="compact" variant="outlined" class="my-3"
-          ><v-btn value="upload">上传精灵图</v-btn><v-btn value="url">使用图片 URL</v-btn></v-btn-toggle
+        <v-alert v-if="importMessage" type="success" variant="tonal" density="compact" class="mt-3"
+          >{{ validation?.pack?.name }} · 已准备好，可以添加到我的素材。</v-alert
         >
-      </template>
-      <v-file-input
-        v-if="imageMode === 'upload'"
-        v-model="fileModel"
-        label="选择精灵图或 ZIP"
-        accept="image/png,image/webp,image/gif,image/jpeg,.zip"
-        variant="outlined"
-        density="compact"
-        prepend-icon=""
-        prepend-inner-icon="mdi-paperclip"
-        :error-messages="imageError ? [imageError] : []"
-        hint="图片不超过 4MB，ZIP 不超过 8MB"
-        persistent-hint
-        :disabled="submitting || codexImporting"
-        @update:model-value="onImage"
-      />
-      <v-alert v-if="importMessage" type="success" variant="tonal" density="compact" class="mt-3"
-        >{{ validation?.pack?.name }} · 已准备好，可以添加到我的素材。</v-alert
-      >
-      <v-expansion-panels v-if="importMode === 'codex' && packText" variant="accordion" class="mt-3"
-        ><v-expansion-panel title="编辑名称与动作映射"
-          ><v-expansion-panel-text
-            ><v-textarea
-              v-model="packText"
-              label="素材包 JSON"
-              rows="6"
-              variant="outlined"
-              density="compact"
-              hide-details
-              class="agent-pet-sprites-config__json"
-              :disabled="submitting" /></v-expansion-panel-text></v-expansion-panel
-      ></v-expansion-panels>
-      <v-alert
-        v-if="importError || clientErrors.length || serverError"
-        type="error"
-        variant="tonal"
-        density="compact"
-        class="mt-3"
-        ><div
-          v-for="message in [
-            ...(importError ? [importError] : []),
-            ...clientErrors,
-            ...(serverError ? [serverError] : []),
-          ]"
-          :key="message"
-        >
-          {{ message }}
-        </div></v-alert
-      >
-      <div class="d-flex align-center justify-end flex-wrap ga-2 mt-4">
-        <v-btn
-          v-if="imageMode === 'upload'"
-          color="primary"
+        <v-expansion-panels v-if="importMode === 'codex' && packText" variant="accordion" class="mt-3"
+          ><v-expansion-panel title="编辑名称与动作映射"
+            ><v-expansion-panel-text
+              ><v-textarea
+                v-model="packText"
+                label="素材包 JSON"
+                rows="6"
+                variant="outlined"
+                density="compact"
+                hide-details
+                class="agent-pet-sprites-config__json"
+                :disabled="submitting" /></v-expansion-panel-text></v-expansion-panel
+        ></v-expansion-panels>
+        <v-alert
+          v-if="importError || clientErrors.length || serverError"
+          type="error"
           variant="tonal"
-          prepend-icon="mdi-file-find-outline"
-          :loading="codexImporting"
-          :disabled="!selectedFile || !!imageError || codexImporting || submitting"
-          @click="importCodexPet"
-          >读取 Codex Pet</v-btn
+          density="compact"
+          class="mt-3"
+          ><div
+            v-for="message in [
+              ...(importError ? [importError] : []),
+              ...clientErrors,
+              ...(serverError ? [serverError] : []),
+            ]"
+            :key="message"
+          >
+            {{ message }}
+          </div></v-alert
         >
-        <v-btn
-          color="primary"
-          variant="flat"
-          prepend-icon="mdi-plus"
-          :loading="submitting"
-          :disabled="!canSubmit || codexImporting"
-          @click="addPack"
-          >添加 Pet</v-btn
-        >
+        <div class="d-flex align-center justify-end flex-wrap ga-2 mt-4">
+          <v-btn
+            v-if="imageMode === 'upload'"
+            color="primary"
+            variant="tonal"
+            prepend-icon="mdi-file-find-outline"
+            :loading="codexImporting"
+            :disabled="!selectedFile || !!imageError || codexImporting || submitting"
+            @click="importCodexPet"
+            >读取 Codex Pet</v-btn
+          >
+          <v-btn
+            color="primary"
+            variant="flat"
+            prepend-icon="mdi-plus"
+            :loading="submitting"
+            :disabled="!canSubmit || codexImporting"
+            @click="addPack"
+            >添加 Pet</v-btn
+          >
+        </div>
       </div>
     </div>
   </div>
@@ -624,6 +642,11 @@ onMounted(refresh)
   padding: 18px;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 12px;
+}
+.agent-pet-sprites-config__import-modes {
+  display: flex;
+  flex-wrap: wrap;
+  height: auto;
 }
 .agent-pet-sprites-config__json :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

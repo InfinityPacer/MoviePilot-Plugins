@@ -7,7 +7,7 @@ import { PACK_UPDATED_EVENT } from './mappings'
 import { readPackArchive, type ArchiveTarget, type PackArchive } from './packArchive'
 
 const props = defineProps<{ api: PluginApi | null; pluginId: string; targets: ArchiveTarget[] }>()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; busy: [value: boolean] }>()
 const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
 const file = ref<File | null>(null)
 const archive = ref<PackArchive | null>(null)
@@ -17,6 +17,7 @@ const mode = ref<'new' | 'copy' | 'replace'>('new')
 const error = ref('')
 const message = ref('')
 const busy = ref(false)
+watch(busy, value => emit('busy', value))
 let alive = true
 let operation = 0
 onBeforeUnmount(() => {
@@ -138,8 +139,8 @@ async function submit() {
 </script>
 
 <template>
-  <section class="ap-archive-import mb-6">
-    <h3 class="text-subtitle-1 mb-2">恢复 AgentPets 素材包</h3>
+  <section class="ap-archive-import">
+    <p class="ap-muted mb-3">选择从素材卡片导出的完整 ZIP，预览后可导入副本，或核对后更新同 ID 素材。</p>
     <v-file-input
       :model-value="file ? [file] : []"
       label="选择 AgentPets 导出 ZIP"
