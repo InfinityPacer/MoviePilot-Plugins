@@ -9,6 +9,7 @@ from ..shared.subscribe import (
     format_subscribe_label,
     is_full_best_version_subscribe,
     is_tv_episode_best_version_subscribe,
+    load_chain_subscription,
     resolve_subscribe_media_type,
 )
 from ..shared.update import update_subscribe
@@ -169,8 +170,12 @@ class PriorityManager:
         """为分集洗版把在库集交给主程序 backfill 合同落库，产生写入时返回 True。"""
         if not self.can_backfill(subscribe) or not existing_episodes:
             return False
-        summary = SubscribeChain().backfill_existing_episodes(
-            subscribe,
+        chain = SubscribeChain()
+        snapshot = load_chain_subscription(chain, subscribe)
+        if snapshot is None:
+            return False
+        summary = chain.backfill_existing_episodes(
+            snapshot,
             existing_episodes,
             priority=100,
             scene=self._format_backfill_scene(scene),
@@ -182,9 +187,12 @@ class PriorityManager:
         if is_tv_episode_best_version_subscribe(subscribe):
             target = self._episode_target_episodes(subscribe)
             if target:
-                SubscribeChain().backfill_existing_episodes(
-                    subscribe, target, priority=100, scene=self._format_backfill_scene("plugin_complete")
-                )
+                chain = SubscribeChain()
+                snapshot = load_chain_subscription(chain, subscribe)
+                if snapshot is not None:
+                    chain.backfill_existing_episodes(
+                        snapshot, target, priority=100, scene=self._format_backfill_scene("plugin_complete")
+                    )
             return
         payload = {"current_priority": 100}
         mode_label = self._mode_label(subscribe)
@@ -234,4 +242,7 @@ class PriorityManager:
             subscribe.current_priority = current_priority
         update_subscribe(self._subscribe_oper, subscribe.id, payload)
         subscribe.episode_priority = episode_priority
-        SubscribeChain().refresh_subscribe_progress(subscribe, scene=scene)
+        chain = SubscribeChain()
+        snapshot = load_chain_subscription(chain, subscribe)
+        if snapshot is not None:
+            chain.refresh_subscribe_progress(snapshot, scene=scene)
