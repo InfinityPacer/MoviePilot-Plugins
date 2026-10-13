@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { calibrationLayout, parseCalibration, type Calibration } from '@/sprites/calibration'
 import { loadImage, withLoadTimeout } from '@/loading'
 
 import { PACK_UPDATED_EVENT, type ActionMappings } from '@/sprites/mappings'
@@ -37,6 +38,8 @@ const props = withDefaults(
     motionActive?: boolean
     /** 预览加载失败时显示错误，不用其他宠物冒充选中项。 */
     strictPreview?: boolean
+    calibrationOverride?: Calibration
+    showCalibration?: boolean
     mappingsOverride?: ActionMappings
     mappingKey?: string
     nativeAction?: string
@@ -89,11 +92,13 @@ const frame = computed(() => {
   const frames = resolved.value.action.frames
   return frames[Math.min(frameIndex.value, frames.length - 1)] ?? 'idle'
 })
+const calibration = computed(() => parseCalibration(props.calibrationOverride ?? pack.value.calibration))
+const layout = computed(() => calibrationLayout(calibration.value, cellRatio.value))
 const frameStyle = computed(() => {
   const { cols, rows } = pack.value.grid
   const position = framePosition(pack.value, frame.value)
   return {
-    '--agent-pet-sprites-ratio': String(cellRatio.value),
+    ...layout.value.frame,
     backgroundImage: `url(${JSON.stringify(sheetSrc.value)})`,
     backgroundSize: `${cols * 100}% ${rows * 100}%`,
     backgroundPosition: `${position.x}% ${position.y}%`,
@@ -181,9 +186,9 @@ watch(
   () => play(),
 )
 watch(
-  [ready, pack, cellRatio],
+  [ready, pack, cellRatio, calibration],
   () => {
-    if (ready.value) emit('appearance', { name: pack.value.name, aspectRatio: cellRatio.value })
+    if (ready.value) emit('appearance', { name: pack.value.name, aspectRatio: layout.value.aspectRatio })
   },
   { immediate: true },
 )
@@ -214,7 +219,14 @@ onBeforeUnmount(() => {
     :data-action="resolved.key"
     :data-frame="frame"
   >
-    <div v-if="ready" class="agent-pet-sprites__frame" :style="frameStyle" />
+    <div
+      v-if="ready"
+      class="agent-pet-sprites__viewport"
+      :class="{ 'agent-pet-sprites__viewport--guides': showCalibration }"
+      :style="{ '--agent-pet-sprites-ratio': String(layout.aspectRatio) }"
+    >
+      <div class="agent-pet-sprites__frame" :style="frameStyle" />
+    </div>
   </div>
 </template>
 
@@ -231,9 +243,23 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.agent-pet-sprites__frame {
+.agent-pet-sprites__viewport {
+  position: relative;
+  overflow: hidden;
   width: min(100cqw, 100cqh * var(--agent-pet-sprites-ratio));
   aspect-ratio: var(--agent-pet-sprites-ratio);
+}
+.agent-pet-sprites__frame {
+  position: absolute;
   background-repeat: no-repeat;
+}
+.agent-pet-sprites__viewport--guides {
+  outline: 1px dashed rgb(var(--v-theme-primary));
+}
+.agent-pet-sprites__viewport--guides::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  border-bottom: 2px solid rgb(var(--v-theme-primary));
 }
 </style>

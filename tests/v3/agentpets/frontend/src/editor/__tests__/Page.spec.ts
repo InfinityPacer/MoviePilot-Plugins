@@ -76,7 +76,7 @@ async function setup() {
       stubs: {
         PetPreview: {
           name: 'PetPreview',
-          props: ['pet', 'settings', 'mappings'],
+          props: ['pet', 'settings', 'mappings', 'calibration'],
           template: '<div class="preview-stub" :data-scale="settings.scale" :data-pet="pet.key" />',
         },
       },
@@ -88,7 +88,9 @@ async function setup() {
   })
   await flushPromises()
   const change = async () => {
-    view.findComponent(StageSettings).vm.$emit('update:modelValue', { scale: 1.3, speed: 1.5, roam: 'free' })
+    view
+      .findComponent(StageSettings)
+      .vm.$emit('update:modelValue', { scale: 1.3, speed: 1.5, roam: 'free', movement: 'auto' })
     await flushPromises()
   }
   const click = async (text: string) => {
@@ -102,6 +104,39 @@ async function setup() {
 }
 
 describe('Pet workspace', () => {
+  it('keeps calibration drafts isolated, saves verified values and detects external changes', async () => {
+    const { view, api, broadcast, click } = await setup()
+    view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    const preview = view.findComponent({ name: 'PetPreview' })
+    preview.vm.$emit('pack-ready', { id: 'kurisu', calibration: {} })
+    await flushPromises()
+    const baseline = { ...preview.props('calibration') }
+    const adjusted = { ...baseline, left: 0.1, right: 0.9 }
+    preview.vm.$emit('calibration', adjusted)
+    await flushPromises()
+    expect(api.post).not.toHaveBeenCalled()
+    expect(broadcast).not.toHaveBeenCalled()
+    api.post.mockImplementation(async (_path, value) => ({
+      success: true,
+      data: { id: 'kurisu', calibration: value.calibration },
+    }))
+    await click('保存调整')
+    expect(api.post).toHaveBeenCalledWith('plugin/AgentPets/packs/calibration', {
+      id: 'kurisu',
+      calibration: adjusted,
+      expected_calibration: baseline,
+    })
+    expect(broadcast).toHaveBeenCalledWith('agentpets.pack.updated', { key: 'kurisu' })
+    preview.vm.$emit('calibration', { ...adjusted, top: 0.1 })
+    preview.vm.$emit('pack-ready', { id: 'kurisu', calibration: { ...adjusted, left: 0.2 } })
+    await flushPromises()
+    expect(view.text()).toContain('素材调整已在其他页面更改')
+    expect(preview.props('calibration').top).toBe(0.1)
+    await click('撤销')
+    expect(preview.props('calibration').left).toBe(0.2)
+  })
+
   it('previews a draft without API writes or live broadcasts, and supports undo', async () => {
     const { view, api, broadcast, change, click } = await setup()
     await change()
@@ -127,11 +162,14 @@ describe('Pet workspace', () => {
     view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
     await change()
     await click('保存调整')
-    expect(api.post.mock.calls).toEqual([['plugin/AgentPets/settings', { scale: 1.3, speed: 1.5, roam: 'free' }]])
+    expect(api.post.mock.calls).toEqual([
+      ['plugin/AgentPets/settings', { scale: 1.3, speed: 1.5, roam: 'free', movement: 'auto' }],
+    ])
     expect(broadcast).toHaveBeenCalledWith('agentpets.settings', {
       scale: 1.3,
       speed: 1.5,
       roam: 'free',
+      movement: 'auto',
     })
     expect(view.text()).toContain('调整已保存')
   })
@@ -157,7 +195,9 @@ describe('Pet workspace', () => {
     expect(view.text()).toContain('仍可预览和保存调整')
     await change()
     await click('保存调整')
-    expect(api.post.mock.calls).toEqual([['plugin/AgentPets/settings', { scale: 1.3, speed: 1.5, roam: 'free' }]])
+    expect(api.post.mock.calls).toEqual([
+      ['plugin/AgentPets/settings', { scale: 1.3, speed: 1.5, roam: 'free', movement: 'auto' }],
+    ])
     expect(view.text()).toContain('调整已保存')
   })
 
@@ -173,7 +213,7 @@ describe('Pet workspace', () => {
     )
     await click('保存调整')
     view.unmount()
-    resolve({ success: true, data: { scale: 1.3, speed: 1.5, roam: 'free' } })
+    resolve({ success: true, data: { scale: 1.3, speed: 1.5, roam: 'free', movement: 'auto' } })
     await flushPromises()
     expect(api.post).toHaveBeenCalledTimes(1)
     expect(broadcast).not.toHaveBeenCalled()
@@ -265,7 +305,7 @@ describe('Pet workspace', () => {
       preview().vm.$emit('pack-ready', { codex_version: 'v2', action_mappings: latest })
       await flushPromises()
       expect(preview().props('mappings')).toEqual({ 'stage.think': 'review' })
-      expect(view.text()).toContain('Kurisu 的动作映射已在其他页面更改')
+      expect(view.text()).toContain('Kurisu 的素材调整已在其他页面更改')
       expect(
         view
           .findAll('button')

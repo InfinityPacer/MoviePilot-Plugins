@@ -1,3 +1,4 @@
+import { sameCalibration, type Calibration } from '@/sprites/calibration'
 import { sameMappings, type ActionMappings } from '@/sprites/mappings'
 import type { PluginApi } from '@/host'
 import { builtinAvatar } from './avatars'
@@ -95,6 +96,25 @@ export async function saveMappings(
   if (result?.id !== key || !result.mappings || !sameMappings(result.mappings, mappings))
     throw new Error('动作映射回读不一致，请刷新后核对')
   return { ...result.mappings }
+}
+
+export async function saveCalibration(
+  api: PluginApi,
+  pluginId: string,
+  key: string,
+  calibration: Calibration,
+  expected: Calibration,
+): Promise<Calibration> {
+  const result = unwrap<{ id: string; calibration: Calibration }>(
+    await api.post(`plugin/${pluginId}/packs/calibration`, {
+      id: key,
+      calibration,
+      expected_calibration: expected,
+    }),
+  )
+  if (result?.id !== key || !result.calibration || !sameCalibration(result.calibration, calibration))
+    throw new Error('显示校准回读不一致，请刷新后核对')
+  return { ...result.calibration }
 }
 
 /** 只查询所需字段，不读取系统环境或其他用户设置。 */

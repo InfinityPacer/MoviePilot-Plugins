@@ -10,6 +10,7 @@ import base64
 import binascii
 import io
 import json
+import math
 import re
 import time
 from copy import deepcopy
@@ -63,6 +64,60 @@ IMAGE_TYPES = {
 
 class PackError(ValueError):
     """素材包或精灵图不合规；消息直接展示给配置页用户。"""
+
+
+DEFAULT_CALIBRATION = {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0,
+                       "baseline": 1.0, "offset_x": 0.0, "offset_y": 0.0}
+
+
+def parse_calibration(raw: Any = None) -> dict[str, float]:
+    """所有帧共用一个参考框，坐标为单格图片比例；只改变显示，不改原图。"""
+    if raw is None:
+        return dict(DEFAULT_CALIBRATION)
+    if not isinstance(raw, dict) or set(raw) - set(DEFAULT_CALIBRATION):
+        raise PackError("显示校准字段无效")
+    result = dict(DEFAULT_CALIBRATION)
+    for key, value in raw.items():
+        low, high = (-0.25, 0.25) if key.startswith("offset_") else (0.0, 1.0)
+        if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or not low <= value <= high:
+            raise PackError(f"显示校准 {key} 超出范围")
+        result[key] = round(float(value), 4)
+    if result["right"] - result["left"] < 0.1 - 1e-6 or result["bottom"] - result["top"] < 0.1 - 1e-6:
+        raise PackError("有效显示区域的宽高至少为原格子的 10%")
+    if not result["top"] < result["baseline"] <= result["bottom"]:
+        raise PackError("脚底基线必须在显示区域内")
+    return result
+
+
+def suggest_calibration(content: bytes, pack: dict[str, Any]) -> dict[str, float]:
+    """以全部已定义帧的透明边界合并参考框，以 idle 帧脚底给出建议。"""
+    from PIL import Image
+
+    validate_sheet(content, pack)
+    with Image.open(io.BytesIO(content)) as source:
+        source.seek(0)
+        sheet = source.convert("RGBA")
+    cols, rows = pack["grid"]["cols"], pack["grid"]["rows"]
+    width, height = sheet.width // cols, sheet.height // rows
+    boxes = []
+    idle = None
+    for index in set(pack["frames"].values()):
+        x, y = index % cols * width, index // cols * height
+        box = sheet.crop((x, y, x + width, y + height)).getchannel("A").getbbox()
+        if box:
+            boxes.append(box)
+            if index == pack["frames"]["idle"]:
+                idle = box
+    if not boxes:
+        raise PackError("素材没有可识别的非透明内容，请手动校准")
+    left, top = min(v[0] for v in boxes) / width, min(v[1] for v in boxes) / height
+    right, bottom = max(v[2] for v in boxes) / width, max(v[3] for v in boxes) / height
+    if right - left < 0.1:
+        left, right = max(0, right - 0.1), min(1, max(right, left + 0.1))
+    if bottom - top < 0.1:
+        top, bottom = max(0, bottom - 0.1), min(1, max(bottom, top + 0.1))
+    return parse_calibration({"left": left, "top": top, "right": right, "bottom": bottom,
+                              "baseline": max(top + 0.001, idle[3] / height if idle else bottom)})
 
 
 def _text(value: Any, field: str, limit: int, required: bool = True) -> str:
@@ -232,6 +287,8 @@ def parse_pack(raw: Any) -> dict[str, Any]:
     version = codex_pet_version(pack)
     if version:
         pack["codex_version"] = version
+    if "calibration" in raw:
+        pack["calibration"] = parse_calibration(raw["calibration"])
     return pack
 
 
@@ -417,6 +474,8 @@ class PackStore:
         record.update(id=pack_id, preview=pack["preview"], avatar=pack["avatar"], created_at=int(time.time()))
         if pack.get("codex_version"):
             record["codex_version"] = pack["codex_version"]
+        if "calibration" in pack:
+            record["calibration"] = pack["calibration"]
         image_path = None
         previous_image = None
         image_write_started = False
@@ -495,6 +554,18 @@ class PackStore:
             raise PackError("保存失败，请重试")
         if self.get(pack_id) != target:
             raise PackError("保存回读不一致，请刷新后核对")
+        return target
+
+    @_serialized
+    def calibrate(self, pack_id: str, value: Any, expected: Any) -> dict[str, Any]:
+        records = deepcopy(self.list())
+        target = next((item for item in records if item["id"] == pack_id), None)
+        if not target or pack_id in RESERVED_IDS:
+            raise PackError("此素材不存在或属于内置形象")
+        if parse_calibration(target.get("calibration")) != parse_calibration(expected):
+            raise PackError("显示校准已在其他页面更改，请刷新后重试")
+        target["calibration"] = parse_calibration(value)
+        self._save_records(records)
         return target
 
     @_serialized

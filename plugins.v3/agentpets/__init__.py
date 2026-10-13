@@ -26,7 +26,7 @@ from app.plugins import _PluginBase
 from app.sdk.logging import logger
 from app.sdk.security import verify_token
 
-from .pack import BUILTIN_PACK_ID, PackError, PackStore, codex_pet_version, load_builtin_pack
+from .pack import BUILTIN_PACK_ID, PackError, PackStore, codex_pet_version, load_builtin_pack, parse_calibration, suggest_calibration
 
 PLUGIN_DIR = Path(__file__).resolve().parent
 DIST_PATH = "frontend/dist/assets"
@@ -119,6 +119,13 @@ class SaveMappingsRequest(BaseModel):
     id: str = Field(min_length=1, max_length=32)
     mappings: dict[str, str] = Field(max_length=43)
     expected_mappings: dict[str, str] = Field(max_length=43)
+
+
+class SaveCalibrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=32)
+    calibration: dict[str, float]
+    expected_calibration: dict[str, float]
 
 
 class AgentPets(_PluginBase):
@@ -304,6 +311,7 @@ class AgentPets(_PluginBase):
             return schemas.Response(success=False, message=str(exc))
         pack = {name: record.get(name) for name in ("id", "name", "description", "grid", "frames", "actions", "random_actions")}
         pack["action_mappings"] = record.get("action_mappings", {})
+        pack["calibration"] = parse_calibration(record.get("calibration"))
         version = codex_pet_version(record)
         if version:
             pack["codex_version"] = version
@@ -335,6 +343,24 @@ class AgentPets(_PluginBase):
             return schemas.Response(success=False, message=str(exc))
         return schemas.Response(success=True, data={"id": record["id"], "mappings": record.get("action_mappings", {})})
 
+    def api_save_calibration(self, request: SaveCalibrationRequest):
+        try:
+            record = self._store().calibrate(request.id, request.calibration, request.expected_calibration)
+            return schemas.Response(success=True, data={"id": record["id"], "calibration": record["calibration"]})
+        except (PackError, OSError, RuntimeError) as exc:
+            return schemas.Response(success=False, message=str(exc))
+
+    def api_suggest_calibration(self, key: str):
+        try:
+            store = self._store()
+            record = store.get(key)
+            path = store.image_path(record) if record else None
+            if not record or not path:
+                raise PackError("自动识别需要已上传的图片；此素材仍可手动校准")
+            return schemas.Response(success=True, data=suggest_calibration(path.read_bytes(), record))
+        except (PackError, OSError, RuntimeError) as exc:
+            return schemas.Response(success=False, message=str(exc))
+
     def api_delete_pack(self, request: DeletePackRequest):
         if request.id == BUILTIN_PACK_ID:
             return schemas.Response(success=False, message="内置素材包不能删除")
@@ -353,6 +379,16 @@ class AgentPets(_PluginBase):
         """形象对所有登录用户显示，读取接口只要求登录；素材包写接口额外要求管理员。"""
         admin = [Depends(require_admin)]
         return [
+            {
+                "path": "/packs/calibration", "endpoint": self.api_save_calibration, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "保存素材显示校准",
+                "response_model": schemas.Response[dict],
+            },
+            {
+                "path": "/packs/calibration/suggest", "endpoint": self.api_suggest_calibration, "methods": ["GET"],
+                "auth": "bear", "summary": "读取显示校准建议",
+                "response_model": schemas.Response[dict],
+            },
             {
                 "path": "/packs/rename", "endpoint": self.api_rename_pack, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "重命名导入的 Codex Pet",

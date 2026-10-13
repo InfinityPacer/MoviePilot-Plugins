@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Calibration } from '@/sprites/calibration'
 import { ref } from 'vue'
 
 import type { AgentPetContext, MoviePilotAgentHost, PluginApi } from '@/host'
@@ -20,6 +21,8 @@ const props = withDefaults(
     previewRoot?: HTMLElement | null
     settingsOverride?: YingSettings
     previewPose?: Pose
+    calibrationOverride?: Calibration
+    showCalibration?: boolean
     mappingsOverride?: ActionMappings
     nativeAction?: string
     replay?: number
