@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createMockHost } from '@/dev/mockHost'
 
 import {
+  avoidPanel,
   blockedSpan,
   readViewport,
   shelterSink,
@@ -63,9 +64,23 @@ describe('stage geometry', () => {
   it.each([0.6, 1, 1.3, 1.6])('preserves 48 visible pixels at scale %s for both random and shelter peeks', scale => {
     const height = 120 * effectiveScale(scale, true)
     for (const depth of [0.5, 0.65, 0.8, 0.92]) {
-      expect(height - shelterSink(height, depth, true)).toBeGreaterThanOrEqual(48)
-      expect(shelterSink(height, depth, false)).toBe(Math.round(height * depth))
+      expect(height - shelterSink(height, depth)).toBeGreaterThanOrEqual(48)
+      const desktopHeight = 120 * scale
+      expect(desktopHeight - shelterSink(desktopHeight, depth)).toBeGreaterThanOrEqual(48)
     }
+  })
+
+  it('uses vertical space when a floating panel leaves no horizontal exit', () => {
+    const panel = { x: 0, y: 400, width: 1000, height: 200 }
+    const point = avoidPanel({ x: 450, y: 480 }, panel, viewport, { width: 100, height: 120 })
+    expect(point).toEqual({ x: 450, y: 600 })
+  })
+
+  it('keeps a non-overlapping point and handles a full-screen panel without an invalid position', () => {
+    const point = { x: 200, y: 500 }
+    const size = { width: 100, height: 120 }
+    expect(avoidPanel(point, { x: 800, y: 0, width: 200, height: 800 }, viewport, size)).toEqual(point)
+    expect(avoidPanel(point, { x: 0, y: 0, width: 1000, height: 800 }, viewport, size)).toEqual(point)
   })
 
   it('places the ground above the safe area and the soft keyboard', () => {

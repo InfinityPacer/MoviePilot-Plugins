@@ -1,8 +1,8 @@
 """助手形象：一个插件注册多个 Agent 助手形象的参考实现。
 
-- 小映（key ``ying``）是 stage 模式的全屏角色，插件拥有整个视口图层里的角色：
+- 慕慕（key ``ying``）是 stage 模式的全屏角色，插件拥有整个视口图层里的角色：
   拖拽、下落、站在页面元素上、散步和探头都由联邦组件 ``./AgentPet`` 完成。
-- Codex Pet 素材包由 ``./AgentPetCodex`` 复用小映舞台，支持缩放、拖拽与自主漫游。
+- Codex Pet 素材包由 ``./AgentPetCodex`` 复用慕慕舞台，支持缩放、拖拽与自主漫游。
 - 普通素材包是 renderer 模式的入口外观，共用 ``./AgentPetSprite``；内置放映猫与用户
   素材包各是一个形象，组件按 ``pet.key`` 读取素材包。
 
@@ -31,7 +31,7 @@ from .pack import BUILTIN_PACK_ID, PackError, PackStore, codex_pet_version, load
 PLUGIN_DIR = Path(__file__).resolve().parent
 DIST_PATH = "frontend/dist/assets"
 
-# 小映的形象 key 写入用户的形象选择（``<plugin_id>:<key>``），改名会让已有选择失效。
+# 慕慕的形象 key 写入用户的形象选择（``<plugin_id>:<key>``），改名会让已有选择失效。
 STAGE_KEY = "ying"
 # 以下图片路径都相对联邦产物目录（remoteEntry.js 所在目录），由构建按原名复制。
 STAGE_PREVIEW = "ying/preview.png"
@@ -39,7 +39,7 @@ STAGE_AVATAR = "ying/avatar.png"
 BUILTIN_PREVIEW = f"packs/{BUILTIN_PACK_ID}/preview.png"
 BUILTIN_AVATAR = f"packs/{BUILTIN_PACK_ID}/avatar.png"
 
-# 全屏角色的大小与移动速度范围；小映与 Codex Pet 使用同一组设置。
+# 全屏角色的大小与移动速度范围；慕慕与 Codex Pet 使用同一组设置。
 SCALE_RANGE = (0.6, 1.6)
 SPEED_RANGE = (0.5, 2.0)
 # 活动范围：surfaces 站在页面元素上，floor 只在底边，free 没有重力、自由停放。
@@ -137,10 +137,10 @@ class SaveCalibrationRequest(BaseModel):
 
 
 class AgentPets(_PluginBase):
-    """为 Agent 助手提供小映全屏角色和精灵图素材包两类形象。"""
+    """为 Agent 助手提供慕慕全屏角色和精灵图素材包两类形象。"""
 
     plugin_name = "助手形象"
-    plugin_desc = "为 Agent 助手换上小映或自定义精灵图形象。"
+    plugin_desc = "为 Agent 助手换上慕慕或自定义精灵图形象。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png"
     plugin_version = "0.1.2"
     plugin_author = "InfinityPacer,Kurisu"
@@ -193,11 +193,11 @@ class AgentPets(_PluginBase):
         return self._builtin
 
     def get_agent_pets(self) -> list[dict[str, Any]]:
-        """一个插件注册多个形象：小映、内置素材包、每个用户素材包各一项，key 在插件内唯一。"""
+        """一个插件注册多个形象：慕慕、内置素材包、每个用户素材包各一项，key 在插件内唯一。"""
         pets = [
             {
                 "key": STAGE_KEY,
-                "name": "小映",
+                "name": "慕慕",
                 "description": "原创 Q 版看板娘，可拖拽，会站在页面元素上散步",
                 "mode": "stage",
                 "component": "AgentPet",

@@ -73,11 +73,11 @@ describe('mobile stage recovery', () => {
     stage.unmount()
   })
 
-  it('limits an existing desktop shelter immediately after switching to mobile and shrinking', async () => {
+  it('preserves the visible shelter across desktop, mobile and scale changes', async () => {
     const stage = await setup('floor', 1.3, false, true)
     stage.host.patch({ isMobile: false })
     await vi.advanceTimersByTimeAsync(2300)
-    expect(stage.rect().height).toBeLessThan(48)
+    expect(stage.rect().height).toBeGreaterThanOrEqual(48)
     stage.host.patch({ isMobile: true })
     stage.host.emit('agentpets.settings', { scale: 0.6, speed: 1, roam: 'floor' })
     await vi.advanceTimersByTimeAsync(64)

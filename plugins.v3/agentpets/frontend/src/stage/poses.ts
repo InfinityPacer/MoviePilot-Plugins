@@ -1,6 +1,6 @@
 import type { AgentPhase } from '@/host'
 
-/** 小映的全部逐帧姿态；文件名即 `assets/ying/<pose>.webp`。 */
+/** 慕慕的全部逐帧姿态；文件名即 `assets/ying/<pose>.webp`。 */
 export const POSES = [
   'idle',
   'blink',

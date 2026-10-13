@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS, ROAM_MODES, SCALE_RANGE, SETTINGS_EVENT, SPEED_RANGE 
 import AgentPet from './AgentPet.vue'
 
 /**
- * 开发预览页：用页面内模拟宿主驱动一只独立的小映，手动触发每个宿主事件。
+ * 开发预览页：用页面内模拟宿主驱动一只独立的慕慕，手动触发每个宿主事件。
  *
  * 宿主事件只能由宿主发出，插件的 `emit` 不能伪造 `agent.*`，所以即使主程序提供了
  * `moviepilot:agent`，预览实例也始终连接模拟对象；真实宿主只用于展示可用状态。
@@ -190,8 +190,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="agent-pet-ying-page">
     <div class="d-flex flex-wrap ga-2 mb-4">
-      <v-btn v-if="!running" color="primary" variant="flat" @click="start">放出预览小映</v-btn>
-      <v-btn v-else variant="tonal" @click="stop">收起预览小映</v-btn>
+      <v-btn v-if="!running" color="primary" variant="flat" @click="start">放出预览慕慕</v-btn>
+      <v-btn v-else variant="tonal" @click="stop">收起预览慕慕</v-btn>
       <v-btn v-if="realHost" variant="text" @click="realHost.open?.()">打开真实助手面板</v-btn>
     </div>
 

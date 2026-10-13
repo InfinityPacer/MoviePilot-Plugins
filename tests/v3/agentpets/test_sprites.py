@@ -52,7 +52,7 @@ def _pack(**overrides) -> dict:
 
 
 def _sprites(plugin: AgentPets) -> list[dict]:
-    """只看素材包形象（renderer），小映的声明由 test_stage 覆盖。"""
+    """只看素材包形象（renderer），慕慕的声明由 test_stage 覆盖。"""
     return [pet for pet in plugin.get_agent_pets() if pet["mode"] == "renderer"]
 
 

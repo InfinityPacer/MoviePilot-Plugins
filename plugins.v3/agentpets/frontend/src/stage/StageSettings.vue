@@ -104,8 +104,8 @@ function reset() {
       <span v-if="props.livePreview" class="text-caption text-medium-emphasis">
         {{
           props.previewOnly
-            ? '仅在预览区试调。小映与 Codex Pet 共用活动设置，保存后对所有用户生效。'
-            : '调整时页面上正在运行的小映或 Codex Pet 会实时变化，保存后对所有用户生效。'
+            ? '仅在预览区试调。慕慕与 Codex Pet 共用活动设置，保存后对所有用户生效。'
+            : '调整时页面上正在运行的慕慕或 Codex Pet 会实时变化，保存后对所有用户生效。'
         }}
       </span>
       <v-spacer />
