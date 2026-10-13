@@ -57,15 +57,20 @@ jobs:
         working-directory: MoviePilot
         run: uv sync --locked
 
-      # 真实归档回归会启动打包子进程，须安装插件声明的 ZIP/7z 运行依赖。
-      - name: Install ArchiveManager test dependencies
-        run: uv pip install --python MoviePilot/.venv/bin/python -r MoviePilot-Plugins/plugins.v3/archivemanager/pyproject.toml
-
       - name: Run V3 plugin tests
         env:
           MOVIEPILOT_BACKEND_PATH: ${{ github.workspace }}/MoviePilot
         working-directory: MoviePilot-Plugins
-        run: ../MoviePilot/.venv/bin/python tests/run.py
+        run: |
+          # 从插件声明读取 ZIP/7z 依赖，仅为本次测试叠加，不改动主程序锁定环境。
+          python - <<'PY' > /tmp/archivemanager-test-requirements.txt
+          import tomllib
+          from pathlib import Path
+
+          manifest = tomllib.loads(Path("plugins.v3/archivemanager/pyproject.toml").read_text())
+          print("\n".join(manifest["project"]["dependencies"]))
+          PY
+          uv run --project ../MoviePilot --locked --no-sync --with-requirements /tmp/archivemanager-test-requirements.txt python tests/run.py
 
   plugin-coverage-gate:
     name: Plugin coverage gate
