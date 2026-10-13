@@ -1,4 +1,4 @@
-"""助手形象插件的多形象声明、慕慕设置与联邦产物合同测试。"""
+"""助手形象插件的多形象声明、小映设置与联邦产物合同测试。"""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def _plugin(config: dict | None = None) -> AgentPets:
 
 
 def test_registers_stage_and_builtin_sprite_pets() -> None:
-    """一个插件注册多个形象：慕慕为 stage，放映猫为 renderer，各自指定暴露组件。"""
+    """一个插件注册多个形象：小映为 stage，放映猫为 renderer，各自指定暴露组件。"""
     pets = _plugin({"enabled": True}).get_agent_pets()
 
     assert [(pet["key"], pet["mode"], pet["component"]) for pet in pets] == [
@@ -41,7 +41,7 @@ def test_registers_stage_and_builtin_sprite_pets() -> None:
     ]
     stage = pets[0]
     assert stage["bubbles"] == "host"
-    assert stage["name"] == "慕慕"
+    assert stage["name"] == "小映"
     for pet in pets:
         assert re.fullmatch(r"[a-z0-9_-]{1,32}", pet["key"])
         assert pet["api_version"] == 1
@@ -123,14 +123,14 @@ def test_every_pose_frame_is_shipped() -> None:
 
 
 def test_registered_components_are_exposed() -> None:
-    """慕慕、普通素材包与 Codex Pet 的组件都由联邦入口暴露。"""
+    """小映、普通素材包与 Codex Pet 的组件都由联邦入口暴露。"""
     remote_entry = (DIST / "remoteEntry.js").read_text(encoding="utf-8")
     for name in ("./AgentPet", "./AgentPetSprite", "./AgentPetCodex", "./Config", "./Page"):
         assert f'"{name}"' in remote_entry
 
 
 def test_settings_default_and_clamp() -> None:
-    """慕慕设置缺省为 1 倍、站在页面元素上；越界和非法值按边界收敛。"""
+    """小映设置缺省为 1 倍、站在页面元素上；越界和非法值按边界收敛。"""
     assert _plugin().settings() == {"scale": 1.0, "speed": 1.0, "roam": "surfaces", "movement": "auto"}
     assert _plugin({"scale": 9, "speed": 0.1, "roam": "free"}).settings() == {"scale": 1.6, "speed": 0.5, "roam": "free", "movement": "auto"}
     assert _plugin({"scale": "abc", "speed": float("nan"), "roam": "moon"}).settings() == {
@@ -142,7 +142,7 @@ def test_settings_default_and_clamp() -> None:
 
 
 def test_settings_api_requires_login_and_returns_saved_values() -> None:
-    """慕慕读取设置的接口只要求登录态，并返回已保存的值。"""
+    """小映读取设置的接口只要求登录态，并返回已保存的值。"""
     plugin = _plugin({"enabled": True, "scale": 1.25, "speed": 0.8, "roam": "floor"})
     routes = {(route["path"], route["methods"][0]): route for route in plugin.get_api()}
 

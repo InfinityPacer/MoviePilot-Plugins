@@ -9,7 +9,7 @@ import { configDefaults } from 'vitest/config'
 const TEST_ROOT = normalizePath(fileURLToPath(new URL('../../../tests/v3/agentpets/frontend', import.meta.url)))
 const REPOSITORY_ROOT = normalizePath(fileURLToPath(new URL('../../..', import.meta.url)))
 const ASSET_DIR = fileURLToPath(new URL('./src/assets', import.meta.url))
-/** 按原名复制进联邦产物的素材目录：慕慕逐帧图与内置素材包。 */
+/** 按原名复制进联邦产物的素材目录：小映逐帧图与内置素材包。 */
 const STATIC_DIRS = ['ying', 'packs']
 // 小头像随组件内联，避免独立静态图片请求失败；动画帧和精灵图仍按原路径提供。
 const UI_AVATAR_FILES = new Set(
@@ -47,7 +47,7 @@ function listFiles(dir: string): string[] {
 }
 
 /**
- * 慕慕逐帧图和内置素材包按原名复制到 `dist/assets/` 下。
+ * 小映逐帧图和内置素材包按原名复制到 `dist/assets/` 下。
  *
  * 宿主从插件静态文件接口加载联邦产物，组件按 `import.meta.url` 相对定位这些图片；
  * 后端声明的 `preview`、`avatar` 和读取的 `pack.json` 都依赖固定文件名，替换美术也不受构建哈希影响。

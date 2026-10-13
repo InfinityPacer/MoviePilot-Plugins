@@ -430,7 +430,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     api: { default: null },
     pluginId: { default: "" },
     sourcePluginId: { default: "" },
-    characterName: { default: "慕慕" },
+    characterName: { default: "小映" },
     aspectRatio: { default: 0 },
     previewRoot: { default: null },
     settingsOverride: {},
@@ -1698,6 +1698,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-0e6d1da4"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-3691c9a6"]]);
 
 export { POSES as P, AgentPet as default };
