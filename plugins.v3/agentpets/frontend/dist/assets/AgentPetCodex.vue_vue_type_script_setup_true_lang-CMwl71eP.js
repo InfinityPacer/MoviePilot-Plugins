@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { s as stageAction } from './mappings-jvCB_8v9.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite--xAqWRds.js';
-import AgentPet from './__federation_expose_AgentPet-Bp-kgnL9.js';
+import { s as stageAction } from './mappings-wSixMRjX.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-00TQt6P7.js';
+import AgentPet from './__federation_expose_AgentPet-CiU2Nd0s.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -18,6 +18,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     sourcePluginId: { default: "" },
     previewRoot: {},
     settingsOverride: {},
+    previewMaxSize: {},
     previewPose: {},
     calibrationOverride: {},
     showCalibration: { type: Boolean },

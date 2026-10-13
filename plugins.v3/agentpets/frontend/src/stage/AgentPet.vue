@@ -66,6 +66,8 @@ const props = withDefaults(
     previewRoot?: HTMLElement | null
     /** 预览草稿直接传入，不读取或写入已保存设置。 */
     settingsOverride?: YingSettings
+    /** 仅预览按窗口容纳角色，不更改活动设置的大小。 */
+    previewMaxSize?: { width: number; height: number }
     previewPose?: Pose
   }>(),
   {
@@ -198,7 +200,11 @@ const cleanups: Array<() => void> = []
 const startup = new AbortController()
 let settingsRevision = 0
 
-const charHeight = computed(() => BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value))
+const charHeight = computed(() => {
+  const height = BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value)
+  const fit = props.previewRoot ? props.previewMaxSize : undefined
+  return fit ? Math.min(height, Math.max(1, fit.height), Math.max(1, fit.width) / aspect.value) : height
+})
 const charWidth = computed(() => charHeight.value * aspect.value)
 const pose = computed<Pose>(() =>
   props.previewRoot && props.previewPose
@@ -222,6 +228,10 @@ watch(
     if (ready.value) relayout()
   },
 )
+
+watch([charHeight, charWidth], () => {
+  if (ready.value && props.previewRoot) relayout()
+})
 
 /** 单帧图片的加载状态。 */
 type FrameStatus = 'pending' | 'loaded' | 'error'

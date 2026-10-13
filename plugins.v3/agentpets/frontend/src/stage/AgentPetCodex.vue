@@ -20,6 +20,7 @@ const props = withDefaults(
     sourcePluginId?: string
     previewRoot?: HTMLElement | null
     settingsOverride?: YingSettings
+    previewMaxSize?: { width: number; height: number }
     previewPose?: Pose
     calibrationOverride?: Calibration
     showCalibration?: boolean

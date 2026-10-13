@@ -8,7 +8,8 @@ import PetPreview from '@/editor/PetPreview.vue'
 import type { PetChoice } from '@/editor/api'
 import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
 
-async function setup() {
+async function setup(size: { width: number; height: number; mobile?: boolean } = { width: 500, height: 400 }) {
+  vi.stubGlobal('innerWidth', size.mobile ? 390 : 1024)
   vi.useFakeTimers()
   vi.spyOn(Math, 'random').mockReturnValue(0.5)
   const original = Element.prototype.getBoundingClientRect
@@ -19,10 +20,10 @@ async function setup() {
         y: 100,
         left: 200,
         top: 100,
-        right: 700,
-        bottom: 500,
-        width: 500,
-        height: 400,
+        right: 200 + size.width,
+        bottom: 100 + size.height,
+        width: size.width,
+        height: size.height,
         toJSON: () => ({}),
       } as DOMRect
     return original.call(this)
@@ -60,11 +61,21 @@ async function setup() {
 
 describe('contained live Pet preview', () => {
   it('keeps canvas coordinates when the phone visual viewport is resized and panned', async () => {
-    const visual = Object.assign(new EventTarget(), { offsetTop: 300, offsetLeft: 40, width: 200, height: 200 })
+    const visual = Object.assign(new EventTarget(), {
+      offsetTop: 300,
+      offsetLeft: 40,
+      width: 200,
+      height: 200,
+    })
     vi.stubGlobal('visualViewport', visual)
     const { view } = await setup()
     const character = view.container.querySelector('.agent-pet-ying__character') as HTMLElement
-    expect(character.style.transform).toContain('264px')
+    const [x, y] = character.style.transform
+      .slice('translate3d('.length)
+      .split(',')
+      .map(value => parseFloat(value))
+    expect(x + parseFloat(character.style.width) / 2).toBeCloseTo(250)
+    expect(y + parseFloat(character.style.height) / 2).toBeCloseTo(198)
     const initial = character.style.transform
     visual.height = 100
     visual.dispatchEvent(new Event('resize'))
@@ -79,9 +90,10 @@ describe('contained live Pet preview', () => {
     expect(character.style.height).toBe('120px')
     expect(canvas.querySelector('.agent-pet-ying--contained')).not.toBeNull()
     expect(api.get.mock.calls).toEqual([['plugin/Clone1/pack?key=kurisu']])
+    await fireEvent.click(view.getByRole('button', { name: '运动测试' }))
     await view.rerender({ settings: { scale: 1.5, speed: 2, roam: 'free' } })
     await vi.advanceTimersByTimeAsync(32)
-    expect(character.style.height).toBe('180px')
+    expect((canvas.querySelector('.agent-pet-ying__character') as HTMLElement).style.height).toBe('180px')
     expect(canvas.querySelector('.agent-pet-ying')?.getAttribute('data-roam')).toBe('free')
     expect(api.post).not.toHaveBeenCalled()
     view.unmount()
@@ -91,12 +103,18 @@ describe('contained live Pet preview', () => {
 
   it('resets a dragged preview position while preserving its activity draft', async () => {
     const { view, api } = await setup()
+    await fireEvent.click(view.getByRole('button', { name: '运动测试' }))
     await view.rerender({ settings: { scale: 1, speed: 1.5, roam: 'free' } })
     await vi.advanceTimersByTimeAsync(32)
     const character = view.container.querySelector('.agent-pet-ying__character') as HTMLElement
     const initialPosition = character.style.transform
     const pointer = (type: string, clientX: number, clientY: number) => {
-      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX, clientY })
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX,
+        clientY,
+      })
       Object.defineProperty(event, 'pointerId', { value: 1 })
       return event
     }
@@ -148,13 +166,15 @@ describe('contained live Pet preview', () => {
     api.get.mockRejectedValue(new Error('offline'))
     await view.rerender({ pet: { ...pet, key: 'unavailable' } })
     await vi.advanceTimersByTimeAsync(64)
-    expect(view.getByText('此 Pet 加载失败，请点击右上角重置重试。')).toBeInTheDocument()
+    expect(view.getByText('此 Pet 加载失败，请点击重置重试。')).toBeInTheDocument()
     expect(view.container.querySelector('[data-pack="projector-cat"]')).toBeNull()
     expect(view.emitted('error').at(-1)).toEqual([true])
   })
   it('shows the full native library and directions without changing runtime mappings', async () => {
     const { view, api } = await setup()
-    await view.rerender({ mappings: { 'stage.idle': 'review', 'stage.think': 'failed' } })
+    await view.rerender({
+      mappings: { 'stage.idle': 'review', 'stage.think': 'failed' },
+    })
     const sprite = view.container.querySelector('.agent-pet-sprites') as HTMLElement
     await fireEvent.click(view.getByRole('button', { name: '等待 · waiting' }))
     await vi.advanceTimersByTimeAsync(32)
@@ -172,12 +192,113 @@ describe('contained live Pet preview', () => {
   it('keeps the simulated tool phase after a direct animation preview', async () => {
     const { view } = await setup()
     await fireEvent.click(view.getByRole('tab', { name: 'MP 事件' }))
+    await fireEvent.click(view.getByRole('tab', { name: '映射' }))
     await fireEvent.click(view.getByRole('button', { name: '会话' }))
     await vi.advanceTimersByTimeAsync(350)
     await fireEvent.click(view.getByRole('button', { name: '试播思考' }))
+    expect(view.getByText('正在播放：思考 → 思考')).toBeInTheDocument()
+    await fireEvent.click(view.getByRole('tab', { name: '动作试播' }))
     await fireEvent.click(view.getByRole('button', { name: '开始执行工具' }))
     await vi.advanceTimersByTimeAsync(350)
     const sprite = view.container.querySelector('.agent-pet-sprites') as HTMLElement
     expect(sprite.dataset.action).toBe('charge')
+  })
+  it('keeps a centered animated character mounted while switching and scrolling editor tabs', async () => {
+    const { view, api } = await setup()
+    await fireEvent.click(view.getByRole('button', { name: '招手 · wave' }))
+    await vi.advanceTimersByTimeAsync(32)
+    const character = view.container.querySelector('.agent-pet-ying__character') as HTMLElement
+    const sprite = view.container.querySelector('.agent-pet-sprites') as HTMLElement
+    const position = character.style.transform
+    const frame = sprite.dataset.frame
+    await vi.advanceTimersByTimeAsync(240)
+    expect(sprite.dataset.frame).not.toBe(frame)
+    for (const name of ['活动', '校准', '映射', '动作试播']) {
+      await fireEvent.click(view.getByRole('tab', { name }))
+      const scroll = view.container.querySelector('.ap-preview__scroll')!
+      await fireEvent.scroll(scroll, { target: { scrollTop: 400 } })
+      expect(view.container.querySelector('.agent-pet-ying__character')).toBe(character)
+      expect(sprite.dataset.action).toBe('wave')
+    }
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(character.style.transform).toBe(position)
+    expect(view.getByText('正在播放：招手 · wave')).toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalled()
+  })
+  it.each([
+    { width: 300, height: 260 },
+    { width: 390, height: 180, mobile: true },
+    { width: 100, height: 160 },
+  ])('fits a compact $width × $height preview without changing saved scale or remounting on expansion', async size => {
+    const { view, api } = await setup(size)
+    const settings = { scale: 1.6, speed: 1, roam: 'surfaces' }
+    await view.rerender({ settings })
+    await vi.advanceTimersByTimeAsync(48)
+    const character = view.container.querySelector('.agent-pet-ying__character') as HTMLElement
+    expect(parseFloat(character.style.height)).toBeLessThanOrEqual(size.height - 40)
+    expect(parseFloat(character.style.width)).toBeLessThanOrEqual(size.width - 32)
+    expect(settings).toEqual({ scale: 1.6, speed: 1, roam: 'surfaces' })
+    const compactHeight = parseFloat(character.style.height)
+    size.height += 200
+    size.width += 200
+    await fireEvent.click(view.getByRole('button', { name: '放大预览' }))
+    window.dispatchEvent(new Event('resize'))
+    await vi.advanceTimersByTimeAsync(48)
+    expect(view.container.querySelector('.agent-pet-ying__character')).toBe(character)
+    expect(parseFloat(character.style.height)).toBeGreaterThanOrEqual(compactHeight)
+    expect(parseFloat(character.style.height)).toBeCloseTo(size.mobile ? 153.6 : 192)
+    expect(api.post).not.toHaveBeenCalled()
+  })
+  it('fits very wide calibrated artwork and restores centered debugging after a movement test', async () => {
+    const { view, api } = await setup({ width: 300, height: 180, mobile: true })
+    const calibration = { left: 0, top: 0, right: 1, bottom: 0.1, baseline: 0.1, offset_x: 0, offset_y: 0 }
+    await view.rerender({ calibration, settings: { scale: 1.6, speed: 1, roam: 'surfaces', movement: 'auto' } })
+    await vi.advanceTimersByTimeAsync(48)
+    let character = view.container.querySelector('.agent-pet-ying__character') as HTMLElement
+    expect(parseFloat(character.style.width)).toBeCloseTo(268)
+    expect(parseFloat(character.style.height)).toBeLessThan(40)
+    expect(view.container.querySelectorAll('.ap-preview__surface')).toHaveLength(0)
+    await fireEvent.click(view.getByRole('button', { name: '运动测试' }))
+    await vi.advanceTimersByTimeAsync(48)
+    expect(view.container.querySelectorAll('.ap-preview__surface')).toHaveLength(2)
+    expect(view.container.querySelector('.agent-pet-ying')?.getAttribute('data-roam')).toBe('surfaces')
+    await fireEvent.click(view.getByRole('button', { name: '动作调试' }))
+    await vi.advanceTimersByTimeAsync(48)
+    character = view.container.querySelector('.agent-pet-ying__character') as HTMLElement
+    const [x] = character.style.transform
+      .slice('translate3d('.length)
+      .split(',')
+      .map(value => parseFloat(value))
+    expect(x + parseFloat(character.style.width) / 2).toBeCloseTo(150)
+    const position = character.style.transform
+    await vi.advanceTimersByTimeAsync(12_000)
+    expect(character.style.transform).toBe(position)
+    expect(api.post).not.toHaveBeenCalled()
+  })
+  it('shows original and calibrated previews beside each other and preserves the calibration draft', async () => {
+    const { view, api } = await setup()
+    const calibration = {
+      left: 0.1,
+      top: 0.1,
+      right: 0.8,
+      bottom: 0.9,
+      baseline: 0.8,
+      offset_x: 0,
+      offset_y: 0,
+    }
+    await view.rerender({ calibration })
+    await fireEvent.click(view.getByRole('tab', { name: '校准' }))
+    await fireEvent.click(view.getByRole('checkbox', { name: '对照原始显示' }))
+    await vi.advanceTimersByTimeAsync(48)
+    expect(view.container.querySelectorAll('.agent-pet-sprites')).toHaveLength(2)
+    expect(view.getByLabelText('原始显示对照')).toBeInTheDocument()
+    expect(view.container.querySelector('.ap-preview__canvas .agent-pet-sprites__viewport--guides')).not.toBeNull()
+    await fireEvent.click(view.getByRole('tab', { name: '映射' }))
+    expect(view.container.querySelectorAll('.agent-pet-sprites')).toHaveLength(2)
+    expect(calibration.left).toBe(0.1)
+    expect(api.post).not.toHaveBeenCalled()
+    view.unmount()
+    await vi.advanceTimersByTimeAsync(48)
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
