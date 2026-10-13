@@ -8,10 +8,12 @@ import {
   sameSettings,
   saveSettings,
   saveMappings,
+  saveCalibration,
   type EditorSnapshot,
   type HostSelection,
 } from '@/editor/api'
 import { PACK_UPDATED_EVENT, sameMappings, type ActionMappings } from '@/sprites/mappings'
+import { parseCalibration, sameCalibration, type Calibration } from '@/sprites/calibration'
 import type { SpritePack } from '@/sprites/schema'
 import PetPreview from '@/editor/PetPreview.vue'
 import '@/editor/ui.css'
@@ -40,11 +42,21 @@ const feedback = ref('')
 const feedbackType = ref<'success' | 'warning' | 'error'>('success')
 const currentPet = computed(() => snapshot.value?.pets.find(pet => pet.key === selectedKey.value) ?? null)
 const previewVersion = ref(0)
+const calibrationDrafts = ref<Record<string, Calibration>>({})
+const calibrationSaved = ref<Record<string, Calibration>>({})
+const calibrationConflicts = ref<Record<string, Calibration>>({})
+const calibrationDirtyKeys = computed(() =>
+  Object.keys(calibrationDrafts.value).filter(
+    key => !sameCalibration(calibrationDrafts.value[key], calibrationSaved.value[key]),
+  ),
+)
 const mappingDrafts = ref<Record<string, ActionMappings>>({})
 const mappingSaved = ref<Record<string, ActionMappings>>({})
 const mappingConflicts = ref<Record<string, ActionMappings>>({})
 const conflictingNames = computed(() =>
-  Object.keys(mappingConflicts.value).map(key => snapshot.value?.pets.find(pet => pet.key === key)?.name ?? key),
+  [...new Set([...Object.keys(mappingConflicts.value), ...Object.keys(calibrationConflicts.value)])].map(
+    key => snapshot.value?.pets.find(pet => pet.key === key)?.name ?? key,
+  ),
 )
 const mappingDirtyKeys = computed(() =>
   Object.keys(mappingDrafts.value).filter(
@@ -53,6 +65,18 @@ const mappingDirtyKeys = computed(() =>
 )
 function onPackReady(pack: SpritePack) {
   const key = selectedKey.value
+  if (!currentPet.value?.builtin) {
+    const latest = parseCalibration(pack.calibration)
+    const baseline = calibrationSaved.value[key]
+    if (baseline && !sameCalibration(calibrationDrafts.value[key], baseline)) {
+      if (!sameCalibration(latest, baseline)) calibrationConflicts.value[key] = latest
+      else delete calibrationConflicts.value[key]
+    } else {
+      calibrationSaved.value[key] = latest
+      calibrationDrafts.value[key] = { ...latest }
+      delete calibrationConflicts.value[key]
+    }
+  }
   if (!pack.codex_version) return
   const latest = { ...pack.action_mappings }
   const baseline = mappingSaved.value[key]
@@ -67,7 +91,12 @@ function onPackReady(pack: SpritePack) {
   mappingSaved.value[key] = latest
   mappingDrafts.value[key] = { ...latest }
 }
-const dirty = computed(() => !sameSettings(draft.value, saved.value) || mappingDirtyKeys.value.length > 0)
+const dirty = computed(
+  () =>
+    !sameSettings(draft.value, saved.value) ||
+    mappingDirtyKeys.value.length > 0 ||
+    calibrationDirtyKeys.value.length > 0,
+)
 const changedNames = computed(() =>
   [
     draft.value.scale !== saved.value.scale ? '大小' : '',
@@ -75,6 +104,7 @@ const changedNames = computed(() =>
     draft.value.roam !== saved.value.roam ? '活动范围' : '',
     draft.value.movement !== saved.value.movement ? '活动方式' : '',
     mappingDirtyKeys.value.length ? `${mappingDirtyKeys.value.length} 只 Pet 的动作映射` : '',
+    calibrationDirtyKeys.value.length ? `${calibrationDirtyKeys.value.length} 只 Pet 的显示校准` : '',
   ].filter(Boolean),
 )
 const blocked = computed(() => loading.value || busy.value || !props.api || !currentPet.value || !!error.value)
@@ -111,6 +141,10 @@ async function refresh(reset = false) {
   if (editor.status === 'fulfilled') {
     const preserveDraft = !reset && dirty.value
     snapshot.value = editor.value
+    for (const values of [calibrationDrafts, calibrationSaved, calibrationConflicts]) {
+      for (const key of Object.keys(values.value))
+        if (!editor.value.pets.some(pet => pet.key === key)) delete values.value[key]
+    }
     for (const key of Object.keys(mappingDrafts.value)) {
       if (!editor.value.pets.some(pet => pet.key === key)) {
         delete mappingDrafts.value[key]
@@ -139,6 +173,9 @@ watch(
     snapshot.value = null
     selection.value = null
     selectedKey.value = ''
+    calibrationDrafts.value = {}
+    calibrationSaved.value = {}
+    calibrationConflicts.value = {}
     mappingDrafts.value = {}
     mappingSaved.value = {}
     mappingConflicts.value = {}
@@ -154,6 +191,11 @@ onBeforeUnmount(() => {
 })
 
 function restore() {
+  calibrationSaved.value = { ...calibrationSaved.value, ...calibrationConflicts.value }
+  calibrationConflicts.value = {}
+  calibrationDrafts.value = Object.fromEntries(
+    Object.entries(calibrationSaved.value).map(([key, value]) => [key, { ...value }]),
+  )
   mappingSaved.value = { ...mappingSaved.value, ...mappingConflicts.value }
   mappingConflicts.value = {}
   draft.value = { ...saved.value }
@@ -173,6 +215,11 @@ async function save() {
     values: { ...mappingDrafts.value[key] },
     expected: { ...mappingSaved.value[key] },
   }))
+  const calibrations = calibrationDirtyKeys.value.map(key => ({
+    key,
+    value: { ...calibrationDrafts.value[key] },
+    expected: { ...calibrationSaved.value[key] },
+  }))
   const version = ++operationVersion
   const current = () => !disposed && version === operationVersion && id === props.pluginId
   busy.value = true
@@ -189,6 +236,13 @@ async function save() {
       const result = await saveMappings(api, id, item.key, item.values, item.expected)
       if (!current()) return
       mappingSaved.value[item.key] = { ...result }
+      agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key })
+    }
+    for (const item of calibrations) {
+      if (!current()) return
+      const result = await saveCalibration(api, id, item.key, item.value, item.expected)
+      if (!current()) return
+      calibrationSaved.value[item.key] = result
       agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key })
     }
     feedbackType.value = 'success'
@@ -229,7 +283,7 @@ async function save() {
       }}</v-alert>
       <v-alert v-if="conflictingNames.length" type="warning" variant="tonal" density="compact" class="ap-result">
         {{ conflictingNames.join('、') }}
-        的动作映射已在其他页面更改。已保留你的草稿；请点击「撤销」载入最新映射后重新调整。
+        的素材调整已在其他页面更改。已保留你的草稿；请点击「撤销」载入最新值后重新调整。
       </v-alert>
       <v-alert v-if="feedback" :type="feedbackType" variant="tonal" density="compact" class="ap-result" role="status">{{
         feedback
@@ -294,9 +348,11 @@ async function save() {
           :api="props.api"
           :plugin-id="props.pluginId"
           :mappings="mappingDrafts[selectedKey]"
+          :calibration="calibrationDrafts[selectedKey]"
           :disabled="blocked"
           @pack-ready="onPackReady"
           @mappings="mappingDrafts[selectedKey] = $event"
+          @calibration="calibrationDrafts[selectedKey] = $event"
         />
       </div>
       <div v-else-if="!loading" class="ap-empty">

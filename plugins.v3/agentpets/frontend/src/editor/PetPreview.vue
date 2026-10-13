@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
+import CalibrationControls from '@/editor/CalibrationControls.vue'
+import { DEFAULT_CALIBRATION, type Calibration } from '@/sprites/calibration'
 import ActionMappingEditor from '@/editor/ActionMappings.vue'
 import { ACTION_LABELS, nativeChoices, type ActionMappings } from '@/sprites/mappings'
 import { HOST_ACTIONS, HOST_INTENTS, type SpritePack } from '@/sprites/schema'
@@ -19,13 +21,21 @@ const props = defineProps<{
   settings: YingSettings
   api: PluginApi | null
   pluginId: string
+  calibration?: Calibration
   mappings?: ActionMappings
   disabled?: boolean
 }>()
 
-const emit = defineEmits<{ error: [boolean]; 'pack-ready': [SpritePack]; mappings: [ActionMappings] }>()
+const emit = defineEmits<{
+  error: [boolean]
+  'pack-ready': [SpritePack]
+  mappings: [ActionMappings]
+  calibration: [Calibration]
+}>()
 const loadedPack = ref<SpritePack | null>(null)
 const replay = ref(0)
+const original = ref(false)
+const displayedCalibration = computed(() => (original.value ? DEFAULT_CALIBRATION : props.calibration))
 const previewGroup = ref(props.pet.key === 'ying' ? 'poses' : 'native')
 function onPackReady(pack: SpritePack) {
   loadedPack.value = pack
@@ -221,6 +231,8 @@ onBeforeUnmount(() => {
         :preview-pose="previewPose"
         :native-action="nativeAction"
         :mappings-override="mappings"
+        :calibration-override="displayedCalibration"
+        :show-calibration="!!calibration && !original"
         :replay="replay"
         @pack-ready="onPackReady"
         @load-state="onLoadState"
@@ -236,6 +248,8 @@ onBeforeUnmount(() => {
           :intent="rendererIntent"
           :native-action="nativeAction"
           :mappings-override="mappings"
+          :calibration-override="displayedCalibration"
+          :show-calibration="!!calibration && !original"
           :replay="replay"
           @pack-ready="onPackReady"
           :motion-active="!paused && !reducedMotion"
@@ -290,6 +304,19 @@ onBeforeUnmount(() => {
         }}
       </p>
     </footer>
+    <div v-if="loadedPack && !pet.builtin" class="px-4">
+      <v-switch v-model="original" label="对照原始显示" density="compact" hide-details />
+    </div>
+    <CalibrationControls
+      v-if="loadedPack && !pet.builtin && calibration"
+      :key="pet.key"
+      :model-value="calibration"
+      :pack-id="pet.key"
+      :api="api"
+      :plugin-id="pluginId"
+      :disabled="disabled"
+      @update:model-value="emit('calibration', $event)"
+    />
     <ActionMappingEditor
       v-if="loadedPack?.codex_version && !pet.builtin"
       :pack="loadedPack"

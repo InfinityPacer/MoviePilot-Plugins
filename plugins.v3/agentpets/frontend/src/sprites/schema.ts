@@ -1,3 +1,4 @@
+import { parseCalibration, type Calibration } from './calibration'
 import builtinPackJson from '@/assets/packs/projector-cat/pack.json'
 
 /** 宿主 renderer 模式的动作名，random_actions 只能取其中的值。 */
@@ -208,6 +209,7 @@ export interface SpritePack {
   random_actions: string[]
   /** 用户映射覆盖；原始 actions 保持不变。 */
   action_mappings?: Record<string, string>
+  calibration?: Calibration
 }
 
 const NAME = /^[a-z0-9_-]{1,32}$/
@@ -302,6 +304,12 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
     }
   }
   const sheet = typeof data.sheet === 'string' ? data.sheet : ''
+  let calibration: Calibration | undefined
+  try {
+    calibration = parseCalibration(data.calibration)
+  } catch (reason) {
+    errors.push((reason as Error).message)
+  }
   if (errors.length) return { pack: null, errors }
   return {
     pack: {
@@ -314,6 +322,7 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
       frames,
       actions,
       random_actions: [...new Set(randomActions as string[])],
+      calibration,
       action_mappings: Object.fromEntries(
         Object.entries((data.action_mappings ?? {}) as object).filter(
           (entry): entry is [string, string] => typeof entry[1] === 'string',
