@@ -56,12 +56,15 @@ describe('ying poses', () => {
 
   it('clamps settings into the supported range', () => {
     expect(normalizeSettings({ scale: 9, speed: 'x', roam: 'moon' })).toEqual({
+      movement: 'auto',
       scale: 1.6,
       speed: 1,
       roam: 'surfaces',
     })
     expect(normalizeSettings({ roam: 'free' }).roam).toBe('free')
-    expect(normalizeSettings(null)).toEqual({ scale: 1, speed: 1, roam: 'surfaces' })
+    expect(normalizeSettings({ movement: 'fixed' }).movement).toBe('fixed')
+    expect(normalizeSettings({ movement: 'invalid' }).movement).toBe('auto')
+    expect(normalizeSettings(null)).toEqual({ movement: 'auto', scale: 1, speed: 1, roam: 'surfaces' })
   })
 
   it('advances the four-frame walk cycle by distance, not time', () => {
