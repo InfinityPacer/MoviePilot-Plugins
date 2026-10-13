@@ -106,7 +106,7 @@
 
 覆盖前把上一份记录保存在插件数据键 `pack_backup_<id>`，并保留已上传的原图文件（远程来源仅保留原 URL）；恢复副本保存失败或无法回读时不覆盖。每个 ID 保留最近一次覆盖前的记录，旧图不自动清理；这份恢复记录用于故障排查，目前没有一键恢复界面，日常备份请保留导出的 ZIP。写入后状态不明会保留可恢复文件并提示核对，不把异常报告为成功。
 
-ZIP 使用 `agentpets.json`（格式 `agentpets`、版本 `1`）和 `sheet.img`，可含 `preview.img`、`avatar.img`；图片保留原始字节并按内容识别格式。ZIP 上限 8MB，清单 64KB，精灵图 4MB，预览图和头像各 49000 字节，图片边长不超过 4096 像素。此格式使用「AgentPets 素材包」选项；Codex 的 `pet.json` ZIP 使用同一导入器中的「Codex Pet」选项。素材操作立即保存，不依赖详情页的「保存调整」。
+ZIP 使用 `agentpets.json`（格式 `agentpets`、版本 `1`）和 `sheet.img`，可含 `preview.img`、`avatar.img`；图片保留原始字节并按内容识别格式。ZIP 上限 8MB，清单 64KB，精灵图 4MB，预览图和头像各 128 KiB，图片边长不超过 4096 像素。此格式使用「AgentPets 素材包」选项；Codex 的 `pet.json` ZIP 使用同一导入器中的「Codex Pet」选项。素材操作立即保存，不依赖详情页的「保存调整」。
 
 ### 入口外观
 
