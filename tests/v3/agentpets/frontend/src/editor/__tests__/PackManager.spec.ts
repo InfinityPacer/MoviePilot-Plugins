@@ -223,6 +223,45 @@ describe('Codex import input identity', () => {
     expect(view.text()).toContain('已导入 我的副本')
   })
 
+  it('discards an image read when the plugin instance changes before submission', async () => {
+    const { view, api, choose, click, button } = await importSetup()
+    await choose(picture('first-pet.png'))
+    await click('读取 Codex Pet')
+    let finishRead!: () => void
+    vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
+      finishRead = () => {
+        Object.defineProperty(this, 'result', { value: 'data:image/png;base64,aW1hZ2U=', configurable: true })
+        this.onload?.(new ProgressEvent('load') as ProgressEvent<FileReader>)
+      }
+    })
+    await click('添加 Pet')
+    await view.setProps({ pluginId: 'Clone2' })
+    finishRead()
+    await flushPromises()
+    expect(api.post).not.toHaveBeenCalled()
+    expect(button('添加 Pet').attributes('disabled')).toBeDefined()
+    expect(view.text()).not.toContain('已准备好')
+  })
+
+  it('ignores a late parsed image after switching away and back to an instance', async () => {
+    const { view, bitmap, choose, click, button } = await importSetup()
+    let finish!: (value: { width: number; height: number; close: () => void }) => void
+    bitmap.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        }),
+    )
+    await choose(picture('first-pet.png'))
+    await click('读取 Codex Pet')
+    await view.setProps({ pluginId: 'Clone2' })
+    await view.setProps({ pluginId: 'Clone1' })
+    finish({ width: 1536, height: 1872, close() {} })
+    await flushPromises()
+    expect(button('添加 Pet').attributes('disabled')).toBeDefined()
+    expect(view.text()).not.toContain('已准备好')
+  })
+
   it('keeps manually supplied custom JSON when replacing its image', async () => {
     const { view, choose, button, click } = await importSetup()
     await click('自定义素材')
@@ -234,5 +273,46 @@ describe('Codex import input identity', () => {
     expect(button('添加 Pet').attributes('disabled')).toBeUndefined()
     await click('Codex Pet')
     expect(button('添加 Pet').attributes('disabled')).toBeDefined()
+  })
+})
+describe('pending material deletion', () => {
+  it('does not apply an old confirmation after switching away and back', async () => {
+    let confirm!: (value: boolean) => void
+    const pack = {
+      id: 'rem',
+      name: 'Rem',
+      builtin: false,
+      source: 'upload',
+      mode: 'stage',
+      preview: '',
+      grid: null,
+      frame_count: 1,
+      action_count: 1,
+    }
+    const api = { get: vi.fn().mockResolvedValue({ success: true, data: [pack] }), post: vi.fn() }
+    const view = mount(PackManager, {
+      props: { api, pluginId: 'Clone1' },
+      global: {
+        plugins: [createVuetify({ components, directives })],
+        provide: {
+          'moviepilot:confirm': () =>
+            new Promise(resolve => {
+              confirm = resolve
+            }),
+        },
+      },
+    })
+    try {
+      await flushPromises()
+      await view.get('button[aria-label="删除 Rem"]').trigger('click')
+      await view.setProps({ pluginId: 'Clone2' })
+      await view.setProps({ pluginId: 'Clone1' })
+      confirm(true)
+      await flushPromises()
+      expect(api.post).not.toHaveBeenCalled()
+      expect(view.emitted('changed')).toBeUndefined()
+    } finally {
+      view.unmount()
+    }
   })
 })

@@ -59,8 +59,10 @@ const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
 const renameValid = computed(() => !!renameName.value.trim() && [...renameName.value.trim()].length <= 40)
 let alive = true
 let listVersion = 0
+let instanceVersion = 0
 onBeforeUnmount(() => {
   alive = false
+  instanceVersion++
   listVersion++
 })
 
@@ -130,6 +132,11 @@ const canSubmit = computed(
     (imageMode.value === 'url' || (!!imageFile.value && !imageError.value)),
 )
 
+function captureScope() {
+  const version = instanceVersion
+  return { api: props.api, id: instanceId.value, current: () => alive && version === instanceVersion }
+}
+
 function previewSrc(pack: PackSummary): string {
   if (pack.builtin) return builtinAvatar(pack.id)
   return pack.preview
@@ -186,7 +193,8 @@ function onImage(value: File | File[] | null | undefined) {
 
 async function importCodexPet() {
   const file = selectedFile.value
-  if (!file || imageError.value) return
+  if (!file || imageError.value || codexImporting.value) return
+  const { current } = captureScope()
   codexImporting.value = true
   parsedCodexFile.value = null
   if (importMode.value === 'codex') packText.value = ''
@@ -203,10 +211,11 @@ async function importCodexPet() {
     } else if (file.type !== 'image/png' && file.type !== 'image/webp') {
       throw new Error('Codex Pet 导入只支持 PNG 或 WebP')
     }
+    if (!current()) return
     const bitmap = await createImageBitmap(image)
     const { width, height } = bitmap
     bitmap.close()
-    if (!alive) return
+    if (!current()) return
     const result = buildCodexPetPack(image.name, width, height, metadata)
     imageMode.value = 'upload'
     imageFile.value = image
@@ -216,10 +225,10 @@ async function importCodexPet() {
     importMessage.value =
       (metadata ? '已从 Codex Pet 包读取精灵图，' : '已识别 Codex Pet ') + result.version + '，动作映射已生成'
   } catch (error) {
-    if (!alive) return
+    if (!current()) return
     importError.value = error instanceof Error ? error.message : '无法读取 Codex Pet 精灵图'
   } finally {
-    codexImporting.value = false
+    if (current()) codexImporting.value = false
   }
 }
 
@@ -234,16 +243,19 @@ function readDataUrl(file: File): Promise<string> {
 
 async function addPack() {
   if (!canSubmit.value || !props.api?.post) return
+  const { api, id, current } = captureScope()
+  const pack = packText.value
+  const file = imageMode.value === 'upload' ? imageFile.value : null
   submitting.value = true
   serverError.value = ''
   try {
-    const image = imageMode.value === 'upload' && imageFile.value ? await readDataUrl(imageFile.value) : null
-    if (!alive) return
-    const response = await props.api.post<PackSummary>(`plugin/${instanceId.value}/packs`, {
-      pack: packText.value,
+    const image = file ? await readDataUrl(file) : null
+    if (!current()) return
+    const response = await api!.post<PackSummary>(`plugin/${id}/packs`, {
+      pack,
       image,
     })
-    if (!alive) return
+    if (!current()) return
     if (!response?.success) {
       serverError.value = response?.message || '添加失败'
       return
@@ -259,14 +271,15 @@ async function addPack() {
     importError.value = ''
     await refresh()
   } catch {
-    serverError.value = '添加失败，请检查网络或稍后重试'
+    if (current()) serverError.value = '添加失败，请检查网络或稍后重试'
   } finally {
-    submitting.value = false
+    if (current()) submitting.value = false
   }
 }
 
 async function removePack(pack: PackSummary) {
   if (!props.api?.post) return
+  const { api, id, current } = captureScope()
   const accepted = confirm
     ? await confirm({
         type: 'warn',
@@ -274,32 +287,32 @@ async function removePack(pack: PackSummary) {
         content: `删除「${pack.name}」后，选择它的用户会回到内置机器人。`,
       })
     : window.confirm(`删除素材包「${pack.name}」？`)
-  if (!accepted || !alive) return
+  if (!accepted || !current()) return
   deleting.value = pack.id
   listError.value = ''
   try {
-    const response = await props.api.post(`plugin/${instanceId.value}/packs/delete`, { id: pack.id })
-    if (!alive) return
+    const response = await api!.post(`plugin/${id}/packs/delete`, { id: pack.id })
+    if (!current()) return
     if (response?.success) {
       notify('success', `已删除素材包 ${pack.name}`)
       emit('changed')
       await refresh()
     } else listError.value = response?.message || '删除失败'
   } catch {
-    if (alive) listError.value = '删除未完成，请刷新核对后重试'
+    if (current()) listError.value = '删除未完成，请刷新核对后重试'
   } finally {
-    if (alive) deleting.value = ''
+    if (current()) deleting.value = ''
   }
 }
 
 async function exportPack(pack: PackSummary) {
   if (!props.api || exporting.value) return
-  const instance = instanceId.value
+  const { api, id, current } = captureScope()
   exporting.value = pack.id
   listError.value = ''
   try {
-    const blob = await exportPackArchive(props.api, instance, pack.id)
-    if (!alive || instance !== instanceId.value) return
+    const blob = await exportPackArchive(api!, id, pack.id)
+    if (!current()) return
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
@@ -309,10 +322,9 @@ async function exportPack(pack: PackSummary) {
     anchor.remove()
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   } catch (reason) {
-    if (alive && instance === instanceId.value)
-      listError.value = `未生成完整素材包：${reason instanceof Error ? reason.message : '图片读取失败'}`
+    if (current()) listError.value = `未生成完整素材包：${reason instanceof Error ? reason.message : '图片读取失败'}`
   } finally {
-    if (alive && instance === instanceId.value) exporting.value = ''
+    if (current()) exporting.value = ''
   }
 }
 function archiveImported() {
@@ -328,17 +340,17 @@ function startRename(pack: PackSummary) {
 async function renamePack() {
   if (renaming.value || !renameValid.value || !props.api || !renameTarget.value) return
   const target = renameTarget.value
-  const id = instanceId.value
+  const { api, id, current } = captureScope()
   const name = renameName.value.trim()
   renaming.value = true
   renameError.value = ''
   try {
-    const response = await props.api.post<PackSummary>(`plugin/${id}/packs/rename`, {
+    const response = await api!.post<PackSummary>(`plugin/${id}/packs/rename`, {
       id: target.id,
       name,
       expected_name: target.name,
     })
-    if (!alive || id !== instanceId.value) return
+    if (!current()) return
     if (!response?.success || response.data?.id !== target.id || response.data?.name !== name) {
       renameError.value = response?.message || '重命名未确认，请刷新后核对'
       return
@@ -348,12 +360,31 @@ async function renamePack() {
     agent?.emit?.(PACK_UPDATED_EVENT, { key: target.id })
     emit('changed')
   } catch {
-    if (alive && id === instanceId.value) renameError.value = '重命名未完成，请刷新核对后重试'
+    if (current()) renameError.value = '重命名未完成，请刷新核对后重试'
   } finally {
-    if (alive && id === instanceId.value) renaming.value = false
+    if (current()) renaming.value = false
   }
 }
 watch(instanceId, () => {
+  instanceVersion++
+  listVersion++
+  packs.value = []
+  submitting.value = false
+  codexImporting.value = false
+  archiveBusy.value = false
+  deleting.value = ''
+  packText.value = ''
+  selectedFile.value = null
+  parsedCodexFile.value = null
+  imageFile.value = null
+  fileModel.value = []
+  imageError.value = ''
+  importMessage.value = ''
+  importError.value = ''
+  serverError.value = ''
+  previousInputMode = 'codex'
+  importMode.value = 'codex'
+  imageMode.value = 'upload'
   exporting.value = ''
   renameTarget.value = null
   renaming.value = false
@@ -504,7 +535,13 @@ onMounted(refresh)
             hide-details="auto"
             :disabled="submitting"
           />
-          <v-btn-toggle v-model="imageMode" mandatory density="compact" variant="outlined" class="my-3"
+          <v-btn-toggle
+            v-model="imageMode"
+            mandatory
+            density="compact"
+            variant="outlined"
+            class="my-3"
+            :disabled="submitting || codexImporting"
             ><v-btn value="upload">上传精灵图</v-btn><v-btn value="url">使用图片 URL</v-btn></v-btn-toggle
           >
         </template>

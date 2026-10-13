@@ -154,7 +154,7 @@ export async function readPackArchive(file: File): Promise<PackArchive> {
     },
   })
   if (!files['agentpets.json'] || !files['sheet.img'])
-    throw new Error('不是完整的 AgentPets 素材包；Codex Pet ZIP 请使用下方导入器')
+    throw new Error('不是完整的 AgentPets 素材包；Codex Pet ZIP 请切换到“Codex Pet”导入类型')
   const manifest = JSON.parse(strFromU8(files['agentpets.json']))
   if (manifest?.format !== 'agentpets' || manifest?.version !== 1 || manifest?.images?.sheet !== 'sheet.img')
     throw new Error('素材包格式或版本不支持')

@@ -94,3 +94,28 @@ def test_new_collision_and_api_permissions(bundle):
     plugin = AgentPets()
     route = next(item for item in plugin.get_api() if item['path'] == '/packs/import')
     assert route['auth'] == 'bear' and route['dependencies'][0].dependency is require_admin
+@pytest.mark.parametrize('failure_at', ['write', 'replace'])
+def test_failed_image_publish_is_retryable_without_damaging_original(bundle, monkeypatch, failure_at):
+    store, _, raw, image, content, old = bundle
+    old_path = store.image_path(old)
+    original_write = type(old_path).write_bytes
+    def fail_write(path, value):
+        if path != old_path:
+            original_write(path, value[:10])
+            raise OSError('simulated partial image write')
+        return original_write(path, value)
+    with monkeypatch.context() as patch:
+        if failure_at == 'write':
+            patch.setattr(type(old_path), 'write_bytes', fail_write)
+        else:
+            def fail_replace(*_args):
+                raise OSError('simulated image publish failure')
+            patch.setattr(type(old_path), 'replace', fail_replace)
+        with pytest.raises(OSError):
+            store.import_pack({**raw, 'name': 'Changed'}, image, 'replace', pack_revision(old))
+    assert store.get('pet') == old
+    assert old_path.read_bytes() == content
+    assert not list(store._dir.glob('*.tmp'))
+    result = store.import_pack({**raw, 'name': 'Changed'}, image, 'replace', pack_revision(old))
+    assert result['name'] == 'Changed'
+    assert store.image_path(result).read_bytes() == content
