@@ -3,6 +3,8 @@ import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { AGENT_HOST_KEY, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import { PACK_UPDATED_EVENT } from '@/sprites/mappings'
+import PackArchiveImport from './PackArchiveImport.vue'
+import { exportPackArchive } from './packArchive'
 import { builtinAvatar } from '@/editor/avatars'
 import { extractCodexPetArchive, isCodexPetArchive, MAX_CODEX_PET_ARCHIVE_BYTES } from '@/sprites/codexPetArchive'
 import { buildCodexPetPack, validatePack, type CodexPetMetadata } from '@/sprites/schema'
@@ -22,6 +24,9 @@ interface PackSummary {
   grid: { cols: number; rows: number } | null
   frame_count: number
   action_count: number
+  revision?: string
+  mapping_count?: number
+  calibrated?: boolean
 }
 
 type HostToast = Partial<Record<'success' | 'error' | 'warning' | 'info', (message: string) => unknown>>
@@ -43,6 +48,7 @@ const emit = defineEmits<{ changed: [] }>()
 const importMode = ref<'codex' | 'custom'>('codex')
 const listError = ref('')
 const deleting = ref('')
+const exporting = ref('')
 const renameTarget = ref<PackSummary | null>(null)
 const renameName = ref('')
 const renameError = ref('')
@@ -281,6 +287,34 @@ async function removePack(pack: PackSummary) {
   }
 }
 
+async function exportPack(pack: PackSummary) {
+  if (!props.api || exporting.value) return
+  const instance = instanceId.value
+  exporting.value = pack.id
+  listError.value = ''
+  try {
+    const blob = await exportPackArchive(props.api, instance, pack.id)
+    if (!alive || instance !== instanceId.value) return
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${pack.id}.agentpets.zip`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (reason) {
+    if (alive && instance === instanceId.value)
+      listError.value = `未生成完整素材包：${reason instanceof Error ? reason.message : '图片读取失败'}`
+  } finally {
+    if (alive && instance === instanceId.value) exporting.value = ''
+  }
+}
+function archiveImported() {
+  emit('changed')
+  void refresh()
+}
+
 function startRename(pack: PackSummary) {
   renameTarget.value = pack
   renameName.value = pack.name
@@ -315,6 +349,7 @@ async function renamePack() {
   }
 }
 watch(instanceId, () => {
+  exporting.value = ''
   renameTarget.value = null
   renaming.value = false
   void refresh()
@@ -354,6 +389,16 @@ onMounted(refresh)
         <div class="agent-pet-sprites-config__actions">
           <v-chip v-if="pack.builtin" size="x-small" variant="tonal">内置</v-chip>
           <v-btn
+            v-if="!pack.builtin"
+            icon="mdi-download-outline"
+            variant="text"
+            size="small"
+            :aria-label="`导出 ${pack.name}`"
+            :loading="exporting === pack.id"
+            :disabled="!!exporting || !!deleting || submitting || renaming"
+            @click="exportPack(pack)"
+          />
+          <v-btn
             v-if="!pack.builtin && pack.mode === 'stage'"
             icon="mdi-pencil-outline"
             variant="text"
@@ -378,6 +423,7 @@ onMounted(refresh)
         暂无素材，导入一个 Pet 开始吧
       </p>
     </div>
+    <PackArchiveImport :api="api" :plugin-id="instanceId" :targets="packs" @changed="archiveImported" />
     <v-dialog
       :model-value="!!renameTarget"
       max-width="420"

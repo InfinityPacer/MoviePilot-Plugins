@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import binascii
 import io
+import hashlib
 import json
 import math
 import re
@@ -101,7 +102,14 @@ def suggest_calibration(content: bytes, pack: dict[str, Any]) -> dict[str, float
     width, height = sheet.width // cols, sheet.height // rows
     boxes = []
     idle = None
-    for index in set(pack["frames"].values()):
+    indices = set(pack["frames"].values())
+    version = codex_pet_version(pack)
+    if version:
+        for row, count in enumerate((6, 8, 8, 4, 5, 8, 6, 6, 6)):
+            indices.update(row * 8 + column for column in range(count))
+        if version == "v2":
+            indices.update(range(72, 88))
+    for index in indices:
         x, y = index % cols * width, index // cols * height
         box = sheet.crop((x, y, x + width, y + height)).getchannel("A").getbbox()
         if box:
@@ -289,6 +297,8 @@ def parse_pack(raw: Any) -> dict[str, Any]:
         pack["codex_version"] = version
     if "calibration" in raw:
         pack["calibration"] = parse_calibration(raw["calibration"])
+    if "action_mappings" in raw:
+        pack["action_mappings"] = validate_mappings(pack, raw["action_mappings"])
     return pack
 
 
@@ -429,6 +439,24 @@ LOOK_DIRECTIONS = (
 )
 
 
+def pack_revision(record: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(record, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def validate_mappings(pack: dict[str, Any], mappings: Any) -> dict[str, str]:
+    if not isinstance(mappings, dict) or len(mappings) > len(MAPPING_KEYS):
+        raise PackError("动作映射必须是有效对象")
+    available = set(pack.get("actions", {}))
+    version = codex_pet_version(pack)
+    if version:
+        available.update(CODEX_ACTIONS)
+    if version == "v2":
+        available.update(f"look-{direction}" for direction in LOOK_DIRECTIONS)
+    if any(key not in MAPPING_KEYS or not isinstance(value, str) or value not in available for key, value in mappings.items()):
+        raise PackError("动作映射包含不支持的触发条件或动画")
+    return dict(mappings)
+
+
 class PackStore:
     """用户素材包：元数据存插件数据，上传的精灵图存插件数据目录。"""
 
@@ -476,6 +504,8 @@ class PackStore:
             record["codex_version"] = pack["codex_version"]
         if "calibration" in pack:
             record["calibration"] = pack["calibration"]
+        if pack.get("action_mappings"):
+            record["action_mappings"] = pack["action_mappings"]
         image_path = None
         previous_image = None
         image_write_started = False
@@ -515,6 +545,63 @@ class PackStore:
                     pass  # 状态不明时保留图片，避免把可恢复数据变成永久丢失。
             raise
         return record
+
+    @_serialized
+    def import_pack(self, raw: Any, image: str, mode: str, expected_revision: str | None = None) -> dict[str, Any]:
+        """完整包新增/副本/更新；更新使用独立图片文件，保留上次记录和原图。"""
+        pack = parse_pack(raw)
+        if mode not in ("new", "copy", "replace"):
+            raise PackError("导入方式无效")
+        records = deepcopy(self.list())
+        pack_id = pack["id"] or self._derive_id(pack["name"])
+        if mode == "copy":
+            occupied = {item["id"] for item in records} | RESERVED_IDS
+            stem = pack_id[:26]
+            for suffix in range(1, MAX_PACKS + 3):
+                candidate = f"{stem}-{suffix}"
+                if candidate not in occupied:
+                    pack["id"] = candidate
+                    break
+            else:
+                raise PackError("无法生成副本 ID")
+        if mode != "replace":
+            return self.add(pack, image)
+        target = next((item for item in records if item["id"] == pack_id), None)
+        if not target or pack_id in RESERVED_IDS:
+            raise PackError("要更新的素材不存在或属于内置形象，请导入副本")
+        if expected_revision != pack_revision(target):
+            raise PackError("素材已在其他页面更改，请重新读取预览后重试")
+        if bool(codex_pet_version(target)) != bool(codex_pet_version(pack)):
+            raise PackError("入口形象与全屏角色不能互相覆盖，请导入副本")
+        content, _, _ = decode_image(image)
+        mime, ext = validate_sheet(content, pack)
+        file_name = f"{pack_id}-{hashlib.sha256(content).hexdigest()[:24]}.{ext}"
+        next_record = {**target, **{key: pack[key] for key in (
+            "name", "description", "grid", "frames", "actions", "random_actions")}}
+        next_record.pop("codex_version", None)
+        if pack.get("codex_version"):
+            next_record["codex_version"] = pack["codex_version"]
+        next_record.update(
+            source="upload", image_file=file_name, mime=mime, sheet_url="",
+            preview=pack["preview"] or first_frame_preview(content, pack),
+            avatar=pack["avatar"] or first_frame_avatar(content, pack),
+            action_mappings=pack.get("action_mappings", {}),
+            calibration=parse_calibration(pack.get("calibration")),
+        )
+        # 先保全可恢复记录；任何失败均不先删除旧图片或旧素材。
+        backup_key = f"pack_backup_{pack_id}"
+        backup = {"record": deepcopy(target), "saved_at": int(time.time())}
+        if self._save_data(backup_key, backup) is False or self._get_data(backup_key) != backup:
+            raise PackError("原素材备份未确认，未执行覆盖")
+        self._dir.mkdir(parents=True, exist_ok=True)
+        path = self._dir / file_name
+        if path.exists():
+            if path.read_bytes() != content:
+                raise PackError("目标图片校验不一致，未执行覆盖")
+        else:
+            path.write_bytes(content)
+        self._save_records([next_record if item["id"] == pack_id else item for item in records])
+        return next_record
 
     def _save_records(self, records: list[dict[str, Any]]) -> None:
         """保存后核对完整列表，拒绝未落盘或回读不一致的结果。"""

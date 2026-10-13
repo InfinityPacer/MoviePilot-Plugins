@@ -67,3 +67,26 @@ def test_calibration_api_requires_admin_for_save(tmp_path):
     assert plugin.api_pack('sample').data['pack']['calibration'] == suggestion.data
     route = next(item for item in plugin.get_api() if item['path'] == '/packs/calibration')
     assert route['dependencies'][0].dependency is require_admin
+
+
+@pytest.mark.parametrize('rows, extra_index', [(9, 8), (11, 87)])
+def test_suggestion_includes_display_completed_codex_frames(rows, extra_index):
+    image = Image.new('RGBA', (800, rows * 100))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((30, 25, 69, 89), fill='white')
+    x, y = extra_index % 8 * 100, extra_index // 8 * 100
+    draw.rectangle((x + 10, y + 5, x + 94, y + 94), fill='white')
+    stream = BytesIO()
+    image.save(stream, format='PNG')
+    groups = {'idle': range(6), 'wave': range(24, 28), 'happy-jump': range(32, 37)}
+    frames = {'idle': 0}
+    actions = {}
+    for action, indices in groups.items():
+        names = [f'f{index}' for index in indices]
+        frames.update(zip(names, indices))
+        actions[action] = names
+    pack = {'grid': {'cols': 8, 'rows': rows}, 'frames': frames, 'actions': actions}
+    assert extra_index not in frames.values()
+    assert suggest_calibration(stream.getvalue(), pack) == parse_calibration({
+        'left': .1, 'top': .05, 'right': .95, 'bottom': .95, 'baseline': .9,
+    })

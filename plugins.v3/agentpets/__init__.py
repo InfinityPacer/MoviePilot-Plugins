@@ -26,7 +26,7 @@ from app.plugins import _PluginBase
 from app.sdk.logging import logger
 from app.sdk.security import verify_token
 
-from .pack import BUILTIN_PACK_ID, PackError, PackStore, codex_pet_version, load_builtin_pack, parse_calibration, suggest_calibration
+from .pack import BUILTIN_PACK_ID, PackError, PackStore, codex_pet_version, load_builtin_pack, parse_calibration, suggest_calibration, pack_revision
 
 PLUGIN_DIR = Path(__file__).resolve().parent
 DIST_PATH = "frontend/dist/assets"
@@ -99,6 +99,14 @@ class AddPackRequest(BaseModel):
 
     pack: Any  # 素材包 JSON 文本或已解析对象
     image: str | None = Field(default=None, max_length=6 * 1024 * 1024)  # 精灵图 data URL；为空时 sheet 必须是 URL
+
+
+class ImportPackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pack: dict[str, Any]
+    image: str = Field(min_length=1, max_length=6 * 1024 * 1024)
+    mode: Literal["new", "copy", "replace"] = "new"
+    expected_revision: str | None = Field(default=None, max_length=64)
 
 
 class DeletePackRequest(BaseModel):
@@ -289,6 +297,9 @@ class AgentPets(_PluginBase):
             "grid": record.get("grid"),
             "frame_count": len(record.get("frames") or {}),
             "action_count": len(record.get("actions") or {}),
+            "revision": pack_revision(record),
+            "mapping_count": len(record.get("action_mappings") or {}),
+            "calibrated": parse_calibration(record.get("calibration")) != parse_calibration(),
         }
 
     def api_packs(self):
@@ -310,6 +321,8 @@ class AgentPets(_PluginBase):
         except PackError as exc:
             return schemas.Response(success=False, message=str(exc))
         pack = {name: record.get(name) for name in ("id", "name", "description", "grid", "frames", "actions", "random_actions")}
+        pack["preview"] = record.get("preview", "")
+        pack["avatar"] = record.get("avatar", "")
         pack["action_mappings"] = record.get("action_mappings", {})
         pack["calibration"] = parse_calibration(record.get("calibration"))
         version = codex_pet_version(record)
@@ -327,6 +340,13 @@ class AgentPets(_PluginBase):
             return schemas.Response(success=False, message="添加素材包失败，请刷新核对后重试")
         logger.info(f"助手形象：已添加素材包 {record['id']}（{record['source']}）")
         return schemas.Response(success=True, data=self._summary(record))
+
+    def api_import_pack(self, request: ImportPackRequest):
+        try:
+            record = self._store().import_pack(request.pack, request.image, request.mode, request.expected_revision)
+            return schemas.Response(success=True, data=self._summary(record))
+        except (PackError, OSError, RuntimeError) as exc:
+            return schemas.Response(success=False, message=str(exc))
 
     def api_rename_pack(self, request: RenamePackRequest):
         try:
@@ -379,6 +399,11 @@ class AgentPets(_PluginBase):
         """形象对所有登录用户显示，读取接口只要求登录；素材包写接口额外要求管理员。"""
         admin = [Depends(require_admin)]
         return [
+            {
+                "path": "/packs/import", "endpoint": self.api_import_pack, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "导入或更新完整素材包",
+                "response_model": schemas.Response[dict],
+            },
             {
                 "path": "/packs/calibration", "endpoint": self.api_save_calibration, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "保存素材显示校准",
