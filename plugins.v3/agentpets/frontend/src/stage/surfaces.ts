@@ -95,7 +95,7 @@ export function querySurfaces(
 }
 
 /**
- * 移动端固定底栏的上缘。只做 9 次命中和有界祖先检查，不扫描整个页面；
+ * 固定底栏的上缘（包括宽屏 App Dock）。只做 15 次命中和有界祖先检查，不扫描整个页面；
  * 忽略普通内容、全屏弹层及宠物图层，给底部导航留出 8px 间隔。
  */
 export function bottomFixedFloor(layer: Element | null, viewport: StageViewport): number {
@@ -106,10 +106,12 @@ export function bottomFixedFloor(layer: Element | null, viewport: StageViewport)
   const seen = new Set<Element>()
   let result = floor
   for (const ratio of [0.1, 0.5, 0.9]) {
-    for (const depth of [2, 24, 60]) {
+    for (const depth of [2, 24, 60, 120, 180]) {
       const y = floor - depth
       if (y <= viewport.safeArea.top) continue
-      let el = document.elementsFromPoint(left + width * ratio, y).find(item => !layer?.contains(item)) ?? null
+      const hit = document.elementsFromPoint(left + width * ratio, y).find(item => !layer?.contains(item))
+      if (!hit || !surfaceVisible(hit)) continue
+      let el: Element | null = hit
       for (let level = 0; el && level < 8; level += 1, el = el.parentElement) {
         if (seen.has(el)) break
         seen.add(el)
@@ -119,12 +121,18 @@ export function bottomFixedFloor(layer: Element | null, viewport: StageViewport)
           rect.width < width * 0.5 ||
           rect.height <= 0 ||
           rect.height > Math.min(200, (floor - viewport.safeArea.top) * 0.35) ||
-          rect.bottom < floor - 8 ||
+          rect.bottom < floor - 96 ||
+          rect.top >= floor ||
           rect.top <= viewport.safeArea.top
         )
           continue
         const style = window.getComputedStyle(el)
-        if ((style.position === 'fixed' || style.position === 'sticky') && surfaceVisible(el)) {
+        // MP 的固定外层不接收指针，可点击 Dock 在相对定位的内层；可见性以命中子项和外层共同判定。
+        if (
+          (style.position === 'fixed' || style.position === 'sticky') &&
+          style.visibility !== 'hidden' &&
+          style.display !== 'none'
+        ) {
           result = Math.min(result, rect.top - 8)
         }
       }

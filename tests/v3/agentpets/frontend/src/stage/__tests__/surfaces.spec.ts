@@ -51,7 +51,7 @@ describe('mobile bottom navigation', () => {
     const hits = stubHits(() => [pet, child, bar, document.body])
     const scan = vi.spyOn(document, 'querySelectorAll')
     expect(bottomFixedFloor(layer, viewport)).toBe(716)
-    expect(hits).toHaveBeenCalledTimes(9)
+    expect(hits).toHaveBeenCalledTimes(15)
     expect(scan).not.toHaveBeenCalled()
   })
 
@@ -66,6 +66,38 @@ describe('mobile bottom navigation', () => {
     bar.style.visibility = 'visible'
     withRect(bar, { left: 0, top: 0, width: 1000, height: 800 })
     expect(bottomFixedFloor(null, viewport)).toBe(800)
+  })
+})
+
+describe('MP floating Dock', () => {
+  it.each([0, 16, 32, 60])('detects a pointer-transparent fixed wrapper with a %spx floating gap', gap => {
+    const wrapper = withRect(document.createElement('div'), { left: 0, top: 700 - gap, width: 1000, height: 100 })
+    wrapper.style.position = 'fixed'
+    wrapper.style.pointerEvents = 'none'
+    const bar = withRect(document.createElement('div'), { left: 100, top: 700 - gap, width: 800, height: 64 })
+    bar.className = 'v-card footer-nav-card'
+    bar.style.position = 'relative'
+    bar.style.pointerEvents = 'auto'
+    wrapper.appendChild(bar)
+    document.body.appendChild(wrapper)
+    const hits = stubHits(({ x, y }) =>
+      x >= 100 && x <= 900 && y >= 700 - gap && y <= 764 - gap ? [bar, document.body] : [document.body],
+    )
+    expect(bottomFixedFloor(null, viewport)).toBe(692 - gap)
+    expect(hits.mock.calls.length).toBeLessThanOrEqual(15)
+    wrapper.style.visibility = 'hidden'
+    expect(bottomFixedFloor(null, viewport)).toBe(800)
+    wrapper.style.visibility = 'visible'
+    stubHits(() => [document.body])
+    expect(bottomFixedFloor(null, viewport)).toBe(800)
+  })
+
+  it.each([16, 32, 60])('reserves an ordinary floating fixed bar with a %spx bottom gap', gap => {
+    const bar = withRect(document.createElement('nav'), { left: 0, top: 736 - gap, width: 1000, height: 64 })
+    bar.style.position = 'fixed'
+    document.body.appendChild(bar)
+    stubHits(({ y }) => (y >= 736 - gap && y <= 800 - gap ? [bar, document.body] : [document.body]))
+    expect(bottomFixedFloor(null, viewport)).toBe(728 - gap)
   })
 })
 

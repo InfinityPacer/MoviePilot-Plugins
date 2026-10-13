@@ -312,19 +312,21 @@ function bottomFixedFloor(layer, viewport) {
   const seen = /* @__PURE__ */ new Set();
   let result = floor;
   for (const ratio of [0.1, 0.5, 0.9]) {
-    for (const depth of [2, 24, 60]) {
+    for (const depth of [2, 24, 60, 120, 180]) {
       const y = floor - depth;
       if (y <= viewport.safeArea.top) continue;
-      let el = document.elementsFromPoint(left + width * ratio, y).find((item) => !layer?.contains(item)) ?? null;
+      const hit = document.elementsFromPoint(left + width * ratio, y).find((item) => !layer?.contains(item));
+      if (!hit || !surfaceVisible(hit)) continue;
+      let el = hit;
       for (let level = 0; el && level < 8; level += 1, el = el.parentElement) {
         if (seen.has(el)) break;
         seen.add(el);
         if (layer && el.contains(layer)) continue;
         const rect = el.getBoundingClientRect();
-        if (rect.width < width * 0.5 || rect.height <= 0 || rect.height > Math.min(200, (floor - viewport.safeArea.top) * 0.35) || rect.bottom < floor - 8 || rect.top <= viewport.safeArea.top)
+        if (rect.width < width * 0.5 || rect.height <= 0 || rect.height > Math.min(200, (floor - viewport.safeArea.top) * 0.35) || rect.bottom < floor - 96 || rect.top >= floor || rect.top <= viewport.safeArea.top)
           continue;
         const style = window.getComputedStyle(el);
-        if ((style.position === "fixed" || style.position === "sticky") && surfaceVisible(el)) {
+        if ((style.position === "fixed" || style.position === "sticky") && style.visibility !== "hidden" && style.display !== "none") {
           result = Math.min(result, rect.top - 8);
         }
       }
@@ -458,7 +460,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const isMobile = ref(false);
     const animationActive = ref(false);
     let hostState = null;
-    let mobileFloor = null;
+    let bottomFloor = null;
     let documentVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
     let rafId = 0;
     let lastFrame = 0;
@@ -634,16 +636,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function viewport() {
       const view = readViewport(hostState, !props.previewRoot);
-      if (mobileFloor === null || !isMobile.value || props.previewRoot) return view;
+      if (bottomFloor === null || props.previewRoot) return view;
       return {
         ...view,
-        safeArea: { ...view.safeArea, bottom: Math.max(view.safeArea.bottom, view.height - mobileFloor) }
+        safeArea: { ...view.safeArea, bottom: Math.max(view.safeArea.bottom, view.height - bottomFloor) }
       };
     }
-    function refreshMobileFloor() {
-      const next = isMobile.value && !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null;
-      const changed = next !== mobileFloor;
-      mobileFloor = next;
+    function refreshBottomFloor() {
+      const next = !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null;
+      const changed = next !== bottomFloor;
+      bottomFloor = next;
       return changed;
     }
     function hiddenHeight(depth) {
@@ -883,6 +885,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       facingLeft.value = direction < 0;
       const left = surface;
       x.value = clamp(x.value + direction * charWidth.value * 0.6, range[0], range[1]);
+      const center = x.value + charWidth.value / 2;
+      if (center >= left.left && center <= left.right) {
+        facingLeft.value = direction > 0;
+        queueAnchor();
+        scheduleBehavior();
+        return;
+      }
       startFall(left.el);
     }
     function scheduleBlink() {
@@ -1075,11 +1084,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function checkClearance() {
       if (fixed()) {
-        if (refreshMobileFloor()) relayout();
+        if (refreshBottomFloor()) relayout();
         return;
       }
       if (disposed || !ready.value || !visible()) return;
-      if (refreshMobileFloor()) relayout();
+      if (refreshBottomFloor()) relayout();
       if (sheltering) {
         recheckShelter();
         return;
@@ -1376,7 +1385,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
-      if (resized) refreshMobileFloor();
+      if (resized) refreshBottomFloor();
       const nextSustained = phasePose(state.phase);
       if (nextSustained !== sustained.value) {
         sustained.value = nextSustained;
@@ -1573,7 +1582,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function onWindowResize() {
       if (!ready.value || props.previewRoot) return;
-      refreshMobileFloor();
+      refreshBottomFloor();
       relayout();
       scheduleClearance(RESIZE_CLEAR_DELAY);
     }
@@ -1621,7 +1630,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       ]);
       if (disposed) return;
       if (revision === settingsRevision) settings.value = normalizeSettings(props.settingsOverride ?? loaded);
-      refreshMobileFloor();
+      refreshBottomFloor();
       restorePosition(stored);
       ready.value = true;
       syncVisibility();
@@ -1698,6 +1707,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-aff81d8d"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-60a1ad2b"]]);
 
 export { POSES as P, AgentPet as default };
