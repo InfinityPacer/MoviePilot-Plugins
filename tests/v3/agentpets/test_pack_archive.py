@@ -2,12 +2,13 @@
 import base64
 from copy import deepcopy
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from app.plugins.agentpets import AgentPets, ImportPackRequest, require_admin
-from app.plugins.agentpets.pack import PackError, PackStore, pack_revision, parse_calibration
+from app.plugins.agentpets.pack import MAX_PREVIEW_BYTES, PackError, PackStore, pack_revision, parse_calibration, parse_pack
 
 
 @pytest.fixture
@@ -38,6 +39,33 @@ def test_roundtrip_and_copy_preserve_all_material_fields(bundle):
     assert store.image_path(copied).read_bytes() == content
     assert store.get('pet') == old
     assert len(data['packs']) == 2
+
+
+@pytest.mark.parametrize('field', ['preview', 'avatar'])
+def test_thumbnail_capacity_remains_bounded(field):
+    image = 'data:image/png;base64,' + base64.b64encode(bytes(MAX_PREVIEW_BYTES + 128)).decode()
+    with pytest.raises(PackError, match='128 KiB'):
+        parse_pack({'name': 'Too large', 'grid': {'cols': 1, 'rows': 1}, 'frames': {'idle': 0}, field: image})
+
+
+def test_high_detail_generated_thumbnails_can_be_imported_as_copy(bundle):
+    store, _, _, _, _, _ = bundle
+    content = (Path(__file__).parent / 'fixtures' / 'texture.png').read_bytes()
+    image = 'data:image/png;base64,' + base64.b64encode(content).decode()
+    original = store.add({'id': 'texture', 'name': 'Texture', 'grid': {'cols': 1, 'rows': 1},
+                          'frames': {'idle': 0}}, image)
+    # 此合法上传图的自动缩略图超过旧导出额度，必须仍能完整备份和导入副本。
+    assert len(base64.b64decode(original['preview'].split(',')[1])) > 49000
+    assert len(original['preview']) > 64 * 1024
+    plugin = AgentPets()
+    plugin._store = lambda: store
+    exported = plugin.api_pack('texture').data
+    result = plugin.api_import_pack(ImportPackRequest(pack=exported['pack'], image=exported['sheet_src'], mode='copy'))
+    assert result.success
+    copied = store.get(result.data['id'])
+    assert copied['preview'] == original['preview']
+    assert copied['avatar'] == original['avatar']
+    assert store.image_path(copied).read_bytes() == content
 
 
 def test_replacement_retains_identity_and_previous_image(bundle):

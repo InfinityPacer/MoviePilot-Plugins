@@ -49,7 +49,9 @@ MAX_ACTIONS = 64
 MAX_SEQUENCE = 64
 MAX_RANDOM_ACTIONS = 16
 MAX_PACKS = 20
-MAX_PREVIEW_CHARS = 64 * 1024
+# 与完整素材包的缩略图字节上限一致，字符额度包含 Base64 膨胀与 data URL 头。
+MAX_PREVIEW_BYTES = 128 * 1024
+MAX_PREVIEW_CHARS = ((MAX_PREVIEW_BYTES + 2) // 3) * 4 + 32
 DEFAULT_FRAME_MS = 160
 FRAME_MS_RANGE = (40, 5000)
 PREVIEW_SIZE = 128
@@ -157,7 +159,7 @@ def _image_ref(value: Any, field: str) -> str:
     if value in (None, ""):
         return ""
     if not isinstance(value, str) or len(value) > MAX_PREVIEW_CHARS:
-        raise PackError(f"{field} 必须是不超过 64KB 的字符串")
+        raise PackError(f"{field} 地址过长，内嵌图片不能超过 128 KiB")
     if is_http_url(value) or value.startswith("data:image/"):
         return value
     raise PackError(f"{field} 只支持 http(s) 地址或 data:image URL")

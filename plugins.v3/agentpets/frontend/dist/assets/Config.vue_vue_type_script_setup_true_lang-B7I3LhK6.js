@@ -1078,7 +1078,7 @@ function unzipSync(data, opts) {
 const MAX_ARCHIVE = 8 * 1024 * 1024;
 const MAX_IMAGE = 4 * 1024 * 1024;
 const MAX_MANIFEST = 64 * 1024;
-const MAX_THUMB = 49e3;
+const MAX_THUMB = 128 * 1024;
 function imageMime(bytes) {
   if (bytes[0] === 137 && strFromU8(bytes.subarray(1, 4)) === "PNG") return "image/png";
   if (strFromU8(bytes.subarray(0, 4)) === "RIFF" && strFromU8(bytes.subarray(8, 12)) === "WEBP") return "image/webp";

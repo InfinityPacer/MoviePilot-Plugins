@@ -12,7 +12,7 @@ const currentImports = {};
       return __federation_import('./__federation_expose_AgentPetCodex-Dgdi05Ha.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./Config":()=>{
       dynamicLoadingCss(["Config-CmE14zHP.css","host-CRofF9Zj.css"], false, './Config');
-      return __federation_import('./__federation_expose_Config-B8pZ0tuo.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
+      return __federation_import('./__federation_expose_Config-CCeqBARr.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./Page":()=>{
       dynamicLoadingCss(["Page-BR1CYsAj.css","host-CRofF9Zj.css","__federation_expose_AgentPet-DVROQWdy.css","__federation_expose_AgentPetSprite-N9XG3V9K.css"], false, './Page');
       return __federation_import('./__federation_expose_Page-BPrbnq3l.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},};

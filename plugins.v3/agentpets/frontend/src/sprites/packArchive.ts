@@ -6,7 +6,8 @@ import { validatePack, type SpritePack } from './schema'
 const MAX_ARCHIVE = 8 * 1024 * 1024
 const MAX_IMAGE = 4 * 1024 * 1024
 const MAX_MANIFEST = 64 * 1024
-const MAX_THUMB = 49000
+// 与后端预览图和头像的容量契约一致，容纳高细节的 128×128 PNG。
+const MAX_THUMB = 128 * 1024
 
 export interface PortablePack extends SpritePack {
   preview?: string
