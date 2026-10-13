@@ -837,7 +837,7 @@ var dutf8 = function (d) {
  * @returns The string encoded in UTF-8/Latin-1 binary
  */
 function strToU8(str, latin1) {
-    var i; 
+    var i;
     if (te)
         return te.encode(str);
     var l = str.length;
@@ -1537,7 +1537,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PackArchiveImport = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-65f32844"]]);
+const PackArchiveImport = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-a20b81a4"]]);
 
 const MAX_CODEX_PET_ARCHIVE_BYTES = 8 * 1024 * 1024;
 const MAX_SPRITESHEET_BYTES = 4 * 1024 * 1024;
@@ -2446,7 +2446,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-43d9b9cc"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-7e128498"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
