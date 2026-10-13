@@ -1,11 +1,11 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
+import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, p as parseCalibration, c as calibrationLayout, f as framePosition, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './mappings-jvCB_8v9.js';
 import { w as withLoadTimeout, l as loadImage } from './loading-BHLkYAXO.js';
-import { B as BUILTIN_PACK_ID, a as BUILTIN_PACK, b as builtinAsset, r as resolveAction, f as framePosition, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './mappings-CoSijLMf.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {normalizeStyle:_normalizeStyle,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode} = await importShared('vue');
+const {normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,normalizeClass:_normalizeClass,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode} = await importShared('vue');
 
 const _hoisted_1 = ["data-pack", "data-action", "data-frame"];
 const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
@@ -22,6 +22,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     thinking: { type: Boolean, default: false },
     motionActive: { type: Boolean, default: true },
     strictPreview: { type: Boolean },
+    calibrationOverride: {},
+    showCalibration: { type: Boolean },
     mappingsOverride: {},
     mappingKey: {},
     nativeAction: {},
@@ -53,11 +55,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const frames = resolved.value.action.frames;
       return frames[Math.min(frameIndex.value, frames.length - 1)] ?? "idle";
     });
+    const calibration = computed(() => parseCalibration(props.calibrationOverride ?? pack.value.calibration));
+    const layout = computed(() => calibrationLayout(calibration.value, cellRatio.value));
     const frameStyle = computed(() => {
       const { cols, rows } = pack.value.grid;
       const position = framePosition(pack.value, frame.value);
       return {
-        "--agent-pet-sprites-ratio": String(cellRatio.value),
+        ...layout.value.frame,
         backgroundImage: `url(${JSON.stringify(sheetSrc.value)})`,
         backgroundSize: `${cols * 100}% ${rows * 100}%`,
         backgroundPosition: `${position.x}% ${position.y}%`
@@ -139,9 +143,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => play()
     );
     watch(
-      [ready, pack, cellRatio],
+      [ready, pack, cellRatio, calibration],
       () => {
-        if (ready.value) emit("appearance", { name: pack.value.name, aspectRatio: cellRatio.value });
+        if (ready.value) emit("appearance", { name: pack.value.name, aspectRatio: layout.value.aspectRatio });
       },
       { immediate: true }
     );
@@ -170,14 +174,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }, [
         ready.value ? (_openBlock(), _createElementBlock("div", {
           key: 0,
-          class: "agent-pet-sprites__frame",
-          style: _normalizeStyle(frameStyle.value)
-        }, null, 4)) : _createCommentVNode("", true)
+          class: _normalizeClass(["agent-pet-sprites__viewport", { "agent-pet-sprites__viewport--guides": __props.showCalibration }]),
+          style: _normalizeStyle({ "--agent-pet-sprites-ratio": String(layout.value.aspectRatio) })
+        }, [
+          _createElementVNode("div", {
+            class: "agent-pet-sprites__frame",
+            style: _normalizeStyle(frameStyle.value)
+          }, null, 4)
+        ], 6)) : _createCommentVNode("", true)
       ], 8, _hoisted_1);
     };
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-313dd0fb"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-007b4c85"]]);
 
 export { AgentPetSprite as default };

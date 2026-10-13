@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { w as withLoadTimeout } from './loading-BHLkYAXO.js';
-import { D as DEFAULT_SETTINGS, S as SETTINGS_EVENT, l as loadSettings, n as normalizeSettings } from './settings-CQFXVfMf.js';
+import { D as DEFAULT_SETTINGS, S as SETTINGS_EVENT, l as loadSettings, n as normalizeSettings } from './settings-tnFA6UQD.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const POSES = [
@@ -393,7 +393,7 @@ const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {renderSlot:_renderSlot,unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,createElementVNode:_createElementVNode,vShow:_vShow,withModifiers:_withModifiers,normalizeStyle:_normalizeStyle,withDirectives:_withDirectives} = await importShared('vue');
 
-const _hoisted_1 = ["data-pose", "data-motion", "data-roam"];
+const _hoisted_1 = ["data-pose", "data-motion", "data-roam", "data-movement"];
 const _hoisted_2 = ["aria-label"];
 const _hoisted_3 = ["data-frame"];
 const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
@@ -469,6 +469,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let pendingShelter = null;
     let hopVx = 0;
     let hopTargetX = null;
+    let fixedPosition = null;
     let lastSaved = "";
     let lastSaveAt = 0;
     let saveOnLand = false;
@@ -577,6 +578,44 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function randomBetween(min, max) {
       return min + Math.random() * (max - min);
+    }
+    function fixed() {
+      return settings.value.movement === "fixed";
+    }
+    function rememberFixedPosition() {
+      const view = freeBounds(viewport(), ...sizePair());
+      fixedPosition = { xRatio: xToRatio(x.value, view.x), yRatio: xToRatio(y.value, view.y) };
+    }
+    function placeFixed() {
+      const view = freeBounds(viewport(), ...sizePair());
+      x.value = ratioToX(fixedPosition?.xRatio ?? DEFAULT_RATIO, view.x);
+      y.value = ratioToX(fixedPosition?.yRatio ?? 1, view.y);
+      queueAnchor();
+    }
+    function pinHere() {
+      stopLoop();
+      for (const name of ["behavior", "peek", "sit", "clearance"]) clearTimer(name);
+      walkTarget = null;
+      walkPhase.value = 0;
+      fallTarget = null;
+      hopVx = 0;
+      hopTargetX = null;
+      velocity = 0;
+      rising.value = false;
+      pendingPeek = false;
+      pendingStepOff = false;
+      pendingShelter = null;
+      sheltering = false;
+      sink.value = 0;
+      peekTarget = 0;
+      motion.value = "idle";
+      detachSurface();
+      rememberFixedPosition();
+      placeFixed();
+      if (saveOnLand) {
+        saveOnLand = false;
+        requestSave();
+      }
     }
     function roam() {
       return settings.value.roam;
@@ -745,7 +784,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       else scheduleBehavior();
     }
     function beginPeek() {
-      if (!motionAllowed() || !onFloor()) return;
+      if (fixed() || !motionAllowed() || !onFloor()) return;
       facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2;
       motion.value = "peek";
       peekTarget = hiddenHeight(PEEK_RATIO);
@@ -788,7 +827,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function scheduleBehavior() {
       clearTimer("behavior");
-      if (!calm()) return;
+      if (fixed() || !calm()) return;
       setTimer("behavior", randomBetween(6e3, 14e3), () => {
         if (!calm()) return;
         if (roam() === "free") {
@@ -871,6 +910,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return computeLanding(roam(), boxes, { x: x.value, y: y.value }, view, size());
     }
     function startFall(exclude = null) {
+      if (fixed()) {
+        pinHere();
+        return;
+      }
       x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value));
       detachSurface();
       hopVx = 0;
@@ -1012,6 +1055,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return { x: left, y: top + hidden, width: charWidth.value, height: charHeight.value - hidden };
     }
     function checkClearance() {
+      if (fixed()) {
+        if (refreshMobileFloor()) relayout();
+        return;
+      }
       if (disposed || !ready.value || !visible()) return;
       if (refreshMobileFloor()) relayout();
       if (sheltering) {
@@ -1195,7 +1242,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const view = viewport();
       const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1e3) / 1e3;
       const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1e3) / 1e3;
-      const value = { roam: roam(), xRatio, yRatio };
+      const value = {
+        roam: roam(),
+        xRatio,
+        yRatio,
+        ...fixed() && fixedPosition ? {
+          xRatio: Math.round(fixedPosition.xRatio * 1e3) / 1e3,
+          yRatio: Math.round(fixedPosition.yRatio * 1e3) / 1e3
+        } : {}
+      };
       const key = JSON.stringify(value);
       if (key === lastSaved) return;
       lastSaved = key;
@@ -1203,6 +1258,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       props.pet?.storage?.set?.(value)?.catch?.(() => console.warn("[AgentPets] position not saved"));
     }
     function relayout() {
+      if (fixed() && motion.value !== "drag") {
+        placeFixed();
+        return;
+      }
       const view = freeBounds(viewport(), ...sizePair());
       const maxSink = hiddenHeight(1);
       sink.value = Math.min(sink.value, maxSink);
@@ -1249,8 +1308,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function applySettings(value) {
       settingsRevision++;
       const before = settings.value.roam;
+      const wasFixed = fixed();
       settings.value = normalizeSettings(value);
-      if (ready.value && settings.value.roam !== before && motion.value !== "drag") {
+      if (ready.value && wasFixed !== fixed() && motion.value !== "drag") {
+        saveOnLand = true;
+        if (fixed()) pinHere();
+        else {
+          fixedPosition = null;
+          startFall();
+        }
+        return;
+      }
+      if (ready.value && !fixed() && settings.value.roam !== before && motion.value !== "drag") {
         settle();
         saveOnLand = true;
         startFall();
@@ -1442,6 +1511,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       x.value = ratioToX(stored?.xRatio ?? DEFAULT_RATIO, xBounds(view, charWidth.value));
       const yRatio = typeof stored?.yRatio === "number" && Number.isFinite(stored.yRatio) ? stored.yRatio : 1;
       y.value = ratioToX(yRatio, [view.safeArea.top, ground()]);
+      if (fixed()) {
+        rememberFixedPosition();
+        placeFixed();
+        return;
+      }
       if (roam() === "free") {
         land(false);
         return;
@@ -1537,7 +1611,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         class: _normalizeClass(["agent-pet-ying", { "agent-pet-ying--contained": !!props.previewRoot }]),
         "data-pose": pose.value,
         "data-motion": motion.value,
-        "data-roam": settings.value.roam
+        "data-roam": settings.value.roam,
+        "data-movement": settings.value.movement
       }, [
         _withDirectives(_createElementVNode("button", {
           type: "button",
@@ -1580,6 +1655,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-64a658b7"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-773faad9"]]);
 
 export { POSES as P, AgentPet as default };

@@ -1,7 +1,7 @@
 const SCALE_RANGE = [0.6, 1.6];
 const SPEED_RANGE = [0.5, 2];
 const ROAM_MODES = ["surfaces", "floor", "free"];
-const DEFAULT_SETTINGS = { scale: 1, speed: 1, roam: "surfaces" };
+const DEFAULT_SETTINGS = { scale: 1, speed: 1, roam: "surfaces", movement: "auto" };
 const SETTINGS_EVENT = "agentpets.settings";
 function bounded(value, range, fallback) {
   const number = typeof value === "number" ? value : Number(value);
@@ -11,6 +11,7 @@ function bounded(value, range, fallback) {
 function normalizeSettings(value) {
   const source = value && typeof value === "object" ? value : {};
   return {
+    movement: source.movement === "fixed" ? "fixed" : "auto",
     scale: bounded(source.scale, SCALE_RANGE, DEFAULT_SETTINGS.scale),
     speed: bounded(source.speed, SPEED_RANGE, DEFAULT_SETTINGS.speed),
     roam: ROAM_MODES.includes(source.roam) ? source.roam : DEFAULT_SETTINGS.roam
