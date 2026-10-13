@@ -496,7 +496,9 @@ class ArchiveManager(_PluginBase):
     def _wait_capacity(self, task: TaskConfig, store: Store, **capacity):
         """按当前阶段去重等待通知，恢复扫描后再次受限属于新的等待。"""
         previous_phase = store.task_state(task.id)["phase"]
-        store.set_task_state(task.id, active=task.auto_continue, phase="waiting_capacity", **capacity)
+        store.set_task_state(
+            task.id, active=task.auto_continue, phase="waiting_capacity", **capacity
+        )
         if previous_phase != "waiting_capacity":
             self._notify_event("other", task, "等待空间", capacity["reason"])
 
