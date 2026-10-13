@@ -2,9 +2,9 @@ import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { u as unwrap, A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, a as petImage, l as loadEditor, c as loadHostSelection, d as saveSettings, e as saveMappings, f as saveCalibration } from './host-B4WJK_1s.js';
 import { D as DEFAULT_CALIBRATION, p as parseCalibration, m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, h as HOST_INTENTS, e as sameCalibration, d as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-jvCB_8v9.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
-import AgentPet, { P as POSES } from './__federation_expose_AgentPet-BMYQnpik.js';
+import AgentPet, { P as POSES } from './__federation_expose_AgentPet-i6xwDf67.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite--xAqWRds.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-CkOlfq-c.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-ci2l3m68.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, S as SETTINGS_EVENT } from './settings-tnFA6UQD.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
@@ -911,7 +911,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           }, null, 8, ["model-value", "disabled", "hint"])
         ], 64)) : _createCommentVNode$1("", true),
         _createElementVNode$1("div", _hoisted_4$1, [
-          props.livePreview ? (_openBlock$1(), _createElementBlock$1("span", _hoisted_5$1, _toDisplayString$1(props.previewOnly ? "仅在预览区试调。小映与 Codex Pet 共用活动设置，保存后对所有用户生效。" : "调整时页面上正在运行的小映或 Codex Pet 会实时变化，保存后对所有用户生效。"), 1)) : _createCommentVNode$1("", true),
+          props.livePreview ? (_openBlock$1(), _createElementBlock$1("span", _hoisted_5$1, _toDisplayString$1(props.previewOnly ? "仅在预览区试调。慕慕与 Codex Pet 共用活动设置，保存后对所有用户生效。" : "调整时页面上正在运行的慕慕或 Codex Pet 会实时变化，保存后对所有用户生效。"), 1)) : _createCommentVNode$1("", true),
           _createVNode$1(_component_v_spacer),
           _createVNode$1(_component_v_btn, {
             variant: "text",
@@ -930,7 +930,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-5f171cc3"]]);
+const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-cc4b1786"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
