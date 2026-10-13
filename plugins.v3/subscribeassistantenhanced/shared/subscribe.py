@@ -7,6 +7,18 @@ from app.sdk.media import MetaInfo
 from app.schemas.types import MediaSource, MediaType
 
 
+def load_chain_subscription(subscribe_chain, subscribe):
+    """按订阅 ID 从主程序订阅仓储读取 SubscribeChain 合同要求的冻结快照。
+
+    SubscribeOper 返回 ORM 记录，而 Chain 的回填、进度刷新会对入参执行 dataclasses.replace()，
+    只接受仓储快照；SDK 查询返回的 Pydantic DTO 同样不满足该合同。插件写库后再调用 Chain，
+    按 ID 重新读取可让 Chain 基于已落库状态计算。订阅已删除时返回 None，调用方跳过 Chain 调用。
+    """
+    if not subscribe or not subscribe.id:
+        return None
+    return subscribe_chain.subscription_repository.get(subscribe.id)
+
+
 def resolve_subscribe_media_type(subscribe) -> MediaType:
     """解析订阅媒体类型，非法或缺失时返回 UNKNOWN，供状态变更链路 fail-closed。"""
     if not subscribe:
