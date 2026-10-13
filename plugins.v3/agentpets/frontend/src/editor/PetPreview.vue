@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import CalibrationControls from '@/editor/CalibrationControls.vue'
 import { DEFAULT_CALIBRATION, type Calibration } from '@/sprites/calibration'
 import ActionMappingEditor from '@/editor/ActionMappings.vue'
-import { ACTION_LABELS, nativeChoices, type ActionMappings } from '@/sprites/mappings'
+import { ACTION_LABELS, nativeChoices, stageAction, type ActionMappings } from '@/sprites/mappings'
 import { HOST_ACTIONS, HOST_INTENTS, type SpritePack } from '@/sprites/schema'
 import { POSES } from '@/stage/poses'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
@@ -16,15 +16,19 @@ import type { YingSettings } from '@/stage/settings'
 import type { Pose } from '@/stage/poses'
 import type { PetChoice } from './api'
 
-const props = defineProps<{
-  pet: PetChoice
-  settings: YingSettings
-  api: PluginApi | null
-  pluginId: string
-  calibration?: Calibration
-  mappings?: ActionMappings
-  disabled?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    pet: PetChoice
+    settings: YingSettings
+    api: PluginApi | null
+    pluginId: string
+    calibration?: Calibration
+    mappings?: ActionMappings
+    disabled?: boolean
+    initialTab?: 'activity' | 'animations' | 'calibration' | 'mappings'
+  }>(),
+  { initialTab: 'animations' },
+)
 
 const emit = defineEmits<{
   error: [boolean]
@@ -35,7 +39,14 @@ const emit = defineEmits<{
 const loadedPack = ref<SpritePack | null>(null)
 const replay = ref(0)
 const original = ref(false)
-const displayedCalibration = computed(() => (original.value ? DEFAULT_CALIBRATION : props.calibration))
+const editorTab = ref(props.initialTab)
+const expanded = ref(false)
+const previewMode = ref<'debug' | 'movement'>('debug')
+const previewSettings = computed<YingSettings>(() =>
+  previewMode.value === 'debug' ? { ...props.settings, movement: 'fixed', roam: 'free' } : props.settings,
+)
+const previewMaxSize = ref({ width: 280, height: 220 })
+const playing = ref('自主动作')
 const previewGroup = ref(props.pet.key === 'ying' ? 'poses' : 'native')
 function onPackReady(pack: SpritePack) {
   loadedPack.value = pack
@@ -53,7 +64,13 @@ const paused = ref(false)
 const action = ref('auto')
 const positionVersion = ref(0)
 const host = createMockHost(props.pluginId)
-const context = shallowRef(createMockPet(props.pet.mode, props.pet.key))
+function newContext() {
+  const pet = createMockPet(props.pet.mode, props.pet.key)
+  if (previewMode.value === 'debug') void pet.storage?.set?.({ roam: 'free', xRatio: 0.5, yRatio: 0.5 })
+  return pet
+}
+const context = shallowRef(newContext())
+const comparisonContext = computed(() => createMockPet('renderer', props.pet.key))
 const poseLabels: Record<string, string> = {
   idle: '待机',
   blink: '眨眼',
@@ -106,16 +123,23 @@ const events = [
   ['preview', '回复预览'],
   ['bubble', '通知气泡'],
 ]
-function playNative(name: string) {
+function playNative(name: string, trigger?: string) {
   choose(`native:${name}`)
+  if (trigger) playing.value = `${trigger} → ${ACTION_LABELS[name] ?? name}`
 }
 function choose(value: string) {
   action.value = value
+  playing.value =
+    value === 'auto'
+      ? '自主动作'
+      : (choices.value.find(item => item.value === value)?.title ?? value.slice(value.indexOf(':') + 1))
   updateAction()
   replay.value++
 }
 function fireHost(name: string) {
   action.value = 'auto'
+  playing.value = events.find(item => item[0] === name)?.[1] ?? name
+  replay.value++
   const phase =
     name === 'thinking.start'
       ? 'thinking'
@@ -139,6 +163,7 @@ let observer: ResizeObserver | undefined
 function resize() {
   if (!canvas.value) return
   const { width, height } = canvas.value.getBoundingClientRect()
+  previewMaxSize.value = { width: Math.max(1, width - 32), height: Math.max(1, height - 40) }
   host.patch({
     isMobile: window.innerWidth < 600,
     viewport: {
@@ -161,8 +186,8 @@ function updateAction() {
 watch(previewGroup, () => choose('auto'))
 
 // 重置或切换 Pet 时使用新的内存存储，避免重新挂载后恢复旧的拖拽位置。
-watch([() => props.pet.mode, () => props.pet.key, positionVersion], () => {
-  context.value = createMockPet(props.pet.mode, props.pet.key)
+watch([() => props.pet.mode, () => props.pet.key, positionVersion, previewMode], () => {
+  context.value = newContext()
 })
 watch(paused, updateMotion)
 watch(
@@ -172,6 +197,8 @@ watch(
     loadedPack.value = null
     previewGroup.value = props.pet.key === 'ying' ? 'poses' : 'native'
     action.value = 'auto'
+    playing.value = '自主动作'
+    original.value = false
     updateAction()
   },
 )
@@ -193,215 +220,313 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="ap-preview" aria-label="Pet 实时预览">
-    <header class="ap-preview__header">
-      <div class="ap-inline">
-        <span class="ap-live-dot" /><strong>实时预览</strong><span class="ap-muted">{{ pet.name }}</span>
+  <section class="ap-preview" :class="{ 'ap-preview--expanded': expanded }" aria-label="Pet 实时预览">
+    <div class="ap-preview__viewer">
+      <header class="ap-preview__header">
+        <div class="ap-inline"><span class="ap-live-dot" /><strong>实时预览</strong></div>
+        <v-btn size="small" variant="text" :aria-pressed="expanded" @click="expanded = !expanded">
+          {{ expanded ? '收起预览' : '放大预览' }}
+        </v-btn>
+      </header>
+      <div v-if="pet.mode === 'stage'" class="ap-preview__mode">
+        <v-btn-toggle
+          v-model="previewMode"
+          mandatory
+          divided
+          density="compact"
+          color="primary"
+          variant="outlined"
+          aria-label="预览模式"
+        >
+          <v-btn value="debug" size="small">动作调试</v-btn>
+          <v-btn value="movement" size="small">运动测试</v-btn>
+        </v-btn-toggle>
       </div>
-      <div class="ap-inline">
-        <v-btn
-          :icon="paused ? 'mdi-play' : 'mdi-pause'"
-          :aria-label="paused ? '播放预览' : '暂停预览'"
-          size="small"
-          variant="text"
-          @click="paused = !paused"
-        />
-        <v-btn icon="mdi-restore" aria-label="重置预览位置" size="small" variant="text" @click="positionVersion++" />
-      </div>
-    </header>
-    <div ref="canvas" class="ap-preview__canvas" :data-roam="settings.roam">
-      <div class="ap-preview__watermark" aria-hidden="true">
-        <v-icon icon="mdi-paw-outline" size="40" /><span>你的 Pet，在这里活动</span>
-      </div>
-      <template v-if="pet.mode === 'stage' && settings.roam === 'surfaces'">
-        <div class="v-sheet ap-preview__surface ap-preview__surface--left"><span>小平台</span></div>
-        <div class="v-sheet ap-preview__surface ap-preview__surface--right"><span>休息台</span></div>
-      </template>
-      <div class="ap-preview__floor" aria-hidden="true" />
-      <component
-        :is="stageComponent"
-        v-if="mounted && pet.mode === 'stage'"
-        :key="`${pluginId}:${pet.key}:${positionVersion}`"
-        :agent="host"
-        :pet="context"
-        :api="api"
-        :plugin-id="pluginId"
-        :preview-root="canvas"
-        :settings-override="settings"
-        :preview-pose="previewPose"
-        :native-action="nativeAction"
-        :mappings-override="mappings"
-        :calibration-override="displayedCalibration"
-        :show-calibration="!!calibration && !original"
-        :replay="replay"
-        @pack-ready="onPackReady"
-        @load-state="onLoadState"
-      />
-      <div v-else-if="mounted" class="ap-preview__entry">
-        <AgentPetSprite
-          :key="`${pluginId}:${pet.key}:${positionVersion}`"
-          :agent="host"
-          :pet="context"
-          :api="api"
-          :plugin-id="pluginId"
-          :action="rendererAction"
-          :intent="rendererIntent"
-          :native-action="nativeAction"
-          :mappings-override="mappings"
-          :calibration-override="displayedCalibration"
-          :show-calibration="!!calibration && !original"
-          :replay="replay"
-          @pack-ready="onPackReady"
-          :motion-active="!paused && !reducedMotion"
-          strict-preview
-          @load-state="onLoadState"
-        />
-      </div>
-      <v-alert v-if="failed" type="error" variant="tonal" density="compact" class="ap-preview__error"
-        >此 Pet 加载失败，请点击右上角重置重试。</v-alert
-      >
-      <span class="ap-preview__hint">{{
-        pet.mode === 'stage' ? '拖动 Pet 试试 · 调整会即时显示' : '助手入口外观 · 试试下方动作'
-      }}</span>
-    </div>
-    <footer class="ap-preview__library">
-      <div class="ap-inline mb-2">
-        <strong>完整动作预览</strong><v-spacer />
-        <v-btn size="small" :variant="action === 'auto' ? 'tonal' : 'text'" @click="choose('auto')">自主活动</v-btn>
-      </div>
-      <v-tabs v-model="previewGroup" density="compact" color="primary">
-        <v-tab v-if="pet.key !== 'ying'" value="native">原生动画</v-tab>
-        <v-tab v-if="loadedPack?.codex_version === 'v2'" value="directions">视线方向</v-tab>
-        <v-tab v-if="pet.mode === 'stage'" value="poses">活动姿态</v-tab>
-        <v-tab v-if="pet.mode === 'stage'" value="events">MP 事件</v-tab>
-        <v-tab v-if="pet.mode === 'renderer'" value="actions">MP 动作</v-tab>
-        <v-tab v-if="pet.mode === 'renderer'" value="intents">入口状态</v-tab>
-      </v-tabs>
-      <div class="ap-preview__choices">
-        <template v-if="previewGroup === 'events'">
-          <v-btn v-for="[key, label] in events" :key="key" size="small" variant="tonal" @click="fireHost(key)">{{
-            label
-          }}</v-btn>
-        </template>
-        <template v-else>
-          <v-btn
-            v-for="item in choices"
-            :key="item.value"
-            size="small"
-            :variant="action === item.value ? 'flat' : 'tonal'"
-            :color="action === item.value ? 'primary' : undefined"
-            :disabled="failed"
-            @click="choose(item.value)"
-            >{{ item.title }}</v-btn
+      <div class="ap-preview__canvases" :class="{ 'ap-preview__canvases--compare': original }">
+        <div
+          ref="canvas"
+          class="ap-preview__canvas"
+          :class="{ 'ap-preview__canvas--debug': previewMode === 'debug' }"
+          :data-roam="previewSettings.roam"
+        >
+          <template v-if="pet.mode === 'stage' && previewMode === 'movement' && settings.roam === 'surfaces'">
+            <div class="v-sheet ap-preview__surface ap-preview__surface--left"><span>小平台</span></div>
+            <div class="v-sheet ap-preview__surface ap-preview__surface--right"><span>休息台</span></div>
+          </template>
+          <div class="ap-preview__floor" aria-hidden="true" />
+          <component
+            :is="stageComponent"
+            v-if="mounted && pet.mode === 'stage'"
+            :key="`${pluginId}:${pet.key}:${positionVersion}:${previewMode}`"
+            :agent="host"
+            :pet="context"
+            :api="api"
+            :plugin-id="pluginId"
+            :preview-root="canvas"
+            :preview-max-size="previewMaxSize"
+            :settings-override="previewSettings"
+            :preview-pose="previewPose"
+            :native-action="nativeAction"
+            :mappings-override="mappings"
+            :calibration-override="calibration"
+            :show-calibration="editorTab === 'calibration' && !!calibration"
+            :replay="replay"
+            @pack-ready="onPackReady"
+            @load-state="onLoadState"
+          />
+          <div v-else-if="mounted" class="ap-preview__entry">
+            <AgentPetSprite
+              :key="`${pluginId}:${pet.key}:${positionVersion}`"
+              :agent="host"
+              :pet="context"
+              :api="api"
+              :plugin-id="pluginId"
+              :action="rendererAction"
+              :intent="rendererIntent"
+              :native-action="nativeAction"
+              :mappings-override="mappings"
+              :calibration-override="calibration"
+              :show-calibration="editorTab === 'calibration' && !!calibration"
+              :replay="replay"
+              :motion-active="!paused && !reducedMotion"
+              strict-preview
+              @pack-ready="onPackReady"
+              @load-state="onLoadState"
+            />
+          </div>
+          <v-alert v-if="failed" type="error" variant="tonal" density="compact" class="ap-preview__error"
+            >此 Pet 加载失败，请点击重置重试。</v-alert
           >
-        </template>
+          <span class="ap-preview__hint">{{
+            original ? '当前校准' : previewMode === 'debug' ? '居中播放 · 不会自行走开' : '拖动 Pet · 测试移动与跳跃'
+          }}</span>
+        </div>
+        <div v-if="original && loadedPack" class="ap-preview__original" aria-label="原始显示对照">
+          <div class="ap-preview__entry">
+            <AgentPetSprite
+              :agent="host"
+              :pet="comparisonContext"
+              :api="api"
+              :plugin-id="pluginId"
+              :action="previewPose ? stageAction(previewPose, false).action : rendererAction"
+              :mapping-key="previewPose ? stageAction(previewPose, false).key : undefined"
+              :intent="rendererIntent"
+              :native-action="nativeAction"
+              :mappings-override="mappings"
+              :calibration-override="DEFAULT_CALIBRATION"
+              :replay="replay"
+              :motion-active="!paused && !reducedMotion"
+              strict-preview
+            />
+          </div>
+          <span class="ap-preview__hint">原始显示</span>
+        </div>
       </div>
-      <p class="ap-muted mb-0">
-        {{
-          previewGroup === 'native' || previewGroup === 'directions'
-            ? '直接播放素材原始动画，不受动作映射影响。'
-            : '按当前映射预览；自主活动时可拖动 Pet 验证移动交互。'
-        }}
-      </p>
-    </footer>
-    <div v-if="loadedPack && !pet.builtin" class="px-4">
-      <v-switch v-model="original" label="对照原始显示" density="compact" hide-details />
+      <div class="ap-preview__playback">
+        <span class="ap-preview__playing" role="status">{{ paused ? '已暂停' : '正在播放' }}：{{ playing }}</span>
+        <div class="ap-inline">
+          <v-btn
+            :icon="paused ? 'mdi-play' : 'mdi-pause'"
+            :aria-label="paused ? '播放预览' : '暂停预览'"
+            size="small"
+            variant="text"
+            @click="paused = !paused"
+          />
+          <v-btn icon="mdi-replay" aria-label="重播当前动作" size="small" variant="text" @click="replay++" />
+          <v-btn icon="mdi-restore" aria-label="重置预览位置" size="small" variant="text" @click="positionVersion++" />
+        </div>
+      </div>
+      <v-switch
+        v-if="loadedPack && !pet.builtin"
+        v-model="original"
+        label="对照原始显示"
+        density="compact"
+        hide-details
+        class="ap-preview__comparison"
+      />
     </div>
-    <CalibrationControls
-      v-if="loadedPack && !pet.builtin && calibration"
-      :key="pet.key"
-      :model-value="calibration"
-      :pack-id="pet.key"
-      :api="api"
-      :plugin-id="pluginId"
-      :disabled="disabled"
-      @update:model-value="emit('calibration', $event)"
-    />
-    <ActionMappingEditor
-      v-if="loadedPack?.codex_version && !pet.builtin"
-      :pack="loadedPack"
-      :mode="pet.mode"
-      :model-value="mappings ?? loadedPack.action_mappings ?? {}"
-      :disabled="disabled"
-      @update:model-value="emit('mappings', $event)"
-      @preview="playNative"
-    />
+    <div class="ap-preview__editor">
+      <v-tabs v-model="editorTab" density="compact" color="primary" class="ap-preview__tabs">
+        <v-tab value="activity">活动</v-tab>
+        <v-tab value="animations">动作试播</v-tab>
+        <v-tab value="calibration">校准</v-tab>
+        <v-tab value="mappings">映射</v-tab>
+      </v-tabs>
+      <div class="ap-preview__scroll">
+        <div v-show="editorTab === 'activity'" class="ap-preview__panel">
+          <slot name="activity"><p class="ap-muted">活动设置在详情页中调整，预览不会自动保存。</p></slot>
+        </div>
+        <div v-show="editorTab === 'animations'" class="ap-preview__library">
+          <div class="ap-inline mb-2">
+            <strong>完整动作预览</strong><v-spacer />
+            <v-btn size="small" :variant="action === 'auto' ? 'tonal' : 'text'" @click="choose('auto')">自主动作</v-btn>
+          </div>
+          <v-tabs v-model="previewGroup" density="compact" color="primary">
+            <v-tab v-if="pet.key !== 'ying'" value="native">原生动画</v-tab>
+            <v-tab v-if="loadedPack?.codex_version === 'v2'" value="directions">视线方向</v-tab>
+            <v-tab v-if="pet.mode === 'stage'" value="poses">活动姿态</v-tab>
+            <v-tab v-if="pet.mode === 'stage'" value="events">MP 事件</v-tab>
+            <v-tab v-if="pet.mode === 'renderer'" value="actions">MP 动作</v-tab>
+            <v-tab v-if="pet.mode === 'renderer'" value="intents">入口状态</v-tab>
+          </v-tabs>
+          <div class="ap-preview__choices">
+            <template v-if="previewGroup === 'events'">
+              <v-btn v-for="[key, label] in events" :key="key" size="small" variant="tonal" @click="fireHost(key)">{{
+                label
+              }}</v-btn>
+            </template>
+            <template v-else>
+              <v-btn
+                v-for="item in choices"
+                :key="item.value"
+                size="small"
+                :variant="action === item.value ? 'flat' : 'tonal'"
+                :color="action === item.value ? 'primary' : undefined"
+                :disabled="failed"
+                @click="choose(item.value)"
+                >{{ item.title }}</v-btn
+              >
+            </template>
+          </div>
+          <p class="ap-muted mb-0">
+            {{
+              previewGroup === 'native' || previewGroup === 'directions'
+                ? '直接播放素材原始动画，不受动作映射影响。'
+                : '按当前映射预览；运动测试中可拖动 Pet。'
+            }}
+          </p>
+        </div>
+        <div v-show="editorTab === 'calibration'">
+          <CalibrationControls
+            v-if="loadedPack && !pet.builtin && calibration"
+            :key="pet.key"
+            :model-value="calibration"
+            :pack-id="pet.key"
+            :api="api"
+            :plugin-id="pluginId"
+            :disabled="disabled"
+            @update:model-value="emit('calibration', $event)"
+          />
+          <p v-else class="ap-preview__panel ap-muted">
+            {{ pet.builtin ? '内置形象无需显示校准。' : '素材加载后可调整显示区域与脚底基线。' }}
+          </p>
+        </div>
+        <div v-show="editorTab === 'mappings'">
+          <ActionMappingEditor
+            v-if="loadedPack?.codex_version && !pet.builtin"
+            :pack="loadedPack"
+            :mode="pet.mode"
+            :model-value="mappings ?? loadedPack.action_mappings ?? {}"
+            :disabled="disabled"
+            @update:model-value="emit('mappings', $event)"
+            @preview="playNative"
+          />
+          <p v-else class="ap-preview__panel ap-muted">此形象使用内置动作，无需设置动作映射。</p>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.ap-preview__library {
-  padding: 12px 16px;
-}
-.ap-preview__choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 0;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
 .ap-preview {
-  display: flex;
-  flex-direction: column;
+  --ap-preview-width: clamp(280px, 28vw, 320px);
+  --ap-canvas-height: 260px;
+  display: grid;
+  grid-template-columns: var(--ap-preview-width) minmax(0, 1fr);
+  flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 12px;
   background: transparent;
 }
+.ap-preview--expanded {
+  --ap-preview-width: clamp(320px, 40vw, 480px);
+  --ap-canvas-height: clamp(260px, 42dvh, 400px);
+}
+.ap-preview__viewer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
 .ap-preview__header {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 14px;
-  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  gap: 4px;
+  padding: 6px 10px;
   font-size: 13px;
 }
-.ap-preview__error {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 42%;
-  z-index: 1;
+.ap-preview__mode {
+  flex: 0 0 auto;
+  padding: 0 10px 8px;
 }
-.ap-preview__canvas {
+.ap-preview__canvases {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--ap-canvas-height);
+  flex: 0 1 var(--ap-canvas-height);
+  min-height: 0;
+}
+.ap-preview__canvases--compare {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.ap-preview__canvas,
+.ap-preview__viewer :deep(.agent-pet-sprites) {
+  min-width: 0;
+  min-height: 0;
+}
+.ap-preview__original {
   position: relative;
   isolation: isolate;
   contain: paint;
   overflow: hidden;
-  min-height: 330px;
-  height: clamp(330px, 51vh, 530px);
+  min-width: 0;
+  min-height: 0;
+  background-color: rgba(var(--v-theme-on-surface), 0.025);
   background-image: radial-gradient(rgba(var(--v-theme-on-surface), 0.09) 0.8px, transparent 0.8px);
   background-size: 20px 20px;
 }
-.ap-preview__watermark {
+.ap-preview__original {
+  border-left: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.ap-preview__canvas--debug :deep(.agent-pet-ying__character) {
+  pointer-events: none;
+}
+.ap-preview__entry {
   position: absolute;
-  top: 26px;
-  left: 0;
-  right: 0;
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  color: rgba(var(--v-theme-on-surface), 0.22);
-  font-size: 12px;
+  width: min(144px, calc(100% - 32px));
+  height: min(156px, calc(100% - 40px));
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.ap-preview__hint {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
   pointer-events: none;
 }
 .ap-preview__surface {
   position: absolute;
   width: 36%;
-  min-width: 120px;
-  height: 38px;
+  height: 28px;
   border: 1px solid rgba(var(--v-theme-primary), 0.16);
   border-top: 3px solid rgba(var(--v-theme-primary), 0.4);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(var(--v-theme-primary), 0.04);
   color: rgba(var(--v-theme-on-surface), 0.4);
   text-align: center;
-  font-size: 11px;
-  padding-top: 8px;
+  font-size: 10px;
 }
 .ap-preview__surface--left {
   left: 5%;
@@ -413,55 +538,107 @@ onBeforeUnmount(() => {
 }
 .ap-preview__floor {
   position: absolute;
-  bottom: 15px;
+  bottom: 18px;
   left: 16px;
   right: 16px;
   border-top: 1px solid rgba(var(--v-theme-on-surface), 0.15);
   pointer-events: none;
 }
-.ap-preview__entry {
+.ap-preview__error {
   position: absolute;
-  width: 144px;
-  height: 156px;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -35%);
+  inset: 12px;
+  z-index: 1;
+  overflow: auto;
 }
-.ap-preview__hint {
-  position: absolute;
-  left: 12px;
-  bottom: 0;
-  right: 12px;
-  text-align: center;
-  font-size: 10px;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  pointer-events: none;
-}
-.ap-preview__actions {
+.ap-preview__playback {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 4px 12px;
-  padding: 10px;
-  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  justify-content: space-between;
+  padding: 4px 10px;
+}
+.ap-preview__playing {
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
-.ap-preview__toggle {
-  max-width: 100%;
-  height: auto;
+.ap-preview__comparison {
+  flex: 0 0 auto;
+  padding: 0 10px;
+}
+.ap-preview__editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.ap-preview__tabs {
+  flex: 0 0 auto;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.ap-preview__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ap-preview__panel,
+.ap-preview__library {
+  padding: 16px;
+}
+.ap-preview__choices {
+  display: flex;
   flex-wrap: wrap;
-}
-.ap-preview__toggle :deep(.v-btn) {
-  min-width: 48px;
-  border-radius: 6px !important;
+  gap: 8px;
+  padding: 12px 0;
 }
 @media (max-width: 760px) {
-  .ap-preview__canvas {
-    height: 330px;
+  .ap-preview {
+    display: flex;
+    flex-direction: column;
+    --ap-canvas-height: clamp(160px, 24dvh, 200px);
+  }
+  .ap-preview--expanded {
+    --ap-canvas-height: clamp(200px, 34dvh, 320px);
+  }
+  .ap-preview__viewer {
+    flex: 0 1 auto;
+    border-right: 0;
   }
   .ap-preview__header {
-    padding: 6px 10px;
+    padding: 2px 8px;
+  }
+  .ap-preview__mode {
+    padding: 0 8px 4px;
+  }
+  .ap-preview__playback {
+    padding: 0 8px;
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .ap-preview__playing {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+  }
+  .ap-preview__comparison {
+    padding: 0 8px;
+  }
+  .ap-preview__editor {
+    flex: 1;
+    min-height: min(120px, 20dvh);
+  }
+  .ap-preview__panel,
+  .ap-preview__library {
+    padding: 12px;
+  }
+}
+@media (max-height: 600px) and (max-width: 760px) {
+  .ap-preview {
+    --ap-canvas-height: clamp(100px, 20dvh, 140px);
+  }
+  .ap-preview--expanded {
+    --ap-canvas-height: clamp(140px, 30dvh, 200px);
   }
 }
 </style>

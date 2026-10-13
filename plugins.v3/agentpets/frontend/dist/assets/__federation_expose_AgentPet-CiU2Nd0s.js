@@ -436,6 +436,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     aspectRatio: { default: 0 },
     previewRoot: { default: null },
     settingsOverride: {},
+    previewMaxSize: {},
     previewPose: {}
   },
   setup(__props) {
@@ -497,7 +498,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const cleanups = [];
     const startup = new AbortController();
     let settingsRevision = 0;
-    const charHeight = computed(() => BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value));
+    const charHeight = computed(() => {
+      const height = BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value);
+      const fit = props.previewRoot ? props.previewMaxSize : void 0;
+      return fit ? Math.min(height, Math.max(1, fit.height), Math.max(1, fit.width) / aspect.value) : height;
+    });
     const charWidth = computed(() => charHeight.value * aspect.value);
     const pose = computed(
       () => props.previewRoot && props.previewPose ? props.previewPose : resolvePose({
@@ -519,6 +524,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         if (ready.value) relayout();
       }
     );
+    watch([charHeight, charWidth], () => {
+      if (ready.value && props.previewRoot) relayout();
+    });
     const frameStatus = ref(
       Object.fromEntries(POSES.map((name) => [name, "pending"]))
     );
@@ -1707,6 +1715,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-60a1ad2b"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-6fdd61e5"]]);
 
 export { POSES as P, AgentPet as default };

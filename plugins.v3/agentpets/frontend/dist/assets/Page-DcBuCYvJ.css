@@ -1,0 +1,243 @@
+
+.ap-calibration[data-v-b5ba2de4] {
+  padding: 16px;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.ap-calibration__fields[data-v-b5ba2de4] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+  gap: 12px;
+}
+
+.ap-mappings[data-v-62c74c1b] {
+  padding: 16px;
+  border-top: 1px solid rgba(var(--v-border-color), 0.12);
+}
+.ap-mappings__row[data-v-62c74c1b] {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ap-mappings[data-v-62c74c1b] .v-expansion-panel {
+  background: transparent;
+}
+
+.ap-preview[data-v-5f34b232] {
+  --ap-preview-width: clamp(280px, 28vw, 320px);
+  --ap-canvas-height: 260px;
+  display: grid;
+  grid-template-columns: var(--ap-preview-width) minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+  background: transparent;
+}
+.ap-preview--expanded[data-v-5f34b232] {
+  --ap-preview-width: clamp(320px, 40vw, 480px);
+  --ap-canvas-height: clamp(260px, 42dvh, 400px);
+}
+.ap-preview__viewer[data-v-5f34b232] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.ap-preview__header[data-v-5f34b232] {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.ap-preview__mode[data-v-5f34b232] {
+  flex: 0 0 auto;
+  padding: 0 10px 8px;
+}
+.ap-preview__canvases[data-v-5f34b232] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--ap-canvas-height);
+  flex: 0 1 var(--ap-canvas-height);
+  min-height: 0;
+}
+.ap-preview__canvases--compare[data-v-5f34b232] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.ap-preview__canvas[data-v-5f34b232],
+.ap-preview__viewer[data-v-5f34b232] .agent-pet-sprites {
+  min-width: 0;
+  min-height: 0;
+}
+.ap-preview__original[data-v-5f34b232] {
+  position: relative;
+  isolation: isolate;
+  contain: paint;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  background-color: rgba(var(--v-theme-on-surface), 0.025);
+  background-image: radial-gradient(rgba(var(--v-theme-on-surface), 0.09) 0.8px, transparent 0.8px);
+  background-size: 20px 20px;
+}
+.ap-preview__original[data-v-5f34b232] {
+  border-left: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.ap-preview__canvas--debug[data-v-5f34b232] .agent-pet-ying__character {
+  pointer-events: none;
+}
+.ap-preview__entry[data-v-5f34b232] {
+  position: absolute;
+  width: min(144px, calc(100% - 32px));
+  height: min(156px, calc(100% - 40px));
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.ap-preview__hint[data-v-5f34b232] {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  pointer-events: none;
+}
+.ap-preview__surface[data-v-5f34b232] {
+  position: absolute;
+  width: 36%;
+  height: 28px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.16);
+  border-top: 3px solid rgba(var(--v-theme-primary), 0.4);
+  border-radius: 6px;
+  background: rgba(var(--v-theme-primary), 0.04);
+  color: rgba(var(--v-theme-on-surface), 0.4);
+  text-align: center;
+  font-size: 10px;
+}
+.ap-preview__surface--left[data-v-5f34b232] {
+  left: 5%;
+  top: 69%;
+}
+.ap-preview__surface--right[data-v-5f34b232] {
+  right: 5%;
+  top: 55%;
+}
+.ap-preview__floor[data-v-5f34b232] {
+  position: absolute;
+  bottom: 18px;
+  left: 16px;
+  right: 16px;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.15);
+  pointer-events: none;
+}
+.ap-preview__error[data-v-5f34b232] {
+  position: absolute;
+  inset: 12px;
+  z-index: 1;
+  overflow: auto;
+}
+.ap-preview__playback[data-v-5f34b232] {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+}
+.ap-preview__playing[data-v-5f34b232] {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ap-preview__comparison[data-v-5f34b232] {
+  flex: 0 0 auto;
+  padding: 0 10px;
+}
+.ap-preview__editor[data-v-5f34b232] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.ap-preview__tabs[data-v-5f34b232] {
+  flex: 0 0 auto;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.ap-preview__scroll[data-v-5f34b232] {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ap-preview__panel[data-v-5f34b232],
+.ap-preview__library[data-v-5f34b232] {
+  padding: 16px;
+}
+.ap-preview__choices[data-v-5f34b232] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+}
+@media (max-width: 760px) {
+.ap-preview[data-v-5f34b232] {
+    display: flex;
+    flex-direction: column;
+    --ap-canvas-height: clamp(160px, 24dvh, 200px);
+}
+.ap-preview--expanded[data-v-5f34b232] {
+    --ap-canvas-height: clamp(200px, 34dvh, 320px);
+}
+.ap-preview__viewer[data-v-5f34b232] {
+    flex: 0 1 auto;
+    border-right: 0;
+}
+.ap-preview__header[data-v-5f34b232] {
+    padding: 2px 8px;
+}
+.ap-preview__mode[data-v-5f34b232] {
+    padding: 0 8px 4px;
+}
+.ap-preview__playback[data-v-5f34b232] {
+    padding: 0 8px;
+    flex-wrap: nowrap;
+    gap: 4px;
+}
+.ap-preview__playing[data-v-5f34b232] {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+}
+.ap-preview__comparison[data-v-5f34b232] {
+    padding: 0 8px;
+}
+.ap-preview__editor[data-v-5f34b232] {
+    flex: 1;
+    min-height: min(120px, 20dvh);
+}
+.ap-preview__panel[data-v-5f34b232],
+  .ap-preview__library[data-v-5f34b232] {
+    padding: 12px;
+}
+}
+@media (max-height: 600px) and (max-width: 760px) {
+.ap-preview[data-v-5f34b232] {
+    --ap-canvas-height: clamp(100px, 20dvh, 140px);
+}
+.ap-preview--expanded[data-v-5f34b232] {
+    --ap-canvas-height: clamp(140px, 30dvh, 200px);
+}
+}
+
+.agent-pets-stage-settings__value[data-v-5f171cc3] {
+  min-width: 3.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

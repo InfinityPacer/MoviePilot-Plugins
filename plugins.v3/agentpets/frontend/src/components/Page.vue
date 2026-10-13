@@ -4,7 +4,6 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import {
   loadEditor,
   loadHostSelection,
-  petImage,
   sameSettings,
   saveSettings,
   saveMappings,
@@ -274,73 +273,49 @@ async function save() {
       <v-btn icon="mdi-close" aria-label="关闭详情页" variant="text" :disabled="busy" @click="emit('close')" />
     </v-toolbar>
     <div class="ap-page__content">
-      <v-alert v-if="!agent" type="warning" variant="tonal" density="compact" class="ap-result">{{
-        HOST_UNSUPPORTED_MESSAGE
-      }}</v-alert>
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="ap-result">{{ error }}</v-alert>
-      <v-alert v-if="hostError" type="warning" variant="tonal" density="compact" class="ap-result">{{
-        hostError
-      }}</v-alert>
-      <v-alert v-if="conflictingNames.length" type="warning" variant="tonal" density="compact" class="ap-result">
-        {{ conflictingNames.join('、') }}
-        的素材调整已在其他页面更改。已保留你的草稿；请点击「撤销」载入最新值后重新调整。
-      </v-alert>
-      <v-alert v-if="feedback" :type="feedbackType" variant="tonal" density="compact" class="ap-result" role="status">{{
-        feedback
-      }}</v-alert>
+      <div class="ap-page__notices">
+        <v-alert v-if="!agent" type="warning" variant="tonal" density="compact" class="ap-result">{{
+          HOST_UNSUPPORTED_MESSAGE
+        }}</v-alert>
+        <v-alert v-if="error" type="error" variant="tonal" density="compact" class="ap-result">{{ error }}</v-alert>
+        <v-alert v-if="hostError" type="warning" variant="tonal" density="compact" class="ap-result">{{
+          hostError
+        }}</v-alert>
+        <v-alert v-if="conflictingNames.length" type="warning" variant="tonal" density="compact" class="ap-result">
+          {{ conflictingNames.join('、') }}
+          的素材调整已在其他页面更改。已保留你的草稿；请点击「撤销」载入最新值后重新调整。
+        </v-alert>
+        <v-alert
+          v-if="feedback"
+          :type="feedbackType"
+          variant="tonal"
+          density="compact"
+          class="ap-result"
+          role="status"
+          >{{ feedback }}</v-alert
+        >
+      </div>
       <div v-if="loading && !snapshot" class="ap-empty">
         <v-progress-circular indeterminate color="primary" /><span class="ap-muted">正在准备你的 Pet…</span>
       </div>
       <div v-else-if="snapshot && currentPet" class="ap-editor-grid">
-        <aside class="ap-controls">
-          <section class="ap-control-panel">
-            <h2 class="ap-section-title">选择 Pet</h2>
-            <v-select
-              v-model="selectedKey"
-              :items="snapshot.pets"
-              item-title="name"
-              item-value="key"
-              label="预览形象"
-              density="compact"
-              variant="outlined"
-              hide-details
-              :disabled="blocked"
-            />
-            <div class="ap-pet-identity">
-              <img v-if="petImage(currentPet)" :src="petImage(currentPet)" :alt="currentPet.name" />
-              <div>
-                <strong>{{ currentPet.name }}</strong>
-                <div class="ap-muted">
-                  {{ currentPet.mode === 'stage' ? '自由活动的角色' : '助手入口的形象' }} ·
-                  {{ currentPet.builtin ? '内置' : '已导入' }}
-                </div>
-              </div>
-            </div>
-            <p v-if="currentPet.description" class="ap-muted mt-3 mb-0">{{ currentPet.description }}</p>
-          </section>
-          <section class="ap-control-panel">
-            <h2 class="ap-section-title">{{ currentPet.mode === 'stage' ? '活动调整' : '入口外观' }}</h2>
-            <StageSettings
-              v-if="currentPet.mode === 'stage'"
-              v-model="draft"
-              :live-preview="true"
-              :disabled="blocked"
-              :preview-only="true"
-            />
-            <p v-else class="ap-muted mb-0">
-              此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。
-            </p>
-          </section>
-          <section class="ap-control-panel">
-            <h2 class="ap-section-title">在 MP 中使用</h2>
-            <div class="ap-muted">当前系统默认</div>
-            <strong>{{ defaultName }}</strong>
-            <p class="ap-muted mt-3 mb-0">保存调整后，在「设定 → 系统 → 智能助手配置 → 助手形象」中选择 Pet。</p>
-            <v-alert v-if="!snapshot.enabled" type="info" variant="tonal" density="compact" class="mt-3"
-              >先在配置页启用插件，形象才会出现在 MP 的可选列表中。</v-alert
-            >
-          </section>
-        </aside>
+        <div class="ap-page__selector">
+          <v-select
+            v-model="selectedKey"
+            :items="snapshot.pets"
+            item-title="name"
+            item-value="key"
+            label="预览形象"
+            density="compact"
+            variant="outlined"
+            hide-details
+            :disabled="blocked"
+          />
+          <span class="ap-muted"
+            >{{ currentPet.mode === 'stage' ? '自由活动的角色' : '助手入口的形象' }} ·
+            {{ currentPet.builtin ? '内置' : '已导入' }}</span
+          >
+        </div>
         <PetPreview
           :key="`${props.pluginId}:${previewVersion}`"
           :pet="currentPet"
@@ -350,10 +325,37 @@ async function save() {
           :mappings="mappingDrafts[selectedKey]"
           :calibration="calibrationDrafts[selectedKey]"
           :disabled="blocked"
+          initial-tab="activity"
           @pack-ready="onPackReady"
           @mappings="mappingDrafts[selectedKey] = $event"
           @calibration="calibrationDrafts[selectedKey] = $event"
-        />
+        >
+          <template #activity>
+            <p v-if="currentPet.description" class="ap-muted mb-3">{{ currentPet.description }}</p>
+            <section class="ap-control-panel">
+              <h2 class="ap-section-title">{{ currentPet.mode === 'stage' ? '活动调整' : '入口外观' }}</h2>
+              <StageSettings
+                v-if="currentPet.mode === 'stage'"
+                v-model="draft"
+                :live-preview="true"
+                :disabled="blocked"
+                :preview-only="true"
+              />
+              <p v-else class="ap-muted mb-0">
+                此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。
+              </p>
+            </section>
+            <section class="ap-control-panel">
+              <h2 class="ap-section-title">在 MP 中使用</h2>
+              <div class="ap-muted">当前系统默认</div>
+              <strong>{{ defaultName }}</strong>
+              <p class="ap-muted mt-3 mb-0">保存调整后，在「设定 → 系统 → 智能助手配置 → 助手形象」中选择 Pet。</p>
+              <v-alert v-if="!snapshot.enabled" type="info" variant="tonal" density="compact" class="mt-3"
+                >先在配置页启用插件，形象才会出现在 MP 的可选列表中。</v-alert
+              >
+            </section>
+          </template>
+        </PetPreview>
       </div>
       <div v-else-if="!loading" class="ap-empty">
         <v-icon icon="mdi-paw-outline" size="44" color="primary" /><strong>{{

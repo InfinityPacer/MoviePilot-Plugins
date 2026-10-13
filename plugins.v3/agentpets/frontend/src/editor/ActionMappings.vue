@@ -9,7 +9,7 @@ const props = defineProps<{
   modelValue: ActionMappings
   disabled?: boolean
 }>()
-const emit = defineEmits<{ 'update:modelValue': [ActionMappings]; preview: [string] }>()
+const emit = defineEmits<{ 'update:modelValue': [ActionMappings]; preview: [string, string] }>()
 const rows = computed(() => mappingRows(props.mode))
 const groups = computed(() => [...new Set(rows.value.map(row => row.group))])
 const animations = computed(() =>
@@ -67,7 +67,7 @@ function defaultAction(action: string) {
               variant="text"
               size="small"
               :disabled="disabled"
-              @click="emit('preview', modelValue[row.key] ?? defaultAction(row.action))"
+              @click="emit('preview', modelValue[row.key] ?? defaultAction(row.action), row.label)"
             />
           </div>
         </v-expansion-panel-text>
