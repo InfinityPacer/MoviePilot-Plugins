@@ -113,8 +113,9 @@ class TestHandleTorrentDeleted:
         assert "lack_episode" not in payload
         assert "current_priority" not in payload
         assert sub.note == [1, 4]
+        chain_cls.return_value.subscription_repository.get.assert_called_once_with(1)
         chain_cls.return_value.refresh_subscribe_progress.assert_called_once_with(
-            sub,
+            chain_cls.return_value.subscription_repository.get.return_value,
             scene="plugin_delete_rollback",
         )
 

@@ -1,4 +1,5 @@
 """best_version/priority.py PriorityManager 单测。"""
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -21,6 +22,20 @@ def _sub(sid=1, ep_priority=None, current_priority=0, start_episode=1, total_epi
         total_episode=total_episode,
         best_version_full=best_version_full,
     )
+
+
+@contextmanager
+def _patch_chain_snapshot():
+    """替换主程序订阅仓储与进度刷新，返回 (refresh_progress, snapshot) 供断言 Chain 入参。"""
+    snapshot = object()
+    with patch(
+            "app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
+            create=True,
+    ) as refresh_progress, patch(
+        "app.plugins.subscribeassistantenhanced.best_version.priority.load_chain_subscription",
+        return_value=snapshot,
+    ):
+        yield refresh_progress, snapshot
 
 
 def _mgr(store=None):
@@ -139,10 +154,7 @@ class TestTorrentBaselineRollback:
         mgr.capture_torrent_baseline(_sub(ep_priority={"1": 80, "2": 0}), "B",
                                      episodes=[2], contributed_priority=90)
         current = _sub(ep_priority={"1": 80, "2": 90}, current_priority=90)
-        with patch(
-                "app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
-                create=True,
-        ) as refresh_progress:
+        with _patch_chain_snapshot() as (refresh_progress, _):
             mgr.rollback_torrent(current, "A")
         refresh_progress.assert_called_once()
         payload = mgr._oper.update.call_args[0][1]
@@ -155,10 +167,7 @@ class TestTorrentBaselineRollback:
         mgr = _mgr({})
         mgr.capture_torrent_baseline(_sub(ep_priority={"1": 0}), "A",
                                      episodes=[1], contributed_priority=80)
-        with patch(
-                "app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
-                create=True,
-        ) as refresh_progress:
+        with _patch_chain_snapshot() as (refresh_progress, _):
             mgr.rollback_torrent(_sub(ep_priority={"1": 95}), "A")
         refresh_progress.assert_called_once()
         payload = mgr._oper.update.call_args[0][1]
@@ -191,10 +200,7 @@ class TestTorrentBaselineRollback:
             contributed_priority=80,
         )
 
-        with patch(
-                "app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain.refresh_subscribe_progress",
-                create=True,
-        ) as refresh_progress:
+        with _patch_chain_snapshot() as (refresh_progress, _):
             mgr.rollback_torrent(
                 _sub(
                     best_version_full=1,
@@ -227,8 +233,10 @@ class TestBackfillExisting:
         with patch("app.plugins.subscribeassistantenhanced.best_version.priority.SubscribeChain") as chain_cls:
             chain_cls.return_value.backfill_existing_episodes.return_value = {"updated": True}
             assert mgr.backfill_existing(sub, existing_episodes=[1, 3]) is True
+        # Chain 只接受仓储快照，插件须按 ID 重新读取而不是透传 ORM/测试替身。
+        chain_cls.return_value.subscription_repository.get.assert_called_once_with(1)
         chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
-            sub,
+            chain_cls.return_value.subscription_repository.get.return_value,
             [1, 3],
             priority=100,
             scene="plugin_backfill<订阅助手（增强版）>",
@@ -297,7 +305,7 @@ class TestMarkFullBestVersionComplete:
             mgr.mark_full_best_version_complete(sub)
 
         chain_cls.return_value.backfill_existing_episodes.assert_called_once_with(
-            sub,
+            chain_cls.return_value.subscription_repository.get.return_value,
             [2, 3],
             priority=100,
             scene="plugin_complete<订阅助手（增强版）>",
