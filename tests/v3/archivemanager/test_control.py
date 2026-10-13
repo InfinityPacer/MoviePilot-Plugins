@@ -391,6 +391,53 @@ def test_cancelled_job_is_silent_but_failure_includes_reason(store: Store, tmp_p
     assert "读取源文件失败" in messages[0]["text"]
 
 
+@pytest.mark.parametrize("limit_kind", ["daily", "count"])
+def test_resumed_archive_notifies_new_capacity_wait_once(store: Store, tmp_path: Path, monkeypatch, limit_kind: str) -> None:
+    """真实 ZIP 归档覆盖等待后恢复、同轮再次受限及持续等待时不重复推送。"""
+    task = _task(
+        tmp_path, format="zip", compression="store", grouping="none",
+        max_files=1, max_batches=200, max_pending_archives=1 if limit_kind == "count" else 0,
+    )
+    for name in ("first.txt", "second.txt", "third.txt"):
+        _entry(Path(task.source_dir), name)
+    manager = manager_module.ArchiveManager()
+    manager._settings = manager_module.PluginConfig(
+        notify=True, notify_events=["other"], daily_archive_limit_bytes=1 if limit_kind == "daily" else 0,
+    )
+    messages = []
+    monkeypatch.setattr(manager, "_store", lambda: store)
+    monkeypatch.setattr(manager, "post_message", lambda **message: messages.append(message))
+    store.set_task_state(task.id, active=True, phase="waiting_capacity", reason="上一轮等待")
+
+    def run_job():
+        manager._queue.append({"id": "capacity-job", "kind": "run", "task": task, "batch_id": ""})
+        manager._work()
+
+    run_job()
+    assert store.batches(task.id)["total"] == 1
+    assert store.task_state(task.id)["phase"] == "waiting_capacity"
+    assert len(messages) == 1
+    assert messages[0]["title"] == "压缩归档：等待空间"
+    assert ("今日归档额度已用完" if limit_kind == "daily" else "本地成品数量达到上限") in messages[0]["text"]
+    run_job()
+    assert len(messages) == 1
+
+    if limit_kind == "daily":
+        # 模拟次日额度恢复，旧归档仍保留，只扣除上一天发布的包大小。
+        daily_bytes = store.daily_archive_bytes
+        previous_day_bytes = daily_bytes()
+        monkeypatch.setattr(store, "daily_archive_bytes", lambda: daily_bytes() - previous_day_bytes)
+    else:
+        # 模拟外部上传器移走成品，释放本地成品数量额度。
+        Path(store.local_archives(task.id)[0]["archive_path"]).unlink()
+    run_job()
+    assert store.batches(task.id)["total"] == 2
+    assert store.task_state(task.id)["phase"] == "waiting_capacity"
+    assert len(messages) == 2
+    run_job()
+    assert len(messages) == 2
+
+
 def test_init_plugin_writes_password_only_to_secret_store_and_public_config_has_no_echo(tmp_path: Path, monkeypatch) -> None:
     password = "control-secret-不应回显"
     task = _task(

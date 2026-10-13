@@ -87,7 +87,7 @@ class ArchiveManager(_PluginBase):
     plugin_name = "压缩归档"
     plugin_desc = "文件压缩归档，支持独立清单、校验和可选加密。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/archivemanager.png"
-    plugin_version = "0.1.13"
+    plugin_version = "0.1.14"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "archivemanager_"
@@ -379,10 +379,8 @@ class ArchiveManager(_PluginBase):
                     f"压缩归档作业开始：job={job['id'][:6]} kind={job['kind']} "
                     f"task={task.name}({task.id[:6]}) batch={job['batch_id'][:6] or '-'}"
                 )
-            previous_phase = ""
             try:
                 store = self._store()
-                previous_phase = store.task_state(task.id)["phase"]
                 if job["kind"] == "reclaim":
                     batch = store.get(job["batch_id"])
                     # 排队后证明可能被新对账撤销；此时安静跳过，不改任务状态。
@@ -464,9 +462,7 @@ class ArchiveManager(_PluginBase):
                     with self._lock:
                         self._previews[job["id"]] = {"status": "failed", "data": None, "message": message}
                 elif isinstance(exc, CapacityWait):
-                    self._store().set_task_state(
-                        task.id, active=task.auto_continue, phase="waiting_capacity", reason=message
-                    )
+                    self._wait_capacity(task, self._store(), reason=message)
                     logger.warning(
                         f"压缩归档作业等待容量：job={job['id'][:6]} task={task.name}({task.id[:6]}) "
                         f"reason={message}"
@@ -496,10 +492,13 @@ class ArchiveManager(_PluginBase):
                         summary, self._reclaim_summary = self._reclaim_summary, None
                 if summary:
                     self._notify_reclaim(task, summary)
-            if job["kind"] != "preview":
-                state = self._store().task_state(task.id)
-                if state["phase"] == "waiting_capacity" and previous_phase != "waiting_capacity":
-                    self._notify_event("other", task, "等待空间", state["reason"])
+
+    def _wait_capacity(self, task: TaskConfig, store: Store, **capacity):
+        """按当前阶段去重等待通知，恢复扫描后再次受限属于新的等待。"""
+        previous_phase = store.task_state(task.id)["phase"]
+        store.set_task_state(task.id, active=task.auto_continue, phase="waiting_capacity", **capacity)
+        if previous_phase != "waiting_capacity":
+            self._notify_event("other", task, "等待空间", capacity["reason"])
 
     def _execute_cycle(self, task: TaskConfig, store: Store, runner: Runner):
         """历史快照优先，容量不足作为可恢复等待而非归档失败。"""
@@ -534,7 +533,7 @@ class ArchiveManager(_PluginBase):
             store.daily_archive_bytes(),
         )
         if state.get("initialized") and not capacity["budget"]:
-            store.set_task_state(task.id, phase="waiting_capacity", **capacity)
+            self._wait_capacity(task, store, **capacity)
             logger.warning(
                 f"压缩归档周期容量受限：task={task.name}({task.id[:6]}) "
                 f"pending_archives={capacity['pending_archives']} pending_bytes={capacity['pending_bytes']} "
@@ -570,7 +569,7 @@ class ArchiveManager(_PluginBase):
             )
             if selected is None:
                 capacity["reason"] = capacity["reason"] or "剩余容量不足以容纳下一份完整文件，等待空间或调整容量上限"
-                store.set_task_state(task.id, phase="waiting_capacity", **capacity)
+                self._wait_capacity(task, store, **capacity)
                 logger.warning(
                     f"压缩归档下一批无法容纳：task={task.name}({task.id[:6]}) "
                     f"group={groups[0]['group']} next_file_bytes="
