@@ -16,7 +16,7 @@ const emit = defineEmits<{ 'update:modelValue': [YingSettings] }>()
 const ROAM_OPTIONS: Array<{ value: RoamMode; title: string; hint: string }> = [
   { value: 'surfaces', title: '站在页面元素上', hint: '落到卡片、对话框等元素的上边，元素移动或消失时跟着走或掉下来' },
   { value: 'floor', title: '只在底边', hint: '始终站在屏幕底边' },
-  { value: 'free', title: '自由停放', hint: '没有重力，放在哪里停在哪里，空闲时在屏幕内慢慢游走' },
+  { value: 'free', title: '自由活动', hint: '没有重力，空闲时在屏幕内慢慢游走' },
 ]
 
 function update(patch: Partial<YingSettings>) {
@@ -30,6 +30,25 @@ function reset() {
 
 <template>
   <div class="agent-pets-stage-settings">
+    <v-select
+      :model-value="props.modelValue.movement ?? 'auto'"
+      :items="[
+        { title: '自主活动', value: 'auto' },
+        { title: '固定位置', value: 'fixed' },
+      ]"
+      label="活动方式"
+      variant="outlined"
+      density="compact"
+      :disabled="props.disabled"
+      :hint="
+        props.modelValue.movement === 'fixed'
+          ? '拖到哪里就停在哪里；保留会话动作，仅在超出可见区域时限位。'
+          : '按活动范围散步、下落和避让控件。'
+      "
+      persistent-hint
+      class="mb-4"
+      @update:model-value="(value: 'auto' | 'fixed') => update({ movement: value })"
+    />
     <div class="text-subtitle-2 mb-1">角色大小</div>
     <v-slider
       :model-value="props.modelValue.scale"
@@ -47,37 +66,39 @@ function reset() {
         <span class="agent-pets-stage-settings__value">{{ props.modelValue.scale.toFixed(2) }}×</span>
       </template>
     </v-slider>
-    <div class="text-subtitle-2 mt-4 mb-1">移动速度</div>
-    <v-slider
-      :model-value="props.modelValue.speed"
-      :min="SPEED_RANGE[0]"
-      :max="SPEED_RANGE[1]"
-      :step="0.05"
-      color="primary"
-      thumb-label
-      :disabled="props.disabled"
-      hide-details
-      aria-label="移动速度"
-      @update:model-value="(value: number) => update({ speed: Number(value) })"
-    >
-      <template #append>
-        <span class="agent-pets-stage-settings__value">{{ props.modelValue.speed.toFixed(2) }}×</span>
-      </template>
-    </v-slider>
-    <v-select
-      :model-value="props.modelValue.roam"
-      :items="ROAM_OPTIONS"
-      item-title="title"
-      item-value="value"
-      label="活动范围"
-      variant="outlined"
-      density="compact"
-      :disabled="props.disabled"
-      class="mt-5"
-      :hint="ROAM_OPTIONS.find(option => option.value === props.modelValue.roam)?.hint"
-      persistent-hint
-      @update:model-value="(value: RoamMode) => update({ roam: value })"
-    />
+    <template v-if="props.modelValue.movement !== 'fixed'">
+      <div class="text-subtitle-2 mt-4 mb-1">移动速度</div>
+      <v-slider
+        :model-value="props.modelValue.speed"
+        :min="SPEED_RANGE[0]"
+        :max="SPEED_RANGE[1]"
+        :step="0.05"
+        color="primary"
+        thumb-label
+        :disabled="props.disabled"
+        hide-details
+        aria-label="移动速度"
+        @update:model-value="(value: number) => update({ speed: Number(value) })"
+      >
+        <template #append>
+          <span class="agent-pets-stage-settings__value">{{ props.modelValue.speed.toFixed(2) }}×</span>
+        </template>
+      </v-slider>
+      <v-select
+        :model-value="props.modelValue.roam"
+        :items="ROAM_OPTIONS"
+        item-title="title"
+        item-value="value"
+        label="活动范围"
+        variant="outlined"
+        density="compact"
+        :disabled="props.disabled"
+        class="mt-5"
+        :hint="ROAM_OPTIONS.find(option => option.value === props.modelValue.roam)?.hint"
+        persistent-hint
+        @update:model-value="(value: RoamMode) => update({ roam: value })"
+      />
+    </template>
     <div class="d-flex align-start flex-column ga-2 mt-3">
       <!-- 没有宿主对象时配置页顶部已提示升级主程序，这里不再重复。 -->
       <span v-if="props.livePreview" class="text-caption text-medium-emphasis">

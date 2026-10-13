@@ -4,6 +4,7 @@ import type { RoamMode } from '@/stage/geometry'
 /** 角色外观设置；边界与后端 `SCALE_RANGE`、`SPEED_RANGE` 一致。 */
 export interface YingSettings {
   /** 角色大小倍率。 */
+  movement?: 'auto' | 'fixed'
   scale: number
   /** 移动速度倍率。 */
   speed: number
@@ -14,7 +15,7 @@ export interface YingSettings {
 export const SCALE_RANGE: [number, number] = [0.6, 1.6]
 export const SPEED_RANGE: [number, number] = [0.5, 2]
 export const ROAM_MODES: readonly RoamMode[] = ['surfaces', 'floor', 'free']
-export const DEFAULT_SETTINGS: YingSettings = { scale: 1, speed: 1, roam: 'surfaces' }
+export const DEFAULT_SETTINGS: YingSettings = { scale: 1, speed: 1, roam: 'surfaces', movement: 'auto' }
 
 /**
  * 设置页向运行中的形象广播的自定义事件名。
@@ -34,6 +35,7 @@ function bounded(value: unknown, range: [number, number], fallback: number): num
 export function normalizeSettings(value: unknown): YingSettings {
   const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
   return {
+    movement: source.movement === 'fixed' ? 'fixed' : 'auto',
     scale: bounded(source.scale, SCALE_RANGE, DEFAULT_SETTINGS.scale),
     speed: bounded(source.speed, SPEED_RANGE, DEFAULT_SETTINGS.speed),
     roam: ROAM_MODES.includes(source.roam as RoamMode) ? (source.roam as RoamMode) : DEFAULT_SETTINGS.roam,

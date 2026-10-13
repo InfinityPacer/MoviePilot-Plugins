@@ -70,7 +70,9 @@ export function petImage(pet: PetChoice): string {
 }
 
 export function sameSettings(a: YingSettings, b: YingSettings): boolean {
-  return a.scale === b.scale && a.speed === b.speed && a.roam === b.roam
+  return (
+    a.scale === b.scale && a.speed === b.speed && a.roam === b.roam && (a.movement ?? 'auto') === (b.movement ?? 'auto')
+  )
 }
 
 export async function saveSettings(api: PluginApi, pluginId: string, settings: YingSettings): Promise<YingSettings> {

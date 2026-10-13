@@ -167,6 +167,7 @@ let pendingShelter: number | null = null
 /** 跳向另一个面时的水平速度与落点 x。 */
 let hopVx = 0
 let hopTargetX: number | null = null
+let fixedPosition: { xRatio: number; yRatio: number } | null = null
 let lastSaved = ''
 let lastSaveAt = 0
 /** 下一次落地后保存落脚点：用户拖拽放下或活动范围改变时置位。 */
@@ -308,6 +309,49 @@ function clearTimer(name: string) {
 
 function randomBetween(min: number, max: number): number {
   return min + Math.random() * (max - min)
+}
+
+function fixed(): boolean {
+  return settings.value.movement === 'fixed'
+}
+
+/** 只在用户放置或切入固定模式时更新，临时视口收缩不能改写这个落点。 */
+function rememberFixedPosition() {
+  const view = freeBounds(viewport(), ...sizePair())
+  fixedPosition = { xRatio: xToRatio(x.value, view.x), yRatio: xToRatio(y.value, view.y) }
+}
+
+function placeFixed() {
+  const view = freeBounds(viewport(), ...sizePair())
+  x.value = ratioToX(fixedPosition?.xRatio ?? DEFAULT_RATIO, view.x)
+  y.value = ratioToX(fixedPosition?.yRatio ?? 1, view.y)
+  queueAnchor()
+}
+
+function pinHere() {
+  stopLoop()
+  for (const name of ['behavior', 'peek', 'sit', 'clearance']) clearTimer(name)
+  walkTarget = null
+  walkPhase.value = 0
+  fallTarget = null
+  hopVx = 0
+  hopTargetX = null
+  velocity = 0
+  rising.value = false
+  pendingPeek = false
+  pendingStepOff = false
+  pendingShelter = null
+  sheltering = false
+  sink.value = 0
+  peekTarget = 0
+  motion.value = 'idle'
+  detachSurface()
+  rememberFixedPosition()
+  placeFixed()
+  if (saveOnLand) {
+    saveOnLand = false
+    requestSave()
+  }
 }
 
 function roam(): RoamMode {
@@ -515,7 +559,7 @@ function finishWalk() {
 }
 
 function beginPeek() {
-  if (!motionAllowed() || !onFloor()) return
+  if (fixed() || !motionAllowed() || !onFloor()) return
   // 探头时面朝屏幕内侧。
   facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2
   motion.value = 'peek'
@@ -571,7 +615,7 @@ function calm(): boolean {
  */
 function scheduleBehavior() {
   clearTimer('behavior')
-  if (!calm()) return
+  if (fixed() || !calm()) return
   setTimer('behavior', randomBetween(6000, 14000), () => {
     if (!calm()) return
     if (roam() === 'free') {
@@ -672,6 +716,10 @@ function landing(exclude: Element | null = null): Landing<DomSurface> {
  * free 模式没有重力，原地停下；减少动态效果或页面不可见时直接瞬移到落点。
  */
 function startFall(exclude: Element | null = null) {
+  if (fixed()) {
+    pinHere()
+    return
+  }
   x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value))
   detachSurface()
   hopVx = 0
@@ -849,6 +897,10 @@ function rectAt(left: number, top: number, depth = 0): AgentRect {
  * 首次出现或不允许动画时直接放过去。候选位置与候选面数都有上限，控制单次判断的耗时。
  */
 function checkClearance() {
+  if (fixed()) {
+    if (refreshMobileFloor()) relayout()
+    return
+  }
   if (disposed || !ready.value || !visible()) return
   if (refreshMobileFloor()) relayout()
   if (sheltering) {
@@ -1069,7 +1121,17 @@ function writePosition() {
   const view = viewport()
   const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1000) / 1000
   const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1000) / 1000
-  const value: StoredPosition = { roam: roam(), xRatio, yRatio }
+  const value: StoredPosition = {
+    roam: roam(),
+    xRatio,
+    yRatio,
+    ...(fixed() && fixedPosition
+      ? {
+          xRatio: Math.round(fixedPosition.xRatio * 1000) / 1000,
+          yRatio: Math.round(fixedPosition.yRatio * 1000) / 1000,
+        }
+      : {}),
+  }
   const key = JSON.stringify(value)
   if (key === lastSaved) return
   lastSaved = key
@@ -1079,6 +1141,10 @@ function writePosition() {
 
 /** 视口、面板或尺寸变化后把角色放回合法位置。 */
 function relayout() {
+  if (fixed() && motion.value !== 'drag') {
+    placeFixed()
+    return
+  }
   const view = freeBounds(viewport(), ...sizePair())
   const maxSink = hiddenHeight(1)
   sink.value = Math.min(sink.value, maxSink)
@@ -1128,8 +1194,18 @@ function relayout() {
 function applySettings(value: unknown) {
   settingsRevision++
   const before = settings.value.roam
+  const wasFixed = fixed()
   settings.value = normalizeSettings(value)
-  if (ready.value && settings.value.roam !== before && motion.value !== 'drag') {
+  if (ready.value && wasFixed !== fixed() && motion.value !== 'drag') {
+    saveOnLand = true
+    if (fixed()) pinHere()
+    else {
+      fixedPosition = null
+      startFall()
+    }
+    return
+  }
+  if (ready.value && !fixed() && settings.value.roam !== before && motion.value !== 'drag') {
     settle()
     saveOnLand = true
     startFall()
@@ -1350,6 +1426,11 @@ function restorePosition(stored: StoredPosition | null) {
   x.value = ratioToX(stored?.xRatio ?? DEFAULT_RATIO, xBounds(view, charWidth.value))
   const yRatio = typeof stored?.yRatio === 'number' && Number.isFinite(stored.yRatio) ? stored.yRatio : 1
   y.value = ratioToX(yRatio, [view.safeArea.top, ground()])
+  if (fixed()) {
+    rememberFixedPosition()
+    placeFixed()
+    return
+  }
   if (roam() === 'free') {
     land(false)
     return
@@ -1455,6 +1536,7 @@ onBeforeUnmount(() => {
     :data-pose="pose"
     :data-motion="motion"
     :data-roam="settings.roam"
+    :data-movement="settings.movement"
   >
     <button
       v-show="ready"
