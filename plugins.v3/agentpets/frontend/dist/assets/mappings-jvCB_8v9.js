@@ -1,3 +1,47 @@
+const DEFAULT_CALIBRATION = {
+  left: 0,
+  top: 0,
+  right: 1,
+  bottom: 1,
+  baseline: 1,
+  offset_x: 0,
+  offset_y: 0
+};
+function parseCalibration(raw) {
+  if (raw == null) return { ...DEFAULT_CALIBRATION };
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("显示校准字段无效");
+  const value = { ...DEFAULT_CALIBRATION };
+  for (const [key, item] of Object.entries(raw)) {
+    const low = key.startsWith("offset_") ? -0.25 : 0;
+    const high = key.startsWith("offset_") ? 0.25 : 1;
+    if (!Object.hasOwn(value, key) || typeof item !== "number" || !Number.isFinite(item) || item < low || item > high)
+      throw new Error(`显示校准 ${key} 超出范围`);
+    value[key] = Math.round(item * 1e4) / 1e4;
+  }
+  if (value.right - value.left < 0.1 - 1e-6 || value.bottom - value.top < 0.1 - 1e-6)
+    throw new Error("有效显示区域的宽高至少为原格子的 10%");
+  if (value.baseline <= value.top || value.baseline > value.bottom) throw new Error("脚底基线必须在显示区域内");
+  return value;
+}
+function sameCalibration(a, b) {
+  return Object.keys(DEFAULT_CALIBRATION).every(
+    (key) => (a?.[key] ?? DEFAULT_CALIBRATION[key]) === (b?.[key] ?? DEFAULT_CALIBRATION[key])
+  );
+}
+function calibrationLayout(value, cellRatio) {
+  const width = value.right - value.left;
+  const height = value.bottom - value.top;
+  return {
+    aspectRatio: cellRatio * width / height,
+    frame: {
+      width: `${100 / width}%`,
+      height: `${100 / height}%`,
+      left: `${(-value.left + value.offset_x) / width * 100}%`,
+      top: `${(-value.top + value.bottom - value.baseline + value.offset_y) / height * 100}%`
+    }
+  };
+}
+
 const id = "projector-cat";
 const name = "放映猫";
 const description = "戴红色贝雷帽的橘色卡通猫，传统美式卡通风格";
@@ -466,6 +510,12 @@ function validatePack(raw) {
     }
   }
   const sheet = typeof data.sheet === "string" ? data.sheet : "";
+  let calibration;
+  try {
+    calibration = parseCalibration(data.calibration);
+  } catch (reason) {
+    errors.push(reason.message);
+  }
   if (errors.length) return { pack: null, errors };
   return {
     pack: {
@@ -478,6 +528,9 @@ function validatePack(raw) {
       frames,
       actions,
       random_actions: [...new Set(randomActions)],
+      calibration,
+      preview: typeof data.preview === "string" ? data.preview : "",
+      avatar: typeof data.avatar === "string" ? data.avatar : "",
       action_mappings: Object.fromEntries(
         Object.entries(data.action_mappings ?? {}).filter(
           (entry) => typeof entry[1] === "string"
@@ -647,4 +700,4 @@ function sameMappings(a, b) {
   return Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value);
 }
 
-export { ACTION_LABELS as A, BUILTIN_PACK_ID as B, HOST_ACTIONS as H, PACK_UPDATED_EVENT as P, BUILTIN_PACK as a, builtinAsset as b, buildCodexPetPack as c, sameMappings as d, HOST_INTENTS as e, framePosition as f, mappingRows as m, nativeChoices as n, resolveAction as r, stageAction as s, validatePack as v, withCodexStageActions as w };
+export { ACTION_LABELS as A, BUILTIN_PACK_ID as B, DEFAULT_CALIBRATION as D, HOST_ACTIONS as H, PACK_UPDATED_EVENT as P, BUILTIN_PACK as a, builtinAsset as b, calibrationLayout as c, sameMappings as d, sameCalibration as e, framePosition as f, buildCodexPetPack as g, HOST_INTENTS as h, mappingRows as m, nativeChoices as n, parseCalibration as p, resolveAction as r, stageAction as s, validatePack as v, withCodexStageActions as w };

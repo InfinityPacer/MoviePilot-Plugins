@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-CnBDiPMJ.js';
-import { v as validatePack, c as buildCodexPetPack, P as PACK_UPDATED_EVENT } from './mappings-CoSijLMf.js';
+import { u as unwrap, A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-B4WJK_1s.js';
+import { v as validatePack, f as framePosition, e as sameCalibration, P as PACK_UPDATED_EVENT, g as buildCodexPetPack } from './mappings-jvCB_8v9.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 // DEFLATE is a complex format; to read this code, you should probably check the RFC first:
@@ -39,7 +39,7 @@ var freb = function (eb, start) {
 var _a = freb(fleb, 2), fl = _a.b, revfl = _a.r;
 // we can ignore the fact that the other numbers are wrong; they never happen anyway
 fl[28] = 258, revfl[258] = 28;
-var _b = freb(fdeb, 0), fd = _b.b;
+var _b = freb(fdeb, 0), fd = _b.b, revfd = _b.r;
 // map of value to reverse (assuming 16 bits)
 var rev = new u16(32768);
 for (var i = 0; i < 32768; ++i) {
@@ -116,9 +116,9 @@ var fdt = new u8(32);
 for (var i = 0; i < 32; ++i)
     fdt[i] = 5;
 // fixed length map
-var flrm = /*#__PURE__*/ hMap(flt, 9, 1);
+var flm = /*#__PURE__*/ hMap(flt, 9, 0), flrm = /*#__PURE__*/ hMap(flt, 9, 1);
 // fixed distance map
-var fdrm = /*#__PURE__*/ hMap(fdt, 5, 1);
+var fdm = /*#__PURE__*/ hMap(fdt, 5, 0), fdrm = /*#__PURE__*/ hMap(fdt, 5, 1);
 // find max of array
 var max = function (a) {
     var m = a[0];
@@ -358,17 +358,449 @@ var inflt = function (dat, st, buf, dict) {
     // don't reallocate for streams or user buffers
     return bt != buf.length && noBuf ? slc(buf, 0, bt) : buf.subarray(0, bt);
 };
+// starting at p, write the minimum number of bits that can hold v to d
+var wbits = function (d, p, v) {
+    v <<= p & 7;
+    var o = (p / 8) | 0;
+    d[o] |= v;
+    d[o + 1] |= v >> 8;
+};
+// starting at p, write the minimum number of bits (>8) that can hold v to d
+var wbits16 = function (d, p, v) {
+    v <<= p & 7;
+    var o = (p / 8) | 0;
+    d[o] |= v;
+    d[o + 1] |= v >> 8;
+    d[o + 2] |= v >> 16;
+};
+// creates code lengths from a frequency table
+var hTree = function (d, mb) {
+    // Need extra info to make a tree
+    var t = [];
+    for (var i = 0; i < d.length; ++i) {
+        if (d[i])
+            t.push({ s: i, f: d[i] });
+    }
+    var s = t.length;
+    var t2 = t.slice();
+    if (!s)
+        return { t: et, l: 0 };
+    if (s == 1) {
+        var v = new u8(t[0].s + 1);
+        v[t[0].s] = 1;
+        return { t: v, l: 1 };
+    }
+    t.sort(function (a, b) { return a.f - b.f; });
+    // after i2 reaches last ind, will be stopped
+    // freq must be greater than largest possible number of symbols
+    t.push({ s: -1, f: 25001 });
+    var l = t[0], r = t[1], i0 = 0, i1 = 1, i2 = 2;
+    t[0] = { s: -1, f: l.f + r.f, l: l, r: r };
+    // efficient algorithm from UZIP.js
+    // i0 is lookbehind, i2 is lookahead - after processing two low-freq
+    // symbols that combined have high freq, will start processing i2 (high-freq,
+    // non-composite) symbols instead
+    // see https://reddit.com/r/photopea/comments/ikekht/uzipjs_questions/
+    while (i1 != s - 1) {
+        l = t[t[i0].f < t[i2].f ? i0++ : i2++];
+        r = t[i0 != i1 && t[i0].f < t[i2].f ? i0++ : i2++];
+        t[i1++] = { s: -1, f: l.f + r.f, l: l, r: r };
+    }
+    var maxSym = t2[0].s;
+    for (var i = 1; i < s; ++i) {
+        if (t2[i].s > maxSym)
+            maxSym = t2[i].s;
+    }
+    // code lengths
+    var tr = new u16(maxSym + 1);
+    // max bits in tree
+    var mbt = ln(t[i1 - 1], tr, 0);
+    if (mbt > mb) {
+        // more algorithms from UZIP.js
+        // TODO: find out how this code works (debt)
+        //  ind    debt
+        var i = 0, dt = 0;
+        //    left            cost
+        var lft = mbt - mb, cst = 1 << lft;
+        t2.sort(function (a, b) { return tr[b.s] - tr[a.s] || a.f - b.f; });
+        for (; i < s; ++i) {
+            var i2_1 = t2[i].s;
+            if (tr[i2_1] > mb) {
+                dt += cst - (1 << (mbt - tr[i2_1]));
+                tr[i2_1] = mb;
+            }
+            else
+                break;
+        }
+        dt >>= lft;
+        while (dt > 0) {
+            var i2_2 = t2[i].s;
+            if (tr[i2_2] < mb)
+                dt -= 1 << (mb - tr[i2_2]++ - 1);
+            else
+                ++i;
+        }
+        for (; i >= 0 && dt; --i) {
+            var i2_3 = t2[i].s;
+            if (tr[i2_3] == mb) {
+                --tr[i2_3];
+                ++dt;
+            }
+        }
+        mbt = mb;
+    }
+    return { t: new u8(tr), l: mbt };
+};
+// get the max length and assign length codes
+var ln = function (n, l, d) {
+    return n.s == -1
+        ? Math.max(ln(n.l, l, d + 1), ln(n.r, l, d + 1))
+        : (l[n.s] = d);
+};
+// length codes generation
+var lc = function (c) {
+    var s = c.length;
+    // Note that the semicolon was intentional
+    while (s && !c[--s])
+        ;
+    var cl = new u16(++s);
+    //  ind      num         streak
+    var cli = 0, cln = c[0], cls = 1;
+    var w = function (v) { cl[cli++] = v; };
+    for (var i = 1; i <= s; ++i) {
+        if (c[i] == cln && i != s)
+            ++cls;
+        else {
+            if (!cln && cls > 2) {
+                for (; cls > 138; cls -= 138)
+                    w(32754);
+                if (cls > 2) {
+                    w(cls > 10 ? ((cls - 11) << 5) | 28690 : ((cls - 3) << 5) | 12305);
+                    cls = 0;
+                }
+            }
+            else if (cls > 3) {
+                w(cln), --cls;
+                for (; cls > 6; cls -= 6)
+                    w(8304);
+                if (cls > 2)
+                    w(((cls - 3) << 5) | 8208), cls = 0;
+            }
+            while (cls--)
+                w(cln);
+            cls = 1;
+            cln = c[i];
+        }
+    }
+    return { c: cl.subarray(0, cli), n: s };
+};
+// calculate the length of output from tree, code lengths
+var clen = function (cf, cl) {
+    var l = 0;
+    for (var i = 0; i < cl.length; ++i)
+        l += cf[i] * cl[i];
+    return l;
+};
+// writes a fixed block
+// returns the new bit pos
+var wfblk = function (out, pos, dat) {
+    // no need to write 00 as type: TypedArray defaults to 0
+    var s = dat.length;
+    var o = shft(pos + 2);
+    out[o] = s & 255;
+    out[o + 1] = s >> 8;
+    out[o + 2] = out[o] ^ 255;
+    out[o + 3] = out[o + 1] ^ 255;
+    for (var i = 0; i < s; ++i)
+        out[o + i + 4] = dat[i];
+    return (o + 4 + s) * 8;
+};
+// writes a block
+var wblk = function (dat, out, final, syms, lf, df, eb, li, bs, bl, p) {
+    wbits(out, p++, final);
+    ++lf[256];
+    var _a = hTree(lf, 15), dlt = _a.t, mlb = _a.l;
+    var _b = hTree(df, 15), ddt = _b.t, mdb = _b.l;
+    var _c = lc(dlt), lclt = _c.c, nlc = _c.n;
+    var _d = lc(ddt), lcdt = _d.c, ndc = _d.n;
+    var lcfreq = new u16(19);
+    for (var i = 0; i < lclt.length; ++i)
+        ++lcfreq[lclt[i] & 31];
+    for (var i = 0; i < lcdt.length; ++i)
+        ++lcfreq[lcdt[i] & 31];
+    var _e = hTree(lcfreq, 7), lct = _e.t, mlcb = _e.l;
+    var nlcc = 19;
+    for (; nlcc > 4 && !lct[clim[nlcc - 1]]; --nlcc)
+        ;
+    var flen = (bl + 5) << 3;
+    var ftlen = clen(lf, flt) + clen(df, fdt) + eb;
+    var dtlen = clen(lf, dlt) + clen(df, ddt) + eb + 14 + 3 * nlcc + clen(lcfreq, lct) + 2 * lcfreq[16] + 3 * lcfreq[17] + 7 * lcfreq[18];
+    if (bs >= 0 && flen <= ftlen && flen <= dtlen)
+        return wfblk(out, p, dat.subarray(bs, bs + bl));
+    var lm, ll, dm, dl;
+    wbits(out, p, 1 + (dtlen < ftlen)), p += 2;
+    if (dtlen < ftlen) {
+        lm = hMap(dlt, mlb, 0), ll = dlt, dm = hMap(ddt, mdb, 0), dl = ddt;
+        var llm = hMap(lct, mlcb, 0);
+        wbits(out, p, nlc - 257);
+        wbits(out, p + 5, ndc - 1);
+        wbits(out, p + 10, nlcc - 4);
+        p += 14;
+        for (var i = 0; i < nlcc; ++i)
+            wbits(out, p + 3 * i, lct[clim[i]]);
+        p += 3 * nlcc;
+        var lcts = [lclt, lcdt];
+        for (var it = 0; it < 2; ++it) {
+            var clct = lcts[it];
+            for (var i = 0; i < clct.length; ++i) {
+                var len = clct[i] & 31;
+                wbits(out, p, llm[len]), p += lct[len];
+                if (len > 15)
+                    wbits(out, p, (clct[i] >> 5) & 127), p += clct[i] >> 12;
+            }
+        }
+    }
+    else {
+        lm = flm, ll = flt, dm = fdm, dl = fdt;
+    }
+    for (var i = 0; i < li; ++i) {
+        var sym = syms[i];
+        if (sym > 255) {
+            var len = (sym >> 18) & 31;
+            wbits16(out, p, lm[len + 257]), p += ll[len + 257];
+            if (len > 7)
+                wbits(out, p, (sym >> 23) & 31), p += fleb[len];
+            var dst = sym & 31;
+            wbits16(out, p, dm[dst]), p += dl[dst];
+            if (dst > 3)
+                wbits16(out, p, (sym >> 5) & 8191), p += fdeb[dst];
+        }
+        else {
+            wbits16(out, p, lm[sym]), p += ll[sym];
+        }
+    }
+    wbits16(out, p, lm[256]);
+    return p + ll[256];
+};
+// deflate options (nice << 13) | chain
+var deo = /*#__PURE__*/ new i32([65540, 131080, 131088, 131104, 262176, 1048704, 1048832, 2114560, 2117632]);
 // empty
 var et = /*#__PURE__*/ new u8(0);
+// compresses data into a raw DEFLATE buffer
+var dflt = function (dat, lvl, plvl, pre, post, st) {
+    var s = st.z || dat.length;
+    var o = new u8(pre + s + 5 * (1 + Math.ceil(s / 7000)) + post);
+    // writing to this writes to the output buffer
+    var w = o.subarray(pre, o.length - post);
+    var lst = st.l;
+    var pos = (st.r || 0) & 7;
+    if (lvl) {
+        if (pos)
+            w[0] = st.r >> 3;
+        var opt = deo[lvl - 1];
+        var n = opt >> 13, c = opt & 8191;
+        var msk_1 = (1 << plvl) - 1;
+        //    prev 2-byte val map    curr 2-byte val map
+        var prev = st.p || new u16(32768), head = st.h || new u16(msk_1 + 1);
+        var bs1_1 = Math.ceil(plvl / 3), bs2_1 = 2 * bs1_1;
+        var hsh = function (i) { return (dat[i] ^ (dat[i + 1] << bs1_1) ^ (dat[i + 2] << bs2_1)) & msk_1; };
+        // 24576 is an arbitrary number of maximum symbols per block
+        // 424 buffer for last block
+        var syms = new i32(25000);
+        // length/literal freq   distance freq
+        var lf = new u16(288), df = new u16(32);
+        //  l/lcnt  exbits  index          l/lind  waitdx          blkpos
+        var lc_1 = 0, eb = 0, i = st.i || 0, li = 0, wi = st.w || 0, bs = 0;
+        for (; i + 2 < s; ++i) {
+            // hash value
+            var hv = hsh(i);
+            // index mod 32768    previous index mod
+            var imod = i & 32767, pimod = head[hv];
+            prev[imod] = pimod;
+            head[hv] = imod;
+            // We always should modify head and prev, but only add symbols if
+            // this data is not yet processed ("wait" for wait index)
+            if (wi <= i) {
+                // bytes remaining
+                var rem = s - i;
+                if ((lc_1 > 7000 || li > 24576) && (rem > 423 || !lst)) {
+                    pos = wblk(dat, w, 0, syms, lf, df, eb, li, bs, i - bs, pos);
+                    li = lc_1 = eb = 0, bs = i;
+                    for (var j = 0; j < 286; ++j)
+                        lf[j] = 0;
+                    for (var j = 0; j < 30; ++j)
+                        df[j] = 0;
+                }
+                //  len    dist   chain
+                var l = 2, d = 0, ch_1 = c, dif = imod - pimod & 32767;
+                if (rem > 2 && hv == hsh(i - dif)) {
+                    var maxn = Math.min(n, rem) - 1;
+                    var maxd = Math.min(32767, i);
+                    // max possible length
+                    // not capped at dif because decompressors implement "rolling" index population
+                    var ml = Math.min(258, rem);
+                    while (dif <= maxd && --ch_1 && imod != pimod) {
+                        if (dat[i + l] == dat[i + l - dif]) {
+                            var nl = 0;
+                            for (; nl < ml && dat[i + nl] == dat[i + nl - dif]; ++nl)
+                                ;
+                            if (nl > l) {
+                                l = nl, d = dif;
+                                // break out early when we reach "nice" (we are satisfied enough)
+                                if (nl > maxn)
+                                    break;
+                                // now, find the rarest 2-byte sequence within this
+                                // length of literals and search for that instead.
+                                // Much faster than just using the start
+                                var mmd = Math.min(dif, nl - 2);
+                                var md = 0;
+                                for (var j = 0; j < mmd; ++j) {
+                                    var ti = i - dif + j & 32767;
+                                    var pti = prev[ti];
+                                    var cd = ti - pti & 32767;
+                                    if (cd > md)
+                                        md = cd, pimod = ti;
+                                }
+                            }
+                        }
+                        // check the previous match
+                        imod = pimod, pimod = prev[imod];
+                        dif += imod - pimod & 32767;
+                    }
+                }
+                // d will be nonzero only when a match was found
+                if (d) {
+                    // store both dist and len data in one int32
+                    // Make sure this is recognized as a len/dist with 28th bit (2^28)
+                    syms[li++] = 268435456 | (revfl[l] << 18) | revfd[d];
+                    var lin = revfl[l] & 31, din = revfd[d] & 31;
+                    eb += fleb[lin] + fdeb[din];
+                    ++lf[257 + lin];
+                    ++df[din];
+                    wi = i + l;
+                    ++lc_1;
+                }
+                else {
+                    syms[li++] = dat[i];
+                    ++lf[dat[i]];
+                }
+            }
+        }
+        for (i = Math.max(i, wi); i < s; ++i) {
+            syms[li++] = dat[i];
+            ++lf[dat[i]];
+        }
+        pos = wblk(dat, w, lst, syms, lf, df, eb, li, bs, i - bs, pos);
+        if (!lst) {
+            st.r = (pos & 7) | w[(pos / 8) | 0] << 3;
+            // shft(pos) now 1 less if pos & 7 != 0
+            pos -= 7;
+            st.h = head, st.p = prev, st.i = i, st.w = wi;
+        }
+    }
+    else {
+        for (var i = st.w || 0; i < s + lst; i += 65535) {
+            // end
+            var e = i + 65535;
+            if (e >= s) {
+                // write final block
+                w[(pos / 8) | 0] = lst;
+                e = s;
+            }
+            pos = wfblk(w, pos + 1, dat.subarray(i, e));
+        }
+        st.i = s;
+    }
+    return slc(o, 0, pre + shft(pos) + post);
+};
+// CRC32 table
+var crct = /*#__PURE__*/ (function () {
+    var t = new Int32Array(256);
+    for (var i = 0; i < 256; ++i) {
+        var c = i, k = 9;
+        while (--k)
+            c = ((c & 1) && -306674912) ^ (c >>> 1);
+        t[i] = c;
+    }
+    return t;
+})();
+// CRC32
+var crc = function () {
+    var c = -1;
+    return {
+        p: function (d) {
+            // closures have awful performance
+            var cr = c;
+            for (var i = 0; i < d.length; ++i)
+                cr = crct[(cr & 255) ^ d[i]] ^ (cr >>> 8);
+            c = cr;
+        },
+        d: function () { return ~c; }
+    };
+};
+// deflate with opts
+var dopt = function (dat, opt, pre, post, st) {
+    if (!st) {
+        st = { l: 1 };
+        if (opt.dictionary) {
+            var dict = opt.dictionary.subarray(-32768);
+            var newDat = new u8(dict.length + dat.length);
+            newDat.set(dict);
+            newDat.set(dat, dict.length);
+            dat = newDat;
+            st.w = dict.length;
+        }
+    }
+    return dflt(dat, opt.level == null ? 6 : opt.level, opt.mem == null ? (st.l ? Math.ceil(Math.max(8, Math.min(13, Math.log(dat.length))) * 1.5) : 20) : (12 + opt.mem), pre, post, st);
+};
+// Walmart object spread
+var mrg = function (a, b) {
+    var o = {};
+    for (var k in a)
+        o[k] = a[k];
+    for (var k in b)
+        o[k] = b[k];
+    return o;
+};
 // read 2 bytes
 var b2 = function (d, b) { return d[b] | (d[b + 1] << 8); };
 // read 4 bytes
 var b4 = function (d, b) { return (d[b] | (d[b + 1] << 8) | (d[b + 2] << 16) | (d[b + 3] << 24)) >>> 0; };
 // read 8 bytes
 var b8 = function (d, b) { return b4(d, b) + (b4(d, b + 4) * 4294967296); };
+// write bytes
+var wbytes = function (d, b, v) {
+    for (; v; ++b)
+        d[b] = v, v >>>= 8;
+};
+/**
+ * Compresses data with DEFLATE without any wrapper
+ * @param data The data to compress
+ * @param opts The compression options
+ * @returns The deflated version of the data
+ */
+function deflateSync(data, opts) {
+    return dopt(data, opts || {}, 0, 0);
+}
 function inflateSync(data, opts) {
     return inflt(data, { i: 2 }, opts && opts.out, opts && opts.dictionary);
 }
+// flatten a directory structure
+var fltn = function (d, p, t, o) {
+    for (var k in d) {
+        var val = d[k], n = p + k, op = o;
+        if (Array.isArray(val))
+            op = mrg(o, val[1]), val = val[0];
+        if (ArrayBuffer.isView(val))
+            t[n] = [val, op];
+        else {
+            t[n += '/'] = [new u8(0), op];
+            fltn(val, n, t, o);
+        }
+    }
+};
+// text encoder
+var te = typeof TextEncoder != 'undefined' && /*#__PURE__*/ new TextEncoder();
 // text decoder
 var td = typeof TextDecoder != 'undefined' && /*#__PURE__*/ new TextDecoder();
 // text decoder stream
@@ -397,6 +829,40 @@ var dutf8 = function (d) {
             r += String.fromCharCode((c & 15) << 12 | (d[i++] & 63) << 6 | (d[i++] & 63));
     }
 };
+/**
+ * Converts a string into a Uint8Array for use with compression/decompression methods
+ * @param str The string to encode
+ * @param latin1 Whether or not to interpret the data as Latin-1. This should
+ *               not need to be true unless decoding a binary string.
+ * @returns The string encoded in UTF-8/Latin-1 binary
+ */
+function strToU8(str, latin1) {
+    var i; 
+    if (te)
+        return te.encode(str);
+    var l = str.length;
+    var ar = new u8(str.length + (str.length >> 1));
+    var ai = 0;
+    var w = function (v) { ar[ai++] = v; };
+    for (var i = 0; i < l; ++i) {
+        if (ai + 5 > ar.length) {
+            var n = new u8(ai + 8 + ((l - i) << 1));
+            n.set(ar);
+            ar = n;
+        }
+        var c = str.charCodeAt(i);
+        if (c < 128 || latin1)
+            w(c);
+        else if (c < 2048)
+            w(192 | (c >> 6)), w(128 | (c & 63));
+        else if (c > 55295 && c < 57344)
+            c = 65536 + (c & 1023 << 10) | (str.charCodeAt(++i) & 1023),
+                w(240 | (c >> 18)), w(128 | ((c >> 12) & 63)), w(128 | ((c >> 6) & 63)), w(128 | (c & 63));
+        else
+            w(224 | (c >> 12)), w(128 | ((c >> 6) & 63)), w(128 | (c & 63));
+    }
+    return slc(ar, 0, ai);
+}
 /**
  * Converts a Uint8Array to a string
  * @param dat The data to decode to string
@@ -450,6 +916,117 @@ var z64hs = function (d, b, l, z, sc, su, off) {
     }
     return [sc, su, off, 0];
 };
+// extra field length
+var exfl = function (ex) {
+    var le = 0;
+    if (ex) {
+        for (var k in ex) {
+            var l = ex[k].length;
+            if (l > 65535)
+                err(9);
+            le += l + 4;
+        }
+    }
+    return le;
+};
+// write zip header
+var wzh = function (d, b, f, fn, u, c, ce, co) {
+    var fl = fn.length, ex = f.extra, col = co && co.length;
+    var exl = exfl(ex);
+    wbytes(d, b, ce != null ? 0x2014B50 : 0x4034B50), b += 4;
+    if (ce != null)
+        d[b++] = 20, d[b++] = f.os;
+    d[b] = 20, b += 2; // spec compliance? what's that?
+    d[b++] = (f.flag << 1) | (c < 0 && 8), d[b++] = u && 8;
+    d[b++] = f.compression & 255, d[b++] = f.compression >> 8;
+    var dt = new Date(f.mtime == null ? Date.now() : f.mtime), y = dt.getFullYear() - 1980;
+    if (y < 0 || y > 119)
+        err(10);
+    wbytes(d, b, (y << 25) | ((dt.getMonth() + 1) << 21) | (dt.getDate() << 16) | (dt.getHours() << 11) | (dt.getMinutes() << 5) | (dt.getSeconds() >> 1)), b += 4;
+    if (c != -1) {
+        wbytes(d, b, f.crc);
+        wbytes(d, b + 4, c < 0 ? -c - 2 : c);
+        wbytes(d, b + 8, f.size);
+    }
+    wbytes(d, b + 12, fl);
+    wbytes(d, b + 14, exl), b += 16;
+    if (ce != null) {
+        wbytes(d, b, col);
+        wbytes(d, b + 6, f.attrs);
+        wbytes(d, b + 10, ce), b += 14;
+    }
+    d.set(fn, b);
+    b += fl;
+    if (exl) {
+        for (var k in ex) {
+            var exf = ex[k], l = exf.length;
+            wbytes(d, b, +k);
+            wbytes(d, b + 2, l);
+            d.set(exf, b + 4), b += 4 + l;
+        }
+    }
+    if (col)
+        d.set(co, b), b += col;
+    return b;
+};
+// write zip footer (end of central directory)
+var wzf = function (o, b, c, d, e) {
+    wbytes(o, b, 0x6054B50); // skip disk
+    wbytes(o, b + 8, c);
+    wbytes(o, b + 10, c);
+    wbytes(o, b + 12, d);
+    wbytes(o, b + 16, e);
+};
+/**
+ * Synchronously creates a ZIP file. Prefer using `zip` for better performance
+ * with more than one file.
+ * @param data The directory structure for the ZIP archive
+ * @param opts The main options, merged with per-file options
+ * @returns The generated ZIP archive
+ */
+function zipSync(data, opts) {
+    if (!opts)
+        opts = {};
+    var r = {};
+    var files = [];
+    fltn(data, '', r, opts);
+    var o = 0;
+    var tot = 0;
+    for (var fn in r) {
+        var _a = r[fn], file = _a[0], p = _a[1];
+        var compression = p.level == 0 ? 0 : 8;
+        var f = strToU8(fn), s = f.length;
+        var com = p.comment, m = com && strToU8(com), ms = m && m.length;
+        var exl = exfl(p.extra);
+        if (s > 65535)
+            err(11);
+        var d = compression ? deflateSync(file, p) : file, l = d.length;
+        var c = crc();
+        c.p(file);
+        files.push(mrg(p, {
+            size: file.length,
+            crc: c.d(),
+            c: d,
+            f: f,
+            m: m,
+            u: s != fn.length || (m && (com.length != ms)),
+            o: o,
+            compression: compression
+        }));
+        o += 30 + s + exl + l;
+        tot += 76 + 2 * (s + exl) + (ms || 0) + l;
+    }
+    var out = new u8(tot + 22), oe = o, cdl = tot - o;
+    for (var i = 0; i < files.length; ++i) {
+        var f = files[i];
+        wzh(out, f.o, f, f.f, f.u, f.c.length);
+        var badd = 30 + f.f.length + exfl(f.extra);
+        out.set(f.c, f.o + badd);
+        wzh(out, o, f, f.f, f.u, f.c.length, f.o, f.m), o += 16 + badd + (f.m ? f.m.length : 0);
+    }
+    wzf(out, o, files.length, cdl, oe);
+    return out;
+}
 /**
  * Synchronously decompresses a ZIP archive. Prefer using `unzip` for better
  * performance with more than one file.
@@ -497,6 +1074,469 @@ function unzipSync(data, opts) {
     }
     return files;
 }
+
+const MAX_ARCHIVE = 8 * 1024 * 1024;
+const MAX_IMAGE = 4 * 1024 * 1024;
+const MAX_MANIFEST = 64 * 1024;
+const MAX_THUMB = 49e3;
+function imageMime(bytes) {
+  if (bytes[0] === 137 && strFromU8(bytes.subarray(1, 4)) === "PNG") return "image/png";
+  if (strFromU8(bytes.subarray(0, 4)) === "RIFF" && strFromU8(bytes.subarray(8, 12)) === "WEBP") return "image/webp";
+  if (strFromU8(bytes.subarray(0, 3)) === "GIF") return "image/gif";
+  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
+  throw new Error("包内图片格式无效");
+}
+function imageDataUrl(bytes) {
+  let binary = "";
+  for (let start = 0; start < bytes.length; start += 8192)
+    binary += String.fromCharCode(...bytes.subarray(start, start + 8192));
+  return `data:${imageMime(bytes)};base64,${btoa(binary)}`;
+}
+async function imageBytes(src, limit) {
+  if (src.startsWith("data:")) {
+    const match = /^data:image\/[a-z0-9.+-]+;base64,([a-zA-Z0-9+/=]+)$/.exec(src);
+    if (!match || match[1].length > Math.ceil(limit / 3) * 4) throw new Error("图片内容无效或超过大小限制");
+    const bytes = Uint8Array.from(atob(match[1]), (char) => char.charCodeAt(0));
+    if (bytes.length > limit) throw new Error("图片超过大小限制");
+    imageMime(bytes);
+    return bytes;
+  }
+  if (!/^https?:\/\/\S+$/.test(src)) throw new Error("图片地址无效");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12e3);
+  try {
+    const response = await fetch(src, { signal: controller.signal, credentials: "omit" });
+    if (!response.ok || !response.body) throw new Error("远程图片读取失败");
+    const reader = response.body.getReader();
+    const chunks = [];
+    let length = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.length;
+        if (length > limit) {
+          await reader.cancel();
+          throw new Error("图片超过大小限制");
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    imageMime(bytes);
+    return bytes;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+async function verifyImage(bytes, pack) {
+  const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: imageMime(bytes) }));
+  try {
+    if (!bitmap.width || !bitmap.height || bitmap.width > 4096 || bitmap.height > 4096)
+      throw new Error("图片尺寸无效或超过 4096 像素");
+    if (pack && (bitmap.width % pack.grid.cols || bitmap.height % pack.grid.rows))
+      throw new Error("精灵图尺寸不能被素材网格整除");
+  } finally {
+    bitmap.close();
+  }
+}
+async function exportPackArchive(api, pluginId, key) {
+  const data = unwrap(
+    await api.get(`plugin/${pluginId}/pack?key=${encodeURIComponent(key)}`)
+  );
+  if (!data || data.builtin || data.pack?.id !== key) throw new Error("只能导出已导入的素材");
+  const { pack, errors } = validatePack(data.pack);
+  if (!pack) throw new Error(errors.join("；"));
+  const sheet = await imageBytes(data.sheet_src, MAX_IMAGE);
+  await verifyImage(sheet, pack);
+  const files = { "sheet.img": sheet };
+  const images = { sheet: "sheet.img" };
+  for (const field of ["preview", "avatar"]) {
+    if (!data.pack[field]) continue;
+    const bytes = await imageBytes(data.pack[field], MAX_THUMB);
+    await verifyImage(bytes);
+    files[`${field}.img`] = bytes;
+    images[field] = `${field}.img`;
+  }
+  const metadata = { ...pack, sheet: "" };
+  delete metadata.preview;
+  delete metadata.avatar;
+  const manifest = strToU8(JSON.stringify({ format: "agentpets", version: 1, pack: metadata, images }));
+  if (manifest.length > MAX_MANIFEST) throw new Error("素材描述超过 64KB，未生成备份");
+  files["agentpets.json"] = manifest;
+  const archive = zipSync(files);
+  if (archive.length > MAX_ARCHIVE) throw new Error("素材包超过 8MB");
+  return new Blob([new Uint8Array(archive)], { type: "application/zip" });
+}
+function fileBytes(file) {
+  if (file.arrayBuffer) return file.arrayBuffer().then((value) => new Uint8Array(value));
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result));
+    reader.onerror = () => reject(new Error("无法读取素材包"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+async function readPackArchive(file) {
+  if (file.size > MAX_ARCHIVE) throw new Error("素材包不能超过 8MB");
+  const allowed = /* @__PURE__ */ new Set(["agentpets.json", "sheet.img", "preview.img", "avatar.img"]);
+  const seen = /* @__PURE__ */ new Set();
+  const files = unzipSync(await fileBytes(file), {
+    filter: (entry) => {
+      if (!allowed.has(entry.name) || seen.has(entry.name)) throw new Error("素材包包含未知或重复文件");
+      seen.add(entry.name);
+      const limit = entry.name === "agentpets.json" ? MAX_MANIFEST : entry.name === "sheet.img" ? MAX_IMAGE : MAX_THUMB;
+      if (entry.originalSize > limit) throw new Error("包内文件超过大小限制");
+      return true;
+    }
+  });
+  if (!files["agentpets.json"] || !files["sheet.img"])
+    throw new Error("不是完整的 AgentPets 素材包；Codex Pet ZIP 请使用下方导入器");
+  const manifest = JSON.parse(strFromU8(files["agentpets.json"]));
+  if (manifest?.format !== "agentpets" || manifest?.version !== 1 || manifest?.images?.sheet !== "sheet.img")
+    throw new Error("素材包格式或版本不支持");
+  const { pack, errors } = validatePack(manifest.pack);
+  if (!pack) throw new Error(errors.join("；"));
+  pack.sheet = "";
+  pack.preview = "";
+  pack.avatar = "";
+  await verifyImage(files["sheet.img"], pack);
+  for (const field of ["preview", "avatar"]) {
+    const path = manifest.images[field];
+    if (path === void 0) continue;
+    if (path !== `${field}.img` || !files[path]) throw new Error("素材包缺少头像或预览图片");
+    await verifyImage(files[path]);
+    pack[field] = imageDataUrl(files[path]);
+  }
+  return { pack, image: imageDataUrl(files["sheet.img"]) };
+}
+
+const {defineComponent:_defineComponent$2} = await importShared('vue');
+
+const {createElementVNode:_createElementVNode$2,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2,openBlock:_openBlock$2,createBlock:_createBlock$2,createCommentVNode:_createCommentVNode$2,normalizeStyle:_normalizeStyle,createElementBlock:_createElementBlock$2,unref:_unref$2,Fragment:_Fragment$2} = await importShared('vue');
+
+const _hoisted_1$2 = { class: "ap-archive-import mb-6" };
+const _hoisted_2$2 = { class: "d-flex align-center ga-3 mb-3" };
+const _hoisted_3$2 = ["aria-label"];
+const _hoisted_4$2 = { class: "text-caption" };
+const _hoisted_5$2 = {
+  key: 1,
+  class: "ap-archive-import__review"
+};
+const _hoisted_6$2 = { class: "d-flex justify-end ga-2 mt-3" };
+const {computed: computed$2,inject: inject$2,onBeforeUnmount: onBeforeUnmount$2,ref: ref$2,watch: watch$2} = await importShared('vue');
+const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
+  __name: "PackArchiveImport",
+  props: {
+    api: {},
+    pluginId: {},
+    targets: {}
+  },
+  emits: ["changed"],
+  setup(__props, { emit: __emit }) {
+    const props = __props;
+    const emit = __emit;
+    const agent = inject$2(AGENT_HOST_KEY, null);
+    const file = ref$2(null);
+    const archive = ref$2(null);
+    const target = ref$2(null);
+    const name = ref$2("");
+    const mode = ref$2("new");
+    const error = ref$2("");
+    const message = ref$2("");
+    const busy = ref$2(false);
+    let alive = true;
+    let operation = 0;
+    onBeforeUnmount$2(() => {
+      alive = false;
+      operation++;
+    });
+    watch$2(
+      () => props.pluginId,
+      () => {
+        operation++;
+        busy.value = false;
+        archive.value = null;
+        target.value = null;
+        file.value = null;
+        error.value = "";
+        message.value = "";
+      }
+    );
+    const previewStyle = computed$2(() => {
+      if (!archive.value) return {};
+      const { pack, image } = archive.value;
+      const position = framePosition(pack, "idle");
+      return {
+        backgroundImage: `url(${JSON.stringify(image)})`,
+        backgroundSize: `${pack.grid.cols * 100}% ${pack.grid.rows * 100}%`,
+        backgroundPosition: `${position.x}% ${position.y}%`
+      };
+    });
+    const duplicateName = computed$2(
+      () => props.targets.some(
+        (item) => item.name === name.value.trim() && (mode.value !== "replace" || item.id !== target.value?.id)
+      )
+    );
+    const stale = computed$2(
+      () => mode.value === "replace" && props.targets.find((item) => item.id === target.value?.id)?.revision !== target.value?.revision
+    );
+    const valid = computed$2(
+      () => !!archive.value && !!name.value.trim() && [...name.value.trim()].length <= 40 && !busy.value && !stale.value && (mode.value !== "replace" || !!target.value?.revision && !target.value.builtin)
+    );
+    const choices = computed$2(
+      () => target.value ? [
+        { title: "导入副本（保留已有素材）", value: "copy" },
+        ...!target.value.builtin ? [{ title: "更新同 ID 素材", value: "replace" }] : []
+      ] : [{ title: "新增素材", value: "new" }]
+    );
+    watch$2(mode, (value) => {
+      if (value === "replace" && archive.value) name.value = archive.value.pack.name;
+    });
+    async function read(value) {
+      const nextFile = value === void 0 ? file.value : Array.isArray(value) ? value[0] : value;
+      file.value = nextFile ?? null;
+      const version = ++operation;
+      const instance = props.pluginId;
+      archive.value = null;
+      error.value = "";
+      message.value = "";
+      if (!nextFile) {
+        busy.value = false;
+        return;
+      }
+      busy.value = true;
+      try {
+        const result = await readPackArchive(nextFile);
+        if (!alive || version !== operation || instance !== props.pluginId) return;
+        archive.value = result;
+        const match = props.targets.find((item) => item.id === result.pack.id);
+        target.value = match ? { ...match } : null;
+        mode.value = target.value ? "copy" : "new";
+        name.value = props.targets.some((item) => item.name === result.pack.name) ? result.pack.name.slice(0, 35) + "（副本）" : result.pack.name;
+      } catch (reason) {
+        if (alive && version === operation) error.value = reason instanceof Error ? reason.message : "素材包读取失败";
+      } finally {
+        if (alive && version === operation) busy.value = false;
+      }
+    }
+    async function submit() {
+      if (!valid.value || !props.api || !archive.value) return;
+      const instance = props.pluginId;
+      const version = ++operation;
+      const key = archive.value.pack.id;
+      const request = {
+        pack: { ...archive.value.pack, name: name.value.trim() },
+        image: archive.value.image,
+        mode: mode.value,
+        expected_revision: mode.value === "replace" ? target.value?.revision : void 0
+      };
+      busy.value = true;
+      error.value = "";
+      try {
+        const response = await props.api.post(`plugin/${instance}/packs/import`, request);
+        if (!alive || version !== operation || instance !== props.pluginId) return;
+        if (!response?.success || !response.data?.id || request.mode === "replace" && response.data.id !== key)
+          throw new Error(response?.message || "导入结果未确认，请刷新后核对");
+        if (request.mode === "replace") agent?.emit(PACK_UPDATED_EVENT, { key });
+        message.value = `已${request.mode === "replace" ? "更新" : "导入"} ${response.data.name}`;
+        archive.value = null;
+        emit("changed");
+      } catch (reason) {
+        if (alive && version === operation)
+          error.value = reason instanceof Error ? reason.message : "导入失败，请刷新后核对";
+      } finally {
+        if (alive && version === operation) busy.value = false;
+      }
+    }
+    return (_ctx, _cache) => {
+      const _component_v_file_input = _resolveComponent$2("v-file-input");
+      const _component_v_alert = _resolveComponent$2("v-alert");
+      const _component_v_img = _resolveComponent$2("v-img");
+      const _component_v_avatar = _resolveComponent$2("v-avatar");
+      const _component_v_select = _resolveComponent$2("v-select");
+      const _component_v_text_field = _resolveComponent$2("v-text-field");
+      const _component_v_btn = _resolveComponent$2("v-btn");
+      return _openBlock$2(), _createElementBlock$2("section", _hoisted_1$2, [
+        _cache[13] || (_cache[13] = _createElementVNode$2("h3", { class: "text-subtitle-1 mb-2" }, "恢复 AgentPets 素材包", -1)),
+        _createVNode$2(_component_v_file_input, {
+          "model-value": file.value ? [file.value] : [],
+          label: "选择 AgentPets 导出 ZIP",
+          accept: ".zip",
+          density: "compact",
+          variant: "outlined",
+          disabled: busy.value,
+          loading: busy.value,
+          "prepend-icon": "",
+          "prepend-inner-icon": "mdi-package-up",
+          "onUpdate:modelValue": read
+        }, null, 8, ["model-value", "disabled", "loading"]),
+        error.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+          key: 0,
+          type: "error",
+          variant: "tonal",
+          density: "compact"
+        }, {
+          default: _withCtx$2(() => [
+            _createTextVNode$2(_toDisplayString$2(error.value), 1)
+          ]),
+          _: 1
+        })) : _createCommentVNode$2("", true),
+        message.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+          key: 1,
+          type: "success",
+          variant: "tonal",
+          density: "compact"
+        }, {
+          default: _withCtx$2(() => [
+            _createTextVNode$2(_toDisplayString$2(message.value), 1)
+          ]),
+          _: 1
+        })) : _createCommentVNode$2("", true),
+        archive.value ? (_openBlock$2(), _createElementBlock$2(_Fragment$2, { key: 2 }, [
+          _createElementVNode$2("div", _hoisted_2$2, [
+            archive.value.pack.preview || archive.value.pack.avatar ? (_openBlock$2(), _createBlock$2(_component_v_avatar, {
+              key: 0,
+              size: "64",
+              rounded: "lg"
+            }, {
+              default: _withCtx$2(() => [
+                _createVNode$2(_component_v_img, {
+                  src: archive.value.pack.preview || archive.value.pack.avatar,
+                  alt: archive.value.pack.name
+                }, null, 8, ["src", "alt"])
+              ]),
+              _: 1
+            })) : (_openBlock$2(), _createElementBlock$2("div", {
+              key: 1,
+              class: "ap-archive-import__preview",
+              style: _normalizeStyle(previewStyle.value),
+              role: "img",
+              "aria-label": archive.value.pack.name
+            }, null, 12, _hoisted_3$2)),
+            _createElementVNode$2("div", null, [
+              _createElementVNode$2("strong", null, _toDisplayString$2(archive.value.pack.name), 1),
+              _createElementVNode$2("div", _hoisted_4$2, _toDisplayString$2(archive.value.pack.grid.cols) + " × " + _toDisplayString$2(archive.value.pack.grid.rows) + " 网格 · " + _toDisplayString$2(Object.keys(archive.value.pack.actions).length) + " 项动作 ", 1)
+            ])
+          ]),
+          _createVNode$2(_component_v_select, {
+            modelValue: mode.value,
+            "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => mode.value = $event),
+            items: choices.value,
+            label: "导入方式",
+            density: "compact",
+            variant: "outlined",
+            disabled: busy.value
+          }, null, 8, ["modelValue", "items", "disabled"]),
+          _createVNode$2(_component_v_text_field, {
+            modelValue: name.value,
+            "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => name.value = $event),
+            label: "导入后的名称",
+            counter: "40",
+            density: "compact",
+            variant: "outlined",
+            disabled: busy.value
+          }, null, 8, ["modelValue", "disabled"]),
+          duplicateName.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+            key: 0,
+            type: "warning",
+            variant: "tonal",
+            density: "compact",
+            class: "mb-3"
+          }, {
+            default: _withCtx$2(() => [..._cache[3] || (_cache[3] = [
+              _createTextVNode$2("已有同名素材，可修改名称区分；名称相同不会自动覆盖。", -1)
+            ])]),
+            _: 1
+          })) : _createCommentVNode$2("", true),
+          mode.value === "replace" && target.value ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_5$2, [
+            _createElementVNode$2("table", null, [
+              _cache[9] || (_cache[9] = _createElementVNode$2("thead", null, [
+                _createElementVNode$2("tr", null, [
+                  _createElementVNode$2("th", null, "内容"),
+                  _createElementVNode$2("th", null, "当前素材"),
+                  _createElementVNode$2("th", null, "导入后")
+                ])
+              ], -1)),
+              _createElementVNode$2("tbody", null, [
+                _createElementVNode$2("tr", null, [
+                  _cache[4] || (_cache[4] = _createElementVNode$2("td", null, "名称", -1)),
+                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.name), 1),
+                  _createElementVNode$2("td", null, _toDisplayString$2(name.value), 1)
+                ]),
+                _createElementVNode$2("tr", null, [
+                  _cache[5] || (_cache[5] = _createElementVNode$2("td", null, "网格", -1)),
+                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.grid?.cols) + " × " + _toDisplayString$2(target.value.grid?.rows), 1),
+                  _createElementVNode$2("td", null, _toDisplayString$2(archive.value.pack.grid.cols) + " × " + _toDisplayString$2(archive.value.pack.grid.rows), 1)
+                ]),
+                _createElementVNode$2("tr", null, [
+                  _cache[6] || (_cache[6] = _createElementVNode$2("td", null, "帧／动作数量", -1)),
+                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.frame_count) + "／" + _toDisplayString$2(target.value.action_count), 1),
+                  _createElementVNode$2("td", null, _toDisplayString$2(Object.keys(archive.value.pack.frames).length) + "／" + _toDisplayString$2(Object.keys(archive.value.pack.actions).length), 1)
+                ]),
+                _createElementVNode$2("tr", null, [
+                  _cache[7] || (_cache[7] = _createElementVNode$2("td", null, "自定义映射数量", -1)),
+                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.mapping_count ?? 0), 1),
+                  _createElementVNode$2("td", null, _toDisplayString$2(Object.keys(archive.value.pack.action_mappings ?? {}).length), 1)
+                ]),
+                _createElementVNode$2("tr", null, [
+                  _cache[8] || (_cache[8] = _createElementVNode$2("td", null, "显示校准", -1)),
+                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.calibrated ? "已调整" : "默认"), 1),
+                  _createElementVNode$2("td", null, _toDisplayString$2(_unref$2(sameCalibration)(archive.value.pack.calibration) ? "默认" : "已调整"), 1)
+                ])
+              ])
+            ]),
+            _cache[10] || (_cache[10] = _createElementVNode$2("p", { class: "text-caption mt-2" }, " 将替换此 ID 的名称、说明、图片、头像、预览、帧与动作、映射及校准；原记录与已上传原图会保留恢复副本。当前形象选择和个人位置保留。 ", -1))
+          ])) : _createCommentVNode$2("", true),
+          stale.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+            key: 2,
+            type: "warning",
+            variant: "tonal",
+            density: "compact"
+          }, {
+            default: _withCtx$2(() => [..._cache[11] || (_cache[11] = [
+              _createTextVNode$2("当前素材已变化，请重新读取并核对覆盖范围。", -1)
+            ])]),
+            _: 1
+          })) : _createCommentVNode$2("", true),
+          _createElementVNode$2("div", _hoisted_6$2, [
+            _createVNode$2(_component_v_btn, {
+              variant: "text",
+              disabled: busy.value,
+              onClick: _cache[2] || (_cache[2] = ($event) => read())
+            }, {
+              default: _withCtx$2(() => [..._cache[12] || (_cache[12] = [
+                _createTextVNode$2("重新读取", -1)
+              ])]),
+              _: 1
+            }, 8, ["disabled"]),
+            _createVNode$2(_component_v_btn, {
+              color: "primary",
+              variant: "flat",
+              disabled: !valid.value,
+              loading: busy.value,
+              onClick: submit
+            }, {
+              default: _withCtx$2(() => [
+                _createTextVNode$2(_toDisplayString$2(mode.value === "replace" ? "确认覆盖此素材" : "确认导入"), 1)
+              ]),
+              _: 1
+            }, 8, ["disabled", "loading"])
+          ])
+        ], 64)) : _createCommentVNode$2("", true)
+      ]);
+    };
+  }
+});
+
+const PackArchiveImport = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-c75fe82b"]]);
 
 const MAX_CODEX_PET_ARCHIVE_BYTES = 8 * 1024 * 1024;
 const MAX_SPRITESHEET_BYTES = 4 * 1024 * 1024;
@@ -687,6 +1727,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     const importMode = ref$1("codex");
     const listError = ref$1("");
     const deleting = ref$1("");
+    const exporting = ref$1("");
     const renameTarget = ref$1(null);
     const renameName = ref$1("");
     const renameError = ref$1("");
@@ -904,6 +1945,33 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
         if (alive) deleting.value = "";
       }
     }
+    async function exportPack(pack) {
+      if (!props.api || exporting.value) return;
+      const instance = instanceId.value;
+      exporting.value = pack.id;
+      listError.value = "";
+      try {
+        const blob = await exportPackArchive(props.api, instance, pack.id);
+        if (!alive || instance !== instanceId.value) return;
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${pack.id}.agentpets.zip`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1e3);
+      } catch (reason) {
+        if (alive && instance === instanceId.value)
+          listError.value = `未生成完整素材包：${reason instanceof Error ? reason.message : "图片读取失败"}`;
+      } finally {
+        if (alive && instance === instanceId.value) exporting.value = "";
+      }
+    }
+    function archiveImported() {
+      emit("changed");
+      void refresh();
+    }
     function startRename(pack) {
       renameTarget.value = pack;
       renameName.value = pack.name;
@@ -938,6 +2006,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       }
     }
     watch$1(instanceId, () => {
+      exporting.value = "";
       renameTarget.value = null;
       renaming.value = false;
       void refresh();
@@ -1039,8 +2108,18 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                   ])]),
                   _: 1
                 })) : _createCommentVNode$1("", true),
-                !pack.builtin && pack.mode === "stage" ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                !pack.builtin ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
                   key: 1,
+                  icon: "mdi-download-outline",
+                  variant: "text",
+                  size: "small",
+                  "aria-label": `导出 ${pack.name}`,
+                  loading: exporting.value === pack.id,
+                  disabled: !!exporting.value || !!deleting.value || submitting.value || renaming.value,
+                  onClick: ($event) => exportPack(pack)
+                }, null, 8, ["aria-label", "loading", "disabled", "onClick"])) : _createCommentVNode$1("", true),
+                !pack.builtin && pack.mode === "stage" ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                  key: 2,
                   icon: "mdi-pencil-outline",
                   variant: "text",
                   size: "small",
@@ -1049,7 +2128,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                   onClick: ($event) => startRename(pack)
                 }, null, 8, ["aria-label", "disabled", "onClick"])) : _createCommentVNode$1("", true),
                 !pack.builtin ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
-                  key: 2,
+                  key: 3,
                   icon: "mdi-delete-outline",
                   variant: "text",
                   size: "small",
@@ -1063,6 +2142,12 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           }), 128)),
           !packs.value.length && !loading.value && !listError.value ? (_openBlock$1(), _createElementBlock$1("p", _hoisted_8$1, " 暂无素材，导入一个 Pet 开始吧 ")) : _createCommentVNode$1("", true)
         ]),
+        _createVNode$1(PackArchiveImport, {
+          api: __props.api,
+          "plugin-id": instanceId.value,
+          targets: packs.value,
+          onChanged: archiveImported
+        }, null, 8, ["api", "plugin-id", "targets"]),
         _createVNode$1(_component_v_dialog, {
           "model-value": !!renameTarget.value,
           "max-width": "420",
@@ -1311,7 +2396,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-c74b840c"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-726c4e88"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
