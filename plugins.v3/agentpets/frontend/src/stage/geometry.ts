@@ -121,6 +121,27 @@ export function escapeSpan(x: number, span: [number, number] | null, bounds: [nu
   return left >= bounds[0] ? left : x
 }
 
+/** 面板遮住角色时，从面板四侧选最近的视口内空位；全屏面板无空位时保留原位置。 */
+export function avoidPanel(
+  position: { x: number; y: number },
+  panel: AgentRect | null,
+  viewport: StageViewport,
+  size: { width: number; height: number },
+): { x: number; y: number } {
+  if (!panel || intersectionArea({ ...position, ...size }, panel) === 0) return position
+  const bounds = freeBounds(viewport, size.width, size.height)
+  const candidates = [
+    { x: panel.x - size.width, y: position.y },
+    { x: panel.x + panel.width, y: position.y },
+    { x: position.x, y: panel.y - size.height },
+    { x: position.x, y: panel.y + panel.height },
+  ]
+    .map(point => ({ x: clamp(point.x, ...bounds.x), y: clamp(point.y, ...bounds.y) }))
+    .filter(point => intersectionArea({ ...point, ...size }, panel) === 0)
+    .sort((a, b) => Math.hypot(a.x - position.x, a.y - position.y) - Math.hypot(b.x - position.x, b.y - position.y))
+  return candidates[0] ?? position
+}
+
 /** 两个矩形是否在像素级上相同，用于避免重复上报气泡锚点。 */
 export function sameRect(a: AgentRect | null, b: AgentRect | null): boolean {
   if (!a || !b) return a === b
@@ -206,11 +227,21 @@ export function computeLanding<T extends SurfaceBox>(
   position: { x: number; y: number },
   viewport: StageViewport,
   size: { width: number; height: number },
+  dropSnap = 0,
 ): Landing<T> {
   const ground = groundTop(viewport, size.height)
   if (mode === 'free') return { y: clamp(position.y, viewport.safeArea.top, ground), surface: null }
   if (mode === 'surfaces') {
-    const surface = findLanding(boxes, position.x + size.width / 2, position.y + size.height)
+    const centerX = position.x + size.width / 2
+    const feetY = position.y + size.height
+    // 只为手动松手吸附附近的顶沿；自然下落仍使用原来的单向碰撞判断。
+    const nearby =
+      dropSnap > 0
+        ? boxes
+            .filter(box => centerX >= box.left && centerX <= box.right && Math.abs(box.top - feetY) <= dropSnap)
+            .sort((a, b) => Math.abs(a.top - feetY) - Math.abs(b.top - feetY))[0]
+        : null
+    const surface = nearby ?? findLanding(boxes, centerX, feetY)
     if (surface) return { y: surface.top - size.height, surface }
   }
   return { y: ground, surface: null }
@@ -350,12 +381,12 @@ export function pickClearX(
   return null
 }
 
-/** 移动端下沉时至少保留的可见、可拖拽高度（CSS 像素）。 */
-export const MIN_MOBILE_VISIBLE_HEIGHT = 48
+/** 下沉时至少保留的可见、可拖拽高度（CSS 像素），桌面与移动端共用。 */
+export const MIN_VISIBLE_HEIGHT = 48
 
 /** 所有探头路径共用限制，避免小号角色、动态缩放或旧下沉值只留下几像素。 */
-export function shelterSink(height: number, depth: number, isMobile: boolean): number {
-  const maximum = isMobile ? Math.max(0, height - MIN_MOBILE_VISIBLE_HEIGHT) : height
+export function shelterSink(height: number, depth: number): number {
+  const maximum = Math.max(0, height - MIN_VISIBLE_HEIGHT)
   return clamp(Math.round(height * depth), 0, maximum)
 }
 

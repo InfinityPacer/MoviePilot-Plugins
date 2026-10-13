@@ -44,7 +44,7 @@ describe('AgentPet (ying)', () => {
     await flush()
     expect(api.get).toHaveBeenCalledWith('plugin/AgentPets/settings')
     const button = await screen.findByRole('button', {
-      name: '打开助手（小映）',
+      name: '打开助手（慕慕）',
     })
     expect(button).toBeInTheDocument()
     expect(anchors.at(-1)).toMatchObject({ height: 144 })
@@ -398,8 +398,8 @@ describe('AgentPet roam and frame fallback', () => {
     const { anchors, view } = await mountStill({ roam: 'surfaces', xRatio: 0.3, yRatio: 1 })
     await new Promise(resolve => setTimeout(resolve, 20))
     const root = view.container.querySelector('.agent-pet-ying') as HTMLElement
-    // 退到左侧边缘，下沉到只露出身高的 8%，不再按 10% 规则挡住卡片。
-    expect(anchors.at(-1)).toMatchObject({ x: 0, height: 120 - Math.round(120 * 0.92) })
+    // 即使底边仍有控件，也保留足够的可见高度供用户拖回。
+    expect(anchors.at(-1)).toMatchObject({ x: 0, height: 48 })
     expect(root.dataset.motion).toBe('peek')
 
     // 控件消失后，低频复查让她站起来。

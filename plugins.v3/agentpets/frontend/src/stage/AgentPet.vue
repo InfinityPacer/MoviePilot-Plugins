@@ -4,6 +4,7 @@ import { withLoadTimeout } from '@/loading'
 
 import type { AgentHostEvent, AgentHostState, AgentPetContext, AgentRect, MoviePilotAgentHost, PluginApi } from '@/host'
 import {
+  avoidPanel,
   blockedSpan,
   checkSupport,
   clamp,
@@ -13,7 +14,6 @@ import {
   nearestEdge,
   pickClearX,
   pickShelterDepth,
-  escapeSpan,
   freeBounds,
   groundTop,
   isBlocked,
@@ -42,7 +42,7 @@ import {
 } from '@/stage/surfaces'
 
 /**
- * 小映 stage 形象。
+ * 慕慕 stage 形象。
  *
  * 宿主把本组件挂在 `pointer-events: none` 的全视口图层里，组件只让角色按钮接收指针。
  * 所有订阅、rAF、计时器、DOM 观察和全局监听都在卸载时释放；旧版主程序不传 `agent`/`pet`
@@ -74,7 +74,7 @@ const props = withDefaults(
     api: null,
     pluginId: '',
     sourcePluginId: '',
-    characterName: '小映',
+    characterName: '慕慕',
     aspectRatio: 0,
     previewRoot: null,
   },
@@ -179,6 +179,8 @@ let pendingPeek = false
 let pendingStepOff = false
 /** 当前站着的页面元素；站在底边或自由停放时为 null。 */
 let surface: DomSurface | null = null
+/** 手动选中的站立面优先于控件避让，离开或支撑失效后解除。 */
+let manualSurface: Element | null = null
 let surfaceFrame = 0
 let surfaceObserver: MutationObserver | null = null
 let surfacePoll = 0
@@ -325,10 +327,13 @@ function placeFixed() {
   const view = freeBounds(viewport(), ...sizePair())
   x.value = ratioToX(fixedPosition?.xRatio ?? DEFAULT_RATIO, view.x)
   y.value = ratioToX(fixedPosition?.yRatio ?? 1, view.y)
+  const point = avoidPanel({ x: x.value, y: y.value }, hostState?.panelRect ?? null, viewport(), size())
+  x.value = point.x
+  y.value = point.y
   queueAnchor()
 }
 
-function pinHere() {
+function resetMotion() {
   stopLoop()
   for (const name of ['behavior', 'peek', 'sit', 'clearance']) clearTimer(name)
   walkTarget = null
@@ -346,6 +351,10 @@ function pinHere() {
   peekTarget = 0
   motion.value = 'idle'
   detachSurface()
+}
+
+function pinHere() {
+  resetMotion()
   rememberFixedPosition()
   placeFixed()
   if (saveOnLand) {
@@ -376,7 +385,7 @@ function refreshMobileFloor(): boolean {
 }
 
 function hiddenHeight(depth: number): number {
-  return shelterSink(charHeight.value, depth, isMobile.value)
+  return shelterSink(charHeight.value, depth)
 }
 
 function ground(): number {
@@ -469,8 +478,9 @@ function tick(timestamp: number) {
   if (motion.value === 'walk') stepWalk(dt)
   else if (motion.value === 'fall') stepFall(dt)
   else if (motion.value === 'peek') stepPeek(dt)
+  clearPanelOverlap()
   reportAnchor()
-  if (needsLoop() && visible()) rafId = window.requestAnimationFrame(tick)
+  if (!rafId && needsLoop() && visible()) rafId = window.requestAnimationFrame(tick)
 }
 
 function stepWalk(dt: number) {
@@ -503,10 +513,13 @@ function stepWalk(dt: number) {
 }
 
 function stepFall(dt: number) {
-  const target = fallTarget?.y ?? ground()
+  const range = freeBounds(viewport(), ...sizePair())
+  const target = clamp(fallTarget?.y ?? range.y[1], ...range.y)
+  if (fallTarget && target !== fallTarget.y) fallTarget = { y: target, surface: null }
+  if (hopTargetX !== null) hopTargetX = clamp(hopTargetX, ...range.x)
   velocity += GRAVITY * dt
-  y.value += velocity * dt
-  x.value += hopVx * dt
+  y.value = clamp(y.value + velocity * dt, ...range.y)
+  x.value = clamp(x.value + hopVx * dt, ...range.x)
   rising.value = velocity < 0
   // 跳上更高的面时起点在落点下方，上升段不能判定着地。
   if (velocity < 0 || y.value < target) return
@@ -673,7 +686,7 @@ function scheduleBlink() {
   })
 }
 
-/** 任何交互或宿主事件都会叫醒小映并重置打盹计时。 */
+/** 任何交互或宿主事件都会叫醒慕慕并重置打盹计时。 */
 function markActivity() {
   if (dozing.value) {
     dozing.value = false
@@ -699,7 +712,7 @@ function playTransient(next: Pose, duration: number) {
 }
 
 /** 按当前活动范围计算落点；surfaces 模式在这里查询一次可站元素。 */
-function landing(exclude: Element | null = null): Landing<DomSurface> {
+function landing(exclude: Element | null = null, dropSnap = 0): Landing<DomSurface> {
   const view = viewport()
   const boxes =
     roam() === 'surfaces'
@@ -707,7 +720,7 @@ function landing(exclude: Element | null = null): Landing<DomSurface> {
           box => box.el !== exclude,
         )
       : []
-  return computeLanding(roam(), boxes, { x: x.value, y: y.value }, view, size())
+  return computeLanding(roam(), boxes, { x: x.value, y: y.value }, view, size(), dropSnap)
 }
 
 /**
@@ -731,7 +744,7 @@ function startFall(exclude: Element | null = null) {
     land(false)
     return
   }
-  fallTarget = landing(exclude)
+  fallTarget = landing(exclude, droppedByUser ? Math.min(24, charHeight.value * 0.2) : 0)
   if (!motionAllowed() || !visible() || y.value >= fallTarget.y) {
     land(false)
     return
@@ -759,6 +772,7 @@ function land(animated: boolean) {
     y.value = target ? target.y : ground()
     if (!target) surface = null
   }
+  if (droppedByUser) manualSurface = surface?.el ?? null
   if (animated) {
     motion.value = 'sit'
     setTimer('sit', SIT_DURATION, () => {
@@ -769,6 +783,8 @@ function land(animated: boolean) {
     motion.value = 'idle'
     scheduleBehavior()
   }
+  // 避让后仍在下落时，把保存责任留给最终落地，不能提前消耗用户拖放标记。
+  if (clearPanelOverlap() && !onGround()) return
   if (saveOnLand) {
     saveOnLand = false
     requestSave()
@@ -794,7 +810,7 @@ function attachSurface(next: DomSurface) {
   window.addEventListener('scroll', onSurfaceScroll, { capture: true, passive: true })
   if (typeof MutationObserver !== 'undefined') {
     surfaceObserver = new MutationObserver(records => {
-      // 小映自己走路时每帧改 transform，这类变化不影响脚下元素。
+      // 慕慕自己走路时每帧改 transform，这类变化不影响脚下元素。
       if (records.every(record => rootEl.value?.contains(record.target))) return
       if (!timers.has('surface')) setTimer('surface', SURFACE_CHECK_INTERVAL, checkSurface)
     })
@@ -832,6 +848,7 @@ function onStandPoll() {
 
 function detachSurface() {
   surface = null
+  manualSurface = null
   pauseSurfaceWatch()
 }
 
@@ -908,6 +925,8 @@ function checkClearance() {
     return
   }
   if (motion.value !== 'idle') return
+  // 卡片网格中上一排内容可能压在角色身后，不能因此立刻推翻手动选定的落点。
+  if (surface && surface.el === manualSurface) return
   const instant = initialPlacement || !motionAllowed()
   initialPlacement = false
   const view = viewport()
@@ -1082,7 +1101,7 @@ function moveTo(targetX: number, targetY: number, target: DomSurface | null, ins
     { x: x.value, y: y.value },
     { x: targetX, y: targetY },
     GRAVITY,
-    charHeight.value * HOP_LIFT_RATIO,
+    Math.min(charHeight.value * HOP_LIFT_RATIO, Math.max(0, Math.min(y.value, targetY) - viewport().safeArea.top)),
   )
   facingLeft.value = targetX < x.value
   hopVx = vx
@@ -1139,12 +1158,49 @@ function writePosition() {
   props.pet?.storage?.set?.(value)?.catch?.(() => console.warn('[AgentPets] position not saved'))
 }
 
+/** 已经被面板盖住时直接移到空位，不能让“禁止走进面板”的规则把退出路径也封住。 */
+function clearPanelOverlap(): boolean {
+  if (motion.value === 'drag') return false
+  const view = viewport()
+  const point = avoidPanel({ x: x.value, y: y.value }, hostState?.panelRect ?? null, view, size())
+  if (point.x === x.value && point.y === y.value) return false
+  const horizontal = point.y === y.value
+  const previous = surface
+  const manual = manualSurface
+  resetMotion()
+  x.value = point.x
+  y.value = point.y
+  // 横移后仍在同一张卡片上时继续跟随；否则解除旧支撑与旧抛物线。
+  if (
+    previous &&
+    point.y === previous.top - charHeight.value &&
+    checkSupport(
+      previous,
+      previous,
+      point.x + charWidth.value / 2,
+      view,
+      charHeight.value,
+      hostState?.panelRect ?? null,
+      charWidth.value,
+    ).kind === 'follow'
+  ) {
+    attachSurface(previous)
+    manualSurface = manual
+  }
+  // 横向退出面板后继续按活动范围落位；垂直避让时先停在面板外，避免马上掉回遮挡区。
+  if (horizontal && !surface && !fixed() && roam() !== 'free') startFall()
+  scheduleBehavior()
+  queueAnchor()
+  return true
+}
+
 /** 视口、面板或尺寸变化后把角色放回合法位置。 */
 function relayout() {
   if (fixed() && motion.value !== 'drag') {
     placeFixed()
     return
   }
+  if (clearPanelOverlap()) return
   const view = freeBounds(viewport(), ...sizePair())
   const maxSink = hiddenHeight(1)
   sink.value = Math.min(sink.value, maxSink)
@@ -1180,13 +1236,7 @@ function relayout() {
   } else y.value = ground()
   const range = bounds()
   x.value = clamp(x.value, range[0], range[1])
-  const span = panelSpan()
-  if (!sheltering && isBlocked(x.value, span)) {
-    const escaped = escapeSpan(x.value, span, range)
-    settle()
-    if (motionAllowed() && visible() && Math.abs(escaped - x.value) > 1) startWalk(escaped)
-    else x.value = escaped
-  }
+  clearPanelOverlap()
   queueAnchor()
 }
 

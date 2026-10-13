@@ -29,7 +29,7 @@ async function setup() {
             pets: [
               {
                 key: 'ying',
-                name: '小映',
+                name: '慕慕',
                 description: '',
                 mode: 'stage',
                 preview: '',

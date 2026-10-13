@@ -10,7 +10,7 @@ import type { Pose } from '@/stage/poses'
 import type { YingSettings } from '@/stage/settings'
 import AgentPet from './AgentPet.vue'
 
-/** Codex 精灵图复用小映的运动、设置、交互与气泡锚点。 */
+/** Codex 精灵图复用慕慕的运动、设置、交互与气泡锚点。 */
 const props = withDefaults(
   defineProps<{
     agent?: MoviePilotAgentHost | null
