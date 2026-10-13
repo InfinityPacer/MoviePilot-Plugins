@@ -6,6 +6,8 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import PackManager from '@/sprites/PackManager.vue'
+import * as packArchiveApi from '@/sprites/packArchive'
+import { parseCalibration } from '@/sprites/calibration'
 
 async function setup() {
   const pack = {
@@ -79,6 +81,7 @@ describe('Codex import input identity', () => {
     vi.stubGlobal('createImageBitmap', bitmap)
     const api = { get: vi.fn().mockResolvedValue({ success: true, data: [] }), post: vi.fn() }
     const view = mount(PackManager, {
+      attachTo: document.body,
       props: { api, pluginId: 'Clone1' },
       global: { plugins: [createVuetify({ components, directives })] },
     })
@@ -138,6 +141,86 @@ describe('Codex import input identity', () => {
     bitmap.mockRejectedValueOnce(new Error('图像损坏'))
     await click('读取 Codex Pet')
     expect(button('添加 Pet').attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps the Codex draft when visiting the archive option within the shared importer', async () => {
+    const { view, api, choose, button, click } = await importSetup()
+    await choose(picture('first-pet.png'))
+    await click('读取 Codex Pet')
+    expect(button('添加 Pet').attributes('disabled')).toBeUndefined()
+    await click('AgentPets 素材包')
+    const importer = view.get('.agent-pet-sprites-config__import')
+    expect(importer.get('.ap-archive-import').isVisible()).toBe(true)
+    expect(button('添加 Pet').isVisible()).toBe(false)
+    expect(view.text()).not.toContain('恢复 AgentPets 素材包')
+    await click('Codex Pet')
+    expect(importer.get('.ap-archive-import').isVisible()).toBe(false)
+    expect(button('添加 Pet').isVisible()).toBe(true)
+    expect(button('添加 Pet').attributes('disabled')).toBeUndefined()
+    expect(view.text()).toContain('first-pet')
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('preserves the archive review across tabs and locks switching until reading or saving finishes', async () => {
+    const { view, api, button, click } = await importSetup()
+    let finishRead!: (value: packArchiveApi.PackArchive) => void
+    const read = vi.spyOn(packArchiveApi, 'readPackArchive').mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finishRead = resolve
+        }),
+    )
+    await click('AgentPets 素材包')
+    view
+      .findComponent({ name: 'PackArchiveImport' })
+      .findComponent({ name: 'VFileInput' })
+      .vm.$emit('update:modelValue', [new File(['zip'], 'saved.agentpets.zip')])
+    await flushPromises()
+    expect(button('Codex Pet').attributes('disabled')).toBeDefined()
+    expect(api.post).not.toHaveBeenCalled()
+    finishRead({
+      pack: {
+        id: 'saved',
+        name: 'Saved',
+        description: '',
+        sheet: '',
+        grid: { cols: 1, rows: 1 },
+        frames: { idle: 0 },
+        actions: {},
+        random_actions: [],
+        action_mappings: {},
+        calibration: parseCalibration({}),
+      },
+      image: 'data:image/png;base64,aW1hZ2U=',
+    })
+    await flushPromises()
+    const nameField = () =>
+      view.findAllComponents({ name: 'VTextField' }).find(field => field.props('label') === '导入后的名称')!
+    nameField().vm.$emit('update:modelValue', '我的副本')
+    await click('自定义素材')
+    await click('AgentPets 素材包')
+    expect(nameField().props('modelValue')).toBe('我的副本')
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(api.post).not.toHaveBeenCalled()
+    let finishSave!: (value: unknown) => void
+    api.post.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finishSave = resolve
+        }),
+    )
+    await click('确认导入')
+    expect(button('Codex Pet').attributes('disabled')).toBeDefined()
+    expect(api.post).toHaveBeenCalledWith(
+      'plugin/Clone1/packs/import',
+      expect.objectContaining({ mode: 'new', pack: expect.objectContaining({ name: '我的副本' }) }),
+    )
+    finishSave({ success: true, data: { id: 'saved', name: '我的副本' } })
+    await flushPromises()
+    expect(button('Codex Pet').attributes('disabled')).toBeUndefined()
+    expect(view.emitted('changed')).toHaveLength(1)
+    expect(api.get).toHaveBeenCalledTimes(2)
+    expect(view.text()).toContain('已导入 我的副本')
   })
 
   it('keeps manually supplied custom JSON when replacing its image', async () => {
