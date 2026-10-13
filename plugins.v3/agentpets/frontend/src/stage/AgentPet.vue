@@ -42,7 +42,7 @@ import {
 } from '@/stage/surfaces'
 
 /**
- * 慕慕 stage 形象。
+ * 小映 stage 形象。
  *
  * 宿主把本组件挂在 `pointer-events: none` 的全视口图层里，组件只让角色按钮接收指针。
  * 所有订阅、rAF、计时器、DOM 观察和全局监听都在卸载时释放；旧版主程序不传 `agent`/`pet`
@@ -74,7 +74,7 @@ const props = withDefaults(
     api: null,
     pluginId: '',
     sourcePluginId: '',
-    characterName: '慕慕',
+    characterName: '小映',
     aspectRatio: 0,
     previewRoot: null,
   },
@@ -686,7 +686,7 @@ function scheduleBlink() {
   })
 }
 
-/** 任何交互或宿主事件都会叫醒慕慕并重置打盹计时。 */
+/** 任何交互或宿主事件都会叫醒小映并重置打盹计时。 */
 function markActivity() {
   if (dozing.value) {
     dozing.value = false
@@ -810,7 +810,7 @@ function attachSurface(next: DomSurface) {
   window.addEventListener('scroll', onSurfaceScroll, { capture: true, passive: true })
   if (typeof MutationObserver !== 'undefined') {
     surfaceObserver = new MutationObserver(records => {
-      // 慕慕自己走路时每帧改 transform，这类变化不影响脚下元素。
+      // 小映自己走路时每帧改 transform，这类变化不影响脚下元素。
       if (records.every(record => rootEl.value?.contains(record.target))) return
       if (!timers.has('surface')) setTimer('surface', SURFACE_CHECK_INTERVAL, checkSurface)
     })

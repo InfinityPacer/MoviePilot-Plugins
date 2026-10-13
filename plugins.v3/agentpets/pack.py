@@ -27,7 +27,7 @@ ID_PATTERN = re.compile(r"[a-z0-9_-]{1,32}")
 NAME_PATTERN = re.compile(r"[a-z0-9_-]{1,32}")
 
 BUILTIN_PACK_ID = "projector-cat"
-# 与同插件其他形象的 key 共用命名空间（慕慕为 ying），素材包不能占用。
+# 与同插件其他形象的 key 共用命名空间（小映为 ying），素材包不能占用。
 RESERVED_IDS = frozenset({BUILTIN_PACK_ID, "ying"})
 
 # 宿主 renderer 模式的动作名；random_actions 只能取其中的值，宿主随机池从这里挑选。

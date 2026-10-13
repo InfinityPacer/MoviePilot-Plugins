@@ -40,7 +40,7 @@ describe('Pet editor API', () => {
   it('uses bundled builtin avatars and keeps uploaded previews intact', () => {
     const pet = {
       key: 'ying',
-      name: '慕慕',
+      name: '小映',
       description: '',
       mode: 'stage' as const,
       preview: 'ying/avatar.png',

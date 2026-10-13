@@ -2,7 +2,7 @@ import type { AgentRect } from '@/host'
 import { coversAny, floorLine, standable, type StageViewport, type SurfaceBox } from '@/stage/geometry'
 
 /**
- * 慕慕可以站上去的页面容器。
+ * 小映可以站上去的页面容器。
  *
  * 只列宿主常见的卡片、面板和对话框容器；调整可站范围时只改这一处。
  */
@@ -41,7 +41,7 @@ export function surfaceVisible(el: Element): boolean {
 }
 
 /**
- * 上边缘是否露在最上层：在可见部分的中点往下 2px 取命中元素，跳过慕慕自己的图层，
+ * 上边缘是否露在最上层：在可见部分的中点往下 2px 取命中元素，跳过小映自己的图层，
  * 第一个命中的必须是该元素本身或其后代。被遮罩、弹窗或其他元素压住的卡片因此不算。
  *
  * 浏览器不支持 `elementsFromPoint` 时不做遮挡判断。
@@ -67,7 +67,7 @@ export function surfaceUnobstructed(
 /**
  * 查询当前视口里所有可站表面。
  *
- * 只在开始下落或开始走动时调用一次，不在动画帧里调用；排除慕慕自己的图层及其祖先，
+ * 只在开始下落或开始走动时调用一次，不在动画帧里调用；排除小映自己的图层及其祖先，
  * 以及上边缘被其他元素盖住的元素（遮挡判断只在这里做，站立后的重新校验不再做）。
  */
 export function querySurfaces(
@@ -176,7 +176,7 @@ export function surfacesNear(
 }
 
 /**
- * 慕慕不应停留在其上方的可点击控件；调整范围时只改这一处。
+ * 小映不应停留在其上方的可点击控件；调整范围时只改这一处。
  *
  * 包括链接卡片、列表项（侧栏菜单）和可聚焦元素，`tabindex="-1"` 只能脚本聚焦，不算。
  */
@@ -201,7 +201,7 @@ export function samplePoints(rect: AgentRect, cols = SAMPLE_COLS, rows = SAMPLE_
 /**
  * 角色放在 `rect` 时，她身后实际露在最上层的可点击控件矩形。
  *
- * 在 12 个取样点调用 `elementsFromPoint`，跳过慕慕自己的图层，取第一个命中元素，再用
+ * 在 12 个取样点调用 `elementsFromPoint`，跳过小映自己的图层，取第一个命中元素，再用
  * `closest(CONTROL_SELECTOR)` 找到所属控件。只看命中结果，所以遮罩底下、被溢出裁掉的控件
  * 不会算进来，耗时也只与取样点数有关，与页面大小无关。
  *

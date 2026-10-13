@@ -44,7 +44,7 @@ describe('AgentPet (ying)', () => {
     await flush()
     expect(api.get).toHaveBeenCalledWith('plugin/AgentPets/settings')
     const button = await screen.findByRole('button', {
-      name: '打开助手（慕慕）',
+      name: '打开助手（小映）',
     })
     expect(button).toBeInTheDocument()
     expect(anchors.at(-1)).toMatchObject({ height: 144 })
