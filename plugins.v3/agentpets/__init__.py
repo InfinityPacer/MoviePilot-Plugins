@@ -142,7 +142,7 @@ class AgentPets(_PluginBase):
     plugin_name = "助手形象"
     plugin_desc = "为 Agent 助手换上小映或自定义精灵图形象。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png"
-    plugin_version = "0.1.2"
+    plugin_version = "0.1.2.1"
     plugin_author = "InfinityPacer,Kurisu"
     author_url = "https://github.com/z2561221"
     plugin_config_prefix = "agentpets_"

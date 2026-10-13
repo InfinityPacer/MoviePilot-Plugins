@@ -148,7 +148,7 @@ const isMobile = ref(false)
 const animationActive = ref(false)
 
 let hostState: AgentHostState | null = null
-let mobileFloor: number | null = null
+let bottomFloor: number | null = null
 let documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
 let rafId = 0
 let lastFrame = 0
@@ -369,18 +369,18 @@ function roam(): RoamMode {
 
 function viewport() {
   const view = readViewport(hostState, !props.previewRoot)
-  if (mobileFloor === null || !isMobile.value || props.previewRoot) return view
+  if (bottomFloor === null || props.previewRoot) return view
   return {
     ...view,
-    safeArea: { ...view.safeArea, bottom: Math.max(view.safeArea.bottom, view.height - mobileFloor) },
+    safeArea: { ...view.safeArea, bottom: Math.max(view.safeArea.bottom, view.height - bottomFloor) },
   }
 }
 
 /** 只在布局变化和低频避让检查中测量固定底栏。 */
-function refreshMobileFloor(): boolean {
-  const next = isMobile.value && !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null
-  const changed = next !== mobileFloor
-  mobileFloor = next
+function refreshBottomFloor(): boolean {
+  const next = !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null
+  const changed = next !== bottomFloor
+  bottomFloor = next
   return changed
 }
 
@@ -671,6 +671,14 @@ function stepOffEdge() {
   facingLeft.value = direction < 0
   const left = surface
   x.value = clamp(x.value + direction * charWidth.value * 0.6, range[0], range[1])
+  // 视口限位可能让这一步仍站在原表面上；只有中心真正离开支撑才排除原表面。
+  const center = x.value + charWidth.value / 2
+  if (center >= left.left && center <= left.right) {
+    facingLeft.value = direction > 0
+    queueAnchor()
+    scheduleBehavior()
+    return
+  }
   startFall(left.el)
 }
 
@@ -915,11 +923,11 @@ function rectAt(left: number, top: number, depth = 0): AgentRect {
  */
 function checkClearance() {
   if (fixed()) {
-    if (refreshMobileFloor()) relayout()
+    if (refreshBottomFloor()) relayout()
     return
   }
   if (disposed || !ready.value || !visible()) return
-  if (refreshMobileFloor()) relayout()
+  if (refreshBottomFloor()) relayout()
   if (sheltering) {
     recheckShelter()
     return
@@ -1275,7 +1283,7 @@ function onHostState(state: AgentHostState) {
       before.viewport.keyboardInset !== state.viewport.keyboardInset ||
       before.isMobile !== state.isMobile)
   isMobile.value = state.isMobile
-  if (resized) refreshMobileFloor()
+  if (resized) refreshBottomFloor()
   const nextSustained = phasePose(state.phase)
   if (nextSustained !== sustained.value) {
     sustained.value = nextSustained
@@ -1498,7 +1506,7 @@ function onVisibilityChange() {
 
 function onWindowResize() {
   if (!ready.value || props.previewRoot) return
-  refreshMobileFloor()
+  refreshBottomFloor()
   relayout()
   scheduleClearance(RESIZE_CLEAR_DELAY)
 }
@@ -1548,7 +1556,7 @@ onMounted(async () => {
   ])
   if (disposed) return
   if (revision === settingsRevision) settings.value = normalizeSettings(props.settingsOverride ?? loaded)
-  refreshMobileFloor()
+  refreshBottomFloor()
   restorePosition(stored)
   ready.value = true
   syncVisibility()
