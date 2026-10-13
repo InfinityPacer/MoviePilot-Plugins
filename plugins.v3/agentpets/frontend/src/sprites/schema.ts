@@ -210,6 +210,8 @@ export interface SpritePack {
   /** 用户映射覆盖；原始 actions 保持不变。 */
   action_mappings?: Record<string, string>
   calibration?: Calibration
+  preview?: string
+  avatar?: string
 }
 
 const NAME = /^[a-z0-9_-]{1,32}$/
@@ -323,6 +325,8 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
       actions,
       random_actions: [...new Set(randomActions as string[])],
       calibration,
+      preview: typeof data.preview === 'string' ? data.preview : '',
+      avatar: typeof data.avatar === 'string' ? data.avatar : '',
       action_mappings: Object.fromEntries(
         Object.entries((data.action_mappings ?? {}) as object).filter(
           (entry): entry is [string, string] => typeof entry[1] === 'string',

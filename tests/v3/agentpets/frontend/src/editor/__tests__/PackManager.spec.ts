@@ -85,7 +85,10 @@ describe('Codex import input identity', () => {
     cleanups.push(() => view.unmount())
     await flushPromises()
     const choose = async (file: File | null) => {
-      view.findComponent({ name: 'VFileInput' }).vm.$emit('update:modelValue', file ? [file] : [])
+      view
+        .findAllComponents({ name: 'VFileInput' })
+        .find(input => input.props('label') === '选择精灵图或 ZIP')!
+        .vm.$emit('update:modelValue', file ? [file] : [])
       await flushPromises()
     }
     const button = (label: string) => view.findAll('button').find(item => item.text() === label)!
