@@ -56,10 +56,15 @@ describe('Pet editor API', () => {
     const api = mockHost()
     expect((await loadEditor(api, 'Clone1')).enabled).toBe(true)
     expect(api.get).toHaveBeenCalledWith('plugin/Clone1/editor')
-    expect(await saveSettings(api, 'Clone1', { ...settings, scale: 1.2 })).toEqual({ ...settings, scale: 1.2 })
+    expect(await saveSettings(api, 'Clone1', { ...settings, scale: 1.2 })).toEqual({
+      ...settings,
+      scale: 1.2,
+      movement: 'auto',
+    })
     expect(api.post).toHaveBeenCalledWith('plugin/Clone1/settings', {
       ...settings,
       scale: 1.2,
+      movement: 'auto',
     })
   })
 
