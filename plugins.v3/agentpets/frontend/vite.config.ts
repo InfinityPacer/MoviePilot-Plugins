@@ -26,9 +26,10 @@ function cleanFederationAssets(): Plugin {
       for (const fileName of Object.keys(bundle)) {
         if (fileName.startsWith('assets/__federation_shared_vuetify/')) delete bundle[fileName]
       }
-      const remoteEntry = bundle['assets/remoteEntry.js']
-      if (remoteEntry?.type === 'chunk') {
-        remoteEntry.code = remoteEntry.code
+      // 第三方打包代码也可能带尾随空格，统一清理以保持提交与重建产物一致。
+      for (const entry of Object.values(bundle)) {
+        if (entry.type !== 'chunk') continue
+        entry.code = entry.code
           .split('\n')
           .map(line => line.trimEnd())
           .join('\n')
