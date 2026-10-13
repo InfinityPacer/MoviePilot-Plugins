@@ -130,12 +130,13 @@ def test_registered_components_are_exposed() -> None:
 
 def test_settings_default_and_clamp() -> None:
     """小映设置缺省为 1 倍、站在页面元素上；越界和非法值按边界收敛。"""
-    assert _plugin().settings() == {"scale": 1.0, "speed": 1.0, "roam": "surfaces"}
-    assert _plugin({"scale": 9, "speed": 0.1, "roam": "free"}).settings() == {"scale": 1.6, "speed": 0.5, "roam": "free"}
+    assert _plugin().settings() == {"scale": 1.0, "speed": 1.0, "roam": "surfaces", "movement": "auto"}
+    assert _plugin({"scale": 9, "speed": 0.1, "roam": "free"}).settings() == {"scale": 1.6, "speed": 0.5, "roam": "free", "movement": "auto"}
     assert _plugin({"scale": "abc", "speed": float("nan"), "roam": "moon"}).settings() == {
         "scale": 1.0,
         "speed": 1.0,
         "roam": "surfaces",
+        "movement": "auto",
     }
 
 
@@ -148,14 +149,14 @@ def test_settings_api_requires_login_and_returns_saved_values() -> None:
     assert route["auth"] == "bear" and "dependencies" not in route
     response = route["endpoint"]()
     assert response.success is True
-    assert response.data == {"scale": 1.25, "speed": 0.8, "roam": "floor"}
+    assert response.data == {"scale": 1.25, "speed": 0.8, "roam": "floor", "movement": "auto"}
 
 
 def test_form_defaults_match_settings_and_state_follows_enabled() -> None:
     """表单默认值与设置默认值一致，启用状态由配置决定。"""
     _, defaults = AgentPets().get_form()
 
-    assert defaults == {"enabled": False, "scale": 1.0, "speed": 1.0, "roam": "surfaces"}
+    assert defaults == {"enabled": False, "scale": 1.0, "speed": 1.0, "roam": "surfaces", "movement": "auto"}
     assert _plugin({"enabled": True}).get_state() is True
     assert _plugin({}).get_state() is False
     assert AgentPets.get_render_mode()[0] == "vue"

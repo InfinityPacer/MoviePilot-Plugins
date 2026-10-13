@@ -44,7 +44,7 @@ SCALE_RANGE = (0.6, 1.6)
 SPEED_RANGE = (0.5, 2.0)
 # 活动范围：surfaces 站在页面元素上，floor 只在底边，free 没有重力、自由停放。
 ROAM_MODES = ("surfaces", "floor", "free")
-DEFAULT_SETTINGS = {"scale": 1.0, "speed": 1.0, "roam": "surfaces"}
+DEFAULT_SETTINGS = {"scale": 1.0, "speed": 1.0, "roam": "surfaces", "movement": "auto"}
 
 
 @lru_cache(maxsize=4)
@@ -91,6 +91,7 @@ class SaveSettingsRequest(BaseModel):
     scale: float = Field(ge=SCALE_RANGE[0], le=SCALE_RANGE[1], allow_inf_nan=False)
     speed: float = Field(ge=SPEED_RANGE[0], le=SPEED_RANGE[1], allow_inf_nan=False)
     roam: Literal["surfaces", "floor", "free"]
+    movement: Literal["auto", "fixed"] = "auto"
 
 
 class AddPackRequest(BaseModel):
@@ -148,6 +149,7 @@ class AgentPets(_PluginBase):
             "scale": _clamp(config.get("scale"), SCALE_RANGE, DEFAULT_SETTINGS["scale"]),
             "speed": _clamp(config.get("speed"), SPEED_RANGE, DEFAULT_SETTINGS["speed"]),
             "roam": roam if roam in ROAM_MODES else DEFAULT_SETTINGS["roam"],
+            "movement": "fixed" if config.get("movement") == "fixed" else "auto",
         }
         logger.info(f"助手形象配置加载完成：enabled={self._enabled} settings={self._settings}")
 
@@ -253,6 +255,8 @@ class AgentPets(_PluginBase):
         values["speed"] = round(values["speed"], 2)
         try:
             config = dict(self.get_config() or {})
+            if "movement" not in request.model_fields_set:
+                values["movement"] = "fixed" if config.get("movement") == "fixed" else "auto"
             config.update(values)
             if self.update_config(config) is False:
                 return schemas.Response(success=False, message="活动设置保存失败，请重试")

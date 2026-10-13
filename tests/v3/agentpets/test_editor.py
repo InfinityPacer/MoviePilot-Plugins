@@ -43,7 +43,7 @@ def test_save_merges_latest_config_and_leaves_enable_and_unknown_options_untouch
     stored["future_option"]["keep"] = 2
     result = plugin.api_save_settings(SaveSettingsRequest(scale=1.25, speed=0.8, roam="free"))
     assert result.success
-    assert plugin.settings() == result.data == {"scale": 1.25, "speed": 0.8, "roam": "free"}
+    assert plugin.settings() == result.data == {"scale": 1.25, "speed": 0.8, "roam": "free", "movement": "auto"}
     assert stored == {"enabled": True, **result.data, "future_option": {"keep": 2}}
 
 

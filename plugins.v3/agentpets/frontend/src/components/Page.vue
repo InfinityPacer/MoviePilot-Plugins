@@ -73,6 +73,7 @@ const changedNames = computed(() =>
     draft.value.scale !== saved.value.scale ? '大小' : '',
     draft.value.speed !== saved.value.speed ? '速度' : '',
     draft.value.roam !== saved.value.roam ? '活动范围' : '',
+    draft.value.movement !== saved.value.movement ? '活动方式' : '',
     mappingDirtyKeys.value.length ? `${mappingDirtyKeys.value.length} 只 Pet 的动作映射` : '',
   ].filter(Boolean),
 )
