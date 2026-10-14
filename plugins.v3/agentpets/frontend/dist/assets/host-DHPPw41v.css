@@ -222,7 +222,7 @@
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  height: min(860px, calc(100dvh - 96px));
+  height: min(720px, calc(100dvh - 96px));
   min-height: 0;
   overflow: hidden;
 }
@@ -236,7 +236,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 12px 0;
+  padding: 12px 16px;
   overflow: hidden;
 }
 .ap-page__notices {
@@ -265,8 +265,15 @@
   flex: 0 1 320px;
   min-width: 0;
 }
+.ap-page .ap-control-panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
 .ap-page .ap-control-panel + .ap-control-panel {
-  margin-top: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ap-border);
 }
 .ap-page .ap-footer > span {
   min-width: 0;
@@ -396,6 +403,6 @@
     margin-left: auto;
   }
   .ap-page__content {
-    padding: 12px 0;
+    padding: 8px;
   }
 }
