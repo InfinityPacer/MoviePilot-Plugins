@@ -1,5 +1,5 @@
 
-.agent-pet-sprites[data-v-007b4c85] {
+.agent-pet-sprites[data-v-12a33558] {
   container-type: size;
   display: flex;
   align-items: flex-end;
@@ -10,20 +10,20 @@
   min-height: 3rem;
   pointer-events: none;
 }
-.agent-pet-sprites__viewport[data-v-007b4c85] {
+.agent-pet-sprites__viewport[data-v-12a33558] {
   position: relative;
   overflow: hidden;
   width: min(100cqw, 100cqh * var(--agent-pet-sprites-ratio));
   aspect-ratio: var(--agent-pet-sprites-ratio);
 }
-.agent-pet-sprites__frame[data-v-007b4c85] {
+.agent-pet-sprites__frame[data-v-12a33558] {
   position: absolute;
   background-repeat: no-repeat;
 }
-.agent-pet-sprites__viewport--guides[data-v-007b4c85] {
+.agent-pet-sprites__viewport--guides[data-v-12a33558] {
   outline: 1px dashed rgb(var(--v-theme-primary));
 }
-.agent-pet-sprites__viewport--guides[data-v-007b4c85]::after {
+.agent-pet-sprites__viewport--guides[data-v-12a33558]::after {
   content: '';
   position: absolute;
   inset: auto 0 0;

@@ -1735,6 +1735,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-47cd3b55"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-7f9f99ab"]]);
 
 export { MIN_SURFACE_WIDTH as M, POSES as P, AgentPet as default };
