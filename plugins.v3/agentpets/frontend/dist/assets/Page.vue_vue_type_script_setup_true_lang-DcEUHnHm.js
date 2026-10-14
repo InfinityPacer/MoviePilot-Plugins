@@ -1,10 +1,10 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, a as loadHostSelection, b as saveSettings, c as saveMappings, d as saveCalibration } from './host-ZagWe-nT.js';
-import { D as DEFAULT_CALIBRATION, p as parseCalibration, m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, h as HOST_INTENTS, s as stageAction, b as sameCalibration, a as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-wSixMRjX.js';
+import { u as unwrap, A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, c as saveSettings, d as saveMappings, e as saveCalibration } from './host-B1sqp4ev.js';
+import { D as DEFAULT_CALIBRATION, p as parseCalibration, m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, h as HOST_INTENTS, s as stageAction, e as sameCalibration, d as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-jvCB_8v9.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 import AgentPet, { P as POSES, M as MIN_SURFACE_WIDTH } from './__federation_expose_AgentPet-DVcP-XMc.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-00TQt6P7.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BEsQYz4u.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite--xAqWRds.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-ECplOS8N.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, S as SETTINGS_EVENT } from './settings-tnFA6UQD.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
@@ -400,12 +400,12 @@ const _hoisted_14$1 = { class: "ap-preview__panel" };
 const _hoisted_15$1 = { class: "ap-preview__library" };
 const _hoisted_16$1 = { class: "ap-inline mb-2" };
 const _hoisted_17$1 = { class: "ap-preview__choices" };
-const _hoisted_18 = { class: "ap-muted mb-0" };
-const _hoisted_19 = {
+const _hoisted_18$1 = { class: "ap-muted mb-0" };
+const _hoisted_19$1 = {
   key: 1,
   class: "ap-preview__panel ap-muted"
 };
-const _hoisted_20 = {
+const _hoisted_20$1 = {
   key: 1,
   class: "ap-preview__panel ap-muted"
 };
@@ -960,7 +960,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
                   }, 1032, ["variant", "color", "disabled", "onClick"]);
                 }), 128))
               ]),
-              _createElementVNode$2("p", _hoisted_18, _toDisplayString$2(previewGroup.value === "native" || previewGroup.value === "directions" ? "直接播放素材原始动画，不受动作映射影响。" : "按当前映射预览；运动测试中可拖动 Pet。"), 1)
+              _createElementVNode$2("p", _hoisted_18$1, _toDisplayString$2(previewGroup.value === "native" || previewGroup.value === "directions" ? "直接播放素材原始动画，不受动作映射影响。" : "按当前映射预览；运动测试中可拖动 Pet。"), 1)
             ], 512), [
               [_vShow, editorTab.value === "animations"]
             ]),
@@ -973,7 +973,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
                 "plugin-id": __props.pluginId,
                 disabled: __props.disabled,
                 "onUpdate:modelValue": _cache[9] || (_cache[9] = ($event) => emit("calibration", $event))
-              }, null, 8, ["model-value", "pack-id", "api", "plugin-id", "disabled"])) : (_openBlock$2(), _createElementBlock$2("p", _hoisted_19, _toDisplayString$2(__props.pet.builtin ? "内置形象无需显示校准。" : "素材加载后可调整显示区域与脚底基线。"), 1))
+              }, null, 8, ["model-value", "pack-id", "api", "plugin-id", "disabled"])) : (_openBlock$2(), _createElementBlock$2("p", _hoisted_19$1, _toDisplayString$2(__props.pet.builtin ? "内置形象无需显示校准。" : "素材加载后可调整显示区域与脚底基线。"), 1))
             ], 512), [
               [_vShow, editorTab.value === "calibration"]
             ]),
@@ -986,7 +986,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
                 disabled: __props.disabled,
                 "onUpdate:modelValue": _cache[10] || (_cache[10] = ($event) => emit("mappings", $event)),
                 onPreview: playNative
-              }, null, 8, ["pack", "mode", "model-value", "disabled"])) : (_openBlock$2(), _createElementBlock$2("p", _hoisted_20, "此形象使用内置动作，无需设置动作映射。"))
+              }, null, 8, ["pack", "mode", "model-value", "disabled"])) : (_openBlock$2(), _createElementBlock$2("p", _hoisted_20$1, "此形象使用内置动作，无需设置动作映射。"))
             ], 512), [
               [_vShow, editorTab.value === "mappings"]
             ])
@@ -1131,46 +1131,55 @@ const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "d
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,unref:_unref,toDisplayString:_toDisplayString,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementVNode:_createElementVNode,createElementBlock:_createElementBlock} = await importShared('vue');
+const {unref:_unref,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,createBlock:_createBlock} = await importShared('vue');
 
 const _hoisted_1 = { class: "ap-page" };
-const _hoisted_2 = { class: "ap-page__content" };
-const _hoisted_3 = { class: "ap-page__notices" };
-const _hoisted_4 = {
+const _hoisted_2 = { class: "ap-header" };
+const _hoisted_3 = { class: "ap-brand" };
+const _hoisted_4 = ["src"];
+const _hoisted_5 = {
+  key: 1,
+  class: "ap-brand__avatar d-flex align-center justify-center",
+  "aria-hidden": "true"
+};
+const _hoisted_6 = { class: "ap-header__actions" };
+const _hoisted_7 = { class: "ap-page__content" };
+const _hoisted_8 = { class: "ap-page__notices" };
+const _hoisted_9 = {
   key: 0,
   class: "ap-empty"
 };
-const _hoisted_5 = {
+const _hoisted_10 = {
   key: 1,
   class: "ap-editor-grid"
 };
-const _hoisted_6 = { class: "ap-page__selector" };
-const _hoisted_7 = { class: "ap-muted" };
-const _hoisted_8 = {
+const _hoisted_11 = { class: "ap-page__selector" };
+const _hoisted_12 = { class: "ap-muted" };
+const _hoisted_13 = {
   key: 0,
   class: "ap-muted mb-3"
 };
-const _hoisted_9 = { class: "ap-control-panel" };
-const _hoisted_10 = { class: "ap-section-title" };
-const _hoisted_11 = {
+const _hoisted_14 = { class: "ap-control-panel" };
+const _hoisted_15 = { class: "ap-section-title" };
+const _hoisted_16 = {
   key: 1,
   class: "ap-muted mb-0"
 };
-const _hoisted_12 = { class: "ap-control-panel" };
-const _hoisted_13 = {
+const _hoisted_17 = { class: "ap-control-panel" };
+const _hoisted_18 = {
   key: 2,
   class: "ap-empty"
 };
-const _hoisted_14 = { class: "ap-footer" };
-const _hoisted_15 = {
+const _hoisted_19 = { class: "ap-footer" };
+const _hoisted_20 = {
   key: 0,
   class: "ap-change"
 };
-const _hoisted_16 = {
+const _hoisted_21 = {
   key: 1,
   class: "ap-muted"
 };
-const _hoisted_17 = { class: "ap-footer__actions" };
+const _hoisted_22 = { class: "ap-footer__actions" };
 const {computed,inject,onBeforeUnmount,ref,watch} = await importShared('vue');
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "Page",
@@ -1183,9 +1192,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
-    emit("layout", { maxWidth: "68rem" });
+    emit("layout", { maxWidth: "72rem" });
     const agent = inject(AGENT_HOST_KEY, null);
     const snapshot = ref(null);
+    const avatar = builtinAvatar("ying");
+    const avatarFailed = ref(false);
     const selection = ref(null);
     const selectedKey = ref("");
     const draft = ref({ ...DEFAULT_SETTINGS });
@@ -1399,58 +1410,61 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     return (_ctx, _cache) => {
       const _component_v_icon = _resolveComponent("v-icon");
-      const _component_v_toolbar_title = _resolveComponent("v-toolbar-title");
       const _component_v_btn = _resolveComponent("v-btn");
-      const _component_v_toolbar = _resolveComponent("v-toolbar");
       const _component_v_alert = _resolveComponent("v-alert");
       const _component_v_progress_circular = _resolveComponent("v-progress-circular");
       const _component_v_select = _resolveComponent("v-select");
       return _openBlock(), _createElementBlock("section", _hoisted_1, [
-        _createVNode(_component_v_toolbar, {
-          class: "ap-page__toolbar",
-          color: "transparent",
-          density: "compact",
-          flat: ""
-        }, {
-          default: _withCtx(() => [
-            _createVNode(_component_v_icon, {
-              icon: "mdi-paw-outline",
-              color: "primary",
-              class: "mr-3"
-            }),
-            _createVNode(_component_v_toolbar_title, { class: "text-subtitle-1 font-weight-bold" }, {
-              default: _withCtx(() => [..._cache[8] || (_cache[8] = [
-                _createTextVNode("助手形象 · 调整与预览", -1)
-              ])]),
-              _: 1
-            }),
+        _createElementVNode("header", _hoisted_2, [
+          _createElementVNode("div", _hoisted_3, [
+            !avatarFailed.value ? (_openBlock(), _createElementBlock("img", {
+              key: 0,
+              src: _unref(avatar),
+              alt: "",
+              class: "ap-brand__avatar",
+              onError: _cache[0] || (_cache[0] = ($event) => avatarFailed.value = true)
+            }, null, 40, _hoisted_4)) : (_openBlock(), _createElementBlock("span", _hoisted_5, [
+              _createVNode(_component_v_icon, {
+                icon: "mdi-paw-outline",
+                color: "primary",
+                size: "28"
+              })
+            ])),
+            _cache[9] || (_cache[9] = _createElementVNode("div", null, [
+              _createElementVNode("div", { class: "ap-eyebrow" }, "MoviePilot / 调整与预览"),
+              _createElementVNode("h1", null, "助手形象")
+            ], -1))
+          ]),
+          _createElementVNode("div", _hoisted_6, [
             _createVNode(_component_v_btn, {
               icon: "mdi-refresh",
               "aria-label": "刷新形象列表",
               variant: "text",
+              size: "small",
               loading: loading.value,
               disabled: busy.value,
-              onClick: _cache[0] || (_cache[0] = ($event) => refresh())
+              onClick: _cache[1] || (_cache[1] = ($event) => refresh())
             }, null, 8, ["loading", "disabled"]),
             _createVNode(_component_v_btn, {
               icon: "mdi-cog-outline",
               "aria-label": "打开插件配置",
               variant: "text",
+              size: "small",
               disabled: busy.value,
-              onClick: _cache[1] || (_cache[1] = ($event) => emit("switch"))
+              onClick: _cache[2] || (_cache[2] = ($event) => emit("switch"))
             }, null, 8, ["disabled"]),
             _createVNode(_component_v_btn, {
               icon: "mdi-close",
               "aria-label": "关闭详情页",
               variant: "text",
+              size: "small",
               disabled: busy.value,
-              onClick: _cache[2] || (_cache[2] = ($event) => emit("close"))
+              onClick: _cache[3] || (_cache[3] = ($event) => emit("close"))
             }, null, 8, ["disabled"])
-          ]),
-          _: 1
-        }),
-        _createElementVNode("div", _hoisted_2, [
-          _createElementVNode("div", _hoisted_3, [
+          ])
+        ]),
+        _createElementVNode("div", _hoisted_7, [
+          _createElementVNode("div", _hoisted_8, [
             !_unref(agent) ? (_openBlock(), _createBlock(_component_v_alert, {
               key: 0,
               type: "warning",
@@ -1513,17 +1527,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               _: 1
             }, 8, ["type"])) : _createCommentVNode("", true)
           ]),
-          loading.value && !snapshot.value ? (_openBlock(), _createElementBlock("div", _hoisted_4, [
+          loading.value && !snapshot.value ? (_openBlock(), _createElementBlock("div", _hoisted_9, [
             _createVNode(_component_v_progress_circular, {
               indeterminate: "",
               color: "primary"
             }),
-            _cache[9] || (_cache[9] = _createElementVNode("span", { class: "ap-muted" }, "正在准备你的 Pet…", -1))
-          ])) : snapshot.value && currentPet.value ? (_openBlock(), _createElementBlock("div", _hoisted_5, [
-            _createElementVNode("div", _hoisted_6, [
+            _cache[10] || (_cache[10] = _createElementVNode("span", { class: "ap-muted" }, "正在准备你的 Pet…", -1))
+          ])) : snapshot.value && currentPet.value ? (_openBlock(), _createElementBlock("div", _hoisted_10, [
+            _createElementVNode("div", _hoisted_11, [
               _createVNode(_component_v_select, {
                 modelValue: selectedKey.value,
-                "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => selectedKey.value = $event),
+                "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => selectedKey.value = $event),
                 items: snapshot.value.pets,
                 "item-title": "name",
                 "item-value": "key",
@@ -1533,7 +1547,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 "hide-details": "",
                 disabled: blocked.value
               }, null, 8, ["modelValue", "items", "disabled"]),
-              _createElementVNode("span", _hoisted_7, _toDisplayString(currentPet.value.mode === "stage" ? "自由活动的角色" : "助手入口的形象") + " · " + _toDisplayString(currentPet.value.builtin ? "内置" : "已导入"), 1)
+              _createElementVNode("span", _hoisted_12, _toDisplayString(currentPet.value.mode === "stage" ? "自由活动的角色" : "助手入口的形象") + " · " + _toDisplayString(currentPet.value.builtin ? "内置" : "已导入"), 1)
             ]),
             (_openBlock(), _createBlock(PetPreview, {
               key: `${props.pluginId}:${previewVersion.value}`,
@@ -1546,27 +1560,27 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               disabled: blocked.value,
               "initial-tab": "activity",
               onPackReady,
-              onMappings: _cache[5] || (_cache[5] = ($event) => mappingDrafts.value[selectedKey.value] = $event),
-              onCalibration: _cache[6] || (_cache[6] = ($event) => calibrationDrafts.value[selectedKey.value] = $event)
+              onMappings: _cache[6] || (_cache[6] = ($event) => mappingDrafts.value[selectedKey.value] = $event),
+              onCalibration: _cache[7] || (_cache[7] = ($event) => calibrationDrafts.value[selectedKey.value] = $event)
             }, {
               activity: _withCtx(() => [
-                currentPet.value.description ? (_openBlock(), _createElementBlock("p", _hoisted_8, _toDisplayString(currentPet.value.description), 1)) : _createCommentVNode("", true),
-                _createElementVNode("section", _hoisted_9, [
-                  _createElementVNode("h2", _hoisted_10, _toDisplayString(currentPet.value.mode === "stage" ? "活动调整" : "入口外观"), 1),
+                currentPet.value.description ? (_openBlock(), _createElementBlock("p", _hoisted_13, _toDisplayString(currentPet.value.description), 1)) : _createCommentVNode("", true),
+                _createElementVNode("section", _hoisted_14, [
+                  _createElementVNode("h2", _hoisted_15, _toDisplayString(currentPet.value.mode === "stage" ? "活动调整" : "入口外观"), 1),
                   currentPet.value.mode === "stage" ? (_openBlock(), _createBlock(StageSettings, {
                     key: 0,
                     modelValue: draft.value,
-                    "onUpdate:modelValue": _cache[4] || (_cache[4] = ($event) => draft.value = $event),
+                    "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => draft.value = $event),
                     "live-preview": true,
                     disabled: blocked.value,
                     "preview-only": true
-                  }, null, 8, ["modelValue", "disabled"])) : (_openBlock(), _createElementBlock("p", _hoisted_11, " 此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。 "))
+                  }, null, 8, ["modelValue", "disabled"])) : (_openBlock(), _createElementBlock("p", _hoisted_16, " 此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。 "))
                 ]),
-                _createElementVNode("section", _hoisted_12, [
-                  _cache[11] || (_cache[11] = _createElementVNode("h2", { class: "ap-section-title" }, "在 MP 中使用", -1)),
-                  _cache[12] || (_cache[12] = _createElementVNode("div", { class: "ap-muted" }, "当前系统默认", -1)),
+                _createElementVNode("section", _hoisted_17, [
+                  _cache[12] || (_cache[12] = _createElementVNode("h2", { class: "ap-section-title" }, "在 MP 中使用", -1)),
+                  _cache[13] || (_cache[13] = _createElementVNode("div", { class: "ap-muted" }, "当前系统默认", -1)),
                   _createElementVNode("strong", null, _toDisplayString(defaultName.value), 1),
-                  _cache[13] || (_cache[13] = _createElementVNode("p", { class: "ap-muted mt-3 mb-0" }, "保存调整后，在「设定 → 系统 → 智能助手配置 → 助手形象」中选择 Pet。", -1)),
+                  _cache[14] || (_cache[14] = _createElementVNode("p", { class: "ap-muted mt-3 mb-0" }, "保存调整后，在「设定 → 系统 → 智能助手配置 → 助手形象」中选择 Pet。", -1)),
                   !snapshot.value.enabled ? (_openBlock(), _createBlock(_component_v_alert, {
                     key: 0,
                     type: "info",
@@ -1574,7 +1588,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     density: "compact",
                     class: "mt-3"
                   }, {
-                    default: _withCtx(() => [..._cache[10] || (_cache[10] = [
+                    default: _withCtx(() => [..._cache[11] || (_cache[11] = [
                       _createTextVNode("先在配置页启用插件，形象才会出现在 MP 的可选列表中。", -1)
                     ])]),
                     _: 1
@@ -1583,7 +1597,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               ]),
               _: 1
             }, 8, ["pet", "settings", "api", "plugin-id", "mappings", "calibration", "disabled"]))
-          ])) : !loading.value ? (_openBlock(), _createElementBlock("div", _hoisted_13, [
+          ])) : !loading.value ? (_openBlock(), _createElementBlock("div", _hoisted_18, [
             _createVNode(_component_v_icon, {
               icon: "mdi-paw-outline",
               size: "44",
@@ -1593,7 +1607,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             _createVNode(_component_v_btn, {
               variant: "tonal",
               color: "primary",
-              onClick: _cache[7] || (_cache[7] = ($event) => error.value ? refresh() : emit("switch"))
+              onClick: _cache[8] || (_cache[8] = ($event) => error.value ? refresh() : emit("switch"))
             }, {
               default: _withCtx(() => [
                 _createTextVNode(_toDisplayString(error.value ? "重新加载" : "前往素材管理"), 1)
@@ -1602,21 +1616,21 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             })
           ])) : _createCommentVNode("", true)
         ]),
-        _createElementVNode("footer", _hoisted_14, [
-          dirty.value ? (_openBlock(), _createElementBlock("span", _hoisted_15, [
+        _createElementVNode("footer", _hoisted_19, [
+          dirty.value ? (_openBlock(), _createElementBlock("span", _hoisted_20, [
             _createVNode(_component_v_icon, {
               icon: "mdi-circle",
               size: "7"
             }),
             _createTextVNode("未保存 · " + _toDisplayString(changedNames.value.join("、")), 1)
-          ])) : (_openBlock(), _createElementBlock("span", _hoisted_16, "预览中的调整不会自动保存")),
-          _createElementVNode("div", _hoisted_17, [
+          ])) : (_openBlock(), _createElementBlock("span", _hoisted_21, "预览中的调整不会自动保存")),
+          _createElementVNode("div", _hoisted_22, [
             _createVNode(_component_v_btn, {
               variant: "text",
               disabled: blocked.value || !dirty.value && !conflictingNames.value.length,
               onClick: restore
             }, {
-              default: _withCtx(() => [..._cache[14] || (_cache[14] = [
+              default: _withCtx(() => [..._cache[15] || (_cache[15] = [
                 _createTextVNode("撤销", -1)
               ])]),
               _: 1
@@ -1629,7 +1643,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               loading: busy.value,
               onClick: save
             }, {
-              default: _withCtx(() => [..._cache[15] || (_cache[15] = [
+              default: _withCtx(() => [..._cache[16] || (_cache[16] = [
                 _createTextVNode("保存调整", -1)
               ])]),
               _: 1

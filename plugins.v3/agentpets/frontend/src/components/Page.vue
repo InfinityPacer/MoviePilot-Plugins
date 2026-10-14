@@ -15,6 +15,7 @@ import { PACK_UPDATED_EVENT, sameMappings, type ActionMappings } from '@/sprites
 import { parseCalibration, sameCalibration, type Calibration } from '@/sprites/calibration'
 import type { SpritePack } from '@/sprites/schema'
 import PetPreview from '@/editor/PetPreview.vue'
+import { builtinAvatar } from '@/editor/avatars'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import { DEFAULT_SETTINGS, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
@@ -26,9 +27,11 @@ const props = withDefaults(defineProps<{ api?: PluginApi | null; pluginId?: stri
   sourcePluginId: '',
 })
 const emit = defineEmits<{ close: []; switch: []; layout: [{ maxWidth: string }] }>()
-emit('layout', { maxWidth: '68rem' })
+emit('layout', { maxWidth: '72rem' })
 const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
 const snapshot = ref<EditorSnapshot | null>(null)
+const avatar = builtinAvatar('ying')
+const avatarFailed = ref(false)
 const selection = ref<HostSelection | null>(null)
 const selectedKey = ref('')
 const draft = ref<YingSettings>({ ...DEFAULT_SETTINGS })
@@ -258,20 +261,45 @@ async function save() {
 
 <template>
   <section class="ap-page">
-    <v-toolbar class="ap-page__toolbar" color="transparent" density="compact" flat>
-      <v-icon icon="mdi-paw-outline" color="primary" class="mr-3" />
-      <v-toolbar-title class="text-subtitle-1 font-weight-bold">助手形象 · 调整与预览</v-toolbar-title>
-      <v-btn
-        icon="mdi-refresh"
-        aria-label="刷新形象列表"
-        variant="text"
-        :loading="loading"
-        :disabled="busy"
-        @click="refresh()"
-      />
-      <v-btn icon="mdi-cog-outline" aria-label="打开插件配置" variant="text" :disabled="busy" @click="emit('switch')" />
-      <v-btn icon="mdi-close" aria-label="关闭详情页" variant="text" :disabled="busy" @click="emit('close')" />
-    </v-toolbar>
+    <header class="ap-header">
+      <div class="ap-brand">
+        <img v-if="!avatarFailed" :src="avatar" alt="" class="ap-brand__avatar" @error="avatarFailed = true" />
+        <span v-else class="ap-brand__avatar d-flex align-center justify-center" aria-hidden="true">
+          <v-icon icon="mdi-paw-outline" color="primary" size="28" />
+        </span>
+        <div>
+          <div class="ap-eyebrow">MoviePilot / 调整与预览</div>
+          <h1>助手形象</h1>
+        </div>
+      </div>
+      <div class="ap-header__actions">
+        <v-btn
+          icon="mdi-refresh"
+          aria-label="刷新形象列表"
+          variant="text"
+          size="small"
+          :loading="loading"
+          :disabled="busy"
+          @click="refresh()"
+        />
+        <v-btn
+          icon="mdi-cog-outline"
+          aria-label="打开插件配置"
+          variant="text"
+          size="small"
+          :disabled="busy"
+          @click="emit('switch')"
+        />
+        <v-btn
+          icon="mdi-close"
+          aria-label="关闭详情页"
+          variant="text"
+          size="small"
+          :disabled="busy"
+          @click="emit('close')"
+        />
+      </div>
+    </header>
     <div class="ap-page__content">
       <div class="ap-page__notices">
         <v-alert v-if="!agent" type="warning" variant="tonal" density="compact" class="ap-result">{{
