@@ -656,8 +656,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       bottomFloor = next;
       return changed;
     }
+    function canSink() {
+      return !!props.previewRoot || !isMobile.value || bottomFloor === null || bottomFloor >= floorLine(readViewport(hostState));
+    }
     function hiddenHeight(depth) {
-      return shelterSink(charHeight.value, depth);
+      return canSink() ? shelterSink(charHeight.value, depth) : 0;
     }
     function ground() {
       return groundTop(viewport(), charHeight.value);
@@ -811,6 +814,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function beginPeek() {
       if (fixed() || !motionAllowed() || !onFloor()) return;
+      if (!canSink()) {
+        scheduleBehavior();
+        return;
+      }
       facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2;
       motion.value = "peek";
       peekTarget = hiddenHeight(PEEK_RATIO);
@@ -849,7 +856,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingShelter = null;
     }
     function calm() {
-      return motion.value === "idle" && !transient.value && !sustained.value && !dozing.value && motionAllowed() && visible();
+      return motion.value === "idle" && !sheltering && !transient.value && !sustained.value && !dozing.value && motionAllowed() && visible();
     }
     function scheduleBehavior() {
       clearTimer("behavior");
@@ -1193,10 +1200,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function beginShelter(depth, instant) {
       sheltering = true;
-      motion.value = "peek";
       facingLeft.value = x.value > (xBounds(viewport(), charWidth.value)[0] + xBounds(viewport(), charWidth.value)[1]) / 2;
       peekTarget = hiddenHeight(depth);
-      if (instant || !motionAllowed()) {
+      motion.value = peekTarget > 0 ? "peek" : "idle";
+      if (peekTarget === 0 || instant || !motionAllowed()) {
         sink.value = peekTarget;
         queueAnchor();
       } else ensureLoop();
@@ -1209,7 +1216,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!covers(0)) {
         sheltering = false;
         peekTarget = 0;
-        if (motionAllowed()) ensureLoop();
+        if (motionAllowed() && sink.value > 0) ensureLoop();
         else {
           sink.value = 0;
           motion.value = "idle";
@@ -1218,11 +1225,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         }
         return;
       }
+      if (!canSink()) {
+        sink.value = 0;
+        peekTarget = 0;
+        motion.value = "idle";
+        queueAnchor();
+        return;
+      }
       const current = peekTarget / charHeight.value;
       if (!covers(current)) return;
       const depth = pickShelterDepth((level) => level > current && !covers(level));
       if (depth <= current) return;
       peekTarget = hiddenHeight(depth);
+      motion.value = "peek";
       if (motionAllowed()) ensureLoop();
       else {
         sink.value = peekTarget;
@@ -1332,6 +1347,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const maxSink = hiddenHeight(1);
       sink.value = Math.min(sink.value, maxSink);
       peekTarget = Math.min(peekTarget, maxSink);
+      if (maxSink === 0 && motion.value === "peek") {
+        clearTimer("peek");
+        motion.value = "idle";
+        if (!sheltering) scheduleBehavior();
+      }
       if (walkTarget) {
         walkTarget.x = clamp(walkTarget.x, ...view.x);
         if (walkTarget.y !== null) walkTarget.y = clamp(walkTarget.y, ...view.y);
@@ -1715,6 +1735,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-6fdd61e5"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-47cd3b55"]]);
 
 export { MIN_SURFACE_WIDTH as M, POSES as P, AgentPet as default };
