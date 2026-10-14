@@ -450,13 +450,12 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  align-self: start;
+  align-self: stretch;
   max-height: 100%;
   overflow: hidden;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 12px;
-  /* 调试时需要稳定底色，避免宿主壁纸干扰素材和小字。 */
-  background: rgba(var(--v-theme-surface), 0.94);
+  background: transparent;
 }
 .ap-preview__header {
   display: flex;
@@ -475,7 +474,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   height: var(--ap-canvas-height);
-  flex: 0 1 var(--ap-canvas-height);
+  flex: 1 1 var(--ap-canvas-height);
   min-height: 0;
 }
 .ap-preview__canvases--compare {
@@ -585,7 +584,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 12px;
-  background: rgba(var(--v-theme-surface), 0.94);
+  background: transparent;
 }
 .ap-preview__tabs {
   flex: 0 0 auto;
@@ -620,6 +619,9 @@ onBeforeUnmount(() => {
   .ap-preview__viewer {
     flex: 0 1 auto;
     align-self: stretch;
+  }
+  .ap-preview__canvases {
+    flex: 0 1 var(--ap-canvas-height);
   }
   .ap-preview__header {
     padding: 2px 8px;

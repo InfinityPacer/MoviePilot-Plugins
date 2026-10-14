@@ -231,6 +231,12 @@
   background: transparent !important;
   border-bottom: 1px solid var(--ap-border);
 }
+.ap-page__toolbar .v-toolbar__content {
+  padding-inline: 16px;
+}
+.ap-page__toolbar .v-toolbar-title {
+  margin-inline-start: 0;
+}
 .ap-page__content {
   display: flex;
   flex-direction: column;
@@ -401,6 +407,9 @@
   }
   .ap-footer__actions {
     margin-left: auto;
+  }
+  .ap-page__toolbar .v-toolbar__content {
+    padding-inline: 8px;
   }
   .ap-page__content {
     padding: 8px;
