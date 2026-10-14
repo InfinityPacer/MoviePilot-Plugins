@@ -11,11 +11,12 @@
   max-width: 100%;
   min-width: 0;
 }
-.ap-shell {
+.ap-shell,
+.ap-page {
   display: flex;
   flex-direction: column;
   height: min(860px, calc(100dvh - 96px));
-  min-height: 360px;
+  min-height: 0;
   overflow: hidden;
   border: 0;
   border-radius: 0;
@@ -35,19 +36,32 @@
   flex: 0 0 auto;
   margin-inline-start: auto;
 }
+.ap-header__actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
 .ap-brand {
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
+.ap-brand > div {
+  min-width: 0;
+}
 .ap-brand__avatar {
+  flex: 0 0 auto;
   width: 46px;
   height: 46px;
   border-radius: 12px;
   background: rgba(var(--v-theme-primary), 0.08);
 }
 .ap-eyebrow {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   color: rgba(var(--v-theme-on-surface), 0.48);
   margin-bottom: 3px;
@@ -218,31 +232,15 @@
   background: rgb(var(--v-theme-success));
 }
 .ap-page {
-  display: flex;
-  flex-direction: column;
   width: 100%;
   min-width: 0;
-  height: min(720px, calc(100dvh - 96px));
-  min-height: 0;
-  overflow: hidden;
-}
-.ap-page__toolbar {
-  flex: 0 0 auto;
-  background: transparent !important;
-  border-bottom: 1px solid var(--ap-border);
-}
-.ap-page__toolbar .v-toolbar__content {
-  padding-inline: 16px;
-}
-.ap-page__toolbar .v-toolbar-title {
-  margin-inline-start: 0;
 }
 .ap-page__content {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 12px 16px;
+  padding: 20px;
   overflow: hidden;
 }
 .ap-page__notices {
@@ -315,16 +313,14 @@
 .ap-result {
   margin: 0 0 16px;
 }
-.ap-page .v-field {
-  font-size: 13px;
-}
 @media (max-height: 807px) {
   .ap-pane--overview {
     overflow: auto;
   }
 }
 @media (max-width: 760px) {
-  .ap-shell {
+  .ap-shell,
+  .ap-page {
     height: min(860px, calc(100dvh - 32px));
   }
   .ap-header {
@@ -379,9 +375,6 @@
   .ap-metric strong {
     font-size: 20px;
   }
-  .ap-page {
-    height: min(860px, calc(100dvh - 32px));
-  }
   .ap-editor-grid {
     gap: 8px;
   }
@@ -394,12 +387,6 @@
   .ap-page__selector > span {
     display: none;
   }
-  .ap-page .ap-footer {
-    flex-wrap: nowrap;
-  }
-  .ap-page .ap-footer .v-btn {
-    padding-inline: 10px;
-  }
   .ap-footer {
     padding: 10px 12px;
     gap: 8px;
@@ -408,10 +395,7 @@
   .ap-footer__actions {
     margin-left: auto;
   }
-  .ap-page__toolbar .v-toolbar__content {
-    padding-inline: 8px;
-  }
   .ap-page__content {
-    padding: 8px;
+    padding: 14px;
   }
 }
