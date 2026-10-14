@@ -11,7 +11,7 @@ function pointer(type: string, x: number, y: number) {
   return event
 }
 
-async function setup(width = 1280, mobile = false, floor = false) {
+async function setup(width = 1280, mobile = false, floor = false, scale = 1) {
   vi.useFakeTimers()
   vi.spyOn(Math, 'random').mockReturnValue(0.9)
   vi.stubGlobal('innerWidth', width)
@@ -19,10 +19,12 @@ async function setup(width = 1280, mobile = false, floor = false) {
   Object.defineProperty(document, 'elementsFromPoint', {
     configurable: true,
     value: (x: number, y: number) => [
-      ...Array.from(document.querySelectorAll('[data-layout-fixture]')).filter(el => {
-        const r = el.getBoundingClientRect()
-        return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
-      }),
+      ...Array.from(document.querySelectorAll('[data-layout-fixture]'))
+        .reverse()
+        .filter(el => {
+          const r = el.getBoundingClientRect()
+          return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+        }),
       document.body,
     ],
   })
@@ -36,7 +38,7 @@ async function setup(width = 1280, mobile = false, floor = false) {
       pet,
       pluginId: 'AgentPets',
       aspectRatio: 1,
-      settingsOverride: { scale: 1, speed: 1, roam: floor ? 'floor' : 'surfaces' },
+      settingsOverride: { scale, speed: 1, roam: floor ? 'floor' : 'surfaces' },
     },
   })
   await vi.advanceTimersByTimeAsync(64)
@@ -67,6 +69,31 @@ function card(left: number, right: number) {
   el.getBoundingClientRect = () => new DOMRect(left, 400, right - left, 200)
   document.body.appendChild(el)
   return el
+}
+
+function mobilePluginList() {
+  return [10, 160, 310, 460, 610].map(top => {
+    const row = card(16, 374)
+    row.classList.add('v-card--link')
+    row.getBoundingClientRect = () => new DOMRect(16, top, 358, 140)
+    return row
+  })
+}
+
+function mobileDock() {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'footer-nav-container'
+  wrapper.style.position = 'fixed'
+  wrapper.style.pointerEvents = 'none'
+  wrapper.getBoundingClientRect = () => new DOMRect(0, 704, 390, 96)
+  const bar = document.createElement('div')
+  bar.className = 'v-card footer-nav-card'
+  bar.style.pointerEvents = 'auto'
+  bar.dataset.layoutFixture = ''
+  bar.getBoundingClientRect = () => new DOMRect(20, 704, 350, 64)
+  wrapper.appendChild(bar)
+  document.body.appendChild(wrapper)
+  return wrapper
 }
 
 afterEach(() => {
@@ -155,5 +182,151 @@ describe('MP App Dock across viewport widths', () => {
     await vi.advanceTimersByTimeAsync(2200)
     expect(stage.rect().y + stage.rect().height).toBeCloseTo(800)
     stage.unmount()
+  })
+})
+
+describe('whole-body mobile Dock clearance', () => {
+  it.each(['side', 'platform'] as const)('still prefers a clear %s before the full-body fallback', async clearSpot => {
+    const stage = await setup(390, true)
+    try {
+      const rows = mobilePluginList()
+      if (clearSpot === 'side') rows.at(-1)!.getBoundingClientRect = () => new DOMRect(16, 610, 160, 140)
+      else rows[3].remove()
+      mobileDock()
+      await vi.advanceTimersByTimeAsync(2200)
+      stage.drop(0, 696)
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(96)
+      expect(stage.button.style.clipPath).toBe('')
+      if (clearSpot === 'side') {
+        expect(stage.rect().x).toBeGreaterThan(150)
+        expect(stage.rect().y + stage.rect().height).toBeCloseTo(696)
+      } else expect(stage.rect().y + stage.rect().height).toBeCloseTo(610)
+    } finally {
+      stage.unmount()
+    }
+  })
+
+  it.each([
+    ['left', 0.6],
+    ['right', 0.6],
+    ['left', 1],
+    ['right', 1],
+    ['left', 1.3],
+    ['right', 1.3],
+    ['left', 1.6],
+    ['right', 1.6],
+  ] as const)('keeps the %s corner whole on clickable plugin rows at scale %s', async (side, scale) => {
+    const stage = await setup(390, true, false, scale)
+    try {
+      mobilePluginList()
+      mobileDock()
+      await vi.advanceTimersByTimeAsync(2200)
+      const height = 120 * scale * 0.8
+      const edge = side === 'left' ? 0 : 390 - height
+      stage.drop(edge, 696)
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().x).toBeCloseTo(edge)
+      expect(stage.rect().y + stage.rect().height).toBeCloseTo(696)
+      expect(stage.rect().height).toBeCloseTo(height)
+      expect(stage.button.style.clipPath).toBe('')
+      expect(stage.button.closest('.agent-pet-ying')?.getAttribute('data-motion')).toBe('idle')
+
+      // Remaining controls must not trigger repeated walks or shrink the fallback again.
+      vi.mocked(Math.random).mockReturnValue(0.1)
+      stage.host.patch({ motionAllowed: true })
+      const start = stage.anchors.length
+      await vi.advanceTimersByTimeAsync(16000)
+      for (const frame of stage.anchors.slice(start)) {
+        if (frame) {
+          expect(frame.x).toBeCloseTo(edge)
+          expect(frame.height).toBeCloseTo(height)
+          expect(frame.y + frame.height).toBeCloseTo(696)
+        }
+      }
+    } finally {
+      stage.unmount()
+    }
+  })
+
+  it('keeps random edge peeks whole above the mobile Dock', async () => {
+    const stage = await setup(390, true, true)
+    try {
+      mobileDock()
+      await vi.advanceTimersByTimeAsync(2200)
+      stage.drop(0, 696)
+      await vi.advanceTimersByTimeAsync(2200)
+      vi.mocked(Math.random).mockReturnValue(0.1)
+      stage.host.patch({ motionAllowed: true })
+      const start = stage.anchors.length
+      await vi.advanceTimersByTimeAsync(16000)
+      expect(stage.rect().height).toBe(96)
+      for (const frame of stage.anchors.slice(start)) {
+        if (frame) expect(frame.height).toBe(96)
+      }
+      expect(stage.button.style.clipPath).toBe('')
+    } finally {
+      stage.unmount()
+    }
+  })
+
+  it('restores a sheltered body when the Dock appears and retains no-Dock sheltering', async () => {
+    const stage = await setup(390, true)
+    try {
+      mobilePluginList()
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(48)
+      const dock = mobileDock()
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(96)
+      expect(stage.rect().y + stage.rect().height).toBeCloseTo(696)
+      expect(stage.button.style.clipPath).toBe('')
+      dock.remove()
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(48)
+      expect(stage.rect().y + stage.rect().height).toBeCloseTo(800)
+    } finally {
+      stage.unmount()
+    }
+  })
+
+  it('preserves desktop sheltering and restores the full mobile body after a layout switch', async () => {
+    const stage = await setup(390, false)
+    try {
+      mobilePluginList()
+      mobileDock()
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(48)
+      stage.host.patch({ isMobile: true })
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(96)
+      expect(stage.button.style.clipPath).toBe('')
+      stage.host.patch({ isMobile: false })
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(48)
+    } finally {
+      stage.unmount()
+    }
+  })
+
+  it('resumes ordinary movement after the clickable rows stop blocking the Dock edge', async () => {
+    const stage = await setup(390, true)
+    try {
+      const rows = mobilePluginList()
+      mobileDock()
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(stage.rect().height).toBe(96)
+      const edge = stage.rect().x
+      rows.forEach(row => row.classList.remove('v-card--link'))
+      vi.mocked(Math.random).mockReturnValue(0.5)
+      stage.host.patch({ motionAllowed: true })
+      const start = stage.anchors.length
+      await vi.advanceTimersByTimeAsync(16000)
+      expect(stage.anchors.slice(start).some(frame => frame && Math.abs(frame.x - edge) > 10)).toBe(true)
+      expect(stage.rect().height).toBe(96)
+      expect(stage.button.style.clipPath).toBe('')
+    } finally {
+      stage.unmount()
+    }
   })
 })

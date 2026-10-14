@@ -10,6 +10,7 @@ import {
   clamp,
   computeLanding,
   effectiveScale,
+  floorLine,
   hopVelocity,
   nearestEdge,
   pickClearX,
@@ -394,8 +395,15 @@ function refreshBottomFloor(): boolean {
   return changed
 }
 
+/** 移动端底栏上方是可见停靠区，不是可以藏住身体的屏幕底边。 */
+function canSink(): boolean {
+  return (
+    !!props.previewRoot || !isMobile.value || bottomFloor === null || bottomFloor >= floorLine(readViewport(hostState))
+  )
+}
+
 function hiddenHeight(depth: number): number {
-  return shelterSink(charHeight.value, depth)
+  return canSink() ? shelterSink(charHeight.value, depth) : 0
 }
 
 function ground(): number {
@@ -583,6 +591,10 @@ function finishWalk() {
 
 function beginPeek() {
   if (fixed() || !motionAllowed() || !onFloor()) return
+  if (!canSink()) {
+    scheduleBehavior()
+    return
+  }
   // 探头时面朝屏幕内侧。
   facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2
   motion.value = 'peek'
@@ -628,7 +640,13 @@ function settle() {
 
 function calm(): boolean {
   return (
-    motion.value === 'idle' && !transient.value && !sustained.value && !dozing.value && motionAllowed() && visible()
+    motion.value === 'idle' &&
+    !sheltering &&
+    !transient.value &&
+    !sustained.value &&
+    !dozing.value &&
+    motionAllowed() &&
+    visible()
   )
 }
 
@@ -928,7 +946,7 @@ function rectAt(left: number, top: number, depth = 0): AgentRect {
  * 只在落地、站定、窗口尺寸变化和站立低频复查时调用，拖拽中不做。挡住时依次兜底：
  * 1. 在当前站立面上走到最近的空位；
  * 2. surfaces 模式换到其他可站且不遮挡的面（含底边），跳过去；free 模式在视口内另找空位；
- * 3. 都没有时退到底边最近的一侧下沉探头，下沉到不再挡住为止。
+ * 3. 都没有时退到底边最近的一侧；移动端底栏上方完整停靠，其余场景下沉探头。
  * 首次出现或不允许动画时直接放过去。候选位置与候选面数都有上限，控制单次判断的耗时。
  */
 function checkClearance() {
@@ -1050,13 +1068,13 @@ function goShelter(covers: (rect: AgentRect, standingOn: Element | null) => bool
   moveTo(edge, floorY, null, false)
 }
 
-/** 进入下沉躲避；`instant` 时直接到位，否则按探头动画沉下去。 */
+/** 进入边缘躲避；移动端底栏上方保持完整身体，其余场景按探头动画下沉。 */
 function beginShelter(depth: number, instant: boolean) {
   sheltering = true
-  motion.value = 'peek'
   facingLeft.value = x.value > (xBounds(viewport(), charWidth.value)[0] + xBounds(viewport(), charWidth.value)[1]) / 2
   peekTarget = hiddenHeight(depth)
-  if (instant || !motionAllowed()) {
+  motion.value = peekTarget > 0 ? 'peek' : 'idle'
+  if (peekTarget === 0 || instant || !motionAllowed()) {
     sink.value = peekTarget
     queueAnchor()
   } else ensureLoop()
@@ -1072,7 +1090,7 @@ function recheckShelter() {
   if (!covers(0)) {
     sheltering = false
     peekTarget = 0
-    if (motionAllowed()) ensureLoop()
+    if (motionAllowed() && sink.value > 0) ensureLoop()
     else {
       sink.value = 0
       motion.value = 'idle'
@@ -1081,11 +1099,19 @@ function recheckShelter() {
     }
     return
   }
+  if (!canSink()) {
+    sink.value = 0
+    peekTarget = 0
+    motion.value = 'idle'
+    queueAnchor()
+    return
+  }
   const current = peekTarget / charHeight.value
   if (!covers(current)) return
   const depth = pickShelterDepth(level => level > current && !covers(level))
   if (depth <= current) return
   peekTarget = hiddenHeight(depth)
+  motion.value = 'peek'
   if (motionAllowed()) ensureLoop()
   else {
     sink.value = peekTarget
@@ -1223,6 +1249,11 @@ function relayout() {
   const maxSink = hiddenHeight(1)
   sink.value = Math.min(sink.value, maxSink)
   peekTarget = Math.min(peekTarget, maxSink)
+  if (maxSink === 0 && motion.value === 'peek') {
+    clearTimer('peek')
+    motion.value = 'idle'
+    if (!sheltering) scheduleBehavior()
+  }
   if (walkTarget) {
     walkTarget.x = clamp(walkTarget.x, ...view.x)
     if (walkTarget.y !== null) walkTarget.y = clamp(walkTarget.y, ...view.y)
