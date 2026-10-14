@@ -360,8 +360,30 @@ onBeforeUnmount(() => {
             variant="text"
             @click="paused = !paused"
           />
-          <v-btn icon="mdi-replay" aria-label="重播当前动作" size="small" variant="text" @click="replay++" />
-          <v-btn icon="mdi-restore" aria-label="重置预览位置" size="small" variant="text" @click="positionVersion++" />
+          <v-tooltip text="重播当前动作" location="top">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon="mdi-replay"
+                aria-label="重播当前动作"
+                size="small"
+                variant="text"
+                @click="replay++"
+              />
+            </template>
+          </v-tooltip>
+          <v-tooltip text="重置预览位置，保留当前调整" location="top">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon="mdi-restore"
+                aria-label="重置预览位置"
+                size="small"
+                variant="text"
+                @click="positionVersion++"
+              />
+            </template>
+          </v-tooltip>
         </div>
       </div>
       <v-switch

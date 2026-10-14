@@ -14,8 +14,8 @@ const currentImports = {};
       dynamicLoadingCss(["Config-1I8sEq5o.css","host-p3HSuyZu.css"], false, './Config');
       return __federation_import('./__federation_expose_Config-CMifi1YL.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./Page":()=>{
-      dynamicLoadingCss(["Page-BInFHWMI.css","host-p3HSuyZu.css","__federation_expose_AgentPet-Dc0jit9X.css","__federation_expose_AgentPetSprite-CRVVJOnh.css"], false, './Page');
-      return __federation_import('./__federation_expose_Page-A5M8WoWQ.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},};
+      dynamicLoadingCss(["Page-CKHECKeS.css","host-p3HSuyZu.css","__federation_expose_AgentPet-Dc0jit9X.css","__federation_expose_AgentPetSprite-CRVVJOnh.css"], false, './Page');
+      return __federation_import('./__federation_expose_Page-wXrUkkme.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},};
       const seen = {};
       const dynamicLoadingCss = (cssFilePaths, dontAppendStylesToHead, exposeItemName) => {
         const metaUrl = import.meta.url;
