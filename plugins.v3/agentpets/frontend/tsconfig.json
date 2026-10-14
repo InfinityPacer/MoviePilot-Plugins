@@ -21,6 +21,7 @@
       "fflate": ["node_modules/fflate"],
       "vitest": ["node_modules/vitest"],
       "vue": ["node_modules/vue"],
+      "vue/compiler-sfc": ["node_modules/@vue/compiler-sfc"],
       "vuetify": ["node_modules/vuetify"],
       "vuetify/components": ["node_modules/vuetify/lib/components/index.d.mts"],
       "vuetify/directives": ["node_modules/vuetify/lib/directives/index.d.mts"]

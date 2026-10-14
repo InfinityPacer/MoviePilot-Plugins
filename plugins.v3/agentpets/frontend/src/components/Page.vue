@@ -26,7 +26,7 @@ const props = withDefaults(defineProps<{ api?: PluginApi | null; pluginId?: stri
   sourcePluginId: '',
 })
 const emit = defineEmits<{ close: []; switch: []; layout: [{ maxWidth: string }] }>()
-emit('layout', { maxWidth: '76rem' })
+emit('layout', { maxWidth: '68rem' })
 const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
 const snapshot = ref<EditorSnapshot | null>(null)
 const selection = ref<HostSelection | null>(null)

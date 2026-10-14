@@ -430,16 +430,15 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ap-preview {
-  --ap-preview-width: clamp(280px, 28vw, 320px);
+  --ap-preview-width: clamp(280px, 28vw, 300px);
   --ap-canvas-height: 260px;
   display: grid;
   grid-template-columns: var(--ap-preview-width) minmax(0, 1fr);
+  gap: 14px;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  border-radius: 12px;
   background: transparent;
 }
 .ap-preview--expanded {
@@ -451,7 +450,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  align-self: start;
+  max-height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+  /* 调试时需要稳定底色，避免宿主壁纸干扰素材和小字。 */
+  background: rgba(var(--v-theme-surface), 0.94);
 }
 .ap-preview__header {
   display: flex;
@@ -459,7 +464,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   font-size: 13px;
 }
 .ap-preview__mode {
@@ -481,6 +486,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
 }
+/* 两块画布都必须建立坐标边界；角色、底线和提示不能定位到宿主弹窗。 */
+.ap-preview__canvas,
 .ap-preview__original {
   position: relative;
   isolation: isolate;
@@ -556,9 +563,13 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px;
+  gap: 4px;
+  padding: 6px 10px;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 .ap-preview__playing {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -571,6 +582,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 12px;
+  background: rgba(var(--v-theme-surface), 0.94);
 }
 .ap-preview__tabs {
   flex: 0 0 auto;
@@ -596,6 +611,7 @@ onBeforeUnmount(() => {
   .ap-preview {
     display: flex;
     flex-direction: column;
+    gap: 8px;
     --ap-canvas-height: clamp(160px, 24dvh, 200px);
   }
   .ap-preview--expanded {
@@ -603,7 +619,7 @@ onBeforeUnmount(() => {
   }
   .ap-preview__viewer {
     flex: 0 1 auto;
-    border-right: 0;
+    align-self: stretch;
   }
   .ap-preview__header {
     padding: 2px 8px;

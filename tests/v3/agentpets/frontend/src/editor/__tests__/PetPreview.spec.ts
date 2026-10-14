@@ -1,10 +1,12 @@
 import { fireEvent, render } from '@testing-library/vue'
+import { compileStyle, parse } from 'vue/compiler-sfc'
 import { describe, expect, it, vi } from 'vitest'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 
 import PetPreview from '@/editor/PetPreview.vue'
+import previewSource from '@/editor/PetPreview.vue?raw'
 import type { PetChoice } from '@/editor/api'
 import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
 
@@ -60,6 +62,45 @@ async function setup(size: { width: number; height: number; mobile?: boolean } =
 }
 
 describe('contained live Pet preview', () => {
+  it('anchors the character, floor and hint to their own painted preview instead of the host dialog', async () => {
+    const { view } = await setup()
+    const style = document.createElement('style')
+    const scopeId = (PetPreview as typeof PetPreview & { __scopeId: string }).__scopeId
+    const { descriptor } = parse(previewSource)
+    const compiled = compileStyle({
+      source: descriptor.styles[0].content,
+      filename: 'PetPreview.vue',
+      id: scopeId,
+      scoped: true,
+    })
+    expect(compiled.errors).toEqual([])
+    style.textContent = compiled.code
+    document.head.append(style)
+    try {
+      const canvas = view.container.querySelector('.ap-preview__canvas')!
+      const nearestPositionedParent = (element: Element) => {
+        let parent = element.parentElement
+        while (parent) {
+          const position = getComputedStyle(parent).position
+          if (position && position !== 'static') return parent
+          parent = parent.parentElement
+        }
+        return null
+      }
+      for (const selector of ['.agent-pet-ying--contained', '.ap-preview__floor', '.ap-preview__hint']) {
+        expect(nearestPositionedParent(canvas.querySelector(selector)!)).toBe(canvas)
+      }
+      expect(getComputedStyle(canvas).overflow).toBe('hidden')
+      expect(getComputedStyle(canvas).contain).toBe('paint')
+      await fireEvent.click(view.getByLabelText('对照原始显示'))
+      const original = view.getByLabelText('原始显示对照')
+      expect(nearestPositionedParent(original.querySelector('.ap-preview__entry')!)).toBe(original)
+      expect(getComputedStyle(original).overflow).toBe('hidden')
+    } finally {
+      style.remove()
+    }
+  })
+
   it('keeps canvas coordinates when the phone visual viewport is resized and panned', async () => {
     const visual = Object.assign(new EventTarget(), {
       offsetTop: 300,
