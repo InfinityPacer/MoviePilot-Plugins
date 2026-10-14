@@ -1,10 +1,10 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, c as saveSettings, d as saveMappings, e as saveCalibration } from './host-B1sqp4ev.js';
+import { u as unwrap, A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, c as saveSettings, d as saveMappings, e as saveCalibration } from './host-CRNJLCge.js';
 import { D as DEFAULT_CALIBRATION, p as parseCalibration, m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, h as HOST_INTENTS, s as stageAction, e as sameCalibration, d as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-jvCB_8v9.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
-import AgentPet, { P as POSES, M as MIN_SURFACE_WIDTH } from './__federation_expose_AgentPet-DYvmUzx2.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite--xAqWRds.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-DR5rHkh2.js';
+import AgentPet, { P as POSES, M as MIN_SURFACE_WIDTH } from './__federation_expose_AgentPet-vrHH2K_o.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-kB970YWT.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-CK8GFsxV.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, S as SETTINGS_EVENT } from './settings-tnFA6UQD.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
@@ -142,7 +142,7 @@ const _sfc_main$4 = /* @__PURE__ */ _defineComponent$4({
   }
 });
 
-const CalibrationControls = /* @__PURE__ */ _export_sfc(_sfc_main$4, [["__scopeId", "data-v-b5ba2de4"]]);
+const CalibrationControls = /* @__PURE__ */ _export_sfc(_sfc_main$4, [["__scopeId", "data-v-ee750aeb"]]);
 
 const {defineComponent:_defineComponent$3} = await importShared('vue');
 
@@ -262,7 +262,7 @@ const _sfc_main$3 = /* @__PURE__ */ _defineComponent$3({
   }
 });
 
-const ActionMappingEditor = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-62c74c1b"]]);
+const ActionMappingEditor = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-6c330988"]]);
 
 function windowViewport() {
   return {
@@ -997,7 +997,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-f57dc862"]]);
+const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-88096a85"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
@@ -1127,7 +1127,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-5f171cc3"]]);
+const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-133d87f6"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 

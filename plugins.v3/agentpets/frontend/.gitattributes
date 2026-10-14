@@ -1,0 +1,2 @@
+# Release builds and copied text assets must use the same bytes on every platform.
+* text=auto eol=lf

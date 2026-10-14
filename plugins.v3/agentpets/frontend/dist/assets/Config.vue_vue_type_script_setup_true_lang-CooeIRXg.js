@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-B1sqp4ev.js';
+import { u as unwrap, A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-CRNJLCge.js';
 import { v as validatePack, f as framePosition, e as sameCalibration, P as PACK_UPDATED_EVENT, g as buildCodexPetPack } from './mappings-jvCB_8v9.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
@@ -1537,7 +1537,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PackArchiveImport = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-65f32844"]]);
+const PackArchiveImport = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-a20b81a4"]]);
 
 const MAX_CODEX_PET_ARCHIVE_BYTES = 8 * 1024 * 1024;
 const MAX_SPRITESHEET_BYTES = 4 * 1024 * 1024;
@@ -2446,7 +2446,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-43d9b9cc"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-7e128498"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
