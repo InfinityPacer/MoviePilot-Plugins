@@ -23,7 +23,7 @@
   background: transparent;
 }
 
-.ap-preview[data-v-26edc16b] {
+.ap-preview[data-v-f57dc862] {
   --ap-preview-width: clamp(280px, 28vw, 300px);
   --ap-canvas-height: 260px;
   display: grid;
@@ -35,11 +35,11 @@
   overflow: hidden;
   background: transparent;
 }
-.ap-preview--expanded[data-v-26edc16b] {
+.ap-preview--expanded[data-v-f57dc862] {
   --ap-preview-width: clamp(320px, 40vw, 480px);
   --ap-canvas-height: clamp(260px, 42dvh, 400px);
 }
-.ap-preview__viewer[data-v-26edc16b] {
+.ap-preview__viewer[data-v-f57dc862] {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -51,7 +51,7 @@
   border-radius: 12px;
   background: transparent;
 }
-.ap-preview__header[data-v-26edc16b] {
+.ap-preview__header[data-v-f57dc862] {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -60,28 +60,28 @@
   padding: 8px 10px;
   font-size: 13px;
 }
-.ap-preview__mode[data-v-26edc16b] {
+.ap-preview__mode[data-v-f57dc862] {
   flex: 0 0 auto;
   padding: 0 10px 8px;
 }
-.ap-preview__canvases[data-v-26edc16b] {
+.ap-preview__canvases[data-v-f57dc862] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   height: var(--ap-canvas-height);
   flex: 1 1 var(--ap-canvas-height);
   min-height: 0;
 }
-.ap-preview__canvases--compare[data-v-26edc16b] {
+.ap-preview__canvases--compare[data-v-f57dc862] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.ap-preview__canvas[data-v-26edc16b],
-.ap-preview__viewer[data-v-26edc16b] .agent-pet-sprites {
+.ap-preview__canvas[data-v-f57dc862],
+.ap-preview__viewer[data-v-f57dc862] .agent-pet-sprites {
   min-width: 0;
   min-height: 0;
 }
 /* 两块画布都必须建立坐标边界；角色、底线和提示不能定位到宿主弹窗。 */
-.ap-preview__canvas[data-v-26edc16b],
-.ap-preview__original[data-v-26edc16b] {
+.ap-preview__canvas[data-v-f57dc862],
+.ap-preview__original[data-v-f57dc862] {
   position: relative;
   isolation: isolate;
   contain: paint;
@@ -92,13 +92,13 @@
   background-image: radial-gradient(rgba(var(--v-theme-on-surface), 0.09) 0.8px, transparent 0.8px);
   background-size: 20px 20px;
 }
-.ap-preview__original[data-v-26edc16b] {
+.ap-preview__original[data-v-f57dc862] {
   border-left: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity));
 }
-.ap-preview__canvas--debug[data-v-26edc16b] .agent-pet-ying__character {
+.ap-preview__canvas--debug[data-v-f57dc862] .agent-pet-ying__character {
   pointer-events: none;
 }
-.ap-preview__entry[data-v-26edc16b] {
+.ap-preview__entry[data-v-f57dc862] {
   position: absolute;
   width: min(144px, calc(100% - 32px));
   height: min(156px, calc(100% - 40px));
@@ -106,7 +106,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
 }
-.ap-preview__hint[data-v-26edc16b] {
+.ap-preview__hint[data-v-f57dc862] {
   position: absolute;
   left: 8px;
   right: 8px;
@@ -116,7 +116,7 @@
   color: rgba(var(--v-theme-on-surface), 0.58);
   pointer-events: none;
 }
-.ap-preview__surface[data-v-26edc16b] {
+.ap-preview__surface[data-v-f57dc862] {
   position: absolute;
   width: 36%;
   height: 28px;
@@ -128,15 +128,15 @@
   text-align: center;
   font-size: 10px;
 }
-.ap-preview__surface--left[data-v-26edc16b] {
+.ap-preview__surface--left[data-v-f57dc862] {
   left: 5%;
   top: 69%;
 }
-.ap-preview__surface--right[data-v-26edc16b] {
+.ap-preview__surface--right[data-v-f57dc862] {
   right: 5%;
   top: 55%;
 }
-.ap-preview__floor[data-v-26edc16b] {
+.ap-preview__floor[data-v-f57dc862] {
   position: absolute;
   bottom: 18px;
   left: 16px;
@@ -144,13 +144,13 @@
   border-top: 1px solid rgba(var(--v-theme-on-surface), 0.15);
   pointer-events: none;
 }
-.ap-preview__error[data-v-26edc16b] {
+.ap-preview__error[data-v-f57dc862] {
   position: absolute;
   inset: 12px;
   z-index: 1;
   overflow: auto;
 }
-.ap-preview__playback[data-v-26edc16b] {
+.ap-preview__playback[data-v-f57dc862] {
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
@@ -160,17 +160,17 @@
   padding: 6px 10px;
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
-.ap-preview__playing[data-v-26edc16b] {
+.ap-preview__playing[data-v-f57dc862] {
   flex: 1;
   min-width: 0;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.ap-preview__comparison[data-v-26edc16b] {
+.ap-preview__comparison[data-v-f57dc862] {
   flex: 0 0 auto;
   padding: 0 10px;
 }
-.ap-preview__editor[data-v-26edc16b] {
+.ap-preview__editor[data-v-f57dc862] {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -180,76 +180,76 @@
   border-radius: 12px;
   background: transparent;
 }
-.ap-preview__tabs[data-v-26edc16b] {
+.ap-preview__tabs[data-v-f57dc862] {
   flex: 0 0 auto;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
-.ap-preview__scroll[data-v-26edc16b] {
+.ap-preview__scroll[data-v-f57dc862] {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.ap-preview__panel[data-v-26edc16b],
-.ap-preview__library[data-v-26edc16b] {
+.ap-preview__panel[data-v-f57dc862],
+.ap-preview__library[data-v-f57dc862] {
   padding: 16px;
 }
-.ap-preview__choices[data-v-26edc16b] {
+.ap-preview__choices[data-v-f57dc862] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 0;
 }
 @media (max-width: 760px) {
-.ap-preview[data-v-26edc16b] {
+.ap-preview[data-v-f57dc862] {
     display: flex;
     flex-direction: column;
     gap: 8px;
     --ap-canvas-height: clamp(160px, 24dvh, 200px);
 }
-.ap-preview--expanded[data-v-26edc16b] {
+.ap-preview--expanded[data-v-f57dc862] {
     --ap-canvas-height: clamp(200px, 34dvh, 320px);
 }
-.ap-preview__viewer[data-v-26edc16b] {
+.ap-preview__viewer[data-v-f57dc862] {
     flex: 0 1 auto;
     align-self: stretch;
 }
-.ap-preview__canvases[data-v-26edc16b] {
+.ap-preview__canvases[data-v-f57dc862] {
     flex: 0 1 var(--ap-canvas-height);
 }
-.ap-preview__header[data-v-26edc16b] {
+.ap-preview__header[data-v-f57dc862] {
     padding: 2px 8px;
 }
-.ap-preview__mode[data-v-26edc16b] {
+.ap-preview__mode[data-v-f57dc862] {
     padding: 0 8px 4px;
 }
-.ap-preview__playback[data-v-26edc16b] {
+.ap-preview__playback[data-v-f57dc862] {
     padding: 0 8px;
     flex-wrap: nowrap;
     gap: 4px;
 }
-.ap-preview__playing[data-v-26edc16b] {
+.ap-preview__playing[data-v-f57dc862] {
     flex: 1;
     min-width: 0;
     font-size: 11px;
 }
-.ap-preview__comparison[data-v-26edc16b] {
+.ap-preview__comparison[data-v-f57dc862] {
     padding: 0 8px;
 }
-.ap-preview__editor[data-v-26edc16b] {
+.ap-preview__editor[data-v-f57dc862] {
     flex: 1;
     min-height: min(120px, 20dvh);
 }
-.ap-preview__panel[data-v-26edc16b],
-  .ap-preview__library[data-v-26edc16b] {
+.ap-preview__panel[data-v-f57dc862],
+  .ap-preview__library[data-v-f57dc862] {
     padding: 12px;
 }
 }
 @media (max-height: 600px) and (max-width: 760px) {
-.ap-preview[data-v-26edc16b] {
+.ap-preview[data-v-f57dc862] {
     --ap-canvas-height: clamp(100px, 20dvh, 140px);
 }
-.ap-preview--expanded[data-v-26edc16b] {
+.ap-preview--expanded[data-v-f57dc862] {
     --ap-canvas-height: clamp(140px, 30dvh, 200px);
 }
 }

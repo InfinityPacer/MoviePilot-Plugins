@@ -368,7 +368,7 @@ function createMockPet(mode, key, hooks = {}) {
 
 const {defineComponent:_defineComponent$2} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$2,withCtx:_withCtx$2,createVNode:_createVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,unref:_unref$2,normalizeStyle:_normalizeStyle,Fragment:_Fragment$1,resolveDynamicComponent:_resolveDynamicComponent,createBlock:_createBlock$1,normalizeClass:_normalizeClass,renderSlot:_renderSlot,vShow:_vShow,withDirectives:_withDirectives,renderList:_renderList} = await importShared('vue');
+const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$2,withCtx:_withCtx$2,createVNode:_createVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,unref:_unref$2,normalizeStyle:_normalizeStyle,Fragment:_Fragment$1,resolveDynamicComponent:_resolveDynamicComponent,createBlock:_createBlock$1,normalizeClass:_normalizeClass,mergeProps:_mergeProps,renderSlot:_renderSlot,vShow:_vShow,withDirectives:_withDirectives,renderList:_renderList} = await importShared('vue');
 
 const _hoisted_1$2 = { class: "ap-preview__viewer" };
 const _hoisted_2$2 = { class: "ap-preview__header" };
@@ -596,6 +596,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       const _component_v_btn = _resolveComponent$2("v-btn");
       const _component_v_btn_toggle = _resolveComponent$2("v-btn-toggle");
       const _component_v_alert = _resolveComponent$2("v-alert");
+      const _component_v_tooltip = _resolveComponent$2("v-tooltip");
       const _component_v_switch = _resolveComponent$2("v-switch");
       const _component_v_tab = _resolveComponent$2("v-tab");
       const _component_v_tabs = _resolveComponent$2("v-tabs");
@@ -765,19 +766,35 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
                 variant: "text",
                 onClick: _cache[2] || (_cache[2] = ($event) => paused.value = !paused.value)
               }, null, 8, ["icon", "aria-label"]),
-              _createVNode$2(_component_v_btn, {
-                icon: "mdi-replay",
-                "aria-label": "重播当前动作",
-                size: "small",
-                variant: "text",
-                onClick: _cache[3] || (_cache[3] = ($event) => replay.value++)
+              _createVNode$2(_component_v_tooltip, {
+                text: "重播当前动作",
+                location: "top"
+              }, {
+                activator: _withCtx$2(({ props: tooltipProps }) => [
+                  _createVNode$2(_component_v_btn, _mergeProps(tooltipProps, {
+                    icon: "mdi-replay",
+                    "aria-label": "重播当前动作",
+                    size: "small",
+                    variant: "text",
+                    onClick: _cache[3] || (_cache[3] = ($event) => replay.value++)
+                  }), null, 16)
+                ]),
+                _: 1
               }),
-              _createVNode$2(_component_v_btn, {
-                icon: "mdi-restore",
-                "aria-label": "重置预览位置",
-                size: "small",
-                variant: "text",
-                onClick: _cache[4] || (_cache[4] = ($event) => positionVersion.value++)
+              _createVNode$2(_component_v_tooltip, {
+                text: "重置预览位置，保留当前调整",
+                location: "top"
+              }, {
+                activator: _withCtx$2(({ props: tooltipProps }) => [
+                  _createVNode$2(_component_v_btn, _mergeProps(tooltipProps, {
+                    icon: "mdi-restore",
+                    "aria-label": "重置预览位置",
+                    size: "small",
+                    variant: "text",
+                    onClick: _cache[4] || (_cache[4] = ($event) => positionVersion.value++)
+                  }), null, 16)
+                ]),
+                _: 1
               })
             ])
           ]),
@@ -980,7 +997,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-26edc16b"]]);
+const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-f57dc862"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
