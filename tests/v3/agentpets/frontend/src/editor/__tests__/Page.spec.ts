@@ -77,7 +77,8 @@ async function setup() {
         PetPreview: {
           name: 'PetPreview',
           props: ['pet', 'settings', 'mappings', 'calibration'],
-          template: '<div class="preview-stub" :data-scale="settings.scale" :data-pet="pet.key"><slot name="activity" /></div>',
+          template:
+            '<div class="preview-stub" :data-scale="settings.scale" :data-pet="pet.key"><slot name="activity" /></div>',
         },
       },
     },
