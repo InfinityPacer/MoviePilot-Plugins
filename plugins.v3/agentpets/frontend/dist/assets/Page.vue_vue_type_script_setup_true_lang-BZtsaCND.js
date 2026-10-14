@@ -2,9 +2,9 @@ import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { u as unwrap, A as AGENT_HOST_KEY, s as sameSettings, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, a as loadHostSelection, b as saveSettings, c as saveMappings, d as saveCalibration } from './host-ZagWe-nT.js';
 import { D as DEFAULT_CALIBRATION, p as parseCalibration, m as mappingRows, A as ACTION_LABELS, n as nativeChoices, H as HOST_ACTIONS, h as HOST_INTENTS, s as stageAction, b as sameCalibration, a as sameMappings, P as PACK_UPDATED_EVENT } from './mappings-wSixMRjX.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
-import AgentPet, { P as POSES } from './__federation_expose_AgentPet-CiU2Nd0s.js';
+import AgentPet, { P as POSES, M as MIN_SURFACE_WIDTH } from './__federation_expose_AgentPet-DVcP-XMc.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-00TQt6P7.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-CMwl71eP.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BEsQYz4u.js';
 import { a as SCALE_RANGE, b as SPEED_RANGE, D as DEFAULT_SETTINGS, S as SETTINGS_EVENT } from './settings-tnFA6UQD.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
@@ -368,7 +368,7 @@ function createMockPet(mode, key, hooks = {}) {
 
 const {defineComponent:_defineComponent$2} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$2,withCtx:_withCtx$2,createVNode:_createVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,Fragment:_Fragment$1,unref:_unref$2,resolveDynamicComponent:_resolveDynamicComponent,createBlock:_createBlock$1,normalizeClass:_normalizeClass,renderSlot:_renderSlot,vShow:_vShow,withDirectives:_withDirectives,renderList:_renderList} = await importShared('vue');
+const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$2,withCtx:_withCtx$2,createVNode:_createVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,unref:_unref$2,normalizeStyle:_normalizeStyle,Fragment:_Fragment$1,resolveDynamicComponent:_resolveDynamicComponent,createBlock:_createBlock$1,normalizeClass:_normalizeClass,renderSlot:_renderSlot,vShow:_vShow,withDirectives:_withDirectives,renderList:_renderList} = await importShared('vue');
 
 const _hoisted_1$2 = { class: "ap-preview__viewer" };
 const _hoisted_2$2 = { class: "ap-preview__header" };
@@ -432,6 +432,10 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     const editorTab = ref$1(props.initialTab);
     const expanded = ref$1(false);
     const previewMode = ref$1("debug");
+    const testingPlatforms = computed$1(
+      () => props.pet.mode === "stage" && previewMode.value === "movement" && props.settings.roam === "surfaces"
+    );
+    const platformsAvailable = ref$1(true);
     const previewSettings = computed$1(
       () => previewMode.value === "debug" ? { ...props.settings, movement: "fixed", roam: "free" } : props.settings
     );
@@ -535,7 +539,9 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     function resize() {
       if (!canvas.value) return;
       const { width, height } = canvas.value.getBoundingClientRect();
-      previewMaxSize.value = { width: Math.max(1, width - 32), height: Math.max(1, height - 40) };
+      platformsAvailable.value = width * 0.9 >= MIN_SURFACE_WIDTH;
+      const maxHeight = testingPlatforms.value && platformsAvailable.value ? Math.min(height - 40, height * 0.55 - 16) : height - 40;
+      previewMaxSize.value = { width: Math.max(1, width - 32), height: Math.max(1, maxHeight) };
       host.patch({
         isMobile: window.innerWidth < 600,
         viewport: {
@@ -554,6 +560,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       host.patch({ phase: action.value === "auto" ? "idle" : "thinking", thinking: false, panelOpen: false });
     }
     watch$1(previewGroup, () => choose("auto"));
+    watch$1(testingPlatforms, resize);
     watch$1([() => props.pet.mode, () => props.pet.key, positionVersion, previewMode], () => {
       context.value = newContext();
     });
@@ -658,13 +665,19 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
               class: _normalizeClass(["ap-preview__canvas", { "ap-preview__canvas--debug": previewMode.value === "debug" }]),
               "data-roam": previewSettings.value.roam
             }, [
-              __props.pet.mode === "stage" && previewMode.value === "movement" && __props.settings.roam === "surfaces" ? (_openBlock$2(), _createElementBlock$2(_Fragment$1, { key: 0 }, [
-                _cache[14] || (_cache[14] = _createElementVNode$2("div", { class: "v-sheet ap-preview__surface ap-preview__surface--left" }, [
-                  _createElementVNode$2("span", null, "小平台")
-                ], -1)),
-                _cache[15] || (_cache[15] = _createElementVNode$2("div", { class: "v-sheet ap-preview__surface ap-preview__surface--right" }, [
-                  _createElementVNode$2("span", null, "休息台")
-                ], -1))
+              testingPlatforms.value && platformsAvailable.value ? (_openBlock$2(), _createElementBlock$2(_Fragment$1, { key: 0 }, [
+                _createElementVNode$2("div", {
+                  class: "v-sheet ap-preview__surface ap-preview__surface--left",
+                  style: _normalizeStyle({ minWidth: `${_unref$2(MIN_SURFACE_WIDTH)}px` })
+                }, [..._cache[14] || (_cache[14] = [
+                  _createElementVNode$2("span", null, "小平台", -1)
+                ])], 4),
+                _createElementVNode$2("div", {
+                  class: "v-sheet ap-preview__surface ap-preview__surface--right",
+                  style: _normalizeStyle({ minWidth: `${_unref$2(MIN_SURFACE_WIDTH)}px` })
+                }, [..._cache[15] || (_cache[15] = [
+                  _createElementVNode$2("span", null, "休息台", -1)
+                ])], 4)
               ], 64)) : _createCommentVNode$2("", true),
               _cache[17] || (_cache[17] = _createElementVNode$2("div", {
                 class: "ap-preview__floor",
@@ -719,7 +732,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
                 ])]),
                 _: 1
               })) : _createCommentVNode$2("", true),
-              _createElementVNode$2("span", _hoisted_6$1, _toDisplayString$2(original.value ? "当前校准" : previewMode.value === "debug" ? "居中播放 · 不会自行走开" : "拖动 Pet · 测试移动与跳跃"), 1)
+              _createElementVNode$2("span", _hoisted_6$1, _toDisplayString$2(original.value ? "当前校准" : previewMode.value === "debug" ? "居中播放 · 不会自行走开" : testingPlatforms.value ? platformsAvailable.value ? "拖到平台上方松手 · 测试站立" : "预览过窄，请放大后测试平台" : "拖动 Pet · 测试移动与跳跃"), 1)
             ], 10, _hoisted_4$2),
             original.value && loadedPack.value ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_7$1, [
               _createElementVNode$2("div", _hoisted_8$1, [
@@ -967,7 +980,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   }
 });
 
-const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-7988d563"]]);
+const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-26edc16b"]]);
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 

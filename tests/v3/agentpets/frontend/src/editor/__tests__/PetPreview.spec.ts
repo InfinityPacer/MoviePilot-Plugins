@@ -28,6 +28,27 @@ async function setup(size: { width: number; height: number; mobile?: boolean } =
         height: size.height,
         toJSON: () => ({}),
       } as DOMRect
+    if (this.classList.contains('ap-preview__surface') && getComputedStyle(this).width) {
+      const css = getComputedStyle(this)
+      const px = (value: string, reference: number) => parseFloat(value) * (value.endsWith('%') ? reference / 100 : 1)
+      const width = Math.max(px(css.width, size.width), parseFloat(css.minWidth) || 0)
+      const height = parseFloat(css.height)
+      const left =
+        200 +
+        (css.left && css.left !== 'auto' ? px(css.left, size.width) : size.width - px(css.right, size.width) - width)
+      const top = 100 + px(css.top, size.height)
+      return {
+        x: left,
+        y: top,
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+        width,
+        height,
+        toJSON: () => ({}),
+      } as DOMRect
+    }
     return original.call(this)
   })
   const pet: PetChoice = {
@@ -61,21 +82,26 @@ async function setup(size: { width: number; height: number; mobile?: boolean } =
   return { view, pet, api }
 }
 
+function applyPreviewStyles() {
+  const style = document.createElement('style')
+  const scopeId = (PetPreview as typeof PetPreview & { __scopeId: string }).__scopeId
+  const { descriptor } = parse(previewSource)
+  const compiled = compileStyle({
+    source: descriptor.styles[0].content,
+    filename: 'PetPreview.vue',
+    id: scopeId,
+    scoped: true,
+  })
+  expect(compiled.errors).toEqual([])
+  style.textContent = compiled.code
+  document.head.append(style)
+  return style
+}
+
 describe('contained live Pet preview', () => {
   it('anchors the character, floor and hint to their own painted preview instead of the host dialog', async () => {
     const { view } = await setup()
-    const style = document.createElement('style')
-    const scopeId = (PetPreview as typeof PetPreview & { __scopeId: string }).__scopeId
-    const { descriptor } = parse(previewSource)
-    const compiled = compileStyle({
-      source: descriptor.styles[0].content,
-      filename: 'PetPreview.vue',
-      id: scopeId,
-      scoped: true,
-    })
-    expect(compiled.errors).toEqual([])
-    style.textContent = compiled.code
-    document.head.append(style)
+    const style = applyPreviewStyles()
     try {
       const canvas = view.container.querySelector('.ap-preview__canvas')!
       const nearestPositionedParent = (element: Element) => {
@@ -99,6 +125,71 @@ describe('contained live Pet preview', () => {
     } finally {
       style.remove()
     }
+  })
+
+  it.each([
+    { width: 280, height: 400, key: 'ying' },
+    { width: 300, height: 400, key: 'kurisu' },
+    { width: 390, height: 180, key: 'ying', mobile: true },
+  ])('lands on both CSS-sized platforms in a $width × $height $key preview', async size => {
+    const { view, pet, api } = await setup(size)
+    const style = applyPreviewStyles()
+    try {
+      await view.rerender({
+        pet: { ...pet, key: size.key, builtin: size.key === 'ying' },
+        settings: { scale: 1.3, speed: 1, roam: 'surfaces', movement: 'auto' },
+      })
+      await fireEvent.click(view.getByRole('button', { name: '运动测试' }))
+      await vi.advanceTimersByTimeAsync(48)
+      const canvas = view.container.querySelector('.ap-preview__canvas')!
+      const platforms = Array.from(canvas.querySelectorAll('.ap-preview__surface'))
+      expect(platforms).toHaveLength(2)
+      const pointer = (type: string, clientX: number, clientY: number) => {
+        const event = new MouseEvent(type, { bubbles: true, button: 0, clientX, clientY })
+        Object.defineProperty(event, 'pointerId', { value: 1 })
+        return event
+      }
+      for (const platform of platforms) {
+        const character = canvas.querySelector('.agent-pet-ying__character') as HTMLElement
+        const position = () =>
+          character.style.transform
+            .slice('translate3d('.length)
+            .split(',')
+            .map(value => parseFloat(value))
+        const [x, y] = position()
+        const width = parseFloat(character.style.width)
+        const height = parseFloat(character.style.height)
+        const origin = canvas.getBoundingClientRect()
+        const target = platform.getBoundingClientRect()
+        const targetX = (target.left + target.right) / 2
+        const targetY = target.top - height / 2 - 4
+        character.dispatchEvent(pointer('pointerdown', origin.left + x + width / 2, origin.top + y + height / 2))
+        window.dispatchEvent(pointer('pointermove', targetX, targetY))
+        window.dispatchEvent(pointer('pointerup', targetX, targetY))
+        await vi.advanceTimersByTimeAsync(500)
+        expect(origin.top + position()[1] + height).toBeCloseTo(target.top, 1)
+      }
+      expect(api.post).not.toHaveBeenCalled()
+    } finally {
+      view.unmount()
+      style.remove()
+    }
+  })
+
+  it('asks to expand a canvas too narrow for platforms and restores them after resizing', async () => {
+    const size = { width: 100, height: 160 }
+    const { view, api } = await setup(size)
+    await view.rerender({ settings: { scale: 1.3, speed: 1, roam: 'surfaces', movement: 'auto' } })
+    await fireEvent.click(view.getByRole('button', { name: '运动测试' }))
+    await vi.advanceTimersByTimeAsync(48)
+    expect(view.container.querySelectorAll('.ap-preview__surface')).toHaveLength(0)
+    expect(view.getByText('预览过窄，请放大后测试平台')).toBeInTheDocument()
+    size.width = 300
+    window.dispatchEvent(new Event('resize'))
+    await vi.advanceTimersByTimeAsync(48)
+    expect(view.container.querySelectorAll('.ap-preview__surface')).toHaveLength(2)
+    expect(view.getByText('拖到平台上方松手 · 测试站立')).toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalled()
   })
 
   it('keeps canvas coordinates when the phone visual viewport is resized and panned', async () => {

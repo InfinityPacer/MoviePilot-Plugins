@@ -7,6 +7,7 @@ import ActionMappingEditor from '@/editor/ActionMappings.vue'
 import { ACTION_LABELS, nativeChoices, stageAction, type ActionMappings } from '@/sprites/mappings'
 import { HOST_ACTIONS, HOST_INTENTS, type SpritePack } from '@/sprites/schema'
 import { POSES } from '@/stage/poses'
+import { MIN_SURFACE_WIDTH } from '@/stage/geometry'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import type { PluginApi } from '@/host'
 import AgentPetSprite from '@/sprites/AgentPetSprite.vue'
@@ -42,6 +43,10 @@ const original = ref(false)
 const editorTab = ref(props.initialTab)
 const expanded = ref(false)
 const previewMode = ref<'debug' | 'movement'>('debug')
+const testingPlatforms = computed(
+  () => props.pet.mode === 'stage' && previewMode.value === 'movement' && props.settings.roam === 'surfaces',
+)
+const platformsAvailable = ref(true)
 const previewSettings = computed<YingSettings>(() =>
   previewMode.value === 'debug' ? { ...props.settings, movement: 'fixed', roam: 'free' } : props.settings,
 )
@@ -163,7 +168,11 @@ let observer: ResizeObserver | undefined
 function resize() {
   if (!canvas.value) return
   const { width, height } = canvas.value.getBoundingClientRect()
-  previewMaxSize.value = { width: Math.max(1, width - 32), height: Math.max(1, height - 40) }
+  platformsAvailable.value = width * 0.9 >= MIN_SURFACE_WIDTH
+  // 运动测试需给较高平台（55% 高度）上方留出完整人物和 4px 余量；只缩放预览，不改保存大小。
+  const maxHeight =
+    testingPlatforms.value && platformsAvailable.value ? Math.min(height - 40, height * 0.55 - 16) : height - 40
+  previewMaxSize.value = { width: Math.max(1, width - 32), height: Math.max(1, maxHeight) }
   host.patch({
     isMobile: window.innerWidth < 600,
     viewport: {
@@ -184,6 +193,7 @@ function updateAction() {
   host.patch({ phase: action.value === 'auto' ? 'idle' : 'thinking', thinking: false, panelOpen: false })
 }
 watch(previewGroup, () => choose('auto'))
+watch(testingPlatforms, resize)
 
 // 重置或切换 Pet 时使用新的内存存储，避免重新挂载后恢复旧的拖拽位置。
 watch([() => props.pet.mode, () => props.pet.key, positionVersion, previewMode], () => {
@@ -249,9 +259,19 @@ onBeforeUnmount(() => {
           :class="{ 'ap-preview__canvas--debug': previewMode === 'debug' }"
           :data-roam="previewSettings.roam"
         >
-          <template v-if="pet.mode === 'stage' && previewMode === 'movement' && settings.roam === 'surfaces'">
-            <div class="v-sheet ap-preview__surface ap-preview__surface--left"><span>小平台</span></div>
-            <div class="v-sheet ap-preview__surface ap-preview__surface--right"><span>休息台</span></div>
+          <template v-if="testingPlatforms && platformsAvailable">
+            <div
+              class="v-sheet ap-preview__surface ap-preview__surface--left"
+              :style="{ minWidth: `${MIN_SURFACE_WIDTH}px` }"
+            >
+              <span>小平台</span>
+            </div>
+            <div
+              class="v-sheet ap-preview__surface ap-preview__surface--right"
+              :style="{ minWidth: `${MIN_SURFACE_WIDTH}px` }"
+            >
+              <span>休息台</span>
+            </div>
           </template>
           <div class="ap-preview__floor" aria-hidden="true" />
           <component
@@ -298,7 +318,15 @@ onBeforeUnmount(() => {
             >此 Pet 加载失败，请点击重置重试。</v-alert
           >
           <span class="ap-preview__hint">{{
-            original ? '当前校准' : previewMode === 'debug' ? '居中播放 · 不会自行走开' : '拖动 Pet · 测试移动与跳跃'
+            original
+              ? '当前校准'
+              : previewMode === 'debug'
+                ? '居中播放 · 不会自行走开'
+                : testingPlatforms
+                  ? platformsAvailable
+                    ? '拖到平台上方松手 · 测试站立'
+                    : '预览过窄，请放大后测试平台'
+                  : '拖动 Pet · 测试移动与跳跃'
           }}</span>
         </div>
         <div v-if="original && loadedPack" class="ap-preview__original" aria-label="原始显示对照">
