@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-CRNJLCge.js';
+import { u as unwrap, A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-CAmGwqUb.js';
 import { v as validatePack, f as framePosition, e as sameCalibration, P as PACK_UPDATED_EVENT, g as buildCodexPetPack } from './mappings-jvCB_8v9.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
@@ -1218,21 +1218,21 @@ async function readPackArchive(file) {
   return { pack, image: imageDataUrl(files["sheet.img"]) };
 }
 
-const {defineComponent:_defineComponent$2} = await importShared('vue');
+const {defineComponent:_defineComponent$3} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode$2,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2,openBlock:_openBlock$2,createBlock:_createBlock$2,createCommentVNode:_createCommentVNode$2,normalizeStyle:_normalizeStyle,createElementBlock:_createElementBlock$2,unref:_unref$2,Fragment:_Fragment$2} = await importShared('vue');
+const {createElementVNode:_createElementVNode$3,resolveComponent:_resolveComponent$3,createVNode:_createVNode$3,toDisplayString:_toDisplayString$3,createTextVNode:_createTextVNode$3,withCtx:_withCtx$3,openBlock:_openBlock$3,createBlock:_createBlock$3,createCommentVNode:_createCommentVNode$3,normalizeStyle:_normalizeStyle,createElementBlock:_createElementBlock$3,unref:_unref$3,Fragment:_Fragment$3} = await importShared('vue');
 
-const _hoisted_1$2 = { class: "ap-archive-import" };
-const _hoisted_2$2 = { class: "d-flex align-center ga-3 mb-3" };
-const _hoisted_3$2 = ["aria-label"];
-const _hoisted_4$2 = { class: "text-caption" };
-const _hoisted_5$2 = {
+const _hoisted_1$3 = { class: "ap-archive-import" };
+const _hoisted_2$3 = { class: "d-flex align-center ga-3 mb-3" };
+const _hoisted_3$3 = ["aria-label"];
+const _hoisted_4$3 = { class: "text-caption" };
+const _hoisted_5$3 = {
   key: 1,
   class: "ap-archive-import__review"
 };
-const _hoisted_6$2 = { class: "d-flex justify-end ga-2 mt-3" };
-const {computed: computed$2,inject: inject$2,onBeforeUnmount: onBeforeUnmount$2,ref: ref$2,watch: watch$2} = await importShared('vue');
-const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
+const _hoisted_6$3 = { class: "d-flex justify-end ga-2 mt-3" };
+const {computed: computed$3,inject: inject$3,onBeforeUnmount: onBeforeUnmount$3,ref: ref$3,watch: watch$3} = await importShared('vue');
+const _sfc_main$3 = /* @__PURE__ */ _defineComponent$3({
   __name: "PackArchiveImport",
   props: {
     api: {},
@@ -1243,23 +1243,23 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
-    const agent = inject$2(AGENT_HOST_KEY, null);
-    const file = ref$2(null);
-    const archive = ref$2(null);
-    const target = ref$2(null);
-    const name = ref$2("");
-    const mode = ref$2("new");
-    const error = ref$2("");
-    const message = ref$2("");
-    const busy = ref$2(false);
-    watch$2(busy, (value) => emit("busy", value));
+    const agent = inject$3(AGENT_HOST_KEY, null);
+    const file = ref$3(null);
+    const archive = ref$3(null);
+    const target = ref$3(null);
+    const name = ref$3("");
+    const mode = ref$3("new");
+    const error = ref$3("");
+    const message = ref$3("");
+    const busy = ref$3(false);
+    watch$3(busy, (value) => emit("busy", value));
     let alive = true;
     let operation = 0;
-    onBeforeUnmount$2(() => {
+    onBeforeUnmount$3(() => {
       alive = false;
       operation++;
     });
-    watch$2(
+    watch$3(
       () => props.pluginId,
       () => {
         operation++;
@@ -1271,7 +1271,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
         message.value = "";
       }
     );
-    const previewStyle = computed$2(() => {
+    const previewStyle = computed$3(() => {
       if (!archive.value) return {};
       const { pack, image } = archive.value;
       const position = framePosition(pack, "idle");
@@ -1281,24 +1281,24 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
         backgroundPosition: `${position.x}% ${position.y}%`
       };
     });
-    const duplicateName = computed$2(
+    const duplicateName = computed$3(
       () => props.targets.some(
         (item) => item.name === name.value.trim() && (mode.value !== "replace" || item.id !== target.value?.id)
       )
     );
-    const stale = computed$2(
+    const stale = computed$3(
       () => mode.value === "replace" && props.targets.find((item) => item.id === target.value?.id)?.revision !== target.value?.revision
     );
-    const valid = computed$2(
+    const valid = computed$3(
       () => !!archive.value && !!name.value.trim() && [...name.value.trim()].length <= 40 && !busy.value && !stale.value && (mode.value !== "replace" || !!target.value?.revision && !target.value.builtin)
     );
-    const choices = computed$2(
+    const choices = computed$3(
       () => target.value ? [
         { title: "导入副本（保留已有素材）", value: "copy" },
         ...!target.value.builtin ? [{ title: "更新同 ID 素材", value: "replace" }] : []
       ] : [{ title: "新增素材", value: "new" }]
     );
-    watch$2(mode, (value) => {
+    watch$3(mode, (value) => {
       if (value === "replace" && archive.value) name.value = archive.value.pack.name;
     });
     async function read(value) {
@@ -1358,16 +1358,16 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       }
     }
     return (_ctx, _cache) => {
-      const _component_v_file_input = _resolveComponent$2("v-file-input");
-      const _component_v_alert = _resolveComponent$2("v-alert");
-      const _component_v_img = _resolveComponent$2("v-img");
-      const _component_v_avatar = _resolveComponent$2("v-avatar");
-      const _component_v_select = _resolveComponent$2("v-select");
-      const _component_v_text_field = _resolveComponent$2("v-text-field");
-      const _component_v_btn = _resolveComponent$2("v-btn");
-      return _openBlock$2(), _createElementBlock$2("section", _hoisted_1$2, [
-        _cache[13] || (_cache[13] = _createElementVNode$2("p", { class: "ap-muted mb-3" }, "选择从素材卡片导出的完整 ZIP，预览后可导入副本，或核对后更新同 ID 素材。", -1)),
-        _createVNode$2(_component_v_file_input, {
+      const _component_v_file_input = _resolveComponent$3("v-file-input");
+      const _component_v_alert = _resolveComponent$3("v-alert");
+      const _component_v_img = _resolveComponent$3("v-img");
+      const _component_v_avatar = _resolveComponent$3("v-avatar");
+      const _component_v_select = _resolveComponent$3("v-select");
+      const _component_v_text_field = _resolveComponent$3("v-text-field");
+      const _component_v_btn = _resolveComponent$3("v-btn");
+      return _openBlock$3(), _createElementBlock$3("section", _hoisted_1$3, [
+        _cache[13] || (_cache[13] = _createElementVNode$3("p", { class: "ap-muted mb-3" }, "选择从素材卡片导出的完整 ZIP，预览后可导入副本，或核对后更新同 ID 素材。", -1)),
+        _createVNode$3(_component_v_file_input, {
           "model-value": file.value ? [file.value] : [],
           label: "选择 AgentPets 导出 ZIP",
           accept: ".zip",
@@ -1379,55 +1379,55 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
           "prepend-inner-icon": "mdi-package-up",
           "onUpdate:modelValue": read
         }, null, 8, ["model-value", "disabled", "loading"]),
-        error.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+        error.value ? (_openBlock$3(), _createBlock$3(_component_v_alert, {
           key: 0,
           type: "error",
           variant: "tonal",
           density: "compact"
         }, {
-          default: _withCtx$2(() => [
-            _createTextVNode$2(_toDisplayString$2(error.value), 1)
+          default: _withCtx$3(() => [
+            _createTextVNode$3(_toDisplayString$3(error.value), 1)
           ]),
           _: 1
-        })) : _createCommentVNode$2("", true),
-        message.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+        })) : _createCommentVNode$3("", true),
+        message.value ? (_openBlock$3(), _createBlock$3(_component_v_alert, {
           key: 1,
           type: "success",
           variant: "tonal",
           density: "compact"
         }, {
-          default: _withCtx$2(() => [
-            _createTextVNode$2(_toDisplayString$2(message.value), 1)
+          default: _withCtx$3(() => [
+            _createTextVNode$3(_toDisplayString$3(message.value), 1)
           ]),
           _: 1
-        })) : _createCommentVNode$2("", true),
-        archive.value ? (_openBlock$2(), _createElementBlock$2(_Fragment$2, { key: 2 }, [
-          _createElementVNode$2("div", _hoisted_2$2, [
-            archive.value.pack.preview || archive.value.pack.avatar ? (_openBlock$2(), _createBlock$2(_component_v_avatar, {
+        })) : _createCommentVNode$3("", true),
+        archive.value ? (_openBlock$3(), _createElementBlock$3(_Fragment$3, { key: 2 }, [
+          _createElementVNode$3("div", _hoisted_2$3, [
+            archive.value.pack.preview || archive.value.pack.avatar ? (_openBlock$3(), _createBlock$3(_component_v_avatar, {
               key: 0,
               size: "64",
               rounded: "lg"
             }, {
-              default: _withCtx$2(() => [
-                _createVNode$2(_component_v_img, {
+              default: _withCtx$3(() => [
+                _createVNode$3(_component_v_img, {
                   src: archive.value.pack.preview || archive.value.pack.avatar,
                   alt: archive.value.pack.name
                 }, null, 8, ["src", "alt"])
               ]),
               _: 1
-            })) : (_openBlock$2(), _createElementBlock$2("div", {
+            })) : (_openBlock$3(), _createElementBlock$3("div", {
               key: 1,
               class: "ap-archive-import__preview",
               style: _normalizeStyle(previewStyle.value),
               role: "img",
               "aria-label": archive.value.pack.name
-            }, null, 12, _hoisted_3$2)),
-            _createElementVNode$2("div", null, [
-              _createElementVNode$2("strong", null, _toDisplayString$2(archive.value.pack.name), 1),
-              _createElementVNode$2("div", _hoisted_4$2, _toDisplayString$2(archive.value.pack.grid.cols) + " × " + _toDisplayString$2(archive.value.pack.grid.rows) + " 网格 · " + _toDisplayString$2(Object.keys(archive.value.pack.actions).length) + " 项动作 ", 1)
+            }, null, 12, _hoisted_3$3)),
+            _createElementVNode$3("div", null, [
+              _createElementVNode$3("strong", null, _toDisplayString$3(archive.value.pack.name), 1),
+              _createElementVNode$3("div", _hoisted_4$3, _toDisplayString$3(archive.value.pack.grid.cols) + " × " + _toDisplayString$3(archive.value.pack.grid.rows) + " 网格 · " + _toDisplayString$3(Object.keys(archive.value.pack.actions).length) + " 项动作 ", 1)
             ])
           ]),
-          _createVNode$2(_component_v_select, {
+          _createVNode$3(_component_v_select, {
             modelValue: mode.value,
             "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => mode.value = $event),
             items: choices.value,
@@ -1436,7 +1436,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
             variant: "outlined",
             disabled: busy.value
           }, null, 8, ["modelValue", "items", "disabled"]),
-          _createVNode$2(_component_v_text_field, {
+          _createVNode$3(_component_v_text_field, {
             modelValue: name.value,
             "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => name.value = $event),
             label: "导入后的名称",
@@ -1445,99 +1445,99 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
             variant: "outlined",
             disabled: busy.value
           }, null, 8, ["modelValue", "disabled"]),
-          duplicateName.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+          duplicateName.value ? (_openBlock$3(), _createBlock$3(_component_v_alert, {
             key: 0,
             type: "warning",
             variant: "tonal",
             density: "compact",
             class: "mb-3"
           }, {
-            default: _withCtx$2(() => [..._cache[3] || (_cache[3] = [
-              _createTextVNode$2("已有同名素材，可修改名称区分；名称相同不会自动覆盖。", -1)
+            default: _withCtx$3(() => [..._cache[3] || (_cache[3] = [
+              _createTextVNode$3("已有同名素材，可修改名称区分；名称相同不会自动覆盖。", -1)
             ])]),
             _: 1
-          })) : _createCommentVNode$2("", true),
-          mode.value === "replace" && target.value ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_5$2, [
-            _createElementVNode$2("table", null, [
-              _cache[9] || (_cache[9] = _createElementVNode$2("thead", null, [
-                _createElementVNode$2("tr", null, [
-                  _createElementVNode$2("th", null, "内容"),
-                  _createElementVNode$2("th", null, "当前素材"),
-                  _createElementVNode$2("th", null, "导入后")
+          })) : _createCommentVNode$3("", true),
+          mode.value === "replace" && target.value ? (_openBlock$3(), _createElementBlock$3("div", _hoisted_5$3, [
+            _createElementVNode$3("table", null, [
+              _cache[9] || (_cache[9] = _createElementVNode$3("thead", null, [
+                _createElementVNode$3("tr", null, [
+                  _createElementVNode$3("th", null, "内容"),
+                  _createElementVNode$3("th", null, "当前素材"),
+                  _createElementVNode$3("th", null, "导入后")
                 ])
               ], -1)),
-              _createElementVNode$2("tbody", null, [
-                _createElementVNode$2("tr", null, [
-                  _cache[4] || (_cache[4] = _createElementVNode$2("td", null, "名称", -1)),
-                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.name), 1),
-                  _createElementVNode$2("td", null, _toDisplayString$2(name.value), 1)
+              _createElementVNode$3("tbody", null, [
+                _createElementVNode$3("tr", null, [
+                  _cache[4] || (_cache[4] = _createElementVNode$3("td", null, "名称", -1)),
+                  _createElementVNode$3("td", null, _toDisplayString$3(target.value.name), 1),
+                  _createElementVNode$3("td", null, _toDisplayString$3(name.value), 1)
                 ]),
-                _createElementVNode$2("tr", null, [
-                  _cache[5] || (_cache[5] = _createElementVNode$2("td", null, "网格", -1)),
-                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.grid?.cols) + " × " + _toDisplayString$2(target.value.grid?.rows), 1),
-                  _createElementVNode$2("td", null, _toDisplayString$2(archive.value.pack.grid.cols) + " × " + _toDisplayString$2(archive.value.pack.grid.rows), 1)
+                _createElementVNode$3("tr", null, [
+                  _cache[5] || (_cache[5] = _createElementVNode$3("td", null, "网格", -1)),
+                  _createElementVNode$3("td", null, _toDisplayString$3(target.value.grid?.cols) + " × " + _toDisplayString$3(target.value.grid?.rows), 1),
+                  _createElementVNode$3("td", null, _toDisplayString$3(archive.value.pack.grid.cols) + " × " + _toDisplayString$3(archive.value.pack.grid.rows), 1)
                 ]),
-                _createElementVNode$2("tr", null, [
-                  _cache[6] || (_cache[6] = _createElementVNode$2("td", null, "帧／动作数量", -1)),
-                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.frame_count) + "／" + _toDisplayString$2(target.value.action_count), 1),
-                  _createElementVNode$2("td", null, _toDisplayString$2(Object.keys(archive.value.pack.frames).length) + "／" + _toDisplayString$2(Object.keys(archive.value.pack.actions).length), 1)
+                _createElementVNode$3("tr", null, [
+                  _cache[6] || (_cache[6] = _createElementVNode$3("td", null, "帧／动作数量", -1)),
+                  _createElementVNode$3("td", null, _toDisplayString$3(target.value.frame_count) + "／" + _toDisplayString$3(target.value.action_count), 1),
+                  _createElementVNode$3("td", null, _toDisplayString$3(Object.keys(archive.value.pack.frames).length) + "／" + _toDisplayString$3(Object.keys(archive.value.pack.actions).length), 1)
                 ]),
-                _createElementVNode$2("tr", null, [
-                  _cache[7] || (_cache[7] = _createElementVNode$2("td", null, "自定义映射数量", -1)),
-                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.mapping_count ?? 0), 1),
-                  _createElementVNode$2("td", null, _toDisplayString$2(Object.keys(archive.value.pack.action_mappings ?? {}).length), 1)
+                _createElementVNode$3("tr", null, [
+                  _cache[7] || (_cache[7] = _createElementVNode$3("td", null, "自定义映射数量", -1)),
+                  _createElementVNode$3("td", null, _toDisplayString$3(target.value.mapping_count ?? 0), 1),
+                  _createElementVNode$3("td", null, _toDisplayString$3(Object.keys(archive.value.pack.action_mappings ?? {}).length), 1)
                 ]),
-                _createElementVNode$2("tr", null, [
-                  _cache[8] || (_cache[8] = _createElementVNode$2("td", null, "显示校准", -1)),
-                  _createElementVNode$2("td", null, _toDisplayString$2(target.value.calibrated ? "已调整" : "默认"), 1),
-                  _createElementVNode$2("td", null, _toDisplayString$2(_unref$2(sameCalibration)(archive.value.pack.calibration) ? "默认" : "已调整"), 1)
+                _createElementVNode$3("tr", null, [
+                  _cache[8] || (_cache[8] = _createElementVNode$3("td", null, "显示校准", -1)),
+                  _createElementVNode$3("td", null, _toDisplayString$3(target.value.calibrated ? "已调整" : "默认"), 1),
+                  _createElementVNode$3("td", null, _toDisplayString$3(_unref$3(sameCalibration)(archive.value.pack.calibration) ? "默认" : "已调整"), 1)
                 ])
               ])
             ]),
-            _cache[10] || (_cache[10] = _createElementVNode$2("p", { class: "text-caption mt-2" }, " 将替换此 ID 的名称、说明、图片、头像、预览、帧与动作、映射及校准；原记录与已上传原图会保留恢复副本。当前形象选择和个人位置保留。 ", -1))
-          ])) : _createCommentVNode$2("", true),
-          stale.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
+            _cache[10] || (_cache[10] = _createElementVNode$3("p", { class: "text-caption mt-2" }, " 将替换此 ID 的名称、说明、图片、头像、预览、帧与动作、映射及校准；原记录与已上传原图会保留恢复副本。当前形象选择和个人位置保留。 ", -1))
+          ])) : _createCommentVNode$3("", true),
+          stale.value ? (_openBlock$3(), _createBlock$3(_component_v_alert, {
             key: 2,
             type: "warning",
             variant: "tonal",
             density: "compact"
           }, {
-            default: _withCtx$2(() => [..._cache[11] || (_cache[11] = [
-              _createTextVNode$2("当前素材已变化，请重新读取并核对覆盖范围。", -1)
+            default: _withCtx$3(() => [..._cache[11] || (_cache[11] = [
+              _createTextVNode$3("当前素材已变化，请重新读取并核对覆盖范围。", -1)
             ])]),
             _: 1
-          })) : _createCommentVNode$2("", true),
-          _createElementVNode$2("div", _hoisted_6$2, [
-            _createVNode$2(_component_v_btn, {
+          })) : _createCommentVNode$3("", true),
+          _createElementVNode$3("div", _hoisted_6$3, [
+            _createVNode$3(_component_v_btn, {
               variant: "text",
               disabled: busy.value,
               onClick: _cache[2] || (_cache[2] = ($event) => read())
             }, {
-              default: _withCtx$2(() => [..._cache[12] || (_cache[12] = [
-                _createTextVNode$2("重新读取", -1)
+              default: _withCtx$3(() => [..._cache[12] || (_cache[12] = [
+                _createTextVNode$3("重新读取", -1)
               ])]),
               _: 1
             }, 8, ["disabled"]),
-            _createVNode$2(_component_v_btn, {
+            _createVNode$3(_component_v_btn, {
               color: "primary",
               variant: "flat",
               disabled: !valid.value,
               loading: busy.value,
               onClick: submit
             }, {
-              default: _withCtx$2(() => [
-                _createTextVNode$2(_toDisplayString$2(mode.value === "replace" ? "确认覆盖此素材" : "确认导入"), 1)
+              default: _withCtx$3(() => [
+                _createTextVNode$3(_toDisplayString$3(mode.value === "replace" ? "确认覆盖此素材" : "确认导入"), 1)
               ]),
               _: 1
             }, 8, ["disabled", "loading"])
           ])
-        ], 64)) : _createCommentVNode$2("", true)
+        ], 64)) : _createCommentVNode$3("", true)
       ]);
     };
   }
 });
 
-const PackArchiveImport = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-a20b81a4"]]);
+const PackArchiveImport = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-a20b81a4"]]);
 
 const MAX_CODEX_PET_ARCHIVE_BYTES = 8 * 1024 * 1024;
 const MAX_SPRITESHEET_BYTES = 4 * 1024 * 1024;
@@ -1691,56 +1691,56 @@ async function extractCodexPetArchive(file) {
   return { manifest, spritesheet };
 }
 
-const {defineComponent:_defineComponent$1} = await importShared('vue');
+const {defineComponent:_defineComponent$2} = await importShared('vue');
 
-const {createElementVNode:_createElementVNode$1,resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,toDisplayString:_toDisplayString$1,createTextVNode:_createTextVNode$1,withCtx:_withCtx$1,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$1,renderList:_renderList$1,Fragment:_Fragment$1,createElementBlock:_createElementBlock$1,withModifiers:_withModifiers,withKeys:_withKeys,vShow:_vShow$1,withDirectives:_withDirectives$1,unref:_unref$1} = await importShared('vue');
+const {createElementVNode:_createElementVNode$2,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2,openBlock:_openBlock$2,createBlock:_createBlock$2,createCommentVNode:_createCommentVNode$2,renderList:_renderList$2,Fragment:_Fragment$2,createElementBlock:_createElementBlock$2,withModifiers:_withModifiers$1,withKeys:_withKeys,vShow:_vShow$1,withDirectives:_withDirectives$1,unref:_unref$2} = await importShared('vue');
 
-const _hoisted_1$1 = { class: "agent-pet-sprites-config" };
-const _hoisted_2$1 = { class: "ap-inline mb-2" };
-const _hoisted_3$1 = {
+const _hoisted_1$2 = { class: "agent-pet-sprites-config" };
+const _hoisted_2$2 = { class: "ap-inline mb-2" };
+const _hoisted_3$2 = {
   class: "agent-pet-sprites-config__list mb-6",
   role: "list",
   "aria-label": "已有 Pet 素材"
 };
-const _hoisted_4$1 = { class: "agent-pet-sprites-config__info" };
-const _hoisted_5$1 = ["title"];
-const _hoisted_6$1 = { class: "agent-pet-sprites-config__meta" };
-const _hoisted_7$1 = { class: "agent-pet-sprites-config__actions" };
-const _hoisted_8$1 = {
+const _hoisted_4$2 = { class: "agent-pet-sprites-config__info" };
+const _hoisted_5$2 = ["title"];
+const _hoisted_6$2 = { class: "agent-pet-sprites-config__meta" };
+const _hoisted_7$2 = { class: "agent-pet-sprites-config__actions" };
+const _hoisted_8$2 = {
   key: 0,
   class: "agent-pet-sprites-config__empty ap-muted"
 };
-const _hoisted_9$1 = { class: "agent-pet-sprites-config__import" };
-const _hoisted_10$1 = { class: "ap-section-heading" };
-const _hoisted_11$1 = { class: "d-flex align-center justify-end flex-wrap ga-2 mt-4" };
-const {computed: computed$1,inject: inject$1,onBeforeUnmount: onBeforeUnmount$1,onMounted,ref: ref$1,watch: watch$1} = await importShared('vue');
+const _hoisted_9$2 = { class: "agent-pet-sprites-config__import" };
+const _hoisted_10$2 = { class: "ap-section-heading" };
+const _hoisted_11$2 = { class: "d-flex align-center justify-end flex-wrap ga-2 mt-4" };
+const {computed: computed$2,inject: inject$2,onBeforeUnmount: onBeforeUnmount$2,onMounted,ref: ref$2,watch: watch$2} = await importShared('vue');
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
+const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   __name: "PackManager",
   props: {
     api: { default: null },
     pluginId: { default: "" }
   },
   emits: ["changed"],
-  setup(__props, { emit: __emit }) {
+  setup(__props, { expose: __expose, emit: __emit }) {
     const props = __props;
     const emit = __emit;
-    const importMode = ref$1("codex");
-    const archiveBusy = ref$1(false);
+    const importMode = ref$2("codex");
+    const archiveBusy = ref$2(false);
     let previousInputMode = "codex";
-    const listError = ref$1("");
-    const deleting = ref$1("");
-    const exporting = ref$1("");
-    const renameTarget = ref$1(null);
-    const renameName = ref$1("");
-    const renameError = ref$1("");
-    const renaming = ref$1(false);
-    const agent = inject$1(AGENT_HOST_KEY, null);
-    const renameValid = computed$1(() => !!renameName.value.trim() && [...renameName.value.trim()].length <= 40);
+    const listError = ref$2("");
+    const deleting = ref$2("");
+    const exporting = ref$2("");
+    const renameTarget = ref$2(null);
+    const renameName = ref$2("");
+    const renameError = ref$2("");
+    const renaming = ref$2(false);
+    const agent = inject$2(AGENT_HOST_KEY, null);
+    const renameValid = computed$2(() => !!renameName.value.trim() && [...renameName.value.trim()].length <= 40);
     let alive = true;
     let listVersion = 0;
     let instanceVersion = 0;
-    onBeforeUnmount$1(() => {
+    onBeforeUnmount$2(() => {
       alive = false;
       instanceVersion++;
       listVersion++;
@@ -1763,16 +1763,16 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       null,
       2
     );
-    const toast = inject$1("moviepilot:toast", null);
-    const confirm = inject$1("moviepilot:confirm", null);
-    const instanceId = computed$1(() => props.pluginId || "AgentPets");
-    const packs = ref$1([]);
-    const loading = ref$1(false);
-    const submitting = ref$1(false);
-    const codexImporting = ref$1(false);
-    const packText = ref$1("");
-    const imageMode = ref$1("upload");
-    watch$1(importMode, (value) => {
+    const toast = inject$2("moviepilot:toast", null);
+    const confirm = inject$2("moviepilot:confirm", null);
+    const instanceId = computed$2(() => props.pluginId || "AgentPets");
+    const packs = ref$2([]);
+    const loading = ref$2(false);
+    const submitting = ref$2(false);
+    const codexImporting = ref$2(false);
+    const packText = ref$2("");
+    const imageMode = ref$2("upload");
+    watch$2(importMode, (value) => {
       if (value === "archive") return;
       if (value === "codex" && previousInputMode !== "codex") {
         imageMode.value = "upload";
@@ -1782,23 +1782,23 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       }
       previousInputMode = value;
     });
-    const selectedFile = ref$1(null);
-    const parsedCodexFile = ref$1(null);
-    const imageFile = ref$1(null);
-    const fileModel = ref$1([]);
-    const imageError = ref$1("");
-    const importMessage = ref$1("");
-    const importError = ref$1("");
-    const serverError = ref$1("");
-    const validation = computed$1(() => packText.value.trim() ? validatePack(packText.value) : null);
-    const clientErrors = computed$1(() => {
+    const selectedFile = ref$2(null);
+    const parsedCodexFile = ref$2(null);
+    const imageFile = ref$2(null);
+    const fileModel = ref$2([]);
+    const imageError = ref$2("");
+    const importMessage = ref$2("");
+    const importError = ref$2("");
+    const serverError = ref$2("");
+    const validation = computed$2(() => packText.value.trim() ? validatePack(packText.value) : null);
+    const clientErrors = computed$2(() => {
       const errors = [...validation.value?.errors ?? []];
       if (imageMode.value === "url" && validation.value?.pack && !/^https?:\/\/\S+$/.test(validation.value.pack.sheet)) {
         errors.push("填写 URL 方式时，JSON 的 sheet 必须是 http(s) 图片地址");
       }
       return errors;
     });
-    const canSubmit = computed$1(
+    const canSubmit = computed$2(
       () => importMode.value !== "archive" && !!validation.value?.pack && !clientErrors.value.length && !submitting.value && (importMode.value !== "codex" || !!selectedFile.value && parsedCodexFile.value === selectedFile.value) && (imageMode.value === "url" || !!imageFile.value && !imageError.value)
     );
     function captureScope() {
@@ -2021,7 +2021,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
         if (current()) renaming.value = false;
       }
     }
-    watch$1(instanceId, () => {
+    watch$2(instanceId, () => {
       instanceVersion++;
       listVersion++;
       packs.value = [];
@@ -2047,31 +2047,32 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       void refresh();
     });
     onMounted(refresh);
+    __expose({ refresh });
     return (_ctx, _cache) => {
-      const _component_v_spacer = _resolveComponent$1("v-spacer");
-      const _component_v_btn = _resolveComponent$1("v-btn");
-      const _component_v_alert = _resolveComponent$1("v-alert");
-      const _component_v_progress_linear = _resolveComponent$1("v-progress-linear");
-      const _component_v_img = _resolveComponent$1("v-img");
-      const _component_v_icon = _resolveComponent$1("v-icon");
-      const _component_v_avatar = _resolveComponent$1("v-avatar");
-      const _component_v_chip = _resolveComponent$1("v-chip");
-      const _component_v_text_field = _resolveComponent$1("v-text-field");
-      const _component_v_card_text = _resolveComponent$1("v-card-text");
-      const _component_v_card_actions = _resolveComponent$1("v-card-actions");
-      const _component_v_card = _resolveComponent$1("v-card");
-      const _component_v_dialog = _resolveComponent$1("v-dialog");
-      const _component_v_btn_toggle = _resolveComponent$1("v-btn-toggle");
-      const _component_v_textarea = _resolveComponent$1("v-textarea");
-      const _component_v_file_input = _resolveComponent$1("v-file-input");
-      const _component_v_expansion_panel_text = _resolveComponent$1("v-expansion-panel-text");
-      const _component_v_expansion_panel = _resolveComponent$1("v-expansion-panel");
-      const _component_v_expansion_panels = _resolveComponent$1("v-expansion-panels");
-      return _openBlock$1(), _createElementBlock$1("div", _hoisted_1$1, [
-        _createElementVNode$1("div", _hoisted_2$1, [
-          _cache[9] || (_cache[9] = _createElementVNode$1("h3", { class: "ap-section-title mb-0" }, "我的素材", -1)),
-          _createVNode$1(_component_v_spacer),
-          _createVNode$1(_component_v_btn, {
+      const _component_v_spacer = _resolveComponent$2("v-spacer");
+      const _component_v_btn = _resolveComponent$2("v-btn");
+      const _component_v_alert = _resolveComponent$2("v-alert");
+      const _component_v_progress_linear = _resolveComponent$2("v-progress-linear");
+      const _component_v_img = _resolveComponent$2("v-img");
+      const _component_v_icon = _resolveComponent$2("v-icon");
+      const _component_v_avatar = _resolveComponent$2("v-avatar");
+      const _component_v_chip = _resolveComponent$2("v-chip");
+      const _component_v_text_field = _resolveComponent$2("v-text-field");
+      const _component_v_card_text = _resolveComponent$2("v-card-text");
+      const _component_v_card_actions = _resolveComponent$2("v-card-actions");
+      const _component_v_card = _resolveComponent$2("v-card");
+      const _component_v_dialog = _resolveComponent$2("v-dialog");
+      const _component_v_btn_toggle = _resolveComponent$2("v-btn-toggle");
+      const _component_v_textarea = _resolveComponent$2("v-textarea");
+      const _component_v_file_input = _resolveComponent$2("v-file-input");
+      const _component_v_expansion_panel_text = _resolveComponent$2("v-expansion-panel-text");
+      const _component_v_expansion_panel = _resolveComponent$2("v-expansion-panel");
+      const _component_v_expansion_panels = _resolveComponent$2("v-expansion-panels");
+      return _openBlock$2(), _createElementBlock$2("div", _hoisted_1$2, [
+        _createElementVNode$2("div", _hoisted_2$2, [
+          _cache[9] || (_cache[9] = _createElementVNode$2("h3", { class: "ap-section-title mb-0" }, "我的素材", -1)),
+          _createVNode$2(_component_v_spacer),
+          _createVNode$2(_component_v_btn, {
             icon: "mdi-refresh",
             "aria-label": "刷新素材列表",
             variant: "text",
@@ -2080,70 +2081,70 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
             onClick: refresh
           }, null, 8, ["loading"])
         ]),
-        listError.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+        listError.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
           key: 0,
           type: "error",
           variant: "tonal",
           density: "compact",
           class: "mb-3"
         }, {
-          default: _withCtx$1(() => [
-            _createTextVNode$1(_toDisplayString$1(listError.value), 1)
+          default: _withCtx$2(() => [
+            _createTextVNode$2(_toDisplayString$2(listError.value), 1)
           ]),
           _: 1
-        })) : _createCommentVNode$1("", true),
-        loading.value ? (_openBlock$1(), _createBlock$1(_component_v_progress_linear, {
+        })) : _createCommentVNode$2("", true),
+        loading.value ? (_openBlock$2(), _createBlock$2(_component_v_progress_linear, {
           key: 1,
           indeterminate: "",
           color: "primary"
-        })) : _createCommentVNode$1("", true),
-        _createElementVNode$1("div", _hoisted_3$1, [
-          (_openBlock$1(true), _createElementBlock$1(_Fragment$1, null, _renderList$1(packs.value, (pack) => {
-            return _openBlock$1(), _createElementBlock$1("article", {
+        })) : _createCommentVNode$2("", true),
+        _createElementVNode$2("div", _hoisted_3$2, [
+          (_openBlock$2(true), _createElementBlock$2(_Fragment$2, null, _renderList$2(packs.value, (pack) => {
+            return _openBlock$2(), _createElementBlock$2("article", {
               key: pack.id,
               class: "agent-pet-sprites-config__card",
               role: "listitem"
             }, [
-              _createVNode$1(_component_v_avatar, {
+              _createVNode$2(_component_v_avatar, {
                 rounded: "lg",
                 size: "52",
                 class: "agent-pet-sprites-config__thumb"
               }, {
-                default: _withCtx$1(() => [
-                  previewSrc(pack) ? (_openBlock$1(), _createBlock$1(_component_v_img, {
+                default: _withCtx$2(() => [
+                  previewSrc(pack) ? (_openBlock$2(), _createBlock$2(_component_v_img, {
                     key: 0,
                     src: previewSrc(pack),
                     alt: pack.name
-                  }, null, 8, ["src", "alt"])) : (_openBlock$1(), _createBlock$1(_component_v_icon, {
+                  }, null, 8, ["src", "alt"])) : (_openBlock$2(), _createBlock$2(_component_v_icon, {
                     key: 1,
                     icon: "mdi-image-outline"
                   }))
                 ]),
                 _: 2
               }, 1024),
-              _createElementVNode$1("div", _hoisted_4$1, [
-                _createElementVNode$1("div", {
+              _createElementVNode$2("div", _hoisted_4$2, [
+                _createElementVNode$2("div", {
                   class: "agent-pet-sprites-config__name",
                   title: pack.name
-                }, _toDisplayString$1(pack.name), 9, _hoisted_5$1),
-                _createElementVNode$1("div", _hoisted_6$1, [
-                  _createElementVNode$1("span", null, _toDisplayString$1(pack.builtin ? "内置素材" : "已导入"), 1),
-                  _createElementVNode$1("span", null, _toDisplayString$1(pack.mode === "stage" ? "自由活动" : "入口形象"), 1),
-                  _createElementVNode$1("span", null, _toDisplayString$1(pack.action_count) + " 项动作定义", 1)
+                }, _toDisplayString$2(pack.name), 9, _hoisted_5$2),
+                _createElementVNode$2("div", _hoisted_6$2, [
+                  _createElementVNode$2("span", null, _toDisplayString$2(pack.builtin ? "内置素材" : "已导入"), 1),
+                  _createElementVNode$2("span", null, _toDisplayString$2(pack.mode === "stage" ? "自由活动" : "入口形象"), 1),
+                  _createElementVNode$2("span", null, _toDisplayString$2(pack.action_count) + " 项动作定义", 1)
                 ])
               ]),
-              _createElementVNode$1("div", _hoisted_7$1, [
-                pack.builtin ? (_openBlock$1(), _createBlock$1(_component_v_chip, {
+              _createElementVNode$2("div", _hoisted_7$2, [
+                pack.builtin ? (_openBlock$2(), _createBlock$2(_component_v_chip, {
                   key: 0,
                   size: "x-small",
                   variant: "tonal"
                 }, {
-                  default: _withCtx$1(() => [..._cache[10] || (_cache[10] = [
-                    _createTextVNode$1("内置", -1)
+                  default: _withCtx$2(() => [..._cache[10] || (_cache[10] = [
+                    _createTextVNode$2("内置", -1)
                   ])]),
                   _: 1
-                })) : _createCommentVNode$1("", true),
-                !pack.builtin ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                })) : _createCommentVNode$2("", true),
+                !pack.builtin ? (_openBlock$2(), _createBlock$2(_component_v_btn, {
                   key: 1,
                   icon: "mdi-download-outline",
                   variant: "text",
@@ -2152,8 +2153,8 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                   loading: exporting.value === pack.id,
                   disabled: !!exporting.value || !!deleting.value || submitting.value || renaming.value,
                   onClick: ($event) => exportPack(pack)
-                }, null, 8, ["aria-label", "loading", "disabled", "onClick"])) : _createCommentVNode$1("", true),
-                !pack.builtin && pack.mode === "stage" ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                }, null, 8, ["aria-label", "loading", "disabled", "onClick"])) : _createCommentVNode$2("", true),
+                !pack.builtin && pack.mode === "stage" ? (_openBlock$2(), _createBlock$2(_component_v_btn, {
                   key: 2,
                   icon: "mdi-pencil-outline",
                   variant: "text",
@@ -2161,8 +2162,8 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                   "aria-label": `重命名 ${pack.name}`,
                   disabled: !!deleting.value || submitting.value || renaming.value,
                   onClick: ($event) => startRename(pack)
-                }, null, 8, ["aria-label", "disabled", "onClick"])) : _createCommentVNode$1("", true),
-                !pack.builtin ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                }, null, 8, ["aria-label", "disabled", "onClick"])) : _createCommentVNode$2("", true),
+                !pack.builtin ? (_openBlock$2(), _createBlock$2(_component_v_btn, {
                   key: 3,
                   icon: "mdi-delete-outline",
                   variant: "text",
@@ -2171,24 +2172,24 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                   loading: deleting.value === pack.id,
                   disabled: !!deleting.value || submitting.value || renaming.value,
                   onClick: ($event) => removePack(pack)
-                }, null, 8, ["aria-label", "loading", "disabled", "onClick"])) : _createCommentVNode$1("", true)
+                }, null, 8, ["aria-label", "loading", "disabled", "onClick"])) : _createCommentVNode$2("", true)
               ])
             ]);
           }), 128)),
-          !packs.value.length && !loading.value && !listError.value ? (_openBlock$1(), _createElementBlock$1("p", _hoisted_8$1, " 暂无素材，导入一个 Pet 开始吧 ")) : _createCommentVNode$1("", true)
+          !packs.value.length && !loading.value && !listError.value ? (_openBlock$2(), _createElementBlock$2("p", _hoisted_8$2, " 暂无素材，导入一个 Pet 开始吧 ")) : _createCommentVNode$2("", true)
         ]),
-        _createVNode$1(_component_v_dialog, {
+        _createVNode$2(_component_v_dialog, {
           "model-value": !!renameTarget.value,
           "max-width": "420",
           persistent: renaming.value,
           "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => !$event && !renaming.value && (renameTarget.value = null))
         }, {
-          default: _withCtx$1(() => [
-            _createVNode$1(_component_v_card, { title: "重命名 Pet" }, {
-              default: _withCtx$1(() => [
-                _createVNode$1(_component_v_card_text, null, {
-                  default: _withCtx$1(() => [
-                    _createVNode$1(_component_v_text_field, {
+          default: _withCtx$2(() => [
+            _createVNode$2(_component_v_card, { title: "重命名 Pet" }, {
+              default: _withCtx$2(() => [
+                _createVNode$2(_component_v_card_text, null, {
+                  default: _withCtx$2(() => [
+                    _createVNode$2(_component_v_text_field, {
                       modelValue: renameName.value,
                       "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => renameName.value = $event),
                       label: "显示名称",
@@ -2197,34 +2198,34 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                       counter: "40",
                       disabled: renaming.value,
                       "error-messages": renameError.value || (!renameValid.value ? "请输入 1～40 个字符的名称" : ""),
-                      onKeydown: _withKeys(_withModifiers(renamePack, ["prevent"]), ["enter"])
+                      onKeydown: _withKeys(_withModifiers$1(renamePack, ["prevent"]), ["enter"])
                     }, null, 8, ["modelValue", "disabled", "error-messages", "onKeydown"]),
-                    _cache[11] || (_cache[11] = _createElementVNode$1("p", { class: "ap-muted mb-0" }, "只修改名称，当前选择、动作映射和位置保持不变。", -1))
+                    _cache[11] || (_cache[11] = _createElementVNode$2("p", { class: "ap-muted mb-0" }, "只修改名称，当前选择、动作映射和位置保持不变。", -1))
                   ]),
                   _: 1
                 }),
-                _createVNode$1(_component_v_card_actions, null, {
-                  default: _withCtx$1(() => [
-                    _createVNode$1(_component_v_spacer),
-                    _createVNode$1(_component_v_btn, {
+                _createVNode$2(_component_v_card_actions, null, {
+                  default: _withCtx$2(() => [
+                    _createVNode$2(_component_v_spacer),
+                    _createVNode$2(_component_v_btn, {
                       variant: "text",
                       disabled: renaming.value,
                       onClick: _cache[1] || (_cache[1] = ($event) => renameTarget.value = null)
                     }, {
-                      default: _withCtx$1(() => [..._cache[12] || (_cache[12] = [
-                        _createTextVNode$1("取消", -1)
+                      default: _withCtx$2(() => [..._cache[12] || (_cache[12] = [
+                        _createTextVNode$2("取消", -1)
                       ])]),
                       _: 1
                     }, 8, ["disabled"]),
-                    _createVNode$1(_component_v_btn, {
+                    _createVNode$2(_component_v_btn, {
                       variant: "flat",
                       color: "primary",
                       disabled: !renameValid.value || renameName.value.trim() === renameTarget.value?.name,
                       loading: renaming.value,
                       onClick: renamePack
                     }, {
-                      default: _withCtx$1(() => [..._cache[13] || (_cache[13] = [
-                        _createTextVNode$1("保存名称", -1)
+                      default: _withCtx$2(() => [..._cache[13] || (_cache[13] = [
+                        _createTextVNode$2("保存名称", -1)
                       ])]),
                       _: 1
                     }, 8, ["disabled", "loading"])
@@ -2237,18 +2238,18 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           ]),
           _: 1
         }, 8, ["model-value", "persistent"]),
-        _createElementVNode$1("div", _hoisted_9$1, [
-          _createElementVNode$1("div", _hoisted_10$1, [
-            _createVNode$1(_component_v_icon, {
+        _createElementVNode$2("div", _hoisted_9$2, [
+          _createElementVNode$2("div", _hoisted_10$2, [
+            _createVNode$2(_component_v_icon, {
               icon: "mdi-package-down",
               color: "primary"
             }),
-            _cache[14] || (_cache[14] = _createElementVNode$1("div", null, [
-              _createElementVNode$1("h2", null, "导入 Pet"),
-              _createElementVNode$1("p", null, "支持 Codex Pet、AgentPets 导出包和自定义精灵图，读取并核对后再导入。")
+            _cache[14] || (_cache[14] = _createElementVNode$2("div", null, [
+              _createElementVNode$2("h2", null, "导入 Pet"),
+              _createElementVNode$2("p", null, "支持 Codex Pet、AgentPets 导出包和自定义精灵图，读取并核对后再导入。")
             ], -1))
           ]),
-          _createVNode$1(_component_v_btn_toggle, {
+          _createVNode$2(_component_v_btn_toggle, {
             modelValue: importMode.value,
             "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => importMode.value = $event),
             mandatory: "",
@@ -2259,29 +2260,29 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
             "aria-label": "导入类型",
             disabled: submitting.value || codexImporting.value || archiveBusy.value
           }, {
-            default: _withCtx$1(() => [
-              _createVNode$1(_component_v_btn, { value: "codex" }, {
-                default: _withCtx$1(() => [..._cache[15] || (_cache[15] = [
-                  _createTextVNode$1("Codex Pet", -1)
+            default: _withCtx$2(() => [
+              _createVNode$2(_component_v_btn, { value: "codex" }, {
+                default: _withCtx$2(() => [..._cache[15] || (_cache[15] = [
+                  _createTextVNode$2("Codex Pet", -1)
                 ])]),
                 _: 1
               }),
-              _createVNode$1(_component_v_btn, { value: "archive" }, {
-                default: _withCtx$1(() => [..._cache[16] || (_cache[16] = [
-                  _createTextVNode$1("AgentPets 素材包", -1)
+              _createVNode$2(_component_v_btn, { value: "archive" }, {
+                default: _withCtx$2(() => [..._cache[16] || (_cache[16] = [
+                  _createTextVNode$2("AgentPets 素材包", -1)
                 ])]),
                 _: 1
               }),
-              _createVNode$1(_component_v_btn, { value: "custom" }, {
-                default: _withCtx$1(() => [..._cache[17] || (_cache[17] = [
-                  _createTextVNode$1("自定义素材", -1)
+              _createVNode$2(_component_v_btn, { value: "custom" }, {
+                default: _withCtx$2(() => [..._cache[17] || (_cache[17] = [
+                  _createTextVNode$2("自定义素材", -1)
                 ])]),
                 _: 1
               })
             ]),
             _: 1
           }, 8, ["modelValue", "disabled"]),
-          _withDirectives$1(_createVNode$1(PackArchiveImport, {
+          _withDirectives$1(_createVNode$2(PackArchiveImport, {
             api: __props.api,
             "plugin-id": instanceId.value,
             targets: packs.value,
@@ -2290,13 +2291,13 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           }, null, 8, ["api", "plugin-id", "targets"]), [
             [_vShow$1, importMode.value === "archive"]
           ]),
-          _withDirectives$1(_createElementVNode$1("div", null, [
-            importMode.value === "custom" ? (_openBlock$1(), _createElementBlock$1(_Fragment$1, { key: 0 }, [
-              _createVNode$1(_component_v_textarea, {
+          _withDirectives$1(_createElementVNode$2("div", null, [
+            importMode.value === "custom" ? (_openBlock$2(), _createElementBlock$2(_Fragment$2, { key: 0 }, [
+              _createVNode$2(_component_v_textarea, {
                 modelValue: packText.value,
                 "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => packText.value = $event),
                 label: "素材包 JSON",
-                placeholder: _unref$1(EXAMPLE),
+                placeholder: _unref$2(EXAMPLE),
                 rows: "6",
                 variant: "outlined",
                 density: "compact",
@@ -2304,7 +2305,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                 "hide-details": "auto",
                 disabled: submitting.value
               }, null, 8, ["modelValue", "placeholder", "disabled"]),
-              _createVNode$1(_component_v_btn_toggle, {
+              _createVNode$2(_component_v_btn_toggle, {
                 modelValue: imageMode.value,
                 "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => imageMode.value = $event),
                 mandatory: "",
@@ -2313,24 +2314,24 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                 class: "my-3",
                 disabled: submitting.value || codexImporting.value
               }, {
-                default: _withCtx$1(() => [
-                  _createVNode$1(_component_v_btn, { value: "upload" }, {
-                    default: _withCtx$1(() => [..._cache[18] || (_cache[18] = [
-                      _createTextVNode$1("上传精灵图", -1)
+                default: _withCtx$2(() => [
+                  _createVNode$2(_component_v_btn, { value: "upload" }, {
+                    default: _withCtx$2(() => [..._cache[18] || (_cache[18] = [
+                      _createTextVNode$2("上传精灵图", -1)
                     ])]),
                     _: 1
                   }),
-                  _createVNode$1(_component_v_btn, { value: "url" }, {
-                    default: _withCtx$1(() => [..._cache[19] || (_cache[19] = [
-                      _createTextVNode$1("使用图片 URL", -1)
+                  _createVNode$2(_component_v_btn, { value: "url" }, {
+                    default: _withCtx$2(() => [..._cache[19] || (_cache[19] = [
+                      _createTextVNode$2("使用图片 URL", -1)
                     ])]),
                     _: 1
                   })
                 ]),
                 _: 1
               }, 8, ["modelValue", "disabled"])
-            ], 64)) : _createCommentVNode$1("", true),
-            imageMode.value === "upload" ? (_openBlock$1(), _createBlock$1(_component_v_file_input, {
+            ], 64)) : _createCommentVNode$2("", true),
+            imageMode.value === "upload" ? (_openBlock$2(), _createBlock$2(_component_v_file_input, {
               key: 1,
               modelValue: fileModel.value,
               "onUpdate:modelValue": [
@@ -2347,30 +2348,30 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
               hint: "图片不超过 4MB，ZIP 不超过 8MB",
               "persistent-hint": "",
               disabled: submitting.value || codexImporting.value
-            }, null, 8, ["modelValue", "error-messages", "disabled"])) : _createCommentVNode$1("", true),
-            importMessage.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+            }, null, 8, ["modelValue", "error-messages", "disabled"])) : _createCommentVNode$2("", true),
+            importMessage.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
               key: 2,
               type: "success",
               variant: "tonal",
               density: "compact",
               class: "mt-3"
             }, {
-              default: _withCtx$1(() => [
-                _createTextVNode$1(_toDisplayString$1(validation.value?.pack?.name) + " · 已准备好，可以添加到我的素材。", 1)
+              default: _withCtx$2(() => [
+                _createTextVNode$2(_toDisplayString$2(validation.value?.pack?.name) + " · 已准备好，可以添加到我的素材。", 1)
               ]),
               _: 1
-            })) : _createCommentVNode$1("", true),
-            importMode.value === "codex" && packText.value ? (_openBlock$1(), _createBlock$1(_component_v_expansion_panels, {
+            })) : _createCommentVNode$2("", true),
+            importMode.value === "codex" && packText.value ? (_openBlock$2(), _createBlock$2(_component_v_expansion_panels, {
               key: 3,
               variant: "accordion",
               class: "mt-3"
             }, {
-              default: _withCtx$1(() => [
-                _createVNode$1(_component_v_expansion_panel, { title: "编辑名称与动作映射" }, {
-                  default: _withCtx$1(() => [
-                    _createVNode$1(_component_v_expansion_panel_text, null, {
-                      default: _withCtx$1(() => [
-                        _createVNode$1(_component_v_textarea, {
+              default: _withCtx$2(() => [
+                _createVNode$2(_component_v_expansion_panel, { title: "编辑名称与动作映射" }, {
+                  default: _withCtx$2(() => [
+                    _createVNode$2(_component_v_expansion_panel_text, null, {
+                      default: _withCtx$2(() => [
+                        _createVNode$2(_component_v_textarea, {
                           modelValue: packText.value,
                           "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => packText.value = $event),
                           label: "素材包 JSON",
@@ -2389,27 +2390,27 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                 })
               ]),
               _: 1
-            })) : _createCommentVNode$1("", true),
-            importError.value || clientErrors.value.length || serverError.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+            })) : _createCommentVNode$2("", true),
+            importError.value || clientErrors.value.length || serverError.value ? (_openBlock$2(), _createBlock$2(_component_v_alert, {
               key: 4,
               type: "error",
               variant: "tonal",
               density: "compact",
               class: "mt-3"
             }, {
-              default: _withCtx$1(() => [
-                (_openBlock$1(true), _createElementBlock$1(_Fragment$1, null, _renderList$1([
+              default: _withCtx$2(() => [
+                (_openBlock$2(true), _createElementBlock$2(_Fragment$2, null, _renderList$2([
                   ...importError.value ? [importError.value] : [],
                   ...clientErrors.value,
                   ...serverError.value ? [serverError.value] : []
                 ], (message) => {
-                  return _openBlock$1(), _createElementBlock$1("div", { key: message }, _toDisplayString$1(message), 1);
+                  return _openBlock$2(), _createElementBlock$2("div", { key: message }, _toDisplayString$2(message), 1);
                 }), 128))
               ]),
               _: 1
-            })) : _createCommentVNode$1("", true),
-            _createElementVNode$1("div", _hoisted_11$1, [
-              imageMode.value === "upload" ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+            })) : _createCommentVNode$2("", true),
+            _createElementVNode$2("div", _hoisted_11$2, [
+              imageMode.value === "upload" ? (_openBlock$2(), _createBlock$2(_component_v_btn, {
                 key: 0,
                 color: "primary",
                 variant: "tonal",
@@ -2418,12 +2419,12 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                 disabled: !selectedFile.value || !!imageError.value || codexImporting.value || submitting.value,
                 onClick: importCodexPet
               }, {
-                default: _withCtx$1(() => [..._cache[20] || (_cache[20] = [
-                  _createTextVNode$1("读取 Codex Pet", -1)
+                default: _withCtx$2(() => [..._cache[20] || (_cache[20] = [
+                  _createTextVNode$2("读取 Codex Pet", -1)
                 ])]),
                 _: 1
-              }, 8, ["loading", "disabled"])) : _createCommentVNode$1("", true),
-              _createVNode$1(_component_v_btn, {
+              }, 8, ["loading", "disabled"])) : _createCommentVNode$2("", true),
+              _createVNode$2(_component_v_btn, {
                 color: "primary",
                 variant: "flat",
                 "prepend-icon": "mdi-plus",
@@ -2431,8 +2432,8 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                 disabled: !canSubmit.value || codexImporting.value,
                 onClick: addPack
               }, {
-                default: _withCtx$1(() => [..._cache[21] || (_cache[21] = [
-                  _createTextVNode$1("添加 Pet", -1)
+                default: _withCtx$2(() => [..._cache[21] || (_cache[21] = [
+                  _createTextVNode$2("添加 Pet", -1)
                 ])]),
                 _: 1
               }, 8, ["loading", "disabled"])
@@ -2446,7 +2447,620 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-7e128498"]]);
+const PackManager = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-6b56f482"]]);
+
+function marketUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+function marketError(reason, fallback) {
+  const response = reason?.response;
+  if (response?.status === 403) return "仅管理员可以导入市场形象";
+  const detail = response?.data?.detail ?? response?.data?.message;
+  if (typeof detail === "string" && detail) return detail;
+  return reason instanceof Error && reason.message ? reason.message : fallback;
+}
+function requireConnection(api, pluginId) {
+  if (!api?.get || !api.post || !pluginId) throw new Error("页面连接尚未就绪，请重新打开");
+  return api;
+}
+function record(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+function isMarket(value) {
+  return record(value) && typeof value.id === "string" && /^[a-z0-9_-]{1,32}$/.test(value.id) && typeof value.name === "string" && !!value.name.trim() && typeof value.description === "string" && (value.homepage === null || typeof value.homepage === "string");
+}
+function isItem(value) {
+  return record(value) && typeof value.id === "string" && !!value.id && typeof value.name === "string" && !!value.name.trim() && ["description", "author", "license"].every((key) => typeof value[key] === "string") && ["preview", "source_url"].every((key) => value[key] === null || typeof value[key] === "string");
+}
+async function loadMarkets(api, pluginId) {
+  const data = unwrap(await requireConnection(api, pluginId).get(`plugin/${pluginId}/markets`));
+  if (!Array.isArray(data) || !data.every(isMarket) || new Set(data.map((item) => item.id)).size !== data.length) {
+    throw new Error("市场列表响应无效，请刷新重试");
+  }
+  return data;
+}
+async function searchMarket(api, pluginId, marketId, keyword, page, pageSize = 12) {
+  const query = new URLSearchParams({
+    market_id: marketId,
+    keyword: keyword.trim(),
+    page: String(page),
+    page_size: String(pageSize)
+  });
+  const data = unwrap(await requireConnection(api, pluginId).get(`plugin/${pluginId}/markets/items?${query}`));
+  if (!record(data) || data.market_id !== marketId || data.page !== page || data.page_size !== pageSize || !Array.isArray(data.items) || !data.items.every(isItem) || data.items.length > pageSize || new Set(data.items.map((item) => item.id)).size !== data.items.length || !(data.total === null || Number.isInteger(data.total) && Number(data.total) >= data.items.length) || typeof data.has_more !== "boolean") {
+    throw new Error("市场搜索响应无效，请重试");
+  }
+  return data;
+}
+async function importMarketPack(api, pluginId, marketId, itemId, mode) {
+  const data = unwrap(
+    await requireConnection(api, pluginId).post(`plugin/${pluginId}/markets/import`, {
+      market_id: marketId,
+      item_id: itemId,
+      mode
+    })
+  );
+  if (!record(data) || typeof data.id !== "string" || !/^[a-z0-9_-]{1,32}$/.test(data.id) || typeof data.name !== "string" || !data.name.trim()) {
+    throw new Error("导入结果未确认，请刷新我的素材后核对");
+  }
+  return { id: data.id, name: data.name };
+}
+
+const {defineComponent:_defineComponent$1} = await importShared('vue');
+
+const {resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,withModifiers:_withModifiers,createElementVNode:_createElementVNode$1,toDisplayString:_toDisplayString$1,unref:_unref$1,createTextVNode:_createTextVNode$1,withCtx:_withCtx$1,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$1,createElementBlock:_createElementBlock$1,renderList:_renderList$1,Fragment:_Fragment$1} = await importShared('vue');
+
+const _hoisted_1$1 = {
+  class: "ap-market",
+  "aria-label": "在线形象市场"
+};
+const _hoisted_2$1 = { class: "ap-market__toolbar" };
+const _hoisted_3$1 = {
+  key: 0,
+  class: "ap-market__source"
+};
+const _hoisted_4$1 = {
+  key: 3,
+  class: "ap-market__grid",
+  "aria-label": "正在加载市场形象",
+  "aria-busy": "true"
+};
+const _hoisted_5$1 = {
+  key: 4,
+  class: "ap-market__empty",
+  role: "status"
+};
+const _hoisted_6$1 = {
+  key: 5,
+  class: "ap-market__empty",
+  role: "status"
+};
+const _hoisted_7$1 = {
+  key: 6,
+  class: "ap-market__grid",
+  role: "list",
+  "aria-label": "市场形象"
+};
+const _hoisted_8$1 = ["aria-label", "disabled", "onClick"];
+const _hoisted_9$1 = ["src", "alt", "onError"];
+const _hoisted_10$1 = { class: "ap-market__item-body" };
+const _hoisted_11$1 = ["title"];
+const _hoisted_12$1 = { class: "ap-market__author" };
+const _hoisted_13$1 = ["title"];
+const _hoisted_14$1 = { class: "ap-market__item-actions" };
+const _hoisted_15$1 = {
+  key: 7,
+  class: "ap-market__pagination",
+  "aria-label": "市场分页"
+};
+const _hoisted_16$1 = { role: "status" };
+const _hoisted_17$1 = { class: "ap-market__review-preview" };
+const _hoisted_18$1 = ["src", "alt"];
+const _hoisted_19$1 = { class: "ap-market__review-description" };
+const _hoisted_20$1 = { class: "ap-market__metadata" };
+const {computed: computed$1,inject: inject$1,onBeforeUnmount: onBeforeUnmount$1,ref: ref$1,watch: watch$1} = await importShared('vue');
+const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
+  __name: "MarketBrowser",
+  props: {
+    api: { default: null },
+    pluginId: { default: "" }
+  },
+  emits: ["imported"],
+  setup(__props, { emit: __emit }) {
+    const props = __props;
+    const emit = __emit;
+    const toast = inject$1("moviepilot:toast", null);
+    const markets = ref$1([]);
+    const marketId = ref$1("");
+    const keyword = ref$1("");
+    const submittedKeyword = ref$1("");
+    const result = ref$1(null);
+    const page = ref$1(1);
+    const listLoading = ref$1(false);
+    const loading = ref$1(false);
+    const listError = ref$1("");
+    const error = ref$1("");
+    const notice = ref$1("");
+    const failedImages = ref$1(/* @__PURE__ */ new Set());
+    const selected = ref$1(null);
+    const mode = ref$1("new");
+    const importing = ref$1(false);
+    const importError = ref$1("");
+    const importedIds = ref$1(/* @__PURE__ */ new Set());
+    const market = computed$1(() => markets.value.find((item) => item.id === marketId.value));
+    const pageCount = computed$1(
+      () => result.value?.total === null ? null : Math.max(1, Math.ceil((result.value?.total ?? 0) / 12))
+    );
+    let alive = true;
+    let scopeVersion = 0;
+    let queryVersion = 0;
+    function imageFailed(item) {
+      failedImages.value = /* @__PURE__ */ new Set([...failedImages.value, item.id]);
+    }
+    function preview(item) {
+      return failedImages.value.has(item.id) ? "" : marketUrl(item.preview);
+    }
+    async function fetchPage(nextPage = 1) {
+      if (!marketId.value) return;
+      const version = ++queryVersion;
+      const scope = scopeVersion;
+      const id = props.pluginId;
+      const target = marketId.value;
+      page.value = nextPage;
+      result.value = null;
+      error.value = "";
+      failedImages.value = /* @__PURE__ */ new Set();
+      loading.value = true;
+      try {
+        const data = await searchMarket(props.api, id, target, submittedKeyword.value, nextPage);
+        if (!alive || scope !== scopeVersion || version !== queryVersion) return;
+        result.value = data;
+      } catch (reason) {
+        if (alive && scope === scopeVersion && version === queryVersion)
+          error.value = marketError(reason, "市场暂时无法读取，请重试");
+      } finally {
+        if (alive && scope === scopeVersion && version === queryVersion) loading.value = false;
+      }
+    }
+    async function initialize() {
+      const scope = ++scopeVersion;
+      queryVersion++;
+      markets.value = [];
+      marketId.value = "";
+      keyword.value = "";
+      submittedKeyword.value = "";
+      result.value = null;
+      selected.value = null;
+      importing.value = false;
+      loading.value = false;
+      listError.value = "";
+      error.value = "";
+      notice.value = "";
+      importError.value = "";
+      importedIds.value = /* @__PURE__ */ new Set();
+      listLoading.value = true;
+      try {
+        const data = await loadMarkets(props.api, props.pluginId);
+        if (!alive || scope !== scopeVersion) return;
+        markets.value = data;
+        marketId.value = data[0]?.id ?? "";
+        if (marketId.value) void fetchPage();
+      } catch (reason) {
+        if (alive && scope === scopeVersion) listError.value = marketError(reason, "市场列表读取失败，请重试");
+      } finally {
+        if (alive && scope === scopeVersion) listLoading.value = false;
+      }
+    }
+    function changeMarket(value) {
+      if (importing.value) return;
+      marketId.value = value;
+      keyword.value = "";
+      submittedKeyword.value = "";
+      selected.value = null;
+      notice.value = "";
+      void fetchPage();
+    }
+    function search() {
+      if (importing.value || !marketId.value) return;
+      submittedKeyword.value = (keyword.value ?? "").trim();
+      void fetchPage();
+    }
+    function clearSearch() {
+      keyword.value = "";
+      search();
+    }
+    function choose(item) {
+      selected.value = item;
+      mode.value = importedIds.value.has(`${marketId.value}:${item.id}`) ? "copy" : "new";
+      importError.value = "";
+    }
+    function closeReview(value) {
+      if (!value && !importing.value) selected.value = null;
+    }
+    async function importSelected() {
+      if (!selected.value || importing.value) return;
+      const item = selected.value;
+      const scope = scopeVersion;
+      const target = marketId.value;
+      const id = props.pluginId;
+      importing.value = true;
+      importError.value = "";
+      try {
+        const saved = await importMarketPack(props.api, id, target, item.id, mode.value);
+        if (!alive || scope !== scopeVersion) return;
+        importedIds.value = /* @__PURE__ */ new Set([...importedIds.value, `${target}:${item.id}`]);
+        notice.value = `已导入 ${saved.name}`;
+        selected.value = null;
+        toast?.success?.(notice.value);
+        emit("imported");
+      } catch (reason) {
+        if (alive && scope === scopeVersion) importError.value = marketError(reason, "导入未完成，请刷新我的素材核对后重试");
+      } finally {
+        if (alive && scope === scopeVersion) importing.value = false;
+      }
+    }
+    watch$1([() => props.pluginId, () => props.api], () => void initialize(), { immediate: true });
+    onBeforeUnmount$1(() => {
+      alive = false;
+      scopeVersion++;
+      queryVersion++;
+    });
+    return (_ctx, _cache) => {
+      const _component_v_select = _resolveComponent$1("v-select");
+      const _component_v_text_field = _resolveComponent$1("v-text-field");
+      const _component_v_btn = _resolveComponent$1("v-btn");
+      const _component_v_alert = _resolveComponent$1("v-alert");
+      const _component_v_skeleton_loader = _resolveComponent$1("v-skeleton-loader");
+      const _component_v_icon = _resolveComponent$1("v-icon");
+      const _component_v_chip = _resolveComponent$1("v-chip");
+      const _component_v_spacer = _resolveComponent$1("v-spacer");
+      const _component_v_radio = _resolveComponent$1("v-radio");
+      const _component_v_radio_group = _resolveComponent$1("v-radio-group");
+      const _component_v_card_text = _resolveComponent$1("v-card-text");
+      const _component_v_card_actions = _resolveComponent$1("v-card-actions");
+      const _component_v_card = _resolveComponent$1("v-card");
+      const _component_v_dialog = _resolveComponent$1("v-dialog");
+      return _openBlock$1(), _createElementBlock$1("section", _hoisted_1$1, [
+        _createElementVNode$1("div", _hoisted_2$1, [
+          _createVNode$1(_component_v_select, {
+            "model-value": marketId.value,
+            items: markets.value,
+            "item-title": "name",
+            "item-value": "id",
+            label: "形象市场",
+            "aria-label": "形象市场",
+            variant: "outlined",
+            density: "compact",
+            "hide-details": "",
+            loading: listLoading.value,
+            disabled: listLoading.value || !markets.value.length || importing.value,
+            "onUpdate:modelValue": changeMarket
+          }, null, 8, ["model-value", "items", "loading", "disabled"]),
+          _createElementVNode$1("form", {
+            class: "ap-market__search",
+            onSubmit: _withModifiers(search, ["prevent"])
+          }, [
+            _createVNode$1(_component_v_text_field, {
+              modelValue: keyword.value,
+              "onUpdate:modelValue": _cache[0] || (_cache[0] = ($event) => keyword.value = $event),
+              label: "搜索形象",
+              maxlength: "200",
+              variant: "outlined",
+              density: "compact",
+              "hide-details": "",
+              clearable: "",
+              disabled: !marketId.value || importing.value,
+              "onClick:clear": clearSearch
+            }, null, 8, ["modelValue", "disabled"]),
+            _createVNode$1(_component_v_btn, {
+              type: "submit",
+              color: "primary",
+              variant: "tonal",
+              icon: "mdi-magnify",
+              "aria-label": "搜索市场形象",
+              disabled: !marketId.value || importing.value
+            }, null, 8, ["disabled"])
+          ], 32)
+        ]),
+        market.value ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_3$1, [
+          _createElementVNode$1("span", null, _toDisplayString$1(market.value.description), 1),
+          _unref$1(marketUrl)(market.value.homepage) ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+            key: 0,
+            href: _unref$1(marketUrl)(market.value.homepage),
+            target: "_blank",
+            rel: "noopener noreferrer",
+            size: "small",
+            variant: "text",
+            "append-icon": "mdi-open-in-new"
+          }, {
+            default: _withCtx$1(() => [..._cache[7] || (_cache[7] = [
+              _createTextVNode$1("市场主页", -1)
+            ])]),
+            _: 1
+          }, 8, ["href"])) : _createCommentVNode$1("", true)
+        ])) : _createCommentVNode$1("", true),
+        notice.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+          key: 1,
+          role: "status",
+          type: "success",
+          variant: "tonal",
+          density: "compact",
+          class: "mb-4"
+        }, {
+          default: _withCtx$1(() => [
+            _createTextVNode$1(_toDisplayString$1(notice.value), 1)
+          ]),
+          _: 1
+        })) : _createCommentVNode$1("", true),
+        listError.value || error.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+          key: 2,
+          role: "alert",
+          type: "error",
+          variant: "tonal",
+          density: "compact",
+          class: "mb-4"
+        }, {
+          append: _withCtx$1(() => [
+            _createVNode$1(_component_v_btn, {
+              size: "small",
+              variant: "text",
+              "prepend-icon": "mdi-refresh",
+              onClick: _cache[1] || (_cache[1] = ($event) => listError.value ? initialize() : fetchPage(page.value))
+            }, {
+              default: _withCtx$1(() => [..._cache[8] || (_cache[8] = [
+                _createTextVNode$1("重试", -1)
+              ])]),
+              _: 1
+            })
+          ]),
+          default: _withCtx$1(() => [
+            _createTextVNode$1(_toDisplayString$1(listError.value || error.value) + " ", 1)
+          ]),
+          _: 1
+        })) : _createCommentVNode$1("", true),
+        listLoading.value || loading.value ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_4$1, [
+          (_openBlock$1(), _createElementBlock$1(_Fragment$1, null, _renderList$1(6, (index) => {
+            return _createElementVNode$1("div", {
+              key: index,
+              class: "ap-market__skeleton"
+            }, [
+              _createVNode$1(_component_v_skeleton_loader, { type: "image, list-item-two-line" })
+            ]);
+          }), 64))
+        ])) : !listError.value && !markets.value.length ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_5$1, [
+          _createVNode$1(_component_v_icon, {
+            icon: "mdi-storefront-outline",
+            size: "36"
+          }),
+          _cache[9] || (_cache[9] = _createElementVNode$1("p", null, "暂未接入形象市场", -1))
+        ])) : result.value && !result.value.items.length ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_6$1, [
+          _createVNode$1(_component_v_icon, {
+            icon: "mdi-magnify",
+            size: "36"
+          }),
+          _createElementVNode$1("p", null, _toDisplayString$1(submittedKeyword.value ? "没有找到匹配的形象" : "当前市场暂无形象"), 1)
+        ])) : result.value ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_7$1, [
+          (_openBlock$1(true), _createElementBlock$1(_Fragment$1, null, _renderList$1(result.value.items, (item) => {
+            return _openBlock$1(), _createElementBlock$1("article", {
+              key: item.id,
+              class: "ap-market__item",
+              role: "listitem"
+            }, [
+              _createElementVNode$1("button", {
+                class: "ap-market__preview",
+                type: "button",
+                "aria-label": `预览 ${item.name}`,
+                disabled: importing.value,
+                onClick: ($event) => choose(item)
+              }, [
+                preview(item) ? (_openBlock$1(), _createElementBlock$1("img", {
+                  key: 0,
+                  src: preview(item),
+                  alt: item.name,
+                  loading: "lazy",
+                  referrerpolicy: "no-referrer",
+                  onError: ($event) => imageFailed(item)
+                }, null, 40, _hoisted_9$1)) : (_openBlock$1(), _createBlock$1(_component_v_icon, {
+                  key: 1,
+                  icon: "mdi-paw-outline",
+                  size: "38",
+                  "aria-hidden": "true"
+                }))
+              ], 8, _hoisted_8$1),
+              _createElementVNode$1("div", _hoisted_10$1, [
+                _createElementVNode$1("h3", {
+                  title: item.name
+                }, _toDisplayString$1(item.name), 9, _hoisted_11$1),
+                _createElementVNode$1("p", _hoisted_12$1, _toDisplayString$1(item.author || "作者未提供"), 1),
+                _createElementVNode$1("p", {
+                  class: "ap-market__description",
+                  title: item.description
+                }, _toDisplayString$1(item.description || "暂无说明"), 9, _hoisted_13$1),
+                _createElementVNode$1("div", _hoisted_14$1, [
+                  importedIds.value.has(`${marketId.value}:${item.id}`) ? (_openBlock$1(), _createBlock$1(_component_v_chip, {
+                    key: 0,
+                    size: "x-small",
+                    color: "success",
+                    variant: "tonal"
+                  }, {
+                    default: _withCtx$1(() => [..._cache[10] || (_cache[10] = [
+                      _createTextVNode$1("已导入", -1)
+                    ])]),
+                    _: 1
+                  })) : _createCommentVNode$1("", true),
+                  _createVNode$1(_component_v_spacer),
+                  _createVNode$1(_component_v_btn, {
+                    size: "small",
+                    variant: "tonal",
+                    color: "primary",
+                    "prepend-icon": "mdi-download-outline",
+                    "aria-label": `导入 ${item.name}`,
+                    disabled: importing.value,
+                    onClick: ($event) => choose(item)
+                  }, {
+                    default: _withCtx$1(() => [..._cache[11] || (_cache[11] = [
+                      _createTextVNode$1("导入", -1)
+                    ])]),
+                    _: 1
+                  }, 8, ["aria-label", "disabled", "onClick"])
+                ])
+              ])
+            ]);
+          }), 128))
+        ])) : _createCommentVNode$1("", true),
+        result.value ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_15$1, [
+          _createElementVNode$1("span", _hoisted_16$1, _toDisplayString$1(result.value.total === null ? "总量未知" : `共 ${result.value.total} 个形象`) + " · 第 " + _toDisplayString$1(page.value) + " 页" + _toDisplayString$1(pageCount.value ? ` / ${pageCount.value}` : ""), 1),
+          _createElementVNode$1("div", null, [
+            _createVNode$1(_component_v_btn, {
+              icon: "mdi-chevron-left",
+              "aria-label": "上一页",
+              variant: "text",
+              size: "small",
+              disabled: page.value <= 1 || loading.value || importing.value,
+              onClick: _cache[2] || (_cache[2] = ($event) => fetchPage(page.value - 1))
+            }, null, 8, ["disabled"]),
+            _createVNode$1(_component_v_btn, {
+              icon: "mdi-chevron-right",
+              "aria-label": "下一页",
+              variant: "text",
+              size: "small",
+              disabled: !result.value.has_more || loading.value || importing.value,
+              onClick: _cache[3] || (_cache[3] = ($event) => fetchPage(page.value + 1))
+            }, null, 8, ["disabled"])
+          ])
+        ])) : _createCommentVNode$1("", true),
+        _createVNode$1(_component_v_dialog, {
+          "model-value": !!selected.value,
+          "max-width": "580",
+          persistent: importing.value,
+          "onUpdate:modelValue": closeReview
+        }, {
+          default: _withCtx$1(() => [
+            selected.value ? (_openBlock$1(), _createBlock$1(_component_v_card, {
+              key: 0,
+              title: selected.value.name
+            }, {
+              default: _withCtx$1(() => [
+                _createVNode$1(_component_v_card_text, null, {
+                  default: _withCtx$1(() => [
+                    _createElementVNode$1("div", _hoisted_17$1, [
+                      preview(selected.value) ? (_openBlock$1(), _createElementBlock$1("img", {
+                        key: 0,
+                        src: preview(selected.value),
+                        alt: selected.value.name,
+                        referrerpolicy: "no-referrer",
+                        onError: _cache[4] || (_cache[4] = ($event) => imageFailed(selected.value))
+                      }, null, 40, _hoisted_18$1)) : (_openBlock$1(), _createBlock$1(_component_v_icon, {
+                        key: 1,
+                        icon: "mdi-paw-outline",
+                        size: "60"
+                      }))
+                    ]),
+                    _createElementVNode$1("p", _hoisted_19$1, _toDisplayString$1(selected.value.description || "暂无说明"), 1),
+                    _createElementVNode$1("dl", _hoisted_20$1, [
+                      _cache[12] || (_cache[12] = _createElementVNode$1("dt", null, "市场", -1)),
+                      _createElementVNode$1("dd", null, _toDisplayString$1(market.value?.name), 1),
+                      _cache[13] || (_cache[13] = _createElementVNode$1("dt", null, "作者", -1)),
+                      _createElementVNode$1("dd", null, _toDisplayString$1(selected.value.author || "未提供"), 1),
+                      _cache[14] || (_cache[14] = _createElementVNode$1("dt", null, "许可", -1)),
+                      _createElementVNode$1("dd", null, _toDisplayString$1(selected.value.license || "未提供"), 1)
+                    ]),
+                    _unref$1(marketUrl)(selected.value.source_url) ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                      key: 0,
+                      href: _unref$1(marketUrl)(selected.value.source_url),
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      size: "small",
+                      variant: "text",
+                      "append-icon": "mdi-open-in-new",
+                      class: "mb-3"
+                    }, {
+                      default: _withCtx$1(() => [..._cache[15] || (_cache[15] = [
+                        _createTextVNode$1("查看来源", -1)
+                      ])]),
+                      _: 1
+                    }, 8, ["href"])) : _createCommentVNode$1("", true),
+                    _createVNode$1(_component_v_radio_group, {
+                      modelValue: mode.value,
+                      "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => mode.value = $event),
+                      label: "导入方式",
+                      disabled: importing.value,
+                      "hide-details": ""
+                    }, {
+                      default: _withCtx$1(() => [
+                        _createVNode$1(_component_v_radio, {
+                          label: "新增素材",
+                          value: "new"
+                        }),
+                        _createVNode$1(_component_v_radio, {
+                          label: "导入副本",
+                          value: "copy"
+                        })
+                      ]),
+                      _: 1
+                    }, 8, ["modelValue", "disabled"]),
+                    importError.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+                      key: 1,
+                      role: "alert",
+                      type: "error",
+                      variant: "tonal",
+                      density: "compact",
+                      class: "mt-3"
+                    }, {
+                      default: _withCtx$1(() => [
+                        _createTextVNode$1(_toDisplayString$1(importError.value), 1)
+                      ]),
+                      _: 1
+                    })) : _createCommentVNode$1("", true)
+                  ]),
+                  _: 1
+                }),
+                _createVNode$1(_component_v_card_actions, null, {
+                  default: _withCtx$1(() => [
+                    _createVNode$1(_component_v_spacer),
+                    _createVNode$1(_component_v_btn, {
+                      disabled: importing.value,
+                      onClick: _cache[6] || (_cache[6] = ($event) => selected.value = null)
+                    }, {
+                      default: _withCtx$1(() => [..._cache[16] || (_cache[16] = [
+                        _createTextVNode$1("取消", -1)
+                      ])]),
+                      _: 1
+                    }, 8, ["disabled"]),
+                    _createVNode$1(_component_v_btn, {
+                      color: "primary",
+                      variant: "flat",
+                      "prepend-icon": "mdi-download-outline",
+                      loading: importing.value,
+                      disabled: importing.value,
+                      onClick: importSelected
+                    }, {
+                      default: _withCtx$1(() => [..._cache[17] || (_cache[17] = [
+                        _createTextVNode$1("确认导入", -1)
+                      ])]),
+                      _: 1
+                    }, 8, ["loading", "disabled"])
+                  ]),
+                  _: 1
+                })
+              ]),
+              _: 1
+            }, 8, ["title"])) : _createCommentVNode$1("", true)
+          ]),
+          _: 1
+        }, 8, ["model-value", "persistent"])
+      ]);
+    };
+  }
+});
+
+const MarketBrowser = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-34a7a093"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -2508,6 +3122,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const agent = inject(AGENT_HOST_KEY, null);
     const activeMain = ref("overview");
     const visitedPacks = ref(false);
+    const visitedMarket = ref(false);
+    const packManager = ref(null);
     const enabled = ref(Boolean(props.initialConfig?.enabled));
     const baseline = ref(Boolean(props.initialConfig?.enabled));
     const changed = computed(() => enabled.value !== baseline.value);
@@ -2531,7 +3147,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         title: "素材管理",
         icon: "mdi-package-variant-closed",
         description: "导入你的 Pet，或管理已有的素材包。"
-      }
+      },
+      { key: "market", title: "在线市场", icon: "mdi-storefront-outline", description: "" }
     ];
     const group = computed(() => groups.find((item) => item.key === activeMain.value) ?? groups[0]);
     const stageCount = computed(() => snapshot.value?.pets.filter((pet) => pet.mode === "stage").length ?? 0);
@@ -2552,7 +3169,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     );
     watch(activeMain, (value) => {
       if (value === "packs") visitedPacks.value = true;
+      if (value === "market") visitedMarket.value = true;
     });
+    function marketImported() {
+      void refresh();
+      void packManager.value?.refresh();
+    }
     async function refresh() {
       const version = ++requestVersion;
       const id = props.pluginId;
@@ -2858,12 +3480,22 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 ], -1))
               ], 64)) : _createCommentVNode("", true),
               visitedPacks.value ? _withDirectives((_openBlock(), _createBlock(PackManager, {
+                ref_key: "packManager",
+                ref: packManager,
                 key: props.pluginId,
                 api: props.api,
                 "plugin-id": props.pluginId,
                 onChanged: refresh
               }, null, 8, ["api", "plugin-id"])), [
                 [_vShow, activeMain.value === "packs"]
+              ]) : _createCommentVNode("", true),
+              visitedMarket.value ? _withDirectives((_openBlock(), _createBlock(MarketBrowser, {
+                key: props.pluginId,
+                api: props.api,
+                "plugin-id": props.pluginId,
+                onImported: marketImported
+              }, null, 8, ["api", "plugin-id"])), [
+                [_vShow, activeMain.value === "market"]
               ]) : _createCommentVNode("", true)
             ], 2)
           ]),
@@ -2874,7 +3506,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 size: "7"
               }),
               _cache[27] || (_cache[27] = _createTextVNode("1 项未保存 · 启用助手形象", -1))
-            ])) : (_openBlock(), _createElementBlock("span", _hoisted_24, _toDisplayString(activeMain.value === "packs" ? "素材的导入与删除即时保存" : "修改配置后点击保存"), 1)),
+            ])) : (_openBlock(), _createElementBlock("span", _hoisted_24, _toDisplayString(activeMain.value === "packs" || activeMain.value === "market" ? "素材的导入与删除即时保存" : "修改配置后点击保存"), 1)),
             _createElementVNode("div", _hoisted_25, [
               _createVNode(_component_v_btn, {
                 variant: "text",

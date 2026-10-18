@@ -7,10 +7,12 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.plugins.agentpets import AgentPets, SaveSettingsRequest, require_admin
+from app.plugins.agentpets import AgentPets, require_admin
+from app.plugins.agentpets.requests import SaveSettingsRequest
 
 
 def editor(config=None):
+    """建立配置保存在内存且素材为空的实例，模拟未知配置字段的并存"""
     plugin = AgentPets()
     config = config or {"enabled": True, "scale": 1, "speed": 1, "roam": "floor", "future_option": {"keep": 1}}
     stored = deepcopy(config)
@@ -19,6 +21,7 @@ def editor(config=None):
     plugin.get_data = lambda key=None: None
 
     def persist(values):
+        """以深拷贝替换内存配置，模拟一次成功持久化"""
         stored.clear()
         stored.update(deepcopy(values))
         return True
@@ -28,6 +31,7 @@ def editor(config=None):
 
 
 def test_editor_returns_only_public_state_and_both_builtin_modes():
+    """编辑接口只暴露必要设置和两类内置形象，不泄露未知配置"""
     plugin, _ = editor()
     result = plugin.api_editor()
     assert result.success
@@ -39,6 +43,7 @@ def test_editor_returns_only_public_state_and_both_builtin_modes():
 
 
 def test_save_merges_latest_config_and_leaves_enable_and_unknown_options_untouched():
+    """保存时合并最新配置，保留开关及其他页面更新的未知字段"""
     plugin, stored = editor()
     stored["future_option"]["keep"] = 2
     result = plugin.api_save_settings(SaveSettingsRequest(scale=1.25, speed=0.8, roam="free"))
@@ -48,6 +53,7 @@ def test_save_merges_latest_config_and_leaves_enable_and_unknown_options_untouch
 
 
 def test_save_does_not_enable_a_disabled_plugin():
+    """调整活动参数不得意外启用已停用的插件"""
     plugin, stored = editor({"enabled": False, "scale": 1, "speed": 1, "roam": "floor"})
     assert plugin.api_save_settings(SaveSettingsRequest(scale=1.2, speed=1, roam="free")).success
     assert not stored["enabled"] and not plugin.get_state()
@@ -55,6 +61,7 @@ def test_save_does_not_enable_a_disabled_plugin():
 
 @pytest.mark.parametrize("failure", ["write", "readback"])
 def test_failed_persistence_keeps_runtime_parameters(failure):
+    """写入失败或回读不一致时，运行中的活动参数不得提前改变"""
     plugin, _ = editor()
     before = plugin.settings()
     plugin.update_config = lambda value: failure != "write"
@@ -68,11 +75,13 @@ def test_failed_persistence_keeps_runtime_parameters(failure):
     {"roam": "outside"}, {"enabled": False}, {"AI_AGENT_PET": "another:pet"},
 ])
 def test_edit_request_rejects_invalid_values_and_unrelated_fields(change):
+    """请求拒绝越界、非有限值、未知枚举和无权更改的配置字段"""
     with pytest.raises(ValidationError):
         SaveSettingsRequest(**{"scale": 1, "speed": 1, "roam": "floor", **change})
 
 
 def test_edit_route_requires_admin_and_read_route_only_requires_login():
+    """活动保存需要管理员，编辑读取只要求登录且不改变配置"""
     plugin, _ = editor()
     routes = {(item["path"], item["methods"][0]): item for item in plugin.get_api()}
     assert routes[("/settings", "POST")]["dependencies"][0].dependency is require_admin
@@ -93,12 +102,14 @@ def test_built_preview_does_not_export_raw_vue_sources():
 
 @pytest.mark.parametrize("phase", ["read", "write", "readback"])
 def test_settings_io_errors_return_failure_without_changing_runtime(phase):
+    """读取、写入和回读异常均返回失败，不改变运行参数或已有配置"""
     plugin, stored = editor()
     before = plugin.settings()
     original = deepcopy(stored)
     calls = 0
 
     def read():
+        """根据测试阶段在首读或回读注入故障，其他读取返回独立快照"""
         nonlocal calls
         calls += 1
         if phase == "read" or (phase == "readback" and calls == 2):
@@ -106,6 +117,7 @@ def test_settings_io_errors_return_failure_without_changing_runtime(phase):
         return deepcopy(stored)
 
     def write(_values):
+        """仅在写入阶段注入运行时错误，不实际覆盖原始配置"""
         if phase == "write":
             raise RuntimeError("settings unavailable")
         return True

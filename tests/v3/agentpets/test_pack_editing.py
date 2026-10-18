@@ -3,12 +3,15 @@ from copy import deepcopy
 
 import pytest
 
-from app.plugins.agentpets import AgentPets, RenamePackRequest, SaveMappingsRequest, require_admin
-from app.plugins.agentpets.pack import PackError, PackStore
+from app.plugins.agentpets import AgentPets, require_admin
+from app.plugins.agentpets.packs.constants import PackError
+from app.plugins.agentpets.packs.store import PackStore
+from app.plugins.agentpets.requests import RenamePackRequest, SaveMappingsRequest
 
 
 @pytest.fixture
 def state(tmp_path):
+    """提供两份 Codex 记录与未知字段，用于验证局部编辑和实例内隔离"""
     record = {
         "id": "rem", "name": "Rem", "codex_version": "v1", "grid": {"cols": 8, "rows": 9},
         "frames": {"idle": 0}, "actions": {"idle": {"frames": ["idle"], "frame_ms": 360, "loop": True}},
@@ -20,6 +23,7 @@ def state(tmp_path):
 
 
 def test_rename_preserves_identity_assets_and_other_pet(state):
+    """重命名只改目标名称，不变更缓存原对象、未知字段和其他素材"""
     store, data, before = state
     snapshot = deepcopy(data)
     result = store.update("rem", name="  蕾姆  ", expected_name="Rem")
@@ -30,6 +34,7 @@ def test_rename_preserves_identity_assets_and_other_pet(state):
 
 
 def test_mappings_preserve_raw_animation_and_rename_and_reset(state):
+    """映射编辑不改原始动画，改名后映射保留且可恢复默认"""
     store, _, before = state
     mapping = {"stage.think": "review", "stage.walk-left": "running-left", "action.nod": "waving"}
     result = store.update("rem", mappings=mapping, expected_mappings={})
@@ -49,6 +54,7 @@ def test_mappings_preserve_raw_animation_and_rename_and_reset(state):
     {"mappings": {}, "expected_mappings": {"stage.think": "review"}},
 ])
 def test_invalid_or_stale_edits_do_not_write(state, kwargs):
+    """非法名称、触发器、动画或过期旧值不得写入元数据"""
     store, data, _ = state
     before = deepcopy(data)
     with pytest.raises(PackError):
@@ -57,6 +63,7 @@ def test_invalid_or_stale_edits_do_not_write(state, kwargs):
 
 
 def test_v2_direction_mapping_and_failed_persistence(state):
+    """v2 可映射视线动作，保存失败时原数据不发生变化"""
     store, data, _ = state
     data["packs"][0].update(codex_version="v2", grid={"cols": 8, "rows": 11})
     assert store.update("rem", mappings={"stage.think": "look-337-5"}, expected_mappings={})["action_mappings"]
@@ -68,6 +75,7 @@ def test_v2_direction_mapping_and_failed_persistence(state):
 
 
 def test_missing_builtin_and_non_codex_cannot_be_edited(state):
+    """仅已有用户 Codex 素材可编辑，内置、缺失和普通入口素材被拒绝"""
     store, data, _ = state
     for key in ("missing", "projector-cat", "ying"):
         with pytest.raises(PackError):
@@ -79,6 +87,7 @@ def test_missing_builtin_and_non_codex_cannot_be_edited(state):
 
 
 def test_api_readback_and_permissions(state):
+    """API 回读改名和映射结果，形象声明同步且写路由均要求管理员"""
     store, _, _ = state
     plugin = AgentPets()
     plugin._store = lambda: store
@@ -95,6 +104,7 @@ def test_api_readback_and_permissions(state):
 
 
 def test_failed_readback_is_not_reported_as_success(state):
+    """保存未真正落地时回读检查失败，不把无效持久化报告为成功"""
     store, _, _ = state
     store._save_data = lambda *_: None
     with pytest.raises(PackError, match="回读"):

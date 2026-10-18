@@ -21,13 +21,18 @@ async function setup() {
   }
   let persisted = { ...initial }
   const api = {
-    get: vi
-      .fn()
-      .mockImplementation(async (path: string) =>
-        path.endsWith('/editor')
-          ? { success: true, data: { enabled: persisted.enabled, settings: persisted, pets: [] } }
-          : { ...persisted },
-      ),
+    get: vi.fn().mockImplementation(async (path: string) =>
+      path.endsWith('/editor')
+        ? {
+            success: true,
+            data: {
+              enabled: persisted.enabled,
+              settings: persisted,
+              pets: [],
+            },
+          }
+        : { ...persisted },
+    ),
     post: vi.fn(),
   }
   const view = mount(Config, {
@@ -95,7 +100,13 @@ describe('Pet settings layout', () => {
 
   it('reads fresh complete configuration before saving only the enable switch', async () => {
     const { view, initial, api, toggle, save, setPersisted } = await setup()
-    const latest = { ...initial, scale: 1.6, speed: 1.8, roam: 'surfaces', future: { keep: false } }
+    const latest = {
+      ...initial,
+      scale: 1.6,
+      speed: 1.8,
+      roam: 'surfaces',
+      future: { keep: false },
+    }
     setPersisted(latest)
     await toggle()
     await save()
@@ -136,6 +147,38 @@ describe('Pet settings layout', () => {
     view.unmount()
     resolve(initial)
     await flushPromises()
+    expect(view.emitted('save')).toBeUndefined()
+  })
+
+  it('refreshes an already visited local library after a market import', async () => {
+    const { view, api } = await setup()
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    await view
+      .findAll('.ap-nav .v-list-item')
+      .find(item => item.text().includes('素材管理'))!
+      .trigger('click')
+    Object.assign(view.getComponent({ name: 'PackManager' }).vm, { refresh })
+    api.get.mockImplementation(async (path: string) =>
+      path.endsWith('/markets')
+        ? { success: true, data: [] }
+        : {
+            success: true,
+            data: {
+              enabled: true,
+              settings: { scale: 1, speed: 1, roam: 'floor' },
+              pets: [],
+            },
+          },
+    )
+    await view
+      .findAll('.ap-nav .v-list-item')
+      .find(item => item.text().includes('在线市场'))!
+      .trigger('click')
+    await flushPromises()
+    view.getComponent({ name: 'MarketBrowser' }).vm.$emit('imported')
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(api.get).toHaveBeenCalledWith('plugin/Clone1/editor')
     expect(view.emitted('save')).toBeUndefined()
   })
 })

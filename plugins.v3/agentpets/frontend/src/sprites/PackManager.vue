@@ -391,6 +391,7 @@ watch(instanceId, () => {
   void refresh()
 })
 onMounted(refresh)
+defineExpose({ refresh })
 </script>
 
 <template>

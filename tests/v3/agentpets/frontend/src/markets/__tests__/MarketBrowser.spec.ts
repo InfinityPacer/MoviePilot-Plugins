@@ -1,0 +1,218 @@
+import { fireEvent, render, waitFor } from '@testing-library/vue'
+import { flushPromises } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { createVuetify } from 'vuetify'
+import * as components from 'vuetify/components'
+import * as directives from 'vuetify/directives'
+
+import MarketBrowser from '@/markets/MarketBrowser.vue'
+
+const markets = [
+  {
+    id: 'codex-pets',
+    name: 'Codex Pets',
+    description: 'Community pets',
+    homepage: 'https://codex-pets.net/',
+  },
+  { id: 'petdex', name: 'Petdex', description: 'Petdex pets', homepage: null },
+]
+const item = {
+  id: 'author/pet',
+  name: 'Test Pet',
+  description: 'A companion',
+  author: 'Creator',
+  license: '',
+  preview: null,
+  source_url: 'https://example.com/pet',
+}
+
+async function setup() {
+  const api = {
+    get: vi.fn().mockImplementation(async (path: string) => {
+      if (path.endsWith('/markets')) return { success: true, data: markets }
+      const params = new URLSearchParams(path.split('?')[1])
+      return {
+        success: true,
+        data: {
+          market_id: params.get('market_id'),
+          page: Number(params.get('page')),
+          page_size: 12,
+          items: [item],
+          total: null,
+          has_more: true,
+        },
+      }
+    }),
+    post: vi.fn().mockResolvedValue({
+      success: true,
+      data: { id: 'local-pet', name: 'Test Pet' },
+    }),
+  }
+  const view = render(MarketBrowser, {
+    props: { api, pluginId: 'Clone1' },
+    global: { plugins: [createVuetify({ components, directives })] },
+  })
+  await waitFor(() => expect(view.getByRole('button', { name: '导入 Test Pet' })).toBeInTheDocument())
+  return { api, view }
+}
+
+describe('market browsing and import', () => {
+  it('browses unknown totals and searches with a reset page', async () => {
+    const { api, view } = await setup()
+    expect(view.getByText(/总量未知/)).toBeInTheDocument()
+    await fireEvent.click(view.getByRole('button', { name: '下一页' }))
+    await waitFor(() => expect(view.getByText(/第 2 页/)).toBeInTheDocument())
+    await fireEvent.update(view.getByRole('textbox', { name: '搜索形象' }), 'cat')
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await waitFor(() => expect(view.getByText(/第 1 页/)).toBeInTheDocument())
+    expect(api.get.mock.calls.at(-1)?.[0]).toContain('keyword=cat&page=1')
+    await fireEvent.click(view.getByRole('button', { name: 'Clear 搜索形象' }))
+    await waitFor(() => expect(api.get.mock.calls.at(-1)?.[0]).toContain('keyword=&page=1'))
+  })
+
+  it('confirms explicit copy import and emits only after success', async () => {
+    const { api, view } = await setup()
+    await fireEvent.click(view.getByRole('button', { name: '导入 Test Pet' }))
+    expect(api.post).not.toHaveBeenCalled()
+    await fireEvent.click(view.getByRole('radio', { name: '导入副本' }))
+    await fireEvent.click(view.getByRole('button', { name: '确认导入' }))
+    await waitFor(() => expect(view.getByText('已导入 Test Pet')).toBeInTheDocument())
+    expect(api.post).toHaveBeenCalledWith('plugin/Clone1/markets/import', {
+      market_id: 'codex-pets',
+      item_id: 'author/pet',
+      mode: 'copy',
+    })
+    expect(view.emitted('imported')).toHaveLength(1)
+  })
+
+  it('preserves the review and never reports success on backend failure', async () => {
+    const { api, view } = await setup()
+    api.post.mockResolvedValue({
+      success: false,
+      message: '已存在 ID，请导入副本',
+    })
+    await fireEvent.click(view.getByRole('button', { name: '导入 Test Pet' }))
+    await fireEvent.click(view.getByRole('button', { name: '确认导入' }))
+    await waitFor(() => expect(view.getByText('已存在 ID，请导入副本')).toBeInTheDocument())
+    expect(view.getByRole('button', { name: '确认导入' })).toBeInTheDocument()
+    expect(view.emitted('imported')).toBeUndefined()
+  })
+
+  it('ignores a late import after switching plugin instances', async () => {
+    const { api, view } = await setup()
+    let finish!: (value: unknown) => void
+    api.post.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        }),
+    )
+    await fireEvent.click(view.getByRole('button', { name: '导入 Test Pet' }))
+    await fireEvent.click(view.getByRole('button', { name: '确认导入' }))
+    await view.rerender({ api, pluginId: 'Clone2' })
+    finish({ success: true, data: { id: 'local-pet', name: 'Test Pet' } })
+    await flushPromises()
+    expect(view.emitted('imported')).toBeUndefined()
+    expect(view.queryByText('已导入 Test Pet')).toBeNull()
+  })
+
+  it('switches markets and ignores an older search response', async () => {
+    const { api, view } = await setup()
+    const original = api.get.getMockImplementation()!
+    let finish!: (value: unknown) => void
+    api.get.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        }),
+    )
+    await fireEvent.update(view.getByRole('textbox', { name: '搜索形象' }), 'old')
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    expect(view.getByRole('textbox', { name: '形象市场' })).toBeInTheDocument()
+    await fireEvent.mouseDown(view.getByRole('combobox'))
+    await fireEvent.click(view.getByRole('option', { name: 'Petdex' }))
+    await waitFor(() => expect(view.getByRole('button', { name: '导入 Test Pet' })).toBeInTheDocument())
+    expect(api.get.mock.calls.at(-1)?.[0]).toContain('market_id=petdex&keyword=&page=1')
+    finish({
+      success: true,
+      data: {
+        market_id: 'codex-pets',
+        page: 1,
+        page_size: 12,
+        total: 1,
+        has_more: false,
+        items: [{ ...item, name: 'Old Pet' }],
+      },
+    })
+    await flushPromises()
+    expect(view.queryByText('Old Pet')).toBeNull()
+    api.get.mockImplementation(original)
+  })
+
+  it('keeps the review on permission failure and prevents duplicate submissions', async () => {
+    const { api, view } = await setup()
+    let fail!: (error: unknown) => void
+    api.post.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject
+        }),
+    )
+    await fireEvent.click(view.getByRole('button', { name: '导入 Test Pet' }))
+    await fireEvent.click(view.getByRole('button', { name: '确认导入' }))
+    expect(view.getByRole('button', { name: '确认导入' })).toBeDisabled()
+    expect(api.post).toHaveBeenCalledTimes(1)
+    fail({ response: { status: 403 } })
+    await waitFor(() => expect(view.getByText('仅管理员可以导入市场形象')).toBeInTheDocument())
+    expect(view.emitted('imported')).toBeUndefined()
+    expect(view.getByRole('button', { name: '确认导入' })).toBeEnabled()
+  })
+
+  it('can retry query failures and distinguishes empty matches from missing markets', async () => {
+    const { api, view } = await setup()
+    api.get.mockResolvedValueOnce({ success: false, message: '市场暂不可用' })
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await waitFor(() => expect(view.getByText('市场暂不可用')).toBeInTheDocument())
+    await fireEvent.click(view.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(view.getByRole('button', { name: '导入 Test Pet' })).toBeInTheDocument())
+    api.get.mockResolvedValueOnce({
+      success: true,
+      data: {
+        market_id: 'codex-pets',
+        page: 1,
+        page_size: 12,
+        total: 0,
+        has_more: false,
+        items: [],
+      },
+    })
+    await fireEvent.update(view.getByRole('textbox', { name: '搜索形象' }), 'missing')
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await waitFor(() => expect(view.getByText('没有找到匹配的形象')).toBeInTheDocument())
+    api.get.mockResolvedValueOnce({ success: true, data: [] })
+    await view.rerender({ api, pluginId: 'Clone2' })
+    await waitFor(() => expect(view.getByText('暂未接入形象市场')).toBeInTheDocument())
+  })
+
+  it('falls back when a preview image fails and closes the review without writing', async () => {
+    const { api, view } = await setup()
+    api.get.mockResolvedValueOnce({
+      success: true,
+      data: {
+        market_id: 'codex-pets',
+        page: 1,
+        page_size: 12,
+        total: 1,
+        has_more: false,
+        items: [{ ...item, preview: 'https://example.com/pet.png' }],
+      },
+    })
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await waitFor(() => expect(view.getByRole('img', { name: 'Test Pet' })).toBeInTheDocument())
+    await fireEvent.error(view.getByRole('img', { name: 'Test Pet' }))
+    expect(view.queryByRole('img', { name: 'Test Pet' })).toBeNull()
+    await fireEvent.click(view.getByRole('button', { name: '预览 Test Pet' }))
+    await fireEvent.click(view.getByRole('button', { name: '取消' }))
+    expect(api.post).not.toHaveBeenCalled()
+  })
+})

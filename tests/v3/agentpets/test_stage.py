@@ -25,6 +25,7 @@ POSES = [
 
 
 def _plugin(config: dict | None = None) -> AgentPets:
+    """创建没有用户素材的实例，按传入配置读取舞台行为与声明"""
     plugin = AgentPets()
     plugin.init_plugin(config)
     plugin.get_data = lambda key=None: None
@@ -70,11 +71,13 @@ def test_builtin_images_are_small_decodable_inline_images() -> None:
 
 
 def test_builtin_images_are_encoded_once_across_declaration_reads(monkeypatch) -> None:
+    """相同内置缩略图跨实例只编码一次，最终清空缓存以隔离用例"""
     agentpets._builtin_image.cache_clear()
     original = Image.open
     opened = []
 
     def track_open(path):
+        """记录内置图片实际打开次数，并委托原始解码器读取"""
         opened.append(path)
         return original(path)
 
@@ -89,6 +92,7 @@ def test_builtin_images_are_encoded_once_across_declaration_reads(monkeypatch) -
 
 @pytest.mark.parametrize("corrupt", [False, True])
 def test_unreadable_builtin_image_preserves_registration(monkeypatch, tmp_path, corrupt) -> None:
+    """内置图片缺失或损坏时仍声明形象，并保留可回退的静态路径"""
     monkeypatch.setattr(agentpets, "PLUGIN_DIR", tmp_path)
     path = tmp_path / agentpets.DIST_PATH / agentpets.STAGE_PREVIEW
     if corrupt:
@@ -105,6 +109,7 @@ def test_unreadable_builtin_image_preserves_registration(monkeypatch, tmp_path, 
 
 
 def test_user_images_are_not_replaced_by_builtin_images() -> None:
+    """用户自定义预览与头像不被内置图片编码逻辑覆盖"""
     record = {"id": "custom", "name": "用户角色", "preview": "https://example.com/pet.png",
               "avatar": "data:image/png;base64,user-image"}
     plugin = _plugin()

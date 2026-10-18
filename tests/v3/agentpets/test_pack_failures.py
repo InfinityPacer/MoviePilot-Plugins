@@ -8,11 +8,12 @@ import pytest
 from PIL import Image
 
 from app.plugins.agentpets import AgentPets
-from app.plugins.agentpets.pack import PackStore
+from app.plugins.agentpets.packs.store import PackStore
 
 
 @pytest.fixture
 def fixture(tmp_path):
+    """建立内存元数据、临时图片目录和插件门面，模拟素材写入故障"""
     data = {}
     store = PackStore(data.get, lambda key, value: data.__setitem__(key, deepcopy(value)), tmp_path)
     plugin = AgentPets()
@@ -26,7 +27,9 @@ def fixture(tmp_path):
 
 
 def failure(mode):
+    """构造报错、返回失败或静默不写的持久化替身"""
     def save(*_args):
+        """按故障模式返回失败或抛异常，始终不改变元数据"""
         if mode == "raise":
             raise RuntimeError("persistence unavailable")
         return False if mode == "false" else None
@@ -35,6 +38,7 @@ def failure(mode):
 
 @pytest.mark.parametrize("mode", ["raise", "false", "silent"])
 def test_failed_delete_preserves_existing_record_and_image(fixture, mode):
+    """记录删除未确认时不得回收仍被引用的原始图片"""
     plugin, store, data, pack, image = fixture
     record = store.add(pack, image)
     original = deepcopy(data)
@@ -49,6 +53,7 @@ def test_failed_delete_preserves_existing_record_and_image(fixture, mode):
 
 @pytest.mark.parametrize("mode", ["raise", "false", "silent"])
 def test_failed_add_reports_failure_and_removes_only_its_new_image(fixture, mode, tmp_path):
+    """新增持久化失败明确报错，只清理本次未被引用的新图片"""
     plugin, store, data, pack, image = fixture
     store._save_data = failure(mode)
     response = plugin.api_add_pack(SimpleNamespace(pack=pack, image=image))
@@ -58,9 +63,11 @@ def test_failed_add_reports_failure_and_removes_only_its_new_image(fixture, mode
 
 
 def test_ambiguous_commit_keeps_the_image_referenced_by_saved_metadata(fixture):
+    """提交后报错时保留已被元数据引用的新图片，避免永久丢失"""
     plugin, store, data, pack, image = fixture
 
     def save_then_raise(key, value):
+        """先完成元数据写入再抛异常，模拟不确定的提交确认"""
         data[key] = deepcopy(value)
         raise RuntimeError("failure after commit")
 
@@ -73,6 +80,7 @@ def test_ambiguous_commit_keeps_the_image_referenced_by_saved_metadata(fixture):
 
 @pytest.mark.parametrize("frame", [{}, [], None, 1])
 def test_invalid_frame_reference_returns_a_validation_response(fixture, frame):
+    """动作引用非法帧类型时返回格式错误，不落盘任何素材记录"""
     plugin, _, data, pack, image = fixture
     pack["actions"] = {"idle": [frame]}
     response = plugin.api_add_pack(SimpleNamespace(pack=pack, image=image))
@@ -82,6 +90,7 @@ def test_invalid_frame_reference_returns_a_validation_response(fixture, frame):
 
 
 def test_add_does_not_remove_an_existing_image_when_reading_it_fails(fixture, tmp_path, monkeypatch):
+    """备份旧图读取失败时不得删除或覆盖已存在的可恢复文件"""
     plugin, _, _, pack, image = fixture
     path = tmp_path / "packs" / "test-pet.png"
     path.parent.mkdir()
@@ -89,6 +98,7 @@ def test_add_does_not_remove_an_existing_image_when_reading_it_fails(fixture, tm
     original = type(path).read_bytes
 
     def unreadable(item):
+        """仅让目标旧图暂时不可读，其他文件仍沿用真实读取行为"""
         if item == path:
             raise PermissionError("temporarily unreadable")
         return original(item)
