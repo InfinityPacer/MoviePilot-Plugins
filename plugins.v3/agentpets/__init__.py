@@ -16,17 +16,32 @@ import math
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import Depends, HTTPException, Query
 
 from app import schemas
 from app.plugins import _PluginBase
 from app.sdk.logging import logger
 from app.sdk.security import verify_token
 
-from .pack import BUILTIN_PACK_ID, PackError, PackStore, codex_pet_version, load_builtin_pack, parse_calibration, suggest_calibration, pack_revision
+from .markets.contracts import MarketError, MarketPack, MarketPage, MarketQuery
+from .markets.registry import create_market_registry
+from .packs.constants import BUILTIN_PACK_ID, PackError
+from .packs.images import sniff_image, suggest_calibration
+from .packs.schema import codex_pet_version, pack_revision, parse_calibration
+from .packs.store import PackStore, load_builtin_pack
+from .requests import (
+    AddPackRequest,
+    DeletePackRequest,
+    ImportMarketPackRequest,
+    ImportPackRequest,
+    RenamePackRequest,
+    SaveCalibrationRequest,
+    SaveMappingsRequest,
+    SaveSettingsRequest,
+)
+from .settings import DEFAULT_SETTINGS, ROAM_MODES, SCALE_RANGE, SPEED_RANGE
 
 PLUGIN_DIR = Path(__file__).resolve().parent
 DIST_PATH = "frontend/dist/assets"
@@ -38,14 +53,6 @@ STAGE_PREVIEW = "ying/preview.png"
 STAGE_AVATAR = "ying/avatar.png"
 BUILTIN_PREVIEW = f"packs/{BUILTIN_PACK_ID}/preview.png"
 BUILTIN_AVATAR = f"packs/{BUILTIN_PACK_ID}/avatar.png"
-
-# 全屏角色的大小与移动速度范围；小映与 Codex Pet 使用同一组设置。
-SCALE_RANGE = (0.6, 1.6)
-SPEED_RANGE = (0.5, 2.0)
-# 活动范围：surfaces 站在页面元素上，floor 只在底边，free 没有重力、自由停放。
-ROAM_MODES = ("surfaces", "floor", "free")
-DEFAULT_SETTINGS = {"scale": 1.0, "speed": 1.0, "roam": "surfaces", "movement": "auto"}
-
 
 @lru_cache(maxsize=4)
 def _builtin_image(path: str, size: int) -> str:
@@ -84,58 +91,6 @@ def require_admin(payload=Depends(verify_token)):
     return payload
 
 
-class SaveSettingsRequest(BaseModel):
-    """仅接受活动参数，避免详情页覆盖启用状态或其他插件配置。"""
-
-    model_config = ConfigDict(extra="forbid")
-    scale: float = Field(ge=SCALE_RANGE[0], le=SCALE_RANGE[1], allow_inf_nan=False)
-    speed: float = Field(ge=SPEED_RANGE[0], le=SPEED_RANGE[1], allow_inf_nan=False)
-    roam: Literal["surfaces", "floor", "free"]
-    movement: Literal["auto", "fixed"] = "auto"
-
-
-class AddPackRequest(BaseModel):
-    """配置页添加素材包的请求。"""
-
-    pack: Any  # 素材包 JSON 文本或已解析对象
-    image: str | None = Field(default=None, max_length=6 * 1024 * 1024)  # 精灵图 data URL；为空时 sheet 必须是 URL
-
-
-class ImportPackRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    pack: dict[str, Any]
-    image: str = Field(min_length=1, max_length=6 * 1024 * 1024)
-    mode: Literal["new", "copy", "replace"] = "new"
-    expected_revision: str | None = Field(default=None, max_length=64)
-
-
-class DeletePackRequest(BaseModel):
-    """删除用户素材包的请求。"""
-
-    id: str = Field(min_length=1, max_length=32)  # 素材包 ID
-
-
-class RenamePackRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(min_length=1, max_length=32)
-    name: str = Field(min_length=1, max_length=40)
-    expected_name: str = Field(min_length=1, max_length=40)
-
-
-class SaveMappingsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(min_length=1, max_length=32)
-    mappings: dict[str, str] = Field(max_length=43)
-    expected_mappings: dict[str, str] = Field(max_length=43)
-
-
-class SaveCalibrationRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(min_length=1, max_length=32)
-    calibration: dict[str, float]
-    expected_calibration: dict[str, float]
-
-
 class AgentPets(_PluginBase):
     """为 Agent 助手提供小映全屏角色和精灵图素材包两类形象。"""
 
@@ -150,10 +105,12 @@ class AgentPets(_PluginBase):
     auth_level = 1
 
     def __init__(self):
+        """初始化实例设置、内置素材缓存和独立市场注册表，不请求远程市场"""
         super().__init__()
         self._enabled = False
         self._settings = dict(DEFAULT_SETTINGS)
         self._builtin: dict[str, Any] | None = None
+        self._markets = create_market_registry()
 
     def init_plugin(self, config: dict | None = None):
         """读取启用状态与全屏角色设置，越界值按边界收敛。"""
@@ -169,17 +126,21 @@ class AgentPets(_PluginBase):
         logger.info(f"助手形象配置加载完成：enabled={self._enabled} settings={self._settings}")
 
     def get_state(self) -> bool:
+        """返回插件启用状态，供宿主决定是否注册形象"""
         return self._enabled
 
     @staticmethod
     def get_render_mode():
+        """声明 Vue 联邦渲染方式与相对资源目录"""
         return "vue", DIST_PATH
 
     @staticmethod
     def get_command() -> list[dict[str, Any]]:
+        """本插件不注册消息命令，返回空命令列表"""
         return []
 
     def _store(self) -> PackStore:
+        """使用当前插件实例的数据回调与数据路径创建存储门面"""
         return PackStore(self.get_data, self.save_data, self.get_data_path())
 
     def builtin_pack(self) -> dict[str, Any]:
@@ -244,6 +205,7 @@ class AgentPets(_PluginBase):
         return dict(self._settings)
 
     def api_settings(self):
+        """向登录用户返回已保存的活动设置副本"""
         return schemas.Response(success=True, data=self.settings())
 
     def api_editor(self):
@@ -286,6 +248,7 @@ class AgentPets(_PluginBase):
 
     @staticmethod
     def _summary(record: dict[str, Any], builtin: bool = False) -> dict[str, Any]:
+        """生成素材管理摘要，包含运行模式、修订号和映射校准状态"""
         return {
             "id": record["id"],
             "name": record["name"],
@@ -331,6 +294,7 @@ class AgentPets(_PluginBase):
         return schemas.Response(success=True, data={"pack": pack, "builtin": False, "sheet_src": sheet_src})
 
     def api_add_pack(self, request: AddPackRequest):
+        """校验并新增素材包，持久化失败返回失败且保全被引用图片"""
         try:
             record = self._store().add(request.pack, request.image)
         except PackError as exc:
@@ -342,13 +306,57 @@ class AgentPets(_PluginBase):
         return schemas.Response(success=True, data=self._summary(record))
 
     def api_import_pack(self, request: ImportPackRequest):
+        """导入新增、副本或核对修订号后的覆盖素材，返回本地摘要"""
         try:
             record = self._store().import_pack(request.pack, request.image, request.mode, request.expected_revision)
             return schemas.Response(success=True, data=self._summary(record))
         except (PackError, OSError, RuntimeError) as exc:
             return schemas.Response(success=False, message=str(exc))
 
+    def api_markets(self) -> schemas.Response:
+        """列出已接入的在线市场；未注册适配器时返回空列表"""
+        return schemas.Response(success=True, data=[info.model_dump(mode="json") for info in self._markets.list()])
+
+    def api_market_items(
+        self,
+        market_id: Annotated[str, Query(pattern=r"^[a-z0-9_-]{1,32}$")],
+        keyword: Annotated[str, Query(max_length=200)] = "",
+        page: Annotated[int, Query(ge=1, le=10000)] = 1,
+        page_size: Annotated[int, Query(ge=1, le=50)] = 20,
+    ) -> schemas.Response:
+        """分页浏览或搜索单个已注册市场；适配器负责把上游分页转换为统一结果"""
+        try:
+            adapter = self._markets.get(market_id)
+            query = MarketQuery(keyword=keyword, page=page, page_size=page_size)
+            result = MarketPage.model_validate(adapter.search(query))
+            if len(result.items) > query.page_size:
+                raise MarketError("市场返回的形象数量超过请求上限")
+            return schemas.Response(success=True, data={
+                "market_id": market_id, "page": query.page, "page_size": query.page_size,
+                **result.model_dump(mode="json"),
+            })
+        except MarketError as exc:
+            return schemas.Response(success=False, message=str(exc))
+        except (OSError, RuntimeError, ValueError):
+            logger.error("助手形象：形象市场查询失败", exc_info=True)
+            return schemas.Response(success=False, message="形象市场查询失败，请稍后重试或查看插件日志")
+
+    def api_import_market_pack(self, request: ImportMarketPackRequest) -> schemas.Response:
+        """获取市场素材并复用完整包导入校验；请求不能指定任意下载 URL 或本地路径"""
+        try:
+            adapter = self._markets.get(request.market_id)
+            material = MarketPack.model_validate(adapter.fetch(request.item_id))
+            mime, _ = sniff_image(material.image)
+            image = f"data:{mime};base64," + base64.b64encode(material.image).decode("ascii")
+            return self.api_import_pack(ImportPackRequest(pack=material.pack, image=image, mode=request.mode))
+        except (MarketError, PackError) as exc:
+            return schemas.Response(success=False, message=str(exc))
+        except (OSError, RuntimeError, ValueError):
+            logger.error("助手形象：市场素材导入失败", exc_info=True)
+            return schemas.Response(success=False, message="市场素材导入失败，请稍后重试或查看插件日志")
+
     def api_rename_pack(self, request: RenamePackRequest):
+        """核对原名称后改名并返回最新摘要，冲突时拒绝覆盖"""
         try:
             record = self._store().update(request.id, name=request.name, expected_name=request.expected_name)
         except (PackError, OSError, RuntimeError) as exc:
@@ -356,6 +364,7 @@ class AgentPets(_PluginBase):
         return schemas.Response(success=True, data=self._summary(record))
 
     def api_save_mappings(self, request: SaveMappingsRequest):
+        """核对旧映射后保存并回读，空映射恢复素材默认动作"""
         try:
             record = self._store().update(request.id, mappings=request.mappings,
                                          expected_mappings=request.expected_mappings)
@@ -364,6 +373,7 @@ class AgentPets(_PluginBase):
         return schemas.Response(success=True, data={"id": record["id"], "mappings": record.get("action_mappings", {})})
 
     def api_save_calibration(self, request: SaveCalibrationRequest):
+        """核对旧校准后保存并回读，不修改原始精灵图或动作"""
         try:
             record = self._store().calibrate(request.id, request.calibration, request.expected_calibration)
             return schemas.Response(success=True, data={"id": record["id"], "calibration": record["calibration"]})
@@ -371,6 +381,7 @@ class AgentPets(_PluginBase):
             return schemas.Response(success=False, message=str(exc))
 
     def api_suggest_calibration(self, key: str):
+        """读取已上传图片生成校准建议，不保存草稿或下载 URL 素材"""
         try:
             store = self._store()
             record = store.get(key)
@@ -382,6 +393,7 @@ class AgentPets(_PluginBase):
             return schemas.Response(success=False, message=str(exc))
 
     def api_delete_pack(self, request: DeletePackRequest):
+        """拒绝删除内置素材，先确认记录移除再回收图片并返回操作结果"""
         if request.id == BUILTIN_PACK_ID:
             return schemas.Response(success=False, message="内置素材包不能删除")
         try:
@@ -399,6 +411,21 @@ class AgentPets(_PluginBase):
         """形象对所有登录用户显示，读取接口只要求登录；素材包写接口额外要求管理员。"""
         admin = [Depends(require_admin)]
         return [
+            {
+                "path": "/markets", "endpoint": self.api_markets, "methods": ["GET"],
+                "auth": "bear", "summary": "已接入的在线形象市场",
+                "response_model": schemas.Response[list],
+            },
+            {
+                "path": "/markets/items", "endpoint": self.api_market_items, "methods": ["GET"],
+                "auth": "bear", "summary": "分页搜索市场形象",
+                "response_model": schemas.Response[dict],
+            },
+            {
+                "path": "/markets/import", "endpoint": self.api_import_market_pack, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "导入在线市场形象",
+                "response_model": schemas.Response[dict],
+            },
             {
                 "path": "/packs/import", "endpoint": self.api_import_pack, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "导入或更新完整素材包",

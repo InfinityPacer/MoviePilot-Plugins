@@ -131,6 +131,146 @@ ZIP 使用 `agentpets.json`（格式 `agentpets`、版本 `1`）和 `sheet.img`�
 - 管理员可在配置页添加素材包，上传的精灵图保存在插件数据目录，不写进插件代码目录
 - 配置页可导入 Codex Pet ZIP 包或直接上传原生精灵图；v2 的 16 向帧可用于 scan 动作
 
+## 后端目录
+
+后端按数据契约、纯格式转换、外部市场协议和素材持久化拆分；前端目录及联邦资源路径保持原样。
+
+| 路径 | 职责 |
+| --- | --- |
+| [__init__.py](__init__.py) | 插件生命周期、形象声明、API 编排及权限检查 |
+| [requests.py](requests.py)、[settings.py](settings.py) | 请求字段和共享活动参数范围 |
+| [packs/constants.py](packs/constants.py) | 素材限制、动作与保留 ID 契约 |
+| [packs/schema.py](packs/schema.py) | 素材格式、校准、动作映射和修订号的纯校验 |
+| [packs/images.py](packs/images.py) | 图片解码、尺寸检查、缩略图及自动校准 |
+| [packs/store.py](packs/store.py) | 唯一进程写锁、数据持久化、备份回读与图片失败恢复 |
+| [formats/archive.py](formats/archive.py) | 包容器读取接口和安全 ZIP 实现，只负责路径、索引、限额与资源生命周期 |
+| [formats/codex.py](formats/codex.py) | Codex 清单布局识别与动作转换，通过容器接口读取素材内容 |
+| [formats/openpets.py](formats/openpets.py) | OpenPets 两文件包布局、身份、图集类型和版本约束 |
+| [markets/contracts.py](markets/contracts.py)、[markets/registry.py](markets/registry.py) | 市场模型、装饰器类型登记、本地模块发现与实例级装配 |
+| [markets/http.py](markets/http.py) | 宿主 SDK 网络读取、TLS、地址安全、限额与受控跳转 |
+| [markets/providers/codexpets.py](markets/providers/codexpets.py)、[markets/providers/petdex.py](markets/providers/petdex.py) | 各站点分页、字段和资源定位协议 |
+| [markets/providers/openpets.py](markets/providers/openpets.py) | OpenPets v3 静态目录、搜索分片、按需页面读取与官方 ZIP 下载 |
+
+插件内部代码和测试直接从上述职责模块导入，不设置旧路径兼容层或转发模块。请求模型统一从 [requests.py](requests.py) 引用；原有 API、素材数据键、文件位置、修订号、备份和 ID 不因模块整理而迁移。
+
+生产代码和对应 Python 测试的类、函数、构造器、私有与嵌套函数均提供中文 docstring。仓库根的 `tests/v3/agentpets/test_documentation.py` 使用 AST 检查覆盖完整性，其他测试通过既有宿主引导隔离配置与真实网络，不在自动测试中访问在线市场。
+
+## 在线形象市场扩展
+
+插件默认注册 [Codex Pets](https://codex-pets.net/)（`codex-pets`）、[OpenPets](https://openpets.dev/)（`openpets`）和 [Petdex](https://petdex.dev/)（`petdex`）。配置页「在线市场」提供市场切换、关键词搜索、分页、预览和导入确认，并保留相应 API。插件初始化和读取市场列表均不访问网络，只有搜索或导入时请求对应站点。
+
+### 页面浏览与导入
+
+进入配置页「在线市场」后选择形象市场，可按名称或关键词搜索，搜索和切换市场均回到第一页。结果卡片展示图片、作者与说明；点击预览或「导入」可查看来源和许可，并选择「新增素材」或「导入副本」后确认。未知总量时仍可按上游返回的下一页状态翻页，预览图加载失败时显示占位图。
+
+浏览接口供登录用户使用，导入仍由后端验证管理员权限；权限不足、ID 冲突或市场不可用时保留确认内容并展示失败原因，不报告成功。导入成功会即时保存，刷新已打开的本地素材列表与运行概览，无需再点击「保存配置」。同一页面已导入的远程形象再次选择时默认采用副本模式，跨页面或历史素材的 ID 冲突仍以存储校验为准。
+
+切换插件实例会清空对应市场状态并忽略旧请求结果；切换市场或连续搜索时，较早返回的结果不会覆盖最新内容。桌面使用侧栏导航，手机使用两列分组入口，确认弹窗中的图片与说明独立布局。
+
+### Codex Pets
+
+[markets/providers/codexpets.py](markets/providers/codexpets.py) 对接站点的公开 `/api/pets` 目录及 `/api/pets/<id>/download` 下载端点，不需要站点账号或 API 密钥。支持关键词搜索、分页，以及 Codex Pet v1（8×9）和 v2（8×11）ZIP 素材转换；动作与已有前端导入器一致，v2 保留 16 向视线动画。
+
+搜索示例：`GET /api/v1/plugin/AgentPets/markets/items?market_id=codex-pets&keyword=cat&page=1&page_size=20`。从响应 `items` 取得远程 `id` 后，调用导入 API，传入 `market_id=codex-pets`、`item_id=<远程 id>` 和 `mode=new` 或 `copy`。导入仍只允许管理员，既有素材不会被市场下载覆盖。
+
+本地素材 ID 为 `codex-` 加远程 ID 的 SHA-256 前 24 位，满足本地长度限制，并保持同一市场形象重复导入时 ID 稳定；显式导入副本时由存储层生成独立 ID。名称与说明截取到本地素材的 40 / 120 字符上限，其他字段继续经过现有素材校验。
+
+作者取自上游 `ownerName` 或 `ownerHandle`，预览使用站点的 `posterUrl` 或 `previewUrl`，来源链接指向原形象页。仅当上游返回具体素材的 `license` 字符串时展示许可；否则为空，不以网站或程序源码的开源许可代替素材授权。
+
+网络请求通过宿主 SDK，启用 TLS 校验、严格限定站点域名并拒绝解析到非公网地址；不跟随重定向，也不使用目录返回的任意下载 URL。目录响应最多 1 MiB、ZIP 最多 8 MiB，按流累计限额，单次请求超时 20 秒，流读取另设 30 秒截止检查。ZIP 最多 256 个条目、声明解压总量最多 16 MiB，只读取唯一 `pet.json`（64 KiB）及其精灵图（4 MiB），拒绝越界路径、重复路径、加密文件和符号链接，不向磁盘解压。
+
+站点不可用、形象下架、限流或素材格式不支持时返回失败信息，现有本地形象仍可继续使用。
+
+### Petdex
+
+[markets/providers/petdex.py](markets/providers/petdex.py) 对接匿名公开的 `/api/pets/search`。统一 `page` 映射为 `(page-1)*page_size` 的 `cursor` 偏移量，关键词使用 `q`、每页数量使用 `limit`，显式采用字母排序并请求总量。下一页依据 `nextCursor` 判断；总量未提供时保持 `null`，搜索失败时不改用本地目录搜索，避免更改匹配和分页语义。
+
+搜索示例：`GET /api/v1/plugin/AgentPets/markets/items?market_id=petdex&keyword=boba&page=1&page_size=20`。导入 API 的 JSON 使用 `{"market_id":"petdex","item_id":"boba","mode":"new"}`，`item_id` 为搜索返回的 slug；也可显式选择 `mode=copy`。
+
+导入通过公开 `/api/manifest/v2` 精确查找 slug，不依赖之前搜索的内存结果。紧凑目录的版本、字段顺序、记录类型、重复 slug、总量和所有资源地址均经过检查；目录版本 `v=2` 与图片版本不是同一个概念。成功解析的目录在单个插件实例内缓存 300 秒，最多 20000 条、响应最多 8 MiB；刷新失败不把过期记录用于新的导入，也不缓存下载图片或 ZIP。
+
+首选目录声明的 ZIP；只有未声明 ZIP 时，才分别读取目录指定的清单与图片。坏 ZIP 或格式校验失败直接报告错误，不切换资源绕过检查。不会调用带安装计数副作用的 `/api/install-pet/<slug>`，也不读取或执行安装脚本。
+
+支持 Codex v1/v2 标准图及保持原始宽高比、所有格子边界为整数的等比缩放图，不对图片重采样。实际图片须与素材清单中的显式版本一致；目录摘要中的过时版本标签不用于最终判版。Codex Pets 和前端手动 Codex 导入原有的标准尺寸策略保持不变。
+
+资源仅允许 HTTPS 的 `assets.petdex.dev`。只有 manifest 允许一次 307/308 跳转到该 CDN 的 `/manifests/` 路径，每一跳重新检查精确域名、凭据、端口、路径和非公网解析；图片、ZIP 不自动跳转。下载、图片、清单和 ZIP 解包限制与 Codex 共用，搜索响应仍限 1 MiB。
+
+本地素材 ID 使用 `petdex-` 加 slug 的 SHA-256 前 24 位，与已有 `codex-` 素材隔离。作者来自 `submittedBy.name`，来源链接指向原形象页面；只有上游明确返回素材许可字符串时才展示，未声明时保持未知，不推断为站点源码的 MIT 许可。
+
+### OpenPets
+
+[markets/providers/openpets.py](markets/providers/openpets.py) 对接公开 `/pets/catalog.v3.json`。无关键词时按原目录顺序浏览，只读取本页需要的目录分片，统一页大小可以跨越远程页边界。有关键词时读取轻量搜索索引和分片，对 ID、名称与上游 `searchText` 做宽度及大小写归一化后的多词包含匹配，再按需读取完整摘要。搜索总量为本次匹配数量，空结果与目录读取失败分别处理，不回退到旧目录或伪造空结果。
+
+搜索示例：`GET /api/v1/plugin/AgentPets/markets/items?market_id=openpets&keyword=meat&page=1&page_size=20`。导入 API 使用 `{"market_id":"openpets","item_id":"meat-proxy","mode":"new"}`，`item_id` 为目录中的 ID，不是资源目录 slug；支持显式 `mode=copy`。
+
+目录根索引和成功读取的页面按实例缓存 300 秒，最多 20000 项、200 个分片。索引响应最多 128 KiB，单页最多 2 MiB；刷新成功清空旧页面和搜索缓存，刷新失败不把过期记录作为成功结果继续导入。根索引、分片数量、页码、记录 ID、版本、搜索快照及页映射均经过检查；不因页面返回任意 URL 而扩大网络白名单。
+
+目录和预览资源限定 HTTPS `openpets.dev/pets/`，ZIP 限定 HTTPS `zip.openpets.dev/pets/<slug>/<id>.zip`，不自动跳转。导入不依赖先前浏览，按搜索映射精确定位完整目录记录，再下载官方包。下载和容器解压继续使用共用限额，不向磁盘展开 ZIP。
+
+[formats/openpets.py](formats/openpets.py) 单独校验包结构：根目录或单个顶级目录下只能有 `pet.json` 和 `spritesheet.webp`，二者必须同目录。包内 ID 和版本须与选择的目录记录一致，清单必须引用真实 WebP 图集；标准 v1/v2 动作映射复用 Codex 转换。当前不支持 OpenPets 的 SVG 图集，选择此类包会明确返回不支持提示，不会静默转换或保存坏素材。
+
+本地 ID 为 `openpets-` 加远程 ID 的 SHA-256 前 23 位，保持稳定且符合 32 字符上限，与另外两家市场隔离。来源链接使用官方详情 slug；作者和许可只读取明确的字符串字段，未提供时保持未知，不把站点源码许可当作素材授权。
+
+### 适配器契约
+
+[markets/contracts.py](markets/contracts.py) 定义同步抽象类 `MarketAdapter`，每个市场实现以下成员。
+
+| 成员 | 返回类型 | 职责 |
+| --- | --- | --- |
+| `info` 属性 | `MarketInfo` | 稳定的市场 `id`、名称、说明与可选主页 |
+| `search(query)` | `MarketPage` | 按 `MarketQuery` 分页搜索；空关键词表示浏览 |
+| `fetch(item_id)` | `MarketPack` | 按市场内形象标识下载并转换为完整 AgentPets 素材 |
+
+统一数据约定：
+
+- `MarketInfo.id` 使用 1～32 个小写字母、数字、`-` 或 `_`，在插件内唯一且应长期稳定
+- `MarketQuery` 包含 `keyword`、`page`、`page_size`；关键词最多 200 字符，页码从 1 开始且不超过 10000，每页默认 20 条、最多 50 条
+- `MarketPage` 包含 `items`、`total`、`has_more`；当前页条数不得超过请求的 `page_size`。上游不提供总量时 `total` 为 `null`，由适配器确定 `has_more`
+- `MarketItem` 包含 `id`、`name`、`description`、`author`、`license`、`preview`、`source_url`；作者、许可和链接可缺省，许可为空表示未知，不推断授权。预览和来源链接仅接受 HTTP(S)
+- 形象 `id` 只需在对应市场内唯一，可包含上游命名空间，与本地素材包 ID 相互独立；API 使用 `market_id` 与 `item_id` 定位远程形象
+- `MarketPack.pack` 是下文素材包格式对应的字典，`MarketPack.image` 是已下载的原始图片字节，最大 4MB；第三方 ZIP、清单和动画布局由适配器转换，不向本地存储传入任意文件路径或下载指令
+- 可预期的上游不可用、形象不存在或格式不支持应抛出 `MarketError`；消息可直接展示，不得包含凭据、内部地址或上游响应正文
+
+### 注册与导入
+
+新增市场时，在 `markets/providers/` 新建模块，继承 `MarketAdapter`，声明类属性 `market_id = "example"`，并添加从 [markets/registry.py](markets/registry.py) 导入的 `@register_market` 装饰器。实现 `info`、`search`、`fetch`，`info.id` 使用 `self.market_id`，构造函数不得访问远程服务。无需修改注册工厂或供应商包的导出列表。
+
+`MarketAdapter` 仅定义接口与身份字段，继承本身不触发登记；中间类和测试替身不添加装饰器即可保持未登记。`@register_market` 显式校验并保存供应商类，拒绝非法或重复的市场 ID、非适配器类型，以及仍未实现抽象接口的供应商，返回原类而不创建实例。
+
+工厂按名称顺序发现并导入本地 `markets/providers/` 中非下划线开头的模块，导入时执行装饰器；随后按市场 ID 排序，为每个插件实例分别创建适配器。全局只保存类型，不共享实例缓存、锁或网络连接。
+
+每个插件实例仍有独立市场索引，装配时检查类声明与 `info.id` 是否一致。自动发现仅限插件自身的本地供应商包，API 不根据请求输入导入模块。
+
+### 包容器与素材格式
+
+下载资源的压缩形式与素材内容是两个独立选择。市场适配器根据实际协议选择容器和内容解析器，最终返回统一的 `MarketPack`；新市场不必使用 Codex 格式。
+
+- `PackageReader` 约定只读文件列表、限额读取、包内相对路径解析和关闭操作，不约定清单文件名、目录层级、图片类型或动画格式
+- `ZipPackageReader` 实现 ZIP 的路径与重复项检查、压缩及解压额度、加密和符号链接拒绝、损坏数据处理，不向磁盘解压；其他容器可独立实现 `PackageReader`
+- `read_codex_package()` 只解释 Codex 的唯一 `pet.json` 与 `spritesheetPath`，可读取 ZIP 容器或任何其他满足接口的容器
+- `read_openpets_package()` 在共享读取之上校验 OpenPets 自己的两文件布局和目录身份，拒绝不支持的 SVG 图集
+- `build_codex_pack()` 从已取得的清单和图片生成内部素材，Petdex 的独立 JSON 与图片下载直接进入此步骤
+
+现有市场按各自协议组合安全 ZIP 容器和内容解析器。以后新增其他清单命名、文件布局或动画格式时，在 `formats/` 添加对应解析实现；不同市场可以复用同一种解析器，容器安全规则无需重复实现。目前只实现已需要的 ZIP 容器，不自动猜测未知包格式或下载其他资源绕过校验。
+
+适配器只负责发现、下载和转换，不修改插件配置、素材记录或插件数据目录。网络实现应使用宿主公开网络与 URL 安全接口，限制可信上游域名、每次重定向、请求超时、响应字节数与解压大小，并根据该市场规则校验形象标识；不能把用户提供的标识直接当作任意 URL 下载。`MarketPack` 的图片大小检查不替代下载期间的流量上限。
+
+导入 API 将下载结果交给现有完整包导入链路，继续检查帧引用、图片类型、网格、尺寸、内置 ID 和最多 20 个素材包等限制。默认 `mode=new`，同 ID 已存在时拒绝写入；明确使用 `mode=copy` 时生成独立本地 ID。市场导入不支持 `replace`，需要更新已有素材时仍使用原有的完整包导入及修订号核对流程。
+
+导入成功返回现有素材摘要，之后可由 `packs`、`pack` 和宿主形象目录读取。市场搜索本身不保存素材；只有导入写接口需要管理员权限。
+
+### 市场 API
+
+所有路径均以 `/api/v1/plugin/AgentPets` 为前缀，沿用 `success`、`message`、`data` 响应结构。
+
+| API | 参数与结果 |
+| --- | --- |
+| `GET /markets` | 登录用户可用；`data` 为已注册的 `MarketInfo` 数组，未接入市场时为 `[]` |
+| `GET /markets/items` | 登录用户可用；查询参数为必填 `market_id`、可选 `keyword`、`page=1`、`page_size=20`；`data` 包含 `market_id`、`page`、`page_size`、`items`、`total`、`has_more` |
+| `POST /markets/import` | 仅管理员；JSON 为 `market_id`、`item_id`、可选 `mode`（`new` 或 `copy`）；成功时 `data` 为已导入的本地素材摘要 |
+
+未知市场或市场访问失败返回 `success=false`；请求字段非法或分页参数越界返回 HTTP 422，无管理员权限的导入返回 HTTP 403。请求不接受下载 URL 或本地文件路径字段。
+
 ## 一个插件注册多个形象
 
 主程序通过插件的 `get_agent_pets()` 收集形象，返回列表里的每一项都是一个可选形象。`key` 在插件内唯一，用户的选择记作 `<插件 ID>:<key>`。本插件返回下面这些形象。
@@ -148,6 +288,9 @@ ZIP 使用 `agentpets.json`（格式 `agentpets`、版本 `1`）和 `sheet.img`�
 
 | 类型 | 标识 | 说明 |
 | --- | --- | --- |
+| API | `GET /api/v1/plugin/AgentPets/markets` | 列出已注册的在线形象市场，登录用户可用 |
+| API | `GET /api/v1/plugin/AgentPets/markets/items` | 按 `market_id` 分页浏览或搜索形象，登录用户可用 |
+| API | `POST /api/v1/plugin/AgentPets/markets/import` | 按 `market_id`、`item_id` 导入市场素材，支持 `new/copy`，仅管理员 |
 | API | `GET /api/v1/plugin/AgentPets/editor` | 读取编辑页必要状态与 Pet 列表，登录用户可用 |
 | API | `POST /api/v1/plugin/AgentPets/settings` | 只合并保存活动参数并回读，仅管理员 |
 | API | `GET /api/v1/plugin/AgentPets/settings` | 读取全屏角色的已保存设置，登录用户可用 |
@@ -171,7 +314,7 @@ ZIP 使用 `agentpets.json`（格式 `agentpets`、版本 `1`）和 `sheet.img`�
 
 配置页保存开关前读取最新完整配置，保留详情页已保存的活动参数；读取失败或开关已在其他页面更改时停止提交。
 
-配置页采用分组导航，提供运行总览、基础设置和素材管理；标题层级、分组排版与未保存提示参考订阅助手（增强版）。详情页集中选择 Pet、调整大小/活动方式/速度/活动范围，并在独立区域实时预览。预览复用正式形象的动作与移动逻辑，拖拽、落到平台、暂停和切换动作都不会修改正在使用的形象或保存位置。
+配置页采用分组导航，提供运行总览、基础设置、素材管理和在线市场；标题层级、分组排版与未保存提示参考订阅助手（增强版）。详情页集中选择 Pet、调整大小/活动方式/速度/活动范围，并在独立区域实时预览。预览复用正式形象的动作与移动逻辑，拖拽、落到平台、暂停和切换动作都不会修改正在使用的形象或保存位置。
 
 活动参数仍由小映与全部 Codex Pet 共用，对所有用户生效；本轮不提供个人或手机／电脑独立偏好。「保存调整」只持久化这些参数并通知当前页面的运行形象；「撤销」恢复已保存值。
 
@@ -238,6 +381,7 @@ ZIP 使用 `agentpets.json`（格式 `agentpets`、版本 `1`）和 `sheet.img`�
 2. 打开个人设置中的「助手形象」，选择「小映」或「放映猫」，管理员也可以在系统设置中设为默认助手形象
 3. 打开插件详情页，选择 Pet 并调整大小、活动方式、速度和活动范围，在右侧实时预览；满意后点击「保存调整」
 4. 需要更多 Pet 时，在配置页「素材管理」上传 `.zip` 或原生 PNG/WebP，点击「读取 Codex Pet」后「添加 Pet」；自定义素材仍可填写 JSON 并上传图片或使用图片 URL
+5. 从第三方市场获取 Pet 时，进入「在线市场」，选择市场并搜索形象，打开预览后确认「新增素材」或「导入副本」；成功后可在「素材管理」查看，随后在 MP 设置中选择使用
 
 Codex Pet 导入支持 v1 的 1536×1872（8×9）和 v2 的 1536×2288（8×11）精灵图。ZIP 包从唯一的 `pet.json` 读取 `spritesheetPath`、ID、名称和描述；直接上传图片时按文件名生成名称和 ID。导入器把前九行动画映射到 Agent 状态与动作；v2 最后两行的 16 个视线方向保留在素材包中，并映射到 scan 动作。生成后仍需点击「添加 Pet」保存；更换输入文件后须重新读取，避免新图片沿用旧名称和动作信息。新包带有 `codex_version`（`v1` 或 `v2`）以保留布局类型，选择该形象后使用全屏舞台。
 

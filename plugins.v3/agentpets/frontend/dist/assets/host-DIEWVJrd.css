@@ -337,7 +337,7 @@
     width: 100%;
     flex: 0 0 auto;
     padding: 4px 6px;
-    overflow: auto;
+    overflow: visible;
     border-right: 0;
     border-bottom: 1px solid var(--ap-border);
   }
@@ -345,13 +345,15 @@
     display: none;
   }
   .ap-nav .v-list {
-    display: flex;
-    flex-wrap: nowrap;
-    min-width: max-content;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-width: 0;
+    gap: 4px;
   }
   .ap-nav .v-list-item {
-    margin: 0 3px;
-    min-height: 38px;
+    min-width: 0;
+    margin: 0;
+    min-height: 42px;
   }
   .ap-pane {
     padding: 14px;
@@ -397,5 +399,11 @@
   }
   .ap-page__content {
     padding: 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .ap-nav .v-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

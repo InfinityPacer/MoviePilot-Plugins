@@ -13,32 +13,33 @@ from fastapi import HTTPException
 from PIL import Image
 
 from app.plugins.agentpets import BUILTIN_PREVIEW, AgentPets, require_admin
-from app.plugins.agentpets.pack import (
+from app.plugins.agentpets.packs.constants import (
     BUILTIN_PACK_ID,
     HOST_ACTIONS,
     MAX_PACKS,
     PackError,
-    codex_pet_version,
-    decode_image,
-    parse_pack,
-    sniff_image,
 )
+from app.plugins.agentpets.packs.images import decode_image, sniff_image
+from app.plugins.agentpets.packs.schema import codex_pet_version, parse_pack
 
 PLUGIN_ROOT = Path(__file__).parents[3] / "plugins.v3" / "agentpets"
 DIST = PLUGIN_ROOT / "frontend" / "dist" / "assets"
 
 
 def _png(width: int = 64, height: int = 32, fmt: str = "PNG") -> bytes:
+    """生成指定格式与尺寸的小图片，用于图片识别和网格校验"""
     buffer = io.BytesIO()
     Image.new("RGBA", (width, height), (255, 128, 0, 255)).save(buffer, format=fmt)
     return buffer.getvalue()
 
 
 def _data_url(content: bytes, mime: str = "image/png") -> str:
+    """将生成图片编码为上传接口使用的 Base64 data URL"""
     return f"data:{mime};base64," + base64.b64encode(content).decode("ascii")
 
 
 def _pack(**overrides) -> dict:
+    """生成最小双帧素材，允许测试显式替换字段制造边界输入"""
     pack = {
         "id": "pixel-dog",
         "name": "像素狗",
@@ -57,6 +58,7 @@ def _sprites(plugin: AgentPets) -> list[dict]:
 
 
 def _decode(data_url: str) -> Image.Image:
+    """解码接口返回的内嵌图片以核对尺寸、透明度与像素"""
     return Image.open(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1])))
 
 
@@ -216,6 +218,7 @@ def test_parse_pack_rejects_invalid_structure(overrides: dict, message: str) -> 
 
 
 def test_parse_pack_rejects_bad_json_and_oversize() -> None:
+    """错误 JSON、超长清单和非对象顶层均给出明确校验错误"""
     with pytest.raises(PackError, match="解析失败"):
         parse_pack("{")
     with pytest.raises(PackError, match="64KB"):
@@ -259,6 +262,7 @@ def test_write_endpoints_require_admin(plugin: AgentPets) -> None:
 
 
 def test_packs_api_lists_builtin_first(plugin: AgentPets) -> None:
+    """列表以内置素材开头，并返回用户素材来源和正确帧动作数量"""
     plugin.api_add_pack(SimpleNamespace(pack=_pack(sheet="https://example.com/s.png"), image=None))
 
     packs = plugin.api_packs().data
@@ -289,6 +293,7 @@ def test_codex_marker_survives_save_and_registers_stage(plugin: AgentPets, versi
 
 
 def _legacy_codex_pack() -> dict:
+    """读取未显式标记版本的旧 Codex 样本，验证向后兼容识别"""
     return json.loads((Path(__file__).parent / "fixtures" / "legacy-codex-v2.json").read_text(encoding="utf-8"))
 
 
@@ -320,5 +325,6 @@ def test_codex_detection_requires_animation_layout_not_just_grid() -> None:
 
 @pytest.mark.parametrize("marker, rows", [("v3", 11), ("v1", 11), ("v2", 9), (True, 9)])
 def test_codex_marker_must_match_supported_layout(marker, rows: int) -> None:
+    """显式版本仅允许受支持字符串且必须与网格行数一致"""
     with pytest.raises(PackError, match="codex_version"):
         parse_pack(_pack(codex_version=marker, grid={"cols": 8, "rows": rows}))

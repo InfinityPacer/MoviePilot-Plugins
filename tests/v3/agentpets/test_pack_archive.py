@@ -7,12 +7,16 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app.plugins.agentpets import AgentPets, ImportPackRequest, require_admin
-from app.plugins.agentpets.pack import MAX_PREVIEW_BYTES, PackError, PackStore, pack_revision, parse_calibration, parse_pack
+from app.plugins.agentpets import AgentPets, require_admin
+from app.plugins.agentpets.packs.constants import MAX_PREVIEW_BYTES, PackError
+from app.plugins.agentpets.packs.schema import pack_revision, parse_calibration, parse_pack
+from app.plugins.agentpets.packs.store import PackStore
+from app.plugins.agentpets.requests import ImportPackRequest
 
 
 @pytest.fixture
 def bundle(tmp_path):
+    """创建带映射和校准的完整素材及图片，用隔离存储模拟导出和恢复"""
     buffer = BytesIO()
     Image.new('RGBA', (200, 100), (255, 0, 0, 255)).save(buffer, format='PNG')
     content = buffer.getvalue()
@@ -27,6 +31,7 @@ def bundle(tmp_path):
 
 
 def test_roundtrip_and_copy_preserve_all_material_fields(bundle):
+    """完整导入副本保留元数据与原始图片，不改变源素材"""
     store, data, _, image, content, old = bundle
     plugin = AgentPets()
     plugin._store = lambda: store
@@ -43,12 +48,14 @@ def test_roundtrip_and_copy_preserve_all_material_fields(bundle):
 
 @pytest.mark.parametrize('field', ['preview', 'avatar'])
 def test_thumbnail_capacity_remains_bounded(field):
+    """内嵌预览与头像超过字节额度时不能绕过素材校验"""
     image = 'data:image/png;base64,' + base64.b64encode(bytes(MAX_PREVIEW_BYTES + 128)).decode()
     with pytest.raises(PackError, match='128 KiB'):
         parse_pack({'name': 'Too large', 'grid': {'cols': 1, 'rows': 1}, 'frames': {'idle': 0}, field: image})
 
 
 def test_high_detail_generated_thumbnails_can_be_imported_as_copy(bundle):
+    """合法高细节自动缩略图可完整导出再导入，不被旧字符额度误拒绝"""
     store, _, _, _, _, _ = bundle
     content = (Path(__file__).parent / 'fixtures' / 'texture.png').read_bytes()
     image = 'data:image/png;base64,' + base64.b64encode(content).decode()
@@ -69,6 +76,7 @@ def test_high_detail_generated_thumbnails_can_be_imported_as_copy(bundle):
 
 
 def test_replacement_retains_identity_and_previous_image(bundle):
+    """覆盖保留 ID 与创建时间，先备份记录并保留旧图以便恢复"""
     store, data, raw, image, content, old = bundle
     result = store.import_pack({**raw, 'name': 'Changed'}, image, 'replace', pack_revision(old))
     assert result['id'] == old['id'] and result['created_at'] == old['created_at']
@@ -81,6 +89,7 @@ def test_replacement_retains_identity_and_previous_image(bundle):
 
 @pytest.mark.parametrize('fault', ['stale', 'bad_mapping', 'bad_image', 'backup_failure', 'metadata_failure'])
 def test_failed_import_does_not_damage_existing_material(bundle, fault):
+    """过期修订号、坏素材和备份或元数据写入失败都保全旧素材"""
     store, data, raw, image, content, old = bundle
     revision = pack_revision(old)
     save = store._save_data
@@ -101,9 +110,11 @@ def test_failed_import_does_not_damage_existing_material(bundle, fault):
 
 
 def test_uncertain_commit_keeps_both_images_and_backup(bundle):
+    """提交完成后异常导致状态不明时，两份图片和恢复记录仍可用"""
     store, data, raw, image, content, old = bundle
     save = store._save_data
     def fail_after_save(key, value):
+        """先提交内存记录再报错，模拟持久化成功但确认通道失败"""
         save(key, value)
         if key == 'packs':
             raise RuntimeError('write completed but transport failed')
@@ -116,6 +127,7 @@ def test_uncertain_commit_keeps_both_images_and_backup(bundle):
 
 
 def test_new_collision_and_api_permissions(bundle):
+    """新增同 ID 必须失败，完整包导入路由需要管理员权限"""
     store, _, raw, image, _, _ = bundle
     with pytest.raises(PackError, match='已存在'):
         store.import_pack(raw, image, 'new')
@@ -124,10 +136,12 @@ def test_new_collision_and_api_permissions(bundle):
     assert route['auth'] == 'bear' and route['dependencies'][0].dependency is require_admin
 @pytest.mark.parametrize('failure_at', ['write', 'replace'])
 def test_failed_image_publish_is_retryable_without_damaging_original(bundle, monkeypatch, failure_at):
+    """图片临时写入或原子替换失败后可重试，原始图片保持完好"""
     store, _, raw, image, content, old = bundle
     old_path = store.image_path(old)
     original_write = type(old_path).write_bytes
     def fail_write(path, value):
+        """模拟非原图路径只写部分内容后失败，原图读取和写入仍可用"""
         if path != old_path:
             original_write(path, value[:10])
             raise OSError('simulated partial image write')
@@ -137,6 +151,7 @@ def test_failed_image_publish_is_retryable_without_damaging_original(bundle, mon
             patch.setattr(type(old_path), 'write_bytes', fail_write)
         else:
             def fail_replace(*_args):
+                """注入发布临时图片的原子替换失败，验证清理与原图保全"""
                 raise OSError('simulated image publish failure')
             patch.setattr(type(old_path), 'replace', fail_replace)
         with pytest.raises(OSError):

@@ -6,6 +6,7 @@ import { builtinAvatar } from '@/editor/avatars'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import PackManager from '@/sprites/PackManager.vue'
+import MarketBrowser from '@/markets/MarketBrowser.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -27,6 +28,8 @@ emit('layout', { maxWidth: '72rem' })
 const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
 const activeMain = ref('overview')
 const visitedPacks = ref(false)
+const visitedMarket = ref(false)
+const packManager = ref<{ refresh: () => Promise<void> } | null>(null)
 const enabled = ref(Boolean(props.initialConfig?.enabled))
 const baseline = ref(Boolean(props.initialConfig?.enabled))
 const changed = computed(() => enabled.value !== baseline.value)
@@ -51,6 +54,7 @@ const groups = [
     icon: 'mdi-package-variant-closed',
     description: '导入你的 Pet，或管理已有的素材包。',
   },
+  { key: 'market', title: '在线市场', icon: 'mdi-storefront-outline', description: '' },
 ]
 const group = computed(() => groups.find(item => item.key === activeMain.value) ?? groups[0]!)
 const stageCount = computed(() => snapshot.value?.pets.filter(pet => pet.mode === 'stage').length ?? 0)
@@ -72,7 +76,13 @@ watch(
 )
 watch(activeMain, value => {
   if (value === 'packs') visitedPacks.value = true
+  if (value === 'market') visitedMarket.value = true
 })
+
+function marketImported() {
+  void refresh()
+  void packManager.value?.refresh()
+}
 
 async function refresh() {
   const version = ++requestVersion
@@ -263,12 +273,21 @@ async function save() {
             </div>
           </template>
           <PackManager
+            ref="packManager"
             v-if="visitedPacks"
             v-show="activeMain === 'packs'"
             :key="props.pluginId"
             :api="props.api"
             :plugin-id="props.pluginId"
             @changed="refresh"
+          />
+          <MarketBrowser
+            v-if="visitedMarket"
+            v-show="activeMain === 'market'"
+            :key="props.pluginId"
+            :api="props.api"
+            :plugin-id="props.pluginId"
+            @imported="marketImported"
           />
         </main>
       </div>
@@ -277,7 +296,7 @@ async function save() {
           ><v-icon icon="mdi-circle" size="7" />1 项未保存 · 启用助手形象</span
         >
         <span v-else class="ap-muted">{{
-          activeMain === 'packs' ? '素材的导入与删除即时保存' : '修改配置后点击保存'
+          activeMain === 'packs' || activeMain === 'market' ? '素材的导入与删除即时保存' : '修改配置后点击保存'
         }}</span>
         <div class="ap-footer__actions">
           <v-btn variant="text" @click="emit('close')">取消</v-btn
