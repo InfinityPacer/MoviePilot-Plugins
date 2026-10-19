@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { withLoadTimeout } from '@/loading'
+import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
+import {
+  calibrationEye,
+  calibrationLayout,
+  calibrationPoint,
+  LANDMARKS,
+  mirrorFace,
+  parseCalibration,
+  type Calibration,
+} from '@/sprites/calibration'
+import { PACK_UPDATED_EVENT } from '@/sprites/mappings'
+import type { SpritePack } from '@/sprites/schema'
 
 import type { AgentHostEvent, AgentHostState, AgentPetContext, AgentRect, MoviePilotAgentHost, PluginApi } from '@/host'
 import {
@@ -12,9 +24,9 @@ import {
   effectiveScale,
   floorLine,
   hopVelocity,
+  intersectionArea,
   nearestEdge,
   pickClearX,
-  pickShelterDepth,
   freeBounds,
   groundTop,
   isBlocked,
@@ -23,18 +35,31 @@ import {
   ratioToX,
   readViewport,
   sameRect,
-  shelterSink,
   surfaceXBounds,
   xBounds,
   xToRatio,
   type Landing,
   type RoamMode,
 } from '@/stage/geometry'
+import {
+  dropPeekEdge,
+  isPeekEdge,
+  peekHome,
+  peekLayout,
+  peekPanelShift,
+  PEEK_TUCK,
+  PEEK_RISE_SECONDS,
+  PEEK_TILT_SECONDS,
+  type PeekEdge,
+  type PeekEye,
+} from '@/stage/peek'
 import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
 import { DEFAULT_SETTINGS, loadSettings, normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
+import { normalizePeekAngles } from '@/stage/peek'
 import {
   coversControlAt,
   bottomFixedFloor,
+  BOTTOM_FLOOR_GAP,
   measureSurface,
   querySurfaces,
   surfacesNear,
@@ -63,6 +88,8 @@ const props = withDefaults(
     /** 使用自定义外观时的名称与格子宽高比。 */
     characterName?: string
     aspectRatio?: number
+    /** undefined 使用小映眼位，null 表示素材尚未校准。 */
+    peekEye?: PeekEye | null
     /** 详情页局部预览边界；缺省仍在整个页面活动。 */
     previewRoot?: HTMLElement | null
     /** 预览草稿直接传入，不读取或写入已保存设置。 */
@@ -70,6 +97,11 @@ const props = withDefaults(
     /** 仅预览按窗口容纳角色，不更改活动设置的大小。 */
     previewMaxSize?: { width: number; height: number }
     previewPose?: Pose
+    previewPeekEdge?: PeekEdge | null
+    /** 仅局部贴边试览使用；正式舞台读取当前 Pet 保存的角度。 */
+    previewPeekAngle?: number
+    calibrationOverride?: Calibration
+    showCalibration?: boolean
   }>(),
   {
     agent: null,
@@ -82,6 +114,8 @@ const props = withDefaults(
     previewRoot: null,
   },
 )
+const emit = defineEmits<{ 'pack-ready': [SpritePack]; 'load-state': ['loading' | 'ready' | 'error'] }>()
+const ownFrames = !useSlots().default
 
 /** 设置为 1 倍时的角色高度（CSS 像素）。 */
 const BASE_HEIGHT = 120
@@ -97,8 +131,7 @@ const GRAVITY = 2600
 const DRAG_THRESHOLD = 6
 const SIT_DURATION = 900
 const DOZE_AFTER = 90_000
-const PEEK_RATIO = 0.5
-const PEEK_SPEED = 160
+const PEEK_SPEED = 1.8
 /** 跳到别的面时顶点比两端较高者再高出的身高比例。 */
 const HOP_LIFT_RATIO = 0.5
 /** 当前面找不到空位时，最多再尝试的其他站立面数（含底边）。 */
@@ -127,16 +160,35 @@ interface StoredPosition {
   xRatio: number
   /** 顶边在视口可用高度内的比例，0 为最上，1 为底边；只用于恢复站在元素上或自由停放的位置。 */
   yRatio?: number
+  peekEdge?: PeekEdge
 }
 
 const rootEl = ref<HTMLElement | null>(null)
 const settings = ref<YingSettings>({ ...DEFAULT_SETTINGS })
 const imageAspect = ref(198 / 240)
-const aspect = computed(() => (props.aspectRatio > 0 ? props.aspectRatio : imageAspect.value))
+const ownCalibration = ref(builtinDefaultCalibration('ying'))
+const effectiveCalibration = computed(() => parseCalibration(props.calibrationOverride ?? ownCalibration.value))
+const ownLayout = computed(() => calibrationLayout(effectiveCalibration.value, imageAspect.value))
+const aspect = computed(() => (props.aspectRatio > 0 ? props.aspectRatio : ownLayout.value.aspectRatio))
+const ownGuides = computed(() =>
+  ['eye', ...LANDMARKS].flatMap(key => {
+    const point = calibrationPoint(effectiveCalibration.value, key as 'eye' | (typeof LANDMARKS)[number])
+    return point ? [{ key, ...point }] : []
+  }),
+)
 const x = ref(0)
 const y = ref(0)
-const sink = ref(0)
+const peekProgress = ref(0)
+const peekRevealing = ref(false)
+const peekTiltProgress = ref(0)
+const peekEdge = ref<PeekEdge | null>(null)
+const peekPhase = ref<'tuck' | 'pause' | 'tilt' | 'look' | 'leave' | null>(null)
+const layoutRevision = ref(0)
 const facingLeft = ref(false)
+const ownEye = computed(() => {
+  const face = calibrationEye(effectiveCalibration.value)
+  return facingLeft.value ? mirrorFace(face) : face
+})
 const motion = ref<Motion>('idle')
 const walkPhase = ref(0)
 const transient = ref<Pose | null>(null)
@@ -163,10 +215,11 @@ let velocity = 0
 let bounced = false
 let fallTarget: Landing<DomSurface> | null = null
 let peekTarget = 0
+let peekPinned = false
 /** 无处可站时在底边一侧下沉躲开控件；与随机探头不同，没有结束计时，由复查决定何时站起来。 */
 let sheltering = false
-/** 到达目的地后进入下沉躲避的深度（占身高比例）；为 null 时不躲。 */
-let pendingShelter: number | null = null
+/** 到达目的地后进入稳定眼位，不再逐次加深。 */
+let pendingShelter = false
 /** 跳向另一个面时的水平速度与落点 x。 */
 let hopVx = 0
 let hopTargetX: number | null = null
@@ -177,7 +230,7 @@ let lastSaveAt = 0
 let saveOnLand = false
 let suppressClick = false
 /** 散步到底边一侧后接着探头。 */
-let pendingPeek = false
+let pendingPeek: PeekEdge | null = null
 /** 走到元素边缘后跳下去。 */
 let pendingStepOff = false
 /** 当前站着的页面元素；站在底边或自由停放时为 null。 */
@@ -207,18 +260,27 @@ const charHeight = computed(() => {
   return fit ? Math.min(height, Math.max(1, fit.height), Math.max(1, fit.width) / aspect.value) : height
 })
 const charWidth = computed(() => charHeight.value * aspect.value)
+const previewEdge = computed(() => (props.previewRoot ? (props.previewPeekEdge ?? null) : null))
+const activePeekEdge = computed(() => previewEdge.value ?? peekEdge.value)
+const settledPeek = computed(
+  () => !previewEdge.value && motion.value === 'peek' && peekPhase.value === 'look' && peekProgress.value === 1,
+)
 const pose = computed<Pose>(() =>
-  props.previewRoot && props.previewPose
-    ? props.previewPose
-    : resolvePose({
-        motion: motion.value,
-        walkPhase: walkPhase.value,
-        transient: transient.value,
-        sustained: sustained.value,
-        dozing: dozing.value,
-        blinking: blinking.value,
-        rising: rising.value,
-      }),
+  activePeekEdge.value
+    ? settledPeek.value && animationActive.value && blinking.value
+      ? 'blink'
+      : 'alert'
+    : props.previewRoot && props.previewPose
+      ? props.previewPose
+      : resolvePose({
+          motion: motion.value,
+          walkPhase: walkPhase.value,
+          transient: transient.value,
+          sustained: sustained.value,
+          dozing: dozing.value,
+          blinking: blinking.value,
+          rising: rising.value,
+        }),
 )
 const label = computed(() =>
   available.value ? `打开助手（${props.characterName}）` : `${props.characterName}（助手未启用）`,
@@ -233,6 +295,20 @@ watch(
 watch([charHeight, charWidth], () => {
   if (ready.value && props.previewRoot) relayout()
 })
+watch(
+  [() => props.peekEye, previewEdge, ownEye],
+  () => {
+    if (ready.value) relayout()
+  },
+  { deep: true },
+)
+watch(
+  effectiveCalibration,
+  () => {
+    if (ready.value && ownFrames) relayout()
+  },
+  { deep: true },
+)
 
 /** 单帧图片的加载状态。 */
 type FrameStatus = 'pending' | 'loaded' | 'error'
@@ -296,11 +372,46 @@ function onFrameError(name: Pose) {
   syncDisplayed()
 }
 
+const drawing = computed(() => {
+  // 宿主快照不是响应式对象，布局事件需要使裁切边界重新计算。
+  void layoutRevision.value
+  const edge = activePeekEdge.value
+  const view = peekViewport()
+  const position = previewEdge.value
+    ? peekHome({ x: x.value, y: y.value }, view, size(), previewEdge.value)
+    : { x: x.value, y: y.value }
+  const eye = props.peekEye === undefined ? ownEye.value : props.peekEye
+  return peekLayout(
+    position,
+    size(),
+    view,
+    edge,
+    previewEdge.value ? 1 : peekProgress.value,
+    eye,
+    !!previewEdge.value || peekRevealing.value,
+    previewEdge.value ? 1 : peekTiltProgress.value,
+    previewEdge.value && props.previewPeekAngle !== undefined
+      ? props.previewPeekAngle
+      : normalizePeekAngles(settings.value.peek_angles)[activePeekEdge.value ?? 'bottom'],
+  )
+})
 const buttonStyle = computed(() => ({
-  width: `${charWidth.value}px`,
-  height: `${charHeight.value}px`,
-  transform: `translate3d(${x.value}px, ${y.value + sink.value}px, 0)`,
-  clipPath: sink.value > 0 ? `inset(0 0 ${sink.value}px 0)` : undefined,
+  width: `${drawing.value.hit.width}px`,
+  height: `${drawing.value.hit.height}px`,
+  transform: `translate3d(${drawing.value.hit.x}px, ${drawing.value.hit.y}px, 0)`,
+}))
+const clipStyle = computed(() => ({
+  left: `${drawing.value.visible.x - drawing.value.hit.x}px`,
+  top: `${drawing.value.visible.y - drawing.value.hit.y}px`,
+  width: `${drawing.value.visible.width}px`,
+  height: `${drawing.value.visible.height}px`,
+}))
+const artworkStyle = computed(() => ({
+  left: `${drawing.value.artwork.x - drawing.value.visible.x}px`,
+  top: `${drawing.value.artwork.y - drawing.value.visible.y}px`,
+  width: `${drawing.value.artwork.width}px`,
+  height: `${drawing.value.artwork.height}px`,
+  transform: `rotate(${drawing.value.artwork.rotation}deg)`,
 }))
 
 function setTimer(name: string, delay: number, callback: () => void) {
@@ -346,7 +457,7 @@ function placeFixed() {
 
 function resetMotion() {
   stopLoop()
-  for (const name of ['behavior', 'peek', 'sit', 'clearance']) clearTimer(name)
+  for (const name of ['behavior', 'peek', 'peek-pause', 'landing-peek', 'sit', 'clearance']) clearTimer(name)
   walkTarget = null
   walkPhase.value = 0
   fallTarget = null
@@ -354,11 +465,15 @@ function resetMotion() {
   hopTargetX = null
   velocity = 0
   rising.value = false
-  pendingPeek = false
+  pendingPeek = null
   pendingStepOff = false
-  pendingShelter = null
+  pendingShelter = false
   sheltering = false
-  sink.value = 0
+  peekProgress.value = 0
+  peekTiltProgress.value = 0
+  peekEdge.value = null
+  peekPhase.value = null
+  peekPinned = false
   peekTarget = 0
   motion.value = 'idle'
   detachSurface()
@@ -395,15 +510,24 @@ function refreshBottomFloor(): boolean {
   return changed
 }
 
-/** 移动端底栏上方是可见停靠区，不是可以藏住身体的屏幕底边。 */
-function canSink(): boolean {
-  return (
-    !!props.previewRoot || !isMobile.value || bottomFloor === null || bottomFloor >= floorLine(readViewport(hostState))
-  )
+/** 正常站立保留底栏间隔；偷窥直接贴住底栏上沿。 */
+function peekViewport() {
+  const view = readViewport(hostState, !props.previewRoot)
+  if (bottomFloor === null || props.previewRoot || bottomFloor >= floorLine(view)) return view
+  return {
+    ...view,
+    safeArea: {
+      ...view.safeArea,
+      bottom: Math.max(view.safeArea.bottom, view.height - bottomFloor - BOTTOM_FLOOR_GAP),
+    },
+  }
 }
 
-function hiddenHeight(depth: number): number {
-  return canSink() ? shelterSink(charHeight.value, depth) : 0
+function placePeek() {
+  if (!peekEdge.value) return
+  const point = peekHome({ x: x.value, y: y.value }, peekViewport(), size(), peekEdge.value)
+  x.value = point.x
+  y.value = point.y
 }
 
 function ground(): number {
@@ -451,7 +575,7 @@ function onFloor(): boolean {
 
 /** 角色当前露出的矩形；探头时只报告地面以上的部分。 */
 function currentRect(): AgentRect {
-  return { x: x.value, y: y.value + sink.value, width: charWidth.value, height: charHeight.value - sink.value }
+  return drawing.value.visible
 }
 
 function reportAnchor() {
@@ -471,7 +595,7 @@ function queueAnchor() {
 
 function needsLoop(): boolean {
   if (motion.value === 'walk' || motion.value === 'fall') return true
-  return motion.value === 'peek' && sink.value !== peekTarget
+  return motion.value === 'peek' && (peekPhase.value === 'tilt' || peekProgress.value !== peekTarget)
 }
 
 function ensureLoop() {
@@ -552,12 +676,39 @@ function stepFall(dt: number) {
 }
 
 function stepPeek(dt: number) {
-  const step = PEEK_SPEED * dt
-  sink.value =
-    sink.value < peekTarget ? Math.min(peekTarget, sink.value + step) : Math.max(peekTarget, sink.value - step)
-  if (sink.value === 0 && peekTarget === 0) {
+  if (peekPhase.value === 'tilt') {
+    peekTiltProgress.value = Math.min(1, peekTiltProgress.value + dt / PEEK_TILT_SECONDS)
+    if (peekTiltProgress.value === 1) {
+      peekPhase.value = 'look'
+      peekTarget = 1
+    }
+    return
+  }
+  const step = (peekPhase.value === 'look' ? (PEEK_TUCK - 1) / PEEK_RISE_SECONDS : PEEK_SPEED) * dt
+  peekProgress.value =
+    peekProgress.value < peekTarget
+      ? Math.min(peekTarget, peekProgress.value + step)
+      : Math.max(peekTarget, peekProgress.value - step)
+  if (peekProgress.value === PEEK_TUCK && peekPhase.value === 'tuck') {
+    peekPhase.value = 'pause'
+    setTimer('peek-pause', 420, () => {
+      if (motion.value !== 'peek' || peekPhase.value !== 'pause') return
+      peekRevealing.value = true
+      // 底边先在完全隐藏的位置完成倾斜与横向靠角，再只沿竖直方向探出。
+      peekPhase.value = peekEdge.value === 'bottom' ? 'tilt' : 'look'
+      peekTarget = peekEdge.value === 'bottom' ? PEEK_TUCK : 1
+      ensureLoop()
+    })
+  }
+  if (peekProgress.value === 0 && peekTarget === 0) {
+    const fromSide = peekEdge.value === 'left' || peekEdge.value === 'right'
+    peekEdge.value = null
+    peekPhase.value = null
+    peekPinned = false
     motion.value = 'idle'
-    scheduleBehavior()
+    y.value = onFloor() ? ground() : y.value
+    if (fromSide && roam() !== 'free' && !onFloor()) startFall()
+    else scheduleBehavior()
   }
 }
 
@@ -575,41 +726,55 @@ function finishWalk() {
   if (motion.value === 'walk') motion.value = 'idle'
   const peek = pendingPeek
   const stepOff = pendingStepOff
-  pendingPeek = false
+  pendingPeek = null
   pendingStepOff = false
-  if (pendingShelter !== null) {
-    const depth = pendingShelter
-    pendingShelter = null
-    beginShelter(depth, false)
+  if (pendingShelter) {
+    pendingShelter = false
+    beginShelter(false)
     return
   }
   scheduleClearance(0)
   if (stepOff && surface) stepOffEdge()
-  else if (peek) beginPeek()
+  else if (peek) beginPeek(peek)
   else scheduleBehavior()
 }
 
-function beginPeek() {
-  if (fixed() || !motionAllowed() || !onFloor()) return
-  if (!canSink()) {
-    scheduleBehavior()
-    return
-  }
-  // 探头时面朝屏幕内侧。
+function beginPeek(edge: PeekEdge = 'bottom', pinned = false, instant = false) {
+  if (fixed()) return
+  for (const name of ['behavior', 'peek', 'peek-pause', 'landing-peek', 'sit', 'clearance']) clearTimer(name)
+  detachSurface()
+  peekEdge.value = edge
+  peekPinned = pinned
+  x.value = nearestEdge(x.value, bounds())
+  placePeek()
   facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2
   motion.value = 'peek'
-  peekTarget = hiddenHeight(PEEK_RATIO)
-  ensureLoop()
-  setTimer('peek', randomBetween(4000, 7000), endPeek)
+  const still = instant || !motionAllowed()
+  peekRevealing.value = still
+  peekTiltProgress.value = still ? 1 : 0
+  peekPhase.value = still ? 'look' : 'tuck'
+  peekProgress.value = still ? 1 : 0
+  peekTarget = still ? 1 : PEEK_TUCK
+  if (still) queueAnchor()
+  else ensureLoop()
+  schedulePeekExit()
+  syncSurfacePoll()
+}
+
+function schedulePeekExit() {
+  clearTimer('peek')
+  if (!peekPinned && !sheltering && motionAllowed()) setTimer('peek', randomBetween(5000, 8000), endPeek)
 }
 
 function endPeek() {
   clearTimer('peek')
+  clearTimer('peek-pause')
   if (motion.value !== 'peek') return
+  peekPhase.value = 'leave'
   peekTarget = 0
   if (!motionAllowed()) {
-    sink.value = 0
-    motion.value = 'idle'
+    peekProgress.value = 0
+    stepPeek(0)
     queueAnchor()
   }
   ensureLoop()
@@ -624,18 +789,12 @@ function settle() {
     motion.value = 'idle'
   }
   if (motion.value === 'peek' && !sheltering) {
-    clearTimer('peek')
-    peekTarget = 0
-    if (motionAllowed() && visible()) ensureLoop()
-    else {
-      sink.value = 0
-      motion.value = 'idle'
-    }
+    endPeek()
   }
-  pendingPeek = false
+  pendingPeek = null
   pendingStepOff = false
   // 打断后不再执行走向底边途中的下沉，否则会在别处的落点沉下去，交给下一次复查重新判断。
-  pendingShelter = null
+  pendingShelter = false
 }
 
 function calm(): boolean {
@@ -651,7 +810,7 @@ function calm(): boolean {
 }
 
 /**
- * 空闲行为：底边上偶尔散步或走到一侧探头，元素上偶尔走到边缘跳下去，
+ * 空闲行为：底边上偶尔散步或走到下角，从底边或对应侧边探头；元素上偶尔走到边缘跳下去，
  * 自由停放时在视口内慢慢游走。
  */
 function scheduleBehavior() {
@@ -675,7 +834,7 @@ function scheduleBehavior() {
         return
       }
       if (surface) pendingStepOff = Math.random() < 0.5
-      else pendingPeek = true
+      else pendingPeek = Math.random() < 0.5 ? 'bottom' : side === min ? 'left' : 'right'
       if (Math.abs(side - x.value) < 1) finishWalk()
       else startWalk(side)
       return
@@ -698,21 +857,40 @@ function stepOffEdge() {
   const range = xBounds(viewport(), charWidth.value)
   facingLeft.value = direction < 0
   const left = surface
-  x.value = clamp(x.value + direction * charWidth.value * 0.6, range[0], range[1])
+  const nextX = clamp(x.value + direction * charWidth.value * 0.6, range[0], range[1])
   // 视口限位可能让这一步仍站在原表面上；只有中心真正离开支撑才排除原表面。
-  const center = x.value + charWidth.value / 2
+  const center = nextX + charWidth.value / 2
   if (center >= left.left && center <= left.right) {
+    x.value = nextX
     facingLeft.value = direction > 0
     queueAnchor()
     scheduleBehavior()
     return
   }
+  // 主动跳下不能落到避让逻辑必定赶走的位置，否则会在卡片与地面之间循环。
+  const target = landing(left.el, 0, { x: nextX, y: y.value })
+  const view = viewport()
+  if (
+    isBlocked(nextX, blockedSpan(hostState?.panelRect ?? null, target.y, charWidth.value, charHeight.value)) ||
+    coversControlAt(
+      rectAt(nextX, target.y),
+      rootEl.value,
+      view,
+      target.surface?.el ?? null,
+      charWidth.value * charHeight.value,
+      props.previewRoot,
+    )
+  ) {
+    scheduleBehavior()
+    return
+  }
+  x.value = nextX
   startFall(left.el)
 }
 
 function scheduleBlink() {
   setTimer('blink', randomBetween(2500, 6000), () => {
-    if (motionAllowed() && visible() && pose.value === 'idle') {
+    if (motionAllowed() && visible() && (pose.value === 'idle' || settledPeek.value)) {
       blinking.value = true
       setTimer('blink-end', 140, () => {
         blinking.value = false
@@ -748,7 +926,11 @@ function playTransient(next: Pose, duration: number) {
 }
 
 /** 按当前活动范围计算落点；surfaces 模式在这里查询一次可站元素。 */
-function landing(exclude: Element | null = null, dropSnap = 0): Landing<DomSurface> {
+function landing(
+  exclude: Element | null = null,
+  dropSnap = 0,
+  position = { x: x.value, y: y.value },
+): Landing<DomSurface> {
   const view = viewport()
   const boxes =
     roam() === 'surfaces'
@@ -756,7 +938,7 @@ function landing(exclude: Element | null = null, dropSnap = 0): Landing<DomSurfa
           box => box.el !== exclude,
         )
       : []
-  return computeLanding(roam(), boxes, { x: x.value, y: y.value }, view, size(), dropSnap)
+  return computeLanding(roam(), boxes, position, view, size(), dropSnap)
 }
 
 /**
@@ -765,11 +947,20 @@ function landing(exclude: Element | null = null, dropSnap = 0): Landing<DomSurfa
  * free 模式没有重力，原地停下；减少动态效果或页面不可见时直接瞬移到落点。
  */
 function startFall(exclude: Element | null = null) {
+  clearTimer('landing-peek')
   if (fixed()) {
     pinHere()
     return
   }
   x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value))
+  clearTimer('peek')
+  clearTimer('peek-pause')
+  peekProgress.value = 0
+  peekTarget = 0
+  peekEdge.value = null
+  peekPhase.value = null
+  peekPinned = false
+  sheltering = false
   detachSurface()
   hopVx = 0
   hopTargetX = null
@@ -794,7 +985,11 @@ function startFall(exclude: Element | null = null) {
 function land(animated: boolean) {
   velocity = 0
   rising.value = false
-  sink.value = 0
+  peekProgress.value = 0
+  peekTarget = 0
+  peekEdge.value = null
+  peekPhase.value = null
+  peekPinned = false
   sheltering = false
   hopVx = 0
   if (hopTargetX !== null) {
@@ -812,7 +1007,8 @@ function land(animated: boolean) {
   if (animated) {
     motion.value = 'sit'
     setTimer('sit', SIT_DURATION, () => {
-      if (motion.value === 'sit') motion.value = 'idle'
+      if (motion.value !== 'sit') return
+      motion.value = 'idle'
       scheduleBehavior()
     })
   } else {
@@ -826,16 +1022,19 @@ function land(animated: boolean) {
     requestSave()
   }
   queueAnchor()
-  if (pendingShelter !== null) {
-    const depth = pendingShelter
-    pendingShelter = null
+  if (pendingShelter) {
+    pendingShelter = false
     clearTimer('sit')
-    beginShelter(depth, !animated)
+    beginShelter(!animated)
     return
   }
-  const delay = droppedByUser ? DROP_CLEAR_DELAY : 0
+  const delay = animated
+    ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, SIT_DURATION + 50)
+    : droppedByUser
+      ? DROP_CLEAR_DELAY
+      : 0
   droppedByUser = false
-  scheduleClearance(animated ? Math.max(delay, SIT_DURATION + 50) : delay)
+  scheduleClearance(delay)
 }
 
 /** 站上元素后开始监听可能让它移动或消失的变化。 */
@@ -934,10 +1133,9 @@ function checkSurface() {
   queueAnchor()
 }
 
-/** 角色以完整身高站在 (left, top) 时的矩形；下沉 `depth` 时只算露出的部分。 */
-function rectAt(left: number, top: number, depth = 0): AgentRect {
-  const hidden = hiddenHeight(depth)
-  return { x: left, y: top + hidden, width: charWidth.value, height: charHeight.value - hidden }
+/** 角色以完整身高站在 (left, top) 时的矩形。 */
+function rectAt(left: number, top: number): AgentRect {
+  return { x: left, y: top, width: charWidth.value, height: charHeight.value }
 }
 
 /**
@@ -946,7 +1144,7 @@ function rectAt(left: number, top: number, depth = 0): AgentRect {
  * 只在落地、站定、窗口尺寸变化和站立低频复查时调用，拖拽中不做。挡住时依次兜底：
  * 1. 在当前站立面上走到最近的空位；
  * 2. surfaces 模式换到其他可站且不遮挡的面（含底边），跳过去；free 模式在视口内另找空位；
- * 3. 都没有时退到底边最近的一侧；移动端底栏上方完整停靠，其余场景下沉探头。
+ * 3. 都没有时退到底边最近的一侧，以稳定眼位偷窥，不继续加深。
  * 首次出现或不允许动画时直接放过去。候选位置与候选面数都有上限，控制单次判断的耗时。
  */
 function checkClearance() {
@@ -990,7 +1188,7 @@ function checkClearance() {
     moveTo(elsewhere.x, elsewhere.y, elsewhere.surface, instant)
     return
   }
-  goShelter(covers, instant)
+  goShelter(instant)
 }
 
 /** 其他可站面上的空位：按距离由近到远最多试 3 个面（含底边），每个面最多试 4 个位置。 */
@@ -1051,71 +1249,35 @@ function findFreeSpot(
   return null
 }
 
-/** 退到底边最近的一侧，下沉到不再挡住控件的深度。 */
-function goShelter(covers: (rect: AgentRect, standingOn: Element | null) => boolean, instant: boolean) {
+/** 退到底边最近的一侧，视觉避让与可操作命中区分开。 */
+function goShelter(instant: boolean) {
   const edge = nearestEdge(x.value, xBounds(viewport(), charWidth.value))
   const floorY = ground()
-  const depth = pickShelterDepth(level => !covers(rectAt(edge, floorY, level), null))
-  pendingShelter = depth
+  pendingShelter = true
   if (instant || (Math.abs(edge - x.value) < 1 && Math.abs(floorY - y.value) < 1 && !surface)) {
-    pendingShelter = null
+    pendingShelter = false
     detachSurface()
     x.value = edge
     y.value = floorY
-    beginShelter(depth, true)
+    beginShelter(instant)
     return
   }
   moveTo(edge, floorY, null, false)
 }
 
-/** 进入边缘躲避；移动端底栏上方保持完整身体，其余场景按探头动画下沉。 */
-function beginShelter(depth: number, instant: boolean) {
+/** 进入边缘躲避，保持眼位直到完整站起已不会挡住控件。 */
+function beginShelter(instant: boolean) {
   sheltering = true
-  facingLeft.value = x.value > (xBounds(viewport(), charWidth.value)[0] + xBounds(viewport(), charWidth.value)[1]) / 2
-  peekTarget = hiddenHeight(depth)
-  motion.value = peekTarget > 0 ? 'peek' : 'idle'
-  if (peekTarget === 0 || instant || !motionAllowed()) {
-    sink.value = peekTarget
-    queueAnchor()
-  } else ensureLoop()
-  syncSurfacePoll()
+  beginPeek('bottom', false, instant)
 }
 
-/** 躲避中复查：站起来不再挡住就站起来，下沉后仍挡住就再沉深一点。 */
+/** 躲避中只检查能否恢复，不以持续遮挡为由反复下沉。 */
 function recheckShelter() {
   const view = viewport()
   const body = charWidth.value * charHeight.value
-  const covers = (depth: number) =>
-    coversControlAt(rectAt(x.value, ground(), depth), rootEl.value, view, null, body, props.previewRoot)
-  if (!covers(0)) {
+  if (!coversControlAt(rectAt(x.value, ground()), rootEl.value, view, null, body, props.previewRoot)) {
     sheltering = false
-    peekTarget = 0
-    if (motionAllowed() && sink.value > 0) ensureLoop()
-    else {
-      sink.value = 0
-      motion.value = 'idle'
-      queueAnchor()
-      scheduleBehavior()
-    }
-    return
-  }
-  if (!canSink()) {
-    sink.value = 0
-    peekTarget = 0
-    motion.value = 'idle'
-    queueAnchor()
-    return
-  }
-  const current = peekTarget / charHeight.value
-  if (!covers(current)) return
-  const depth = pickShelterDepth(level => level > current && !covers(level))
-  if (depth <= current) return
-  peekTarget = hiddenHeight(depth)
-  motion.value = 'peek'
-  if (motionAllowed()) ensureLoop()
-  else {
-    sink.value = peekTarget
-    queueAnchor()
+    endPeek()
   }
 }
 
@@ -1188,6 +1350,7 @@ function writePosition() {
     roam: roam(),
     xRatio,
     yRatio,
+    ...(peekPinned && peekEdge.value ? { peekEdge: peekEdge.value } : {}),
     ...(fixed() && fixedPosition
       ? {
           xRatio: Math.round(fixedPosition.xRatio * 1000) / 1000,
@@ -1205,6 +1368,18 @@ function writePosition() {
 /** 已经被面板盖住时直接移到空位，不能让“禁止走进面板”的规则把退出路径也封住。 */
 function clearPanelOverlap(): boolean {
   if (motion.value === 'drag') return false
+  if (activePeekEdge.value) {
+    const rect = currentRect()
+    const panel = hostState?.panelRect
+    if (!panel || intersectionArea(rect, panel) === 0) return false
+    const shift = peekPanelShift(rect, panel, peekViewport(), activePeekEdge.value)
+    if (shift) {
+      x.value += shift.x
+      y.value += shift.y
+      queueAnchor()
+      return true
+    }
+  }
   const view = viewport()
   const point = avoidPanel({ x: x.value, y: y.value }, hostState?.panelRect ?? null, view, size())
   if (point.x === x.value && point.y === y.value) return false
@@ -1240,20 +1415,19 @@ function clearPanelOverlap(): boolean {
 
 /** 视口、面板或尺寸变化后把角色放回合法位置。 */
 function relayout() {
+  layoutRevision.value++
   if (fixed() && motion.value !== 'drag') {
     placeFixed()
     return
   }
+  if (motion.value === 'peek' && peekEdge.value) {
+    placePeek()
+    clearPanelOverlap()
+    queueAnchor()
+    return
+  }
   if (clearPanelOverlap()) return
   const view = freeBounds(viewport(), ...sizePair())
-  const maxSink = hiddenHeight(1)
-  sink.value = Math.min(sink.value, maxSink)
-  peekTarget = Math.min(peekTarget, maxSink)
-  if (maxSink === 0 && motion.value === 'peek') {
-    clearTimer('peek')
-    motion.value = 'idle'
-    if (!sheltering) scheduleBehavior()
-  }
   if (walkTarget) {
     walkTarget.x = clamp(walkTarget.x, ...view.x)
     if (walkTarget.y !== null) walkTarget.y = clamp(walkTarget.y, ...view.y)
@@ -1266,7 +1440,7 @@ function relayout() {
     y.value = clamp(y.value, ...view.y)
     // 收回当前位置还不够：取消越界的旧抛物线和落点，防止下一帧再次离屏。
     if (motion.value === 'fall' && (outside || targetOutside || hopOutside)) {
-      pendingShelter = null
+      pendingShelter = false
       startFall()
     }
     queueAnchor()
@@ -1335,7 +1509,10 @@ function onHostState(state: AgentHostState) {
     } else scheduleBehavior()
   }
   if (!state.motionAllowed && before?.motionAllowed !== false) freezeMotion()
-  if (state.motionAllowed && before?.motionAllowed === false) scheduleBehavior()
+  if (state.motionAllowed && before?.motionAllowed === false) {
+    if (motion.value === 'peek') schedulePeekExit()
+    else scheduleBehavior()
+  }
   syncVisibility()
   syncSurfacePoll()
   if (resized) scheduleClearance(RESIZE_CLEAR_DELAY)
@@ -1347,19 +1524,23 @@ function freezeMotion() {
   stopLoop()
   clearTimer('behavior')
   clearTimer('peek')
+  clearTimer('peek-pause')
   walkTarget = null
   walkPhase.value = 0
-  pendingPeek = false
+  pendingPeek = null
   pendingStepOff = false
-  pendingShelter = null
+  pendingShelter = false
   blinking.value = false
-  if (sheltering) {
-    // 躲避控件的下沉是静止的，不属于动画，直接停在目标深度。
-    sink.value = peekTarget
+  if (motion.value === 'peek' && peekEdge.value) {
+    peekProgress.value = 1
+    peekTarget = 1
+    peekPhase.value = 'look'
+    peekRevealing.value = true
+    peekTiltProgress.value = 1
     queueAnchor()
     return
   }
-  sink.value = 0
+  peekProgress.value = 0
   peekTarget = 0
   if (motion.value === 'fall') land(false)
   else if (motion.value === 'walk' || motion.value === 'peek') {
@@ -1393,9 +1574,52 @@ function onHostEvent(event: AgentHostEvent) {
   if (next) playTransient(next.pose, next.duration)
 }
 
+async function refreshPetSettings() {
+  if (props.settingsOverride) return
+  const revision = ++settingsRevision
+  const loaded = await withLoadTimeout(
+    loadSettings(props.api, props.pluginId, props.pet?.key || 'ying'),
+    startup.signal,
+  ).catch(() => settings.value)
+  if (!disposed && revision === settingsRevision) applySettings(loaded)
+}
+
 function onSettingsEvent(event: AgentHostEvent) {
   if (props.pluginId && event.source !== props.pluginId) return
-  applySettings(event.data)
+  const data = event.data as (Partial<YingSettings> & { key?: string }) | null
+  if (!data || typeof data !== 'object' || (data.key && data.key !== (props.pet?.key || 'ying'))) return
+  if (!ready.value && props.api && !props.settingsOverride) {
+    void refreshPetSettings()
+    return
+  }
+  applySettings({ ...settings.value, ...data })
+}
+
+watch([() => props.pluginId, () => props.pet?.key], () => {
+  ownCalibration.value = builtinDefaultCalibration('ying')
+  void refreshPetSettings()
+  void refreshOwnCalibration()
+})
+
+let calibrationRevision = 0
+async function refreshOwnCalibration() {
+  const version = ++calibrationRevision
+  if (!ownFrames) return
+  if (props.pet?.key && props.pet.key !== 'ying') {
+    ownCalibration.value = builtinDefaultCalibration('ying')
+    return
+  }
+  emit('load-state', 'loading')
+  try {
+    const value = await loadBuiltinCalibration(props.api, props.pluginId, 'ying', startup.signal)
+    if (disposed || version !== calibrationRevision) return
+    ownCalibration.value = value
+    emit('pack-ready', { ...YING_PACK, calibration: value })
+    emit('load-state', 'ready')
+  } catch {
+    if (disposed || version !== calibrationRevision) return
+    if (props.previewRoot) emit('load-state', 'error')
+  }
 }
 
 function pointerPosition(event: PointerEvent) {
@@ -1418,8 +1642,8 @@ function onPointerDown(event: PointerEvent) {
     id: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
-    offsetX: pointerPosition(event).x - x.value,
-    offsetY: pointerPosition(event).y - (y.value + sink.value),
+    offsetX: activePeekEdge.value ? charWidth.value / 2 : pointerPosition(event).x - x.value,
+    offsetY: activePeekEdge.value ? charHeight.value * 0.3 : pointerPosition(event).y - y.value,
     dragging: false,
   }
   window.addEventListener('pointermove', onPointerMove)
@@ -1438,11 +1662,17 @@ function onPointerMove(event: PointerEvent) {
     clearTimer('behavior')
     clearTimer('sit')
     clearTimer('clearance')
+    clearTimer('peek')
+    clearTimer('peek-pause')
+    clearTimer('landing-peek')
     transient.value = null
-    sink.value = 0
+    peekProgress.value = 0
+    peekEdge.value = null
+    peekPhase.value = null
+    peekPinned = false
     peekTarget = 0
     sheltering = false
-    pendingShelter = null
+    pendingShelter = false
     hopVx = 0
     hopTargetX = null
     velocity = 0
@@ -1473,6 +1703,17 @@ function finishDrag() {
   // 先离开拖拽状态，站立复查随之恢复。
   motion.value = 'idle'
   syncSurfacePoll()
+  const edge = fixed() || previewEdge.value ? null : dropPeekEdge({ x: x.value, y: y.value }, viewport(), size())
+  const snap = Math.min(24, charHeight.value * 0.2)
+  const nearby = !fixed() && roam() === 'surfaces' ? landing(null, snap) : null
+  const onPlatform = !!nearby?.surface && Math.abs(nearby.y - y.value) <= snap
+  if (edge && !onPlatform) {
+    droppedByUser = false
+    saveOnLand = false
+    beginPeek(edge, true)
+    requestSave()
+    return
+  }
   startFall()
 }
 
@@ -1530,6 +1771,13 @@ function restorePosition(stored: StoredPosition | null) {
     placeFixed()
     return
   }
+  if (isPeekEdge(stored?.peekEdge)) {
+    const home = peekHome({ x: x.value, y: y.value }, view, size(), stored.peekEdge)
+    if (stored.peekEdge === 'bottom' || (Math.abs(home.x - x.value) < 1 && Math.abs(home.y - y.value) < 1)) {
+      beginPeek(stored.peekEdge, true, true)
+      return
+    }
+  }
   if (roam() === 'free') {
     land(false)
     return
@@ -1553,6 +1801,7 @@ function onWindowResize() {
 }
 
 onMounted(async () => {
+  void refreshOwnCalibration()
   const agent = props.agent
   if (agent?.subscribe) cleanups.push(agent.subscribe(onHostState))
   if (agent?.on) {
@@ -1572,6 +1821,12 @@ onMounted(async () => {
       cleanups.push(agent.on(name, onHostEvent))
     }
     cleanups.push(agent.on(SETTINGS_EVENT, onSettingsEvent))
+    if (ownFrames)
+      cleanups.push(
+        agent.on(PACK_UPDATED_EVENT, event => {
+          if (event.source === props.pluginId && event.data.key === 'ying') void refreshOwnCalibration()
+        }),
+      )
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('resize', onWindowResize)
@@ -1590,7 +1845,7 @@ onMounted(async () => {
   const revision = settingsRevision
   const [loaded, stored] = await Promise.all([
     withLoadTimeout(
-      Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId)),
+      Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId, props.pet?.key || 'ying')),
       startup.signal,
     ).catch(() => DEFAULT_SETTINGS),
     withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null),
@@ -1636,6 +1891,8 @@ onBeforeUnmount(() => {
     :data-motion="motion"
     :data-roam="settings.roam"
     :data-movement="settings.movement"
+    :data-peek-edge="activePeekEdge ?? undefined"
+    :data-peek-phase="previewEdge ? 'look' : (peekPhase ?? undefined)"
   >
     <button
       v-show="ready"
@@ -1647,26 +1904,46 @@ onBeforeUnmount(() => {
       @click="onActivate"
       @dragstart.prevent
     >
-      <slot :pose="pose" :facing-left="facingLeft" :motion-active="animationActive">
-        <span
-          class="agent-pet-ying__frames"
-          :class="{ 'agent-pet-ying__frames--flip': facingLeft, 'agent-pet-ying__frames--pending': !displayed }"
-          :data-frame="displayed ?? undefined"
-        >
-          <img
-            v-for="name in POSES"
-            :key="name"
-            class="agent-pet-ying__frame"
-            :class="{ 'agent-pet-ying__frame--visible': name === displayed }"
-            :src="frameSrc[name]"
-            :data-pose="name"
-            alt=""
-            draggable="false"
-            @load="onFrameLoad(name, $event)"
-            @error="onFrameError(name)"
-          />
+      <span class="agent-pet-ying__clip" :style="clipStyle">
+        <span class="agent-pet-ying__artwork" :style="artworkStyle">
+          <slot
+            :pose="pose"
+            :facing-left="facingLeft"
+            :motion-active="animationActive && (!activePeekEdge || settledPeek)"
+            :peek-edge="activePeekEdge"
+            :peek-from-left="drawing.fromLeft"
+          >
+            <span
+              class="agent-pet-ying__frames"
+              :class="{ 'agent-pet-ying__frames--flip': facingLeft, 'agent-pet-ying__frames--pending': !displayed }"
+              :data-frame="displayed ?? undefined"
+            >
+              <span class="agent-pet-ying__frame-crop" :style="ownLayout.frame">
+                <img
+                  v-for="name in POSES"
+                  :key="name"
+                  class="agent-pet-ying__frame"
+                  :class="{ 'agent-pet-ying__frame--visible': name === displayed }"
+                  :src="frameSrc[name]"
+                  :data-pose="name"
+                  alt=""
+                  draggable="false"
+                  @load="onFrameLoad(name, $event)"
+                  @error="onFrameError(name)"
+                />
+              </span>
+              <template v-if="showCalibration">
+                <span
+                  v-for="point in ownGuides"
+                  :key="point.key"
+                  class="agent-pet-ying__eye"
+                  :style="{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }"
+                />
+              </template>
+            </span>
+          </slot>
         </span>
-      </slot>
+      </span>
     </button>
   </div>
 </template>
@@ -1708,12 +1985,39 @@ onBeforeUnmount(() => {
   border-radius: 12px;
 }
 
-/* 翻转作用在容器上，所有帧表现一致；下沉的 clip-path 在按钮上。 */
+.agent-pet-ying__clip {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.agent-pet-ying__artwork {
+  position: absolute;
+  display: block;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+/* 翻转只作用于画面，命中区不随裁切或旋转缩小。 */
 .agent-pet-ying__frames {
   position: absolute;
   inset: 0;
   display: block;
   pointer-events: none;
+  overflow: hidden;
+}
+
+.agent-pet-ying__frame-crop {
+  position: absolute;
+  display: block;
+}
+.agent-pet-ying__eye {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgb(var(--v-theme-warning));
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .agent-pet-ying__frames--pending {

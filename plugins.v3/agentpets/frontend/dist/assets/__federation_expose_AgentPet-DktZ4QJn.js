@@ -1,0 +1,1712 @@
+import { importShared } from './__federation_fn_import-JrT3xvdd.js';
+import { b as builtinDefaultCalibration, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, a as walkFrame } from './poses-ThlqHr1z.js';
+import { p as parseCalibration, c as calibrationLayout, L as LANDMARKS, a as calibrationPoint, b as calibrationEye, m as mirrorFace, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-DHgn0gTZ.js';
+import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, o as pickClearX, q as isBlocked, t as surfaceXBounds, u as blockedSpan, v as nearestEdge, w as hopVelocity, y as xToRatio, z as isPeekEdge, A as intersectionArea, B as peekPanelShift, C as computeLanding, E as dropPeekEdge, P as PEEK_TILT_SECONDS, F as PEEK_TUCK, G as PEEK_RISE_SECONDS, H as pickFreeTarget, I as pickWalkTarget } from './settings-DtFgdyvj.js';
+
+const SURFACE_SELECTOR = '.v-card, .v-sheet, .v-overlay__content, [role="dialog"]';
+const MAX_SURFACE_CANDIDATES = 400;
+function measureSurface(el, scope = null) {
+  if (!el.isConnected) return null;
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const origin = scope?.getBoundingClientRect();
+  return {
+    left: rect.left - (origin?.left ?? 0),
+    top: rect.top - (origin?.top ?? 0),
+    right: rect.right - (origin?.left ?? 0)
+  };
+}
+function surfaceVisible(el) {
+  const style = window.getComputedStyle(el);
+  return style.pointerEvents !== "none" && style.visibility !== "hidden" && style.display !== "none";
+}
+function surfaceUnobstructed(el, box, layer, viewportWidth, scope = null) {
+  if (typeof document.elementsFromPoint !== "function") return true;
+  const left = Math.max(box.left, 0);
+  const right = Math.min(box.right, viewportWidth);
+  if (right <= left) return false;
+  const origin = scope?.getBoundingClientRect();
+  const hit = document.elementsFromPoint((left + right) / 2 + (origin?.left ?? 0), box.top + 2 + (origin?.top ?? 0)).find((item) => !layer?.contains(item));
+  return !!hit && (hit === el || el.contains(hit));
+}
+function querySurfaces(layer, viewport, charHeight, panel, scope = null) {
+  const floor = floorLine(viewport);
+  const candidates = [];
+  for (const el of Array.from((scope ?? document).querySelectorAll(SURFACE_SELECTOR))) {
+    const box = measureSurface(el, scope);
+    if (!box || box.right <= 0 || box.left >= viewport.width || box.top >= floor) continue;
+    if (!standable(box, viewport, charHeight, panel)) continue;
+    if (layer && (layer.contains(el) || el.contains(layer))) continue;
+    candidates.push({ ...box, el });
+    if (candidates.length >= MAX_SURFACE_CANDIDATES) break;
+  }
+  return candidates.filter(
+    (candidate) => surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width, scope)
+  );
+}
+const BOTTOM_FLOOR_GAP = 8;
+function bottomFixedFloor(layer, viewport) {
+  const floor = floorLine(viewport);
+  if (typeof document.elementsFromPoint !== "function") return floor;
+  const left = viewport.safeArea.left;
+  const width = viewport.width - viewport.safeArea.right - left;
+  const seen = /* @__PURE__ */ new Set();
+  let result = floor;
+  for (const ratio of [0.1, 0.5, 0.9]) {
+    for (const depth of [2, 24, 60, 120, 180]) {
+      const y = floor - depth;
+      if (y <= viewport.safeArea.top) continue;
+      const hit = document.elementsFromPoint(left + width * ratio, y).find((item) => !layer?.contains(item));
+      if (!hit || !surfaceVisible(hit)) continue;
+      let el = hit;
+      for (let level = 0; el && level < 8; level += 1, el = el.parentElement) {
+        if (seen.has(el)) break;
+        seen.add(el);
+        if (layer && el.contains(layer)) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < width * 0.5 || rect.height <= 0 || rect.height > Math.min(200, (floor - viewport.safeArea.top) * 0.35) || rect.bottom < floor - 96 || rect.top >= floor || rect.top <= viewport.safeArea.top)
+          continue;
+        const style = window.getComputedStyle(el);
+        if ((style.position === "fixed" || style.position === "sticky") && style.visibility !== "hidden" && style.display !== "none") {
+          result = Math.min(result, rect.top - BOTTOM_FLOOR_GAP);
+        }
+      }
+    }
+  }
+  return result;
+}
+const NEARBY_SURFACE_ROWS = 4;
+function surfacesNear(layer, viewport, charHeight, panel, columns, scope = null) {
+  if (scope) return querySurfaces(layer, viewport, charHeight, panel, scope);
+  if (typeof document.elementsFromPoint !== "function") return [];
+  const top = viewport.safeArea.top + charHeight;
+  const bottom = floorLine(viewport);
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const x of columns) {
+    if (x < 0 || x >= viewport.width) continue;
+    for (let row = 0; row < NEARBY_SURFACE_ROWS; row += 1) {
+      const y = top + (row + 0.5) * (bottom - top) / NEARBY_SURFACE_ROWS;
+      const hit = document.elementsFromPoint(x, y).find((item) => !layer?.contains(item));
+      const el = hit?.closest(SURFACE_SELECTOR);
+      if (!el || seen.has(el)) continue;
+      seen.add(el);
+      if (layer && el.contains(layer)) continue;
+      const box = measureSurface(el, scope);
+      if (!box || !standable(box, viewport, charHeight, panel) || !surfaceVisible(el)) continue;
+      if (!surfaceUnobstructed(el, box, layer, viewport.width)) continue;
+      result.push({ ...box, el });
+    }
+  }
+  return result;
+}
+const CONTROL_SELECTOR = 'a, button, [role="button"], input, textarea, select, .v-btn, .v-card--link, .v-list-item, [tabindex]:not([tabindex="-1"])';
+const SAMPLE_COLS = 3;
+const SAMPLE_ROWS = 4;
+function samplePoints(rect, cols = SAMPLE_COLS, rows = SAMPLE_ROWS) {
+  const points = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      points.push({ x: rect.x + (col + 0.5) * rect.width / cols, y: rect.y + (row + 0.5) * rect.height / rows });
+    }
+  }
+  return points;
+}
+function coversControlAt(rect, layer, viewport, standingOn, bodyArea = rect.width * rect.height, scope = null) {
+  for (const control of eachControlUnder(rect, layer, viewport, standingOn, scope)) {
+    if (coversAny(rect, [control], bodyArea)) return true;
+  }
+  return false;
+}
+function* eachControlUnder(rect, layer, viewport, standingOn, scope = null) {
+  if (typeof document.elementsFromPoint !== "function") return;
+  const viewportArea = viewport.width * viewport.height;
+  const origin = scope?.getBoundingClientRect();
+  const seen = /* @__PURE__ */ new Set();
+  for (const point of samplePoints(rect)) {
+    if (point.x < 0 || point.y < 0 || point.x >= viewport.width || point.y >= viewport.height) continue;
+    const hit = document.elementsFromPoint(point.x + (origin?.left ?? 0), point.y + (origin?.top ?? 0)).find((item) => !layer?.contains(item));
+    const control = hit?.closest(CONTROL_SELECTOR);
+    if (!control || seen.has(control) || scope && !scope.contains(control)) continue;
+    seen.add(control);
+    if (layer && control.contains(layer)) continue;
+    if (standingOn && (control === standingOn || control.contains(standingOn))) continue;
+    const box = control.getBoundingClientRect();
+    if (box.width * box.height > viewportArea / 2) continue;
+    yield { x: box.left - (origin?.left ?? 0), y: box.top - (origin?.top ?? 0), width: box.width, height: box.height };
+  }
+}
+
+const {defineComponent:_defineComponent} = await importShared('vue');
+
+const {renderSlot:_renderSlot,unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
+
+const _hoisted_1 = ["data-pose", "data-motion", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
+const _hoisted_2 = ["aria-label"];
+const _hoisted_3 = ["data-frame"];
+const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
+const {computed,onBeforeUnmount,onMounted,ref,useSlots,watch} = await importShared('vue');
+const BASE_HEIGHT = 120;
+const BASE_WALK_SPEED = 70;
+const FREE_SPEED_RATIO = 0.6;
+const GRAVITY = 2600;
+const DRAG_THRESHOLD = 6;
+const SIT_DURATION = 900;
+const DOZE_AFTER = 9e4;
+const PEEK_SPEED = 1.8;
+const HOP_LIFT_RATIO = 0.5;
+const MAX_OTHER_SURFACES = 3;
+const OTHER_SURFACE_CANDIDATES = 4;
+const DEFAULT_RATIO = 0.88;
+const SURFACE_CHECK_INTERVAL = 500;
+const DROP_CLEAR_DELAY = 1500;
+const RESIZE_CLEAR_DELAY = 300;
+const SAVE_THROTTLE = 3e4;
+const CLEARANCE_POLL_EVERY = 4;
+const FRAME_RETRY_AFTER = 5e3;
+const _sfc_main = /* @__PURE__ */ _defineComponent({
+  __name: "AgentPet",
+  props: {
+    agent: { default: null },
+    pet: { default: null },
+    api: { default: null },
+    pluginId: { default: "" },
+    sourcePluginId: { default: "" },
+    characterName: { default: "小映" },
+    aspectRatio: { default: 0 },
+    peekEye: {},
+    previewRoot: { default: null },
+    settingsOverride: {},
+    previewMaxSize: {},
+    previewPose: {},
+    previewPeekEdge: {},
+    previewPeekAngle: {},
+    calibrationOverride: {},
+    showCalibration: { type: Boolean }
+  },
+  emits: ["pack-ready", "load-state"],
+  setup(__props, { emit: __emit }) {
+    const props = __props;
+    const emit = __emit;
+    const ownFrames = !useSlots().default;
+    const rootEl = ref(null);
+    const settings = ref({ ...DEFAULT_SETTINGS });
+    const imageAspect = ref(198 / 240);
+    const ownCalibration = ref(builtinDefaultCalibration("ying"));
+    const effectiveCalibration = computed(() => parseCalibration(props.calibrationOverride ?? ownCalibration.value));
+    const ownLayout = computed(() => calibrationLayout(effectiveCalibration.value, imageAspect.value));
+    const aspect = computed(() => props.aspectRatio > 0 ? props.aspectRatio : ownLayout.value.aspectRatio);
+    const ownGuides = computed(
+      () => ["eye", ...LANDMARKS].flatMap((key) => {
+        const point = calibrationPoint(effectiveCalibration.value, key);
+        return point ? [{ key, ...point }] : [];
+      })
+    );
+    const x = ref(0);
+    const y = ref(0);
+    const peekProgress = ref(0);
+    const peekRevealing = ref(false);
+    const peekTiltProgress = ref(0);
+    const peekEdge = ref(null);
+    const peekPhase = ref(null);
+    const layoutRevision = ref(0);
+    const facingLeft = ref(false);
+    const ownEye = computed(() => {
+      const face = calibrationEye(effectiveCalibration.value);
+      return facingLeft.value ? mirrorFace(face) : face;
+    });
+    const motion = ref("idle");
+    const walkPhase = ref(0);
+    const transient = ref(null);
+    const sustained = ref(null);
+    const dozing = ref(false);
+    const blinking = ref(false);
+    const ready = ref(false);
+    const rising = ref(false);
+    const available = ref(true);
+    const isMobile = ref(false);
+    const animationActive = ref(false);
+    let hostState = null;
+    let bottomFloor = null;
+    let documentVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
+    let rafId = 0;
+    let lastFrame = 0;
+    let anchorFrame = 0;
+    let lastAnchor = null;
+    let walkTarget = null;
+    let walkDistance = 0;
+    let velocity = 0;
+    let bounced = false;
+    let fallTarget = null;
+    let peekTarget = 0;
+    let peekPinned = false;
+    let sheltering = false;
+    let pendingShelter = false;
+    let hopVx = 0;
+    let hopTargetX = null;
+    let fixedPosition = null;
+    let lastSaved = "";
+    let lastSaveAt = 0;
+    let saveOnLand = false;
+    let suppressClick = false;
+    let pendingPeek = null;
+    let pendingStepOff = false;
+    let surface = null;
+    let manualSurface = null;
+    let surfaceFrame = 0;
+    let surfaceObserver = null;
+    let surfacePoll = 0;
+    let standPollTicks = 0;
+    let disposed = false;
+    let droppedByUser = false;
+    let initialPlacement = true;
+    let press = null;
+    const timers = /* @__PURE__ */ new Map();
+    const cleanups = [];
+    const startup = new AbortController();
+    let settingsRevision = 0;
+    const charHeight = computed(() => {
+      const height = BASE_HEIGHT * effectiveScale(settings.value.scale, isMobile.value);
+      const fit = props.previewRoot ? props.previewMaxSize : void 0;
+      return fit ? Math.min(height, Math.max(1, fit.height), Math.max(1, fit.width) / aspect.value) : height;
+    });
+    const charWidth = computed(() => charHeight.value * aspect.value);
+    const previewEdge = computed(() => props.previewRoot ? props.previewPeekEdge ?? null : null);
+    const activePeekEdge = computed(() => previewEdge.value ?? peekEdge.value);
+    const settledPeek = computed(
+      () => !previewEdge.value && motion.value === "peek" && peekPhase.value === "look" && peekProgress.value === 1
+    );
+    const pose = computed(
+      () => activePeekEdge.value ? settledPeek.value && animationActive.value && blinking.value ? "blink" : "alert" : props.previewRoot && props.previewPose ? props.previewPose : resolvePose({
+        motion: motion.value,
+        walkPhase: walkPhase.value,
+        transient: transient.value,
+        sustained: sustained.value,
+        dozing: dozing.value,
+        blinking: blinking.value,
+        rising: rising.value
+      })
+    );
+    const label = computed(
+      () => available.value ? `打开助手（${props.characterName}）` : `${props.characterName}（助手未启用）`
+    );
+    watch(
+      () => props.aspectRatio,
+      () => {
+        if (ready.value) relayout();
+      }
+    );
+    watch([charHeight, charWidth], () => {
+      if (ready.value && props.previewRoot) relayout();
+    });
+    watch(
+      [() => props.peekEye, previewEdge, ownEye],
+      () => {
+        if (ready.value) relayout();
+      },
+      { deep: true }
+    );
+    watch(
+      effectiveCalibration,
+      () => {
+        if (ready.value && ownFrames) relayout();
+      },
+      { deep: true }
+    );
+    const frameStatus = ref(
+      Object.fromEntries(POSES.map((name) => [name, "pending"]))
+    );
+    const frameSrc = ref(
+      Object.fromEntries(POSES.map((name) => [name, frameUrl(name)]))
+    );
+    const displayed = ref(null);
+    const failedAt = /* @__PURE__ */ new Map();
+    const retries = /* @__PURE__ */ new Map();
+    function syncDisplayed() {
+      const target = pose.value;
+      if (frameStatus.value[target] === "loaded") {
+        displayed.value = target;
+        return;
+      }
+      const failed = failedAt.get(target);
+      if (frameStatus.value[target] === "error" && failed !== void 0 && Date.now() - failed >= FRAME_RETRY_AFTER) {
+        const attempt = (retries.get(target) ?? 0) + 1;
+        retries.set(target, attempt);
+        failedAt.delete(target);
+        frameStatus.value[target] = "pending";
+        frameSrc.value[target] = `${frameUrl(target)}?retry=${attempt}`;
+      }
+      if (displayed.value && frameStatus.value[displayed.value] !== "loaded") displayed.value = null;
+    }
+    watch(pose, syncDisplayed);
+    function onFrameLoad(name, event) {
+      frameStatus.value[name] = "loaded";
+      failedAt.delete(name);
+      if (name === "idle") {
+        const image = event.target;
+        if (image.naturalWidth && image.naturalHeight) {
+          imageAspect.value = image.naturalWidth / image.naturalHeight;
+          relayout();
+        }
+      }
+      if (name === pose.value) displayed.value = name;
+    }
+    function onFrameError(name) {
+      frameStatus.value[name] = "error";
+      failedAt.set(name, Date.now());
+      if (displayed.value === name) displayed.value = null;
+      syncDisplayed();
+    }
+    const drawing = computed(() => {
+      void layoutRevision.value;
+      const edge = activePeekEdge.value;
+      const view = peekViewport();
+      const position = previewEdge.value ? peekHome({ x: x.value, y: y.value }, view, size(), previewEdge.value) : { x: x.value, y: y.value };
+      const eye = props.peekEye === void 0 ? ownEye.value : props.peekEye;
+      return peekLayout(
+        position,
+        size(),
+        view,
+        edge,
+        previewEdge.value ? 1 : peekProgress.value,
+        eye,
+        !!previewEdge.value || peekRevealing.value,
+        previewEdge.value ? 1 : peekTiltProgress.value,
+        previewEdge.value && props.previewPeekAngle !== void 0 ? props.previewPeekAngle : normalizePeekAngles(settings.value.peek_angles)[activePeekEdge.value ?? "bottom"]
+      );
+    });
+    const buttonStyle = computed(() => ({
+      width: `${drawing.value.hit.width}px`,
+      height: `${drawing.value.hit.height}px`,
+      transform: `translate3d(${drawing.value.hit.x}px, ${drawing.value.hit.y}px, 0)`
+    }));
+    const clipStyle = computed(() => ({
+      left: `${drawing.value.visible.x - drawing.value.hit.x}px`,
+      top: `${drawing.value.visible.y - drawing.value.hit.y}px`,
+      width: `${drawing.value.visible.width}px`,
+      height: `${drawing.value.visible.height}px`
+    }));
+    const artworkStyle = computed(() => ({
+      left: `${drawing.value.artwork.x - drawing.value.visible.x}px`,
+      top: `${drawing.value.artwork.y - drawing.value.visible.y}px`,
+      width: `${drawing.value.artwork.width}px`,
+      height: `${drawing.value.artwork.height}px`,
+      transform: `rotate(${drawing.value.artwork.rotation}deg)`
+    }));
+    function setTimer(name, delay, callback) {
+      clearTimer(name);
+      timers.set(
+        name,
+        window.setTimeout(() => {
+          timers.delete(name);
+          callback();
+        }, delay)
+      );
+    }
+    function clearTimer(name) {
+      const id = timers.get(name);
+      if (id !== void 0) window.clearTimeout(id);
+      timers.delete(name);
+    }
+    function randomBetween(min, max) {
+      return min + Math.random() * (max - min);
+    }
+    function fixed() {
+      return settings.value.movement === "fixed";
+    }
+    function rememberFixedPosition() {
+      const view = freeBounds(viewport(), ...sizePair());
+      fixedPosition = { xRatio: xToRatio(x.value, view.x), yRatio: xToRatio(y.value, view.y) };
+    }
+    function placeFixed() {
+      const view = freeBounds(viewport(), ...sizePair());
+      x.value = ratioToX(fixedPosition?.xRatio ?? DEFAULT_RATIO, view.x);
+      y.value = ratioToX(fixedPosition?.yRatio ?? 1, view.y);
+      const point = avoidPanel({ x: x.value, y: y.value }, hostState?.panelRect ?? null, viewport(), size());
+      x.value = point.x;
+      y.value = point.y;
+      queueAnchor();
+    }
+    function resetMotion() {
+      stopLoop();
+      for (const name of ["behavior", "peek", "peek-pause", "landing-peek", "sit", "clearance"]) clearTimer(name);
+      walkTarget = null;
+      walkPhase.value = 0;
+      fallTarget = null;
+      hopVx = 0;
+      hopTargetX = null;
+      velocity = 0;
+      rising.value = false;
+      pendingPeek = null;
+      pendingStepOff = false;
+      pendingShelter = false;
+      sheltering = false;
+      peekProgress.value = 0;
+      peekTiltProgress.value = 0;
+      peekEdge.value = null;
+      peekPhase.value = null;
+      peekPinned = false;
+      peekTarget = 0;
+      motion.value = "idle";
+      detachSurface();
+    }
+    function pinHere() {
+      resetMotion();
+      rememberFixedPosition();
+      placeFixed();
+      if (saveOnLand) {
+        saveOnLand = false;
+        requestSave();
+      }
+    }
+    function roam() {
+      return settings.value.roam;
+    }
+    function viewport() {
+      const view = readViewport(hostState, !props.previewRoot);
+      if (bottomFloor === null || props.previewRoot) return view;
+      return {
+        ...view,
+        safeArea: { ...view.safeArea, bottom: Math.max(view.safeArea.bottom, view.height - bottomFloor) }
+      };
+    }
+    function refreshBottomFloor() {
+      const next = !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null;
+      const changed = next !== bottomFloor;
+      bottomFloor = next;
+      return changed;
+    }
+    function peekViewport() {
+      const view = readViewport(hostState, !props.previewRoot);
+      if (bottomFloor === null || props.previewRoot || bottomFloor >= floorLine(view)) return view;
+      return {
+        ...view,
+        safeArea: {
+          ...view.safeArea,
+          bottom: Math.max(view.safeArea.bottom, view.height - bottomFloor - BOTTOM_FLOOR_GAP)
+        }
+      };
+    }
+    function placePeek() {
+      if (!peekEdge.value) return;
+      const point = peekHome({ x: x.value, y: y.value }, peekViewport(), size(), peekEdge.value);
+      x.value = point.x;
+      y.value = point.y;
+    }
+    function ground() {
+      return groundTop(viewport(), charHeight.value);
+    }
+    function standY() {
+      return surface ? surface.top - charHeight.value : ground();
+    }
+    function size() {
+      return { width: charWidth.value, height: charHeight.value };
+    }
+    function bounds() {
+      if (roam() === "free") return freeBounds(viewport(), charWidth.value, charHeight.value).x;
+      if (surface) return surfaceXBounds(surface, viewport(), charWidth.value);
+      return xBounds(viewport(), charWidth.value);
+    }
+    function panelSpan() {
+      if (roam() === "free") return null;
+      return blockedSpan(hostState?.panelRect ?? null, standY(), charWidth.value, charHeight.value);
+    }
+    function motionAllowed() {
+      if (hostState) return hostState.motionAllowed;
+      return !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    }
+    function visible() {
+      return documentVisible && (hostState?.pageVisible ?? true);
+    }
+    function onGround() {
+      return motion.value !== "drag" && motion.value !== "fall";
+    }
+    function onFloor() {
+      return roam() !== "free" && !surface;
+    }
+    function currentRect() {
+      return drawing.value.visible;
+    }
+    function reportAnchor() {
+      anchorFrame = 0;
+      if (disposed || !ready.value) return;
+      const rect = currentRect();
+      if (sameRect(rect, lastAnchor)) return;
+      lastAnchor = rect;
+      props.pet?.setBubbleAnchor?.(rect);
+    }
+    function queueAnchor() {
+      if (anchorFrame || rafId) return;
+      anchorFrame = window.requestAnimationFrame(reportAnchor);
+    }
+    function needsLoop() {
+      if (motion.value === "walk" || motion.value === "fall") return true;
+      return motion.value === "peek" && (peekPhase.value === "tilt" || peekProgress.value !== peekTarget);
+    }
+    function ensureLoop() {
+      if (rafId || disposed || !visible() || !needsLoop()) return;
+      if (anchorFrame) {
+        window.cancelAnimationFrame(anchorFrame);
+        anchorFrame = 0;
+      }
+      lastFrame = 0;
+      rafId = window.requestAnimationFrame(tick);
+    }
+    function stopLoop() {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+    function tick(timestamp) {
+      rafId = 0;
+      const dt = lastFrame ? Math.min((timestamp - lastFrame) / 1e3, 0.05) : 1 / 60;
+      lastFrame = timestamp;
+      if (motion.value === "walk") stepWalk(dt);
+      else if (motion.value === "fall") stepFall(dt);
+      else if (motion.value === "peek") stepPeek(dt);
+      clearPanelOverlap();
+      reportAnchor();
+      if (!rafId && needsLoop() && visible()) rafId = window.requestAnimationFrame(tick);
+    }
+    function stepWalk(dt) {
+      if (!walkTarget) {
+        finishWalk();
+        return;
+      }
+      const speed = BASE_WALK_SPEED * settings.value.speed * (charHeight.value / BASE_HEIGHT) * (roam() === "free" ? FREE_SPEED_RATIO : 1);
+      const dx = walkTarget.x - x.value;
+      const dy = walkTarget.y === null ? 0 : walkTarget.y - y.value;
+      const distance = Math.hypot(dx, dy);
+      const step = speed * dt;
+      const arrived = distance <= step;
+      const nextX = arrived ? walkTarget.x : x.value + dx / distance * step;
+      const nextY = arrived || walkTarget.y === null ? walkTarget.y ?? y.value : y.value + dy / distance * step;
+      if (isBlocked(nextX, panelSpan())) {
+        finishWalk();
+        return;
+      }
+      walkDistance += Math.hypot(nextX - x.value, nextY - y.value);
+      walkPhase.value = walkFrame(walkDistance, charHeight.value);
+      if (Math.abs(nextX - x.value) > 0.01) facingLeft.value = nextX < x.value;
+      x.value = nextX;
+      y.value = nextY;
+      if (arrived) finishWalk();
+    }
+    function stepFall(dt) {
+      const range = freeBounds(viewport(), ...sizePair());
+      const target = clamp(fallTarget?.y ?? range.y[1], ...range.y);
+      if (fallTarget && target !== fallTarget.y) fallTarget = { y: target, surface: null };
+      if (hopTargetX !== null) hopTargetX = clamp(hopTargetX, ...range.x);
+      velocity += GRAVITY * dt;
+      y.value = clamp(y.value + velocity * dt, ...range.y);
+      x.value = clamp(x.value + hopVx * dt, ...range.x);
+      rising.value = velocity < 0;
+      if (velocity < 0 || y.value < target) return;
+      y.value = target;
+      if (!bounced && velocity > 500) {
+        bounced = true;
+        velocity = -velocity * 0.22;
+        return;
+      }
+      land(true);
+    }
+    function stepPeek(dt) {
+      if (peekPhase.value === "tilt") {
+        peekTiltProgress.value = Math.min(1, peekTiltProgress.value + dt / PEEK_TILT_SECONDS);
+        if (peekTiltProgress.value === 1) {
+          peekPhase.value = "look";
+          peekTarget = 1;
+        }
+        return;
+      }
+      const step = (peekPhase.value === "look" ? (PEEK_TUCK - 1) / PEEK_RISE_SECONDS : PEEK_SPEED) * dt;
+      peekProgress.value = peekProgress.value < peekTarget ? Math.min(peekTarget, peekProgress.value + step) : Math.max(peekTarget, peekProgress.value - step);
+      if (peekProgress.value === PEEK_TUCK && peekPhase.value === "tuck") {
+        peekPhase.value = "pause";
+        setTimer("peek-pause", 420, () => {
+          if (motion.value !== "peek" || peekPhase.value !== "pause") return;
+          peekRevealing.value = true;
+          peekPhase.value = peekEdge.value === "bottom" ? "tilt" : "look";
+          peekTarget = peekEdge.value === "bottom" ? PEEK_TUCK : 1;
+          ensureLoop();
+        });
+      }
+      if (peekProgress.value === 0 && peekTarget === 0) {
+        const fromSide = peekEdge.value === "left" || peekEdge.value === "right";
+        peekEdge.value = null;
+        peekPhase.value = null;
+        peekPinned = false;
+        motion.value = "idle";
+        y.value = onFloor() ? ground() : y.value;
+        if (fromSide && roam() !== "free" && !onFloor()) startFall();
+        else scheduleBehavior();
+      }
+    }
+    function startWalk(targetX, targetY = null) {
+      walkTarget = { x: targetX, y: targetY };
+      walkDistance = 0;
+      facingLeft.value = targetX < x.value;
+      motion.value = "walk";
+      ensureLoop();
+    }
+    function finishWalk() {
+      walkTarget = null;
+      walkPhase.value = 0;
+      if (motion.value === "walk") motion.value = "idle";
+      const peek = pendingPeek;
+      const stepOff = pendingStepOff;
+      pendingPeek = null;
+      pendingStepOff = false;
+      if (pendingShelter) {
+        pendingShelter = false;
+        beginShelter(false);
+        return;
+      }
+      scheduleClearance(0);
+      if (stepOff && surface) stepOffEdge();
+      else if (peek) beginPeek(peek);
+      else scheduleBehavior();
+    }
+    function beginPeek(edge = "bottom", pinned = false, instant = false) {
+      if (fixed()) return;
+      for (const name of ["behavior", "peek", "peek-pause", "landing-peek", "sit", "clearance"]) clearTimer(name);
+      detachSurface();
+      peekEdge.value = edge;
+      peekPinned = pinned;
+      x.value = nearestEdge(x.value, bounds());
+      placePeek();
+      facingLeft.value = x.value > (bounds()[0] + bounds()[1]) / 2;
+      motion.value = "peek";
+      const still = instant || !motionAllowed();
+      peekRevealing.value = still;
+      peekTiltProgress.value = still ? 1 : 0;
+      peekPhase.value = still ? "look" : "tuck";
+      peekProgress.value = still ? 1 : 0;
+      peekTarget = still ? 1 : PEEK_TUCK;
+      if (still) queueAnchor();
+      else ensureLoop();
+      schedulePeekExit();
+      syncSurfacePoll();
+    }
+    function schedulePeekExit() {
+      clearTimer("peek");
+      if (!peekPinned && !sheltering && motionAllowed()) setTimer("peek", randomBetween(5e3, 8e3), endPeek);
+    }
+    function endPeek() {
+      clearTimer("peek");
+      clearTimer("peek-pause");
+      if (motion.value !== "peek") return;
+      peekPhase.value = "leave";
+      peekTarget = 0;
+      if (!motionAllowed()) {
+        peekProgress.value = 0;
+        stepPeek(0);
+        queueAnchor();
+      }
+      ensureLoop();
+      scheduleBehavior();
+    }
+    function settle() {
+      if (motion.value === "walk") {
+        walkTarget = null;
+        walkPhase.value = 0;
+        motion.value = "idle";
+      }
+      if (motion.value === "peek" && !sheltering) {
+        endPeek();
+      }
+      pendingPeek = null;
+      pendingStepOff = false;
+      pendingShelter = false;
+    }
+    function calm() {
+      return motion.value === "idle" && !sheltering && !transient.value && !sustained.value && !dozing.value && motionAllowed() && visible();
+    }
+    function scheduleBehavior() {
+      clearTimer("behavior");
+      if (fixed() || !calm()) return;
+      setTimer("behavior", randomBetween(6e3, 14e3), () => {
+        if (!calm()) return;
+        if (roam() === "free") {
+          const target2 = pickFreeTarget(Math.random, { x: x.value, y: y.value }, freeBounds(viewport(), ...sizePair()));
+          if (target2) startWalk(target2.x, target2.y);
+          else scheduleBehavior();
+          return;
+        }
+        const [min, max] = bounds();
+        const roll = Math.random();
+        if (roll < 0.25) {
+          const side = Math.random() < 0.5 ? min : max;
+          const span = panelSpan();
+          if (isBlocked(side, span)) {
+            scheduleBehavior();
+            return;
+          }
+          if (surface) pendingStepOff = Math.random() < 0.5;
+          else pendingPeek = Math.random() < 0.5 ? "bottom" : side === min ? "left" : "right";
+          if (Math.abs(side - x.value) < 1) finishWalk();
+          else startWalk(side);
+          return;
+        }
+        const target = roll < 0.85 ? pickWalkTarget(Math.random, x.value, [min, max], panelSpan()) : null;
+        if (target === null) scheduleBehavior();
+        else startWalk(target);
+      });
+    }
+    function sizePair() {
+      return [charWidth.value, charHeight.value];
+    }
+    function stepOffEdge() {
+      if (!surface) return;
+      const [min, max] = bounds();
+      const direction = x.value - min < max - x.value ? -1 : 1;
+      const range = xBounds(viewport(), charWidth.value);
+      facingLeft.value = direction < 0;
+      const left = surface;
+      const nextX = clamp(x.value + direction * charWidth.value * 0.6, range[0], range[1]);
+      const center = nextX + charWidth.value / 2;
+      if (center >= left.left && center <= left.right) {
+        x.value = nextX;
+        facingLeft.value = direction > 0;
+        queueAnchor();
+        scheduleBehavior();
+        return;
+      }
+      const target = landing(left.el, 0, { x: nextX, y: y.value });
+      const view = viewport();
+      if (isBlocked(nextX, blockedSpan(hostState?.panelRect ?? null, target.y, charWidth.value, charHeight.value)) || coversControlAt(
+        rectAt(nextX, target.y),
+        rootEl.value,
+        view,
+        target.surface?.el ?? null,
+        charWidth.value * charHeight.value,
+        props.previewRoot
+      )) {
+        scheduleBehavior();
+        return;
+      }
+      x.value = nextX;
+      startFall(left.el);
+    }
+    function scheduleBlink() {
+      setTimer("blink", randomBetween(2500, 6e3), () => {
+        if (motionAllowed() && visible() && (pose.value === "idle" || settledPeek.value)) {
+          blinking.value = true;
+          setTimer("blink-end", 140, () => {
+            blinking.value = false;
+          });
+        }
+        scheduleBlink();
+      });
+    }
+    function markActivity() {
+      if (dozing.value) {
+        dozing.value = false;
+        scheduleBehavior();
+      }
+      setTimer("doze", DOZE_AFTER, () => {
+        if (!onGround()) return;
+        settle();
+        dozing.value = true;
+        clearTimer("behavior");
+      });
+    }
+    function playTransient(next, duration) {
+      if (!onGround()) return;
+      settle();
+      clearTimer("behavior");
+      transient.value = next;
+      setTimer("transient", duration, () => {
+        transient.value = null;
+        scheduleBehavior();
+      });
+    }
+    function landing(exclude = null, dropSnap = 0, position = { x: x.value, y: y.value }) {
+      const view = viewport();
+      const boxes = roam() === "surfaces" ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, props.previewRoot).filter(
+        (box) => box.el !== exclude
+      ) : [];
+      return computeLanding(roam(), boxes, position, view, size(), dropSnap);
+    }
+    function startFall(exclude = null) {
+      clearTimer("landing-peek");
+      if (fixed()) {
+        pinHere();
+        return;
+      }
+      x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value));
+      clearTimer("peek");
+      clearTimer("peek-pause");
+      peekProgress.value = 0;
+      peekTarget = 0;
+      peekEdge.value = null;
+      peekPhase.value = null;
+      peekPinned = false;
+      sheltering = false;
+      detachSurface();
+      hopVx = 0;
+      hopTargetX = null;
+      if (roam() === "free") {
+        const view = freeBounds(viewport(), ...sizePair());
+        x.value = clamp(x.value, ...view.x);
+        y.value = clamp(y.value, ...view.y);
+        land(false);
+        return;
+      }
+      fallTarget = landing(exclude, droppedByUser ? Math.min(24, charHeight.value * 0.2) : 0);
+      if (!motionAllowed() || !visible() || y.value >= fallTarget.y) {
+        land(false);
+        return;
+      }
+      motion.value = "fall";
+      velocity = 0;
+      bounced = false;
+      ensureLoop();
+    }
+    function land(animated) {
+      velocity = 0;
+      rising.value = false;
+      peekProgress.value = 0;
+      peekTarget = 0;
+      peekEdge.value = null;
+      peekPhase.value = null;
+      peekPinned = false;
+      sheltering = false;
+      hopVx = 0;
+      if (hopTargetX !== null) {
+        x.value = hopTargetX;
+        hopTargetX = null;
+      }
+      const target = fallTarget;
+      fallTarget = null;
+      if (roam() !== "free") {
+        if (target?.surface) attachSurface(target.surface);
+        y.value = target ? target.y : ground();
+        if (!target) surface = null;
+      }
+      if (droppedByUser) manualSurface = surface?.el ?? null;
+      if (animated) {
+        motion.value = "sit";
+        setTimer("sit", SIT_DURATION, () => {
+          if (motion.value !== "sit") return;
+          motion.value = "idle";
+          scheduleBehavior();
+        });
+      } else {
+        motion.value = "idle";
+        scheduleBehavior();
+      }
+      if (clearPanelOverlap() && !onGround()) return;
+      if (saveOnLand) {
+        saveOnLand = false;
+        requestSave();
+      }
+      queueAnchor();
+      if (pendingShelter) {
+        pendingShelter = false;
+        clearTimer("sit");
+        beginShelter(!animated);
+        return;
+      }
+      const delay = animated ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, SIT_DURATION + 50) : droppedByUser ? DROP_CLEAR_DELAY : 0;
+      droppedByUser = false;
+      scheduleClearance(delay);
+    }
+    function attachSurface(next) {
+      detachSurface();
+      surface = next;
+      if (!visible()) return;
+      window.addEventListener("scroll", onSurfaceScroll, { capture: true, passive: true });
+      if (typeof MutationObserver !== "undefined") {
+        surfaceObserver = new MutationObserver((records) => {
+          if (records.every((record) => rootEl.value?.contains(record.target))) return;
+          if (!timers.has("surface")) setTimer("surface", SURFACE_CHECK_INTERVAL, checkSurface);
+        });
+        surfaceObserver.observe(props.previewRoot ?? document.body, { subtree: true, childList: true, attributes: true });
+      }
+      syncSurfacePoll();
+    }
+    function syncSurfacePoll() {
+      const wanted = ready.value && !disposed && visible() && motion.value !== "drag";
+      if (wanted && !surfacePoll) surfacePoll = window.setInterval(onStandPoll, SURFACE_CHECK_INTERVAL);
+      if (!wanted && surfacePoll) {
+        window.clearInterval(surfacePoll);
+        surfacePoll = 0;
+      }
+    }
+    function onStandPoll() {
+      standPollTicks += 1;
+      if (surface && surfaceObserver) checkSurface();
+      if (standPollTicks % CLEARANCE_POLL_EVERY === 0 && !timers.has("clearance")) checkClearance();
+    }
+    function detachSurface() {
+      surface = null;
+      manualSurface = null;
+      pauseSurfaceWatch();
+    }
+    function pauseSurfaceWatch() {
+      window.removeEventListener("scroll", onSurfaceScroll, { capture: true });
+      surfaceObserver?.disconnect();
+      surfaceObserver = null;
+      syncSurfacePoll();
+      clearTimer("surface");
+      if (surfaceFrame) window.cancelAnimationFrame(surfaceFrame);
+      surfaceFrame = 0;
+    }
+    function onSurfaceScroll() {
+      if (surfaceFrame) return;
+      surfaceFrame = window.requestAnimationFrame(() => {
+        surfaceFrame = 0;
+        checkSurface();
+      });
+    }
+    function checkSurface() {
+      if (!surface || !onGround()) return;
+      const current = surface;
+      const box = measureSurface(current.el, props.previewRoot);
+      const result = checkSupport(
+        current,
+        box && surfaceVisible(current.el) ? box : null,
+        x.value + charWidth.value / 2,
+        viewport(),
+        charHeight.value,
+        hostState?.panelRect ?? null,
+        charWidth.value
+      );
+      if (result.kind === "fall") {
+        settle();
+        startFall(current.el);
+        return;
+      }
+      if (!box) return;
+      surface = { ...box, el: current.el };
+      x.value += result.dx;
+      if (walkTarget) walkTarget.x += result.dx;
+      if (motion.value !== "peek") y.value = result.y;
+      queueAnchor();
+    }
+    function rectAt(left, top) {
+      return { x: left, y: top, width: charWidth.value, height: charHeight.value };
+    }
+    function checkClearance() {
+      if (fixed()) {
+        if (refreshBottomFloor()) relayout();
+        return;
+      }
+      if (disposed || !ready.value || !visible()) return;
+      if (refreshBottomFloor()) relayout();
+      if (sheltering) {
+        recheckShelter();
+        return;
+      }
+      if (motion.value !== "idle") return;
+      if (surface && surface.el === manualSurface) return;
+      const instant = initialPlacement || !motionAllowed();
+      initialPlacement = false;
+      const view = viewport();
+      const body = charWidth.value * charHeight.value;
+      const covers = (rect, standingOn2) => coversControlAt(rect, rootEl.value, view, standingOn2, body, props.previewRoot);
+      const standingOn = surface?.el ?? null;
+      if (!covers(currentRect(), standingOn)) return;
+      settle();
+      clearTimer("behavior");
+      const span = panelSpan();
+      const here = pickClearX(
+        x.value,
+        bounds(),
+        (left) => !isBlocked(left, span) && !covers(rectAt(left, y.value), standingOn),
+        charWidth.value / 2
+      );
+      if (here !== null) {
+        moveTo(here, y.value, surface, instant);
+        return;
+      }
+      const elsewhere = roam() === "free" ? findFreeSpot(covers) : findOtherSurface(covers);
+      if (elsewhere) {
+        moveTo(elsewhere.x, elsewhere.y, elsewhere.surface, instant);
+        return;
+      }
+      goShelter(instant);
+    }
+    function findOtherSurface(covers) {
+      if (roam() !== "surfaces" && !surface) return null;
+      const view = viewport();
+      const options = [];
+      if (surface) options.push({ y: ground(), bounds: xBounds(view, charWidth.value), surface: null });
+      if (roam() === "surfaces") {
+        const columns = [x.value + charWidth.value / 2, view.width * 0.25, view.width * 0.75];
+        for (const box of surfacesNear(
+          rootEl.value,
+          view,
+          charHeight.value,
+          hostState?.panelRect ?? null,
+          columns,
+          props.previewRoot
+        )) {
+          if (box.el === surface?.el) continue;
+          options.push({ y: box.top - charHeight.value, bounds: surfaceXBounds(box, view, charWidth.value), surface: box });
+        }
+      }
+      const centerX = x.value;
+      options.sort((a, b) => distanceTo(a, centerX) - distanceTo(b, centerX));
+      for (const option of options.slice(0, MAX_OTHER_SURFACES)) {
+        const start = clamp(x.value, ...option.bounds);
+        const standingOn = option.surface?.el ?? null;
+        const span = blockedSpan(hostState?.panelRect ?? null, option.y, charWidth.value, charHeight.value);
+        const clear = (left2) => !isBlocked(left2, span) && !covers(rectAt(left2, option.y), standingOn);
+        const left = clear(start) ? start : pickClearX(start, option.bounds, clear, charWidth.value / 2, OTHER_SURFACE_CANDIDATES);
+        if (left !== null) return { x: left, y: option.y, surface: option.surface };
+      }
+      return null;
+    }
+    function distanceTo(option, centerX) {
+      const left = clamp(centerX, ...option.bounds);
+      return Math.hypot(left - centerX, option.y - y.value);
+    }
+    function findFreeSpot(covers) {
+      const range = freeBounds(viewport(), ...sizePair());
+      for (const top of [range.y[0], (range.y[0] + range.y[1]) / 2, range.y[1]]) {
+        if (Math.abs(top - y.value) < 1) continue;
+        const start = clamp(x.value, ...range.x);
+        const clear = (left2) => !covers(rectAt(left2, top), null);
+        const left = clear(start) ? start : pickClearX(start, range.x, clear, charWidth.value / 2, OTHER_SURFACE_CANDIDATES);
+        if (left !== null) return { x: left, y: top, surface: null };
+      }
+      return null;
+    }
+    function goShelter(instant) {
+      const edge = nearestEdge(x.value, xBounds(viewport(), charWidth.value));
+      const floorY = ground();
+      pendingShelter = true;
+      if (instant || Math.abs(edge - x.value) < 1 && Math.abs(floorY - y.value) < 1 && !surface) {
+        pendingShelter = false;
+        detachSurface();
+        x.value = edge;
+        y.value = floorY;
+        beginShelter(instant);
+        return;
+      }
+      moveTo(edge, floorY, null, false);
+    }
+    function beginShelter(instant) {
+      sheltering = true;
+      beginPeek("bottom", false, instant);
+    }
+    function recheckShelter() {
+      const view = viewport();
+      const body = charWidth.value * charHeight.value;
+      if (!coversControlAt(rectAt(x.value, ground()), rootEl.value, view, null, body, props.previewRoot)) {
+        sheltering = false;
+        endPeek();
+      }
+    }
+    function moveTo(targetX, targetY, target, instant) {
+      const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null);
+      if (instant) {
+        facingLeft.value = targetX < x.value;
+        detachSurface();
+        x.value = targetX;
+        y.value = targetY;
+        fallTarget = { y: targetY, surface: target };
+        land(false);
+        return;
+      }
+      if (sameLevel || roam() === "free") {
+        if (Math.abs(targetX - x.value) < 1 && Math.abs(targetY - y.value) < 1) finishWalk();
+        else startWalk(targetX, roam() === "free" ? targetY : null);
+        return;
+      }
+      detachSurface();
+      const { vx, vy } = hopVelocity(
+        { x: x.value, y: y.value },
+        { x: targetX, y: targetY },
+        GRAVITY,
+        Math.min(charHeight.value * HOP_LIFT_RATIO, Math.max(0, Math.min(y.value, targetY) - viewport().safeArea.top))
+      );
+      facingLeft.value = targetX < x.value;
+      hopVx = vx;
+      hopTargetX = targetX;
+      velocity = vy;
+      bounced = true;
+      fallTarget = { y: targetY, surface: target };
+      motion.value = "fall";
+      ensureLoop();
+    }
+    function scheduleClearance(delay) {
+      setTimer("clearance", delay, checkClearance);
+    }
+    function requestSave(immediate = false) {
+      if (immediate) {
+        clearTimer("save");
+        writePosition();
+        return;
+      }
+      const wait = lastSaveAt + SAVE_THROTTLE - Date.now();
+      if (wait <= 0) writePosition();
+      else if (!timers.has("save")) setTimer("save", wait, writePosition);
+    }
+    function writePosition() {
+      if (!ready.value || motion.value === "drag" || motion.value === "fall") return;
+      const view = viewport();
+      const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1e3) / 1e3;
+      const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1e3) / 1e3;
+      const value = {
+        roam: roam(),
+        xRatio,
+        yRatio,
+        ...peekPinned && peekEdge.value ? { peekEdge: peekEdge.value } : {},
+        ...fixed() && fixedPosition ? {
+          xRatio: Math.round(fixedPosition.xRatio * 1e3) / 1e3,
+          yRatio: Math.round(fixedPosition.yRatio * 1e3) / 1e3
+        } : {}
+      };
+      const key = JSON.stringify(value);
+      if (key === lastSaved) return;
+      lastSaved = key;
+      lastSaveAt = Date.now();
+      props.pet?.storage?.set?.(value)?.catch?.(() => console.warn("[AgentPets] position not saved"));
+    }
+    function clearPanelOverlap() {
+      if (motion.value === "drag") return false;
+      if (activePeekEdge.value) {
+        const rect = currentRect();
+        const panel = hostState?.panelRect;
+        if (!panel || intersectionArea(rect, panel) === 0) return false;
+        const shift = peekPanelShift(rect, panel, peekViewport(), activePeekEdge.value);
+        if (shift) {
+          x.value += shift.x;
+          y.value += shift.y;
+          queueAnchor();
+          return true;
+        }
+      }
+      const view = viewport();
+      const point = avoidPanel({ x: x.value, y: y.value }, hostState?.panelRect ?? null, view, size());
+      if (point.x === x.value && point.y === y.value) return false;
+      const horizontal = point.y === y.value;
+      const previous = surface;
+      const manual = manualSurface;
+      resetMotion();
+      x.value = point.x;
+      y.value = point.y;
+      if (previous && point.y === previous.top - charHeight.value && checkSupport(
+        previous,
+        previous,
+        point.x + charWidth.value / 2,
+        view,
+        charHeight.value,
+        hostState?.panelRect ?? null,
+        charWidth.value
+      ).kind === "follow") {
+        attachSurface(previous);
+        manualSurface = manual;
+      }
+      if (horizontal && !surface && !fixed() && roam() !== "free") startFall();
+      scheduleBehavior();
+      queueAnchor();
+      return true;
+    }
+    function relayout() {
+      layoutRevision.value++;
+      if (fixed() && motion.value !== "drag") {
+        placeFixed();
+        return;
+      }
+      if (motion.value === "peek" && peekEdge.value) {
+        placePeek();
+        clearPanelOverlap();
+        queueAnchor();
+        return;
+      }
+      if (clearPanelOverlap()) return;
+      const view = freeBounds(viewport(), ...sizePair());
+      if (walkTarget) {
+        walkTarget.x = clamp(walkTarget.x, ...view.x);
+        if (walkTarget.y !== null) walkTarget.y = clamp(walkTarget.y, ...view.y);
+      }
+      if (motion.value === "drag" || motion.value === "fall") {
+        const outside = x.value < view.x[0] || x.value > view.x[1] || y.value > view.y[1];
+        const targetOutside = fallTarget && (fallTarget.y < view.y[0] || fallTarget.y > view.y[1]);
+        const hopOutside = hopTargetX !== null && (hopTargetX < view.x[0] || hopTargetX > view.x[1]);
+        x.value = clamp(x.value, ...view.x);
+        y.value = clamp(y.value, ...view.y);
+        if (motion.value === "fall" && (outside || targetOutside || hopOutside)) {
+          pendingShelter = false;
+          startFall();
+        }
+        queueAnchor();
+        return;
+      }
+      if (roam() === "free") {
+        const view2 = freeBounds(viewport(), ...sizePair());
+        x.value = clamp(x.value, ...view2.x);
+        y.value = clamp(y.value, ...view2.y);
+        queueAnchor();
+        return;
+      }
+      if (surface) {
+        checkSurface();
+        if (!surface) return;
+      } else y.value = ground();
+      const range = bounds();
+      x.value = clamp(x.value, range[0], range[1]);
+      clearPanelOverlap();
+      queueAnchor();
+    }
+    function applySettings(value) {
+      settingsRevision++;
+      const before = settings.value.roam;
+      const wasFixed = fixed();
+      settings.value = normalizeSettings(value);
+      if (ready.value && wasFixed !== fixed() && motion.value !== "drag") {
+        saveOnLand = true;
+        if (fixed()) pinHere();
+        else {
+          fixedPosition = null;
+          startFall();
+        }
+        return;
+      }
+      if (ready.value && !fixed() && settings.value.roam !== before && motion.value !== "drag") {
+        settle();
+        saveOnLand = true;
+        startFall();
+        return;
+      }
+      relayout();
+    }
+    function onHostState(state) {
+      const before = hostState;
+      hostState = state;
+      available.value = state.available;
+      const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
+      isMobile.value = state.isMobile;
+      if (resized) refreshBottomFloor();
+      const nextSustained = phasePose(state.phase);
+      if (nextSustained !== sustained.value) {
+        sustained.value = nextSustained;
+        if (nextSustained) {
+          settle();
+          clearTimer("behavior");
+          markActivity();
+        } else scheduleBehavior();
+      }
+      if (!state.motionAllowed && before?.motionAllowed !== false) freezeMotion();
+      if (state.motionAllowed && before?.motionAllowed === false) {
+        if (motion.value === "peek") schedulePeekExit();
+        else scheduleBehavior();
+      }
+      syncVisibility();
+      syncSurfacePoll();
+      if (resized) scheduleClearance(RESIZE_CLEAR_DELAY);
+      if (ready.value) relayout();
+    }
+    function freezeMotion() {
+      stopLoop();
+      clearTimer("behavior");
+      clearTimer("peek");
+      clearTimer("peek-pause");
+      walkTarget = null;
+      walkPhase.value = 0;
+      pendingPeek = null;
+      pendingStepOff = false;
+      pendingShelter = false;
+      blinking.value = false;
+      if (motion.value === "peek" && peekEdge.value) {
+        peekProgress.value = 1;
+        peekTarget = 1;
+        peekPhase.value = "look";
+        peekRevealing.value = true;
+        peekTiltProgress.value = 1;
+        queueAnchor();
+        return;
+      }
+      peekProgress.value = 0;
+      peekTarget = 0;
+      if (motion.value === "fall") land(false);
+      else if (motion.value === "walk" || motion.value === "peek") {
+        motion.value = "idle";
+        queueAnchor();
+      }
+    }
+    function syncVisibility() {
+      animationActive.value = motionAllowed() && visible();
+      if (!visible()) {
+        stopLoop();
+        clearTimer("behavior");
+        pauseSurfaceWatch();
+        if (motion.value === "fall") land(false);
+        requestSave(true);
+        return;
+      }
+      if (surface && !surfaceObserver) {
+        attachSurface(surface);
+        checkSurface();
+      }
+      ensureLoop();
+      if (motion.value === "idle" && !timers.has("behavior")) scheduleBehavior();
+    }
+    function onHostEvent(event) {
+      markActivity();
+      const next = eventPose(event.name);
+      if (next) playTransient(next.pose, next.duration);
+    }
+    async function refreshPetSettings() {
+      if (props.settingsOverride) return;
+      const revision = ++settingsRevision;
+      const loaded = await withLoadTimeout(
+        loadSettings(props.api, props.pluginId, props.pet?.key || "ying"),
+        startup.signal
+      ).catch(() => settings.value);
+      if (!disposed && revision === settingsRevision) applySettings(loaded);
+    }
+    function onSettingsEvent(event) {
+      if (props.pluginId && event.source !== props.pluginId) return;
+      const data = event.data;
+      if (!data || typeof data !== "object" || data.key && data.key !== (props.pet?.key || "ying")) return;
+      if (!ready.value && props.api && !props.settingsOverride) {
+        void refreshPetSettings();
+        return;
+      }
+      applySettings({ ...settings.value, ...data });
+    }
+    watch([() => props.pluginId, () => props.pet?.key], () => {
+      ownCalibration.value = builtinDefaultCalibration("ying");
+      void refreshPetSettings();
+      void refreshOwnCalibration();
+    });
+    let calibrationRevision = 0;
+    async function refreshOwnCalibration() {
+      const version = ++calibrationRevision;
+      if (!ownFrames) return;
+      if (props.pet?.key && props.pet.key !== "ying") {
+        ownCalibration.value = builtinDefaultCalibration("ying");
+        return;
+      }
+      emit("load-state", "loading");
+      try {
+        const value = await loadBuiltinCalibration(props.api, props.pluginId, "ying", startup.signal);
+        if (disposed || version !== calibrationRevision) return;
+        ownCalibration.value = value;
+        emit("pack-ready", { ...YING_PACK, calibration: value });
+        emit("load-state", "ready");
+      } catch {
+        if (disposed || version !== calibrationRevision) return;
+        if (props.previewRoot) emit("load-state", "error");
+      }
+    }
+    function pointerPosition(event) {
+      const origin = props.previewRoot?.getBoundingClientRect();
+      return { x: event.clientX - (origin?.left ?? 0), y: event.clientY - (origin?.top ?? 0) };
+    }
+    watch(
+      () => props.settingsOverride,
+      (value) => {
+        if (value) applySettings(value);
+      },
+      { deep: true }
+    );
+    function onPointerDown(event) {
+      if (event.button !== 0 || press) return;
+      markActivity();
+      press = {
+        id: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        offsetX: activePeekEdge.value ? charWidth.value / 2 : pointerPosition(event).x - x.value,
+        offsetY: activePeekEdge.value ? charHeight.value * 0.3 : pointerPosition(event).y - y.value,
+        dragging: false
+      };
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerCancel);
+    }
+    function onPointerMove(event) {
+      if (!press || event.pointerId !== press.id) return;
+      if (!press.dragging) {
+        if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) < DRAG_THRESHOLD) return;
+        press.dragging = true;
+        settle();
+        stopLoop();
+        detachSurface();
+        clearTimer("behavior");
+        clearTimer("sit");
+        clearTimer("clearance");
+        clearTimer("peek");
+        clearTimer("peek-pause");
+        clearTimer("landing-peek");
+        transient.value = null;
+        peekProgress.value = 0;
+        peekEdge.value = null;
+        peekPhase.value = null;
+        peekPinned = false;
+        peekTarget = 0;
+        sheltering = false;
+        pendingShelter = false;
+        hopVx = 0;
+        hopTargetX = null;
+        velocity = 0;
+        fallTarget = null;
+        motion.value = "drag";
+        syncSurfacePoll();
+        props.pet?.setInteracting?.(true);
+      }
+      event.preventDefault();
+      const view = freeBounds(viewport(), ...sizePair());
+      x.value = clamp(pointerPosition(event).x - press.offsetX, ...view.x);
+      y.value = clamp(pointerPosition(event).y - press.offsetY, ...view.y);
+      facingLeft.value = false;
+      queueAnchor();
+    }
+    function releasePointer() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+    }
+    function finishDrag() {
+      props.pet?.setInteracting?.(false);
+      droppedByUser = true;
+      saveOnLand = true;
+      x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value));
+      motion.value = "idle";
+      syncSurfacePoll();
+      const edge = fixed() || previewEdge.value ? null : dropPeekEdge({ x: x.value, y: y.value }, viewport(), size());
+      const snap = Math.min(24, charHeight.value * 0.2);
+      const nearby = !fixed() && roam() === "surfaces" ? landing(null, snap) : null;
+      const onPlatform = !!nearby?.surface && Math.abs(nearby.y - y.value) <= snap;
+      if (edge && !onPlatform) {
+        droppedByUser = false;
+        saveOnLand = false;
+        beginPeek(edge, true);
+        requestSave();
+        return;
+      }
+      startFall();
+    }
+    function onPointerUp(event) {
+      if (!press || event.pointerId !== press.id) return;
+      const dragged = press.dragging;
+      press = null;
+      releasePointer();
+      if (!dragged) return;
+      suppressClick = true;
+      window.setTimeout(() => {
+        suppressClick = false;
+      }, 0);
+      finishDrag();
+    }
+    function onPointerCancel(event) {
+      if (!press || event.pointerId !== press.id) return;
+      const dragged = press.dragging;
+      press = null;
+      releasePointer();
+      if (dragged) finishDrag();
+    }
+    function onActivate() {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
+      markActivity();
+      props.agent?.open?.();
+    }
+    async function readStoredPosition() {
+      try {
+        const stored = await props.pet?.storage?.get?.();
+        if (stored && typeof stored.xRatio === "number" && Number.isFinite(stored.xRatio)) return stored;
+      } catch {
+        console.warn("[AgentPets] position unavailable");
+      }
+      return null;
+    }
+    function restorePosition(stored) {
+      const view = viewport();
+      x.value = ratioToX(stored?.xRatio ?? DEFAULT_RATIO, xBounds(view, charWidth.value));
+      const yRatio = typeof stored?.yRatio === "number" && Number.isFinite(stored.yRatio) ? stored.yRatio : 1;
+      y.value = ratioToX(yRatio, [view.safeArea.top, ground()]);
+      if (fixed()) {
+        rememberFixedPosition();
+        placeFixed();
+        return;
+      }
+      if (isPeekEdge(stored?.peekEdge)) {
+        const home = peekHome({ x: x.value, y: y.value }, view, size(), stored.peekEdge);
+        if (stored.peekEdge === "bottom" || Math.abs(home.x - x.value) < 1 && Math.abs(home.y - y.value) < 1) {
+          beginPeek(stored.peekEdge, true, true);
+          return;
+        }
+      }
+      if (roam() === "free") {
+        land(false);
+        return;
+      }
+      y.value = Math.max(view.safeArea.top, y.value - 4);
+      fallTarget = landing();
+      land(false);
+    }
+    function onVisibilityChange() {
+      documentVisible = document.visibilityState !== "hidden";
+      syncVisibility();
+    }
+    function onWindowResize() {
+      if (!ready.value || props.previewRoot) return;
+      refreshBottomFloor();
+      relayout();
+      scheduleClearance(RESIZE_CLEAR_DELAY);
+    }
+    onMounted(async () => {
+      void refreshOwnCalibration();
+      const agent = props.agent;
+      if (agent?.subscribe) cleanups.push(agent.subscribe(onHostState));
+      if (agent?.on) {
+        for (const name of [
+          "agent.panel.open",
+          "agent.panel.close",
+          "agent.thinking.start",
+          "agent.thinking.end",
+          "agent.tool.start",
+          "agent.tool.end",
+          "agent.awaiting",
+          "agent.done",
+          "agent.error",
+          "agent.preview",
+          "agent.bubble"
+        ]) {
+          cleanups.push(agent.on(name, onHostEvent));
+        }
+        cleanups.push(agent.on(SETTINGS_EVENT, onSettingsEvent));
+        if (ownFrames)
+          cleanups.push(
+            agent.on(PACK_UPDATED_EVENT, (event) => {
+              if (event.source === props.pluginId && event.data.key === "ying") void refreshOwnCalibration();
+            })
+          );
+      }
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("resize", onWindowResize);
+      cleanups.push(() => document.removeEventListener("visibilitychange", onVisibilityChange));
+      cleanups.push(() => window.removeEventListener("resize", onWindowResize));
+      const visual = window.visualViewport;
+      if (visual && !props.previewRoot) {
+        visual.addEventListener("resize", onWindowResize);
+        visual.addEventListener("scroll", onWindowResize);
+        cleanups.push(() => {
+          visual.removeEventListener("resize", onWindowResize);
+          visual.removeEventListener("scroll", onWindowResize);
+        });
+      }
+      const revision = settingsRevision;
+      const [loaded, stored] = await Promise.all([
+        withLoadTimeout(
+          Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId, props.pet?.key || "ying")),
+          startup.signal
+        ).catch(() => DEFAULT_SETTINGS),
+        withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null)
+      ]);
+      if (disposed) return;
+      if (revision === settingsRevision) settings.value = normalizeSettings(props.settingsOverride ?? loaded);
+      refreshBottomFloor();
+      restorePosition(stored);
+      ready.value = true;
+      syncVisibility();
+      syncSurfacePoll();
+      reportAnchor();
+      scheduleBlink();
+      markActivity();
+      scheduleBehavior();
+    });
+    onBeforeUnmount(() => {
+      if (timers.has("save")) writePosition();
+      disposed = true;
+      startup.abort();
+      stopLoop();
+      pauseSurfaceWatch();
+      if (anchorFrame) window.cancelAnimationFrame(anchorFrame);
+      anchorFrame = 0;
+      for (const id of timers.values()) window.clearTimeout(id);
+      timers.clear();
+      releasePointer();
+      if (press?.dragging) props.pet?.setInteracting?.(false);
+      press = null;
+      for (const cleanup of cleanups.splice(0)) cleanup();
+      props.pet?.setBubbleAnchor?.(null);
+    });
+    return (_ctx, _cache) => {
+      return _openBlock(), _createElementBlock("div", {
+        ref_key: "rootEl",
+        ref: rootEl,
+        class: _normalizeClass(["agent-pet-ying", { "agent-pet-ying--contained": !!props.previewRoot }]),
+        "data-pose": pose.value,
+        "data-motion": motion.value,
+        "data-roam": settings.value.roam,
+        "data-movement": settings.value.movement,
+        "data-peek-edge": activePeekEdge.value ?? void 0,
+        "data-peek-phase": previewEdge.value ? "look" : peekPhase.value ?? void 0
+      }, [
+        _withDirectives(_createElementVNode("button", {
+          type: "button",
+          class: "agent-pet-ying__character",
+          style: _normalizeStyle(buttonStyle.value),
+          "aria-label": label.value,
+          onPointerdown: onPointerDown,
+          onClick: onActivate,
+          onDragstart: _cache[0] || (_cache[0] = _withModifiers(() => {
+          }, ["prevent"]))
+        }, [
+          _createElementVNode("span", {
+            class: "agent-pet-ying__clip",
+            style: _normalizeStyle(clipStyle.value)
+          }, [
+            _createElementVNode("span", {
+              class: "agent-pet-ying__artwork",
+              style: _normalizeStyle(artworkStyle.value)
+            }, [
+              _renderSlot(_ctx.$slots, "default", {
+                pose: pose.value,
+                facingLeft: facingLeft.value,
+                motionActive: animationActive.value && (!activePeekEdge.value || settledPeek.value),
+                peekEdge: activePeekEdge.value,
+                peekFromLeft: drawing.value.fromLeft
+              }, () => [
+                _createElementVNode("span", {
+                  class: _normalizeClass(["agent-pet-ying__frames", { "agent-pet-ying__frames--flip": facingLeft.value, "agent-pet-ying__frames--pending": !displayed.value }]),
+                  "data-frame": displayed.value ?? void 0
+                }, [
+                  _createElementVNode("span", {
+                    class: "agent-pet-ying__frame-crop",
+                    style: _normalizeStyle(ownLayout.value.frame)
+                  }, [
+                    (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(POSES), (name) => {
+                      return _openBlock(), _createElementBlock("img", {
+                        key: name,
+                        class: _normalizeClass(["agent-pet-ying__frame", { "agent-pet-ying__frame--visible": name === displayed.value }]),
+                        src: frameSrc.value[name],
+                        "data-pose": name,
+                        alt: "",
+                        draggable: "false",
+                        onLoad: ($event) => onFrameLoad(name, $event),
+                        onError: ($event) => onFrameError(name)
+                      }, null, 42, _hoisted_4);
+                    }), 128))
+                  ], 4),
+                  __props.showCalibration ? (_openBlock(true), _createElementBlock(_Fragment, { key: 0 }, _renderList(ownGuides.value, (point) => {
+                    return _openBlock(), _createElementBlock("span", {
+                      key: point.key,
+                      class: "agent-pet-ying__eye",
+                      style: _normalizeStyle({ left: `${point.x * 100}%`, top: `${point.y * 100}%` })
+                    }, null, 4);
+                  }), 128)) : _createCommentVNode("", true)
+                ], 10, _hoisted_3)
+              ], true)
+            ], 4)
+          ], 4)
+        ], 44, _hoisted_2), [
+          [_vShow, ready.value]
+        ])
+      ], 10, _hoisted_1);
+    };
+  }
+});
+
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a2f33116"]]);
+
+export { AgentPet as default };

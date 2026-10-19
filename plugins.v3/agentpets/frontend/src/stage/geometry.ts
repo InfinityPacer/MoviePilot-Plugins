@@ -258,6 +258,9 @@ export function surfaceXBounds(box: SurfaceBox, viewport: StageViewport, charWid
 /** 脚下表面重新校验的结论：跟着表面移动，或者开始下落。 */
 export type SupportResult = { kind: 'fall' } | { kind: 'follow'; dx: number; y: number }
 
+// Undoing center/half-width arithmetic can overshoot a legal edge by a few floating-point bits.
+const SUPPORT_EPSILON = 1e-7
+
 /**
  * 重新校验脚下的表面。
  *
@@ -277,7 +280,12 @@ export function checkSupport(
   const dx = next.left - previous.left
   const center = centerX + dx
   const [minX, maxX] = xBounds(viewport, charWidth)
-  if (center < next.left || center > next.right || center - charWidth / 2 < minX || center - charWidth / 2 > maxX)
+  if (
+    center < next.left - SUPPORT_EPSILON ||
+    center > next.right + SUPPORT_EPSILON ||
+    center - charWidth / 2 < minX - SUPPORT_EPSILON ||
+    center - charWidth / 2 > maxX + SUPPORT_EPSILON
+  )
     return { kind: 'fall' }
   return { kind: 'follow', dx, y: next.top - charHeight }
 }

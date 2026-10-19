@@ -23,9 +23,15 @@ from app.plugins.agentpets.markets.contracts import (
     MarketQuery,
 )
 from app.plugins.agentpets.markets.registry import MarketRegistry, create_market_registry, register_market
-from app.plugins.agentpets.packs.constants import MAX_IMAGE_BYTES
+from app.plugins.agentpets.packs.constants import BUILTIN_PACK_IDS, MAX_IMAGE_BYTES
+from app.plugins.agentpets.packs.schema import parse_calibration
 from app.plugins.agentpets.packs.store import PackStore
-from app.plugins.agentpets.requests import ImportMarketPackRequest
+from app.plugins.agentpets.requests import (
+    ImportMarketPackRequest,
+    SaveCalibrationRequest,
+    SaveDescriptionRequest,
+    SavePetSettingsRequest,
+)
 
 
 class MemoryMarket(MarketAdapter):
@@ -139,6 +145,76 @@ def test_market_list_and_search_dispatch(market_plugin, monkeypatch):
     assert queries == [MarketQuery(keyword="pet", page=2, page_size=5)]
     assert response.data["page"] == 2 and response.data["page_size"] == 5
     assert response.data["has_more"] and response.data["total"] is None
+
+
+def test_market_import_retains_custom_settings_and_local_editing(market_plugin, monkeypatch):
+    """市场导入复用新存储模块，仍保留独立设置、三点校准和备注编辑"""
+    _, adapter, store, _ = market_plugin
+    output = BytesIO()
+    Image.new("RGBA", (32, 44), (20, 180, 90, 255)).save(output, format="PNG")
+    material = MarketPack(pack={
+        "id": "market-codex", "name": "Market Codex", "codex_version": "v2",
+        "grid": {"cols": 8, "rows": 11}, "frames": {"idle": 0},
+    }, image=output.getvalue())
+    monkeypatch.setattr(adapter, "fetch", lambda _item_id: material)
+    config = {"enabled": True, "scale": 1.4, "speed": 1, "roam": "floor", "movement": "fixed",
+              "pet_settings": {"builtin-nailong": {"scale": 1.2, "speed": 1.3}},
+              "future_option": {"keep": True}}
+    before = deepcopy(config)
+    plugin = AgentPets()
+    plugin.init_plugin(config)
+    plugin._markets = MarketRegistry([adapter])
+    plugin._store = lambda: store
+    plugin.get_config = lambda: deepcopy(config)
+
+    def persist(values):
+        """只更新测试内存配置，验证市场导入后的局部保存与回读"""
+        config.clear()
+        config.update(deepcopy(values))
+        return True
+
+    plugin.update_config = persist
+    result = plugin.api_import_market_pack(ImportMarketPackRequest(market_id="memory", item_id="author/pet"))
+    assert result.success and result.data["mode"] == "stage"
+    assert config == before
+    snapshot = plugin.api_editor().data
+    assert {pet["key"] for pet in snapshot["pets"]} == {"ying", *BUILTIN_PACK_IDS, "market-codex"}
+    assert snapshot["pet_settings"]["market-codex"] == {"scale": 1.4, "speed": 1}
+    assert plugin.api_save_pet_settings(SavePetSettingsRequest(
+        key="market-codex", scale=1.1, speed=.75, expected={"scale": 1.4, "speed": 1},
+    )).success
+    calibration = parse_calibration({"left_eye_x": .3, "left_eye_y": .4,
+                                     "right_eye_x": .7, "right_eye_y": .4,
+                                     "head_top_x": .5, "head_top_y": .1})
+    assert plugin.api_save_calibration(SaveCalibrationRequest(
+        id="market-codex", calibration=calibration, expected_calibration={},
+    )).success
+    assert plugin.api_save_description(SaveDescriptionRequest(
+        id="market-codex", description="Local note", expected_description="",
+    )).success
+    record = store.get("market-codex")
+    assert record["calibration"] == calibration and record["description"] == "Local note"
+    assert store.image_path(record).read_bytes() == material.image
+    assert config["pet_settings"]["builtin-nailong"] == before["pet_settings"]["builtin-nailong"]
+    assert {key: config[key] for key in before if key != "pet_settings"} == {
+        key: before[key] for key in before if key != "pet_settings"}
+    plugin.init_plugin(config)
+    assert plugin.api_settings("market-codex").data == {
+        "scale": 1.1, "speed": .75, "roam": "floor", "movement": "fixed"}
+
+
+@pytest.mark.parametrize("key", BUILTIN_PACK_IDS)
+def test_market_import_cannot_replace_custom_builtin_ids(market_plugin, monkeypatch, key):
+    """远程素材不能占用内置 ID，显式导入副本才生成另一个本地身份"""
+    plugin, adapter, store, material = market_plugin
+    monkeypatch.setattr(adapter, "fetch", lambda _item_id: MarketPack(
+        pack={**material.pack, "id": key}, image=material.image))
+    request = ImportMarketPackRequest(market_id="memory", item_id="author/pet")
+    assert not plugin.api_import_market_pack(request).success
+    assert store.list() == []
+    copied = plugin.api_import_market_pack(request.model_copy(update={"mode": "copy"}))
+    assert copied.success and copied.data["id"] not in BUILTIN_PACK_IDS
+    assert store.get(key) is None
 
 
 def test_no_registered_markets_is_a_valid_empty_state():

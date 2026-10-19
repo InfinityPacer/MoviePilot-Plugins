@@ -133,7 +133,7 @@ async function save() {
 </script>
 
 <template>
-  <section class="ap-config">
+  <section class="ap-config" data-agentpets-editor>
     <div class="ap-shell">
       <header class="ap-header">
         <div class="ap-brand">

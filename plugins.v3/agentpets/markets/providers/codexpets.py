@@ -69,8 +69,9 @@ class CodexPetsMarket(MarketAdapter):
         params: dict[str, Any] = {"page": query.page, "pageSize": query.page_size}
         if query.keyword:
             params["q"] = query.keyword
+        content = self._read("/api/pets", MAX_CATALOG_BYTES, params)
         try:
-            data = json.loads(self._read("/api/pets", MAX_CATALOG_BYTES, params))
+            data = json.loads(content)
         except (ValueError, UnicodeError) as exc:
             raise MarketError("Codex Pets 目录响应无法解析") from exc
         if not isinstance(data, dict) or not isinstance(data.get("pets"), list):

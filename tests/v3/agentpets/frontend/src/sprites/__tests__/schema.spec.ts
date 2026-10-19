@@ -21,6 +21,31 @@ const minimal = {
 }
 
 describe('sprite pack schema', () => {
+  it.each([
+    null,
+    [],
+    'idle',
+    { missing: 0.8 },
+    { idle: true },
+    { idle: -0.1 },
+    { idle: 1.1 },
+    { idle: NaN },
+    { idle: '0.8' },
+    { idle: 0 },
+  ])('rejects invalid action baselines %j', action_baselines => {
+    expect(validatePack({ ...minimal, id: 'builtin-nailong', action_baselines }).errors.length).toBeGreaterThan(0)
+  })
+  it('retains explicit per-action baselines without changing legacy pack defaults', () => {
+    expect(validatePack(minimal).pack?.action_baselines).toBeUndefined()
+    expect(
+      validatePack({ ...minimal, id: 'builtin-nailong', action_baselines: { idle: 0.87654 } }).pack?.action_baselines,
+    ).toEqual({
+      idle: 0.8765,
+    })
+    expect(validatePack({ ...minimal, id: 'custom', action_baselines: { idle: 0.8 } }).errors).toContain(
+      'action_baselines 仅供内置逐帧形象使用',
+    )
+  })
   it('accepts the builtin pack and only uses host actions for random actions', () => {
     expect(validatePack(builtinJson).errors).toEqual([])
     expect(BUILTIN_PACK.grid).toEqual({ cols: 4, rows: 2 })

@@ -13,7 +13,14 @@ const ASSET_DIR = fileURLToPath(new URL('./src/assets', import.meta.url))
 const STATIC_DIRS = ['ying', 'packs']
 // 小头像随组件内联，避免独立静态图片请求失败；动画帧和精灵图仍按原路径提供。
 const UI_AVATAR_FILES = new Set(
-  ['ying/avatar.png', 'packs/projector-cat/avatar.png'].map(file => normalizePath(`${ASSET_DIR}/${file}`)),
+  [
+    'ying/avatar.png',
+    'packs/projector-cat/avatar.png',
+    'packs/builtin-chibiterasu/avatar.png',
+    'packs/builtin-nailong/avatar.png',
+    'packs/builtin-kurisu/avatar.png',
+    'packs/builtin-kurisu-z256/avatar.png',
+  ].map(file => normalizePath(`${ASSET_DIR}/${file}`)),
 )
 
 const isTestMode = (mode: string): boolean => mode === 'test' || process.env.VITEST === 'true'

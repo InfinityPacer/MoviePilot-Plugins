@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { normalizePeekAngles } from '@/stage/peek'
 
 import {
   applyDefaultPet,
@@ -7,6 +8,8 @@ import {
   petImage,
   prepareEnabledConfig,
   saveSettings,
+  savePetSettings,
+  saveSharedSettings,
 } from '@/editor/api'
 
 const settings = { scale: 1, speed: 1, roam: 'floor' as const }
@@ -37,6 +40,52 @@ function mockHost() {
 }
 
 describe('Pet editor API', () => {
+  it('requires a matching pet identity and verified values before accepting an appearance save', async () => {
+    const api = mockHost()
+    const values = { scale: 0.7, speed: 1.4 }
+    const expected = { scale: 1, speed: 1 }
+    api.post.mockResolvedValue({ success: true, data: { key: 'another', ...values } })
+    await expect(savePetSettings(api, 'Clone1', 'ying', values, expected)).rejects.toThrow('回读不一致')
+    api.post.mockResolvedValue({ success: true, data: { key: 'ying', ...values } })
+    expect(await savePetSettings(api, 'Clone1', 'ying', values, expected)).toEqual(values)
+    expect(api.post).toHaveBeenLastCalledWith('plugin/Clone1/settings/pet', {
+      key: 'ying',
+      ...values,
+      peek_angles: normalizePeekAngles(undefined),
+      expected: { ...expected, peek_angles: normalizePeekAngles(undefined) },
+    })
+  })
+
+  it('rejects angle readback mismatch and explicitly sends defaults when resetting angles', async () => {
+    const api = mockHost()
+    const values = { scale: 1, speed: 1, peek_angles: { bottom: 20, left: 30, right: 40 } }
+    api.post.mockResolvedValue({ success: true, data: { key: 'ying', scale: 1, speed: 1 } })
+    await expect(savePetSettings(api, 'Clone1', 'ying', values, { scale: 1, speed: 1 })).rejects.toThrow('回读不一致')
+    expect(await savePetSettings(api, 'Clone1', 'ying', { scale: 1, speed: 1 }, values)).toEqual({ scale: 1, speed: 1 })
+    expect(api.post).toHaveBeenLastCalledWith('plugin/Clone1/settings/pet', {
+      key: 'ying',
+      scale: 1,
+      speed: 1,
+      peek_angles: normalizePeekAngles(undefined),
+      expected: values,
+    })
+  })
+
+  it('never includes scale or speed in a shared-activity write', async () => {
+    const api = mockHost()
+    const values = { roam: 'free' as const, movement: 'fixed' as const }
+    const expected = { roam: 'floor' as const, movement: 'auto' as const }
+    api.post.mockResolvedValue({ success: true, data: values })
+    expect(await saveSharedSettings(api, 'Clone1', values, expected)).toEqual(values)
+    expect(api.post).toHaveBeenCalledWith('plugin/Clone1/settings/shared', { ...values, expected })
+  })
+
+  it('does not send per-pet angles through the legacy shared defaults endpoint', async () => {
+    const api = mockHost()
+    await saveSettings(api, 'Clone1', { ...settings, peek_angles: { bottom: 20, left: 35, right: 35 } })
+    expect(api.post).toHaveBeenCalledWith('plugin/Clone1/settings', { ...settings, movement: 'auto' })
+  })
+
   it('uses bundled builtin avatars and keeps uploaded previews intact', () => {
     const pet = {
       key: 'ying',

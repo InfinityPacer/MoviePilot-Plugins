@@ -9,6 +9,8 @@ import PetPreview from '@/editor/PetPreview.vue'
 import previewSource from '@/editor/PetPreview.vue?raw'
 import type { PetChoice } from '@/editor/api'
 import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
+import { parseCalibration } from '@/sprites/calibration'
+import { builtinDefaultCalibration } from '@/sprites/builtinCalibration'
 
 async function setup(size: { width: number; height: number; mobile?: boolean } = { width: 500, height: 400 }) {
   vi.stubGlobal('innerWidth', size.mobile ? 390 : 1024)
@@ -60,13 +62,19 @@ async function setup(size: { width: number; height: number; mobile?: boolean } =
     builtin: false,
   }
   const api = {
-    get: vi.fn().mockImplementation(async () => ({
-      success: true,
-      data: {
-        pack: { ...legacyJson, codex_version: 'v2' },
-        sheet_src: 'data:image/png;base64,AAAA',
-      },
-    })),
+    get: vi.fn().mockImplementation(async (path: string) => {
+      if (path.includes('/packs/calibration?')) {
+        const id = new URL(path, 'https://example.test').searchParams.get('key')!
+        return { success: true, data: { id, calibration: builtinDefaultCalibration(id) } }
+      }
+      return {
+        success: true,
+        data: {
+          pack: { ...legacyJson, codex_version: 'v2' },
+          sheet_src: 'data:image/png;base64,AAAA',
+        },
+      }
+    }),
     post: vi.fn(),
   }
   const view = render(PetPreview, {
@@ -81,6 +89,27 @@ async function setup(size: { width: number; height: number; mobile?: boolean } =
   await vi.advanceTimersByTimeAsync(48)
   return { view, pet, api }
 }
+
+it('edits Codex landmarks on a locked peek frame without mounting the draggable stage or saving', async () => {
+  const { view, api } = await setup()
+  await view.rerender({ calibration: parseCalibration({}) })
+  await fireEvent.click(view.getByRole('tab', { name: '校准' }))
+  await vi.advanceTimersByTimeAsync(64)
+  expect(view.getByRole('group', { name: '双眼与头顶拖拽校准' })).toBeTruthy()
+  expect(view.container.querySelector('.agent-pet-ying')).toBeNull()
+  const sprite = view.container.querySelector('.agent-pet-sprites') as HTMLElement
+  expect(sprite.dataset.action).toBe('peek')
+  const frame = sprite.dataset.frame
+  await vi.advanceTimersByTimeAsync(3000)
+  expect(sprite.dataset.frame).toBe(frame)
+  await fireEvent.click(view.getByRole('button', { name: '放大头部' }))
+  expect((view.container.querySelector('.ap-preview__calibration-entry') as HTMLElement).style.transform).toBe(
+    'scale(2)',
+  )
+  await fireEvent.keyDown(view.getByRole('button', { name: /画面左眼校准光圈/ }), { key: 'ArrowRight' })
+  expect(view.emitted().calibration).toHaveLength(1)
+  expect(api.post).not.toHaveBeenCalled()
+})
 
 function applyPreviewStyles() {
   const style = document.createElement('style')
@@ -99,6 +128,42 @@ function applyPreviewStyles() {
 }
 
 describe('contained live Pet preview', () => {
+  it('keeps a non-shrinking canvas and scrollable workspace on short screens', async () => {
+    const { view, api } = await setup({ width: 330, height: 160, mobile: true })
+    const style = applyPreviewStyles()
+    const mediaStyle = document.createElement('style')
+    // jsdom does not apply viewport media queries, so select the real compiled rules for 360 x 640.
+    const viewport = { width: 360, height: 640 }
+    mediaStyle.textContent = Array.from(style.sheet!.cssRules)
+      .filter(rule => rule.type === CSSRule.MEDIA_RULE)
+      .map(rule => rule as CSSMediaRule)
+      .filter(rule => {
+        const limits = Array.from(rule.conditionText.matchAll(/\(max-(width|height):\s*(\d+)px\)/g))
+        return limits.length && limits.every(([, axis, limit]) => viewport[axis as keyof typeof viewport] <= +limit)
+      })
+      .flatMap(rule => Array.from(rule.cssRules).map(child => child.cssText))
+      .join('\n')
+    document.head.append(mediaStyle)
+    try {
+      const css = (selector: string) => getComputedStyle(view.container.querySelector(selector)!)
+      expect(css('.ap-preview').overflowY).toBe('auto')
+      expect(css('.ap-preview__viewer').flexShrink).toBe('0')
+      expect(css('.ap-preview__viewer').maxHeight).toBe('none')
+      expect(css('.ap-preview__canvases').flexShrink).toBe('0')
+      expect(css('.ap-preview__canvases').minHeight).toBe('var(--ap-canvas-height)')
+      expect(css('.ap-preview__scroll').overflow).toBe('visible')
+      expect(parseFloat(getComputedStyle(view.getByRole('tab', { name: '映射' })).minWidth)).toBe(0)
+      expect(parseFloat((view.container.querySelector('.agent-pet-ying__character') as HTMLElement).style.height)).toBe(
+        120 * 0.8,
+      )
+      expect(api.post).not.toHaveBeenCalled()
+    } finally {
+      view.unmount()
+      mediaStyle.remove()
+      style.remove()
+    }
+  })
+
   it('anchors the character, floor and hint to their own painted preview instead of the host dialog', async () => {
     const { view } = await setup()
     const style = applyPreviewStyles()

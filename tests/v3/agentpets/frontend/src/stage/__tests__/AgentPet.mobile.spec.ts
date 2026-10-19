@@ -62,7 +62,9 @@ afterEach(() => {
 describe('mobile stage recovery', () => {
   it.each([0.6, 1, 1.3, 1.6])('keeps a draggable 48px when controls cover the screen at scale %s', async scale => {
     const stage = await setup('free', scale, false, true)
-    expect(stage.rect().height).toBe(48)
+    expect(parseFloat(stage.button.style.height)).toBeGreaterThanOrEqual(48)
+    expect(stage.rect().height).toBeGreaterThan(0)
+    expect(stage.rect().height).toBeLessThan(120 * scale * 0.8)
     expect(stage.rect().y + stage.rect().height).toBeCloseTo(844)
     const sunkY = stage.rect().y
     stage.drag(180, 300)
@@ -77,13 +79,13 @@ describe('mobile stage recovery', () => {
     const stage = await setup('floor', 1.3, false, true)
     stage.host.patch({ isMobile: false })
     await vi.advanceTimersByTimeAsync(2300)
-    expect(stage.rect().height).toBeGreaterThanOrEqual(48)
+    expect(parseFloat(stage.button.style.height)).toBeGreaterThanOrEqual(48)
     stage.host.patch({ isMobile: true })
     stage.host.emit('agentpets.settings', { scale: 0.6, speed: 1, roam: 'floor' })
     await vi.advanceTimersByTimeAsync(64)
-    expect(stage.rect().height).toBeGreaterThanOrEqual(48)
+    expect(parseFloat(stage.button.style.height)).toBeGreaterThanOrEqual(48)
     await vi.advanceTimersByTimeAsync(2300)
-    expect(stage.rect().height).toBeGreaterThanOrEqual(48)
+    expect(parseFloat(stage.button.style.height)).toBeGreaterThanOrEqual(48)
     stage.unmount()
   })
 

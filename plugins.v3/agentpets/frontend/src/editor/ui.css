@@ -5,6 +5,10 @@
   background: transparent;
   font-size: 14px;
 }
+/* 编辑页已有局部预览，暂时收起全局形象，避免透明点击区挡住控件。 */
+body:has([data-agentpets-editor]) .agent-pet-ying:not(.agent-pet-ying--contained) {
+  visibility: hidden;
+}
 /* 宿主负责弹窗宽度和外框，插件只布局内部内容。 */
 .ap-config {
   width: 100%;

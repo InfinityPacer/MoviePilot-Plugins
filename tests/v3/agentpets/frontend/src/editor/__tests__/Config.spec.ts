@@ -74,6 +74,7 @@ async function setup() {
 describe('Pet settings layout', () => {
   it('starts on overview and keeps activity edits out of the configuration form', async () => {
     const { view } = await setup()
+    expect(view.attributes()).toHaveProperty('data-agentpets-editor')
     expect(view.find('.ap-nav .v-list-item--active').text()).toContain('运行总览')
     expect(view.findAll('input[type="range"]')).toHaveLength(0)
     expect(view.findComponent({ name: 'PackManager' }).exists()).toBe(false)

@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from .constants import (
     BUILTIN_PACK_ID,
+    BUILTIN_PACK_IDS,
     CODEX_ACTIONS,
     ID_PATTERN,
     LOOK_DIRECTIONS,
@@ -224,8 +225,9 @@ class PackStore:
 
     @_serialized
     def update(self, pack_id: str, *, name: str | None = None, expected_name: str | None = None,
+               description: str | None = None, expected_description: str | None = None,
                mappings: dict[str, str] | None = None, expected_mappings: dict[str, str] | None = None) -> dict[str, Any]:
-        """只更新显示名称或映射；原始动画、图片、ID 与其他字段保持原样。"""
+        """只更新显示名称、备注或映射；原始动画、图片、ID 与其他字段保持原样。"""
         records = deepcopy(self.list())
         target = next((record for record in records if record["id"] == pack_id), None)
         if not target or pack_id in RESERVED_IDS:
@@ -237,6 +239,10 @@ class PackStore:
             if target["name"] != expected_name:
                 raise PackError("名称已在其他页面更改，请刷新后重试")
             target["name"] = _text(name, "名称", 40)
+        if description is not None:
+            if target.get("description", "") != expected_description:
+                raise PackError("备注已在其他页面更改，请刷新后重试")
+            target["description"] = _text(description, "备注", 120, required=False)
         if mappings is not None:
             if target.get("action_mappings", {}) != expected_mappings:
                 raise PackError("动作映射已在其他页面更改，请刷新后重试")
@@ -302,9 +308,11 @@ class PackStore:
         return slug or f"pack-{int(time.time()) % 10**8}"
 
 
-def load_builtin_pack(dist_dir: Path) -> dict[str, Any]:
+def load_builtin_pack(dist_dir: Path, key: str = BUILTIN_PACK_ID) -> dict[str, Any]:
     """读取随联邦产物分发的内置素材包描述。"""
-    path = dist_dir / "packs" / BUILTIN_PACK_ID / "pack.json"
+    if key not in BUILTIN_PACK_IDS:
+        raise PackError("未知内置素材包")
+    path = dist_dir / "packs" / key / "pack.json"
     pack = parse_pack(path.read_text(encoding="utf-8"))
-    pack["id"] = BUILTIN_PACK_ID
+    pack["id"] = key
     return pack

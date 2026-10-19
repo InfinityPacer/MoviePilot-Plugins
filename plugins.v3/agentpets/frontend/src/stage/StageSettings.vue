@@ -24,7 +24,10 @@ function update(patch: Partial<YingSettings>) {
 }
 
 function reset() {
-  emit('update:modelValue', { ...DEFAULT_SETTINGS })
+  emit('update:modelValue', {
+    ...DEFAULT_SETTINGS,
+    ...(props.modelValue.peek_angles ? { peek_angles: props.modelValue.peek_angles } : {}),
+  })
 }
 </script>
 
@@ -104,8 +107,8 @@ function reset() {
       <span v-if="props.livePreview" class="text-caption text-medium-emphasis">
         {{
           props.previewOnly
-            ? '仅在预览区试调。小映与 Codex Pet 共用活动设置，保存后对所有用户生效。'
-            : '调整时页面上正在运行的小映或 Codex Pet 会实时变化，保存后对所有用户生效。'
+            ? '仅在预览区试调。大小与速度按当前 Pet 独立保存；活动方式与范围仍共享，对所有用户生效。'
+            : '大小与速度属于当前 Pet；活动方式与范围共享，保存后对所有用户生效。'
         }}
       </span>
       <v-spacer />

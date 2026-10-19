@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.plugins.agentpets import AgentPets, require_admin
+from app.plugins.agentpets.packs.constants import BUILTIN_STAGE_PACKS
 from app.plugins.agentpets.requests import SaveSettingsRequest
 
 
@@ -35,9 +36,10 @@ def test_editor_returns_only_public_state_and_both_builtin_modes():
     plugin, _ = editor()
     result = plugin.api_editor()
     assert result.success
-    assert set(result.data) == {"enabled", "settings", "pets"}
+    assert set(result.data) == {"enabled", "settings", "pets", "pet_settings"}
     assert [(pet["key"], pet["mode"], pet["builtin"]) for pet in result.data["pets"]] == [
         ("ying", "stage", True), ("projector-cat", "renderer", True),
+        *((key, "stage", True) for key in BUILTIN_STAGE_PACKS),
     ]
     assert "future_option" not in result.data
 

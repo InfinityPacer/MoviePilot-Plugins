@@ -1,0 +1,2 @@
+# Match the frontend formatter on Windows checkouts as well as clean Git builds.
+* text=auto eol=lf

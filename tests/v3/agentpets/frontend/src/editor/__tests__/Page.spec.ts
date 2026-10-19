@@ -8,6 +8,10 @@ import Page from '@/components/Page.vue'
 import { createMockHost } from '@/dev/mockHost'
 import { AGENT_HOST_KEY } from '@/host'
 import StageSettings from '@/stage/StageSettings.vue'
+import { appearanceOf, type PetAppearance, type YingSettings } from '@/stage/settings'
+import { normalizePeekAngles } from '@/stage/peek'
+import { builtinDefaultCalibration } from '@/sprites/builtinCalibration'
+import { parseCalibration, type Calibration } from '@/sprites/calibration'
 
 const cleanups: Array<() => void> = []
 afterEach(() => {
@@ -15,9 +19,10 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-async function setup() {
-  let saved = { scale: 1, speed: 1, roam: 'floor' }
-  let defaultId = 'AgentPets:ying'
+async function setup(props: { show_switch?: boolean } = {}, builtinKey = 'ying') {
+  let saved = { scale: 1, speed: 1, roam: 'floor', movement: 'auto' }
+  const profiles: Record<string, PetAppearance> = {}
+  let defaultId = `AgentPets:${builtinKey}`
   const api = {
     get: vi.fn().mockImplementation(async (path: string) => {
       if (path.endsWith('/editor'))
@@ -26,12 +31,13 @@ async function setup() {
           data: {
             enabled: true,
             settings: { ...saved },
+            pet_settings: structuredClone(profiles),
             pets: [
               {
-                key: 'ying',
+                key: builtinKey,
                 name: '小映',
                 description: '',
-                mode: 'stage',
+                mode: builtinKey === 'projector-cat' ? 'renderer' : 'stage',
                 preview: '',
                 builtin: true,
               },
@@ -48,7 +54,7 @@ async function setup() {
         }
       if (path === 'plugin/agent_pets')
         return [
-          { plugin_id: 'AgentPets', key: 'ying' },
+          { plugin_id: 'AgentPets', key: builtinKey },
           { plugin_id: 'AgentPets', key: 'kurisu' },
         ]
       if (path.startsWith('system/settings'))
@@ -61,7 +67,15 @@ async function setup() {
       return { success: true, data: { value: null } }
     }),
     post: vi.fn().mockImplementation(async (path: string, body: unknown) => {
-      if (path.endsWith('/settings')) saved = body as typeof saved
+      const value = body as YingSettings & { key: string }
+      if (path.endsWith('/settings/shared')) {
+        saved = { ...saved, roam: value.roam, movement: value.movement ?? 'auto' }
+        return { success: true, data: { roam: saved.roam, movement: saved.movement } }
+      }
+      if (path.endsWith('/settings/pet')) {
+        profiles[value.key] = appearanceOf(value)
+        return { success: true, data: { key: value.key, ...profiles[value.key] } }
+      }
       if (path === 'system/env') defaultId = (body as { AI_AGENT_PET: string }).AI_AGENT_PET
       return { success: true, data: path.endsWith('/settings') ? saved : null }
     }),
@@ -69,7 +83,7 @@ async function setup() {
   const host = createMockHost('AgentPets')
   const broadcast = vi.spyOn(host, 'emit')
   const view = mount(Page, {
-    props: { api, pluginId: 'AgentPets' },
+    props: { api, pluginId: 'AgentPets', ...props },
     global: {
       plugins: [createVuetify({ components, directives })],
       provide: { [AGENT_HOST_KEY]: host },
@@ -101,10 +115,143 @@ async function setup() {
       .trigger('click')
     await flushPromises()
   }
-  return { view, api, host, broadcast, change, click }
+  return { view, api, host, broadcast, change, click, profiles }
 }
 
 describe('Pet workspace', () => {
+  it('saves angle-only edits, refreshes them, and restores defaults without leaking to another pet', async () => {
+    const { view, api, click, profiles, broadcast } = await setup()
+    const angles = { bottom: 20, left: 15, right: 35 }
+    const preview = view.findComponent({ name: 'PetPreview' })
+    preview.vm.$emit('settings', { ...preview.props('settings'), peek_angles: angles })
+    await flushPromises()
+    expect(view.text()).toContain('未保存')
+    expect(view.text()).toContain('1 只 Pet 的独立设置')
+    expect(api.post).not.toHaveBeenCalled()
+    await click('撤销')
+    expect(preview.props('settings').peek_angles).toBeUndefined()
+    preview.vm.$emit('settings', { ...preview.props('settings'), peek_angles: angles })
+    await flushPromises()
+    await click('保存调整')
+    expect(profiles.ying.peek_angles).toEqual(angles)
+    expect(profiles.kurisu).toBeUndefined()
+    expect(api.post.mock.calls.map(([path]) => path)).toEqual(['plugin/AgentPets/settings/pet'])
+    await view.get('[aria-label="刷新形象列表"]').trigger('click')
+    await flushPromises()
+    const refreshed = view.findComponent({ name: 'PetPreview' })
+    expect(refreshed.props('settings').peek_angles).toEqual(angles)
+    refreshed.vm.$emit('settings', { ...refreshed.props('settings'), peek_angles: normalizePeekAngles(undefined) })
+    await flushPromises()
+    await click('保存调整')
+    expect(profiles.ying.peek_angles).toBeUndefined()
+    expect(broadcast).toHaveBeenLastCalledWith('agentpets.settings', {
+      key: 'ying',
+      scale: 1,
+      speed: 1,
+      peek_angles: normalizePeekAngles(undefined),
+    })
+  })
+  it('keeps configuration switching when the host supports it', async () => {
+    const { view, api } = await setup()
+    expect(view.attributes()).toHaveProperty('data-agentpets-editor')
+    await view.get('[aria-label="打开插件配置"]').trigger('click')
+    expect(view.emitted('switch')).toHaveLength(1)
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('does not offer dead configuration links in a quick-access host', async () => {
+    const { view, api } = await setup({ show_switch: false })
+    expect(view.find('[aria-label="打开插件配置"]').exists()).toBe(false)
+    expect(view.attributes('show_switch')).toBeUndefined()
+    api.get.mockResolvedValue({
+      success: true,
+      data: { enabled: true, settings: { scale: 1, speed: 1, roam: 'floor' }, pets: [] },
+    })
+    await view.get('[aria-label="刷新形象列表"]').trigger('click')
+    await flushPromises()
+    expect(view.text()).toContain('请从「插件 → 助手形象 → 设置」打开素材管理。')
+    expect(view.findAll('button').some(button => button.text() === '前往素材管理')).toBe(false)
+    expect(view.emitted('switch')).toBeUndefined()
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('saves two appearance drafts by key without changing shared activity or the legacy defaults', async () => {
+    const { view, api, click, profiles } = await setup()
+    const selector = view.findComponent({ name: 'VSelect' })
+    const update = async (scale: number, speed: number) => {
+      view.findComponent(StageSettings).vm.$emit('update:modelValue', { scale, speed, roam: 'floor', movement: 'auto' })
+      await flushPromises()
+    }
+    await update(0.7, 1.4)
+    selector.vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({ scale: 1, speed: 1 })
+    await update(1.5, 0.6)
+    selector.vm.$emit('update:modelValue', 'ying')
+    await flushPromises()
+    expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({ scale: 0.7, speed: 1.4 })
+    await click('保存调整')
+    expect(api.post.mock.calls.map(([path]) => path)).toEqual([
+      'plugin/AgentPets/settings/pet',
+      'plugin/AgentPets/settings/pet',
+    ])
+    expect(profiles).toEqual({ ying: { scale: 0.7, speed: 1.4 }, kurisu: { scale: 1.5, speed: 0.6 } })
+    await view.find('[aria-label="刷新形象列表"]').trigger('click')
+    await flushPromises()
+    selector.vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({
+      scale: 1.5,
+      speed: 0.6,
+      roam: 'floor',
+    })
+  })
+
+  it('does not resend an already saved pet when a later pet fails', async () => {
+    const { view, api, click, profiles } = await setup()
+    const selector = view.findComponent({ name: 'VSelect' })
+    for (const key of ['ying', 'kurisu']) {
+      selector.vm.$emit('update:modelValue', key)
+      await flushPromises()
+      view
+        .findComponent(StageSettings)
+        .vm.$emit('update:modelValue', { scale: 0.7, speed: 1, roam: 'floor', movement: 'auto' })
+      await flushPromises()
+    }
+    const persist = api.post.getMockImplementation()!
+    api.post.mockImplementation(async (path, body) =>
+      (body as { key: string }).key === 'kurisu' ? { success: false, message: '保存失败' } : persist(path, body),
+    )
+    await click('保存调整')
+    expect(profiles).toEqual({ ying: { scale: 0.7, speed: 1 } })
+    expect(view.text()).toContain('未保存')
+    api.post.mockImplementation(persist)
+    api.post.mockClear()
+    await click('保存调整')
+    expect(api.post).toHaveBeenCalledTimes(1)
+    expect(api.post.mock.calls[0][1]).toMatchObject({ key: 'kurisu' })
+  })
+
+  it('blocks a stale pet draft after refresh until the user explicitly discards it', async () => {
+    const { view, click, profiles } = await setup()
+    view
+      .findComponent(StageSettings)
+      .vm.$emit('update:modelValue', { scale: 0.7, speed: 1, roam: 'floor', movement: 'auto' })
+    await flushPromises()
+    profiles.ying = { scale: 1.4, speed: 1.3 }
+    await view.find('[aria-label="刷新形象列表"]').trigger('click')
+    await flushPromises()
+    expect(view.findComponent(StageSettings).props('modelValue').scale).toBe(0.7)
+    expect(
+      view
+        .findAll('button')
+        .find(button => button.text() === '保存调整')!
+        .attributes('disabled'),
+    ).toBeDefined()
+    await click('撤销')
+    expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({ scale: 1.4, speed: 1.3 })
+  })
+
   it('keeps calibration drafts isolated, saves verified values and detects external changes', async () => {
     const { view, api, broadcast, click } = await setup()
     view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
@@ -164,13 +311,26 @@ describe('Pet workspace', () => {
     await change()
     await click('保存调整')
     expect(api.post.mock.calls).toEqual([
-      ['plugin/AgentPets/settings', { scale: 1.3, speed: 1.5, roam: 'free', movement: 'auto' }],
+      [
+        'plugin/AgentPets/settings/shared',
+        { roam: 'free', movement: 'auto', expected: { roam: 'floor', movement: 'auto' } },
+      ],
+      [
+        'plugin/AgentPets/settings/pet',
+        {
+          key: 'kurisu',
+          scale: 1.3,
+          speed: 1.5,
+          peek_angles: normalizePeekAngles(undefined),
+          expected: { scale: 1, speed: 1, peek_angles: normalizePeekAngles(undefined) },
+        },
+      ],
     ])
     expect(broadcast).toHaveBeenCalledWith('agentpets.settings', {
+      key: 'kurisu',
       scale: 1.3,
       speed: 1.5,
-      roam: 'free',
-      movement: 'auto',
+      peek_angles: normalizePeekAngles(undefined),
     })
     expect(view.text()).toContain('调整已保存')
   })
@@ -197,7 +357,20 @@ describe('Pet workspace', () => {
     await change()
     await click('保存调整')
     expect(api.post.mock.calls).toEqual([
-      ['plugin/AgentPets/settings', { scale: 1.3, speed: 1.5, roam: 'free', movement: 'auto' }],
+      [
+        'plugin/AgentPets/settings/shared',
+        { roam: 'free', movement: 'auto', expected: { roam: 'floor', movement: 'auto' } },
+      ],
+      [
+        'plugin/AgentPets/settings/pet',
+        {
+          key: 'ying',
+          scale: 1.3,
+          speed: 1.5,
+          peek_angles: normalizePeekAngles(undefined),
+          expected: { scale: 1, speed: 1, peek_angles: normalizePeekAngles(undefined) },
+        },
+      ],
     ])
     expect(view.text()).toContain('调整已保存')
   })
@@ -339,4 +512,60 @@ describe('Pet workspace', () => {
       })
     },
   )
+})
+
+describe('built-in calibration save workflow', () => {
+  it.each(['ying', 'projector-cat', 'builtin-chibiterasu', 'builtin-nailong', 'builtin-kurisu', 'builtin-kurisu-z256'])(
+    'saves and resets %s calibration without exposing built-in action mappings',
+    async key => {
+      const { view, api, click, broadcast } = await setup({}, key)
+      const preview = view.findComponent({ name: 'PetPreview' })
+      const baseline = builtinDefaultCalibration(key)
+      preview.vm.$emit('pack-ready', { id: key, calibration: baseline })
+      await flushPromises()
+      expect(preview.props('calibration')).toEqual(baseline)
+      expect(view.text()).not.toContain('未保存')
+      const value = parseCalibration({ ...baseline, offset_x: 0.02 })
+      preview.vm.$emit('calibration', value)
+      await flushPromises()
+      api.post.mockImplementation(async (_path, body) => ({
+        success: true,
+        data: { id: key, calibration: (body as { calibration: Calibration }).calibration },
+      }))
+      await click('保存调整')
+      expect(api.post.mock.calls).toEqual([
+        ['plugin/AgentPets/packs/calibration', { id: key, calibration: value, expected_calibration: baseline }],
+      ])
+      expect(broadcast).toHaveBeenCalledWith('agentpets.pack.updated', { key })
+      expect(preview.props('mappings')).toBeUndefined()
+      preview.vm.$emit('pack-ready', { id: key, calibration: value })
+      await flushPromises()
+      expect(view.text()).not.toContain('未保存')
+      preview.vm.$emit('calibration', baseline)
+      await flushPromises()
+      await click('保存调整')
+      expect(api.post.mock.calls.at(-1)?.[1]).toEqual({ id: key, calibration: baseline, expected_calibration: value })
+    },
+  )
+
+  it('keeps a built-in draft on conflict and restores the latest external value', async () => {
+    const { view, api, click } = await setup()
+    const preview = view.findComponent({ name: 'PetPreview' })
+    const baseline = builtinDefaultCalibration('ying')
+    const draft = parseCalibration({ ...baseline, offset_x: 0.02 })
+    const latest = parseCalibration({ ...baseline, offset_x: 0.03 })
+    preview.vm.$emit('pack-ready', { id: 'ying', calibration: baseline })
+    await flushPromises()
+    preview.vm.$emit('calibration', draft)
+    await flushPromises()
+    preview.vm.$emit('pack-ready', { id: 'ying', calibration: latest })
+    await flushPromises()
+    expect(view.text()).toContain('素材调整已在其他页面更改')
+    expect(preview.props('calibration')).toEqual(draft)
+    await click('保存调整')
+    expect(api.post).not.toHaveBeenCalled()
+    await click('撤销')
+    expect(preview.props('calibration')).toEqual(latest)
+    expect(view.text()).not.toContain('未保存')
+  })
 })

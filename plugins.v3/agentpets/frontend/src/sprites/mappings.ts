@@ -5,6 +5,36 @@ export type ActionMappings = Record<string, string>
 export const PACK_UPDATED_EVENT = 'agentpets.pack.updated'
 export const ACTION_LABELS: Record<string, string> = {
   idle: '待机',
+  stand: '站立',
+  walk: '行走',
+  run: '奔跑',
+  dash: '冲刺',
+  follow: '跟随姿态',
+  'relaxed-sit': '放松坐下',
+  'sit-feet-down': '垂腿坐下',
+  'dangle-feet': '晃腿',
+  'look-up': '抬头',
+  think: '思考',
+  lie: '躺下',
+  crawl: '匍匐',
+  jump: '跳跃',
+  fall: '下落',
+  land: '落地',
+  bounce: '弹跳',
+  'hold-wall': '挂墙姿态',
+  'grab-wall': '抓墙姿态',
+  'climb-wall': '爬墙姿态',
+  'climb-wall-up': '向上攀爬',
+  'climb-wall-down': '向下攀爬',
+  'hold-ceiling': '悬挂姿态',
+  'crawl-ceiling': '爬顶姿态',
+  drag: '被拖起',
+  resist: '挣扎',
+  'pull-out': '拔起',
+  surprise: '惊讶',
+  split: '分身姿态',
+  cheer: '欢呼',
+  'spin-celebrate': '旋转庆祝',
   wave: '招手',
   sit: '坐下',
   'eye-roll': '翻白眼',
@@ -55,6 +85,7 @@ export const STAGE_ACTIONS: Record<string, { label: string; action: string; grou
   fall: { label: '下落', action: 'jumping', group: '移动交互' },
   jump: { label: '跳起', action: 'jumping', group: '移动交互' },
   sit: { label: '落地坐下', action: 'idle', group: '移动交互' },
+  peek: { label: '底角露眼', action: 'peek', group: '移动交互' },
   'walk-left': { label: '向左行走', action: 'running-left', group: '移动交互' },
   'walk-right': { label: '向右行走', action: 'running-right', group: '移动交互' },
 }
@@ -70,8 +101,8 @@ export const NATIVE_ACTIONS = [
   'review',
 ]
 
-export function stageAction(pose: Pose, facingLeft: boolean) {
-  const key = pose.startsWith('walk') ? (facingLeft ? 'walk-left' : 'walk-right') : pose
+export function stageAction(pose: Pose, facingLeft: boolean, peeking = false) {
+  const key = peeking ? 'peek' : pose.startsWith('walk') ? (facingLeft ? 'walk-left' : 'walk-right') : pose
   return { key: `stage.${key}`, action: STAGE_ACTIONS[key]?.action ?? 'idle' }
 }
 
@@ -82,6 +113,15 @@ export function nativeChoices(pack: SpritePack) {
   const seen = new Set(keys.map(signature))
   for (const key of Object.keys(pack.actions)) {
     if (key.startsWith('look-') || keys.includes(key)) continue
+    const peekFrame = pack.actions.idle?.frames[0]
+    if (
+      pack.codex_version &&
+      key === 'peek' &&
+      pack.actions[key].frames.length === 1 &&
+      peekFrame &&
+      pack.frames[pack.actions[key].frames[0]] === pack.frames[peekFrame]
+    )
+      continue
     const sequence = signature(key)
     if (pack.codex_version && seen.has(sequence)) continue
     keys.push(key)

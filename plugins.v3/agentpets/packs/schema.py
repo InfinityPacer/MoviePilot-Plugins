@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from .constants import (
+    BUILTIN_STAGE_PACKS,
     CODEX_ACTIONS,
     DEFAULT_CALIBRATION,
     DEFAULT_FRAME_MS,
@@ -28,7 +29,7 @@ from .constants import (
 )
 
 
-def parse_calibration(raw: Any = None) -> dict[str, float]:
+def parse_calibration(raw: Any = None) -> dict[str, float | None]:
     """所有帧共用一个参考框，坐标为单格图片比例；只改变显示，不改原图。"""
     if raw is None:
         return dict(DEFAULT_CALIBRATION)
@@ -36,6 +37,8 @@ def parse_calibration(raw: Any = None) -> dict[str, float]:
         raise PackError("显示校准字段无效")
     result = dict(DEFAULT_CALIBRATION)
     for key, value in raw.items():
+        if DEFAULT_CALIBRATION[key] is None and value is None:
+            continue
         low, high = (-0.25, 0.25) if key.startswith("offset_") else (0.0, 1.0)
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or not low <= value <= high:
             raise PackError(f"显示校准 {key} 超出范围")
@@ -44,6 +47,19 @@ def parse_calibration(raw: Any = None) -> dict[str, float]:
         raise PackError("有效显示区域的宽高至少为原格子的 10%")
     if not result["top"] < result["baseline"] <= result["bottom"]:
         raise PackError("脚底基线必须在显示区域内")
+    for point in ("eye", "left_eye", "right_eye", "head_top"):
+        x, y = result[f"{point}_x"], result[f"{point}_y"]
+        if (x is None) != (y is None):
+            raise PackError("校准点需要同时设置横纵坐标")
+        if x is not None:
+            display_x = (x - result["left"] + result["offset_x"]) / (result["right"] - result["left"])
+            display_y = (y - result["top"] + result["bottom"] - result["baseline"] + result["offset_y"]) / (result["bottom"] - result["top"])
+            if not -1e-8 <= display_x <= 1 + 1e-8 or not -1e-8 <= display_y <= 1 + 1e-8:
+                raise PackError("校准点必须在最终显示区域内")
+    if result["left_eye_x"] is not None and result["right_eye_x"] is not None and result["left_eye_x"] >= result["right_eye_x"]:
+        raise PackError("画面左眼必须位于画面右眼左侧")
+    if result["head_top_y"] is not None and any(y is not None and result["head_top_y"] >= y for y in (result["left_eye_y"], result["right_eye_y"])):
+        raise PackError("头顶必须位于双眼上方")
     return result
 
 
@@ -101,7 +117,13 @@ def _action(key: str, value: Any, frames: dict[str, int]) -> dict[str, Any]:
     loop = value.get("loop", False)
     if not isinstance(loop, bool):
         raise PackError(f"actions.{key}.loop 必须是布尔值")
-    return {"frames": list(sequence), "frame_ms": frame_ms, "loop": loop}
+    result = {"frames": list(sequence), "frame_ms": frame_ms, "loop": loop}
+    durations = value.get("frame_durations")
+    if durations is not None:
+        if not isinstance(durations, list) or len(durations) != len(sequence):
+            raise PackError(f"actions.{key}.frame_durations 必须与帧序列等长")
+        result["frame_durations"] = [_int(ms, f"actions.{key}.frame_durations", *FRAME_MS_RANGE) for ms in durations]
+    return result
 
 
 def codex_pet_version(pack: dict[str, Any]) -> str | None:
@@ -219,6 +241,18 @@ def parse_pack(raw: Any) -> dict[str, Any]:
         pack["codex_version"] = version
     if "calibration" in raw:
         pack["calibration"] = parse_calibration(raw["calibration"])
+    if "action_baselines" in raw:
+        if pack_id not in BUILTIN_STAGE_PACKS:
+            raise PackError("action_baselines 仅供内置逐帧形象使用")
+        baselines = raw["action_baselines"]
+        if not isinstance(baselines, dict):
+            raise PackError("action_baselines 必须是动作名到基线的对象")
+        calibration = pack.get("calibration") or parse_calibration()
+        pack["action_baselines"] = {}
+        for action, baseline in baselines.items():
+            if action not in actions:
+                raise PackError("action_baselines 引用了未定义的动作")
+            pack["action_baselines"][action] = parse_calibration({**calibration, "baseline": baseline})["baseline"]
     if "action_mappings" in raw:
         pack["action_mappings"] = validate_mappings(pack, raw["action_mappings"])
     return pack

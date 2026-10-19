@@ -98,6 +98,8 @@ export function querySurfaces(
  * 固定底栏的上缘（包括宽屏 App Dock）。只做 15 次命中和有界祖先检查，不扫描整个页面；
  * 忽略普通内容、全屏弹层及宠物图层，给底部导航留出 8px 间隔。
  */
+export const BOTTOM_FLOOR_GAP = 8
+
 export function bottomFixedFloor(layer: Element | null, viewport: StageViewport): number {
   const floor = floorLine(viewport)
   if (typeof document.elementsFromPoint !== 'function') return floor
@@ -133,7 +135,7 @@ export function bottomFixedFloor(layer: Element | null, viewport: StageViewport)
           style.visibility !== 'hidden' &&
           style.display !== 'none'
         ) {
-          result = Math.min(result, rect.top - 8)
+          result = Math.min(result, rect.top - BOTTOM_FLOOR_GAP)
         }
       }
     }

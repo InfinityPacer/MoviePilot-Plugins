@@ -1,12 +1,26 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { calibrationLayout, parseCalibration, type Calibration } from '@/sprites/calibration'
+import {
+  calibrationEye,
+  calibrationForAction,
+  calibrationLayout,
+  calibrationPoint,
+  LANDMARKS,
+  mirrorFace,
+  parseCalibration,
+  type Calibration,
+  type CalibratedFace,
+} from '@/sprites/calibration'
+import CalibrationMarkers from '@/editor/CalibrationMarkers.vue'
+import { loadBuiltinCalibration, YING_PACK } from './builtinCalibration'
+import { frameUrl } from '@/stage/poses'
 import { loadImage, withLoadTimeout } from '@/loading'
 
 import { PACK_UPDATED_EVENT, type ActionMappings } from '@/sprites/mappings'
 import type { AgentPetContext, MoviePilotAgentHost, PluginApi } from '@/host'
 import {
   BUILTIN_PACK,
+  BUILTIN_PACKS,
   BUILTIN_PACK_ID,
   builtinAsset,
   framePosition,
@@ -36,10 +50,14 @@ const props = withDefaults(
     thinking?: boolean
     /** 为 false 时只显示当前动作的第一帧。 */
     motionActive?: boolean
+    mirrorX?: boolean
     /** 预览加载失败时显示错误，不用其他宠物冒充选中项。 */
     strictPreview?: boolean
     calibrationOverride?: Calibration
     showCalibration?: boolean
+    editCalibration?: boolean
+    calibrationDisabled?: boolean
+    calibrationZoom?: number
     mappingsOverride?: ActionMappings
     mappingKey?: string
     nativeAction?: string
@@ -59,7 +77,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  appearance: [{ name: string; aspectRatio: number }]
+  appearance: [{ name: string; aspectRatio: number; eye: CalibratedFace | null }]
+  'calibration-change': [Calibration]
   'load-state': ['loading' | 'ready' | 'error']
   'pack-ready': [SpritePack]
 }>()
@@ -92,7 +111,25 @@ const frame = computed(() => {
   const frames = resolved.value.action.frames
   return frames[Math.min(frameIndex.value, frames.length - 1)] ?? 'idle'
 })
-const calibration = computed(() => parseCalibration(props.calibrationOverride ?? pack.value.calibration))
+const baseCalibration = computed(() => parseCalibration(props.calibrationOverride ?? pack.value.calibration))
+const calibration = computed(() =>
+  calibrationForAction(
+    baseCalibration.value,
+    pack.value.action_baselines,
+    resolved.value.key,
+    BUILTIN_PACKS[pack.value.id]?.calibration?.baseline,
+  ),
+)
+const eye = computed(() => {
+  const face = calibrationEye(calibration.value)
+  return props.mirrorX ? mirrorFace(face) : face
+})
+const guidePoints = computed(() =>
+  LANDMARKS.flatMap(key => {
+    const point = calibrationPoint(calibration.value, key)
+    return point ? [{ key, ...point, x: props.mirrorX ? 1 - point.x : point.x }] : []
+  }),
+)
 const layout = computed(() => calibrationLayout(calibration.value, cellRatio.value))
 const frameStyle = computed(() => {
   const { cols, rows } = pack.value.grid
@@ -115,7 +152,7 @@ function play() {
   stop()
   frameIndex.value = 0
   if (!props.motionActive || !ready.value || disposed) return
-  const { frames, frame_ms: frameMs, loop } = resolved.value.action
+  const { frames, frame_ms: frameMs, frame_durations: durations, loop } = resolved.value.action
   if (frames.length < 2) return
   const advance = () => {
     const next = frameIndex.value + 1
@@ -124,9 +161,9 @@ function play() {
       return
     }
     frameIndex.value = next % frames.length
-    timer = window.setTimeout(advance, frameMs)
+    timer = window.setTimeout(advance, durations?.[frameIndex.value] ?? frameMs)
   }
-  timer = window.setTimeout(advance, frameMs)
+  timer = window.setTimeout(advance, durations?.[0] ?? frameMs)
 }
 
 async function loadPack(key: string) {
@@ -138,9 +175,20 @@ async function loadPack(key: string) {
   const current = () => !disposed && version === loadVersion && !signal.aborted
   emit('load-state', 'loading')
   try {
-    let nextPack = BUILTIN_PACK
-    let nextSheet = builtinAsset('sheet.webp')
-    if (key !== BUILTIN_PACK_ID) {
+    const builtin = key === 'ying' || Object.hasOwn(BUILTIN_PACKS, key)
+    let nextPack = key === 'ying' ? YING_PACK : builtin ? BUILTIN_PACKS[key] : BUILTIN_PACK
+    let nextSheet =
+      key === 'ying'
+        ? frameUrl('idle')
+        : builtinAsset(nextPack.sheet || 'sheet.webp', undefined, builtin ? key : BUILTIN_PACK_ID)
+    if (builtin) {
+      try {
+        nextPack = { ...nextPack, calibration: await loadBuiltinCalibration(props.api, props.pluginId, key, signal) }
+      } catch {
+        if (props.strictPreview && props.api?.get) throw new Error('内置校准读取失败')
+        // Keep bundled art available when the service is temporarily unreachable.
+      }
+    } else {
       if (!props.api?.get) throw new Error('pack API unavailable')
       const instanceId = props.pluginId || 'AgentPets'
       const response = await withLoadTimeout(
@@ -186,9 +234,10 @@ watch(
   () => play(),
 )
 watch(
-  [ready, pack, cellRatio, calibration],
+  [ready, pack, cellRatio, calibration, () => props.mirrorX],
   () => {
-    if (ready.value) emit('appearance', { name: pack.value.name, aspectRatio: layout.value.aspectRatio })
+    if (ready.value)
+      emit('appearance', { name: pack.value.name, aspectRatio: layout.value.aspectRatio, eye: eye.value })
   },
   { immediate: true },
 )
@@ -214,10 +263,12 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="agent-pet-sprites"
-    aria-hidden="true"
+    :class="{ 'agent-pet-sprites--stage': pet?.mode === 'stage' }"
+    :aria-hidden="editCalibration ? undefined : true"
     :data-pack="ready ? pack.id : undefined"
     :data-action="resolved.key"
     :data-frame="frame"
+    :data-mirrored="!!mirrorX"
   >
     <div
       v-if="ready"
@@ -225,7 +276,29 @@ onBeforeUnmount(() => {
       :class="{ 'agent-pet-sprites__viewport--guides': showCalibration }"
       :style="{ '--agent-pet-sprites-ratio': String(layout.aspectRatio) }"
     >
-      <div class="agent-pet-sprites__frame" :style="frameStyle" />
+      <div class="agent-pet-sprites__crop" :style="mirrorX ? { transform: 'scaleX(-1)' } : undefined">
+        <div class="agent-pet-sprites__frame" :style="frameStyle" />
+      </div>
+      <CalibrationMarkers
+        v-if="editCalibration && (pack.codex_version || pet?.mode === 'stage')"
+        :model-value="calibration"
+        :disabled="calibrationDisabled"
+        :zoom="calibrationZoom"
+        @update:model-value="emit('calibration-change', { ...$event, baseline: baseCalibration.baseline })"
+      />
+      <span
+        v-if="showCalibration && eye && !editCalibration"
+        class="agent-pet-sprites__eye"
+        :style="{ left: `${eye.x * 100}%`, top: `${eye.y * 100}%` }"
+      />
+      <template v-if="showCalibration && !editCalibration">
+        <span
+          v-for="point in guidePoints"
+          :key="point.key"
+          class="agent-pet-sprites__eye"
+          :style="{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }"
+        />
+      </template>
     </div>
   </div>
 </template>
@@ -245,13 +318,31 @@ onBeforeUnmount(() => {
 
 .agent-pet-sprites__viewport {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   width: min(100cqw, 100cqh * var(--agent-pet-sprites-ratio));
   aspect-ratio: var(--agent-pet-sprites-ratio);
+}
+.agent-pet-sprites--stage {
+  min-width: 0;
+  min-height: 0;
+}
+.agent-pet-sprites__eye {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgb(var(--v-theme-warning));
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgb(var(--v-theme-surface));
 }
 .agent-pet-sprites__frame {
   position: absolute;
   background-repeat: no-repeat;
+}
+.agent-pet-sprites__crop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 .agent-pet-sprites__viewport--guides {
   outline: 1px dashed rgb(var(--v-theme-primary));

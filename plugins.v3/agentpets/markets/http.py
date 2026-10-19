@@ -42,9 +42,10 @@ def read_market_bytes(
     仅当显式给出跳转白名单时允许一次 307/308，跳转前重新检查域名、路径和 DNS
     错误消息不包含远程响应正文、请求地址或凭据
     """
+    from app.sdk.config import settings
     from app.sdk.network import RequestUtils, SecurityUtils
 
-    client = RequestUtils(timeout=20, verify=True, headers={
+    client = RequestUtils(proxies=settings.PROXY, timeout=20, verify=True, headers={
         "User-Agent": "MoviePilot-AgentPets/market", "Accept-Encoding": "identity",
         "Accept": "application/json, application/zip",
     })
