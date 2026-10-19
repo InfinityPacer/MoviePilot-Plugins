@@ -2,10 +2,10 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .markets.contracts import MarketModel
-from .settings import SCALE_RANGE, SPEED_RANGE
+from .settings import DEFAULT_PEEK_ANGLES, PEEK_ANGLE_RANGE, SCALE_RANGE, SPEED_RANGE
 
 
 class SaveSettingsRequest(BaseModel):
@@ -63,8 +63,8 @@ class SaveMappingsRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=32, description="本地素材包 ID")
-    mappings: dict[str, str] = Field(max_length=43, description="新的动作映射")
-    expected_mappings: dict[str, str] = Field(max_length=43, description="读取时的动作映射")
+    mappings: dict[str, str] = Field(max_length=44, description="新的动作映射")
+    expected_mappings: dict[str, str] = Field(max_length=44, description="读取时的动作映射")
 
 
 class SaveCalibrationRequest(BaseModel):
@@ -72,5 +72,68 @@ class SaveCalibrationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=32, description="本地素材包 ID")
-    calibration: dict[str, float] = Field(description="新的显示校准")
-    expected_calibration: dict[str, float] = Field(description="读取时的显示校准")
+    calibration: dict[str, float | None] = Field(description="新的显示校准")
+    expected_calibration: dict[str, float | None] = Field(description="读取时的显示校准")
+
+
+class CalibrationData(BaseModel):
+    """Persisted display calibration returned by the read and save endpoints."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    calibration: dict[str, float | None]
+
+
+class PeekAngles(BaseModel):
+    """独立偷看角度；底边默认 0 度，左右侧边默认 35 度"""
+    model_config = ConfigDict(extra="forbid")
+    bottom: float = Field(default=DEFAULT_PEEK_ANGLES["bottom"], ge=PEEK_ANGLE_RANGE[0], le=PEEK_ANGLE_RANGE[1], allow_inf_nan=False)
+    left: float = Field(default=DEFAULT_PEEK_ANGLES["left"], ge=PEEK_ANGLE_RANGE[0], le=PEEK_ANGLE_RANGE[1], allow_inf_nan=False)
+    right: float = Field(default=DEFAULT_PEEK_ANGLES["right"], ge=PEEK_ANGLE_RANGE[0], le=PEEK_ANGLE_RANGE[1], allow_inf_nan=False)
+
+
+class PetAppearance(BaseModel):
+    """单只舞台形象的大小、速度与角度，不允许夹带共享设置"""
+    model_config = ConfigDict(extra="forbid")
+    scale: float = Field(ge=SCALE_RANGE[0], le=SCALE_RANGE[1], allow_inf_nan=False)
+    speed: float = Field(ge=SPEED_RANGE[0], le=SPEED_RANGE[1], allow_inf_nan=False)
+    peek_angles: PeekAngles | None = None
+
+
+class SavePetSettingsRequest(PetAppearance):
+    """用稳定 Pet ID 和读取时的旧值保护独立设置写入"""
+    key: str = Field(min_length=1, max_length=32, pattern=r"^[a-z0-9_-]+$")
+    expected: PetAppearance
+
+    @model_validator(mode="after")
+    def require_angle_baseline(self):
+        """写角度的新客户端必须提供角度旧值；旧客户端只更新大小速度"""
+        if self.peek_angles is not None and self.expected.peek_angles is None:
+            raise ValueError("修改偷看角度必须提供读取时的角度")
+        return self
+
+
+class SharedActivity(BaseModel):
+    """所有舞台形象共用的活动方式和范围"""
+    model_config = ConfigDict(extra="forbid")
+    roam: Literal["surfaces", "floor", "free"]
+    movement: Literal["auto", "fixed"]
+
+
+class SaveSharedSettingsRequest(SharedActivity):
+    """保存共享活动参数时必须同时提交读取时的旧值"""
+    expected: SharedActivity
+
+
+class SaveDescriptionRequest(BaseModel):
+    """用旧备注校验保护局部编辑，不接受图片或动画字段"""
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=32)
+    description: str = Field(max_length=120)
+    expected_description: str = Field(max_length=120)
+
+
+class PackDescriptionData(BaseModel):
+    """备注保存接口只回传素材身份与实际保存的文本"""
+    id: str
+    description: str

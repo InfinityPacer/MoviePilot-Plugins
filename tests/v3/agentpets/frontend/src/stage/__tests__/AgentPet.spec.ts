@@ -39,10 +39,32 @@ async function flush() {
 }
 
 describe('AgentPet (ying)', () => {
+  it('reloads appearance for a changed pet key and ignores an older pending key response', async () => {
+    const { api, view, anchors } = setup()
+    await flush()
+    let finishOld!: (value: unknown) => void
+    api.get.mockImplementation((path: string) =>
+      path.endsWith('key=second')
+        ? new Promise(resolve => {
+            finishOld = resolve
+          })
+        : Promise.resolve({ success: true, data: { scale: 0.8, speed: 1, roam: 'floor' } }),
+    )
+    await view.rerender({ pet: createMockPet('stage', 'second', { onAnchor: rect => anchors.push(rect) }) })
+    await flush()
+    await view.rerender({ pet: createMockPet('stage', 'third', { onAnchor: rect => anchors.push(rect) }) })
+    await flush()
+    expect(api.get).toHaveBeenLastCalledWith('plugin/AgentPets/settings?key=third')
+    expect(anchors.at(-1)).toMatchObject({ height: 96 })
+    finishOld({ success: true, data: { scale: 1.6, speed: 2, roam: 'free' } })
+    await flush()
+    expect(anchors.at(-1)).toMatchObject({ height: 96 })
+  })
+
   it('loads saved settings and reports a bubble anchor', async () => {
     const { api, anchors } = setup()
     await flush()
-    expect(api.get).toHaveBeenCalledWith('plugin/AgentPets/settings')
+    expect(api.get).toHaveBeenCalledWith('plugin/AgentPets/settings?key=ying')
     const button = await screen.findByRole('button', {
       name: '打开助手（小映）',
     })
@@ -76,7 +98,10 @@ describe('AgentPet (ying)', () => {
   it('applies live settings only from its own plugin instance', async () => {
     const { host, anchors } = setup()
     await flush()
-    host.emit('agentpets.settings', { scale: 0.6, speed: 1 })
+    host.emit('agentpets.settings', { key: 'other-pet', scale: 0.6, speed: 1 })
+    await flush()
+    expect(anchors.at(-1)).toMatchObject({ height: 144 })
+    host.emit('agentpets.settings', { key: 'ying', scale: 0.6, speed: 1 })
     await flush()
     expect(anchors.at(-1)).toMatchObject({ height: 72 })
     host.fire('agentpets.settings', { scale: 1.6, speed: 1 })
@@ -398,8 +423,11 @@ describe('AgentPet roam and frame fallback', () => {
     const { anchors, view } = await mountStill({ roam: 'surfaces', xRatio: 0.3, yRatio: 1 })
     await new Promise(resolve => setTimeout(resolve, 20))
     const root = view.container.querySelector('.agent-pet-ying') as HTMLElement
-    // 即使底边仍有控件，也保留足够的可见高度供用户拖回。
-    expect(anchors.at(-1)).toMatchObject({ x: 0, height: 48 })
+    // 眼位决定可见高度，透明命中区单独保证可拖回。
+    expect(anchors.at(-1)).toMatchObject({ x: 0 })
+    expect(anchors.at(-1)!.height).toBeGreaterThan(0)
+    expect(anchors.at(-1)!.height).toBeLessThan(120)
+    expect(parseFloat((root.querySelector('button') as HTMLElement).style.height)).toBeGreaterThanOrEqual(48)
     expect(root.dataset.motion).toBe('peek')
 
     // 控件消失后，低频复查让她站起来。

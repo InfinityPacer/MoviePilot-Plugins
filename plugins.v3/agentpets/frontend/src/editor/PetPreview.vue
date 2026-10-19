@@ -3,11 +3,19 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 
 import CalibrationControls from '@/editor/CalibrationControls.vue'
 import { DEFAULT_CALIBRATION, type Calibration } from '@/sprites/calibration'
+import { builtinDefaultCalibration } from '@/sprites/builtinCalibration'
 import ActionMappingEditor from '@/editor/ActionMappings.vue'
 import { ACTION_LABELS, nativeChoices, stageAction, type ActionMappings } from '@/sprites/mappings'
 import { HOST_ACTIONS, HOST_INTENTS, type SpritePack } from '@/sprites/schema'
 import { POSES } from '@/stage/poses'
 import { MIN_SURFACE_WIDTH } from '@/stage/geometry'
+import {
+  DEFAULT_PEEK_ANGLES,
+  normalizePeekAngle,
+  normalizePeekAngles,
+  PEEK_PREVIEW_MAX_ANGLE,
+  type PeekEdge,
+} from '@/stage/peek'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import type { PluginApi } from '@/host'
 import AgentPetSprite from '@/sprites/AgentPetSprite.vue'
@@ -36,19 +44,56 @@ const emit = defineEmits<{
   'pack-ready': [SpritePack]
   mappings: [ActionMappings]
   calibration: [Calibration]
+  settings: [YingSettings]
 }>()
 const loadedPack = ref<SpritePack | null>(null)
 const replay = ref(0)
 const original = ref(false)
 const editorTab = ref(props.initialTab)
+const calibrationEdge = ref<PeekEdge | null>(null)
+const showGuides = ref(true)
+const defaultCalibrationAngle = computed(() => DEFAULT_PEEK_ANGLES[calibrationEdge.value ?? 'bottom'])
+const calibrationAngle = computed({
+  get: () => normalizePeekAngles(props.settings.peek_angles)[calibrationEdge.value ?? 'bottom'],
+  set: (value: number) => {
+    if (!calibrationEdge.value || props.disabled) return
+    emit('settings', {
+      ...props.settings,
+      peek_angles: {
+        ...normalizePeekAngles(props.settings.peek_angles),
+        [calibrationEdge.value]: normalizePeekAngle(value, defaultCalibrationAngle.value),
+      },
+    })
+  },
+})
+const calibrationZoom = ref(1)
+const calibrating = computed(
+  () => editorTab.value === 'calibration' && props.pet.mode === 'stage' && !!loadedPack.value && !!props.calibration,
+)
+const editingLandmarks = computed(() => calibrating.value && !calibrationEdge.value && !!props.calibration)
+const peekChoices = [
+  { title: '完整形象', value: null },
+  { title: '底边偷看试览', value: 'bottom' },
+  { title: '左下侧边试览', value: 'left' },
+  { title: '右下侧边试览', value: 'right' },
+]
+const activePeekEdge = computed(() =>
+  props.pet.mode === 'stage' && editorTab.value === 'calibration' ? calibrationEdge.value : null,
+)
 const expanded = ref(false)
 const previewMode = ref<'debug' | 'movement'>('debug')
 const testingPlatforms = computed(
-  () => props.pet.mode === 'stage' && previewMode.value === 'movement' && props.settings.roam === 'surfaces',
+  () =>
+    !calibrating.value &&
+    props.pet.mode === 'stage' &&
+    previewMode.value === 'movement' &&
+    props.settings.roam === 'surfaces',
 )
 const platformsAvailable = ref(true)
 const previewSettings = computed<YingSettings>(() =>
-  previewMode.value === 'debug' ? { ...props.settings, movement: 'fixed', roam: 'free' } : props.settings,
+  previewMode.value === 'debug' || calibrating.value
+    ? { ...props.settings, movement: 'fixed', roam: 'free' }
+    : props.settings,
 )
 const previewMaxSize = ref({ width: 280, height: 220 })
 const playing = ref('自主动作')
@@ -66,6 +111,13 @@ function onLoadState(state: 'loading' | 'ready' | 'error') {
 const canvas = ref<HTMLElement | null>(null)
 const mounted = ref(false)
 const paused = ref(false)
+const playbackStatus = computed(() => {
+  if (activePeekEdge.value) {
+    const label = peekChoices.find(choice => choice.value === activePeekEdge.value)!.title
+    return `${label} · 锁定偷看首帧`
+  }
+  return calibrating.value ? '校准中：锁定偷看首帧' : `${paused.value ? '已暂停' : '正在播放'}：${playing.value}`
+})
 const action = ref('auto')
 const positionVersion = ref(0)
 const host = createMockHost(props.pluginId)
@@ -186,7 +238,10 @@ function resize() {
 
 function updateMotion() {
   reducedMotion.value = mediaQuery.matches
-  host.patch({ motionAllowed: !paused.value && !reducedMotion.value, reducedMotion: reducedMotion.value })
+  host.patch({
+    motionAllowed: !calibrating.value && !paused.value && !reducedMotion.value,
+    reducedMotion: reducedMotion.value,
+  })
 }
 
 function updateAction() {
@@ -200,6 +255,10 @@ watch([() => props.pet.mode, () => props.pet.key, positionVersion, previewMode],
   context.value = newContext()
 })
 watch(paused, updateMotion)
+watch(calibrating, updateMotion)
+watch([() => props.pet.key, () => props.pluginId], () => {
+  showGuides.value = true
+})
 watch(
   () => props.pet.key,
   () => {
@@ -209,6 +268,8 @@ watch(
     action.value = 'auto'
     playing.value = '自主动作'
     original.value = false
+    calibrationEdge.value = null
+    calibrationZoom.value = 1
     updateAction()
   },
 )
@@ -238,7 +299,7 @@ onBeforeUnmount(() => {
           {{ expanded ? '收起预览' : '放大预览' }}
         </v-btn>
       </header>
-      <div v-if="pet.mode === 'stage'" class="ap-preview__mode">
+      <div v-if="pet.mode === 'stage' && !calibrating" class="ap-preview__mode">
         <v-btn-toggle
           v-model="previewMode"
           mandatory
@@ -256,7 +317,7 @@ onBeforeUnmount(() => {
         <div
           ref="canvas"
           class="ap-preview__canvas"
-          :class="{ 'ap-preview__canvas--debug': previewMode === 'debug' }"
+          :class="{ 'ap-preview__canvas--debug': previewMode === 'debug' || calibrating }"
           :data-roam="previewSettings.roam"
         >
           <template v-if="testingPlatforms && platformsAvailable">
@@ -274,9 +335,35 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <div class="ap-preview__floor" aria-hidden="true" />
+          <div
+            v-if="mounted && editingLandmarks"
+            class="ap-preview__calibration-entry"
+            :style="{ transform: `scale(${calibrationZoom})` }"
+          >
+            <AgentPetSprite
+              :key="`${pluginId}:${pet.key}:landmarks`"
+              :agent="host"
+              :pet="context"
+              :api="api"
+              :plugin-id="pluginId"
+              action="peek"
+              mapping-key="stage.peek"
+              :mappings-override="mappings"
+              :calibration-override="calibration"
+              :motion-active="false"
+              :show-calibration="showGuides"
+              :edit-calibration="showGuides"
+              :calibration-disabled="disabled"
+              :calibration-zoom="calibrationZoom"
+              strict-preview
+              @pack-ready="onPackReady"
+              @load-state="onLoadState"
+              @calibration-change="emit('calibration', $event)"
+            />
+          </div>
           <component
             :is="stageComponent"
-            v-if="mounted && pet.mode === 'stage'"
+            v-else-if="mounted && pet.mode === 'stage'"
             :key="`${pluginId}:${pet.key}:${positionVersion}:${previewMode}`"
             :agent="host"
             :pet="context"
@@ -286,10 +373,11 @@ onBeforeUnmount(() => {
             :preview-max-size="previewMaxSize"
             :settings-override="previewSettings"
             :preview-pose="previewPose"
-            :native-action="nativeAction"
+            :preview-peek-edge="activePeekEdge"
+            :native-action="calibrating ? undefined : nativeAction"
             :mappings-override="mappings"
             :calibration-override="calibration"
-            :show-calibration="editorTab === 'calibration' && !!calibration"
+            :show-calibration="editorTab === 'calibration' && !!calibration && showGuides"
             :replay="replay"
             @pack-ready="onPackReady"
             @load-state="onLoadState"
@@ -306,7 +394,7 @@ onBeforeUnmount(() => {
               :native-action="nativeAction"
               :mappings-override="mappings"
               :calibration-override="calibration"
-              :show-calibration="editorTab === 'calibration' && !!calibration"
+              :show-calibration="editorTab === 'calibration' && !!calibration && showGuides"
               :replay="replay"
               :motion-active="!paused && !reducedMotion"
               strict-preview
@@ -317,16 +405,20 @@ onBeforeUnmount(() => {
           <v-alert v-if="failed" type="error" variant="tonal" density="compact" class="ap-preview__error"
             >此 Pet 加载失败，请点击重置重试。</v-alert
           >
-          <span class="ap-preview__hint">{{
-            original
-              ? '当前校准'
-              : previewMode === 'debug'
-                ? '居中播放 · 不会自行走开'
-                : testingPlatforms
-                  ? platformsAvailable
-                    ? '拖到平台上方松手 · 测试站立'
-                    : '预览过窄，请放大后测试平台'
-                  : '拖动 Pet · 测试移动与跳跃'
+          <span v-if="!activePeekEdge" class="ap-preview__hint">{{
+            editingLandmarks
+              ? showGuides
+                ? '拖动光圈标定 · 只改草稿 · 保存后生效'
+                : '光圈已隐藏 · 显示后可继续标定'
+              : original
+                ? '当前校准'
+                : previewMode === 'debug'
+                  ? '居中播放 · 不会自行走开'
+                  : testingPlatforms
+                    ? platformsAvailable
+                      ? '拖到平台上方松手 · 测试站立'
+                      : '预览过窄，请放大后测试平台'
+                    : '拖动 Pet · 测试移动与跳跃'
           }}</span>
         </div>
         <div v-if="original && loadedPack" class="ap-preview__original" aria-label="原始显示对照">
@@ -343,7 +435,7 @@ onBeforeUnmount(() => {
               :mappings-override="mappings"
               :calibration-override="DEFAULT_CALIBRATION"
               :replay="replay"
-              :motion-active="!paused && !reducedMotion"
+              :motion-active="!calibrating && !paused && !reducedMotion"
               strict-preview
             />
           </div>
@@ -351,8 +443,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="ap-preview__playback">
-        <span class="ap-preview__playing" role="status">{{ paused ? '已暂停' : '正在播放' }}：{{ playing }}</span>
-        <div class="ap-inline">
+        <span class="ap-preview__playing" role="status">{{ playbackStatus }}</span>
+        <v-btn
+          v-if="editingLandmarks"
+          size="small"
+          variant="text"
+          @click="calibrationZoom = calibrationZoom === 1 ? 2 : 1"
+        >
+          {{ calibrationZoom === 1 ? '放大头部' : '全身标定' }}
+        </v-btn>
+        <div v-if="!calibrating" class="ap-inline">
           <v-btn
             :icon="paused ? 'mdi-play' : 'mdi-pause'"
             :aria-label="paused ? '播放预览' : '暂停预览'"
@@ -387,7 +487,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <v-switch
-        v-if="loadedPack && !pet.builtin"
+        v-if="loadedPack"
         v-model="original"
         label="对照原始显示"
         density="compact"
@@ -447,19 +547,64 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div v-show="editorTab === 'calibration'">
+          <v-switch
+            v-if="loadedPack && calibration"
+            v-model="showGuides"
+            label="显示校准光圈"
+            density="compact"
+            hide-details
+            class="ap-preview__panel"
+          />
+          <v-select
+            v-if="pet.mode === 'stage'"
+            v-model="calibrationEdge"
+            class="ap-preview__panel"
+            label="贴边试览"
+            :items="peekChoices"
+            density="compact"
+            variant="outlined"
+            hide-details
+            :disabled="disabled"
+          />
+          <div v-if="activePeekEdge" class="ap-preview__angle">
+            <div class="ap-inline">
+              <strong>偷看角度</strong>
+              <v-spacer />
+              <output aria-live="polite">{{ calibrationAngle }}°</output>
+              <v-btn
+                size="x-small"
+                variant="text"
+                aria-label="恢复默认偷看角度"
+                :disabled="disabled || calibrationAngle === defaultCalibrationAngle"
+                @click="calibrationAngle = defaultCalibrationAngle"
+                >重置</v-btn
+              >
+            </div>
+            <v-slider
+              v-model="calibrationAngle"
+              aria-label="偷看试览角度"
+              :min="0"
+              :max="PEEK_PREVIEW_MAX_ANGLE"
+              :step="1"
+              :disabled="disabled"
+              density="compact"
+              hide-details
+            />
+            <p class="ap-muted">当前 Pet 按方向独立保存；点击底部「保存调整」后，正式偷看也会使用此角度。</p>
+          </div>
           <CalibrationControls
-            v-if="loadedPack && !pet.builtin && calibration"
+            v-if="loadedPack && calibration"
             :key="pet.key"
             :model-value="calibration"
             :pack-id="pet.key"
             :api="api"
             :plugin-id="pluginId"
             :disabled="disabled"
+            :codex="pet.mode === 'stage'"
+            :default-value="pet.builtin ? builtinDefaultCalibration(pet.key) : undefined"
             @update:model-value="emit('calibration', $event)"
           />
-          <p v-else class="ap-preview__panel ap-muted">
-            {{ pet.builtin ? '内置形象无需显示校准。' : '素材加载后可调整显示区域与脚底基线。' }}
-          </p>
+          <p v-else class="ap-preview__panel ap-muted">素材加载后可调整显示区域与脚底基线。</p>
         </div>
         <div v-show="editorTab === 'mappings'">
           <ActionMappingEditor
@@ -494,6 +639,18 @@ onBeforeUnmount(() => {
 .ap-preview--expanded {
   --ap-preview-width: clamp(320px, 40vw, 480px);
   --ap-canvas-height: clamp(260px, 42dvh, 400px);
+}
+.ap-preview__angle {
+  padding: 0 12px 8px;
+}
+.ap-preview__angle output {
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ap-preview__angle p {
+  margin: 0;
+  font-size: 12px;
 }
 .ap-preview__viewer {
   display: flex;
@@ -561,6 +718,11 @@ onBeforeUnmount(() => {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+.ap-preview__calibration-entry {
+  position: absolute;
+  inset: 16px 24px 32px;
+  transform-origin: 50% 0%;
 }
 .ap-preview__hint {
   position: absolute;
@@ -696,17 +858,46 @@ onBeforeUnmount(() => {
     flex: 1;
     min-height: min(120px, 20dvh);
   }
+  .ap-preview__tabs :deep(.v-tab) {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 8px;
+  }
   .ap-preview__panel,
   .ap-preview__library {
     padding: 12px;
   }
 }
-@media (max-height: 600px) and (max-width: 760px) {
+@media (max-height: 740px) {
   .ap-preview {
-    --ap-canvas-height: clamp(100px, 20dvh, 140px);
+    --ap-canvas-height: 160px;
+    align-items: start;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .ap-preview--expanded {
-    --ap-canvas-height: clamp(140px, 30dvh, 200px);
+    --ap-canvas-height: 200px;
+  }
+  /* Scroll the workspace instead of shrinking the character beneath its controls. */
+  .ap-preview__viewer,
+  .ap-preview__editor {
+    width: 100%;
+    flex: 0 0 auto;
+    align-self: start;
+    max-height: none;
+  }
+  .ap-preview__canvases {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: var(--ap-canvas-height);
+    min-height: var(--ap-canvas-height);
+  }
+  .ap-preview__editor,
+  .ap-preview__scroll {
+    overflow: visible;
+  }
+  .ap-preview__scroll {
+    flex: 0 0 auto;
   }
 }
 </style>

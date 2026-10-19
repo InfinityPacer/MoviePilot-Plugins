@@ -1,12 +1,13 @@
-"""改名和动作映射独立持久化，验证数据保留、并发旧值和管理员边界。"""
+"""改名、备注和动作映射独立持久化，验证数据保留、并发旧值和管理员边界。"""
 from copy import deepcopy
 
 import pytest
+from pydantic import ValidationError
 
 from app.plugins.agentpets import AgentPets, require_admin
 from app.plugins.agentpets.packs.constants import PackError
 from app.plugins.agentpets.packs.store import PackStore
-from app.plugins.agentpets.requests import RenamePackRequest, SaveMappingsRequest
+from app.plugins.agentpets.requests import RenamePackRequest, SaveDescriptionRequest, SaveMappingsRequest
 
 
 @pytest.fixture
@@ -109,3 +110,70 @@ def test_failed_readback_is_not_reported_as_success(state):
     store._save_data = lambda *_: None
     with pytest.raises(PackError, match="回读"):
         store.update("rem", name="New", expected_name="Rem")
+
+
+def test_description_preserves_all_other_fields_and_cached_record(state):
+    """只改备注，其他元数据及缓存原记录均保持不变"""
+    store, data, before = state
+    before.update(description="Original", calibration={"eye_y": 0.2}, action_mappings={"stage.peek": "idle"})
+    snapshot = deepcopy(data)
+    result = store.update("rem", description="  z256专属  ", expected_description="Original")
+    assert result["description"] == "z256专属"
+    assert {**result, "description": "Original"} == snapshot["packs"][0]
+    assert data["packs"][1] == snapshot["packs"][1]
+    assert before["description"] == "Original"
+    assert store.update("rem", description="", expected_description="z256专属")["description"] == ""
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"description": "new", "expected_description": "stale"},
+    {"description": "new"},
+    {"description": "x" * 121, "expected_description": ""},
+    {"description": 42, "expected_description": ""},
+])
+def test_invalid_or_stale_description_does_not_write(state, kwargs):
+    """无效或过期备注拒绝写入，不覆盖并发修改"""
+    store, data, _ = state
+    before = deepcopy(data)
+    with pytest.raises(PackError):
+        store.update("rem", **kwargs)
+    assert data == before
+
+
+@pytest.mark.parametrize("failure", [False, None])
+def test_description_persistence_failures_are_not_success(state, failure):
+    """保存失败或回读不一致不能冒充备注保存成功"""
+    store, data, _ = state
+    before = deepcopy(data)
+    store._save_data = lambda *_: failure
+    with pytest.raises(PackError, match="保存"):
+        store.update("rem", description="New", expected_description="")
+    assert data == before
+
+
+@pytest.mark.parametrize("changes", [
+    {"description": None}, {"description": "x" * 121}, {"expected_description": None},
+    {"image": "replacement"}, {"name": "replacement"}, {"id": ""},
+])
+def test_description_request_rejects_invalid_or_unrelated_fields(changes):
+    """备注请求拒绝超长、无效及无关字段"""
+    with pytest.raises(ValidationError):
+        SaveDescriptionRequest(**{"id": "rem", "description": "new", "expected_description": "", **changes})
+
+
+def test_description_api_permissions_readback_and_conflict(state):
+    """备注写入保留管理员边界、正确回读与旧值冲突保护"""
+    store, _, _ = state
+    plugin = AgentPets()
+    plugin._store = lambda: store
+    request = SaveDescriptionRequest(id="rem", description="z256专属", expected_description="")
+    result = plugin.api_save_description(request)
+    assert result.success and result.data.model_dump() == {"id": "rem", "description": "z256专属"}
+    assert not plugin.api_save_description(request).success
+    assert next(pet for pet in plugin.get_agent_pets() if pet["key"] == "rem")["description"] == "z256专属"
+    route = next(item for item in plugin.get_api() if item["path"] == "/packs/description")
+    assert route["auth"] == "bear" and route["methods"] == ["POST"]
+    assert route["dependencies"][0].dependency is require_admin
+    assert route["response_model"].model_validate(result.model_dump()).data.description == "z256专属"
+    for key in ("missing", "builtin-kurisu"):
+        assert not plugin.api_save_description(request.model_copy(update={"id": key})).success

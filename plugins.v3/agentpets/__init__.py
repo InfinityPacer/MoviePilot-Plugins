@@ -2,7 +2,7 @@
 
 - 小映（key ``ying``）是 stage 模式的全屏角色，插件拥有整个视口图层里的角色：
   拖拽、下落、站在页面元素上、散步和探头都由联邦组件 ``./AgentPet`` 完成。
-- Codex Pet 素材包由 ``./AgentPetCodex`` 复用小映舞台，支持缩放、拖拽与自主漫游。
+- 内置逐帧素材与 Codex Pet 素材包由 ``./AgentPetCodex`` 复用小映舞台，支持缩放、拖拽与自主漫游。
 - 普通素材包是 renderer 模式的入口外观，共用 ``./AgentPetSprite``；内置放映猫与用户
   素材包各是一个形象，组件按 ``pet.key`` 读取素材包。
 
@@ -16,6 +16,7 @@ import math
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+from threading import RLock
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Query
@@ -27,12 +28,13 @@ from app.sdk.security import verify_token
 
 from .markets.contracts import MarketError, MarketPack, MarketPage, MarketQuery
 from .markets.registry import create_market_registry
-from .packs.constants import BUILTIN_PACK_ID, PackError
+from .packs.constants import BUILTIN_PACK_ID, BUILTIN_PACK_IDS, BUILTIN_STAGE_PACKS, PackError
 from .packs.images import sniff_image, suggest_calibration
 from .packs.schema import codex_pet_version, pack_revision, parse_calibration
 from .packs.store import PackStore, load_builtin_pack
 from .requests import (
     AddPackRequest,
+    CalibrationData,
     DeletePackRequest,
     ImportMarketPackRequest,
     ImportPackRequest,
@@ -40,8 +42,15 @@ from .requests import (
     SaveCalibrationRequest,
     SaveMappingsRequest,
     SaveSettingsRequest,
+    SavePetSettingsRequest,
+    SaveSharedSettingsRequest,
+    SaveDescriptionRequest,
+    PackDescriptionData,
 )
-from .settings import DEFAULT_SETTINGS, ROAM_MODES, SCALE_RANGE, SPEED_RANGE
+from .settings import (
+    DEFAULT_PEEK_ANGLES, DEFAULT_SETTINGS, PEEK_ANGLE_RANGE, PEEK_EDGES,
+    ROAM_MODES, SCALE_RANGE, SPEED_RANGE,
+)
 
 PLUGIN_DIR = Path(__file__).resolve().parent
 DIST_PATH = "frontend/dist/assets"
@@ -54,7 +63,7 @@ STAGE_AVATAR = "ying/avatar.png"
 BUILTIN_PREVIEW = f"packs/{BUILTIN_PACK_ID}/preview.png"
 BUILTIN_AVATAR = f"packs/{BUILTIN_PACK_ID}/avatar.png"
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=16)
 def _builtin_image(path: str, size: int) -> str:
     """缓存内置小图的 data URL，供宿主卡片和消息头像直接显示。"""
     from PIL import Image
@@ -97,7 +106,7 @@ class AgentPets(_PluginBase):
     plugin_name = "助手形象"
     plugin_desc = "为 Agent 助手换上小映或自定义精灵图形象。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png"
-    plugin_version = "0.1.3"
+    plugin_version = "0.1.4"
     plugin_author = "InfinityPacer,Kurisu"
     author_url = "https://github.com/z2561221"
     plugin_config_prefix = "agentpets_"
@@ -109,13 +118,21 @@ class AgentPets(_PluginBase):
         super().__init__()
         self._enabled = False
         self._settings = dict(DEFAULT_SETTINGS)
-        self._builtin: dict[str, Any] | None = None
+        self._pet_settings: dict[str, dict[str, Any]] = {}
+        self._settings_lock = RLock()
+        self._builtin_packs: dict[str, dict[str, Any]] = {}
         self._markets = create_market_registry()
 
     def init_plugin(self, config: dict | None = None):
         """读取启用状态与全屏角色设置，越界值按边界收敛。"""
         config = config or {}
-        self._enabled = bool(config.get("enabled", False))
+        with self._settings_lock:
+            self._enabled = bool(config.get("enabled", False))
+            self._load_settings(config)
+        logger.info(f"助手形象配置加载完成：enabled={self._enabled} settings={self._settings}")
+
+    def _load_settings(self, config: dict):
+        """读取默认值与按 Pet ID 保存的大小、速度和角度，不回写旧数据"""
         roam = config.get("roam")
         self._settings = {
             "scale": _clamp(config.get("scale"), SCALE_RANGE, DEFAULT_SETTINGS["scale"]),
@@ -123,7 +140,30 @@ class AgentPets(_PluginBase):
             "roam": roam if roam in ROAM_MODES else DEFAULT_SETTINGS["roam"],
             "movement": "fixed" if config.get("movement") == "fixed" else "auto",
         }
-        logger.info(f"助手形象配置加载完成：enabled={self._enabled} settings={self._settings}")
+        raw = config.get("pet_settings")
+        self._pet_settings = {
+            key: self._appearance(value, self._settings)
+            for key, value in raw.items() if isinstance(key, str) and isinstance(value, dict)
+        } if isinstance(raw, dict) else {}
+
+    @staticmethod
+    def _appearance(value: dict, defaults: dict) -> dict[str, Any]:
+        """规整独立大小、速度与角度；默认角度不增加旧配置字段"""
+        result = {name: _clamp(value.get(name), bounds, defaults[name])
+                  for name, bounds in (("scale", SCALE_RANGE), ("speed", SPEED_RANGE))}
+        raw = value.get("peek_angles")
+        raw = raw if isinstance(raw, dict) else {}
+        angles = {edge: _clamp(raw.get(edge), PEEK_ANGLE_RANGE, DEFAULT_PEEK_ANGLES[edge]) for edge in PEEK_EDGES}
+        if any(angle != DEFAULT_PEEK_ANGLES[edge] for edge, angle in angles.items()):
+            result["peek_angles"] = angles
+        return result
+
+    def _is_stage_pet(self, key: str) -> bool:
+        """只允许当前存在的舞台形象使用独立活动设置"""
+        if key == STAGE_KEY or key in BUILTIN_STAGE_PACKS:
+            return True
+        record = self._store().get(key)
+        return bool(record and codex_pet_version(record))
 
     def get_state(self) -> bool:
         """返回插件启用状态，供宿主决定是否注册形象"""
@@ -143,15 +183,15 @@ class AgentPets(_PluginBase):
         """使用当前插件实例的数据回调与数据路径创建存储门面"""
         return PackStore(self.get_data, self.save_data, self.get_data_path())
 
-    def builtin_pack(self) -> dict[str, Any]:
-        """内置素材包描述；读取失败时退回只有名称的最小声明，不影响其他形象。"""
-        if self._builtin is None:
+    def builtin_pack(self, key: str = BUILTIN_PACK_ID) -> dict[str, Any]:
+        """内置素材包只从构建目录读取，不写入用户素材存储。"""
+        if key not in self._builtin_packs:
             try:
-                self._builtin = load_builtin_pack(PLUGIN_DIR / DIST_PATH)
+                self._builtin_packs[key] = load_builtin_pack(PLUGIN_DIR / DIST_PATH, key)
             except (OSError, PackError) as exc:
                 logger.warning(f"助手形象：内置素材包读取失败：{exc}")
-                return {"id": BUILTIN_PACK_ID, "name": "放映猫", "description": "", "random_actions": []}
-        return self._builtin
+                return {"id": key, "name": BUILTIN_STAGE_PACKS.get(key, "放映猫"), "description": "", "random_actions": []}
+        return self._builtin_packs[key]
 
     def get_agent_pets(self) -> list[dict[str, Any]]:
         """一个插件注册多个形象：小映、内置素材包、每个用户素材包各一项，key 在插件内唯一。"""
@@ -172,6 +212,11 @@ class AgentPets(_PluginBase):
                 _builtin_image(BUILTIN_PREVIEW, 320), _builtin_image(BUILTIN_AVATAR, 128),
             ),
         ]
+        for key in BUILTIN_STAGE_PACKS:
+            pets.append(self._sprite_pet(
+                key, self.builtin_pack(key),
+                _builtin_image(f"packs/{key}/preview.png", 320), _builtin_image(f"packs/{key}/avatar.png", 128),
+            ))
         for record in self._store().list():
             pets.append(
                 self._sprite_pet(record["id"], record, record.get("preview") or None, record.get("avatar") or None)
@@ -180,8 +225,8 @@ class AgentPets(_PluginBase):
 
     @staticmethod
     def _sprite_pet(key: str, pack: dict[str, Any], preview: str | None, avatar: str | None) -> dict[str, Any]:
-        """Codex Pet 进入舞台；普通素材包保留入口外观，形象 key 不变。"""
-        stage = codex_pet_version(pack) is not None
+        """内置逐帧 Pet 与 Codex Pet 进入舞台；普通素材包保留入口外观。"""
+        stage = key in BUILTIN_STAGE_PACKS or codex_pet_version(pack) is not None
         item: dict[str, Any] = {
             "key": key,
             "name": pack["name"],
@@ -200,13 +245,16 @@ class AgentPets(_PluginBase):
             item["random_actions"] = list(pack["random_actions"])
         return item
 
-    def settings(self) -> dict[str, Any]:
-        """全屏角色启动时读取的已保存设置。"""
-        return dict(self._settings)
+    def settings(self, key: str | None = None) -> dict[str, Any]:
+        """旧值作为默认；指定 Pet 覆盖独立大小、速度与偷看角度。"""
+        with self._settings_lock:
+            return {**self._settings, **self._appearance(self._pet_settings.get(key, {}), self._settings)}
 
-    def api_settings(self):
-        """向登录用户返回已保存的活动设置副本"""
-        return schemas.Response(success=True, data=self.settings())
+    def api_settings(self, key: str | None = None):
+        """读取指定 Pet 的有效设置；不支持的入口形象和失效 ID 明确失败"""
+        if key is not None and not self._is_stage_pet(key):
+            return schemas.Response(success=False, message="此 Pet 不支持独立活动设置或已不存在")
+        return schemas.Response(success=True, data=self.settings(key))
 
     def api_editor(self):
         """编辑页只取得必要的状态与形象，不暴露其他配置。"""
@@ -217,34 +265,88 @@ class AgentPets(_PluginBase):
                 "description": pet.get("description", ""),
                 "mode": pet["mode"],
                 "preview": pet.get("avatar") or pet.get("preview") or "",
-                "builtin": pet["key"] in (STAGE_KEY, BUILTIN_PACK_ID),
+                "builtin": pet["key"] in (STAGE_KEY, *BUILTIN_PACK_IDS),
             }
             for pet in self.get_agent_pets()
         ]
         return schemas.Response(success=True, data={
             "enabled": self._enabled, "settings": self.settings(), "pets": pets,
+            "pet_settings": {pet["key"]: self._appearance(self.settings(pet["key"]), self._settings)
+                             for pet in pets if pet["mode"] == "stage"},
         })
 
+    def _persist_settings(self, config: dict, changes: dict):
+        """合并局部配置，确认保存与完整回读后才更新运行态"""
+        config.update(changes)
+        if self.update_config(config) is False:
+            return schemas.Response(success=False, message="活动设置保存失败，请重试")
+        persisted = self.get_config() or {}
+        if any(persisted.get(key) != value for key, value in changes.items()):
+            return schemas.Response(success=False, message="活动设置回读不一致，请刷新后核对")
+        self._load_settings(persisted)
+        return None
+
     def api_save_settings(self, request: SaveSettingsRequest):
-        """合并并回读活动设置；持久化失败时不改变运行中的参数。"""
-        values = request.model_dump()
-        values["scale"] = round(values["scale"], 2)
-        values["speed"] = round(values["speed"], 2)
-        try:
-            config = dict(self.get_config() or {})
-            if "movement" not in request.model_fields_set:
-                values["movement"] = "fixed" if config.get("movement") == "fixed" else "auto"
-            config.update(values)
-            if self.update_config(config) is False:
-                return schemas.Response(success=False, message="活动设置保存失败，请重试")
-            persisted = self.get_config() or {}
-            if any(persisted.get(key) != value for key, value in values.items()):
-                return schemas.Response(success=False, message="活动设置回读不一致，请刷新后重试")
-        except (OSError, RuntimeError, ValueError):
-            logger.error("助手形象：保存活动设置失败")
-            return schemas.Response(success=False, message="活动设置保存失败，请查看插件日志")
-        self._settings = values
-        return schemas.Response(success=True, data=self.settings())
+        """兼容旧客户端的默认设置保存；保留每只 Pet 的独立值。"""
+        with self._settings_lock:
+            try:
+                config = dict(self.get_config() or {})
+                values = request.model_dump()
+                values.update(self._appearance(values, self._settings))
+                if "movement" not in request.model_fields_set:
+                    values["movement"] = "fixed" if config.get("movement") == "fixed" else "auto"
+                failure = self._persist_settings(config, values)
+                return failure if failure is not None else schemas.Response(success=True, data=self.settings())
+            except (OSError, RuntimeError, ValueError):
+                logger.error("助手形象：保存默认活动设置失败")
+                return schemas.Response(success=False, message="活动设置保存失败，请刷新后核对")
+
+    def api_save_pet_settings(self, request: SavePetSettingsRequest):
+        """核对单只 Pet 的旧值后保存独立参数，旧客户端不覆盖角度"""
+        with self._settings_lock:
+            try:
+                if not self._is_stage_pet(request.key):
+                    return schemas.Response(success=False, message="此 Pet 不支持独立活动设置或已不存在")
+                config = dict(self.get_config() or {})
+                defaults = self._appearance(config, DEFAULT_SETTINGS)
+                raw = config.get("pet_settings")
+                overrides = dict(raw) if isinstance(raw, dict) else {}
+                existing = overrides.get(request.key)
+                current = self._appearance(existing if isinstance(existing, dict) else {}, defaults)
+                expected = self._appearance(request.expected.model_dump(exclude_none=True), defaults)
+                compared = current if request.peek_angles is not None else {k: v for k, v in current.items() if k != "peek_angles"}
+                if request.peek_angles is None:
+                    expected.pop("peek_angles", None)
+                if compared != expected:
+                    return schemas.Response(success=False, message="此 Pet 的大小、速度或偷看角度已在其他页面更改，请刷新后核对")
+                values = self._appearance(request.model_dump(exclude_none=True), defaults)
+                if request.peek_angles is None and "peek_angles" in current:
+                    values["peek_angles"] = current["peek_angles"]
+                overrides[request.key] = values
+                failure = self._persist_settings(config, {"pet_settings": overrides})
+                return failure if failure is not None else schemas.Response(
+                    success=True, data={"key": request.key, **values})
+            except (OSError, RuntimeError, ValueError):
+                logger.error("助手形象：保存 Pet 独立活动设置失败")
+                return schemas.Response(success=False, message="Pet 活动设置保存失败，请刷新后核对")
+
+    def api_save_shared_settings(self, request: SaveSharedSettingsRequest):
+        """核对旧值后仅更新共享活动方式与范围，保留独立大小和速度"""
+        with self._settings_lock:
+            try:
+                config = dict(self.get_config() or {})
+                current = {
+                    "roam": config.get("roam") if config.get("roam") in ROAM_MODES else DEFAULT_SETTINGS["roam"],
+                    "movement": "fixed" if config.get("movement") == "fixed" else "auto",
+                }
+                if current != request.expected.model_dump():
+                    return schemas.Response(success=False, message="共享活动方式或范围已在其他页面更改，请刷新后核对")
+                values = request.model_dump(exclude={"expected"})
+                failure = self._persist_settings(config, values)
+                return failure if failure is not None else schemas.Response(success=True, data=values)
+            except (OSError, RuntimeError, ValueError):
+                logger.error("助手形象：保存共享活动设置失败")
+                return schemas.Response(success=False, message="共享活动设置保存失败，请刷新后核对")
 
     @staticmethod
     def _summary(record: dict[str, Any], builtin: bool = False) -> dict[str, Any]:
@@ -254,9 +356,9 @@ class AgentPets(_PluginBase):
             "name": record["name"],
             "description": record.get("description") or "",
             "builtin": builtin,
-            "mode": "stage" if codex_pet_version(record) else "renderer",
+            "mode": "stage" if record["id"] in BUILTIN_STAGE_PACKS or codex_pet_version(record) else "renderer",
             "source": "builtin" if builtin else record.get("source", ""),
-            "preview": BUILTIN_PREVIEW if builtin else record.get("preview", ""),
+            "preview": f"packs/{record['id']}/preview.png" if builtin else record.get("preview", ""),
             "grid": record.get("grid"),
             "frame_count": len(record.get("frames") or {}),
             "action_count": len(record.get("actions") or {}),
@@ -267,14 +369,18 @@ class AgentPets(_PluginBase):
 
     def api_packs(self):
         """素材包列表，内置在前。"""
-        packs = [self._summary(self.builtin_pack(), builtin=True)]
+        packs = [self._summary(self.builtin_pack(key), builtin=True) for key in BUILTIN_PACK_IDS]
         packs += [self._summary(record) for record in self._store().list()]
         return schemas.Response(success=True, data=packs)
 
     def api_pack(self, key: str = BUILTIN_PACK_ID):
         """素材包组件读取的完整素材包；内置素材包的精灵图由前端从联邦产物加载。"""
-        if key == BUILTIN_PACK_ID:
-            return schemas.Response(success=True, data={"pack": dict(self.builtin_pack()), "builtin": True, "sheet_src": ""})
+        if key in BUILTIN_PACK_IDS:
+            calibration = self.api_builtin_calibration(key)
+            if not calibration.success:
+                return calibration
+            pack = {**self.builtin_pack(key), "calibration": calibration.data.calibration}
+            return schemas.Response(success=True, data={"pack": pack, "builtin": True, "sheet_src": ""})
         store = self._store()
         record = store.get(key)
         if not record:
@@ -372,13 +478,73 @@ class AgentPets(_PluginBase):
             return schemas.Response(success=False, message=str(exc))
         return schemas.Response(success=True, data={"id": record["id"], "mappings": record.get("action_mappings", {})})
 
+    def api_save_description(self, request: SaveDescriptionRequest):
+        """核对旧备注后局部保存，失败不报告成功或覆盖其他素材字段"""
+        try:
+            record = self._store().update(request.id, description=request.description,
+                                         expected_description=request.expected_description)
+        except (PackError, OSError, RuntimeError) as exc:
+            return schemas.Response[PackDescriptionData](success=False, message=str(exc))
+        return schemas.Response[PackDescriptionData](
+            success=True, data=PackDescriptionData(id=record["id"], description=record["description"]))
+
+    def _builtin_default_calibration(self, key: str) -> dict[str, float | None]:
+        """内置标定来自原始素材；小映复用逐帧舞台的初始眼位。"""
+        if key == STAGE_KEY:
+            return parse_calibration({"eye_x": 0.5, "eye_y": 0.38})
+        if key not in BUILTIN_PACK_IDS:
+            raise PackError("此内置形象不存在")
+        return parse_calibration(self.builtin_pack(key).get("calibration"))
+
+    def _builtin_calibration(self, key: str, config: dict) -> dict[str, float | None]:
+        """只叠加当前实例的校准，不改共享内置素材缓存。"""
+        default = self._builtin_default_calibration(key)
+        overrides = config.get("builtin_calibrations")
+        if not isinstance(overrides, dict) or key not in overrides:
+            return default
+        return parse_calibration(overrides[key])
+
+    def api_builtin_calibration(self, key: str):
+        """轻量读取内置校准；不传输图片，也不创建默认配置。"""
+        with self._settings_lock:
+            try:
+                value = self._builtin_calibration(key, self.get_config() or {})
+                return schemas.Response[CalibrationData](
+                    success=True, data=CalibrationData(id=key, calibration=value))
+            except (PackError, OSError, RuntimeError) as exc:
+                return schemas.Response[CalibrationData](success=False, message=str(exc))
+
+    def _save_builtin_calibration(self, request: SaveCalibrationRequest):
+        """核对最新旧值，按稳定 ID 保存覆盖；默认值移除该 Pet 的覆盖。"""
+        with self._settings_lock:
+            config = dict(self.get_config() or {})
+            current = self._builtin_calibration(request.id, config)
+            if current != parse_calibration(request.expected_calibration):
+                raise PackError("显示校准已在其他页面更改，请刷新后重试")
+            value = parse_calibration(request.calibration)
+            if current != value:
+                raw = config.get("builtin_calibrations")
+                overrides = dict(raw) if isinstance(raw, dict) else {}
+                if value == self._builtin_default_calibration(request.id):
+                    overrides.pop(request.id, None)
+                else:
+                    overrides[request.id] = value
+                failure = self._persist_settings(config, {"builtin_calibrations": overrides})
+                if failure is not None:
+                    raise PackError("内置校准保存或回读失败，请刷新后核对")
+            return schemas.Response[CalibrationData](
+                success=True, data=CalibrationData(id=request.id, calibration=value))
+
     def api_save_calibration(self, request: SaveCalibrationRequest):
         """核对旧校准后保存并回读，不修改原始精灵图或动作"""
         try:
+            if request.id in (STAGE_KEY, *BUILTIN_PACK_IDS):
+                return self._save_builtin_calibration(request)
             record = self._store().calibrate(request.id, request.calibration, request.expected_calibration)
-            return schemas.Response(success=True, data={"id": record["id"], "calibration": record["calibration"]})
+            return schemas.Response[CalibrationData](
+                success=True, data=CalibrationData(id=record["id"], calibration=record["calibration"]))
         except (PackError, OSError, RuntimeError) as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[CalibrationData](success=False, message=str(exc))
 
     def api_suggest_calibration(self, key: str):
         """读取已上传图片生成校准建议，不保存草稿或下载 URL 素材"""
@@ -394,7 +560,7 @@ class AgentPets(_PluginBase):
 
     def api_delete_pack(self, request: DeletePackRequest):
         """拒绝删除内置素材，先确认记录移除再回收图片并返回操作结果"""
-        if request.id == BUILTIN_PACK_ID:
+        if request.id in BUILTIN_PACK_IDS:
             return schemas.Response(success=False, message="内置素材包不能删除")
         try:
             if not self._store().remove(request.id):
@@ -411,6 +577,16 @@ class AgentPets(_PluginBase):
         """形象对所有登录用户显示，读取接口只要求登录；素材包写接口额外要求管理员。"""
         admin = [Depends(require_admin)]
         return [
+            {
+                "path": "/settings/pet", "endpoint": self.api_save_pet_settings, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "保存单只 Pet 的大小和速度",
+                "response_model": schemas.Response[dict],
+            },
+            {
+                "path": "/settings/shared", "endpoint": self.api_save_shared_settings, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "保存共享活动方式和范围",
+                "response_model": schemas.Response[dict],
+            },
             {
                 "path": "/markets", "endpoint": self.api_markets, "methods": ["GET"],
                 "auth": "bear", "summary": "已接入的在线形象市场",
@@ -432,9 +608,14 @@ class AgentPets(_PluginBase):
                 "response_model": schemas.Response[dict],
             },
             {
+                "path": "/packs/calibration", "endpoint": self.api_builtin_calibration, "methods": ["GET"],
+                "auth": "bear", "summary": "读取内置形象显示校准",
+                "response_model": schemas.Response[CalibrationData],
+            },
+            {
                 "path": "/packs/calibration", "endpoint": self.api_save_calibration, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "保存素材显示校准",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[CalibrationData],
             },
             {
                 "path": "/packs/calibration/suggest", "endpoint": self.api_suggest_calibration, "methods": ["GET"],
@@ -450,6 +631,11 @@ class AgentPets(_PluginBase):
                 "path": "/packs/mappings", "endpoint": self.api_save_mappings, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "保存 Codex Pet 动作映射",
                 "response_model": schemas.Response[dict],
+            },
+            {
+                "path": "/packs/description", "endpoint": self.api_save_description, "methods": ["POST"],
+                "auth": "bear", "dependencies": list(admin), "summary": "保存导入 Codex Pet 的备注",
+                "response_model": schemas.Response[PackDescriptionData],
             },
             {
                 "path": "/editor",

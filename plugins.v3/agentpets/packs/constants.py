@@ -10,8 +10,15 @@ ID_PATTERN = re.compile(r"[a-z0-9_-]{1,32}")
 NAME_PATTERN = re.compile(r"[a-z0-9_-]{1,32}")
 
 BUILTIN_PACK_ID = "projector-cat"
+BUILTIN_STAGE_PACKS = {
+    "builtin-chibiterasu": "小天照",
+    "builtin-nailong": "奶龙",
+    "builtin-kurisu": "克里斯蒂娜助手",
+    "builtin-kurisu-z256": "克里斯蒂娜（z256专属）",
+}
+BUILTIN_PACK_IDS = (BUILTIN_PACK_ID, *BUILTIN_STAGE_PACKS)
 
-RESERVED_IDS = frozenset({BUILTIN_PACK_ID, "ying"})
+RESERVED_IDS = frozenset({*BUILTIN_PACK_IDS, "ying"})
 
 HOST_ACTIONS = (
     "wave", "sit", "eye-roll", "faint", "disassemble", "happy-jump", "sleep", "stretch",
@@ -59,11 +66,15 @@ IMAGE_TYPES = {
 }
 
 DEFAULT_CALIBRATION = {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0,
-                       "baseline": 1.0, "offset_x": 0.0, "offset_y": 0.0}
+                       "baseline": 1.0, "offset_x": 0.0, "offset_y": 0.0,
+                       "eye_x": None, "eye_y": None,
+                       "left_eye_x": None, "left_eye_y": None,
+                       "right_eye_x": None, "right_eye_y": None,
+                       "head_top_x": None, "head_top_y": None}
 
 STAGE_TRIGGERS = (
     "idle", "blink", "talk", "think", "jump", "wave", "held", "fall", "sit",
-    "walk-left", "walk-right", "doze", "confused", "alert", "victory", "busy",
+    "walk-left", "walk-right", "doze", "confused", "alert", "victory", "busy", "peek",
 )
 
 MAPPING_KEYS = frozenset(
@@ -75,7 +86,7 @@ MAPPING_KEYS = frozenset(
 CODEX_ACTIONS = (
     "idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review",
     "wave", "notify", "happy-jump", "success", "faint", "error", "thinking", "charge", "speaking", "warning",
-    "eye-roll", "scan",
+    "eye-roll", "scan", "peek",
 )
 
 LOOK_DIRECTIONS = (

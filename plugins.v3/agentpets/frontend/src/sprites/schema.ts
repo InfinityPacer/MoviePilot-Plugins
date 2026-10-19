@@ -1,5 +1,9 @@
 import { parseCalibration, type Calibration } from './calibration'
 import builtinPackJson from '@/assets/packs/projector-cat/pack.json'
+import chibiterasuPackJson from '@/assets/packs/builtin-chibiterasu/pack.json'
+import nailongPackJson from '@/assets/packs/builtin-nailong/pack.json'
+import kurisuPackJson from '@/assets/packs/builtin-kurisu/pack.json'
+import z256KurisuPackJson from '@/assets/packs/builtin-kurisu-z256/pack.json'
 
 /** 宿主 renderer 模式的动作名，random_actions 只能取其中的值。 */
 export const HOST_ACTIONS = [
@@ -162,6 +166,7 @@ export function buildCodexPetPack(
     warning: action(rowFrames.review, 180),
     'eye-roll': action(rowFrames.review, 180),
     scan: action(scanFrames, 140),
+    peek: action([rowFrames.idle[0]]),
     ...Object.fromEntries(lookFrames.map(frame => [frame, action([frame])])),
   }
 
@@ -187,6 +192,8 @@ export interface PackAction {
   frames: string[]
   /** 每帧停留毫秒数。 */
   frame_ms: number
+  /** Optional individual timings for imported frame animations. */
+  frame_durations?: number[]
   /** 播完是否从头循环；否则停在最后一帧。 */
   loop: boolean
 }
@@ -210,6 +217,8 @@ export interface SpritePack {
   /** 用户映射覆盖；原始 actions 保持不变。 */
   action_mappings?: Record<string, string>
   calibration?: Calibration
+  /** Built-in atlas support baselines; frames keep their native relative offsets. */
+  action_baselines?: Record<string, number>
   preview?: string
   avatar?: string
 }
@@ -290,6 +299,15 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
       const frameMs = integer(entry?.frame_ms ?? DEFAULT_FRAME_MS, `actions.${key}.frame_ms`, 40, 5000, errors)
       if (entry?.loop !== undefined && typeof entry.loop !== 'boolean') errors.push(`actions.${key}.loop 必须是布尔值`)
       actions[key] = { frames: sequence as string[], frame_ms: frameMs, loop: entry?.loop === true }
+      const durations = entry?.frame_durations
+      if (durations !== undefined && durations !== null) {
+        if (!Array.isArray(durations) || durations.length !== sequence.length)
+          errors.push(`actions.${key}.frame_durations 必须与帧序列等长`)
+        else
+          actions[key].frame_durations = durations.map(value =>
+            integer(value, `actions.${key}.frame_durations`, 40, 5000, errors),
+          )
+      }
     }
   }
 
@@ -307,8 +325,19 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
   }
   const sheet = typeof data.sheet === 'string' ? data.sheet : ''
   let calibration: Calibration | undefined
+  const actionBaselines: Record<string, number> = {}
   try {
     calibration = parseCalibration(data.calibration)
+    if (data.action_baselines !== undefined) {
+      if (!['builtin-chibiterasu', 'builtin-nailong', 'builtin-kurisu'].includes(String(id)))
+        throw new Error('action_baselines 仅供内置逐帧形象使用')
+      if (!data.action_baselines || typeof data.action_baselines !== 'object' || Array.isArray(data.action_baselines))
+        throw new Error('action_baselines 必须是动作名到基线的对象')
+      for (const [action, baseline] of Object.entries(data.action_baselines)) {
+        if (!Object.hasOwn(actions, action)) throw new Error('action_baselines 引用了未定义的动作')
+        actionBaselines[action] = parseCalibration({ ...calibration, baseline }).baseline
+      }
+    }
   } catch (reason) {
     errors.push((reason as Error).message)
   }
@@ -325,6 +354,7 @@ export function validatePack(raw: unknown): { pack: SpritePack | null; errors: s
       actions,
       random_actions: [...new Set(randomActions as string[])],
       calibration,
+      ...(data.action_baselines !== undefined ? { action_baselines: actionBaselines } : {}),
       preview: typeof data.preview === 'string' ? data.preview : '',
       avatar: typeof data.avatar === 'string' ? data.avatar : '',
       action_mappings: Object.fromEntries(
@@ -344,6 +374,15 @@ export function withCodexStageActions(pack: SpritePack): SpritePack {
   const defaults = buildCodexPetPack(pack.id, layout.width, layout.height).pack
   const frames = { ...pack.frames }
   const actions = { ...pack.actions }
+  // 只纠正旧版自动生成的探头别名，不写回素材，也不覆盖显式映射。
+  const oldPeek = actions.peek
+  const oldPeekIndices = layout.version === 'v2' ? [72, 84] : [64]
+  const legacyPeek =
+    oldPeek?.frames.length === 1 &&
+    oldPeekIndices.includes(frames[oldPeek.frames[0]]) &&
+    oldPeek.frame_ms === 160 &&
+    !oldPeek.loop &&
+    !Object.values(pack.action_mappings ?? {}).includes('peek')
   const namesByIndex = new Map(Object.entries(frames).map(([name, index]) => [index, name]))
 
   function frameName(index: number): string {
@@ -357,25 +396,36 @@ export function withCodexStageActions(pack: SpritePack): SpritePack {
   }
 
   for (const [key, action] of Object.entries(defaults.actions)) {
-    if (actions[key]) continue
+    if (actions[key] && !(key === 'peek' && legacyPeek)) continue
     actions[key] = { ...action, frames: action.frames.map(name => frameName(defaults.frames[name])) }
   }
   return { ...pack, frames, actions }
 }
 
 /** 内置放映猫素材包；精灵图随构建原名复制到 `assets/packs/projector-cat/`。 */
-export const BUILTIN_PACK: SpritePack = (() => {
-  const { pack } = validatePack(builtinPackJson)
-  if (!pack) throw new Error('builtin pack is invalid')
-  return { ...pack, id: BUILTIN_PACK_ID }
-})()
+const builtinSources: Record<string, unknown> = {
+  [BUILTIN_PACK_ID]: builtinPackJson,
+  'builtin-chibiterasu': chibiterasuPackJson,
+  'builtin-nailong': nailongPackJson,
+  'builtin-kurisu': kurisuPackJson,
+  'builtin-kurisu-z256': z256KurisuPackJson,
+}
+export const BUILTIN_PACKS: Readonly<Record<string, SpritePack>> = Object.fromEntries(
+  Object.entries(builtinSources).map(([id, source]) => {
+    const { pack } = validatePack(source)
+    if (!pack) throw new Error(`Invalid built-in pack: ${id}`)
+    return [id, withCodexStageActions({ ...pack, id })]
+  }),
+)
+export const BUILTIN_PACK = BUILTIN_PACKS[BUILTIN_PACK_ID]
 
 // 先存成变量再交给 URL，避免 Vite 把 `new URL(..., import.meta.url)` 当作静态资源再打包一份。
 const ASSET_BASE = import.meta.url
 
 /** 内置素材包内文件的绝对地址。 */
-export function builtinAsset(file: string, base: string = ASSET_BASE): string {
-  return new URL(`packs/${BUILTIN_PACK_ID}/${file}`, base).href
+export function builtinAsset(file: string, base: string = ASSET_BASE, key = BUILTIN_PACK_ID): string {
+  if (!Object.hasOwn(BUILTIN_PACKS, key)) throw new Error('Unknown built-in pack')
+  return new URL(`packs/${key}/${file}`, base).href
 }
 
 /**
@@ -397,6 +447,7 @@ export function resolveAction(
   const candidates = [
     options.mappingKey ? mappings[options.mappingKey] : null,
     action ? (mappings[`action.${action}`] ?? action) : null,
+    action === 'peek' ? 'idle' : null,
     intent ? (mappings[`intent.${intent}`] ?? intent) : null,
     thinking ? (mappings['intent.thinking'] ?? 'thinking') : null,
     'idle',

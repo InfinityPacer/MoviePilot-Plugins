@@ -4,8 +4,8 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import {
   loadEditor,
   loadHostSelection,
-  sameSettings,
-  saveSettings,
+  savePetSettings,
+  saveSharedSettings,
   saveMappings,
   saveCalibration,
   type EditorSnapshot,
@@ -15,17 +15,18 @@ import { PACK_UPDATED_EVENT, sameMappings, type ActionMappings } from '@/sprites
 import { parseCalibration, sameCalibration, type Calibration } from '@/sprites/calibration'
 import type { SpritePack } from '@/sprites/schema'
 import PetPreview from '@/editor/PetPreview.vue'
+import { usePetSettings } from '@/editor/settings'
 import { builtinAvatar } from '@/editor/avatars'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
-import { DEFAULT_SETTINGS, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
+import { SETTINGS_EVENT } from '@/stage/settings'
+import { normalizePeekAngles } from '@/stage/peek'
 import StageSettings from '@/stage/StageSettings.vue'
 
-const props = withDefaults(defineProps<{ api?: PluginApi | null; pluginId?: string; sourcePluginId?: string }>(), {
-  api: null,
-  pluginId: '',
-  sourcePluginId: '',
-})
+const props = withDefaults(
+  defineProps<{ api?: PluginApi | null; pluginId?: string; sourcePluginId?: string; show_switch?: boolean }>(),
+  { api: null, pluginId: '', sourcePluginId: '', show_switch: true },
+)
 const emit = defineEmits<{ close: []; switch: []; layout: [{ maxWidth: string }] }>()
 emit('layout', { maxWidth: '72rem' })
 const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
@@ -34,8 +35,9 @@ const avatar = builtinAvatar('ying')
 const avatarFailed = ref(false)
 const selection = ref<HostSelection | null>(null)
 const selectedKey = ref('')
-const draft = ref<YingSettings>({ ...DEFAULT_SETTINGS })
-const saved = ref<YingSettings>({ ...DEFAULT_SETTINGS })
+const activity = usePetSettings(selectedKey)
+const draft = activity.draft
+const settingsConflict = activity.hasConflict
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
@@ -67,19 +69,17 @@ const mappingDirtyKeys = computed(() =>
 )
 function onPackReady(pack: SpritePack) {
   const key = selectedKey.value
-  if (!currentPet.value?.builtin) {
-    const latest = parseCalibration(pack.calibration)
-    const baseline = calibrationSaved.value[key]
-    if (baseline && !sameCalibration(calibrationDrafts.value[key], baseline)) {
-      if (!sameCalibration(latest, baseline)) calibrationConflicts.value[key] = latest
-      else delete calibrationConflicts.value[key]
-    } else {
-      calibrationSaved.value[key] = latest
-      calibrationDrafts.value[key] = { ...latest }
-      delete calibrationConflicts.value[key]
-    }
+  const latestCalibration = parseCalibration(pack.calibration)
+  const savedCalibration = calibrationSaved.value[key]
+  if (savedCalibration && !sameCalibration(calibrationDrafts.value[key], savedCalibration)) {
+    if (!sameCalibration(latestCalibration, savedCalibration)) calibrationConflicts.value[key] = latestCalibration
+    else delete calibrationConflicts.value[key]
+  } else {
+    calibrationSaved.value[key] = latestCalibration
+    calibrationDrafts.value[key] = { ...latestCalibration }
+    delete calibrationConflicts.value[key]
   }
-  if (!pack.codex_version) return
+  if (!pack.codex_version || currentPet.value?.builtin) return
   const latest = { ...pack.action_mappings }
   const baseline = mappingSaved.value[key]
   const preserve = baseline && !sameMappings(mappingDrafts.value[key] ?? {}, baseline)
@@ -94,17 +94,12 @@ function onPackReady(pack: SpritePack) {
   mappingDrafts.value[key] = { ...latest }
 }
 const dirty = computed(
-  () =>
-    !sameSettings(draft.value, saved.value) ||
-    mappingDirtyKeys.value.length > 0 ||
-    calibrationDirtyKeys.value.length > 0,
+  () => activity.dirty.value || mappingDirtyKeys.value.length > 0 || calibrationDirtyKeys.value.length > 0,
 )
 const changedNames = computed(() =>
   [
-    draft.value.scale !== saved.value.scale ? '大小' : '',
-    draft.value.speed !== saved.value.speed ? '速度' : '',
-    draft.value.roam !== saved.value.roam ? '活动范围' : '',
-    draft.value.movement !== saved.value.movement ? '活动方式' : '',
+    activity.dirtyKeys.value.length ? `${activity.dirtyKeys.value.length} 只 Pet 的独立设置` : '',
+    activity.sharedDirty.value ? '共享活动方式与范围' : '',
     mappingDirtyKeys.value.length ? `${mappingDirtyKeys.value.length} 只 Pet 的动作映射` : '',
     calibrationDirtyKeys.value.length ? `${calibrationDirtyKeys.value.length} 只 Pet 的显示校准` : '',
   ].filter(Boolean),
@@ -141,7 +136,6 @@ async function refresh(reset = false) {
     hostError.value = '当前系统默认形象暂不可读，仍可预览和保存调整。'
   }
   if (editor.status === 'fulfilled') {
-    const preserveDraft = !reset && dirty.value
     snapshot.value = editor.value
     for (const values of [calibrationDrafts, calibrationSaved, calibrationConflicts]) {
       for (const key of Object.keys(values.value))
@@ -155,8 +149,7 @@ async function refresh(reset = false) {
       }
     }
     previewVersion.value++
-    saved.value = { ...editor.value.settings }
-    if (!preserveDraft) draft.value = { ...saved.value }
+    activity.receive(editor.value, reset)
     if (!editor.value.pets.some(pet => pet.key === selectedKey.value)) {
       selectedKey.value =
         editor.value.pets.find(pet => `${id}:${pet.key}` === selection.value?.defaultId)?.key ??
@@ -175,6 +168,7 @@ watch(
     snapshot.value = null
     selection.value = null
     selectedKey.value = ''
+    activity.clear()
     calibrationDrafts.value = {}
     calibrationSaved.value = {}
     calibrationConflicts.value = {}
@@ -200,7 +194,7 @@ function restore() {
   )
   mappingSaved.value = { ...mappingSaved.value, ...mappingConflicts.value }
   mappingConflicts.value = {}
-  draft.value = { ...saved.value }
+  activity.restore()
   mappingDrafts.value = Object.fromEntries(
     Object.entries(mappingSaved.value).map(([key, value]) => [key, { ...value }]),
   )
@@ -208,10 +202,21 @@ function restore() {
 }
 
 async function save() {
-  if (blocked.value || conflictingNames.value.length || !props.api || !currentPet.value) return
+  if (blocked.value || conflictingNames.value.length || activity.hasConflict.value || !props.api || !currentPet.value)
+    return
   const api = props.api
   const id = props.pluginId
-  const values = { ...draft.value }
+  const shared = activity.sharedDirty.value
+    ? {
+        values: { ...activity.sharedDraft.value },
+        expected: { ...activity.sharedSaved.value },
+      }
+    : null
+  const appearances = activity.dirtyKeys.value.map(key => ({
+    key,
+    values: { ...activity.drafts.value[key] },
+    expected: { ...activity.saved.value[key] },
+  }))
   const mappings = mappingDirtyKeys.value.map(key => ({
     key,
     values: { ...mappingDrafts.value[key] },
@@ -227,11 +232,18 @@ async function save() {
   busy.value = true
   feedback.value = ''
   try {
-    if (!sameSettings(values, saved.value)) {
-      const result = await saveSettings(api, id, values)
+    if (shared) {
+      const result = await saveSharedSettings(api, id, shared.values, shared.expected)
       if (!current()) return
-      saved.value = { ...result }
+      activity.sharedSaved.value = { ...result }
       agent?.emit?.(SETTINGS_EVENT, { ...result })
+    }
+    for (const item of appearances) {
+      if (!current()) return
+      const result = await savePetSettings(api, id, item.key, item.values, item.expected)
+      if (!current()) return
+      activity.saved.value[item.key] = { ...result }
+      agent?.emit?.(SETTINGS_EVENT, { key: item.key, ...result, peek_angles: normalizePeekAngles(result.peek_angles) })
     }
     for (const item of mappings) {
       if (!current()) return
@@ -260,7 +272,7 @@ async function save() {
 </script>
 
 <template>
-  <section class="ap-page">
+  <section class="ap-page" data-agentpets-editor>
     <header class="ap-header">
       <div class="ap-brand">
         <img v-if="!avatarFailed" :src="avatar" alt="" class="ap-brand__avatar" @error="avatarFailed = true" />
@@ -283,6 +295,7 @@ async function save() {
           @click="refresh()"
         />
         <v-btn
+          v-if="show_switch"
           icon="mdi-cog-outline"
           aria-label="打开插件配置"
           variant="text"
@@ -309,6 +322,9 @@ async function save() {
         <v-alert v-if="hostError" type="warning" variant="tonal" density="compact" class="ap-result">{{
           hostError
         }}</v-alert>
+        <v-alert v-if="settingsConflict" type="warning" variant="tonal" density="compact" class="ap-result">
+          大小、速度、偷看角度或共享活动设置已在其他页面更改。已保留草稿；请点击「撤销」载入最新值后重新调整。
+        </v-alert>
         <v-alert v-if="conflictingNames.length" type="warning" variant="tonal" density="compact" class="ap-result">
           {{ conflictingNames.join('、') }}
           的素材调整已在其他页面更改。已保留你的草稿；请点击「撤销」载入最新值后重新调整。
@@ -357,6 +373,7 @@ async function save() {
           @pack-ready="onPackReady"
           @mappings="mappingDrafts[selectedKey] = $event"
           @calibration="calibrationDrafts[selectedKey] = $event"
+          @settings="draft = $event"
         >
           <template #activity>
             <p v-if="currentPet.description" class="ap-muted mb-3">{{ currentPet.description }}</p>
@@ -389,9 +406,14 @@ async function save() {
         <v-icon icon="mdi-paw-outline" size="44" color="primary" /><strong>{{
           error ? 'Pet 暂时未能加载' : '还没有可预览的 Pet'
         }}</strong
-        ><v-btn variant="tonal" color="primary" @click="error ? refresh() : emit('switch')">{{
-          error ? '重新加载' : '前往素材管理'
-        }}</v-btn>
+        ><v-btn
+          v-if="error || show_switch"
+          variant="tonal"
+          color="primary"
+          @click="error ? refresh() : emit('switch')"
+          >{{ error ? '重新加载' : '前往素材管理' }}</v-btn
+        >
+        <p v-else class="ap-muted">请从「插件 → 助手形象 → 设置」打开素材管理。</p>
       </div>
     </div>
     <footer class="ap-footer">
@@ -400,12 +422,17 @@ async function save() {
       >
       <span v-else class="ap-muted">预览中的调整不会自动保存</span>
       <div class="ap-footer__actions">
-        <v-btn variant="text" :disabled="blocked || (!dirty && !conflictingNames.length)" @click="restore">撤销</v-btn>
+        <v-btn
+          variant="text"
+          :disabled="blocked || (!dirty && !conflictingNames.length && !settingsConflict)"
+          @click="restore"
+          >撤销</v-btn
+        >
         <v-btn
           variant="flat"
           color="primary"
           prepend-icon="mdi-content-save-outline"
-          :disabled="blocked || !dirty || conflictingNames.length > 0"
+          :disabled="blocked || !dirty || conflictingNames.length > 0 || settingsConflict"
           :loading="busy"
           @click="save"
           >保存调整</v-btn

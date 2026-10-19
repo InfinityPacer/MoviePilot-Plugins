@@ -1,0 +1,382 @@
+{
+  "id": "builtin-chibiterasu",
+  "name": "小天照",
+  "description": "shine lock专属",
+  "sheet": "sheet.webp",
+  "grid": {
+    "cols": 8,
+    "rows": 10
+  },
+  "frames": {
+    "frame-000": 0,
+    "frame-001": 1,
+    "frame-002": 2,
+    "frame-003": 3,
+    "frame-004": 4,
+    "frame-005": 5,
+    "frame-006": 6,
+    "frame-007": 7,
+    "frame-008": 8,
+    "frame-009": 9,
+    "frame-010": 10,
+    "frame-011": 11,
+    "frame-012": 12,
+    "frame-013": 13,
+    "frame-014": 14,
+    "frame-015": 15,
+    "frame-016": 16,
+    "frame-017": 17,
+    "frame-018": 18,
+    "frame-019": 19,
+    "frame-020": 20,
+    "frame-021": 21,
+    "frame-022": 22,
+    "frame-023": 23,
+    "frame-024": 24,
+    "frame-025": 25,
+    "frame-026": 26,
+    "frame-027": 27,
+    "frame-028": 28,
+    "frame-029": 29,
+    "frame-030": 30,
+    "frame-031": 31,
+    "frame-032": 32,
+    "frame-033": 33,
+    "frame-034": 34,
+    "frame-035": 35,
+    "frame-036": 36,
+    "frame-037": 37,
+    "frame-038": 38,
+    "frame-039": 39,
+    "frame-040": 40,
+    "frame-041": 41,
+    "frame-042": 42,
+    "frame-043": 43,
+    "frame-044": 44,
+    "frame-045": 45,
+    "frame-046": 46,
+    "frame-047": 47,
+    "frame-048": 48,
+    "frame-049": 49,
+    "frame-050": 50,
+    "frame-051": 51,
+    "frame-052": 52,
+    "frame-053": 53,
+    "frame-054": 54,
+    "frame-055": 55,
+    "frame-056": 56,
+    "frame-057": 57,
+    "frame-058": 58,
+    "frame-059": 59,
+    "frame-060": 60,
+    "frame-061": 61,
+    "frame-062": 62,
+    "frame-063": 63,
+    "frame-064": 64,
+    "frame-065": 65,
+    "frame-066": 66,
+    "frame-067": 67,
+    "frame-068": 68,
+    "frame-069": 69,
+    "frame-070": 70,
+    "frame-071": 71,
+    "frame-072": 72,
+    "frame-073": 73,
+    "frame-074": 74,
+    "frame-075": 75,
+    "frame-076": 76,
+    "frame-077": 77,
+    "frame-078": 78,
+    "idle": 0
+  },
+  "actions": {
+    "stand": {
+      "frames": ["frame-000", "frame-000"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "walk": {
+      "frames": ["frame-000", "frame-001", "frame-000", "frame-002"],
+      "frame_ms": 198,
+      "loop": true
+    },
+    "run": {
+      "frames": ["frame-003", "frame-004", "frame-005"],
+      "frame_ms": 165,
+      "loop": true,
+      "frame_durations": [165, 99, 99]
+    },
+    "dash": {
+      "frames": ["frame-006", "frame-004", "frame-005"],
+      "frame_ms": 165,
+      "loop": true,
+      "frame_durations": [165, 99, 99]
+    },
+    "sit": {
+      "frames": ["frame-007", "frame-007"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "relaxed-sit": {
+      "frames": ["frame-008", "frame-008"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "sit-feet-down": {
+      "frames": ["frame-009", "frame-009"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "dangle-feet": {
+      "frames": ["frame-010", "frame-011", "frame-010", "frame-012"],
+      "frame_ms": 825,
+      "loop": true
+    },
+    "look-up": {
+      "frames": ["frame-013", "frame-013"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "think": {
+      "frames": ["frame-013", "frame-013"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "lie": {
+      "frames": ["frame-014", "frame-014"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "crawl": {
+      "frames": ["frame-015", "frame-015", "frame-016", "frame-016", "frame-016"],
+      "frame_ms": 924,
+      "loop": true,
+      "frame_durations": [924, 132, 132, 132, 792]
+    },
+    "jump": {
+      "frames": ["frame-017", "frame-017"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "fall": {
+      "frames": ["frame-018", "frame-018"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "bounce": {
+      "frames": ["frame-019", "frame-020"],
+      "frame_ms": 132,
+      "loop": true
+    },
+    "hold-wall": {
+      "frames": ["frame-021", "frame-021"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "climb-wall-up": {
+      "frames": [
+        "frame-022",
+        "frame-022",
+        "frame-023",
+        "frame-024",
+        "frame-024",
+        "frame-024",
+        "frame-023",
+        "frame-022"
+      ],
+      "frame_ms": 528,
+      "loop": true,
+      "frame_durations": [528, 132, 132, 132, 528, 132, 132, 132]
+    },
+    "climb-wall-down": {
+      "frames": [
+        "frame-022",
+        "frame-022",
+        "frame-023",
+        "frame-024",
+        "frame-024",
+        "frame-024",
+        "frame-023",
+        "frame-022"
+      ],
+      "frame_ms": 528,
+      "loop": true,
+      "frame_durations": [528, 132, 132, 132, 528, 132, 132, 132]
+    },
+    "hold-ceiling": {
+      "frames": ["frame-025", "frame-025"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "crawl-ceiling": {
+      "frames": [
+        "frame-026",
+        "frame-027",
+        "frame-028",
+        "frame-029",
+        "frame-030",
+        "frame-029",
+        "frame-031",
+        "frame-032",
+        "frame-026"
+      ],
+      "frame_ms": 528,
+      "loop": true,
+      "frame_durations": [528, 132, 40, 66, 132, 99, 66, 165, 132]
+    },
+    "drag": {
+      "frames": ["frame-033", "frame-034", "frame-035", "frame-036", "frame-037"],
+      "frame_ms": 165,
+      "loop": true
+    },
+    "resist": {
+      "frames": ["frame-038", "frame-039", "frame-038", "frame-039", "frame-035"],
+      "frame_ms": 165,
+      "loop": true,
+      "frame_durations": [165, 165, 165, 165, 1650]
+    },
+    "pull-out": {
+      "frames": ["frame-000", "frame-040", "frame-041", "frame-042", "frame-041", "frame-042", "frame-043"],
+      "frame_ms": 528,
+      "loop": false,
+      "frame_durations": [528, 990, 660, 660, 330, 330, 1320]
+    },
+    "surprise": {
+      "frames": ["frame-000", "frame-040", "frame-041", "frame-042", "frame-043"],
+      "frame_ms": 528,
+      "loop": false,
+      "frame_durations": [528, 990, 660, 660, 1320]
+    },
+    "split": {
+      "frames": [
+        "frame-044",
+        "frame-045",
+        "frame-046",
+        "frame-047",
+        "frame-048",
+        "frame-049",
+        "frame-050",
+        "frame-051",
+        "frame-052",
+        "frame-053",
+        "frame-054",
+        "frame-055"
+      ],
+      "frame_ms": 594,
+      "loop": false,
+      "frame_durations": [594, 396, 396, 396, 396, 396, 396, 396, 594, 495, 330, 990]
+    },
+    "cheer": {
+      "frames": ["frame-044", "frame-045", "frame-046", "frame-047", "frame-048"],
+      "frame_ms": 594,
+      "loop": false,
+      "frame_durations": [594, 396, 396, 396, 594]
+    },
+    "spin-celebrate": {
+      "frames": [
+        "frame-045",
+        "frame-046",
+        "frame-047",
+        "frame-048",
+        "frame-050",
+        "frame-051",
+        "frame-052",
+        "frame-055"
+      ],
+      "frame_ms": 396,
+      "loop": false,
+      "frame_durations": [396, 396, 396, 396, 396, 396, 594, 990]
+    },
+    "idle": {
+      "frames": ["frame-000", "frame-000"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "follow": {
+      "frames": ["frame-006", "frame-004", "frame-005"],
+      "frame_ms": 165,
+      "loop": true,
+      "frame_durations": [165, 99, 99]
+    },
+    "land": {
+      "frames": ["frame-019", "frame-020"],
+      "frame_ms": 132,
+      "loop": true
+    },
+    "sleep": {
+      "frames": ["frame-014", "frame-014"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "grab-wall": {
+      "frames": ["frame-021", "frame-021"],
+      "frame_ms": 4125,
+      "loop": true
+    },
+    "climb-wall": {
+      "frames": [
+        "frame-022",
+        "frame-022",
+        "frame-023",
+        "frame-024",
+        "frame-024",
+        "frame-024",
+        "frame-023",
+        "frame-022"
+      ],
+      "frame_ms": 528,
+      "loop": true,
+      "frame_durations": [528, 132, 132, 132, 528, 132, 132, 132]
+    },
+    "running-left": {
+      "frames": ["frame-000", "frame-001", "frame-000", "frame-002"],
+      "frame_ms": 198,
+      "loop": true
+    },
+    "running-right": {
+      "frames": ["frame-056", "frame-057", "frame-056", "frame-058"],
+      "frame_ms": 198,
+      "loop": true
+    },
+    "peek": {
+      "frames": ["frame-000"],
+      "frame_ms": 160,
+      "loop": false
+    }
+  },
+  "random_actions": [],
+  "action_mappings": {
+    "stage.idle": "idle",
+    "stage.blink": "idle",
+    "stage.wave": "cheer",
+    "stage.talk": "cheer",
+    "stage.think": "think",
+    "stage.busy": "think",
+    "stage.alert": "surprise",
+    "stage.victory": "spin-celebrate",
+    "stage.confused": "surprise",
+    "stage.doze": "sleep",
+    "stage.held": "drag",
+    "stage.fall": "fall",
+    "stage.jump": "jump",
+    "stage.sit": "land",
+    "stage.peek": "peek",
+    "stage.walk-left": "running-left",
+    "stage.walk-right": "running-right"
+  },
+  "calibration": {
+    "left": 0,
+    "top": 0,
+    "right": 1,
+    "bottom": 1,
+    "baseline": 0.9928057553956835,
+    "offset_x": 0,
+    "offset_y": 0,
+    "left_eye_x": 0.2625,
+    "left_eye_y": 0.4245,
+    "right_eye_x": 0.4375,
+    "right_eye_y": 0.4245,
+    "head_top_x": 0.4188,
+    "head_top_y": 0.1439
+  }
+}

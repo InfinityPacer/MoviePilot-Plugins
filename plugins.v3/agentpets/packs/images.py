@@ -21,7 +21,7 @@ from .schema import (
 )
 
 
-def suggest_calibration(content: bytes, pack: dict[str, Any]) -> dict[str, float]:
+def suggest_calibration(content: bytes, pack: dict[str, Any]) -> dict[str, float | None]:
     """以全部已定义帧的透明边界合并参考框，以 idle 帧脚底给出建议。"""
     from PIL import Image
 

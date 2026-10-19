@@ -51,15 +51,19 @@ async function setup(motionAllowed = false, scale = 1, overrides: Partial<YingSe
   const button = view.container.querySelector('button')!
   const rect = () => anchors.at(-1)!
   const drop = (x: number, feet: number) => {
+    const peeking = !!button.closest('[data-peek-edge]')
+    const width = parseFloat((button.querySelector('.agent-pet-ying__artwork') as HTMLElement).style.width)
+    const grabX = peeking ? width / 2 : 10
+    const grabY = peeking ? 120 * scale * 0.3 : 10
     button.dispatchEvent(pointer('pointerdown', rect().x + 10, rect().y + 10))
-    window.dispatchEvent(pointer('pointermove', x + 10, feet - 120 * scale + 10))
-    window.dispatchEvent(pointer('pointerup', x + 10, feet - 120 * scale + 10))
+    window.dispatchEvent(pointer('pointermove', x + grabX, feet - 120 * scale + grabY))
+    window.dispatchEvent(pointer('pointerup', x + grabX, feet - 120 * scale + grabY))
   }
   const unmount = () => {
     view.unmount()
     host.dispose()
   }
-  return { host, pet, rect, anchors, drop, unmount }
+  return { host, pet, button, rect, anchors, drop, unmount }
 }
 
 afterEach(() => {
@@ -110,7 +114,9 @@ describe('desktop card placement', () => {
     box('button', new DOMRect(0, 0, 1280, 400))
     box('button', new DOMRect(0, 400, 1280, 400))
     await vi.advanceTimersByTimeAsync(2400)
-    expect(stage.rect().height).toBeGreaterThanOrEqual(48)
+    expect(parseFloat(stage.button.style.height)).toBeGreaterThanOrEqual(48)
+    expect(stage.rect().height).toBeGreaterThan(0)
+    expect(stage.rect().height).toBeLessThan(120 * scale)
     expect(stage.rect().y + stage.rect().height).toBeCloseTo(800)
     stage.drop(300, 300)
     await vi.advanceTimersByTimeAsync(64)

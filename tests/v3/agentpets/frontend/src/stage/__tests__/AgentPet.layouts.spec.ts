@@ -45,9 +45,13 @@ async function setup(width = 1280, mobile = false, floor = false, scale = 1) {
   const button = view.container.querySelector('button')!
   const rect = () => anchors.at(-1)!
   const drop = (x: number, feet: number) => {
+    const height = 120 * scale * (mobile ? 0.8 : 1)
+    const peeking = !!button.closest('[data-peek-edge]')
+    const grabX = peeking ? height / 2 : 10
+    const grabY = peeking ? height * 0.3 : 10
     button.dispatchEvent(pointer('pointerdown', rect().x + 10, rect().y + 10))
-    window.dispatchEvent(pointer('pointermove', x + 10, feet - rect().height + 10))
-    window.dispatchEvent(pointer('pointerup', x + 10, feet - rect().height + 10))
+    window.dispatchEvent(pointer('pointermove', x + grabX, feet - height + grabY))
+    window.dispatchEvent(pointer('pointerup', x + grabX, feet - height + grabY))
   }
   return {
     host,
@@ -185,16 +189,14 @@ describe('MP App Dock across viewport widths', () => {
   })
 })
 
-describe('whole-body mobile Dock clearance', () => {
-  it.each(['side', 'platform'] as const)('still prefers a clear %s before the full-body fallback', async clearSpot => {
+describe('eye-anchored mobile Dock clearance', () => {
+  it.each(['side', 'platform'] as const)('still prefers a clear %s before automatic sheltering', async clearSpot => {
     const stage = await setup(390, true)
     try {
       const rows = mobilePluginList()
       if (clearSpot === 'side') rows.at(-1)!.getBoundingClientRect = () => new DOMRect(16, 610, 160, 140)
       else rows[3].remove()
       mobileDock()
-      await vi.advanceTimersByTimeAsync(2200)
-      stage.drop(0, 696)
       await vi.advanceTimersByTimeAsync(2200)
       expect(stage.rect().height).toBe(96)
       expect(stage.button.style.clipPath).toBe('')
@@ -216,7 +218,7 @@ describe('whole-body mobile Dock clearance', () => {
     ['right', 1.3],
     ['left', 1.6],
     ['right', 1.6],
-  ] as const)('keeps the %s corner whole on clickable plugin rows at scale %s', async (side, scale) => {
+  ] as const)('keeps the %s corner eye visible and draggable at scale %s', async (side, scale) => {
     const stage = await setup(390, true, false, scale)
     try {
       mobilePluginList()
@@ -226,11 +228,15 @@ describe('whole-body mobile Dock clearance', () => {
       const edge = side === 'left' ? 0 : 390 - height
       stage.drop(edge, 696)
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().x).toBeCloseTo(edge)
-      expect(stage.rect().y + stage.rect().height).toBeCloseTo(696)
-      expect(stage.rect().height).toBeCloseTo(height)
+      if (side === 'left') expect(stage.rect().x).toBeCloseTo(0)
+      else expect(stage.rect().x + stage.rect().width).toBeCloseTo(390)
+      expect(stage.rect().y + stage.rect().height).toBeCloseTo(704)
+      expect(stage.rect().height).toBeGreaterThan(0)
+      expect(stage.rect().height).toBeLessThan(height)
+      expect(parseFloat(stage.button.style.height)).toBeGreaterThanOrEqual(48)
       expect(stage.button.style.clipPath).toBe('')
-      expect(stage.button.closest('.agent-pet-ying')?.getAttribute('data-motion')).toBe('idle')
+      expect(stage.button.closest('.agent-pet-ying')?.getAttribute('data-motion')).toBe('peek')
+      const parked = { ...stage.rect() }
 
       // Remaining controls must not trigger repeated walks or shrink the fallback again.
       vi.mocked(Math.random).mockReturnValue(0.1)
@@ -239,9 +245,7 @@ describe('whole-body mobile Dock clearance', () => {
       await vi.advanceTimersByTimeAsync(16000)
       for (const frame of stage.anchors.slice(start)) {
         if (frame) {
-          expect(frame.x).toBeCloseTo(edge)
-          expect(frame.height).toBeCloseTo(height)
-          expect(frame.y + frame.height).toBeCloseTo(696)
+          expect(frame).toEqual(parked)
         }
       }
     } finally {
@@ -249,61 +253,66 @@ describe('whole-body mobile Dock clearance', () => {
     }
   })
 
-  it('keeps random edge peeks whole above the mobile Dock', async () => {
+  it('allows random peeks to touch the mobile Dock rather than leaving a gap', async () => {
     const stage = await setup(390, true, true)
     try {
       mobileDock()
-      await vi.advanceTimersByTimeAsync(2200)
-      stage.drop(0, 696)
       await vi.advanceTimersByTimeAsync(2200)
       vi.mocked(Math.random).mockReturnValue(0.1)
       stage.host.patch({ motionAllowed: true })
       const start = stage.anchors.length
       await vi.advanceTimersByTimeAsync(16000)
-      expect(stage.rect().height).toBe(96)
-      for (const frame of stage.anchors.slice(start)) {
-        if (frame) expect(frame.height).toBe(96)
-      }
+      expect(
+        stage.anchors
+          .slice(start)
+          .some(frame => frame && frame.height < 96 && Math.abs(frame.y + frame.height - 704) < 0.01),
+      ).toBe(true)
       expect(stage.button.style.clipPath).toBe('')
     } finally {
       stage.unmount()
     }
   })
 
-  it('restores a sheltered body when the Dock appears and retains no-Dock sheltering', async () => {
+  it('moves a stable eye from the screen edge to the Dock and back', async () => {
     const stage = await setup(390, true)
     try {
       mobilePluginList()
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().height).toBe(48)
+      const height = stage.rect().height
+      expect(height).toBeGreaterThan(0)
+      expect(height).toBeLessThan(96)
       const dock = mobileDock()
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().height).toBe(96)
-      expect(stage.rect().y + stage.rect().height).toBeCloseTo(696)
+      expect(stage.rect().height).toBeCloseTo(height)
+      expect(stage.rect().y + stage.rect().height).toBeCloseTo(704)
       expect(stage.button.style.clipPath).toBe('')
       dock.remove()
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().height).toBe(48)
+      expect(stage.rect().height).toBeCloseTo(height)
       expect(stage.rect().y + stage.rect().height).toBeCloseTo(800)
     } finally {
       stage.unmount()
     }
   })
 
-  it('preserves desktop sheltering and restores the full mobile body after a layout switch', async () => {
+  it('recalculates the same eye after switching desktop and mobile scale', async () => {
     const stage = await setup(390, false)
     try {
       mobilePluginList()
       mobileDock()
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().height).toBe(48)
+      const height = stage.rect().height
+      expect(height).toBeLessThan(120)
       stage.host.patch({ isMobile: true })
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().height).toBe(96)
+      expect(stage.rect().height).toBeGreaterThan(0)
+      expect(stage.rect().height).toBeLessThan(96)
+      expect(stage.rect().y + stage.rect().height).toBeCloseTo(704)
+      expect(parseFloat(stage.button.style.height)).toBeGreaterThanOrEqual(48)
       expect(stage.button.style.clipPath).toBe('')
       stage.host.patch({ isMobile: false })
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().height).toBe(48)
+      expect(stage.rect().height).toBeCloseTo(height)
     } finally {
       stage.unmount()
     }
@@ -315,7 +324,7 @@ describe('whole-body mobile Dock clearance', () => {
       const rows = mobilePluginList()
       mobileDock()
       await vi.advanceTimersByTimeAsync(2200)
-      expect(stage.rect().height).toBe(96)
+      expect(stage.rect().height).toBeLessThan(96)
       const edge = stage.rect().x
       rows.forEach(row => row.classList.remove('v-card--link'))
       vi.mocked(Math.random).mockReturnValue(0.5)

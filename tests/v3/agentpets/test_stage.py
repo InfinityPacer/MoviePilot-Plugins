@@ -14,6 +14,7 @@ from PIL import Image
 
 import app.plugins.agentpets as agentpets
 from app.plugins.agentpets import AgentPets
+from app.plugins.agentpets.packs.constants import BUILTIN_STAGE_PACKS
 from app.runtime.extensions.plugin.contracts import supports_plugin_hook
 
 PLUGIN_ROOT = Path(__file__).parents[3] / "plugins.v3" / "agentpets"
@@ -39,6 +40,7 @@ def test_registers_stage_and_builtin_sprite_pets() -> None:
     assert [(pet["key"], pet["mode"], pet["component"]) for pet in pets] == [
         ("ying", "stage", "AgentPet"),
         ("projector-cat", "renderer", "AgentPetSprite"),
+        *((key, "stage", "AgentPetCodex") for key in BUILTIN_STAGE_PACKS),
     ]
     stage = pets[0]
     assert stage["bubbles"] == "host"
@@ -67,7 +69,7 @@ def test_builtin_images_are_small_decodable_inline_images() -> None:
                 assert 0 < max(image.size) <= bound
                 if field == "avatar":
                     assert image.width == image.height
-    assert total < 64 * 1024
+    assert total < 160 * 1024
 
 
 def test_builtin_images_are_encoded_once_across_declaration_reads(monkeypatch) -> None:
@@ -85,7 +87,7 @@ def test_builtin_images_are_encoded_once_across_declaration_reads(monkeypatch) -
     try:
         first = _plugin().get_agent_pets()
         assert _plugin().get_agent_pets() == first
-        assert len(opened) == 4
+        assert len(opened) == 2 * len(first)
     finally:
         agentpets._builtin_image.cache_clear()
 
@@ -101,7 +103,7 @@ def test_unreadable_builtin_image_preserves_registration(monkeypatch, tmp_path, 
     agentpets._builtin_image.cache_clear()
     try:
         pets = _plugin().get_agent_pets()
-        assert [pet["key"] for pet in pets] == ["ying", "projector-cat"]
+        assert [pet["key"] for pet in pets] == ["ying", "projector-cat", *BUILTIN_STAGE_PACKS]
         assert pets[0]["preview"] == agentpets.STAGE_PREVIEW
         assert pets[1]["avatar"] == agentpets.BUILTIN_AVATAR
     finally:

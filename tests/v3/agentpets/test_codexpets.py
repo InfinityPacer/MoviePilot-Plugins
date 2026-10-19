@@ -179,6 +179,22 @@ def test_search_maps_live_response_structure_and_pagination(transport):
     assert transport["closed"]
 
 
+def test_search_preserves_http_failure_instead_of_reporting_invalid_json(transport):
+    """网络层限流错误保留原意，不能误报为目录 JSON 解析失败"""
+    transport["status"] = 429
+    with pytest.raises(MarketError, match="请求过于频繁"):
+        CodexPetsMarket().search(MarketQuery())
+    assert transport["closed"]
+
+
+def test_search_preserves_security_rejection_without_sending_request(transport):
+    """地址安全检查失败原样上报，既不联网也不伪装成数据格式错误"""
+    transport["safe"] = False
+    with pytest.raises(MarketError, match="安全检查"):
+        CodexPetsMarket().search(MarketQuery())
+    assert transport["calls"] == []
+
+
 def test_empty_search_and_declared_license(transport):
     """空目录是合法状态，作者回退字段与上游明确许可得到保留"""
     transport["chunks"] = [json.dumps({"pets": [], "page": 1, "pageSize": 20, "total": 0}).encode()]

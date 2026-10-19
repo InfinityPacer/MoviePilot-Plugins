@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRect } from '@/host'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import AgentPetCodex from '@/stage/AgentPetCodex.vue'
+import { validatePack, withCodexStageActions } from '@/sprites/schema'
 import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
 
 const hosts: ReturnType<typeof createMockHost>[] = []
@@ -23,7 +24,7 @@ async function setup(motionAllowed = true) {
   const api = {
     get: vi.fn().mockImplementation(async (path: string) => ({
       success: true,
-      data: path.endsWith('/settings')
+      data: path.includes('/settings?key=')
         ? { scale: 1.2, speed: 1, roam: 'floor' }
         : { pack: { ...legacyJson, codex_version: 'v2' }, sheet_src: 'data:image/png;base64,AAAA' },
     })),
@@ -37,6 +38,51 @@ async function setup(motionAllowed = true) {
 }
 
 describe('Codex Pet stage', () => {
+  it('ignores another pet appearance and applies shared activity without resetting its own size', async () => {
+    const { host, root, anchors } = await setup(false)
+    host.emit('agentpets.settings', { key: 'ying', scale: 0.6, speed: 2 })
+    await vi.advanceTimersByTimeAsync(32)
+    expect(anchors.at(-1)?.height).toBe(144)
+    host.emit('agentpets.settings', { key: 'legacy-pet', scale: 0.9, speed: 0.8 })
+    await vi.advanceTimersByTimeAsync(32)
+    expect(anchors.at(-1)?.height).toBe(108)
+    expect(root.dataset.roam).toBe('floor')
+    host.emit('agentpets.settings', { roam: 'free', movement: 'fixed' })
+    await vi.advanceTimersByTimeAsync(32)
+    expect(root.dataset.movement).toBe('fixed')
+    expect(anchors.at(-1)?.height).toBe(108)
+  })
+
+  it.each([
+    ['left', 'bottom'],
+    ['right', 'bottom'],
+    ['left', 'left'],
+    ['right', 'right'],
+  ])('keeps a neutral level gaze at the %s corner via the %s edge', async (side, edge) => {
+    vi.stubGlobal('innerWidth', 1280)
+    vi.stubGlobal('innerHeight', 800)
+    const { view, root, sprite, anchors } = await setup(false)
+    const rect = anchors.at(-1)!
+    const x = side === 'left' ? 0 : 1280 - rect.width
+    const y = 800 - rect.height - (edge === 'bottom' ? 0 : rect.height / 2)
+    const pointer = (type: string, clientX: number, clientY: number) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX, clientY })
+      Object.defineProperty(event, 'pointerId', { value: 1 })
+      return event
+    }
+    view.getByRole('button').dispatchEvent(pointer('pointerdown', rect.x + 10, rect.y + 10))
+    window.dispatchEvent(pointer('pointermove', x + 10, y + 10))
+    window.dispatchEvent(pointer('pointerup', x + 10, y + 10))
+    await vi.advanceTimersByTimeAsync(64)
+    expect(root.dataset.peekEdge).toBe(edge)
+    expect(sprite.dataset.action).toBe('peek')
+    const completed = withCodexStageActions(validatePack({ ...legacyJson, codex_version: 'v2' }).pack!)
+    expect(completed.frames[sprite.dataset.frame!]).toBe(0)
+    const artwork = root.querySelector('.agent-pet-ying__artwork') as HTMLElement
+    const rotation = edge === 'bottom' ? 0 : (side === 'left' ? 1 : -1) * 35
+    expect(artwork.style.transform).toBe(`rotate(${rotation}deg)`)
+  })
+
   it('shares mobile viewport recovery with the built-in stage', async () => {
     const visual = Object.assign(new EventTarget(), { width: 390, height: 700, offsetTop: 0, offsetLeft: 0 })
     vi.stubGlobal('visualViewport', visual)
@@ -54,7 +100,7 @@ describe('Codex Pet stage', () => {
   it('loads the selected legacy pet and applies saved and live sizes through the stage', async () => {
     const { host, api, view, anchors } = await setup()
     expect(api.get).toHaveBeenCalledWith('plugin/Clone1/pack?key=legacy-pet')
-    expect(api.get).toHaveBeenCalledWith('plugin/Clone1/settings')
+    expect(api.get).toHaveBeenCalledWith('plugin/Clone1/settings?key=legacy-pet')
     expect(view.getByRole('button', { name: '打开助手（旧版素材包）' })).toBeInTheDocument()
     expect(anchors.at(-1)?.height).toBe(144)
     expect(anchors.at(-1)?.width).toBeCloseTo((144 * 192) / 208)
@@ -116,7 +162,7 @@ describe('Codex Pet stage', () => {
     const original = api.get.getMockImplementation()!
     api.get.mockImplementation(async (path: string) => {
       const result = await original(path)
-      if (!path.endsWith('/settings')) result.data.pack.action_mappings = { 'stage.think': 'review' }
+      if (!path.includes('/settings?key=')) result.data.pack.action_mappings = { 'stage.think': 'review' }
       return result
     })
     const count = api.get.mock.calls.length

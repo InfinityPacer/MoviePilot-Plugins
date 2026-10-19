@@ -15,6 +15,7 @@ from PIL import Image
 from app.plugins.agentpets import BUILTIN_PREVIEW, AgentPets, require_admin
 from app.plugins.agentpets.packs.constants import (
     BUILTIN_PACK_ID,
+    BUILTIN_STAGE_PACKS,
     HOST_ACTIONS,
     MAX_PACKS,
     PackError,
@@ -268,9 +269,10 @@ def test_packs_api_lists_builtin_first(plugin: AgentPets) -> None:
     packs = plugin.api_packs().data
     assert [(pack["id"], pack["builtin"], pack["source"]) for pack in packs] == [
         (BUILTIN_PACK_ID, True, "builtin"),
+        *((key, True, "builtin") for key in BUILTIN_STAGE_PACKS),
         ("pixel-dog", False, "url"),
     ]
-    assert packs[1]["frame_count"] == 2 and packs[1]["action_count"] == 2
+    assert packs[-1]["frame_count"] == 2 and packs[-1]["action_count"] == 2
 
 
 @pytest.mark.parametrize("version, rows", [("v1", 9), ("v2", 11)])

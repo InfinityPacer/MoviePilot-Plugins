@@ -2,7 +2,17 @@ import { sameCalibration, type Calibration } from '@/sprites/calibration'
 import { sameMappings, type ActionMappings } from '@/sprites/mappings'
 import type { PluginApi } from '@/host'
 import { builtinAvatar } from './avatars'
-import { normalizeSettings, type YingSettings } from '@/stage/settings'
+import { normalizePeekAngles } from '@/stage/peek'
+import {
+  appearanceOf,
+  normalizeSettings,
+  sameAppearance,
+  sameShared,
+  sharedOf,
+  type PetAppearance,
+  type SharedActivity,
+  type YingSettings,
+} from '@/stage/settings'
 
 export interface PetChoice {
   key: string
@@ -16,6 +26,7 @@ export interface PetChoice {
 export interface EditorSnapshot {
   enabled: boolean
   settings: YingSettings
+  pet_settings?: Record<string, PetAppearance>
   pets: PetChoice[]
 }
 
@@ -78,9 +89,44 @@ export function sameSettings(a: YingSettings, b: YingSettings): boolean {
 
 export async function saveSettings(api: PluginApi, pluginId: string, settings: YingSettings): Promise<YingSettings> {
   const values = normalizeSettings(settings)
+  delete values.peek_angles
   const saved = unwrap<YingSettings>(await api.post(`plugin/${pluginId}/settings`, values))
   if (!saved || !sameSettings(saved, values)) throw new Error('活动设置回读不一致，请刷新后核对')
   return { ...saved }
+}
+
+export async function savePetSettings(
+  api: PluginApi,
+  pluginId: string,
+  key: string,
+  settings: PetAppearance,
+  expected: PetAppearance,
+): Promise<PetAppearance> {
+  const values = appearanceOf(normalizeSettings(settings))
+  const result = unwrap<PetAppearance & { key: string }>(
+    await api.post(`plugin/${pluginId}/settings/pet`, {
+      key,
+      ...values,
+      peek_angles: normalizePeekAngles(values.peek_angles),
+      expected: { ...expected, peek_angles: normalizePeekAngles(expected.peek_angles) },
+    }),
+  )
+  if (result?.key !== key || !sameAppearance(result, values)) throw new Error('Pet 活动设置回读不一致，请刷新后核对')
+  return appearanceOf(result)
+}
+
+export async function saveSharedSettings(
+  api: PluginApi,
+  pluginId: string,
+  settings: SharedActivity,
+  expected: SharedActivity,
+): Promise<SharedActivity> {
+  const values = sharedOf(normalizeSettings(settings))
+  const result = unwrap<SharedActivity>(
+    await api.post(`plugin/${pluginId}/settings/shared`, { ...values, expected: { ...expected } }),
+  )
+  if (!result || !sameShared(result, values)) throw new Error('共享活动设置回读不一致，请刷新后核对')
+  return { ...result }
 }
 
 export async function saveMappings(
