@@ -108,3 +108,49 @@ it('rechecks a moved bottom dock after a viewport change received while paused',
   view.unmount()
   host.dispose()
 })
+
+it('replays visual viewport changes after the editor closes without a host update', async () => {
+  vi.useFakeTimers()
+  const visual = Object.assign(new EventTarget(), {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    offsetLeft: 0,
+    offsetTop: 0,
+  })
+  vi.stubGlobal('visualViewport', visual)
+  const host = createMockHost('AgentPets')
+  host.patch({ motionAllowed: false })
+  const nav = document.createElement('nav')
+  nav.style.position = 'fixed'
+  let top = visual.height - 64
+  nav.getBoundingClientRect = () => new DOMRect(0, top, visual.width, 64)
+  document.body.appendChild(nav)
+  Object.defineProperty(document, 'elementsFromPoint', {
+    configurable: true,
+    value: (_x: number, y: number) => (y >= top && y <= top + 64 ? [nav, document.body] : [document.body]),
+  })
+  const anchors: Array<{ y: number; height: number } | null> = []
+  const view = render(AgentPet, {
+    props: {
+      agent: host,
+      pet: createMockPet('stage', 'ying', { onAnchor: rect => anchors.push(rect) }),
+      settingsOverride: { scale: 1, speed: 1, movement: 'auto', roam: 'floor' },
+    },
+  })
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(50)
+  const before = anchors.at(-1)!
+  const close = registerEditor()
+  visual.height -= 120
+  top = visual.height - 64
+  visual.dispatchEvent(new Event('resize'))
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(anchors.at(-1)).toEqual(before)
+  close()
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(20)
+  const resumed = anchors.at(-1)!
+  expect(resumed.y + resumed.height).toBeCloseTo(top - 8)
+  view.unmount()
+  host.dispose()
+})
