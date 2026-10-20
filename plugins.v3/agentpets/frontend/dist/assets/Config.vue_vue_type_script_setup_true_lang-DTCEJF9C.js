@@ -2525,23 +2525,23 @@ const _hoisted_3$1 = {
   class: "ap-market__source"
 };
 const _hoisted_4$1 = {
-  key: 3,
+  key: 4,
   class: "ap-market__grid",
   "aria-label": "正在加载市场形象",
   "aria-busy": "true"
 };
 const _hoisted_5$1 = {
-  key: 4,
-  class: "ap-market__empty",
-  role: "status"
-};
-const _hoisted_6$1 = {
   key: 5,
   class: "ap-market__empty",
   role: "status"
 };
-const _hoisted_7$1 = {
+const _hoisted_6$1 = {
   key: 6,
+  class: "ap-market__empty",
+  role: "status"
+};
+const _hoisted_7$1 = {
+  key: 7,
   class: "ap-market__grid",
   role: "list",
   "aria-label": "市场形象"
@@ -2554,7 +2554,7 @@ const _hoisted_12$1 = { class: "ap-market__author" };
 const _hoisted_13$1 = ["title"];
 const _hoisted_14$1 = { class: "ap-market__item-actions" };
 const _hoisted_15$1 = {
-  key: 7,
+  key: 8,
   class: "ap-market__pagination",
   "aria-label": "市场分页"
 };
@@ -2636,6 +2636,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       submittedKeyword.value = "";
       result.value = null;
       selected.value = null;
+      failedImages.value = /* @__PURE__ */ new Set();
       importing.value = false;
       loading.value = false;
       listError.value = "";
@@ -2823,6 +2824,19 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           ]),
           _: 1
         })) : _createCommentVNode$1("", true),
+        failedImages.value.size ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+          key: 3,
+          role: "status",
+          type: "info",
+          variant: "tonal",
+          density: "compact",
+          class: "mb-4"
+        }, {
+          default: _withCtx$1(() => [..._cache[9] || (_cache[9] = [
+            _createTextVNode$1(" 部分预览图加载失败。图片由浏览器直接加载，请打开原图检查浏览器网络；MoviePilot 图片安全域不影响此处。 ", -1)
+          ])]),
+          _: 1
+        })) : _createCommentVNode$1("", true),
         listLoading.value || loading.value ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_4$1, [
           (_openBlock$1(), _createElementBlock$1(_Fragment$1, null, _renderList$1(6, (index) => {
             return _createElementVNode$1("div", {
@@ -2837,7 +2851,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
             icon: "mdi-storefront-outline",
             size: "36"
           }),
-          _cache[9] || (_cache[9] = _createElementVNode$1("p", null, "暂未接入形象市场", -1))
+          _cache[10] || (_cache[10] = _createElementVNode$1("p", null, "暂未接入形象市场", -1))
         ])) : result.value && !result.value.items.length ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_6$1, [
           _createVNode$1(_component_v_icon, {
             icon: "mdi-magnify",
@@ -2881,6 +2895,21 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                   class: "ap-market__description",
                   title: item.description
                 }, _toDisplayString$1(item.description || "暂无说明"), 9, _hoisted_13$1),
+                failedImages.value.has(item.id) && _unref$1(marketUrl)(item.preview) ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                  key: 0,
+                  href: _unref$1(marketUrl)(item.preview),
+                  "aria-label": `查看 ${item.name} 原图`,
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  size: "small",
+                  variant: "text",
+                  "append-icon": "mdi-open-in-new"
+                }, {
+                  default: _withCtx$1(() => [..._cache[11] || (_cache[11] = [
+                    _createTextVNode$1("查看原图", -1)
+                  ])]),
+                  _: 1
+                }, 8, ["href", "aria-label"])) : _createCommentVNode$1("", true),
                 _createElementVNode$1("div", _hoisted_14$1, [
                   importedIds.value.has(`${marketId.value}:${item.id}`) ? (_openBlock$1(), _createBlock$1(_component_v_chip, {
                     key: 0,
@@ -2888,7 +2917,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                     color: "success",
                     variant: "tonal"
                   }, {
-                    default: _withCtx$1(() => [..._cache[10] || (_cache[10] = [
+                    default: _withCtx$1(() => [..._cache[12] || (_cache[12] = [
                       _createTextVNode$1("已导入", -1)
                     ])]),
                     _: 1
@@ -2903,7 +2932,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                     disabled: importing.value,
                     onClick: ($event) => choose(item)
                   }, {
-                    default: _withCtx$1(() => [..._cache[11] || (_cache[11] = [
+                    default: _withCtx$1(() => [..._cache[13] || (_cache[13] = [
                       _createTextVNode$1("导入", -1)
                     ])]),
                     _: 1
@@ -2961,17 +2990,45 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                         size: "60"
                       }))
                     ]),
+                    failedImages.value.has(selected.value.id) ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+                      key: 0,
+                      role: "status",
+                      type: "info",
+                      variant: "tonal",
+                      density: "compact",
+                      class: "mt-3"
+                    }, {
+                      default: _withCtx$1(() => [
+                        _cache[15] || (_cache[15] = _createTextVNode$1(" 浏览器无法加载预览图，不影响尝试导入。 ", -1)),
+                        _unref$1(marketUrl)(selected.value.preview) ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
+                          key: 0,
+                          href: _unref$1(marketUrl)(selected.value.preview),
+                          "aria-label": `查看 ${selected.value.name} 原图`,
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          size: "small",
+                          variant: "text",
+                          "append-icon": "mdi-open-in-new"
+                        }, {
+                          default: _withCtx$1(() => [..._cache[14] || (_cache[14] = [
+                            _createTextVNode$1("查看原图", -1)
+                          ])]),
+                          _: 1
+                        }, 8, ["href", "aria-label"])) : _createCommentVNode$1("", true)
+                      ]),
+                      _: 1
+                    })) : _createCommentVNode$1("", true),
                     _createElementVNode$1("p", _hoisted_19$1, _toDisplayString$1(selected.value.description || "暂无说明"), 1),
                     _createElementVNode$1("dl", _hoisted_20$1, [
-                      _cache[12] || (_cache[12] = _createElementVNode$1("dt", null, "市场", -1)),
+                      _cache[16] || (_cache[16] = _createElementVNode$1("dt", null, "市场", -1)),
                       _createElementVNode$1("dd", null, _toDisplayString$1(market.value?.name), 1),
-                      _cache[13] || (_cache[13] = _createElementVNode$1("dt", null, "作者", -1)),
+                      _cache[17] || (_cache[17] = _createElementVNode$1("dt", null, "作者", -1)),
                       _createElementVNode$1("dd", null, _toDisplayString$1(selected.value.author || "未提供"), 1),
-                      _cache[14] || (_cache[14] = _createElementVNode$1("dt", null, "许可", -1)),
+                      _cache[18] || (_cache[18] = _createElementVNode$1("dt", null, "许可", -1)),
                       _createElementVNode$1("dd", null, _toDisplayString$1(selected.value.license || "未提供"), 1)
                     ]),
                     _unref$1(marketUrl)(selected.value.source_url) ? (_openBlock$1(), _createBlock$1(_component_v_btn, {
-                      key: 0,
+                      key: 1,
                       href: _unref$1(marketUrl)(selected.value.source_url),
                       target: "_blank",
                       rel: "noopener noreferrer",
@@ -2980,7 +3037,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                       "append-icon": "mdi-open-in-new",
                       class: "mb-3"
                     }, {
-                      default: _withCtx$1(() => [..._cache[15] || (_cache[15] = [
+                      default: _withCtx$1(() => [..._cache[19] || (_cache[19] = [
                         _createTextVNode$1("查看来源", -1)
                       ])]),
                       _: 1
@@ -3005,7 +3062,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                       _: 1
                     }, 8, ["modelValue", "disabled"]),
                     importError.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
-                      key: 1,
+                      key: 2,
                       role: "alert",
                       type: "error",
                       variant: "tonal",
@@ -3027,7 +3084,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                       disabled: importing.value,
                       onClick: _cache[6] || (_cache[6] = ($event) => selected.value = null)
                     }, {
-                      default: _withCtx$1(() => [..._cache[16] || (_cache[16] = [
+                      default: _withCtx$1(() => [..._cache[20] || (_cache[20] = [
                         _createTextVNode$1("取消", -1)
                       ])]),
                       _: 1
@@ -3040,7 +3097,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                       disabled: importing.value,
                       onClick: importSelected
                     }, {
-                      default: _withCtx$1(() => [..._cache[17] || (_cache[17] = [
+                      default: _withCtx$1(() => [..._cache[21] || (_cache[21] = [
                         _createTextVNode$1("确认导入", -1)
                       ])]),
                       _: 1
@@ -3059,7 +3116,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const MarketBrowser = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-34a7a093"]]);
+const MarketBrowser = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-f1fcaa54"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 

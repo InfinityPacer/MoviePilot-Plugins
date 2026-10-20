@@ -54,11 +54,14 @@ def read_market_bytes(
     try:
         for attempt in range(2):
             validate_resource_url(url, current_hosts)
-            if not SecurityUtils.is_safe_url(url, current_hosts, strict=True, block_private=True):
-                raise MarketError(f"{market_name} 地址未通过安全检查")
+            if not SecurityUtils.is_safe_url(
+                url, current_hosts, strict=True, block_private=True,
+                allowed_private_ranges=getattr(settings, "IMAGE_PROXY_ALLOWED_PRIVATE_RANGES", None),
+            ):
+                raise MarketError(f"{market_name} 地址未通过服务器安全检查，请检查 DNS 与代理网段配置")
             with client.get_stream(url, params=params, allow_redirects=False) as response:
                 if response is None:
-                    raise MarketError(f"{market_name} 暂时无法连接，请稍后重试")
+                    raise MarketError(f"MoviePilot 服务器无法连接 {market_name}，请检查服务器网络或代理后重试")
                 if response.status_code in (307, 308) and attempt == 0 and redirect_hosts:
                     target = urljoin(url, response.headers.get("Location", ""))
                     validate_resource_url(target, redirect_hosts, path_prefix=redirect_path_prefix)
@@ -84,5 +87,5 @@ def read_market_bytes(
     except MarketError:
         raise
     except (OSError, RuntimeError, ValueError) as exc:
-        raise MarketError(f"{market_name} 网络响应读取失败，请稍后重试") from exc
+        raise MarketError(f"MoviePilot 服务器读取 {market_name} 失败，请检查服务器网络或代理后重试") from exc
     raise MarketError(f"{market_name} 重定向次数超限")

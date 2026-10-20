@@ -211,8 +211,31 @@ describe('market browsing and import', () => {
     await waitFor(() => expect(view.getByRole('img', { name: 'Test Pet' })).toBeInTheDocument())
     await fireEvent.error(view.getByRole('img', { name: 'Test Pet' }))
     expect(view.queryByRole('img', { name: 'Test Pet' })).toBeNull()
+    expect(view.getByText(/图片由浏览器直接加载/)).toBeInTheDocument()
+    const original = view.getByRole('link', { name: '查看 Test Pet 原图' })
+    expect(original).toHaveAttribute('href', 'https://example.com/pet.png')
+    expect(original).toHaveAttribute('target', '_blank')
+    expect(original).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(view.getByRole('link', { name: '市场主页' })).toHaveAttribute('href', 'https://codex-pets.net/')
     await fireEvent.click(view.getByRole('button', { name: '预览 Test Pet' }))
+    expect(view.getByText('浏览器无法加载预览图，不影响尝试导入。')).toBeInTheDocument()
+    expect(view.getByRole('button', { name: '确认导入' })).toBeEnabled()
     await fireEvent.click(view.getByRole('button', { name: '取消' }))
     expect(api.post).not.toHaveBeenCalled()
+    await view.rerender({ api, pluginId: 'Clone2' })
+    await waitFor(() => expect(view.queryByText(/图片由浏览器直接加载/)).toBeNull())
+    expect(view.queryByRole('link', { name: '查看 Test Pet 原图' })).toBeNull()
+  })
+
+  it('keeps the homepage visible when the server rejects a market request', async () => {
+    const { api, view } = await setup()
+    api.get.mockResolvedValueOnce({
+      success: false,
+      message: 'Market 地址未通过服务器安全检查',
+    })
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await waitFor(() => expect(view.getByText('Market 地址未通过服务器安全检查')).toBeInTheDocument())
+    expect(view.getByRole('link', { name: '市场主页' })).toHaveAttribute('href', 'https://codex-pets.net/')
+    expect(view.queryByText(/图片由浏览器直接加载/)).toBeNull()
   })
 })

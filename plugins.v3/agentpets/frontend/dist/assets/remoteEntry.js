@@ -11,8 +11,8 @@ const currentImports = {};
       dynamicLoadingCss(["__federation_expose_AgentPetSprite-m1-cuM4o.css","__federation_expose_AgentPet-DIZLia2K.css"], false, './AgentPetCodex');
       return __federation_import('./__federation_expose_AgentPetCodex-DQScXsmX.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./Config":()=>{
-      dynamicLoadingCss(["Config-C2kJqJz-.css","host-85oaIGKr.css"], false, './Config');
-      return __federation_import('./__federation_expose_Config-BYikVur1.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
+      dynamicLoadingCss(["Config-Ccq5qvnj.css","host-85oaIGKr.css"], false, './Config');
+      return __federation_import('./__federation_expose_Config-CZSt0zag.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./Page":()=>{
       dynamicLoadingCss(["Page-Cc3r43_l.css","host-85oaIGKr.css","__federation_expose_AgentPetSprite-m1-cuM4o.css","__federation_expose_AgentPet-DIZLia2K.css"], false, './Page');
       return __federation_import('./__federation_expose_Page-BMdYVfmZ.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},};
