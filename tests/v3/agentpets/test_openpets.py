@@ -207,7 +207,7 @@ def test_invalid_search_mapping_is_not_cached(catalog, fault):
 
 
 def test_expired_index_refresh_failure_preserves_but_does_not_use_old_cache(catalog, monkeypatch):
-    """缓存过期后失败不继续返回旧目录，恢复成功后清理页面与搜索缓存"""
+    """缓存过期失败不使用旧目录；相同快照恢复后保留已经验证的分页。"""
     clock = [0]
     monkeypatch.setattr(openpets, "monotonic", lambda: clock[0])
     market = openpets.OpenPetsMarket()
@@ -220,8 +220,34 @@ def test_expired_index_refresh_failure_preserves_but_does_not_use_old_cache(cata
     assert market._index is old
     catalog["responses"][openpets.INDEX_URL] = catalog["root"]
     market.search(MarketQuery(page=3))
-    assert market._index is not old and market._pages == {}
+    assert market._index is old and len(market._pages) == 2
     assert openpets.OpenPetsMarket()._index is None
+
+
+def test_unchanged_catalog_preserves_pages_and_search(catalog, monkeypatch):
+    """Refreshing an unchanged validated root downloads only the root itself."""
+    clock = [0]
+    monkeypatch.setattr(openpets, "monotonic", lambda: clock[0])
+    market = openpets.OpenPetsMarket()
+    market.search(MarketQuery(keyword="pet"))
+    pages, search = market._pages, market._search
+    before = len(catalog["calls"])
+    clock[0] = 300
+    market.search(MarketQuery(keyword="pet"))
+    assert market._pages is pages and market._search is search
+    assert [call[0] for call in catalog["calls"][before:]] == [openpets.INDEX_URL]
+
+
+def test_changed_catalog_invalidates_its_entire_snapshot(catalog, monkeypatch):
+    """A changed root never reuses page or search data from the previous root."""
+    clock = [0]
+    monkeypatch.setattr(openpets, "monotonic", lambda: clock[0])
+    market = openpets.OpenPetsMarket()
+    market.search(MarketQuery(keyword="pet"))
+    clock[0] = 300
+    catalog["root"]["generatedAt"] = "next-snapshot"
+    market.search(MarketQuery(page=3))
+    assert market._pages == {} and market._search is None
 
 
 @pytest.mark.parametrize("fault", ["host", "identity", "version", "page"])

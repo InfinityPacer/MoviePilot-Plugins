@@ -133,9 +133,11 @@ class OpenPetsMarket(MarketAdapter):
             return self._index
         data = _read_json(INDEX_URL, 128 * 1024)
         _validate_index(data)
-        self._index, self._loaded_at = data, monotonic()
-        self._pages, self._search = {}, None
-        return data
+        if data != self._index:
+            self._index = data
+            self._pages, self._search = {}, None
+        self._loaded_at = monotonic()
+        return self._index
 
     def _page(self, index: dict[str, Any], number: int) -> tuple[dict[str, Any], ...]:
         """按需读取完整目录页，仅缓存整体通过字段和 URL 验证的页面"""
