@@ -1,3 +1,5 @@
+import { importShared } from './__federation_fn_import-JrT3xvdd.js';
+
 function readViewport(state, browserBounds = true) {
   const base = state?.viewport ?? {
     width: window.innerWidth,
@@ -412,4 +414,31 @@ async function loadSettings(api, pluginId, key = "ying") {
   return { ...DEFAULT_SETTINGS };
 }
 
-export { intersectionArea as A, peekPanelShift as B, computeLanding as C, DEFAULT_SETTINGS as D, dropPeekEdge as E, PEEK_TUCK as F, PEEK_RISE_SECONDS as G, pickFreeTarget as H, pickWalkTarget as I, sharedOf as J, sameShared as K, appearanceOf as L, sameAppearance as M, DEFAULT_PEEK_ANGLES as N, normalizePeekAngle as O, PEEK_TILT_SECONDS as P, MIN_SURFACE_WIDTH as Q, PEEK_PREVIEW_MAX_ANGLE as R, SETTINGS_EVENT as S, SCALE_RANGE as T, SPEED_RANGE as U, peekLayout as a, freeBounds as b, coversAny as c, clamp as d, effectiveScale as e, floorLine as f, normalizeSettings as g, ratioToX as h, avoidPanel as i, groundTop as j, sameRect as k, loadSettings as l, checkSupport as m, normalizePeekAngles as n, pickClearX as o, peekHome as p, isBlocked as q, readViewport as r, standable as s, surfaceXBounds as t, blockedSpan as u, nearestEdge as v, hopVelocity as w, xBounds as x, xToRatio as y, isPeekEdge as z };
+const {onBeforeUnmount,onMounted} = await importShared('vue');
+
+const editors = /* @__PURE__ */ new Set();
+const listeners = /* @__PURE__ */ new Set();
+function registerEditor() {
+  const token = Symbol();
+  editors.add(token);
+  if (editors.size === 1) for (const listener of listeners) listener(true);
+  return () => {
+    if (editors.delete(token) && !editors.size) for (const listener of listeners) listener(false);
+  };
+}
+function useEditorPresence() {
+  let release;
+  onMounted(() => {
+    release = registerEditor();
+  });
+  onBeforeUnmount(() => release?.());
+}
+function onEditorPresence(listener) {
+  listeners.add(listener);
+  listener(editors.size > 0);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export { isPeekEdge as A, intersectionArea as B, peekPanelShift as C, DEFAULT_SETTINGS as D, computeLanding as E, dropPeekEdge as F, PEEK_TUCK as G, PEEK_RISE_SECONDS as H, pickFreeTarget as I, pickWalkTarget as J, sharedOf as K, sameShared as L, appearanceOf as M, sameAppearance as N, useEditorPresence as O, PEEK_TILT_SECONDS as P, DEFAULT_PEEK_ANGLES as Q, normalizePeekAngle as R, SETTINGS_EVENT as S, MIN_SURFACE_WIDTH as T, PEEK_PREVIEW_MAX_ANGLE as U, SCALE_RANGE as V, SPEED_RANGE as W, peekLayout as a, freeBounds as b, coversAny as c, clamp as d, effectiveScale as e, floorLine as f, normalizeSettings as g, ratioToX as h, avoidPanel as i, groundTop as j, sameRect as k, loadSettings as l, checkSupport as m, normalizePeekAngles as n, onEditorPresence as o, peekHome as p, pickClearX as q, readViewport as r, standable as s, isBlocked as t, surfaceXBounds as u, blockedSpan as v, nearestEdge as w, xBounds as x, hopVelocity as y, xToRatio as z };

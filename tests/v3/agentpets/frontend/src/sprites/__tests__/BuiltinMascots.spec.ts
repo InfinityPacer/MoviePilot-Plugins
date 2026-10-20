@@ -126,9 +126,8 @@ describe('offline built-in frame mascots', () => {
     expect(parseFloat((sprite.querySelector('.agent-pet-sprites__frame') as HTMLElement).style.top)).toBeCloseTo(
       (1 - baseline) * 100,
     )
-    expect(sprite.querySelector('.agent-pet-sprites__frame')?.getAttribute('style')).toContain(
-      `/packs/${key}/sheet.webp`,
-    )
+    const viewport = sprite.querySelector('.agent-pet-sprites__viewport') as HTMLElement
+    expect(viewport.style.getPropertyValue('--agent-pet-sprites-sheet')).toContain(`/packs/${key}/sheet.webp`)
   })
 
   it.each(['builtin-nailong', 'builtin-kurisu'])(

@@ -1,7 +1,51 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { b as builtinDefaultCalibration, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, a as walkFrame } from './poses-ThlqHr1z.js';
+import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, o as onEditorPresence, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, q as pickClearX, t as isBlocked, u as surfaceXBounds, v as blockedSpan, w as nearestEdge, y as hopVelocity, z as xToRatio, A as isPeekEdge, B as intersectionArea, C as peekPanelShift, E as computeLanding, F as dropPeekEdge, P as PEEK_TILT_SECONDS, G as PEEK_TUCK, H as PEEK_RISE_SECONDS, I as pickFreeTarget, J as pickWalkTarget } from './presence-DexdRolI.js';
 import { p as parseCalibration, c as calibrationLayout, L as LANDMARKS, a as calibrationPoint, b as calibrationEye, m as mirrorFace, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-DHgn0gTZ.js';
-import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, o as pickClearX, q as isBlocked, t as surfaceXBounds, u as blockedSpan, v as nearestEdge, w as hopVelocity, y as xToRatio, z as isPeekEdge, A as intersectionArea, B as peekPanelShift, C as computeLanding, E as dropPeekEdge, P as PEEK_TILT_SECONDS, F as PEEK_TUCK, G as PEEK_RISE_SECONDS, H as pickFreeTarget, I as pickWalkTarget } from './settings-DtFgdyvj.js';
+
+class PausableTimers {
+  paused = false;
+  jobs = /* @__PURE__ */ new Map();
+  has(name) {
+    return this.jobs.has(name);
+  }
+  clear(name) {
+    const job = this.jobs.get(name);
+    if (job?.id !== void 0) window.clearTimeout(job.id);
+    this.jobs.delete(name);
+  }
+  set(name, delay, callback) {
+    this.clear(name);
+    const job = { remaining: delay, started: 0, callback };
+    this.jobs.set(name, job);
+    if (!this.paused) this.start(name);
+  }
+  start(name) {
+    const job = this.jobs.get(name);
+    job.started = performance.now();
+    job.id = window.setTimeout(() => {
+      this.jobs.delete(name);
+      job.callback();
+    }, job.remaining);
+  }
+  pause() {
+    if (this.paused) return;
+    this.paused = true;
+    for (const job of this.jobs.values()) {
+      if (job.id !== void 0) window.clearTimeout(job.id);
+      job.remaining = Math.max(0, job.remaining - (performance.now() - job.started));
+      job.id = void 0;
+    }
+  }
+  resume() {
+    if (!this.paused) return;
+    this.paused = false;
+    for (const name of this.jobs.keys()) this.start(name);
+  }
+  dispose() {
+    for (const name of this.jobs.keys()) this.clear(name);
+  }
+}
 
 const SURFACE_SELECTOR = '.v-card, .v-sheet, .v-overlay__content, [role="dialog"]';
 const MAX_SURFACE_CANDIDATES = 400;
@@ -229,6 +273,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let hostState = null;
     let bottomFloor = null;
     let documentVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
+    let editorPaused = false;
     let rafId = 0;
     let lastFrame = 0;
     let anchorFrame = 0;
@@ -261,7 +306,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let droppedByUser = false;
     let initialPlacement = true;
     let press = null;
-    const timers = /* @__PURE__ */ new Map();
+    const timers = new PausableTimers();
     const cleanups = [];
     const startup = new AbortController();
     let settingsRevision = 0;
@@ -394,19 +439,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       transform: `rotate(${drawing.value.artwork.rotation}deg)`
     }));
     function setTimer(name, delay, callback) {
-      clearTimer(name);
-      timers.set(
-        name,
-        window.setTimeout(() => {
-          timers.delete(name);
-          callback();
-        }, delay)
-      );
+      timers.set(name, delay, callback);
     }
     function clearTimer(name) {
-      const id = timers.get(name);
-      if (id !== void 0) window.clearTimeout(id);
-      timers.delete(name);
+      timers.clear(name);
     }
     function randomBetween(min, max) {
       return min + Math.random() * (max - min);
@@ -516,7 +552,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     }
     function visible() {
-      return documentVisible && (hostState?.pageVisible ?? true);
+      return !editorPaused && documentVisible && (hostState?.pageVisible ?? true);
     }
     function onGround() {
       return motion.value !== "drag" && motion.value !== "fall";
@@ -529,14 +565,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function reportAnchor() {
       anchorFrame = 0;
-      if (disposed || !ready.value) return;
+      if (disposed || !ready.value || editorPaused) return;
       const rect = currentRect();
       if (sameRect(rect, lastAnchor)) return;
       lastAnchor = rect;
       props.pet?.setBubbleAnchor?.(rect);
     }
     function queueAnchor() {
-      if (anchorFrame || rafId) return;
+      if (editorPaused || anchorFrame || rafId) return;
       anchorFrame = window.requestAnimationFrame(reportAnchor);
     }
     function needsLoop() {
@@ -1277,6 +1313,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function onHostState(state) {
       const before = hostState;
       hostState = state;
+      if (editorPaused) return;
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
@@ -1330,6 +1367,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function syncVisibility() {
       animationActive.value = motionAllowed() && visible();
+      if (editorPaused) {
+        stopLoop();
+        pauseSurfaceWatch();
+        if (anchorFrame) window.cancelAnimationFrame(anchorFrame);
+        anchorFrame = 0;
+        return;
+      }
       if (!visible()) {
         stopLoop();
         clearTimer("behavior");
@@ -1346,6 +1390,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (motion.value === "idle" && !timers.has("behavior")) scheduleBehavior();
     }
     function onHostEvent(event) {
+      if (editorPaused) return;
       markActivity();
       const next = eventPose(event.name);
       if (next) playTransient(next.pose, next.duration);
@@ -1548,12 +1593,23 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       syncVisibility();
     }
     function onWindowResize() {
-      if (!ready.value || props.previewRoot) return;
+      if (!ready.value || editorPaused || props.previewRoot) return;
       refreshBottomFloor();
       relayout();
       scheduleClearance(RESIZE_CLEAR_DELAY);
     }
     onMounted(async () => {
+      if (!props.previewRoot)
+        cleanups.push(
+          onEditorPresence((active) => {
+            editorPaused = active;
+            if (active) timers.pause();
+            else timers.resume();
+            if (!active && hostState) onHostState(hostState);
+            syncVisibility();
+            syncSurfacePoll();
+          })
+        );
       void refreshOwnCalibration();
       const agent = props.agent;
       if (agent?.subscribe) cleanups.push(agent.subscribe(onHostState));
@@ -1622,8 +1678,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pauseSurfaceWatch();
       if (anchorFrame) window.cancelAnimationFrame(anchorFrame);
       anchorFrame = 0;
-      for (const id of timers.values()) window.clearTimeout(id);
-      timers.clear();
+      timers.dispose();
       releasePointer();
       if (press?.dragging) props.pet?.setInteracting?.(false);
       press = null;
@@ -1707,6 +1762,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a2f33116"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f797fabe"]]);
 
 export { AgentPet as default };
