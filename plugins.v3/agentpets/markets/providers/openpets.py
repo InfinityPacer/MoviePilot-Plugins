@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from concurrent.futures import Future
 from threading import RLock
 from time import monotonic
 from typing import Any
@@ -120,6 +121,8 @@ class OpenPetsMarket(MarketAdapter):
         self._pages: dict[int, tuple[dict[str, Any], ...]] = {}
         self._search: tuple[tuple[str, int, str], ...] | None = None
         self._lock = RLock()
+        self._refresh_lock = RLock()
+        self._loading: dict[tuple, Future] = {}
 
     @property
     def info(self) -> MarketInfo:
@@ -129,42 +132,90 @@ class OpenPetsMarket(MarketAdapter):
 
     def _catalog(self) -> dict[str, Any]:
         """成功索引缓存五分钟；刷新失败不清空旧值，也不继续使用过期结果"""
-        if self._index is not None and monotonic() - self._loaded_at < CACHE_TTL:
-            return self._index
-        data = _read_json(INDEX_URL, 128 * 1024)
-        _validate_index(data)
-        if data != self._index:
-            self._index = data
-            self._pages, self._search = {}, None
-        self._loaded_at = monotonic()
-        return self._index
+        with self._lock:
+            if self._index is not None and monotonic() - self._loaded_at < CACHE_TTL:
+                return self._index
+        with self._refresh_lock:
+            with self._lock:
+                if self._index is not None and monotonic() - self._loaded_at < CACHE_TTL:
+                    return self._index
+            data = _read_json(INDEX_URL, 128 * 1024)
+            _validate_index(data)
+            with self._lock:
+                if data != self._index:
+                    self._index = data
+                    self._pages, self._search = {}, None
+                self._loaded_at = monotonic()
+                return self._index
+
+    def _cached(self, index: dict[str, Any], number: int | None, load):
+        """Join one snapshot-specific load without holding the cache lock over I/O."""
+        key = (id(index), number)
+        with self._lock:
+            self._require_snapshot(index)
+            cached = self._search if number is None else self._pages.get(number)
+            if cached is not None:
+                return cached
+            future = self._loading.get(key)
+            owner = future is None
+            if owner:
+                future = self._loading[key] = Future()
+        if not owner:
+            return future.result()
+        try:
+            result = load()
+            with self._lock:
+                self._require_snapshot(index)
+                if number is None:
+                    self._search = result
+                else:
+                    self._pages[number] = result
+            future.set_result(result)
+            return result
+        except BaseException as exc:
+            future.set_exception(exc)
+            raise
+        finally:
+            with self._lock:
+                self._loading.pop(key, None)
+
+    def _require_snapshot(self, index: dict[str, Any]) -> None:
+        """Late page/search responses must not populate a newer catalog snapshot."""
+        if index is not self._index:
+            raise MarketError("OpenPets 目录快照已更新，请重试")
 
     def _page(self, index: dict[str, Any], number: int) -> tuple[dict[str, Any], ...]:
         """按需读取完整目录页，仅缓存整体通过字段和 URL 验证的页面"""
-        if number not in self._pages:
-            records = _records(_read_json(index["pages"][number]), index, number)
-            identities = set()
-            for record in records:
-                item_id = _identity(record.get("id"))
-                if item_id in identities:
-                    raise MarketError("OpenPets 目录包含重复形象标识")
-                identities.add(item_id)
-                _text(record.get("displayName"), 120, required=True)
-                _text(record.get("description", ""), 2000)
-                _version(record)
-                _resource(record.get("thumbnail"), "openpets.dev")
-                _resource(record.get("spritesheet"), "openpets.dev")
-                zip_url = _resource(record.get("zip"), ZIP_HOST)
-                parts = urlsplit(zip_url).path.split("/")
-                if len(parts) != 4 or parts[-1] != item_id + ".zip":
-                    raise MarketError("OpenPets ZIP 地址与形象身份不一致")
-            self._pages[number] = tuple(records)
-        return self._pages[number]
+        return self._cached(index, number, lambda: self._read_page(index, number))
+
+    @staticmethod
+    def _read_page(index: dict[str, Any], number: int) -> tuple[dict[str, Any], ...]:
+        """Validate a complete page before making it available to any waiter."""
+        records = _records(_read_json(index["pages"][number]), index, number)
+        identities = set()
+        for record in records:
+            item_id = _identity(record.get("id"))
+            if item_id in identities:
+                raise MarketError("OpenPets 目录包含重复形象标识")
+            identities.add(item_id)
+            _text(record.get("displayName"), 120, required=True)
+            _text(record.get("description", ""), 2000)
+            _version(record)
+            _resource(record.get("thumbnail"), "openpets.dev")
+            _resource(record.get("spritesheet"), "openpets.dev")
+            zip_url = _resource(record.get("zip"), ZIP_HOST)
+            parts = urlsplit(zip_url).path.split("/")
+            if len(parts) != 4 or parts[-1] != item_id + ".zip":
+                raise MarketError("OpenPets ZIP 地址与形象身份不一致")
+        return tuple(records)
 
     def _search_index(self, index: dict[str, Any]) -> tuple[tuple[str, int, str], ...]:
         """读取轻量搜索分片并核对快照，总量或页映射不一致时不缓存失败结果"""
-        if self._search is not None:
-            return self._search
+        return self._cached(index, None, lambda: self._read_search(index))
+
+    @staticmethod
+    def _read_search(index: dict[str, Any]) -> tuple[tuple[str, int, str], ...]:
+        """Build a complete immutable search index outside the cache lock."""
         search = _read_json(index["search"], 128 * 1024)
         _validate_index(search, search=True)
         if search["total"] != index["total"] or search["generatedAt"] != index["generatedAt"]:
@@ -182,8 +233,7 @@ class OpenPetsMarket(MarketAdapter):
                 text = _text(record.get("searchText"), 20000)
                 _version(record)
                 entries.append((item_id, page, _normalize(f"{item_id} {name} {text}")))
-        self._search = tuple(entries)
-        return self._search
+        return tuple(entries)
 
     def _find(self, index: dict[str, Any], item_id: str, page: int) -> dict[str, Any]:
         """按搜索映射读取完整记录，拒绝 ID 在目录页内缺失的过期或损坏索引"""
@@ -203,31 +253,29 @@ class OpenPetsMarket(MarketAdapter):
 
     def search(self, query: MarketQuery) -> MarketPage:
         """无关键词按原目录顺序分页，有关键词按搜索词项匹配并按需补全摘要"""
-        with self._lock:
-            index = self._catalog()
-            offset = (query.page - 1) * query.page_size
-            if query.keyword:
-                terms = _normalize(query.keyword).split()
-                matches = [(item_id, page) for item_id, page, text in self._search_index(index)
-                           if all(term in text for term in terms)]
-                total = len(matches)
-                records = [self._find(index, item_id, page) for item_id, page in matches[offset:offset + query.page_size]]
-            else:
-                total = index["total"]
-                records = [self._page(index, position // index["pageSize"])[position % index["pageSize"]]
-                           for position in range(offset, min(offset + query.page_size, total))]
-            return MarketPage(items=[self._summary(record) for record in records], total=total,
-                              has_more=offset + query.page_size < total)
+        index = self._catalog()
+        offset = (query.page - 1) * query.page_size
+        if query.keyword:
+            terms = _normalize(query.keyword).split()
+            matches = [(item_id, page) for item_id, page, text in self._search_index(index)
+                       if all(term in text for term in terms)]
+            total = len(matches)
+            records = [self._find(index, item_id, page) for item_id, page in matches[offset:offset + query.page_size]]
+        else:
+            total = index["total"]
+            records = [self._page(index, position // index["pageSize"])[position % index["pageSize"]]
+                       for position in range(offset, min(offset + query.page_size, total))]
+        return MarketPage(items=[self._summary(record) for record in records], total=total,
+                          has_more=offset + query.page_size < total)
 
     def fetch(self, item_id: str) -> MarketPack:
         """独立定位目录记录后下载官方 ZIP，检查包身份与版本并返回规范素材"""
         item_id = _identity(item_id)
-        with self._lock:
-            index = self._catalog()
-            match = next(((identity, page) for identity, page, _ in self._search_index(index) if identity == item_id), None)
-            if match is None:
-                raise MarketError("OpenPets 形象不存在或已下架")
-            record = self._find(index, *match)
+        index = self._catalog()
+        match = next(((identity, page) for identity, page, _ in self._search_index(index) if identity == item_id), None)
+        if match is None:
+            raise MarketError("OpenPets 形象不存在或已下架")
+        record = self._find(index, *match)
         try:
             content = read_market_bytes(record["zip"], MAX_ARCHIVE_BYTES, market_name="OpenPets", allowed_hosts={ZIP_HOST})
             with ZipPackageReader(content) as package:

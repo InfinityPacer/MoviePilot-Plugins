@@ -3,7 +3,9 @@
 import json
 import zipfile
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from threading import Event
 
 import pytest
 from PIL import Image
@@ -248,6 +250,83 @@ def test_changed_catalog_invalidates_its_entire_snapshot(catalog, monkeypatch):
     catalog["root"]["generatedAt"] = "next-snapshot"
     market.search(MarketQuery(page=3))
     assert market._pages == {} and market._search is None
+
+
+def test_slow_search_does_not_block_cached_browse_and_is_shared(catalog, monkeypatch):
+    """A blocked search holds no page-cache lock and concurrent searches join it."""
+    market = openpets.OpenPetsMarket()
+    market.search(MarketQuery(page_size=1))
+    entered, release = Event(), Event()
+    read = openpets._read_json
+    calls = []
+
+    def blocked(url, *args):
+        """Block only the search root while allowing already cached catalog reads."""
+        calls.append(url)
+        if url == catalog["root"]["search"]:
+            entered.set()
+            assert release.wait(5)
+        return read(url, *args)
+
+    monkeypatch.setattr(openpets, "_read_json", blocked)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        first = pool.submit(market.search, MarketQuery(keyword="pet"))
+        try:
+            assert entered.wait(2)
+            second = pool.submit(market.search, MarketQuery(keyword="pet"))
+            cached = pool.submit(market.search, MarketQuery(page_size=1))
+            assert cached.result(timeout=1).items[0].id == "pet"
+        finally:
+            release.set()
+        assert first.result(timeout=2) == second.result(timeout=2)
+    assert calls.count(catalog["root"]["search"]) == 1
+    assert market._loading == {}
+
+
+def test_late_page_cannot_pollute_a_new_snapshot(catalog, monkeypatch):
+    """An in-flight old page fails after a refresh, then the new page can load."""
+    clock = [0]
+    monkeypatch.setattr(openpets, "monotonic", lambda: clock[0])
+    market = openpets.OpenPetsMarket()
+    market.search(MarketQuery(page_size=1))
+    entered, release = Event(), Event()
+    read = openpets._read_json
+
+    def blocked(url, *args):
+        """Capture old response bytes before the server publishes a new root."""
+        result = read(url, *args)
+        if url == catalog["root"]["pages"][1]:
+            entered.set()
+            assert release.wait(5)
+        return result
+
+    monkeypatch.setattr(openpets, "_read_json", blocked)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        late = pool.submit(market.search, MarketQuery(page=2, page_size=1))
+        try:
+            assert entered.wait(2)
+            clock[0] = 300
+            catalog["root"]["generatedAt"] = "new"
+            assert market.search(MarketQuery(page=3, page_size=1)).items == []
+        finally:
+            release.set()
+        with pytest.raises(MarketError, match="快照已更新"):
+            late.result(timeout=2)
+    assert market._pages == {} and market._loading == {}
+    assert market.search(MarketQuery(page=2, page_size=1)).items[0].id == "other"
+
+
+def test_failed_page_load_can_be_retried(catalog):
+    """A failed owner always releases its in-flight slot and does not cache errors."""
+    market = openpets.OpenPetsMarket()
+    url = catalog["root"]["pages"][0]
+    original = catalog["responses"][url]
+    catalog["responses"][url] = MarketError("temporary")
+    with pytest.raises(MarketError, match="temporary"):
+        market.search(MarketQuery(page_size=1))
+    assert market._loading == {} and market._pages == {}
+    catalog["responses"][url] = original
+    assert market.search(MarketQuery(page_size=1)).items[0].id == "pet"
 
 
 @pytest.mark.parametrize("fault", ["host", "identity", "version", "page"])
