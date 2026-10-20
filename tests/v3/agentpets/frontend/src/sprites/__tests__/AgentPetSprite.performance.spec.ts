@@ -3,6 +3,8 @@ import { flushPromises } from '@vue/test-utils'
 import { expect, it, vi } from 'vitest'
 import AgentPetSprite from '@/sprites/AgentPetSprite.vue'
 import { createMockPet } from '@/dev/mockHost'
+import { createMockHost } from '@/dev/mockHost'
+import { PACK_UPDATED_EVENT } from '@/sprites/mappings'
 
 it('does not stringify or rewrite the sheet while advancing frames', async () => {
   vi.useFakeTimers()
@@ -35,4 +37,27 @@ it('does not stringify or rewrite the sheet while advancing frames', async () =>
   expect(viewport.style.getPropertyValue('--agent-pet-sprites-sheet')).toBe(original)
   expect(spy.mock.calls.filter(([value]) => value === sheet)).toHaveLength(0)
   expect(writes.mock.calls.filter(([key]) => key === '--agent-pet-sprites-sheet')).toHaveLength(0)
+})
+
+it('keeps a confirmed image when a metadata response reports the same revision', async () => {
+  const host = createMockHost('AgentPets')
+  const data = {
+    pack: { id: 'mine', name: 'Mine', grid: { cols: 1, rows: 1 }, frames: { idle: 0 }, actions: {} },
+    sheet_src: 'data:image/png;base64,AAAA',
+    sheet_revision: 'revision-1',
+  }
+  const api = { get: vi.fn().mockResolvedValue({ success: true, data }), post: vi.fn() }
+  const view = render(AgentPetSprite, {
+    props: { api, agent: host, pluginId: 'AgentPets', pet: createMockPet('renderer', 'mine') },
+  })
+  await flushPromises()
+  const image = vi.spyOn(globalThis, 'Image')
+  api.get.mockResolvedValue({ success: true, data: { ...data, sheet_src: '' } })
+  host.emit(PACK_UPDATED_EVENT, { key: 'mine' })
+  await flushPromises()
+  expect(api.get).toHaveBeenLastCalledWith('plugin/AgentPets/pack?key=' + 'mine' + '&known_sheet=' + 'revision-1')
+  expect(image).not.toHaveBeenCalled()
+  expect(view.container.querySelector('[data-pack="mine"]')).not.toBeNull()
+  view.unmount()
+  host.dispose()
 })

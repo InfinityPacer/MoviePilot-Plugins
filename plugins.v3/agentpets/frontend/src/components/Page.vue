@@ -231,6 +231,7 @@ async function save() {
   }))
   const version = ++operationVersion
   const current = () => !disposed && version === operationVersion && id === props.pluginId
+  const updatedPacks = new Set<string>()
   busy.value = true
   feedback.value = ''
   try {
@@ -252,14 +253,14 @@ async function save() {
       const result = await saveMappings(api, id, item.key, item.values, item.expected)
       if (!current()) return
       mappingSaved.value[item.key] = { ...result }
-      agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key })
+      updatedPacks.add(item.key)
     }
     for (const item of calibrations) {
       if (!current()) return
       const result = await saveCalibration(api, id, item.key, item.value, item.expected)
       if (!current()) return
       calibrationSaved.value[item.key] = result
-      agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key })
+      updatedPacks.add(item.key)
     }
     feedbackType.value = 'success'
     feedback.value = agent ? '调整已保存，并已通知当前页面更新。' : '调整已保存。'
@@ -268,7 +269,10 @@ async function save() {
     feedbackType.value = 'error'
     feedback.value = reason instanceof Error ? reason.message : '操作未完成，请重试'
   } finally {
-    if (current()) busy.value = false
+    if (current()) {
+      for (const key of updatedPacks) agent?.emit?.(PACK_UPDATED_EVENT, { key })
+      busy.value = false
+    }
   }
 }
 </script>
