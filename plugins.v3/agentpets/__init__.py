@@ -709,5 +709,5 @@ class AgentPets(_PluginBase):
         return None
 
     def stop_service(self):
-        """没有后台任务需要停止。"""
+        """没有常驻服务；请求线程自行结算，不可中断的宿主 I/O 仍占有界名额。"""
         pass
