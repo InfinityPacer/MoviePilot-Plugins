@@ -4,8 +4,8 @@ import { L as LANDMARKS, a as calibrationPoint, D as DEFAULT_CALIBRATION, f as m
 import { P as POSES, b as builtinDefaultCalibration } from './poses-ThlqHr1z.js';
 import { Q as DEFAULT_PEEK_ANGLES, R as normalizePeekAngle, n as normalizePeekAngles, T as MIN_SURFACE_WIDTH, U as PEEK_PREVIEW_MAX_ANGLE, D as DEFAULT_SETTINGS, K as sharedOf, N as sameAppearance, L as sameShared, g as normalizeSettings, M as appearanceOf, V as SCALE_RANGE, W as SPEED_RANGE, O as useEditorPresence, S as SETTINGS_EVENT } from './presence-DexdRolI.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-En7gfcRm.js';
-import AgentPet from './__federation_expose_AgentPet-CkwxFLel.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-D_oibeP6.js';
+import AgentPet from './__federation_expose_AgentPet-qU22D3tb.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BetpHlPH.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
 

@@ -271,9 +271,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const isMobile = ref(false);
     const animationActive = ref(false);
     let hostState = null;
+    let pendingHostState = null;
     let bottomFloor = null;
     let documentVisible = typeof document === "undefined" || document.visibilityState !== "hidden";
     let editorPaused = false;
+    let pendingViewportResize = false;
     let rafId = 0;
     let lastFrame = 0;
     let anchorFrame = 0;
@@ -1311,9 +1313,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       relayout();
     }
     function onHostState(state) {
+      if (editorPaused) {
+        pendingHostState = state;
+        return;
+      }
       const before = hostState;
       hostState = state;
-      if (editorPaused) return;
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
@@ -1593,7 +1598,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       syncVisibility();
     }
     function onWindowResize() {
-      if (!ready.value || editorPaused || props.previewRoot) return;
+      if (!ready.value || props.previewRoot) return;
+      if (editorPaused) {
+        pendingViewportResize = true;
+        return;
+      }
       refreshBottomFloor();
       relayout();
       scheduleClearance(RESIZE_CLEAR_DELAY);
@@ -1604,8 +1613,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           onEditorPresence((active) => {
             editorPaused = active;
             if (active) timers.pause();
-            else timers.resume();
-            if (!active && hostState) onHostState(hostState);
+            else {
+              const next = pendingHostState ?? hostState;
+              pendingHostState = null;
+              if (next) onHostState(next);
+              if (pendingViewportResize) {
+                pendingViewportResize = false;
+                onWindowResize();
+              }
+              timers.resume();
+            }
             syncVisibility();
             syncSurfacePoll();
           })
@@ -1762,6 +1779,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-f797fabe"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-31bde7b2"]]);
 
 export { AgentPet as default };
