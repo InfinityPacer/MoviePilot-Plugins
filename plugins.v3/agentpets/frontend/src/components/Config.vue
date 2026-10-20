@@ -3,6 +3,7 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 
 import { loadEditor, prepareEnabledConfig, type EditorSnapshot } from '@/editor/api'
 import { builtinAvatar } from '@/editor/avatars'
+import { useEditorPresence } from '@/editor/presence'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import PackManager from '@/sprites/PackManager.vue'
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 emit('layout', { maxWidth: '72rem' })
 
 const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
+useEditorPresence()
 const activeMain = ref('overview')
 const visitedPacks = ref(false)
 const visitedMarket = ref(false)
