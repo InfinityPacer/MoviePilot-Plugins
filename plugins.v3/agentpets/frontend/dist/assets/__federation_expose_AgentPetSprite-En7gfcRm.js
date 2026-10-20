@@ -162,7 +162,7 @@ const CalibrationMarkers = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass} = await importShared('vue');
+const {normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass,withDirectives:_withDirectives} = await importShared('vue');
 
 const _hoisted_1 = ["aria-hidden", "data-pack", "data-action", "data-frame", "data-mirrored"];
 const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
@@ -204,6 +204,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let disposed = false;
     let loadVersion = 0;
     let loadController = null;
+    let sheetRevision = "";
     let unsubscribe;
     const resolved = computed(
       () => resolveAction(pack.value, props.action, props.intent, props.thinking, {
@@ -236,13 +237,23 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       })
     );
     const layout = computed(() => calibrationLayout(calibration.value, cellRatio.value));
+    const viewportStyle = computed(() => ({
+      "--agent-pet-sprites-ratio": String(layout.value.aspectRatio),
+      "--agent-pet-sprites-sheet": `url(${JSON.stringify(sheetSrc.value)})`,
+      "--agent-pet-sprites-size": `${pack.value.grid.cols * 100}% ${pack.value.grid.rows * 100}%`
+    }));
+    const vSpriteSheet = {
+      mounted: (el, { value }) => {
+        for (const [key, next] of Object.entries(value)) el.style.setProperty(key, next);
+      },
+      updated: (el, { value, oldValue }) => {
+        for (const [key, next] of Object.entries(value)) if (next !== oldValue?.[key]) el.style.setProperty(key, next);
+      }
+    };
     const frameStyle = computed(() => {
-      const { cols, rows } = pack.value.grid;
       const position = framePosition(pack.value, frame.value);
       return {
         ...layout.value.frame,
-        backgroundImage: `url(${JSON.stringify(sheetSrc.value)})`,
-        backgroundSize: `${cols * 100}% ${rows * 100}%`,
         backgroundPosition: `${position.x}% ${position.y}%`
       };
     });
@@ -279,6 +290,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         const builtin = key === "ying" || Object.hasOwn(BUILTIN_PACKS, key);
         let nextPack = key === "ying" ? YING_PACK : builtin ? BUILTIN_PACKS[key] : BUILTIN_PACK;
         let nextSheet = key === "ying" ? frameUrl("idle") : builtinAsset(nextPack.sheet || "sheet.webp", void 0, builtin ? key : BUILTIN_PACK_ID);
+        let nextRevision = "";
         if (builtin) {
           try {
             nextPack = { ...nextPack, calibration: await loadBuiltinCalibration(props.api, props.pluginId, key, signal) };
@@ -288,21 +300,27 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         } else {
           if (!props.api?.get) throw new Error("pack API unavailable");
           const instanceId = props.pluginId || "AgentPets";
+          const known = ready.value && pack.value.id === key ? sheetRevision : "";
           const response = await withLoadTimeout(
-            props.api.get(`plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`),
+            props.api.get(
+              `plugin/${instanceId}/pack?key=${encodeURIComponent(key)}${known ? `&known_sheet=${encodeURIComponent(known)}` : ""}`
+            ),
             signal
           );
           const { pack: parsed } = validatePack(response?.data?.pack);
-          if (!response?.success || !parsed || !response.data?.sheet_src)
+          if (!response?.success || !parsed || !response.data?.sheet_src && (!known || response.data?.sheet_revision !== known))
             throw new Error(response?.message || "invalid pack");
           nextPack = props.pet?.mode === "stage" ? withCodexStageActions(parsed) : parsed;
-          nextSheet = response.data.sheet_src;
+          nextSheet = response.data.sheet_src || sheetSrc.value;
+          nextRevision = response.data.sheet_revision || "";
         }
-        const dimensions = await loadImage(nextSheet, signal);
+        const reuseImage = !!nextRevision && nextRevision === sheetRevision && ready.value && nextSheet === sheetSrc.value && nextPack.grid.cols === pack.value.grid.cols && nextPack.grid.rows === pack.value.grid.rows;
+        const dimensions = reuseImage ? null : await loadImage(nextSheet, signal);
         if (!current()) return;
         pack.value = nextPack;
         sheetSrc.value = nextSheet;
-        cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows);
+        sheetRevision = nextRevision;
+        if (dimensions) cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows);
         ready.value = true;
         emit("pack-ready", nextPack);
         emit("load-state", "ready");
@@ -310,6 +328,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         if (!current()) return;
         console.warn(`[AgentPets] pack ${key} unavailable`);
         ready.value = false;
+        sheetRevision = "";
         emit("load-state", "error");
         if (props.strictPreview || key === BUILTIN_PACK_ID) return;
         try {
@@ -360,10 +379,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "data-frame": frame.value,
         "data-mirrored": !!__props.mirrorX
       }, [
-        ready.value ? (_openBlock(), _createElementBlock("div", {
+        ready.value ? _withDirectives((_openBlock(), _createElementBlock("div", {
           key: 0,
-          class: _normalizeClass(["agent-pet-sprites__viewport", { "agent-pet-sprites__viewport--guides": __props.showCalibration }]),
-          style: _normalizeStyle({ "--agent-pet-sprites-ratio": String(layout.value.aspectRatio) })
+          class: _normalizeClass(["agent-pet-sprites__viewport", { "agent-pet-sprites__viewport--guides": __props.showCalibration }])
         }, [
           _createElementVNode("div", {
             class: "agent-pet-sprites__crop",
@@ -393,12 +411,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               style: _normalizeStyle({ left: `${point.x * 100}%`, top: `${point.y * 100}%` })
             }, null, 4);
           }), 128)) : _createCommentVNode("", true)
-        ], 6)) : _createCommentVNode("", true)
+        ], 2)), [
+          [vSpriteSheet, viewportStyle.value]
+        ]) : _createCommentVNode("", true)
       ], 10, _hoisted_1);
     };
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-53b515ff"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-3899a109"]]);
 
 export { AgentPetSprite as default };

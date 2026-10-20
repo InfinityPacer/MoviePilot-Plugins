@@ -1,11 +1,11 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-KC_Y5wME.js';
+import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-BkgRuym2.js';
 import { L as LANDMARKS, a as calibrationPoint, D as DEFAULT_CALIBRATION, f as moveCalibrationPoint, d as suggestedLandmark, p as parseCalibration, _ as _export_sfc, o as mappingRows, A as ACTION_LABELS, q as nativeChoices, H as HOST_ACTIONS, t as HOST_INTENTS, s as stageAction, e as sameCalibration, l as sameMappings, P as PACK_UPDATED_EVENT } from './_plugin-vue_export-helper-DHgn0gTZ.js';
 import { P as POSES, b as builtinDefaultCalibration } from './poses-ThlqHr1z.js';
-import { N as DEFAULT_PEEK_ANGLES, O as normalizePeekAngle, n as normalizePeekAngles, Q as MIN_SURFACE_WIDTH, R as PEEK_PREVIEW_MAX_ANGLE, D as DEFAULT_SETTINGS, J as sharedOf, M as sameAppearance, K as sameShared, g as normalizeSettings, L as appearanceOf, T as SCALE_RANGE, U as SPEED_RANGE, S as SETTINGS_EVENT } from './settings-DtFgdyvj.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-BM3Cp9gi.js';
-import AgentPet from './__federation_expose_AgentPet-DktZ4QJn.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-D-4ChcWF.js';
+import { Q as DEFAULT_PEEK_ANGLES, R as normalizePeekAngle, n as normalizePeekAngles, T as MIN_SURFACE_WIDTH, U as PEEK_PREVIEW_MAX_ANGLE, D as DEFAULT_SETTINGS, K as sharedOf, N as sameAppearance, L as sameShared, g as normalizeSettings, M as appearanceOf, V as SCALE_RANGE, W as SPEED_RANGE, O as useEditorPresence, S as SETTINGS_EVENT } from './presence-DexdRolI.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-En7gfcRm.js';
+import AgentPet from './__federation_expose_AgentPet-CkwxFLel.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-D_oibeP6.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
 
@@ -1577,6 +1577,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const emit = __emit;
     emit("layout", { maxWidth: "72rem" });
     const agent = inject(AGENT_HOST_KEY, null);
+    useEditorPresence();
     const snapshot = ref(null);
     const avatar = builtinAvatar("ying");
     const avatarFailed = ref(false);
@@ -1763,6 +1764,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }));
       const version = ++operationVersion;
       const current = () => !disposed && version === operationVersion && id === props.pluginId;
+      const updatedPacks = /* @__PURE__ */ new Set();
       busy.value = true;
       feedback.value = "";
       try {
@@ -1784,14 +1786,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           const result = await saveMappings(api, id, item.key, item.values, item.expected);
           if (!current()) return;
           mappingSaved.value[item.key] = { ...result };
-          agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key });
+          updatedPacks.add(item.key);
         }
         for (const item of calibrations) {
           if (!current()) return;
           const result = await saveCalibration(api, id, item.key, item.value, item.expected);
           if (!current()) return;
           calibrationSaved.value[item.key] = result;
-          agent?.emit?.(PACK_UPDATED_EVENT, { key: item.key });
+          updatedPacks.add(item.key);
         }
         feedbackType.value = "success";
         feedback.value = agent ? "调整已保存，并已通知当前页面更新。" : "调整已保存。";
@@ -1800,7 +1802,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         feedbackType.value = "error";
         feedback.value = reason instanceof Error ? reason.message : "操作未完成，请重试";
       } finally {
-        if (current()) busy.value = false;
+        if (current()) {
+          for (const key of updatedPacks) agent?.emit?.(PACK_UPDATED_EVENT, { key });
+          busy.value = false;
+        }
       }
     }
     return (_ctx, _cache) => {

@@ -22,7 +22,7 @@ it.each([false, true])('notifies once per pack after a multi-field save (partial
   const preview = view.findComponent({ name: 'PetPreview' })
   preview.vm.$emit('pack-ready', { id: 'kurisu', codex_version: 'v2', action_mappings: {}, calibration: {} })
   preview.vm.$emit('mappings', { 'stage.think': 'review' })
-  preview.vm.$emit('calibration', { ...parseCalibration(), left: 0.1 })
+  preview.vm.$emit('calibration', { ...parseCalibration(undefined), left: 0.1 })
   api.post.mockImplementation(async (path, body) => {
     const data = body as { mappings: unknown; calibration: unknown }
     if (failure && path.endsWith('/calibration')) return { success: false, data: null }
