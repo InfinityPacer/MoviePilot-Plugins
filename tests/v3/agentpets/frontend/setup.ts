@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 
 import { cleanup } from '@testing-library/vue'
 import { afterEach, beforeEach, vi } from 'vitest'
+import { executeArchiveJob, type ArchiveJob } from '@/sprites/archiveCodec'
 
 // Vuetify 组件依赖这两个浏览器接口，jsdom 没有提供。
 class ResizeObserverStub implements ResizeObserver {
@@ -53,6 +54,26 @@ afterEach(() => {
 
 // jsdom 不解码图片；普通用例模拟成功加载，故障测试按需覆盖 Image。
 beforeEach(() => {
+  class CodecWorker {
+    onmessage: ((event: { data: unknown }) => void) | null = null
+    onerror = null
+    onmessageerror = null
+    stopped = false
+    terminate() {
+      this.stopped = true
+    }
+    postMessage(job: ArchiveJob) {
+      void Promise.resolve().then(() => {
+        if (this.stopped) return
+        try {
+          this.onmessage?.({ data: { success: true, result: executeArchiveJob(job) } })
+        } catch (error) {
+          this.onmessage?.({ data: { success: false, error: (error as Error).message } })
+        }
+      })
+    }
+  }
+  vi.stubGlobal('Worker', CodecWorker)
   class LoadedImage {
     onload: (() => void) | null = null
     onerror: (() => void) | null = null
