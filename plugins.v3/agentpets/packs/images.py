@@ -130,7 +130,12 @@ def _data_url(image) -> str:
 
 def first_frame_preview(content: bytes, pack: dict[str, Any]) -> str:
     """裁出 idle 帧并缩成小缩略图，返回 PNG data URL，供宿主形象列表显示。"""
-    frame = _idle_frame(content, pack)
+    return _frame_preview(_idle_frame(content, pack))
+
+
+def _frame_preview(frame) -> str:
+    """Resize a copy so the avatar keeps the original idle frame."""
+    frame = frame.copy()
     frame.thumbnail((PREVIEW_SIZE, PREVIEW_SIZE))
     return _data_url(frame)
 
@@ -141,9 +146,13 @@ def first_frame_avatar(content: bytes, pack: dict[str, Any]) -> str:
     取角色不透明区域的顶部、以其宽度为边长的正方形，通常落在头部和上半身；
     没有透明背景的图按整格处理。
     """
+    return _frame_avatar(_idle_frame(content, pack))
+
+
+def _frame_avatar(frame) -> str:
+    """Crop the avatar from an already decoded idle frame."""
     from PIL import Image
 
-    frame = _idle_frame(content, pack)
     left, top, right, bottom = frame.getchannel("A").getbbox() or (0, 0, frame.width, frame.height)
     side = min(right - left, bottom - top)
     center = (left + right) // 2
@@ -151,6 +160,15 @@ def first_frame_avatar(content: bytes, pack: dict[str, Any]) -> str:
     avatar = frame.crop((x0, top, x0 + side, top + side))
     avatar.thumbnail((AVATAR_SIZE, AVATAR_SIZE), Image.Resampling.LANCZOS)
     return _data_url(avatar)
+
+
+def first_frame_images(content: bytes, pack: dict[str, Any]) -> tuple[str, str]:
+    """Generate only missing thumbnails, sharing one decode and crop."""
+    preview, avatar = pack.get("preview", ""), pack.get("avatar", "")
+    if preview and avatar:
+        return preview, avatar
+    frame = _idle_frame(content, pack)
+    return preview or _frame_preview(frame), avatar or _frame_avatar(frame)
 
 
 def validate_sheet(content: bytes, pack: dict[str, Any]) -> tuple[str, str]:
