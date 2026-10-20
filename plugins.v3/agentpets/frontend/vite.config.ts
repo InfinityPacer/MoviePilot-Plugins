@@ -104,8 +104,9 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    base: './',
     plugins,
+    // Keep emitted assets relative without changing federation's entry/CSS base.
+    experimental: { renderBuiltUrl: () => ({ relative: true }) },
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
