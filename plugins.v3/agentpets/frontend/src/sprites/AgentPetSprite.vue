@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type ObjectDirective } from 'vue'
 import {
   calibrationEye,
   calibrationForAction,
@@ -131,13 +131,25 @@ const guidePoints = computed(() =>
   }),
 )
 const layout = computed(() => calibrationLayout(calibration.value, cellRatio.value))
+const viewportStyle = computed(() => ({
+  '--agent-pet-sprites-ratio': String(layout.value.aspectRatio),
+  '--agent-pet-sprites-sheet': `url(${JSON.stringify(sheetSrc.value)})`,
+  '--agent-pet-sprites-size': `${pack.value.grid.cols * 100}% ${pack.value.grid.rows * 100}%`,
+}))
+// Vue's style patch rewrites unchanged variables too; never resend a data URL per frame.
+const vSpriteSheet: ObjectDirective<HTMLElement, Record<string, string>> = {
+  mounted: (el, { value }) => {
+    for (const [key, next] of Object.entries(value)) el.style.setProperty(key, next)
+  },
+  updated: (el, { value, oldValue }) => {
+    for (const [key, next] of Object.entries(value))
+      if (next !== oldValue?.[key]) el.style.setProperty(key, next)
+  },
+}
 const frameStyle = computed(() => {
-  const { cols, rows } = pack.value.grid
   const position = framePosition(pack.value, frame.value)
   return {
     ...layout.value.frame,
-    backgroundImage: `url(${JSON.stringify(sheetSrc.value)})`,
-    backgroundSize: `${cols * 100}% ${rows * 100}%`,
     backgroundPosition: `${position.x}% ${position.y}%`,
   }
 })
@@ -274,7 +286,7 @@ onBeforeUnmount(() => {
       v-if="ready"
       class="agent-pet-sprites__viewport"
       :class="{ 'agent-pet-sprites__viewport--guides': showCalibration }"
-      :style="{ '--agent-pet-sprites-ratio': String(layout.aspectRatio) }"
+      v-sprite-sheet="viewportStyle"
     >
       <div class="agent-pet-sprites__crop" :style="mirrorX ? { transform: 'scaleX(-1)' } : undefined">
         <div class="agent-pet-sprites__frame" :style="frameStyle" />
@@ -337,6 +349,8 @@ onBeforeUnmount(() => {
 }
 .agent-pet-sprites__frame {
   position: absolute;
+  background-image: var(--agent-pet-sprites-sheet);
+  background-size: var(--agent-pet-sprites-size);
   background-repeat: no-repeat;
 }
 .agent-pet-sprites__crop {
