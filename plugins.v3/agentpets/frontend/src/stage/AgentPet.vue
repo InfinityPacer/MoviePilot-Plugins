@@ -209,6 +209,7 @@ let pendingHostState: AgentHostState | null = null
 let bottomFloor: number | null = null
 let documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
 let editorPaused = false
+let pendingViewportResize = false
 let rafId = 0
 let lastFrame = 0
 let anchorFrame = 0
@@ -1801,7 +1802,11 @@ function onVisibilityChange() {
 }
 
 function onWindowResize() {
-  if (!ready.value || editorPaused || props.previewRoot) return
+  if (!ready.value || props.previewRoot) return
+  if (editorPaused) {
+    pendingViewportResize = true
+    return
+  }
   refreshBottomFloor()
   relayout()
   scheduleClearance(RESIZE_CLEAR_DELAY)
@@ -1818,6 +1823,10 @@ onMounted(async () => {
           const next = pendingHostState ?? hostState
           pendingHostState = null
           if (next) onHostState(next)
+          if (pendingViewportResize) {
+            pendingViewportResize = false
+            onWindowResize()
+          }
           timers.resume()
         }
         syncVisibility()
