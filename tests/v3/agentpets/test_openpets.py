@@ -5,7 +5,7 @@ import zipfile
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
-from threading import Event
+from threading import Event, current_thread
 
 import pytest
 from PIL import Image
@@ -250,6 +250,58 @@ def test_changed_catalog_invalidates_its_entire_snapshot(catalog, monkeypatch):
     catalog["root"]["generatedAt"] = "next-snapshot"
     market.search(MarketQuery(page=3))
     assert market._pages == {} and market._search is None
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_overlapping_catalog_refreshes_share_success_or_failure(catalog, monkeypatch, failed):
+    """Waiters share one completed refresh, including errors, and a later call can retry."""
+    market = openpets.OpenPetsMarket()
+    entered, release, waiter_ready = Event(), Event(), Event()
+    original_lock, read = market._lock, openpets._read_json
+    calls = []
+
+    class ObservedLock:
+        """Observe the second caller leaving its initial cache check without sleeping."""
+
+        def __enter__(self):
+            """Keep the real cache lock and its serialization semantics."""
+            return original_lock.__enter__()
+
+        def __exit__(self, *args):
+            """Signal only after the waiter has observed the in-flight refresh."""
+            result = original_lock.__exit__(*args)
+            if current_thread().name.endswith("_1"):
+                waiter_ready.set()
+            return result
+
+    def blocked(url, *args):
+        """Delay the owner until a concurrent caller has checked the same cold cache."""
+        calls.append(url)
+        entered.set()
+        assert release.wait(5)
+        if failed:
+            raise MarketError("refresh unavailable")
+        return read(url, *args)
+
+    monkeypatch.setattr(market, "_lock", ObservedLock())
+    monkeypatch.setattr(openpets, "_read_json", blocked)
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="catalog-flight") as pool:
+        owner = pool.submit(market._catalog)
+        try:
+            assert entered.wait(2)
+            waiter = pool.submit(market._catalog)
+            assert waiter_ready.wait(2)
+        finally:
+            release.set()
+        for future in (owner, waiter):
+            if failed:
+                with pytest.raises(MarketError, match="refresh unavailable"):
+                    future.result(timeout=2)
+            else:
+                assert future.result(timeout=2) == catalog["root"]
+    assert calls == [openpets.INDEX_URL]
+    monkeypatch.setattr(openpets, "_read_json", read)
+    assert market._catalog() == catalog["root"]
 
 
 def test_slow_search_does_not_block_cached_browse_and_is_shared(catalog, monkeypatch):
