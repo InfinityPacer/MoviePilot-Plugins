@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { withLoadTimeout } from '@/loading'
+import { onEditorPresence } from '@/editor/presence'
+import { PausableTimers } from './timers'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
   calibrationEye,
@@ -205,6 +207,7 @@ const animationActive = ref(false)
 let hostState: AgentHostState | null = null
 let bottomFloor: number | null = null
 let documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
+let editorPaused = false
 let rafId = 0
 let lastFrame = 0
 let anchorFrame = 0
@@ -249,7 +252,7 @@ let initialPlacement = true
 let press: { id: number; startX: number; startY: number; offsetX: number; offsetY: number; dragging: boolean } | null =
   null
 
-const timers = new Map<string, number>()
+const timers = new PausableTimers()
 const cleanups: Array<() => void> = []
 const startup = new AbortController()
 let settingsRevision = 0
@@ -415,20 +418,11 @@ const artworkStyle = computed(() => ({
 }))
 
 function setTimer(name: string, delay: number, callback: () => void) {
-  clearTimer(name)
-  timers.set(
-    name,
-    window.setTimeout(() => {
-      timers.delete(name)
-      callback()
-    }, delay),
-  )
+  timers.set(name, delay, callback)
 }
 
 function clearTimer(name: string) {
-  const id = timers.get(name)
-  if (id !== undefined) window.clearTimeout(id)
-  timers.delete(name)
+  timers.clear(name)
 }
 
 function randomBetween(min: number, max: number): number {
@@ -561,7 +555,7 @@ function motionAllowed(): boolean {
 }
 
 function visible(): boolean {
-  return documentVisible && (hostState?.pageVisible ?? true)
+  return !editorPaused && documentVisible && (hostState?.pageVisible ?? true)
 }
 
 function onGround(): boolean {
@@ -580,7 +574,7 @@ function currentRect(): AgentRect {
 
 function reportAnchor() {
   anchorFrame = 0
-  if (disposed || !ready.value) return
+  if (disposed || !ready.value || editorPaused) return
   const rect = currentRect()
   if (sameRect(rect, lastAnchor)) return
   lastAnchor = rect
@@ -589,7 +583,7 @@ function reportAnchor() {
 
 /** 每帧最多上报一次锚点；动画循环内直接上报，其余变化合并到下一帧。 */
 function queueAnchor() {
-  if (anchorFrame || rafId) return
+  if (editorPaused || anchorFrame || rafId) return
   anchorFrame = window.requestAnimationFrame(reportAnchor)
 }
 
@@ -1490,6 +1484,7 @@ function applySettings(value: unknown) {
 function onHostState(state: AgentHostState) {
   const before = hostState
   hostState = state
+  if (editorPaused) return
   available.value = state.available
   const resized =
     !!before &&
@@ -1552,6 +1547,13 @@ function freezeMotion() {
 /** 页面不可见时停掉 rAF、行为计时与元素观察；回到可见后继续并重新校验脚下。 */
 function syncVisibility() {
   animationActive.value = motionAllowed() && visible()
+  if (editorPaused) {
+    stopLoop()
+    pauseSurfaceWatch()
+    if (anchorFrame) window.cancelAnimationFrame(anchorFrame)
+    anchorFrame = 0
+    return
+  }
   if (!visible()) {
     stopLoop()
     clearTimer('behavior')
@@ -1569,6 +1571,7 @@ function syncVisibility() {
 }
 
 function onHostEvent(event: AgentHostEvent) {
+  if (editorPaused) return
   markActivity()
   const next = eventPose(event.name)
   if (next) playTransient(next.pose, next.duration)
@@ -1794,13 +1797,24 @@ function onVisibilityChange() {
 }
 
 function onWindowResize() {
-  if (!ready.value || props.previewRoot) return
+  if (!ready.value || editorPaused || props.previewRoot) return
   refreshBottomFloor()
   relayout()
   scheduleClearance(RESIZE_CLEAR_DELAY)
 }
 
 onMounted(async () => {
+  if (!props.previewRoot)
+    cleanups.push(
+      onEditorPresence(active => {
+        editorPaused = active
+        if (active) timers.pause()
+        else timers.resume()
+        if (!active && hostState) onHostState(hostState)
+        syncVisibility()
+        syncSurfacePoll()
+      }),
+    )
   void refreshOwnCalibration()
   const agent = props.agent
   if (agent?.subscribe) cleanups.push(agent.subscribe(onHostState))
@@ -1872,8 +1886,7 @@ onBeforeUnmount(() => {
   pauseSurfaceWatch()
   if (anchorFrame) window.cancelAnimationFrame(anchorFrame)
   anchorFrame = 0
-  for (const id of timers.values()) window.clearTimeout(id)
-  timers.clear()
+  timers.dispose()
   releasePointer()
   if (press?.dragging) props.pet?.setInteracting?.(false)
   press = null

@@ -17,6 +17,7 @@ import type { SpritePack } from '@/sprites/schema'
 import PetPreview from '@/editor/PetPreview.vue'
 import { usePetSettings } from '@/editor/settings'
 import { builtinAvatar } from '@/editor/avatars'
+import { useEditorPresence } from '@/editor/presence'
 import '@/editor/ui.css'
 import { AGENT_HOST_KEY, HOST_UNSUPPORTED_MESSAGE, type MoviePilotAgentHost, type PluginApi } from '@/host'
 import { SETTINGS_EVENT } from '@/stage/settings'
@@ -30,6 +31,7 @@ const props = withDefaults(
 const emit = defineEmits<{ close: []; switch: []; layout: [{ maxWidth: string }] }>()
 emit('layout', { maxWidth: '72rem' })
 const agent = inject<MoviePilotAgentHost | null>(AGENT_HOST_KEY, null)
+useEditorPresence()
 const snapshot = ref<EditorSnapshot | null>(null)
 const avatar = builtinAvatar('ying')
 const avatarFailed = ref(false)
