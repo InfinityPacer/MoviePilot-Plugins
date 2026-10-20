@@ -98,6 +98,7 @@ let timer = 0
 let disposed = false
 let loadVersion = 0
 let loadController: AbortController | null = null
+let sheetRevision = ''
 let unsubscribe: (() => void) | undefined
 
 const resolved = computed(() =>
@@ -142,8 +143,7 @@ const vSpriteSheet: ObjectDirective<HTMLElement, Record<string, string>> = {
     for (const [key, next] of Object.entries(value)) el.style.setProperty(key, next)
   },
   updated: (el, { value, oldValue }) => {
-    for (const [key, next] of Object.entries(value))
-      if (next !== oldValue?.[key]) el.style.setProperty(key, next)
+    for (const [key, next] of Object.entries(value)) if (next !== oldValue?.[key]) el.style.setProperty(key, next)
   },
 }
 const frameStyle = computed(() => {
@@ -193,6 +193,7 @@ async function loadPack(key: string) {
       key === 'ying'
         ? frameUrl('idle')
         : builtinAsset(nextPack.sheet || 'sheet.webp', undefined, builtin ? key : BUILTIN_PACK_ID)
+    let nextRevision = ''
     if (builtin) {
       try {
         nextPack = { ...nextPack, calibration: await loadBuiltinCalibration(props.api, props.pluginId, key, signal) }
@@ -203,21 +204,37 @@ async function loadPack(key: string) {
     } else {
       if (!props.api?.get) throw new Error('pack API unavailable')
       const instanceId = props.pluginId || 'AgentPets'
+      const known = ready.value && pack.value.id === key ? sheetRevision : ''
       const response = await withLoadTimeout(
-        props.api.get<{ pack: unknown; sheet_src: string }>(`plugin/${instanceId}/pack?key=${encodeURIComponent(key)}`),
+        props.api.get<{ pack: unknown; sheet_src: string; sheet_revision?: string }>(
+          `plugin/${instanceId}/pack?key=${encodeURIComponent(key)}${known ? `&known_sheet=${encodeURIComponent(known)}` : ''}`,
+        ),
         signal,
       )
       const { pack: parsed } = validatePack(response?.data?.pack)
-      if (!response?.success || !parsed || !response.data?.sheet_src)
+      if (
+        !response?.success ||
+        !parsed ||
+        (!response.data?.sheet_src && (!known || response.data?.sheet_revision !== known))
+      )
         throw new Error(response?.message || 'invalid pack')
       nextPack = props.pet?.mode === 'stage' ? withCodexStageActions(parsed) : parsed
-      nextSheet = response.data.sheet_src
+      nextSheet = response.data.sheet_src || sheetSrc.value
+      nextRevision = response.data.sheet_revision || ''
     }
-    const dimensions = await loadImage(nextSheet, signal)
+    const reuseImage =
+      !!nextRevision &&
+      nextRevision === sheetRevision &&
+      ready.value &&
+      nextSheet === sheetSrc.value &&
+      nextPack.grid.cols === pack.value.grid.cols &&
+      nextPack.grid.rows === pack.value.grid.rows
+    const dimensions = reuseImage ? null : await loadImage(nextSheet, signal)
     if (!current()) return
     pack.value = nextPack
     sheetSrc.value = nextSheet
-    cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows)
+    sheetRevision = nextRevision
+    if (dimensions) cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows)
     ready.value = true
     emit('pack-ready', nextPack)
     emit('load-state', 'ready')
@@ -225,6 +242,7 @@ async function loadPack(key: string) {
     if (!current()) return
     console.warn(`[AgentPets] pack ${key} unavailable`)
     ready.value = false
+    sheetRevision = ''
     emit('load-state', 'error')
     if (props.strictPreview || key === BUILTIN_PACK_ID) return
     try {

@@ -302,6 +302,18 @@ class PackStore:
         mime, _ = sniff_image(content)
         return f"data:{mime};base64," + base64.b64encode(content).decode("ascii")
 
+    def sheet_revision(self, record: dict[str, Any]) -> str:
+        """生成图片身份；只改校准或映射时不读取和传输整张精灵图。"""
+        if record.get("source") == "url":
+            return ""
+        else:
+            path = self.image_path(record)
+            if path is None or not path.is_file():
+                raise PackError("素材包的精灵图文件已丢失，请删除后重新添加")
+            stat = path.stat()
+            identity = f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}"
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
     def _derive_id(self, name: str) -> str:
         """未写 id 时按名称生成；中文等非 ASCII 名称用时间戳兜底。"""
         slug = re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-")[:24]

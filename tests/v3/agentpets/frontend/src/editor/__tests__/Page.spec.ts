@@ -14,6 +14,26 @@ import { builtinDefaultCalibration } from '@/sprites/builtinCalibration'
 import { parseCalibration, type Calibration } from '@/sprites/calibration'
 
 const cleanups: Array<() => void> = []
+
+it.each([false, true])('notifies once per pack after a multi-field save (partial failure: %s)', async failure => {
+  const { view, api, click, broadcast } = await setup()
+  view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
+  await flushPromises()
+  const preview = view.findComponent({ name: 'PetPreview' })
+  preview.vm.$emit('pack-ready', { id: 'kurisu', codex_version: 'v2', action_mappings: {}, calibration: {} })
+  preview.vm.$emit('mappings', { 'stage.think': 'review' })
+  preview.vm.$emit('calibration', { ...parseCalibration(), left: 0.1 })
+  api.post.mockImplementation(async (path, body) => {
+    const data = body as { mappings: unknown; calibration: unknown }
+    if (failure && path.endsWith('/calibration')) return { success: false, data: null }
+    return { success: true, data: { id: 'kurisu', mappings: data.mappings, calibration: data.calibration } }
+  })
+  await flushPromises()
+  await click('保存调整')
+  expect(api.post).toHaveBeenCalledTimes(2)
+  expect(broadcast).toHaveBeenCalledTimes(1)
+  expect(broadcast).toHaveBeenCalledWith('agentpets.pack.updated', { key: 'kurisu' })
+})
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup())
   vi.clearAllMocks()

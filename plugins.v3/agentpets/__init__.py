@@ -373,7 +373,7 @@ class AgentPets(_PluginBase):
         packs += [self._summary(record) for record in self._store().list()]
         return schemas.Response(success=True, data=packs)
 
-    def api_pack(self, key: str = BUILTIN_PACK_ID):
+    def api_pack(self, key: str = BUILTIN_PACK_ID, known_sheet: str | None = None):
         """素材包组件读取的完整素材包；内置素材包的精灵图由前端从联邦产物加载。"""
         if key in BUILTIN_PACK_IDS:
             calibration = self.api_builtin_calibration(key)
@@ -386,7 +386,8 @@ class AgentPets(_PluginBase):
         if not record:
             return schemas.Response(success=False, message=f"素材包 {key} 不存在")
         try:
-            sheet_src = store.sheet_src(record)
+            sheet_revision = store.sheet_revision(record)
+            sheet_src = "" if known_sheet and known_sheet == sheet_revision else store.sheet_src(record)
         except PackError as exc:
             return schemas.Response(success=False, message=str(exc))
         pack = {name: record.get(name) for name in ("id", "name", "description", "grid", "frames", "actions", "random_actions")}
@@ -397,7 +398,8 @@ class AgentPets(_PluginBase):
         version = codex_pet_version(record)
         if version:
             pack["codex_version"] = version
-        return schemas.Response(success=True, data={"pack": pack, "builtin": False, "sheet_src": sheet_src})
+        return schemas.Response(success=True, data={"pack": pack, "builtin": False, "sheet_src": sheet_src,
+                                                   "sheet_revision": sheet_revision})
 
     def api_add_pack(self, request: AddPackRequest):
         """校验并新增素材包，持久化失败返回失败且保全被引用图片"""

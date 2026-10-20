@@ -150,6 +150,31 @@ def test_pack_api_serves_uploaded_sheet_as_data_url(plugin: AgentPets) -> None:
     assert plugin.api_pack("missing").success is False
 
 
+def test_pack_metadata_reuses_only_the_current_sheet(plugin: AgentPets, monkeypatch) -> None:
+    """图片未变时不读图；错误身份或替换图片必须重新返回完整内容。"""
+    from app.plugins.agentpets.packs.store import PackStore
+
+    plugin.api_add_pack(SimpleNamespace(pack=_pack(), image=_data_url(_png())))
+    first = plugin.api_pack("pixel-dog").data
+    original = PackStore.sheet_src
+    calls = []
+
+    def read(store, record):
+        """记录是否真的读取并编码了完整图片。"""
+        calls.append(record["id"])
+        return original(store, record)
+
+    monkeypatch.setattr(PackStore, "sheet_src", read)
+    assert plugin.api_pack("pixel-dog", first["sheet_revision"]).data["sheet_src"] == ""
+    assert calls == []
+    assert plugin.api_pack("pixel-dog", "wrong").data["sheet_src"] == first["sheet_src"]
+    path = plugin._store().image_path(plugin._store().get("pixel-dog"))
+    path.write_bytes(_png(128, 64))
+    changed = plugin.api_pack("pixel-dog", first["sheet_revision"]).data
+    assert changed["sheet_revision"] != first["sheet_revision"] and changed["sheet_src"]
+    assert len(calls) == 2
+
+
 def test_url_pack_requires_http_sheet(plugin: AgentPets) -> None:
     """不上传图片时 sheet 必须是 http(s) 地址，预览可省略。"""
     bad = plugin.api_add_pack(SimpleNamespace(pack=_pack(sheet="sheet.png"), image=None))
