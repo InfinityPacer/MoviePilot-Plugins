@@ -130,6 +130,8 @@ def transport(monkeypatch):
         def iter_content(self, chunk_size):
             """逐块产生测试数据或注入断流错误，不读取真实连接"""
             for chunk in state["chunks"]:
+                if state.get("clock") is not None:
+                    state["clock"][0] = 31
                 if isinstance(chunk, Exception):
                     raise chunk
                 yield chunk
@@ -176,7 +178,7 @@ def test_search_maps_live_response_structure_and_pagination(transport):
     assert str(page.items[0].preview) == BASE_URL + "/assets/pets/pet-example/poster.webp"
     assert str(page.items[0].source_url) == BASE_URL + "/#/pets/pet-example"
     assert transport["calls"] == [(BASE_URL + "/api/pets", {
-        "params": {"page": 2, "pageSize": 1, "q": "cat"}, "allow_redirects": False,
+        "params": {"page": 2, "pageSize": 1, "q": "cat"}, "allow_redirects": False, "timeout": 20,
     })]
     assert transport["closed"]
 
@@ -281,9 +283,9 @@ def test_stream_limits_and_network_errors_release_response(transport, monkeypatc
     elif fault == "disconnect":
         transport["disconnected"] = True
     else:
-        times = iter([0, 31])
+        transport["clock"] = [0]
         transport["chunks"] = [b"x"]
-        monkeypatch.setattr("app.plugins.agentpets.markets.http.monotonic", lambda: next(times))
+        monkeypatch.setattr("app.plugins.agentpets.markets.http.monotonic", lambda: transport["clock"][0])
     with pytest.raises(MarketError) as error:
         CodexPetsMarket().fetch("pet")
     assert "private" not in str(error.value) and transport["closed"]

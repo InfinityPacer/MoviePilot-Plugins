@@ -2,6 +2,8 @@
 
 from contextlib import contextmanager
 from ipaddress import ip_address
+from threading import BoundedSemaphore, Event
+from time import monotonic
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
@@ -39,7 +41,10 @@ def network(monkeypatch):
         def iter_content(self, chunk_size):
             """按生产分块大小提供固定内容。"""
             assert chunk_size == 16 * 1024
-            yield b"payload"
+            if state.get("stream_wait"):
+                state["stream_wait"]()
+            if not state.get("empty"):
+                yield b"payload"
 
     class Client:
         """记录构造参数，检查代理未被忽略或改写。"""
@@ -55,6 +60,8 @@ def network(monkeypatch):
             try:
                 if state.get("error"):
                     raise state["error"]
+                if state.get("headers_wait"):
+                    state["headers_wait"]()
                 yield None if state.get("no_response") else Response()
             finally:
                 state["closed"] += 1
@@ -62,6 +69,8 @@ def network(monkeypatch):
     def check_url(url, allowed_hosts, **kwargs):
         """记录白名单与私网拦截策略，不解析 DNS 或修改宿主服务。"""
         state["checks"].append((url, allowed_hosts, kwargs))
+        if state.get("dns_wait"):
+            state["dns_wait"]()
         return state["safe"]
 
     monkeypatch.setattr(config, "settings", settings)
@@ -91,7 +100,7 @@ def test_market_catalogs_and_downloads_follow_mp_proxy(network, url, proxy):
     assert network["checks"] == [(url, hosts, {
         "strict": True, "block_private": True, "allowed_private_ranges": None,
     })]
-    assert network["calls"] == [(url, {"params": None, "allow_redirects": False})]
+    assert network["calls"] == [(url, {"params": None, "allow_redirects": False, "timeout": 20})]
     assert network["closed"] == 1
 
 
@@ -212,3 +221,71 @@ def test_connection_failure_identifies_server_without_leaking_details(network, f
     assert "private-proxy-detail" not in str(exc.value)
     assert "图片安全域" not in str(exc.value)
     assert network["closed"] == 1
+
+
+@pytest.mark.parametrize("phase", ["dns_wait", "headers_wait", "stream_wait"])
+def test_deadline_includes_every_blocking_phase_and_empty_bodies(network, monkeypatch, phase):
+    """Late DNS, headers or EOF cannot be accepted as a successful empty response."""
+    from app.plugins.agentpets.markets import http
+
+    clock = [0]
+    monkeypatch.setattr(http, "monotonic", lambda: clock[0])
+    network["empty"] = True
+    network[phase] = lambda: clock.__setitem__(0, 31)
+    with pytest.raises(MarketError, match="超时"):
+        http._read_market_bytes("https://codex-pets.net/api/pets", 16, market_name="Market",
+                                allowed_hosts={"codex-pets.net"}, params=None,
+                                redirect_hosts=None, redirect_path_prefix=None, deadline=30)
+    assert len(network["calls"]) == network["closed"] == (0 if phase == "dns_wait" else 1)
+
+
+def test_redirect_uses_remaining_budget_instead_of_a_fresh_timeout(network, monkeypatch):
+    """DNS and the first response consume the same budget as the redirect."""
+    from app.plugins.agentpets.markets import http
+
+    clock = [0]
+    monkeypatch.setattr(http, "monotonic", lambda: clock[0])
+    network["dns_wait"] = lambda: clock.__setitem__(0, clock[0] + 8)
+    network["headers_wait"] = lambda: clock.__setitem__(0, clock[0] + 5)
+    network["responses"] = [(307, {"Location": "https://assets.petdex.dev/pets/test.zip"}), (200, {})]
+    assert http._read_market_bytes("https://petdex.dev/download", 16, market_name="Market",
+                                  allowed_hosts={"petdex.dev"}, params=None,
+                                  redirect_hosts={"assets.petdex.dev"}, redirect_path_prefix="/pets/",
+                                  deadline=30) == b"payload"
+    assert [call[1]["timeout"] for call in network["calls"]] == [20, 9]
+    assert network["closed"] == 2 and len(network["checks"]) == 2
+
+
+@pytest.mark.parametrize("phase", ["dns_wait", "headers_wait", "stream_wait"])
+def test_caller_times_out_while_host_io_is_blocked_and_slots_stay_bounded(network, monkeypatch, phase):
+    """A timed-out operation retains its slot until I/O exits; no hidden queue grows."""
+    from app.plugins.agentpets.markets import http
+
+    slots = BoundedSemaphore(1)
+    monkeypatch.setattr(http, "_NETWORK_SLOTS", slots)
+    monkeypatch.setattr(http, "REQUEST_BUDGET", 0.05)
+    release, entered = Event(), Event()
+
+    def wait():
+        """Simulate an uninterruptible host operation, released by the test."""
+        entered.set()
+        assert release.wait(3)
+
+    network[phase] = wait
+    start = monotonic()
+    try:
+        with pytest.raises(MarketError, match="超时"):
+            read_market_bytes("https://codex-pets.net/api/pets", 16,
+                              market_name="Market", allowed_hosts={"codex-pets.net"})
+        assert entered.is_set() and monotonic() - start < 1
+        with pytest.raises(MarketError, match="繁忙"):
+            read_market_bytes("https://codex-pets.net/api/pets", 16,
+                              market_name="Market", allowed_hosts={"codex-pets.net"})
+    finally:
+        release.set()
+        assert slots.acquire(timeout=2)
+        slots.release()
+    assert len(network["calls"]) == network["closed"] == (0 if phase == "dns_wait" else 1)
+    network.pop(phase)
+    assert read_market_bytes("https://codex-pets.net/api/pets", 16,
+                             market_name="Market", allowed_hosts={"codex-pets.net"}) == b"payload"
