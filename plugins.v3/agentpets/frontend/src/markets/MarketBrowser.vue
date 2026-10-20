@@ -83,6 +83,7 @@ async function initialize() {
   submittedKeyword.value = ''
   result.value = null
   selected.value = null
+  failedImages.value = new Set()
   importing.value = false
   loading.value = false
   listError.value = ''
@@ -234,6 +235,9 @@ onBeforeUnmount(() => {
         ></template
       >
     </v-alert>
+    <v-alert v-if="failedImages.size" role="status" type="info" variant="tonal" density="compact" class="mb-4">
+      部分预览图加载失败。图片由浏览器直接加载，请打开原图检查浏览器网络；MoviePilot 图片安全域不影响此处。
+    </v-alert>
     <div v-if="listLoading || loading" class="ap-market__grid" aria-label="正在加载市场形象" aria-busy="true">
       <div v-for="index in 6" :key="index" class="ap-market__skeleton">
         <v-skeleton-loader type="image, list-item-two-line" />
@@ -270,6 +274,17 @@ onBeforeUnmount(() => {
           <h3 :title="item.name">{{ item.name }}</h3>
           <p class="ap-market__author">{{ item.author || '作者未提供' }}</p>
           <p class="ap-market__description" :title="item.description">{{ item.description || '暂无说明' }}</p>
+          <v-btn
+            v-if="failedImages.has(item.id) && marketUrl(item.preview)"
+            :href="marketUrl(item.preview)"
+            :aria-label="`查看 ${item.name} 原图`"
+            target="_blank"
+            rel="noopener noreferrer"
+            size="small"
+            variant="text"
+            append-icon="mdi-open-in-new"
+            >查看原图</v-btn
+          >
           <div class="ap-market__item-actions">
             <v-chip v-if="importedIds.has(`${marketId}:${item.id}`)" size="x-small" color="success" variant="tonal"
               >已导入</v-chip
@@ -327,6 +342,27 @@ onBeforeUnmount(() => {
             />
             <v-icon v-else icon="mdi-paw-outline" size="60" />
           </div>
+          <v-alert
+            v-if="failedImages.has(selected.id)"
+            role="status"
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mt-3"
+          >
+            浏览器无法加载预览图，不影响尝试导入。
+            <v-btn
+              v-if="marketUrl(selected.preview)"
+              :href="marketUrl(selected.preview)"
+              :aria-label="`查看 ${selected.name} 原图`"
+              target="_blank"
+              rel="noopener noreferrer"
+              size="small"
+              variant="text"
+              append-icon="mdi-open-in-new"
+              >查看原图</v-btn
+            >
+          </v-alert>
           <p class="ap-market__review-description">{{ selected.description || '暂无说明' }}</p>
           <dl class="ap-market__metadata">
             <dt>市场</dt>

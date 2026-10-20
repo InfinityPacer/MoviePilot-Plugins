@@ -110,6 +110,7 @@ def _archive(entries=None):
 def transport(monkeypatch):
     """替换宿主 HTTP 与地址检查，记录请求和关闭行为并禁止真实联网"""
     import app.sdk.network as network
+    from app.sdk.config import settings
 
     state = {"status": 200, "chunks": [], "headers": {}, "calls": [], "closed": False, "safe": True}
 
@@ -148,10 +149,11 @@ def transport(monkeypatch):
             finally:
                 state["closed"] = True
 
-    def check_url(url, allowed_domains, strict, block_private):
+    def check_url(url, allowed_domains, strict, block_private, allowed_private_ranges):
         """核对固定站点白名单与私网拦截开关，并返回可控安全结论"""
         assert url.startswith(BASE_URL + "/api/pets")
         assert allowed_domains == {"codex-pets.net"} and strict and block_private
+        assert allowed_private_ranges == getattr(settings, "IMAGE_PROXY_ALLOWED_PRIVATE_RANGES", None)
         return state["safe"]
 
     monkeypatch.setattr(network, "RequestUtils", Client)

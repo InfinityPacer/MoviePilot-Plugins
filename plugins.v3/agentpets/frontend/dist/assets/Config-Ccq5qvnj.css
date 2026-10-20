@@ -96,25 +96,25 @@
   font-size: 12px;
 }
 
-.ap-market[data-v-34a7a093] {
+.ap-market[data-v-f1fcaa54] {
   min-width: 0;
 }
-.ap-market__toolbar[data-v-34a7a093] {
+.ap-market__toolbar[data-v-f1fcaa54] {
   display: grid;
   grid-template-columns: minmax(160px, 210px) minmax(0, 1fr);
   gap: 12px;
 }
-.ap-market__search[data-v-34a7a093] {
+.ap-market__search[data-v-f1fcaa54] {
   display: flex;
   gap: 8px;
   min-width: 0;
   align-items: center;
 }
-.ap-market__search[data-v-34a7a093] > :first-child {
+.ap-market__search[data-v-f1fcaa54] > :first-child {
   min-width: 0;
   flex: 1;
 }
-.ap-market__source[data-v-34a7a093] {
+.ap-market__source[data-v-f1fcaa54] {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -123,16 +123,16 @@
   font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.75);
 }
-.ap-market__source > span[data-v-34a7a093] {
+.ap-market__source > span[data-v-f1fcaa54] {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.ap-market__grid[data-v-34a7a093] {
+.ap-market__grid[data-v-f1fcaa54] {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
   gap: 14px;
 }
-.ap-market__item[data-v-34a7a093] {
+.ap-market__item[data-v-f1fcaa54] {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -140,7 +140,7 @@
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 8px;
 }
-.ap-market__preview[data-v-34a7a093] {
+.ap-market__preview[data-v-f1fcaa54] {
   display: grid;
   place-items: center;
   width: 100%;
@@ -150,50 +150,50 @@
   background: rgba(var(--v-theme-on-surface), 0.035);
   cursor: pointer;
 }
-.ap-market__preview[data-v-34a7a093]:focus-visible {
+.ap-market__preview[data-v-f1fcaa54]:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary));
   outline-offset: -3px;
 }
-.ap-market__preview img[data-v-34a7a093] {
+.ap-market__preview img[data-v-f1fcaa54] {
   width: 100%;
   height: 100%;
   object-fit: contain;
   padding: 12px;
 }
-.ap-market__item-body[data-v-34a7a093] {
+.ap-market__item-body[data-v-f1fcaa54] {
   display: flex;
   flex-direction: column;
   gap: 7px;
   padding: 12px;
   flex: 1;
 }
-.ap-market__item h3[data-v-34a7a093] {
+.ap-market__item h3[data-v-f1fcaa54] {
   font-size: 14px;
   line-height: 1.5;
   font-weight: 600;
 }
-.ap-market__item h3[data-v-34a7a093],
-.ap-market__description[data-v-34a7a093] {
+.ap-market__item h3[data-v-f1fcaa54],
+.ap-market__description[data-v-f1fcaa54] {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.ap-market__author[data-v-34a7a093],
-.ap-market__description[data-v-34a7a093] {
+.ap-market__author[data-v-f1fcaa54],
+.ap-market__description[data-v-f1fcaa54] {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
   color: rgba(var(--v-theme-on-surface), 0.75);
 }
-.ap-market__author[data-v-34a7a093] {
+.ap-market__author[data-v-f1fcaa54] {
   overflow-wrap: anywhere;
 }
-.ap-market__description[data-v-34a7a093] {
+.ap-market__description[data-v-f1fcaa54] {
   min-height: 3em;
 }
-.ap-market__item-actions[data-v-34a7a093] {
+.ap-market__item-actions[data-v-f1fcaa54] {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -201,7 +201,7 @@
   margin-top: auto;
   padding-top: 5px;
 }
-.ap-market__pagination[data-v-34a7a093] {
+.ap-market__pagination[data-v-f1fcaa54] {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -209,14 +209,14 @@
   margin-top: 18px;
   font-size: 12px;
 }
-.ap-market__empty[data-v-34a7a093] {
+.ap-market__empty[data-v-f1fcaa54] {
   padding: 44px 12px;
   display: grid;
   justify-items: center;
   gap: 10px;
   color: rgba(var(--v-theme-on-surface), 0.75);
 }
-.ap-market__review-preview[data-v-34a7a093] {
+.ap-market__review-preview[data-v-f1fcaa54] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
@@ -226,7 +226,7 @@
   background: rgba(var(--v-theme-on-surface), 0.035);
   border-radius: 8px;
 }
-.ap-market__review-preview img[data-v-34a7a093] {
+.ap-market__review-preview img[data-v-f1fcaa54] {
   display: block;
   min-width: 0;
   min-height: 0;
@@ -236,48 +236,48 @@
   max-height: 100%;
   object-fit: contain;
 }
-.ap-market__review-description[data-v-34a7a093] {
+.ap-market__review-description[data-v-f1fcaa54] {
   margin: 16px 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-.ap-market__metadata[data-v-34a7a093] {
+.ap-market__metadata[data-v-f1fcaa54] {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
   gap: 8px 12px;
   font-size: 13px;
 }
-.ap-market__metadata dt[data-v-34a7a093] {
+.ap-market__metadata dt[data-v-f1fcaa54] {
   color: rgba(var(--v-theme-on-surface), 0.75);
 }
-.ap-market__metadata dd[data-v-34a7a093] {
+.ap-market__metadata dd[data-v-f1fcaa54] {
   margin: 0;
   overflow-wrap: anywhere;
 }
-.ap-market__skeleton[data-v-34a7a093] {
+.ap-market__skeleton[data-v-f1fcaa54] {
   border-radius: 8px;
   overflow: hidden;
 }
 @media (max-width: 600px) {
-.ap-market__toolbar[data-v-34a7a093] {
+.ap-market__toolbar[data-v-f1fcaa54] {
     grid-template-columns: minmax(0, 1fr);
 }
-.ap-market__grid[data-v-34a7a093] {
+.ap-market__grid[data-v-f1fcaa54] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
-.ap-market__item-body[data-v-34a7a093] {
+.ap-market__item-body[data-v-f1fcaa54] {
     padding: 10px;
 }
-.ap-market__source[data-v-34a7a093] {
+.ap-market__source[data-v-f1fcaa54] {
     align-items: flex-start;
 }
-.ap-market__pagination[data-v-34a7a093] {
+.ap-market__pagination[data-v-f1fcaa54] {
     flex-wrap: wrap;
 }
 }
 @media (max-width: 340px) {
-.ap-market__grid[data-v-34a7a093] {
+.ap-market__grid[data-v-f1fcaa54] {
     grid-template-columns: minmax(0, 1fr);
 }
 }

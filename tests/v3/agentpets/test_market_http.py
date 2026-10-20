@@ -1,6 +1,7 @@
 """市场共享请求遵循宿主代理，同时保留无代理行为和安全边界。"""
 
 from contextlib import contextmanager
+from ipaddress import ip_address
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
@@ -19,16 +20,21 @@ def network(monkeypatch):
     state = {"clients": [], "calls": [], "checks": [], "safe": True, "status": 200, "closed": 0}
     settings = SimpleNamespace(PROXY=None)
     state["settings"] = settings
+    state["real_check"] = sdk.SecurityUtils.is_safe_url
 
     class Response:
         """提供可控 HTTP 状态及有限字节，不读取外部网络。"""
 
-        headers = {}
+        def __init__(self):
+            """依次取出跳转与最终响应，未指定时沿用通用状态。"""
+            self.status, self.headers = state.get("responses", []).pop(0) if state.get("responses") else (
+                state["status"], {},
+            )
 
         @property
         def status_code(self):
             """让同一客户端桩覆盖成功与失败的处理分支。"""
-            return state["status"]
+            return self.status
 
         def iter_content(self, chunk_size):
             """按生产分块大小提供固定内容。"""
@@ -47,7 +53,9 @@ def network(monkeypatch):
             """记录请求与关闭次数，支持断言失败后没有偷偷改走直连。"""
             state["calls"].append((url, kwargs))
             try:
-                yield Response()
+                if state.get("error"):
+                    raise state["error"]
+                yield None if state.get("no_response") else Response()
             finally:
                 state["closed"] += 1
 
@@ -80,7 +88,9 @@ def test_market_catalogs_and_downloads_follow_mp_proxy(network, url, proxy):
     assert options["proxies"] is proxy
     assert options["verify"] is True and options["timeout"] == 20
     assert options["headers"]["Accept-Encoding"] == "identity"
-    assert network["checks"] == [(url, hosts, {"strict": True, "block_private": True})]
+    assert network["checks"] == [(url, hosts, {
+        "strict": True, "block_private": True, "allowed_private_ranges": None,
+    })]
     assert network["calls"] == [(url, {"params": None, "allow_redirects": False})]
     assert network["closed"] == 1
 
@@ -114,3 +124,91 @@ def test_proxy_does_not_bypass_private_address_checks(network):
         read_market_bytes("https://codex-pets.net/api/pets", 16,
                           market_name="Market", allowed_hosts={"codex-pets.net"})
     assert not network["calls"]
+
+
+def test_each_request_reads_latest_allowed_ranges(network):
+    """只复用宿主明确配置的网段；更新和清空后下一请求立即采用新值。"""
+    ranges = [["198.18.0.0/15"], [], None]
+    for value in ranges:
+        network["settings"].IMAGE_PROXY_ALLOWED_PRIVATE_RANGES = value
+        read_market_bytes("https://codex-pets.net/api/pets", 16,
+                          market_name="Market", allowed_hosts={"codex-pets.net"})
+    assert [check[2]["allowed_private_ranges"] for check in network["checks"]] == ranges
+
+
+@pytest.mark.parametrize(("addresses", "ranges", "allowed"), [
+    (["198.18.4.186"], None, False),
+    (["198.18.4.186"], [], False),
+    (["198.18.4.186"], ["198.18.0.0/15"], True),
+    (["198.18.4.186"], ["not-a-network"], False),
+    (["127.0.0.1"], ["198.18.0.0/15"], False),
+    (["192.168.50.1"], ["198.18.0.0/15"], False),
+    (["169.254.169.254"], ["198.18.0.0/15"], False),
+    (["::1"], ["198.18.0.0/15"], False),
+    (["198.18.4.186", "192.168.50.1"], ["198.18.0.0/15"], False),
+    (["198.18.4.186", "2606:4700:4700::1111"], ["198.18.0.0/15"], False),
+    (["2606:4700:4700::1111"], ["198.18.0.0/15"], True),
+    (["1.1.1.1"], None, True),
+    ([], ["198.18.0.0/15"], False),
+])
+def test_real_host_safety_with_controlled_dns(network, monkeypatch, addresses, ranges, allowed):
+    """实验室 DNS 配合真实宿主安全算法，放行 fake-IP 不放行其他私网。"""
+    from app.sdk.network import SecurityUtils
+
+    network["settings"].IMAGE_PROXY_ALLOWED_PRIVATE_RANGES = ranges
+    monkeypatch.setattr(SecurityUtils, "is_safe_url", network["real_check"])
+    monkeypatch.setattr(SecurityUtils, "_hostname_addresses", lambda _host: [ip_address(ip) for ip in addresses])
+    if allowed:
+        assert read_market_bytes("https://codex-pets.net/api/pets", 16,
+                                 market_name="Market", allowed_hosts={"codex-pets.net"}) == b"payload"
+    else:
+        with pytest.raises(MarketError, match="服务器安全检查"):
+            read_market_bytes("https://codex-pets.net/api/pets", 16,
+                              market_name="Market", allowed_hosts={"codex-pets.net"})
+        assert not network["calls"]
+
+
+@pytest.mark.parametrize("target", [
+    "https://untrusted.test/file.zip", "http://codex-pets.net/file.zip",
+    "https://user:password@codex-pets.net/file.zip", "https://codex-pets.net:8443/file.zip",
+])
+def test_allowed_ranges_do_not_expand_market_hosts(network, target):
+    """有网段例外也不接受非内置域名、明文协议、凭据或自定义端口。"""
+    network["settings"].IMAGE_PROXY_ALLOWED_PRIVATE_RANGES = ["198.18.0.0/15"]
+    with pytest.raises(MarketError, match="不受信任"):
+        read_market_bytes(target, 16, market_name="Market", allowed_hosts={"codex-pets.net"})
+    assert not network["checks"] and not network["calls"]
+
+
+@pytest.mark.parametrize("redirect_address", ["198.18.4.187", "192.168.50.1"])
+def test_redirect_rechecks_dns_with_configured_ranges(network, monkeypatch, redirect_address):
+    """白名单跳转重新验证 DNS；fake-IP 例外不得绕过跳转目标私网检查。"""
+    from app.sdk.network import SecurityUtils
+
+    network["settings"].IMAGE_PROXY_ALLOWED_PRIVATE_RANGES = ["198.18.0.0/15"]
+    network["responses"] = [(307, {"Location": "https://assets.petdex.dev/pets/test.zip"}), (200, {})]
+    monkeypatch.setattr(SecurityUtils, "is_safe_url", network["real_check"])
+    monkeypatch.setattr(SecurityUtils, "_hostname_addresses", lambda host: [
+        ip_address(redirect_address if host == "assets.petdex.dev" else "198.18.4.186"),
+    ])
+    kwargs = dict(market_name="Market", allowed_hosts={"petdex.dev"},
+                  redirect_hosts={"assets.petdex.dev"}, redirect_path_prefix="/pets/")
+    if redirect_address.startswith("198.18."):
+        assert read_market_bytes("https://petdex.dev/download", 16, **kwargs) == b"payload"
+        assert len(network["calls"]) == network["closed"] == 2
+    else:
+        with pytest.raises(MarketError, match="服务器安全检查"):
+            read_market_bytes("https://petdex.dev/download", 16, **kwargs)
+        assert len(network["calls"]) == network["closed"] == 1
+
+
+@pytest.mark.parametrize("failure", ["no_response", "error"])
+def test_connection_failure_identifies_server_without_leaking_details(network, failure):
+    """连接失败提示服务器网络，不泄露代理地址、异常正文或引导修改图片安全域。"""
+    network[failure] = True if failure == "no_response" else OSError("private-proxy-detail")
+    with pytest.raises(MarketError, match="MoviePilot 服务器") as exc:
+        read_market_bytes("https://codex-pets.net/api/pets", 16,
+                          market_name="Market", allowed_hosts={"codex-pets.net"})
+    assert "private-proxy-detail" not in str(exc.value)
+    assert "图片安全域" not in str(exc.value)
+    assert network["closed"] == 1
