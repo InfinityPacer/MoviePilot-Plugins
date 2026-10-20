@@ -1,7 +1,7 @@
 """市场专用的有界网络读取，所有请求通过宿主 SDK"""
 
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
-from threading import BoundedSemaphore, Thread
+from threading import BoundedSemaphore, Thread, enumerate as enumerate_threads
 from time import monotonic
 from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit
@@ -52,7 +52,8 @@ def read_market_bytes(
 ) -> bytes:
     """Bound caller latency even when synchronous host DNS cannot be interrupted.
 
-    At most four daemon workers can remain in host I/O; no work is queued.
+    At most four daemon workers can remain in host I/O across module reloads;
+    no work is queued. Excess workers exit before starting host I/O.
     A timed-out worker closes its response when I/O returns and never follows
     another redirect. Safety decisions are always freshly evaluated.
     """
@@ -65,6 +66,9 @@ def read_market_bytes(
     def run() -> None:
         """Keep ownership of the slot until real I/O has stopped, not just the caller."""
         try:
+            # Already registered here: old generations remain visible until I/O exits.
+            if sum(worker.name == "agentpets-market" for worker in enumerate_threads()) > 4:
+                raise MarketError("市场网络请求繁忙，请稍后重试")
             future.set_result(_read_market_bytes(
                 url, limit, market_name=market_name, allowed_hosts=allowed_hosts,
                 params=params, redirect_hosts=redirect_hosts,

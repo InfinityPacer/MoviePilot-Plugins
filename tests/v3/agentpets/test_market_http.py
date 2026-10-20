@@ -2,7 +2,7 @@
 
 from contextlib import contextmanager
 from ipaddress import ip_address
-from threading import BoundedSemaphore, Event
+from threading import BoundedSemaphore, Event, Thread
 from time import monotonic
 from types import SimpleNamespace
 from urllib.parse import urlsplit
@@ -287,5 +287,38 @@ def test_caller_times_out_while_host_io_is_blocked_and_slots_stay_bounded(networ
         slots.release()
     assert len(network["calls"]) == network["closed"] == (0 if phase == "dns_wait" else 1)
     network.pop(phase)
+    assert read_market_bytes("https://codex-pets.net/api/pets", 16,
+                             market_name="Market", allowed_hosts={"codex-pets.net"}) == b"payload"
+
+
+def test_reloaded_market_workers_do_not_enter_io_while_old_generation_owns_capacity(network, monkeypatch):
+    """Live workers survive module replacement and still count against the I/O limit."""
+    from app.plugins.agentpets.markets import http
+
+    release = Event()
+    ready = [Event() for _ in range(4)]
+    workers = []
+
+    def old_generation(index):
+        """Represent a previous module's uninterruptible I/O without real networking."""
+        ready[index].set()
+        release.wait(5)
+
+    for index in range(4):
+        worker = Thread(target=old_generation, args=(index,), name="agentpets-market", daemon=True)
+        worker.start()
+        workers.append(worker)
+    try:
+        assert all(event.wait(2) for event in ready)
+        monkeypatch.setattr(http, "_NETWORK_SLOTS", BoundedSemaphore(4))
+        with pytest.raises(MarketError, match="繁忙"):
+            read_market_bytes("https://codex-pets.net/api/pets", 16,
+                              market_name="Market", allowed_hosts={"codex-pets.net"})
+        assert network["checks"] == network["calls"] == []
+    finally:
+        release.set()
+        for worker in workers:
+            worker.join(timeout=2)
+            assert not worker.is_alive()
     assert read_market_bytes("https://codex-pets.net/api/pets", 16,
                              market_name="Market", allowed_hosts={"codex-pets.net"}) == b"payload"
