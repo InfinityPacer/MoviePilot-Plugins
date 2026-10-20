@@ -57,6 +57,47 @@ async function setup() {
 }
 
 describe('market browsing and import', () => {
+  it('joins identical in-flight searches and allows retry after a failure', async () => {
+    const { api, view } = await setup()
+    let fail!: (reason: Error) => void
+    api.get.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject
+        }),
+    )
+    const before = api.get.mock.calls.length
+    await fireEvent.update(view.getByRole('textbox', { name: '搜索形象' }), 'cat')
+    const search = view.getByRole('button', { name: '搜索市场形象' })
+    await fireEvent.click(search)
+    await fireEvent.click(search)
+    await fireEvent.click(search)
+    expect(api.get.mock.calls.length - before).toBe(1)
+    fail(new Error('temporary failure'))
+    await flushPromises()
+    await fireEvent.click(view.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(view.getByRole('button', { name: '导入 Test Pet' })).toBeInTheDocument())
+    expect(api.get.mock.calls.length - before).toBe(2)
+  })
+
+  it('does not join requests from a previous plugin instance', async () => {
+    const { api, view } = await setup()
+    let finish!: (data: unknown) => void
+    api.get.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        }),
+    )
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await view.rerender({ api, pluginId: 'Clone2' })
+    await waitFor(() => expect(view.getByRole('button', { name: '导入 Test Pet' })).toBeInTheDocument())
+    expect(api.get.mock.calls.at(-1)?.[0]).toContain('plugin/Clone2/')
+    finish({ success: false, message: 'old instance failure' })
+    await flushPromises()
+    expect(view.queryByText('old instance failure')).toBeNull()
+  })
+
   it('browses unknown totals and searches with a reset page', async () => {
     const { api, view } = await setup()
     expect(view.getByText(/总量未知/)).toBeInTheDocument()
