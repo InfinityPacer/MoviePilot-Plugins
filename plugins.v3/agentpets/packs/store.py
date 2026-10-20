@@ -34,8 +34,7 @@ from .schema import (
 )
 from .images import (
     decode_image,
-    first_frame_avatar,
-    first_frame_preview,
+    first_frame_images,
     sniff_image,
     validate_sheet,
 )
@@ -129,11 +128,7 @@ class PackStore:
             file_name = f"{pack_id}.{ext}"
             image_path = self._dir / file_name
             record.update(source="upload", image_file=file_name, mime=mime, sheet_url="")
-            if not record["preview"]:
-                record["preview"] = first_frame_preview(content, pack)
-            # 上传方式总有头像；URL 方式不下载远程图片，只在 JSON 显式填写时声明。
-            if not record["avatar"]:
-                record["avatar"] = first_frame_avatar(content, pack)
+            record["preview"], record["avatar"] = first_frame_images(content, pack)
         else:
             if not is_http_url(pack["sheet"]):
                 raise PackError("没有上传精灵图时，sheet 必须是 http(s) 图片地址")
@@ -194,10 +189,10 @@ class PackStore:
         next_record.pop("codex_version", None)
         if pack.get("codex_version"):
             next_record["codex_version"] = pack["codex_version"]
+        preview, avatar = first_frame_images(content, pack)
         next_record.update(
             source="upload", image_file=file_name, mime=mime, sheet_url="",
-            preview=pack["preview"] or first_frame_preview(content, pack),
-            avatar=pack["avatar"] or first_frame_avatar(content, pack),
+            preview=preview, avatar=avatar,
             action_mappings=pack.get("action_mappings", {}),
             calibration=parse_calibration(pack.get("calibration")),
         )
