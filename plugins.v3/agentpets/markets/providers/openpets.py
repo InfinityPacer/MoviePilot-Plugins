@@ -121,7 +121,7 @@ class OpenPetsMarket(MarketAdapter):
         self._pages: dict[int, tuple[dict[str, Any], ...]] = {}
         self._search: tuple[tuple[str, int, str], ...] | None = None
         self._lock = RLock()
-        self._refresh_lock = RLock()
+        self._refresh: Future | None = None
         self._loading: dict[tuple, Future] = {}
 
     @property
@@ -135,10 +135,13 @@ class OpenPetsMarket(MarketAdapter):
         with self._lock:
             if self._index is not None and monotonic() - self._loaded_at < CACHE_TTL:
                 return self._index
-        with self._refresh_lock:
-            with self._lock:
-                if self._index is not None and monotonic() - self._loaded_at < CACHE_TTL:
-                    return self._index
+            future = self._refresh
+            owner = future is None
+            if owner:
+                future = self._refresh = Future()
+        if not owner:
+            return future.result()
+        try:
             data = _read_json(INDEX_URL, 128 * 1024)
             _validate_index(data)
             with self._lock:
@@ -146,7 +149,16 @@ class OpenPetsMarket(MarketAdapter):
                     self._index = data
                     self._pages, self._search = {}, None
                 self._loaded_at = monotonic()
-                return self._index
+                result = self._index
+            future.set_result(result)
+            return result
+        except BaseException as exc:
+            future.set_exception(exc)
+            raise
+        finally:
+            with self._lock:
+                if self._refresh is future:
+                    self._refresh = None
 
     def _cached(self, index: dict[str, Any], number: int | None, load):
         """Join one snapshot-specific load without holding the cache lock over I/O."""
