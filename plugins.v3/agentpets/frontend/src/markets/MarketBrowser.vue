@@ -41,6 +41,7 @@ const pageCount = computed(() =>
 let alive = true
 let scopeVersion = 0
 let queryVersion = 0
+const pendingQueries = new Map<string, Promise<MarketPage>>()
 
 function imageFailed(item: MarketItem) {
   failedImages.value = new Set([...failedImages.value, item.id])
@@ -57,24 +58,32 @@ async function fetchPage(nextPage = 1) {
   const scope = scopeVersion
   const id = props.pluginId
   const target = marketId.value
+  const queryKey = JSON.stringify([target, submittedKeyword.value, nextPage])
+  let request = pendingQueries.get(queryKey)
+  if (!request) {
+    request = searchMarket(props.api, id, target, submittedKeyword.value, nextPage)
+    pendingQueries.set(queryKey, request)
+  }
   page.value = nextPage
   result.value = null
   error.value = ''
   failedImages.value = new Set()
   loading.value = true
   try {
-    const data = await searchMarket(props.api, id, target, submittedKeyword.value, nextPage)
+    const data = await request
     if (!alive || scope !== scopeVersion || version !== queryVersion) return
     result.value = data
   } catch (reason) {
     if (alive && scope === scopeVersion && version === queryVersion)
       error.value = marketError(reason, '市场暂时无法读取，请重试')
   } finally {
+    if (pendingQueries.get(queryKey) === request) pendingQueries.delete(queryKey)
     if (alive && scope === scopeVersion && version === queryVersion) loading.value = false
   }
 }
 
 async function initialize() {
+  pendingQueries.clear()
   const scope = ++scopeVersion
   queryVersion++
   markets.value = []
@@ -107,6 +116,7 @@ async function initialize() {
 
 function changeMarket(value: string) {
   if (importing.value) return
+  pendingQueries.clear()
   marketId.value = value
   keyword.value = ''
   submittedKeyword.value = ''
@@ -162,6 +172,7 @@ async function importSelected() {
 
 watch([() => props.pluginId, () => props.api], () => void initialize(), { immediate: true })
 onBeforeUnmount(() => {
+  pendingQueries.clear()
   alive = false
   scopeVersion++
   queryVersion++
