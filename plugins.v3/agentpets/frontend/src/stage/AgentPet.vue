@@ -205,6 +205,7 @@ const isMobile = ref(false)
 const animationActive = ref(false)
 
 let hostState: AgentHostState | null = null
+let pendingHostState: AgentHostState | null = null
 let bottomFloor: number | null = null
 let documentVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
 let editorPaused = false
@@ -1482,9 +1483,12 @@ function applySettings(value: unknown) {
 }
 
 function onHostState(state: AgentHostState) {
+  if (editorPaused) {
+    pendingHostState = state
+    return
+  }
   const before = hostState
   hostState = state
-  if (editorPaused) return
   available.value = state.available
   const resized =
     !!before &&
@@ -1809,8 +1813,13 @@ onMounted(async () => {
       onEditorPresence(active => {
         editorPaused = active
         if (active) timers.pause()
-        else timers.resume()
-        if (!active && hostState) onHostState(hostState)
+        else {
+          // Reconcile against the last applied state before restarting motion.
+          const next = pendingHostState ?? hostState
+          pendingHostState = null
+          if (next) onHostState(next)
+          timers.resume()
+        }
         syncVisibility()
         syncSurfacePoll()
       }),
