@@ -1,4 +1,5 @@
-import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
+import { strFromU8, strToU8 } from 'fflate'
+import { runArchiveJob } from './archiveJobs'
 import type { PluginApi } from '@/host'
 import { unwrap } from '@/editor/api'
 import { validatePack, type SpritePack } from './schema'
@@ -37,19 +38,13 @@ function imageMime(bytes: Uint8Array): string {
   throw new Error('包内图片格式无效')
 }
 
-export function imageDataUrl(bytes: Uint8Array): string {
-  let binary = ''
-  for (let start = 0; start < bytes.length; start += 8192)
-    binary += String.fromCharCode(...bytes.subarray(start, start + 8192))
-  return `data:${imageMime(bytes)};base64,${btoa(binary)}`
+export async function imageDataUrl(bytes: Uint8Array): Promise<string> {
+  return runArchiveJob<string>({ kind: 'encode', bytes, mime: imageMime(bytes) })
 }
 
 async function imageBytes(src: string, limit: number): Promise<Uint8Array> {
   if (src.startsWith('data:')) {
-    const match = /^data:image\/[a-z0-9.+-]+;base64,([a-zA-Z0-9+/=]+)$/.exec(src)
-    if (!match || match[1].length > Math.ceil(limit / 3) * 4) throw new Error('图片内容无效或超过大小限制')
-    const bytes = Uint8Array.from(atob(match[1]), char => char.charCodeAt(0))
-    if (bytes.length > limit) throw new Error('图片超过大小限制')
+    const bytes = await runArchiveJob<Uint8Array>({ kind: 'decode', data: src, limit })
     imageMime(bytes)
     return bytes
   }
@@ -126,7 +121,7 @@ export async function exportPackArchive(api: PluginApi, pluginId: string, key: s
   const manifest = strToU8(JSON.stringify({ format: 'agentpets', version: 1, pack: metadata, images }))
   if (manifest.length > MAX_MANIFEST) throw new Error('素材描述超过 64KB，未生成备份')
   files['agentpets.json'] = manifest
-  const archive = zipSync(files)
+  const archive = await runArchiveJob<Uint8Array>({ kind: 'zip', files })
   if (archive.length > MAX_ARCHIVE) throw new Error('素材包超过 8MB')
   return new Blob([new Uint8Array(archive)], { type: 'application/zip' })
 }
@@ -143,17 +138,7 @@ function fileBytes(file: File): Promise<Uint8Array> {
 
 export async function readPackArchive(file: File): Promise<PackArchive> {
   if (file.size > MAX_ARCHIVE) throw new Error('素材包不能超过 8MB')
-  const allowed = new Set(['agentpets.json', 'sheet.img', 'preview.img', 'avatar.img'])
-  const seen = new Set<string>()
-  const files = unzipSync(await fileBytes(file), {
-    filter: entry => {
-      if (!allowed.has(entry.name) || seen.has(entry.name)) throw new Error('素材包包含未知或重复文件')
-      seen.add(entry.name)
-      const limit = entry.name === 'agentpets.json' ? MAX_MANIFEST : entry.name === 'sheet.img' ? MAX_IMAGE : MAX_THUMB
-      if (entry.originalSize > limit) throw new Error('包内文件超过大小限制')
-      return true
-    },
-  })
+  const files = await runArchiveJob<Record<string, Uint8Array>>({ kind: 'unzip', bytes: await fileBytes(file) })
   if (!files['agentpets.json'] || !files['sheet.img'])
     throw new Error('不是完整的 AgentPets 素材包；Codex Pet ZIP 请切换到“Codex Pet”导入类型')
   const manifest = JSON.parse(strFromU8(files['agentpets.json']))
@@ -170,7 +155,7 @@ export async function readPackArchive(file: File): Promise<PackArchive> {
     if (path === undefined) continue
     if (path !== `${field}.img` || !files[path]) throw new Error('素材包缺少头像或预览图片')
     await verifyImage(files[path])
-    pack[field] = imageDataUrl(files[path])
+    pack[field] = await imageDataUrl(files[path])
   }
-  return { pack, image: imageDataUrl(files['sheet.img']) }
+  return { pack, image: await imageDataUrl(files['sheet.img']) }
 }
