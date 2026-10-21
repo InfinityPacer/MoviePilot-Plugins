@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-BkgRuym2.js';
+import { u as unwrap, A as AGENT_HOST_KEY, b as builtinAvatar, H as HOST_UNSUPPORTED_MESSAGE, l as loadEditor, p as prepareEnabledConfig } from './host-BnrYLPDe.js';
 import { O as useEditorPresence } from './presence-DexdRolI.js';
-import { v as validatePack, k as framePosition, e as sameCalibration, P as PACK_UPDATED_EVENT, _ as _export_sfc, n as buildCodexPetPack } from './_plugin-vue_export-helper-DHgn0gTZ.js';
+import { v as validatePack, k as framePosition, b as sameCalibration, P as PACK_UPDATED_EVENT, _ as _export_sfc, n as buildCodexPetPack } from './_plugin-vue_export-helper-DQ595t25.js';
 
 // DEFLATE is a complex format; to read this code, you should probably check the RFC first:
 // https://tools.ietf.org/html/rfc1951

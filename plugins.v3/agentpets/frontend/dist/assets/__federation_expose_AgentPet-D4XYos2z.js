@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { b as builtinDefaultCalibration, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, a as walkFrame } from './poses-ThlqHr1z.js';
+import { b as builtinDefaultCalibration, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, c as walkFrame } from './poses-CIMfpwET.js';
 import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, o as onEditorPresence, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, q as pickClearX, t as isBlocked, u as surfaceXBounds, v as blockedSpan, w as nearestEdge, y as hopVelocity, z as xToRatio, A as isPeekEdge, B as intersectionArea, C as peekPanelShift, E as computeLanding, F as dropPeekEdge, P as PEEK_TILT_SECONDS, G as PEEK_TUCK, H as PEEK_RISE_SECONDS, I as pickFreeTarget, J as pickWalkTarget } from './presence-DexdRolI.js';
-import { p as parseCalibration, c as calibrationLayout, L as LANDMARKS, a as calibrationPoint, b as calibrationEye, m as mirrorFace, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-DHgn0gTZ.js';
+import { p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-DQ595t25.js';
 
 class PausableTimers {
   paused = false;
@@ -44,6 +44,44 @@ class PausableTimers {
   }
   dispose() {
     for (const name of this.jobs.keys()) this.clear(name);
+  }
+}
+
+const LONG_PRESS_MS = 450;
+const MEMORY_LIMIT = 20;
+const MEMORY_WINDOW_MS = 3e4;
+const INTERACTION_LIMIT = 4;
+class InteractionMemory {
+  states = /* @__PURE__ */ new Map();
+  active(key, now) {
+    const state = this.states.get(key);
+    return state && now >= state.lastAt && now - state.lastAt < MEMORY_WINDOW_MS ? state : void 0;
+  }
+  remember(key, state) {
+    this.states.delete(key);
+    this.states.set(key, state);
+    if (this.states.size > MEMORY_LIMIT) this.states.delete(this.states.keys().next().value);
+  }
+  record(key, now) {
+    const state = this.active(key, now) ?? { lastAt: now, count: 0 };
+    state.lastAt = now;
+    state.count = Math.min(INTERACTION_LIMIT, state.count + 1);
+    this.remember(key, state);
+  }
+  respond(key, now) {
+    const state = this.active(key, now) ?? { lastAt: now, count: 0 };
+    const repeated = Math.max(0, state.count - 1);
+    const cooldown = Math.min(6e3, 2400 + repeated * 1200);
+    if (state.lastResponseAt !== void 0 && now - state.lastResponseAt < cooldown) return null;
+    const pose = state.lastPose === "wave" ? "jump" : "wave";
+    state.lastResponseAt = now;
+    state.lastPose = pose;
+    this.remember(key, state);
+    return { pose, duration: Math.max(700, 1200 - repeated * 150) };
+  }
+  landingDelay(key, now) {
+    const count = this.active(key, now)?.count ?? 0;
+    return Math.min(1350, 900 + Math.max(0, count - 1) * 150);
   }
 }
 
@@ -185,7 +223,7 @@ const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {renderSlot:_renderSlot,unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
 
-const _hoisted_1 = ["data-pose", "data-motion", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
+const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
 const _hoisted_2 = ["aria-label"];
 const _hoisted_3 = ["data-frame"];
 const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
@@ -262,6 +300,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const motion = ref("idle");
     const walkPhase = ref(0);
     const transient = ref(null);
+    const reaction = ref(null);
     const sustained = ref(null);
     const dozing = ref(false);
     const blinking = ref(false);
@@ -295,7 +334,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let lastSaved = "";
     let lastSaveAt = 0;
     let saveOnLand = false;
-    let suppressClick = false;
+    let suppressedPointer = null;
+    let pendingDropReaction = null;
     let pendingPeek = null;
     let pendingStepOff = false;
     let surface = null;
@@ -309,6 +349,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let initialPlacement = true;
     let press = null;
     const timers = new PausableTimers();
+    const interactionMemory = new InteractionMemory();
     const cleanups = [];
     const startup = new AbortController();
     let settingsRevision = 0;
@@ -327,7 +368,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => activePeekEdge.value ? settledPeek.value && animationActive.value && blinking.value ? "blink" : "alert" : props.previewRoot && props.previewPose ? props.previewPose : resolvePose({
         motion: motion.value,
         walkPhase: walkPhase.value,
-        transient: transient.value,
+        transient: transient.value ?? reaction.value,
         sustained: sustained.value,
         dozing: dozing.value,
         blinking: blinking.value,
@@ -496,6 +537,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         saveOnLand = false;
         requestSave();
       }
+      finishDropReaction();
     }
     function roam() {
       return settings.value.roam;
@@ -680,6 +722,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function startWalk(targetX, targetY = null) {
+      clearReaction();
       walkTarget = { x: targetX, y: targetY };
       walkDistance = 0;
       facingLeft.value = targetX < x.value;
@@ -706,6 +749,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function beginPeek(edge = "bottom", pinned = false, instant = false) {
       if (fixed()) return;
+      cancelInteractionFeedback();
       for (const name of ["behavior", "peek", "peek-pause", "landing-peek", "sit", "clearance"]) clearTimer(name);
       detachSurface();
       peekEdge.value = edge;
@@ -757,7 +801,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingShelter = false;
     }
     function calm() {
-      return motion.value === "idle" && !sheltering && !transient.value && !sustained.value && !dozing.value && motionAllowed() && visible();
+      return motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
     }
     function scheduleBehavior() {
       clearTimer("behavior");
@@ -858,6 +902,44 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         scheduleBehavior();
       });
     }
+    function interactionKey() {
+      return JSON.stringify([props.pluginId, props.pet?.key || "ying"]);
+    }
+    function hostIdle() {
+      return !hostState || hostState.phase === "idle" && !hostState.thinking;
+    }
+    function clearReaction() {
+      const active = reaction.value !== null;
+      clearTimer("reaction");
+      reaction.value = null;
+      if (active) scheduleBehavior();
+    }
+    function cancelInteractionFeedback() {
+      clearTimer("long-press");
+      if (press) press.longPressCancelled = true;
+      pendingDropReaction = null;
+      clearReaction();
+    }
+    function interactionAllowed() {
+      return !disposed && ready.value && !props.previewRoot && available.value && visible() && motionAllowed() && hostIdle() && !transient.value && !sustained.value && !activePeekEdge.value && !sheltering;
+    }
+    function playInteraction() {
+      if (!interactionAllowed() || motion.value !== "idle" && motion.value !== "walk") return;
+      const next = interactionMemory.respond(interactionKey(), Date.now());
+      if (!next) return;
+      settle();
+      clearTimer("behavior");
+      reaction.value = next.pose;
+      setTimer("reaction", next.duration, () => {
+        reaction.value = null;
+        scheduleBehavior();
+      });
+    }
+    function finishDropReaction() {
+      const key = pendingDropReaction;
+      pendingDropReaction = null;
+      if (key === interactionKey()) playInteraction();
+    }
     function landing(exclude = null, dropSnap = 0, position = { x: x.value, y: y.value }) {
       const view = viewport();
       const boxes = roam() === "surfaces" ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, props.previewRoot).filter(
@@ -866,6 +948,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return computeLanding(roam(), boxes, position, view, size(), dropSnap);
     }
     function startFall(exclude = null) {
+      clearReaction();
       clearTimer("landing-peek");
       if (fixed()) {
         pinHere();
@@ -924,9 +1007,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (droppedByUser) manualSurface = surface?.el ?? null;
       if (animated) {
         motion.value = "sit";
-        setTimer("sit", SIT_DURATION, () => {
+        const duration = pendingDropReaction ? interactionMemory.landingDelay(pendingDropReaction, Date.now()) : SIT_DURATION;
+        setTimer("sit", duration, () => {
           if (motion.value !== "sit") return;
           motion.value = "idle";
+          finishDropReaction();
           scheduleBehavior();
         });
       } else {
@@ -943,8 +1028,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         pendingShelter = false;
         clearTimer("sit");
         beginShelter(!animated);
+        pendingDropReaction = null;
         return;
       }
+      if (!animated) finishDropReaction();
       const delay = animated ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, SIT_DURATION + 50) : droppedByUser ? DROP_CLEAR_DELAY : 0;
       droppedByUser = false;
       scheduleClearance(delay);
@@ -1138,6 +1225,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function moveTo(targetX, targetY, target, instant) {
+      clearReaction();
       const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null);
       if (instant) {
         facingLeft.value = targetX < x.value;
@@ -1319,6 +1407,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       const before = hostState;
       hostState = state;
+      if (!hostIdle() || !state.available || !state.motionAllowed || !state.pageVisible) cancelInteractionFeedback();
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
@@ -1372,6 +1461,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function syncVisibility() {
       animationActive.value = motionAllowed() && visible();
+      if (!visible()) {
+        cancelPointerGesture(!editorPaused);
+        cancelInteractionFeedback();
+      }
       if (editorPaused) {
         stopLoop();
         pauseSurfaceWatch();
@@ -1396,6 +1489,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function onHostEvent(event) {
       if (editorPaused) return;
+      cancelInteractionFeedback();
       markActivity();
       const next = eventPose(event.name);
       if (next) playTransient(next.pose, next.duration);
@@ -1420,10 +1514,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       applySettings({ ...settings.value, ...data });
     }
     watch([() => props.pluginId, () => props.pet?.key], () => {
+      cancelPointerGesture(false);
+      cancelInteractionFeedback();
       ownCalibration.value = builtinDefaultCalibration("ying");
       void refreshPetSettings();
       void refreshOwnCalibration();
     });
+    watch(
+      () => props.previewRoot,
+      () => {
+        cancelPointerGesture(false);
+        cancelInteractionFeedback();
+      }
+    );
     let calibrationRevision = 0;
     async function refreshOwnCalibration() {
       const version = ++calibrationRevision;
@@ -1456,25 +1559,45 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       { deep: true }
     );
     function onPointerDown(event) {
-      if (event.button !== 0 || press) return;
+      if (event.button !== 0 || event.isPrimary === false || press || disposed || !ready.value || !visible()) return;
+      suppressedPointer = null;
+      cancelInteractionFeedback();
       markActivity();
+      if (!activePeekEdge.value && hostIdle()) settle();
+      clearTimer("behavior");
       press = {
         id: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         offsetX: activePeekEdge.value ? charWidth.value / 2 : pointerPosition(event).x - x.value,
         offsetY: activePeekEdge.value ? charHeight.value * 0.3 : pointerPosition(event).y - y.value,
-        dragging: false
+        startedAt: Date.now(),
+        dragging: false,
+        longPressed: false,
+        longPressCancelled: !!props.previewRoot,
+        owner: props.pet
       };
+      const current = press;
+      if (!props.previewRoot)
+        setTimer("long-press", LONG_PRESS_MS, () => {
+          if (press === current) recognizeLongPress(current);
+        });
       window.addEventListener("pointermove", onPointerMove);
       window.addEventListener("pointerup", onPointerUp);
       window.addEventListener("pointercancel", onPointerCancel);
+    }
+    function recognizeLongPress(current) {
+      if (current.dragging || current.longPressed || current.longPressCancelled || !visible()) return;
+      current.longPressed = true;
+      interactionMemory.record(interactionKey(), Date.now());
+      playInteraction();
     }
     function onPointerMove(event) {
       if (!press || event.pointerId !== press.id) return;
       if (!press.dragging) {
         if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) < DRAG_THRESHOLD) return;
         press.dragging = true;
+        cancelInteractionFeedback();
         settle();
         stopLoop();
         detachSurface();
@@ -1498,7 +1621,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         fallTarget = null;
         motion.value = "drag";
         syncSurfacePoll();
-        props.pet?.setInteracting?.(true);
+        press.owner?.setInteracting?.(true);
       }
       event.preventDefault();
       const view = freeBounds(viewport(), ...sizePair());
@@ -1512,8 +1635,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerCancel);
     }
-    function finishDrag() {
-      props.pet?.setInteracting?.(false);
+    function finishDrag(react = true, owner = props.pet) {
+      owner?.setInteracting?.(false);
+      if (react && !props.previewRoot) {
+        const key = interactionKey();
+        interactionMemory.record(key, Date.now());
+        if (interactionAllowed()) pendingDropReaction = key;
+      }
       droppedByUser = true;
       saveOnLand = true;
       x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value));
@@ -1524,6 +1652,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const nearby = !fixed() && roam() === "surfaces" ? landing(null, snap) : null;
       const onPlatform = !!nearby?.surface && Math.abs(nearby.y - y.value) <= snap;
       if (edge && !onPlatform) {
+        pendingDropReaction = null;
         droppedByUser = false;
         saveOnLand = false;
         beginPeek(edge, true);
@@ -1534,28 +1663,55 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function onPointerUp(event) {
       if (!press || event.pointerId !== press.id) return;
-      const dragged = press.dragging;
+      const current = press;
+      if (Date.now() - current.startedAt >= LONG_PRESS_MS) recognizeLongPress(current);
       press = null;
       releasePointer();
-      if (!dragged) return;
-      suppressClick = true;
-      window.setTimeout(() => {
-        suppressClick = false;
-      }, 0);
-      finishDrag();
+      clearTimer("long-press");
+      const held = current.longPressed || !props.previewRoot && Date.now() - current.startedAt >= LONG_PRESS_MS;
+      if (current.dragging || held) suppressCompatibilityClick(current.id);
+      if (current.dragging) finishDrag(true, current.owner);
+      else scheduleBehavior();
+    }
+    function suppressCompatibilityClick(id) {
+      suppressedPointer = { id, until: Date.now() + 700 };
+    }
+    function cancelPointerGesture(settleDrag = true) {
+      clearTimer("long-press");
+      cancelInteractionFeedback();
+      const current = press;
+      if (!current) return;
+      press = null;
+      releasePointer();
+      suppressCompatibilityClick(current.id);
+      if (current.dragging) {
+        if (settleDrag && !disposed) finishDrag(false, current.owner);
+        else {
+          current.owner?.setInteracting?.(false);
+          motion.value = "idle";
+          saveOnLand = false;
+        }
+      } else scheduleBehavior();
     }
     function onPointerCancel(event) {
       if (!press || event.pointerId !== press.id) return;
-      const dragged = press.dragging;
-      press = null;
-      releasePointer();
-      if (dragged) finishDrag();
+      cancelPointerGesture();
     }
-    function onActivate() {
-      if (suppressClick) {
-        suppressClick = false;
+    function onWindowBlur() {
+      cancelPointerGesture();
+      cancelInteractionFeedback();
+    }
+    function onActivate(event) {
+      const pointerId = event.pointerId;
+      const pointerClick = event.detail > 0 || typeof pointerId === "number" && pointerId >= 0;
+      const compatibilityClick = suppressedPointer && Date.now() <= suppressedPointer.until && pointerClick && (pointerId === void 0 || pointerId === suppressedPointer.id);
+      if (compatibilityClick) {
+        suppressedPointer = null;
         return;
       }
+      if (suppressedPointer && Date.now() > suppressedPointer.until) suppressedPointer = null;
+      if (disposed || !ready.value || !visible()) return;
+      cancelInteractionFeedback();
       markActivity();
       props.agent?.open?.();
     }
@@ -1612,8 +1768,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         cleanups.push(
           onEditorPresence((active) => {
             editorPaused = active;
-            if (active) timers.pause();
-            else {
+            if (active) {
+              cancelPointerGesture(false);
+              cancelInteractionFeedback();
+              timers.pause();
+            } else {
               const next = pendingHostState ?? hostState;
               pendingHostState = null;
               if (next) onHostState(next);
@@ -1656,8 +1815,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       document.addEventListener("visibilitychange", onVisibilityChange);
       window.addEventListener("resize", onWindowResize);
+      window.addEventListener("blur", onWindowBlur);
       cleanups.push(() => document.removeEventListener("visibilitychange", onVisibilityChange));
       cleanups.push(() => window.removeEventListener("resize", onWindowResize));
+      cleanups.push(() => window.removeEventListener("blur", onWindowBlur));
       const visual = window.visualViewport;
       if (visual && !props.previewRoot) {
         visual.addEventListener("resize", onWindowResize);
@@ -1690,6 +1851,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     onBeforeUnmount(() => {
       if (timers.has("save")) writePosition();
       disposed = true;
+      cancelPointerGesture(false);
+      cancelInteractionFeedback();
       startup.abort();
       stopLoop();
       pauseSurfaceWatch();
@@ -1697,7 +1860,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       anchorFrame = 0;
       timers.dispose();
       releasePointer();
-      if (press?.dragging) props.pet?.setInteracting?.(false);
       press = null;
       for (const cleanup of cleanups.splice(0)) cleanup();
       props.pet?.setBubbleAnchor?.(null);
@@ -1709,6 +1871,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         class: _normalizeClass(["agent-pet-ying", { "agent-pet-ying--contained": !!props.previewRoot }]),
         "data-pose": pose.value,
         "data-motion": motion.value,
+        "data-reaction": reaction.value ?? void 0,
         "data-roam": settings.value.roam,
         "data-movement": settings.value.movement,
         "data-peek-edge": activePeekEdge.value ?? void 0,
@@ -1779,6 +1942,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-31bde7b2"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-47a872bb"]]);
 
 export { AgentPet as default };
