@@ -132,12 +132,11 @@ const guidePoints = computed(() =>
   }),
 )
 const layout = computed(() => calibrationLayout(calibration.value, cellRatio.value))
-const viewportStyle = computed(() => ({
-  '--agent-pet-sprites-ratio': String(layout.value.aspectRatio),
-  '--agent-pet-sprites-sheet': `url(${JSON.stringify(sheetSrc.value)})`,
-  '--agent-pet-sprites-size': `${pack.value.grid.cols * 100}% ${pack.value.grid.rows * 100}%`,
+const sheetStyle = computed(() => ({
+  'background-image': `url(${JSON.stringify(sheetSrc.value)})`,
+  'background-size': `${pack.value.grid.cols * 100}% ${pack.value.grid.rows * 100}%`,
 }))
-// Vue's style patch rewrites unchanged variables too; never resend a data URL per frame.
+// Large data URLs exceed Chromium's custom-property limit; write the image directly, only when changed.
 const vSpriteSheet: ObjectDirective<HTMLElement, Record<string, string>> = {
   mounted: (el, { value }) => {
     for (const [key, next] of Object.entries(value)) el.style.setProperty(key, next)
@@ -304,10 +303,10 @@ onBeforeUnmount(() => {
       v-if="ready"
       class="agent-pet-sprites__viewport"
       :class="{ 'agent-pet-sprites__viewport--guides': showCalibration }"
-      v-sprite-sheet="viewportStyle"
+      :style="{ '--agent-pet-sprites-ratio': String(layout.aspectRatio) }"
     >
       <div class="agent-pet-sprites__crop" :style="mirrorX ? { transform: 'scaleX(-1)' } : undefined">
-        <div class="agent-pet-sprites__frame" :style="frameStyle" />
+        <div class="agent-pet-sprites__frame" :style="frameStyle" v-sprite-sheet="sheetStyle" />
       </div>
       <CalibrationMarkers
         v-if="editCalibration && (pack.codex_version || pet?.mode === 'stage')"
@@ -367,8 +366,6 @@ onBeforeUnmount(() => {
 }
 .agent-pet-sprites__frame {
   position: absolute;
-  background-image: var(--agent-pet-sprites-sheet);
-  background-size: var(--agent-pet-sprites-size);
   background-repeat: no-repeat;
 }
 .agent-pet-sprites__crop {

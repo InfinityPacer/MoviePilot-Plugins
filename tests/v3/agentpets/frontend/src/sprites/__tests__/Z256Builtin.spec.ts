@@ -44,8 +44,8 @@ describe('Z256 Kurisu packaged Codex Pet', () => {
     const root = view.container.querySelector('.agent-pet-sprites') as HTMLElement
     expect(root.dataset.pack).toBe(KEY)
     expect(root.dataset.action).toBe('running-left')
-    const viewport = root.querySelector('.agent-pet-sprites__viewport') as HTMLElement
-    expect(viewport.style.getPropertyValue('--agent-pet-sprites-sheet')).toContain(`/packs/${KEY}/sheet.webp`)
+    const frame = root.querySelector('.agent-pet-sprites__frame') as HTMLElement
+    expect(frame.style.backgroundImage).toContain(`/packs/${KEY}/sheet.webp`)
     expect(api.get).toHaveBeenCalledExactlyOnceWith(`plugin/Clone1/packs/calibration?key=${KEY}`)
     expect(api.post).not.toHaveBeenCalled()
     view.unmount()
