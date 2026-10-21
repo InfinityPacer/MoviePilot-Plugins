@@ -41,6 +41,7 @@ const pageCount = computed(() =>
 let alive = true
 let scopeVersion = 0
 let queryVersion = 0
+const MAX_PENDING_QUERIES = 4
 const pendingQueries = new Map<string, Promise<MarketPage>>()
 
 function imageFailed(item: MarketItem) {
@@ -51,25 +52,26 @@ function preview(item: MarketItem): string {
   return failedImages.value.has(item.id) ? '' : marketUrl(item.preview)
 }
 
-/** 查询只接受当前实例、市场和最后一次请求；切换回来也不复用旧响应。 */
+/** 只接受当前实例和最新查询；切回相同条件可等待同一请求，不复用已完成结果。 */
 async function fetchPage(nextPage = 1) {
-  if (!marketId.value) return
+  if (!alive || !marketId.value) return
   const version = ++queryVersion
   const scope = scopeVersion
   const id = props.pluginId
   const target = marketId.value
-  const queryKey = JSON.stringify([target, submittedKeyword.value, nextPage])
+  const queryKey = JSON.stringify([scope, id, target, submittedKeyword.value, nextPage])
   let request = pendingQueries.get(queryKey)
-  if (!request) {
-    request = searchMarket(props.api, id, target, submittedKeyword.value, nextPage)
-    pendingQueries.set(queryKey, request)
-  }
   page.value = nextPage
   result.value = null
   error.value = ''
   failedImages.value = new Set()
   loading.value = true
   try {
+    if (!request) {
+      if (pendingQueries.size >= MAX_PENDING_QUERIES) throw new Error('市场查询正在处理，请稍后重试')
+      request = searchMarket(props.api, id, target, submittedKeyword.value, nextPage)
+      pendingQueries.set(queryKey, request)
+    }
     const data = await request
     if (!alive || scope !== scopeVersion || version !== queryVersion) return
     result.value = data
@@ -77,13 +79,13 @@ async function fetchPage(nextPage = 1) {
     if (alive && scope === scopeVersion && version === queryVersion)
       error.value = marketError(reason, '市场暂时无法读取，请重试')
   } finally {
-    if (pendingQueries.get(queryKey) === request) pendingQueries.delete(queryKey)
+    if (request && pendingQueries.get(queryKey) === request) pendingQueries.delete(queryKey)
     if (alive && scope === scopeVersion && version === queryVersion) loading.value = false
   }
 }
 
 async function initialize() {
-  pendingQueries.clear()
+  // Old scopes still consume capacity until their real API promises settle.
   const scope = ++scopeVersion
   queryVersion++
   markets.value = []
@@ -116,7 +118,6 @@ async function initialize() {
 
 function changeMarket(value: string) {
   if (importing.value) return
-  pendingQueries.clear()
   marketId.value = value
   keyword.value = ''
   submittedKeyword.value = ''
