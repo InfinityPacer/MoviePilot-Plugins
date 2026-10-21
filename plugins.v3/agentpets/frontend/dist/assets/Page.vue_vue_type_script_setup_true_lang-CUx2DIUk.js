@@ -3,9 +3,9 @@ import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as b
 import { L as LANDMARKS, a as calibrationPoint, D as DEFAULT_CALIBRATION, f as moveCalibrationPoint, d as suggestedLandmark, p as parseCalibration, _ as _export_sfc, o as mappingRows, A as ACTION_LABELS, q as nativeChoices, H as HOST_ACTIONS, t as HOST_INTENTS, s as stageAction, e as sameCalibration, l as sameMappings, P as PACK_UPDATED_EVENT } from './_plugin-vue_export-helper-DHgn0gTZ.js';
 import { P as POSES, b as builtinDefaultCalibration } from './poses-ThlqHr1z.js';
 import { Q as DEFAULT_PEEK_ANGLES, R as normalizePeekAngle, n as normalizePeekAngles, T as MIN_SURFACE_WIDTH, U as PEEK_PREVIEW_MAX_ANGLE, D as DEFAULT_SETTINGS, K as sharedOf, N as sameAppearance, L as sameShared, g as normalizeSettings, M as appearanceOf, V as SCALE_RANGE, W as SPEED_RANGE, O as useEditorPresence, S as SETTINGS_EVENT } from './presence-DexdRolI.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-En7gfcRm.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-MTydHAg0.js';
 import AgentPet from './__federation_expose_AgentPet-qU22D3tb.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BetpHlPH.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-CDBXBfXr.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
 
