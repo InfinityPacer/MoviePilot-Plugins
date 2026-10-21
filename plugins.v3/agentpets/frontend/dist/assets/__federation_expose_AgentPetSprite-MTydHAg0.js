@@ -162,7 +162,7 @@ const CalibrationMarkers = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass,withDirectives:_withDirectives} = await importShared('vue');
+const {normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,withDirectives:_withDirectives,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass} = await importShared('vue');
 
 const _hoisted_1 = ["aria-hidden", "data-pack", "data-action", "data-frame", "data-mirrored"];
 const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
@@ -237,10 +237,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       })
     );
     const layout = computed(() => calibrationLayout(calibration.value, cellRatio.value));
-    const viewportStyle = computed(() => ({
-      "--agent-pet-sprites-ratio": String(layout.value.aspectRatio),
-      "--agent-pet-sprites-sheet": `url(${JSON.stringify(sheetSrc.value)})`,
-      "--agent-pet-sprites-size": `${pack.value.grid.cols * 100}% ${pack.value.grid.rows * 100}%`
+    const sheetStyle = computed(() => ({
+      "background-image": `url(${JSON.stringify(sheetSrc.value)})`,
+      "background-size": `${pack.value.grid.cols * 100}% ${pack.value.grid.rows * 100}%`
     }));
     const vSpriteSheet = {
       mounted: (el, { value }) => {
@@ -379,18 +378,21 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "data-frame": frame.value,
         "data-mirrored": !!__props.mirrorX
       }, [
-        ready.value ? _withDirectives((_openBlock(), _createElementBlock("div", {
+        ready.value ? (_openBlock(), _createElementBlock("div", {
           key: 0,
-          class: _normalizeClass(["agent-pet-sprites__viewport", { "agent-pet-sprites__viewport--guides": __props.showCalibration }])
+          class: _normalizeClass(["agent-pet-sprites__viewport", { "agent-pet-sprites__viewport--guides": __props.showCalibration }]),
+          style: _normalizeStyle({ "--agent-pet-sprites-ratio": String(layout.value.aspectRatio) })
         }, [
           _createElementVNode("div", {
             class: "agent-pet-sprites__crop",
             style: _normalizeStyle(__props.mirrorX ? { transform: "scaleX(-1)" } : void 0)
           }, [
-            _createElementVNode("div", {
+            _withDirectives(_createElementVNode("div", {
               class: "agent-pet-sprites__frame",
               style: _normalizeStyle(frameStyle.value)
-            }, null, 4)
+            }, null, 4), [
+              [vSpriteSheet, sheetStyle.value]
+            ])
           ], 4),
           __props.editCalibration && (pack.value.codex_version || __props.pet?.mode === "stage") ? (_openBlock(), _createBlock(CalibrationMarkers, {
             key: 0,
@@ -411,14 +413,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               style: _normalizeStyle({ left: `${point.x * 100}%`, top: `${point.y * 100}%` })
             }, null, 4);
           }), 128)) : _createCommentVNode("", true)
-        ], 2)), [
-          [vSpriteSheet, viewportStyle.value]
-        ]) : _createCommentVNode("", true)
+        ], 6)) : _createCommentVNode("", true)
       ], 10, _hoisted_1);
     };
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-3899a109"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-8bb9a9c8"]]);
 
 export { AgentPetSprite as default };
