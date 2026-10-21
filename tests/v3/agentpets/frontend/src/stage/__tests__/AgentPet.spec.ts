@@ -72,7 +72,7 @@ describe('AgentPet (ying)', () => {
     expect(anchors.at(-1)).toMatchObject({ height: 144 })
   })
 
-  it('opens the native panel on click and keyboard activation', async () => {
+  it('opens the native panel on click', async () => {
     const { host } = setup()
     const open = vi.spyOn(host, 'open')
     await flush()
@@ -90,7 +90,7 @@ describe('AgentPet (ying)', () => {
     window.dispatchEvent(pointer('pointermove', { pointerId: 1, clientX: 160, clientY: 40 }))
     expect(interacting).toEqual([true])
     window.dispatchEvent(pointer('pointerup', { pointerId: 1, clientX: 160, clientY: 40 }))
-    await fireEvent.click(button)
+    await fireEvent.click(button, { detail: 1 })
     expect(interacting).toEqual([true, false])
     expect(open).not.toHaveBeenCalled()
   })

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { withLoadTimeout } from '@/loading'
 import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
+import { InteractionMemory, LONG_PRESS_MS } from './interaction'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
   calibrationEye,
@@ -194,6 +195,7 @@ const ownEye = computed(() => {
 const motion = ref<Motion>('idle')
 const walkPhase = ref(0)
 const transient = ref<Pose | null>(null)
+const reaction = ref<'wave' | 'jump' | null>(null)
 const sustained = ref<Pose | null>(null)
 const dozing = ref(false)
 const blinking = ref(false)
@@ -233,7 +235,8 @@ let lastSaved = ''
 let lastSaveAt = 0
 /** 下一次落地后保存落脚点：用户拖拽放下或活动范围改变时置位。 */
 let saveOnLand = false
-let suppressClick = false
+let suppressedPointer: { id: number; until: number } | null = null
+let pendingDropReaction: string | null = null
 /** 散步到底边一侧后接着探头。 */
 let pendingPeek: PeekEdge | null = null
 /** 走到元素边缘后跳下去。 */
@@ -251,10 +254,21 @@ let disposed = false
 let droppedByUser = false
 /** 首次出现时直接放到不挡控件的位置，不走过去。 */
 let initialPlacement = true
-let press: { id: number; startX: number; startY: number; offsetX: number; offsetY: number; dragging: boolean } | null =
-  null
+let press: {
+  id: number
+  startX: number
+  startY: number
+  offsetX: number
+  offsetY: number
+  startedAt: number
+  dragging: boolean
+  longPressed: boolean
+  longPressCancelled: boolean
+  owner: AgentPetContext | null
+} | null = null
 
 const timers = new PausableTimers()
+const interactionMemory = new InteractionMemory()
 const cleanups: Array<() => void> = []
 const startup = new AbortController()
 let settingsRevision = 0
@@ -280,7 +294,7 @@ const pose = computed<Pose>(() =>
       : resolvePose({
           motion: motion.value,
           walkPhase: walkPhase.value,
-          transient: transient.value,
+          transient: transient.value ?? reaction.value,
           sustained: sustained.value,
           dozing: dozing.value,
           blinking: blinking.value,
@@ -483,6 +497,7 @@ function pinHere() {
     saveOnLand = false
     requestSave()
   }
+  finishDropReaction()
 }
 
 function roam(): RoamMode {
@@ -709,6 +724,7 @@ function stepPeek(dt: number) {
 }
 
 function startWalk(targetX: number, targetY: number | null = null) {
+  clearReaction()
   walkTarget = { x: targetX, y: targetY }
   walkDistance = 0
   facingLeft.value = targetX < x.value
@@ -737,6 +753,7 @@ function finishWalk() {
 
 function beginPeek(edge: PeekEdge = 'bottom', pinned = false, instant = false) {
   if (fixed()) return
+  cancelInteractionFeedback()
   for (const name of ['behavior', 'peek', 'peek-pause', 'landing-peek', 'sit', 'clearance']) clearTimer(name)
   detachSurface()
   peekEdge.value = edge
@@ -798,7 +815,9 @@ function calm(): boolean {
     motion.value === 'idle' &&
     !sheltering &&
     !transient.value &&
+    !reaction.value &&
     !sustained.value &&
+    !press &&
     !dozing.value &&
     motionAllowed() &&
     visible()
@@ -921,6 +940,63 @@ function playTransient(next: Pose, duration: number) {
   })
 }
 
+function interactionKey(): string {
+  return JSON.stringify([props.pluginId, props.pet?.key || 'ying'])
+}
+
+function hostIdle(): boolean {
+  return !hostState || (hostState.phase === 'idle' && !hostState.thinking)
+}
+
+function clearReaction() {
+  const active = reaction.value !== null
+  clearTimer('reaction')
+  reaction.value = null
+  if (active) scheduleBehavior()
+}
+
+function cancelInteractionFeedback() {
+  clearTimer('long-press')
+  if (press) press.longPressCancelled = true
+  pendingDropReaction = null
+  clearReaction()
+}
+
+function interactionAllowed(): boolean {
+  return (
+    !disposed &&
+    ready.value &&
+    !props.previewRoot &&
+    available.value &&
+    visible() &&
+    motionAllowed() &&
+    hostIdle() &&
+    !transient.value &&
+    !sustained.value &&
+    !activePeekEdge.value &&
+    !sheltering
+  )
+}
+
+function playInteraction() {
+  if (!interactionAllowed() || (motion.value !== 'idle' && motion.value !== 'walk')) return
+  const next = interactionMemory.respond(interactionKey(), Date.now())
+  if (!next) return
+  settle()
+  clearTimer('behavior')
+  reaction.value = next.pose
+  setTimer('reaction', next.duration, () => {
+    reaction.value = null
+    scheduleBehavior()
+  })
+}
+
+function finishDropReaction() {
+  const key = pendingDropReaction
+  pendingDropReaction = null
+  if (key === interactionKey()) playInteraction()
+}
+
 /** 按当前活动范围计算落点；surfaces 模式在这里查询一次可站元素。 */
 function landing(
   exclude: Element | null = null,
@@ -943,6 +1019,7 @@ function landing(
  * free 模式没有重力，原地停下；减少动态效果或页面不可见时直接瞬移到落点。
  */
 function startFall(exclude: Element | null = null) {
+  clearReaction()
   clearTimer('landing-peek')
   if (fixed()) {
     pinHere()
@@ -1002,9 +1079,13 @@ function land(animated: boolean) {
   if (droppedByUser) manualSurface = surface?.el ?? null
   if (animated) {
     motion.value = 'sit'
-    setTimer('sit', SIT_DURATION, () => {
+    const duration = pendingDropReaction
+      ? interactionMemory.landingDelay(pendingDropReaction, Date.now())
+      : SIT_DURATION
+    setTimer('sit', duration, () => {
       if (motion.value !== 'sit') return
       motion.value = 'idle'
+      finishDropReaction()
       scheduleBehavior()
     })
   } else {
@@ -1022,8 +1103,10 @@ function land(animated: boolean) {
     pendingShelter = false
     clearTimer('sit')
     beginShelter(!animated)
+    pendingDropReaction = null
     return
   }
+  if (!animated) finishDropReaction()
   const delay = animated
     ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, SIT_DURATION + 50)
     : droppedByUser
@@ -1283,6 +1366,7 @@ function recheckShelter() {
  * 同一个面上走过去；换面时沿抛物线跳过去（跳上更高的面也一样）；首次出现或不允许动画时瞬移。
  */
 function moveTo(targetX: number, targetY: number, target: DomSurface | null, instant: boolean) {
+  clearReaction()
   const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null)
   if (instant) {
     facingLeft.value = targetX < x.value
@@ -1490,6 +1574,7 @@ function onHostState(state: AgentHostState) {
   }
   const before = hostState
   hostState = state
+  if (!hostIdle() || !state.available || !state.motionAllowed || !state.pageVisible) cancelInteractionFeedback()
   available.value = state.available
   const resized =
     !!before &&
@@ -1552,6 +1637,10 @@ function freezeMotion() {
 /** 页面不可见时停掉 rAF、行为计时与元素观察；回到可见后继续并重新校验脚下。 */
 function syncVisibility() {
   animationActive.value = motionAllowed() && visible()
+  if (!visible()) {
+    cancelPointerGesture(!editorPaused)
+    cancelInteractionFeedback()
+  }
   if (editorPaused) {
     stopLoop()
     pauseSurfaceWatch()
@@ -1577,6 +1666,7 @@ function syncVisibility() {
 
 function onHostEvent(event: AgentHostEvent) {
   if (editorPaused) return
+  cancelInteractionFeedback()
   markActivity()
   const next = eventPose(event.name)
   if (next) playTransient(next.pose, next.duration)
@@ -1604,10 +1694,20 @@ function onSettingsEvent(event: AgentHostEvent) {
 }
 
 watch([() => props.pluginId, () => props.pet?.key], () => {
+  cancelPointerGesture(false)
+  cancelInteractionFeedback()
   ownCalibration.value = builtinDefaultCalibration('ying')
   void refreshPetSettings()
   void refreshOwnCalibration()
 })
+
+watch(
+  () => props.previewRoot,
+  () => {
+    cancelPointerGesture(false)
+    cancelInteractionFeedback()
+  },
+)
 
 let calibrationRevision = 0
 async function refreshOwnCalibration() {
@@ -1644,19 +1744,39 @@ watch(
 )
 
 function onPointerDown(event: PointerEvent) {
-  if (event.button !== 0 || press) return
+  if (event.button !== 0 || event.isPrimary === false || press || disposed || !ready.value || !visible()) return
+  suppressedPointer = null
+  cancelInteractionFeedback()
   markActivity()
+  if (!activePeekEdge.value && hostIdle()) settle()
+  clearTimer('behavior')
   press = {
     id: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
     offsetX: activePeekEdge.value ? charWidth.value / 2 : pointerPosition(event).x - x.value,
     offsetY: activePeekEdge.value ? charHeight.value * 0.3 : pointerPosition(event).y - y.value,
+    startedAt: Date.now(),
     dragging: false,
+    longPressed: false,
+    longPressCancelled: !!props.previewRoot,
+    owner: props.pet,
   }
+  const current = press
+  if (!props.previewRoot)
+    setTimer('long-press', LONG_PRESS_MS, () => {
+      if (press === current) recognizeLongPress(current)
+    })
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('pointercancel', onPointerCancel)
+}
+
+function recognizeLongPress(current: NonNullable<typeof press>) {
+  if (current.dragging || current.longPressed || current.longPressCancelled || !visible()) return
+  current.longPressed = true
+  interactionMemory.record(interactionKey(), Date.now())
+  playInteraction()
 }
 
 function onPointerMove(event: PointerEvent) {
@@ -1664,6 +1784,7 @@ function onPointerMove(event: PointerEvent) {
   if (!press.dragging) {
     if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) < DRAG_THRESHOLD) return
     press.dragging = true
+    cancelInteractionFeedback()
     settle()
     stopLoop()
     detachSurface()
@@ -1687,7 +1808,7 @@ function onPointerMove(event: PointerEvent) {
     fallTarget = null
     motion.value = 'drag'
     syncSurfacePoll()
-    props.pet?.setInteracting?.(true)
+    press.owner?.setInteracting?.(true)
   }
   event.preventDefault()
   const view = freeBounds(viewport(), ...sizePair())
@@ -1703,8 +1824,13 @@ function releasePointer() {
   window.removeEventListener('pointercancel', onPointerCancel)
 }
 
-function finishDrag() {
-  props.pet?.setInteracting?.(false)
+function finishDrag(react = true, owner = props.pet) {
+  owner?.setInteracting?.(false)
+  if (react && !props.previewRoot) {
+    const key = interactionKey()
+    interactionMemory.record(key, Date.now())
+    if (interactionAllowed()) pendingDropReaction = key
+  }
   droppedByUser = true
   saveOnLand = true
   x.value = clamp(x.value, ...xBounds(viewport(), charWidth.value))
@@ -1716,6 +1842,7 @@ function finishDrag() {
   const nearby = !fixed() && roam() === 'surfaces' ? landing(null, snap) : null
   const onPlatform = !!nearby?.surface && Math.abs(nearby.y - y.value) <= snap
   if (edge && !onPlatform) {
+    pendingDropReaction = null
     droppedByUser = false
     saveOnLand = false
     beginPeek(edge, true)
@@ -1727,32 +1854,66 @@ function finishDrag() {
 
 function onPointerUp(event: PointerEvent) {
   if (!press || event.pointerId !== press.id) return
-  const dragged = press.dragging
+  const current = press
+  // Input can be dispatched before an already-due timer on a busy browser loop.
+  if (Date.now() - current.startedAt >= LONG_PRESS_MS) recognizeLongPress(current)
   press = null
   releasePointer()
-  if (!dragged) return
-  // 拖拽结束后浏览器仍会派发一次 click，同一轮事件内忽略它，避免松手即打开面板。
-  suppressClick = true
-  window.setTimeout(() => {
-    suppressClick = false
-  }, 0)
-  finishDrag()
+  clearTimer('long-press')
+  const held = current.longPressed || (!props.previewRoot && Date.now() - current.startedAt >= LONG_PRESS_MS)
+  if (current.dragging || held) suppressCompatibilityClick(current.id)
+  if (current.dragging) finishDrag(true, current.owner)
+  else scheduleBehavior()
+}
+
+function suppressCompatibilityClick(id: number) {
+  suppressedPointer = { id, until: Date.now() + 700 }
+}
+
+function cancelPointerGesture(settleDrag = true) {
+  clearTimer('long-press')
+  cancelInteractionFeedback()
+  const current = press
+  if (!current) return
+  press = null
+  releasePointer()
+  suppressCompatibilityClick(current.id)
+  if (current.dragging) {
+    if (settleDrag && !disposed) finishDrag(false, current.owner)
+    else {
+      current.owner?.setInteracting?.(false)
+      motion.value = 'idle'
+      saveOnLand = false
+    }
+  } else scheduleBehavior()
 }
 
 function onPointerCancel(event: PointerEvent) {
   if (!press || event.pointerId !== press.id) return
-  const dragged = press.dragging
-  press = null
-  releasePointer()
-  if (dragged) finishDrag()
+  cancelPointerGesture()
+}
+
+function onWindowBlur() {
+  cancelPointerGesture()
+  cancelInteractionFeedback()
 }
 
 /** 鼠标点击与键盘 Enter/Space 都经按钮的 click 打开原生面板。 */
-function onActivate() {
-  if (suppressClick) {
-    suppressClick = false
+function onActivate(event: MouseEvent) {
+  const pointerId = (event as PointerEvent).pointerId
+  const pointerClick = event.detail > 0 || (typeof pointerId === 'number' && pointerId >= 0)
+  const compatibilityClick =
+    suppressedPointer &&
+    Date.now() <= suppressedPointer.until &&
+    pointerClick &&
+    (pointerId === undefined || pointerId === suppressedPointer.id)
+  if (compatibilityClick) {
+    suppressedPointer = null
     return
   }
+  if (suppressedPointer && Date.now() > suppressedPointer.until) suppressedPointer = null
+  if (disposed || !ready.value || !visible()) return
+  cancelInteractionFeedback()
   markActivity()
   props.agent?.open?.()
 }
@@ -1817,8 +1978,11 @@ onMounted(async () => {
     cleanups.push(
       onEditorPresence(active => {
         editorPaused = active
-        if (active) timers.pause()
-        else {
+        if (active) {
+          cancelPointerGesture(false)
+          cancelInteractionFeedback()
+          timers.pause()
+        } else {
           // Reconcile against the last applied state before restarting motion.
           const next = pendingHostState ?? hostState
           pendingHostState = null
@@ -1862,8 +2026,10 @@ onMounted(async () => {
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('resize', onWindowResize)
+  window.addEventListener('blur', onWindowBlur)
   cleanups.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
   cleanups.push(() => window.removeEventListener('resize', onWindowResize))
+  cleanups.push(() => window.removeEventListener('blur', onWindowBlur))
   const visual = window.visualViewport
   if (visual && !props.previewRoot) {
     visual.addEventListener('resize', onWindowResize)
@@ -1899,6 +2065,8 @@ onBeforeUnmount(() => {
   // 还有推迟的保存时在卸载前写掉（例如切换形象）。
   if (timers.has('save')) writePosition()
   disposed = true
+  cancelPointerGesture(false)
+  cancelInteractionFeedback()
   startup.abort()
   stopLoop()
   pauseSurfaceWatch()
@@ -1906,7 +2074,6 @@ onBeforeUnmount(() => {
   anchorFrame = 0
   timers.dispose()
   releasePointer()
-  if (press?.dragging) props.pet?.setInteracting?.(false)
   press = null
   for (const cleanup of cleanups.splice(0)) cleanup()
   props.pet?.setBubbleAnchor?.(null)
@@ -1920,6 +2087,7 @@ onBeforeUnmount(() => {
     :class="{ 'agent-pet-ying--contained': !!props.previewRoot }"
     :data-pose="pose"
     :data-motion="motion"
+    :data-reaction="reaction ?? undefined"
     :data-roam="settings.roam"
     :data-movement="settings.movement"
     :data-peek-edge="activePeekEdge ?? undefined"

@@ -1,10 +1,11 @@
 import { fireEvent, render } from '@testing-library/vue'
+import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentRect } from '@/host'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import AgentPetCodex from '@/stage/AgentPetCodex.vue'
-import { validatePack, withCodexStageActions } from '@/sprites/schema'
+import { buildCodexPetPack, validatePack, withCodexStageActions } from '@/sprites/schema'
 import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
 
 const hosts: ReturnType<typeof createMockHost>[] = []
@@ -38,6 +39,66 @@ async function setup(motionAllowed = true) {
 }
 
 describe('Codex Pet stage', () => {
+  it.each(['v1', 'v2'] as const)('plays long-press responses from the standard %s native actions', async version => {
+    vi.useFakeTimers()
+    const host = createMockHost('Clone1')
+    hosts.push(host)
+    const pack = buildCodexPetPack('standard-pet.png', 1536, version === 'v1' ? 1872 : 2288).pack
+    const api = {
+      get: vi.fn().mockResolvedValue({
+        success: true,
+        data: { pack, sheet_src: 'data:image/png;base64,AAAA' },
+      }),
+      post: vi.fn(),
+    }
+    const view = render(AgentPetCodex, {
+      props: {
+        agent: host,
+        pet: createMockPet('stage', pack.id),
+        api,
+        pluginId: 'Clone1',
+        settingsOverride: { scale: 1, speed: 1, roam: 'free', movement: 'fixed' },
+      },
+    })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(32)
+    const button = view.getByRole('button')
+    const stage = view.container.querySelector<HTMLElement>('.agent-pet-ying')!
+    const sprite = view.container.querySelector<HTMLElement>('.agent-pet-sprites')!
+    const pointer = (type: string) => {
+      const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: 100, clientY: 100 })
+      Object.defineProperties(event, {
+        pointerId: { value: 1 },
+        pointerType: { value: 'touch' },
+        isPrimary: { value: true },
+      })
+      return event
+    }
+    const hold = async () => {
+      await fireEvent(button, pointer('pointerdown'))
+      await vi.advanceTimersByTimeAsync(450)
+      await fireEvent(window, pointer('pointerup'))
+      await flushPromises()
+    }
+    await hold()
+    expect(stage.dataset.reaction).toBe('wave')
+    expect(sprite.dataset.action).toBe('wave')
+    expect(pack.actions.waving.frames).toContain(sprite.dataset.frame)
+    expect(pack.frames[sprite.dataset.frame!]).toBeGreaterThanOrEqual(24)
+    expect(pack.frames[sprite.dataset.frame!]).toBeLessThan(32)
+
+    await vi.advanceTimersByTimeAsync(6000)
+    await hold()
+    expect(stage.dataset.reaction).toBe('jump')
+    expect(sprite.dataset.action).toBe('jumping')
+    expect(pack.actions.jumping.frames).toContain(sprite.dataset.frame)
+    expect(pack.frames[sprite.dataset.frame!]).toBeGreaterThanOrEqual(32)
+    expect(pack.frames[sprite.dataset.frame!]).toBeLessThan(40)
+    expect(api.get).toHaveBeenCalledTimes(1)
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('ignores another pet appearance and applies shared activity without resetting its own size', async () => {
     const { host, root, anchors } = await setup(false)
     host.emit('agentpets.settings', { key: 'ying', scale: 0.6, speed: 2 })
