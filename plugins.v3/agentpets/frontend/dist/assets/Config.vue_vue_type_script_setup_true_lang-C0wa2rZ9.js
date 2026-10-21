@@ -1569,6 +1569,7 @@ const _hoisted_18$1 = ["src", "alt"];
 const _hoisted_19$1 = { class: "ap-market__review-description" };
 const _hoisted_20$1 = { class: "ap-market__metadata" };
 const {computed: computed$1,inject: inject$1,onBeforeUnmount: onBeforeUnmount$1,ref: ref$1,watch: watch$1} = await importShared('vue');
+const MAX_PENDING_QUERIES = 4;
 const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   __name: "MarketBrowser",
   props: {
@@ -1612,23 +1613,24 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       return failedImages.value.has(item.id) ? "" : marketUrl(item.preview);
     }
     async function fetchPage(nextPage = 1) {
-      if (!marketId.value) return;
+      if (!alive || !marketId.value) return;
       const version = ++queryVersion;
       const scope = scopeVersion;
       const id = props.pluginId;
       const target = marketId.value;
-      const queryKey = JSON.stringify([target, submittedKeyword.value, nextPage]);
+      const queryKey = JSON.stringify([scope, id, target, submittedKeyword.value, nextPage]);
       let request = pendingQueries.get(queryKey);
-      if (!request) {
-        request = searchMarket(props.api, id, target, submittedKeyword.value, nextPage);
-        pendingQueries.set(queryKey, request);
-      }
       page.value = nextPage;
       result.value = null;
       error.value = "";
       failedImages.value = /* @__PURE__ */ new Set();
       loading.value = true;
       try {
+        if (!request) {
+          if (pendingQueries.size >= MAX_PENDING_QUERIES) throw new Error("市场查询正在处理，请稍后重试");
+          request = searchMarket(props.api, id, target, submittedKeyword.value, nextPage);
+          pendingQueries.set(queryKey, request);
+        }
         const data = await request;
         if (!alive || scope !== scopeVersion || version !== queryVersion) return;
         result.value = data;
@@ -1636,12 +1638,11 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
         if (alive && scope === scopeVersion && version === queryVersion)
           error.value = marketError(reason, "市场暂时无法读取，请重试");
       } finally {
-        if (pendingQueries.get(queryKey) === request) pendingQueries.delete(queryKey);
+        if (request && pendingQueries.get(queryKey) === request) pendingQueries.delete(queryKey);
         if (alive && scope === scopeVersion && version === queryVersion) loading.value = false;
       }
     }
     async function initialize() {
-      pendingQueries.clear();
       const scope = ++scopeVersion;
       queryVersion++;
       markets.value = [];
@@ -1673,7 +1674,6 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     }
     function changeMarket(value) {
       if (importing.value) return;
-      pendingQueries.clear();
       marketId.value = value;
       keyword.value = "";
       submittedKeyword.value = "";
@@ -2132,7 +2132,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const MarketBrowser = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-2561858c"]]);
+const MarketBrowser = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-80be5f46"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
