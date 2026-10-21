@@ -128,7 +128,11 @@ describe('mobile stage recovery', () => {
   it('stops a free walk from returning to its old offscreen target after rotation', async () => {
     const stage = await setup('free', 1, true)
     stage.drag(50, 80)
-    await vi.advanceTimersByTimeAsync(14000)
+    // The drop reaction postpones roaming; rotate only once a walk actually starts.
+    for (let elapsed = 0; elapsed < 16000; elapsed += 100) {
+      await vi.advanceTimersByTimeAsync(100)
+      if (stage.button.closest('.agent-pet-ying')?.getAttribute('data-motion') === 'walk') break
+    }
     expect(stage.button.closest('.agent-pet-ying')?.getAttribute('data-motion')).toBe('walk')
     stage.visual.height = 250
     stage.visual.width = 240
