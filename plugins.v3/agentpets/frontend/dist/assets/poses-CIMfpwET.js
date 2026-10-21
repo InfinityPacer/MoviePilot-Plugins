@@ -1,4 +1,4 @@
-import { p as parseCalibration, B as BUILTIN_PACKS } from './_plugin-vue_export-helper-DHgn0gTZ.js';
+import { p as parseCalibration, B as BUILTIN_PACKS } from './_plugin-vue_export-helper-DQ595t25.js';
 
 function withLoadTimeout(operation, signal, timeout = 5e3) {
   return new Promise((resolve, reject) => {
@@ -144,4 +144,4 @@ function walkFrame(distance, charHeight) {
   return Math.floor(Math.max(0, distance) / stride) % WALK_CYCLE.length;
 }
 
-export { POSES as P, YING_PACK as Y, walkFrame as a, builtinDefaultCalibration as b, loadImage as c, eventPose as e, frameUrl as f, loadBuiltinCalibration as l, phasePose as p, resolvePose as r, withLoadTimeout as w };
+export { POSES as P, YING_PACK as Y, loadImage as a, builtinDefaultCalibration as b, walkFrame as c, eventPose as e, frameUrl as f, loadBuiltinCalibration as l, phasePose as p, resolvePose as r, withLoadTimeout as w };
