@@ -118,4 +118,34 @@ describe('short-lived interaction memory', () => {
     memory.record('pet', 1)
     expect(memory.respond('pet', 1)).toBeNull()
   })
+
+  it('previews touch attention without consuming the long-press response budget', () => {
+    const memory = new InteractionMemory()
+    expect(memory.attend('pet', 0, false)).toEqual({ duration: 1200 })
+    expect(memory.attend('pet', 10, false)).toEqual({ duration: 1200 })
+    memory.record('pet', 20)
+    expect(memory.respond('pet', 20)).toEqual({ pose: 'wave', duration: 1200 })
+  })
+
+  it('shares attention cooldown with explicit interactions without consuming their pose order', () => {
+    const memory = new InteractionMemory()
+    expect(memory.attend('pet', 0)).toEqual({ duration: 1200 })
+    expect(memory.attend('pet', 100)).toBeNull()
+    memory.record('pet', 100)
+    expect(memory.respond('pet', 100)).toBeNull()
+    expect(memory.respond('pet', 3600)?.pose).toBe('wave')
+    expect(memory.attend('pet', 7200, false)).toBeNull()
+    expect(memory.attend('pet', 8400)).toEqual({ duration: 900 })
+    expect(memory.respond('pet', 8400)).toBeNull()
+    expect(memory.respond('pet', 13200)?.pose).toBe('jump')
+  })
+
+  it('does not keep the memory alive or evict records on a rejected attention preview', () => {
+    const memory = new InteractionMemory()
+    for (let index = 0; index < 20; index++) memory.attend(String(index), 0)
+    expect(memory.attend('0', 100, false)).toBeNull()
+    for (let index = 20; index < 60; index++) memory.attend(String(index), 1, false)
+    expect(memory.respond('0', 100)).toBeNull()
+    expect(memory.attend('0', 30000)).toEqual({ duration: 1200 })
+  })
 })
