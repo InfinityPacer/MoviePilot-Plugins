@@ -35,14 +35,30 @@ export class InteractionMemory {
 
   respond(key: string, now: number): { pose: 'wave' | 'jump'; duration: number } | null {
     const state = this.active(key, now) ?? { lastAt: now, count: 0 }
-    const repeated = Math.max(0, state.count - 1)
-    const cooldown = Math.min(6000, 2400 + repeated * 1200)
-    if (state.lastResponseAt !== undefined && now - state.lastResponseAt < cooldown) return null
+    const duration = this.duration(state, now)
+    if (duration === null) return null
     const pose = state.lastPose === 'wave' ? 'jump' : 'wave'
     state.lastResponseAt = now
     state.lastPose = pose
     this.remember(key, state)
-    return { pose, duration: Math.max(700, 1200 - repeated * 150) }
+    return { pose, duration }
+  }
+
+  /** Touch previews reserve nothing until release; attention keeps explicit pose order. */
+  attend(key: string, now: number, commit = true): { duration: number } | null {
+    const prior = this.active(key, now) ?? { lastAt: now, count: 0 }
+    const next = { ...prior, lastAt: now, count: Math.min(INTERACTION_LIMIT, prior.count + 1) }
+    const duration = this.duration(next, now)
+    if (duration === null) return null
+    if (commit) this.remember(key, { ...next, lastResponseAt: now })
+    return { duration }
+  }
+
+  private duration(state: InteractionState, now: number): number | null {
+    const repeated = Math.max(0, state.count - 1)
+    const cooldown = Math.min(6000, 2400 + repeated * 1200)
+    if (state.lastResponseAt !== undefined && now - state.lastResponseAt < cooldown) return null
+    return Math.max(700, 1200 - repeated * 150)
   }
 
   landingDelay(key: string, now: number): number {
