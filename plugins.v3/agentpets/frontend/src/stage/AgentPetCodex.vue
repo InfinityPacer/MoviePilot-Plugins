@@ -12,6 +12,7 @@ import type { YingSettings } from '@/stage/settings'
 import AgentPet from './AgentPet.vue'
 import { supportsLookDirections } from './attention'
 import { greetingPlayback } from './greeting'
+import { supportsRest } from './activity'
 
 /** Codex 精灵图复用小映的运动、设置、交互与气泡锚点。 */
 const props = withDefaults(
@@ -49,6 +50,9 @@ const loadedPack = shallowRef<SpritePack | null>(null)
 const startupPlayback = computed(() =>
   loadedPack.value ? greetingPlayback(loadedPack.value, props.mappingsOverride) : null,
 )
+const restAvailable = computed(
+  () => artworkReady.value && !!loadedPack.value && supportsRest(loadedPack.value, props.mappingsOverride),
+)
 
 function onPackReady(pack: SpritePack) {
   loadedPack.value = pack
@@ -72,6 +76,7 @@ function onLoadState(state: 'loading' | 'ready' | 'error') {
     :look-directions="lookDirections"
     :artwork-ready="artworkReady"
     :greeting-playback="startupPlayback"
+    :rest-available="restAvailable"
   >
     <template
       #default="{ pose, facingLeft, motionActive, peekEdge, peekFromLeft, gazeAction, greetingRound, greetingComplete }"
