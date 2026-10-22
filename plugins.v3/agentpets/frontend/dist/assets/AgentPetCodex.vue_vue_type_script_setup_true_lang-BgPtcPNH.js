@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { s as stageAction } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-B9dYQXAG.js';
-import AgentPet, { s as supportsLookDirections } from './__federation_expose_AgentPet-B5O4zZgA.js';
+import AgentPet, { s as supportsRest, a as supportsLookDirections } from './__federation_expose_AgentPet-CnDcBMIp.js';
 import { g as greetingPlayback } from './greeting-B7a9rq7Z.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
@@ -44,6 +44,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const startupPlayback = computed(
       () => loadedPack.value ? greetingPlayback(loadedPack.value, props.mappingsOverride) : null
     );
+    const restAvailable = computed(
+      () => artworkReady.value && !!loadedPack.value && supportsRest(loadedPack.value, props.mappingsOverride)
+    );
     function onPackReady(pack) {
       loadedPack.value = pack;
       lookDirections.value = supportsLookDirections(pack);
@@ -61,7 +64,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "peek-eye": appearance.value.eye,
         "look-directions": lookDirections.value,
         "artwork-ready": artworkReady.value,
-        "greeting-playback": startupPlayback.value
+        "greeting-playback": startupPlayback.value,
+        "rest-available": restAvailable.value
       }), {
         default: _withCtx(({ pose, facingLeft, motionActive, peekEdge, peekFromLeft, gazeAction, greetingRound, greetingComplete }) => [
           _createVNode(AgentPetSprite, _mergeProps(props, {
@@ -79,7 +83,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           }), null, 16, ["action", "mapping-key", "native-action", "motion-active", "replay", "mirror-x", "strict-preview", "onCycleComplete"])
         ]),
         _: 1
-      }, 16, ["character-name", "aspect-ratio", "peek-eye", "look-directions", "artwork-ready", "greeting-playback"]);
+      }, 16, ["character-name", "aspect-ratio", "peek-eye", "look-directions", "artwork-ready", "greeting-playback", "rest-available"]);
     };
   }
 });
