@@ -4,6 +4,7 @@ import { withLoadTimeout } from '@/loading'
 import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
+import { ATTENTION_DWELL_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
   calibrationEye,
@@ -93,6 +94,8 @@ const props = withDefaults(
     aspectRatio?: number
     /** undefined 使用小映眼位，null 表示素材尚未校准。 */
     peekEye?: PeekEye | null
+    /** The loaded sprite supplies native, single-frame Codex v2 directions. */
+    lookDirections?: boolean
     /** 详情页局部预览边界；缺省仍在整个页面活动。 */
     previewRoot?: HTMLElement | null
     /** 预览草稿直接传入，不读取或写入已保存设置。 */
@@ -196,6 +199,8 @@ const motion = ref<Motion>('idle')
 const walkPhase = ref(0)
 const transient = ref<Pose | null>(null)
 const reaction = ref<'wave' | 'jump' | null>(null)
+const attention = ref<'mouse' | 'touch' | null>(null)
+const gazeAction = ref<string | null>(null)
 const sustained = ref<Pose | null>(null)
 const dozing = ref(false)
 const blinking = ref(false)
@@ -264,11 +269,15 @@ let press: {
   dragging: boolean
   longPressed: boolean
   longPressCancelled: boolean
+  touchPreview: boolean
   owner: AgentPetContext | null
 } | null = null
 
 const timers = new PausableTimers()
 const interactionMemory = new InteractionMemory()
+const proximity = new ProximityTracker()
+const gaze = new GazeTracker()
+let nearbyPointer: { x: number; y: number } | null = null
 const cleanups: Array<() => void> = []
 const startup = new AbortController()
 let settingsRevision = 0
@@ -294,7 +303,7 @@ const pose = computed<Pose>(() =>
       : resolvePose({
           motion: motion.value,
           walkPhase: walkPhase.value,
-          transient: transient.value ?? reaction.value,
+          transient: transient.value ?? reaction.value ?? (attention.value && !gazeAction.value ? 'wave' : null),
           sustained: sustained.value,
           dozing: dozing.value,
           blinking: blinking.value,
@@ -724,6 +733,7 @@ function stepPeek(dt: number) {
 }
 
 function startWalk(targetX: number, targetY: number | null = null) {
+  clearAttention()
   clearReaction()
   walkTarget = { x: targetX, y: targetY }
   walkDistance = 0
@@ -816,6 +826,7 @@ function calm(): boolean {
     !sheltering &&
     !transient.value &&
     !reaction.value &&
+    !attention.value &&
     !sustained.value &&
     !press &&
     !dozing.value &&
@@ -956,6 +967,7 @@ function clearReaction() {
 }
 
 function cancelInteractionFeedback() {
+  clearAttention()
   clearTimer('long-press')
   if (press) press.longPressCancelled = true
   pendingDropReaction = null
@@ -979,6 +991,7 @@ function interactionAllowed(): boolean {
 }
 
 function playInteraction() {
+  clearAttention()
   if (!interactionAllowed() || (motion.value !== 'idle' && motion.value !== 'walk')) return
   const next = interactionMemory.respond(interactionKey(), Date.now())
   if (!next) return
@@ -995,6 +1008,78 @@ function finishDropReaction() {
   const key = pendingDropReaction
   pendingDropReaction = null
   if (key === interactionKey()) playInteraction()
+}
+
+function clearAttention(resetProximity = true) {
+  const active = attention.value !== null
+  clearTimer('attention-dwell')
+  clearTimer('attention')
+  attention.value = null
+  gazeAction.value = null
+  gaze.reset()
+  if (resetProximity) {
+    proximity.reset()
+    nearbyPointer = null
+  }
+  if (active) scheduleBehavior()
+}
+
+function attentionAllowed(): boolean {
+  return interactionAllowed() && !reaction.value && motion.value === 'idle'
+}
+
+function selectGaze(point: { x: number; y: number }): string | null {
+  const rect = currentRect()
+  return gaze.select(point, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, Date.now())
+}
+
+function beginAttention(point: { x: number; y: number }, mode: 'mouse' | 'touch'): boolean {
+  if (!attentionAllowed() || (mode === 'touch' && !props.lookDirections)) return false
+  const action = props.lookDirections ? selectGaze(point) : null
+  if (props.lookDirections && !action) return false
+  const next = interactionMemory.attend(interactionKey(), Date.now(), mode === 'mouse')
+  if (!next) {
+    gaze.reset()
+    return false
+  }
+  markActivity()
+  clearTimer('behavior')
+  gazeAction.value = action
+  attention.value = mode
+  setTimer('attention', mode === 'touch' ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false))
+  return true
+}
+
+function onAttentionPointerMove(event: PointerEvent) {
+  if (event.pointerType !== 'mouse' || event.isPrimary === false || press) return
+  if (event.buttons !== 0 || isMobile.value || !attentionAllowed()) {
+    clearAttention()
+    return
+  }
+  nearbyPointer = { x: event.clientX, y: event.clientY }
+  const state = proximity.sample(nearbyPointer, currentRect())
+  if (state === 'leave') {
+    clearAttention()
+    return
+  }
+  if (attention.value === 'mouse') {
+    if (gazeAction.value) gazeAction.value = selectGaze(nearbyPointer)
+  } else if (state === 'arm') {
+    setTimer('attention-dwell', ATTENTION_DWELL_MS, () => {
+      if (!nearbyPointer || press || isMobile.value || !attentionAllowed()) return
+      if (proximity.sample(nearbyPointer, currentRect()) === 'leave') return
+      proximity.consume()
+      beginAttention(nearbyPointer, 'mouse')
+    })
+  }
+}
+
+function onAttentionPointerOut(event: PointerEvent) {
+  if (event.relatedTarget === null && attention.value !== 'touch') clearAttention()
+}
+
+function onPagePointerDown() {
+  if (!press) clearAttention()
 }
 
 /** 按当前活动范围计算落点；surfaces 模式在这里查询一次可站元素。 */
@@ -1019,6 +1104,7 @@ function landing(
  * free 模式没有重力，原地停下；减少动态效果或页面不可见时直接瞬移到落点。
  */
 function startFall(exclude: Element | null = null) {
+  clearAttention()
   clearReaction()
   clearTimer('landing-peek')
   if (fixed()) {
@@ -1366,6 +1452,7 @@ function recheckShelter() {
  * 同一个面上走过去；换面时沿抛物线跳过去（跳上更高的面也一样）；首次出现或不允许动画时瞬移。
  */
 function moveTo(targetX: number, targetY: number, target: DomSurface | null, instant: boolean) {
+  clearAttention()
   clearReaction()
   const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null)
   if (instant) {
@@ -1583,6 +1670,7 @@ function onHostState(state: AgentHostState) {
       before.viewport.keyboardInset !== state.viewport.keyboardInset ||
       before.isMobile !== state.isMobile)
   isMobile.value = state.isMobile
+  if (resized) clearAttention()
   if (resized) refreshBottomFloor()
   const nextSustained = phasePose(state.phase)
   if (nextSustained !== sustained.value) {
@@ -1709,6 +1797,11 @@ watch(
   },
 )
 
+watch(
+  () => props.lookDirections,
+  () => clearAttention(),
+)
+
 let calibrationRevision = 0
 async function refreshOwnCalibration() {
   const version = ++calibrationRevision
@@ -1760,9 +1853,12 @@ function onPointerDown(event: PointerEvent) {
     dragging: false,
     longPressed: false,
     longPressCancelled: !!props.previewRoot,
+    touchPreview: false,
     owner: props.pet,
   }
   const current = press
+  if (event.pointerType === 'touch')
+    current.touchPreview = beginAttention({ x: event.clientX, y: event.clientY }, 'touch')
   if (!props.previewRoot)
     setTimer('long-press', LONG_PRESS_MS, () => {
       if (press === current) recognizeLongPress(current)
@@ -1774,6 +1870,7 @@ function onPointerDown(event: PointerEvent) {
 
 function recognizeLongPress(current: NonNullable<typeof press>) {
   if (current.dragging || current.longPressed || current.longPressCancelled || !visible()) return
+  clearAttention()
   current.longPressed = true
   interactionMemory.record(interactionKey(), Date.now())
   playInteraction()
@@ -1861,6 +1958,8 @@ function onPointerUp(event: PointerEvent) {
   releasePointer()
   clearTimer('long-press')
   const held = current.longPressed || (!props.previewRoot && Date.now() - current.startedAt >= LONG_PRESS_MS)
+  if (!current.dragging && !held && current.touchPreview && attention.value === 'touch' && attentionAllowed())
+    interactionMemory.attend(interactionKey(), Date.now())
   if (current.dragging || held) suppressCompatibilityClick(current.id)
   if (current.dragging) finishDrag(true, current.owner)
   else scheduleBehavior()
@@ -1964,6 +2063,7 @@ function onVisibilityChange() {
 
 function onWindowResize() {
   if (!ready.value || props.previewRoot) return
+  clearAttention()
   if (editorPaused) {
     pendingViewportResize = true
     return
@@ -2030,6 +2130,16 @@ onMounted(async () => {
   cleanups.push(() => document.removeEventListener('visibilitychange', onVisibilityChange))
   cleanups.push(() => window.removeEventListener('resize', onWindowResize))
   cleanups.push(() => window.removeEventListener('blur', onWindowBlur))
+  if (!props.previewRoot) {
+    window.addEventListener('pointermove', onAttentionPointerMove, { passive: true })
+    window.addEventListener('pointerout', onAttentionPointerOut, { passive: true })
+    window.addEventListener('pointerdown', onPagePointerDown, { passive: true })
+    cleanups.push(() => {
+      window.removeEventListener('pointermove', onAttentionPointerMove)
+      window.removeEventListener('pointerout', onAttentionPointerOut)
+      window.removeEventListener('pointerdown', onPagePointerDown)
+    })
+  }
   const visual = window.visualViewport
   if (visual && !props.previewRoot) {
     visual.addEventListener('resize', onWindowResize)
@@ -2088,6 +2198,8 @@ onBeforeUnmount(() => {
     :data-pose="pose"
     :data-motion="motion"
     :data-reaction="reaction ?? undefined"
+    :data-attention="attention ?? undefined"
+    :data-gaze="gazeAction ?? undefined"
     :data-roam="settings.roam"
     :data-movement="settings.movement"
     :data-peek-edge="activePeekEdge ?? undefined"
@@ -2107,6 +2219,7 @@ onBeforeUnmount(() => {
         <span class="agent-pet-ying__artwork" :style="artworkStyle">
           <slot
             :pose="pose"
+            :gaze-action="gazeAction"
             :facing-left="facingLeft"
             :motion-active="animationActive && (!activePeekEdge || settledPeek)"
             :peek-edge="activePeekEdge"

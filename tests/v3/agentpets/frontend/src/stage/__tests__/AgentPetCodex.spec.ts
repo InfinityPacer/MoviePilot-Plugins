@@ -39,6 +39,67 @@ async function setup(motionAllowed = true) {
 }
 
 describe('Codex Pet stage', () => {
+  it.each(['v1', 'v2'] as const)(
+    'uses loaded %s capabilities for nearby attention without rewriting the atlas',
+    async version => {
+      vi.useFakeTimers()
+      const host = createMockHost('Clone1')
+      hosts.push(host)
+      host.patch({ isMobile: false })
+      const pack = buildCodexPetPack('standard-pet.png', 1536, version === 'v1' ? 1872 : 2288).pack
+      const anchors: Array<AgentRect | null> = []
+      const api = {
+        get: vi.fn().mockResolvedValue({ success: true, data: { pack, sheet_src: 'data:image/png;base64,AAAA' } }),
+        post: vi.fn(),
+      }
+      const view = render(AgentPetCodex, {
+        props: {
+          agent: host,
+          api,
+          pluginId: 'Clone1',
+          pet: createMockPet('stage', pack.id, { onAnchor: rect => anchors.push(rect) }),
+          settingsOverride: { scale: 1, speed: 1, roam: 'free', movement: 'fixed' },
+        },
+      })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(32)
+      const stage = view.container.querySelector<HTMLElement>('.agent-pet-ying')!
+      const sprite = view.container.querySelector<HTMLElement>('.agent-pet-sprites')!
+      const frame = view.container.querySelector<HTMLElement>('.agent-pet-sprites__frame')!
+      const sheetWrites = vi.spyOn(frame.style, 'setProperty')
+      const point = (side: 'right' | 'left') => {
+        const rect = anchors.at(-1)!
+        return { x: side === 'right' ? rect.x + rect.width + 30 : rect.x - 30, y: rect.y + rect.height / 2 }
+      }
+      const move = async (side: 'right' | 'left') => {
+        const { x, y } = point(side)
+        const event = new MouseEvent('pointermove', { clientX: x, clientY: y, buttons: 0 })
+        Object.defineProperties(event, { pointerType: { value: 'mouse' }, isPrimary: { value: true } })
+        await fireEvent(window, event)
+      }
+      await move('right')
+      await vi.advanceTimersByTimeAsync(350)
+      await flushPromises()
+      expect(stage.dataset.attention).toBe('mouse')
+      expect(sprite.dataset.action).toBe(version === 'v2' ? 'look-090' : 'wave')
+      if (version === 'v2') {
+        expect(sprite.dataset.frame).toBe('look-090')
+        expect(pack.frames[sprite.dataset.frame!]).toBe(76)
+        await vi.advanceTimersByTimeAsync(120)
+        await move('left')
+        expect(sprite.dataset.action).toBe('look-270')
+        expect(pack.frames[sprite.dataset.frame!]).toBe(84)
+      } else {
+        expect(stage.dataset.gaze).toBeUndefined()
+        expect(pack.actions.waving.frames).toContain(sprite.dataset.frame)
+      }
+      expect(sheetWrites.mock.calls.filter(([key]) => key === 'background-image')).toHaveLength(0)
+      expect(api.get).toHaveBeenCalledTimes(1)
+      view.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
   it.each(['v1', 'v2'] as const)('plays long-press responses from the standard %s native actions', async version => {
     vi.useFakeTimers()
     const host = createMockHost('Clone1')
