@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { b as builtinDefaultCalibration, u as useStartupGreeting, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, c as walkFrame } from './greeting-B7a9rq7Z.js';
-import { p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, o as pickClearX, q as isBlocked, t as surfaceXBounds, u as blockedSpan, v as nearestEdge, w as hopVelocity, y as xToRatio, z as isPeekEdge, A as intersectionArea, B as peekPanelShift, C as computeLanding, E as dropPeekEdge, P as PEEK_TILT_SECONDS, F as PEEK_TUCK, G as PEEK_RISE_SECONDS, H as pickFreeTarget, I as pickWalkTarget } from './settings-DtFgdyvj.js';
+import { r as resolveAction, p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import { p as pickFreeTarget, a as pickWalkTarget, i as isBlocked, f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, b as peekHome, d as peekLayout, n as normalizePeekAngles, r as readViewport, g as freeBounds, h as clamp, S as SETTINGS_EVENT, l as loadSettings, j as normalizeSettings, k as ratioToX, m as avoidPanel, o as groundTop, x as xBounds, q as sameRect, t as checkSupport, u as pickClearX, v as surfaceXBounds, w as blockedSpan, y as nearestEdge, z as hopVelocity, A as xToRatio, B as isPeekEdge, C as intersectionArea, E as peekPanelShift, F as computeLanding, G as dropPeekEdge, P as PEEK_TILT_SECONDS, H as PEEK_TUCK, I as PEEK_RISE_SECONDS } from './settings-DI0CwwAz.js';
 
 class PausableTimers {
   paused = false;
@@ -96,6 +96,132 @@ class InteractionMemory {
   landingDelay(key, now) {
     const count = this.active(key, now)?.count ?? 0;
     return Math.min(1350, 900 + Math.max(0, count - 1) * 150);
+  }
+}
+
+function supportsRest(pack, mappings) {
+  const resolved = resolveAction(pack, "sleep", void 0, false, { mappings, mappingKey: "stage.doze" });
+  const indices = resolved.action.frames.map((frame) => pack.frames[frame]);
+  const idle = pack.actions.idle?.frames.map((frame) => pack.frames[frame]) ?? [pack.frames.idle];
+  return resolved.key !== "idle" && indices.length > 0 && indices.every((index) => Number.isInteger(index) && index >= 0 && index < pack.grid.cols * pack.grid.rows) && indices.some((index) => !idle.includes(index));
+}
+function activityRadius(height, mobile) {
+  return Math.max(48, Math.min(260, height * (mobile ? 0.9 : 1.8)));
+}
+const VISIT_WINDOW = 45e3;
+const EPISODE_WINDOW = 25e3;
+const INTERACTION_WINDOW = 16e3;
+class ActivityPolicy {
+  visits = [];
+  remaining = 0;
+  episodeUntil = 0;
+  excitedUntil = 0;
+  nearbyOrigin = null;
+  boostPending = false;
+  stepsTaken = 0;
+  prune(now) {
+    this.visits = this.visits.filter((visit) => now >= visit.at && now - visit.at < VISIT_WINDOW);
+    if (now >= this.episodeUntil) this.remaining = 0;
+    if (now >= this.excitedUntil) {
+      this.nearbyOrigin = null;
+      this.boostPending = false;
+    }
+  }
+  continuing(now) {
+    this.prune(now);
+    return this.remaining > 0;
+  }
+  excited(now) {
+    this.prune(now);
+    return this.nearbyOrigin !== null;
+  }
+  delay(now, random) {
+    const short = this.continuing(now) || this.excited(now) && this.boostPending;
+    return short ? 800 + random() * 1e3 : 6e3 + random() * 8e3;
+  }
+  begin(now, random) {
+    if (this.continuing(now)) return;
+    this.remaining = this.excited(now) ? 3 : random() < 0.5 ? 2 : 3;
+    this.episodeUntil = now + EPISODE_WINDOW;
+    this.stepsTaken = 0;
+    this.boostPending = false;
+  }
+  remainingTime(now) {
+    this.prune(now);
+    return this.remaining > 0 ? Math.max(0, this.episodeUntil - now) : 0;
+  }
+  interact(point, now) {
+    this.cancel();
+    this.nearbyOrigin = { ...point };
+    this.excitedUntil = now + INTERACTION_WINDOW;
+    this.boostPending = true;
+  }
+  arrived(from, to, now) {
+    this.prune(now);
+    this.visits.push({ ...from, at: now }, { ...to, at: now });
+    this.visits = this.visits.slice(-6);
+    this.remaining = Math.max(0, this.remaining - 1);
+    this.stepsTaken++;
+  }
+  cancel() {
+    this.remaining = 0;
+    this.episodeUntil = 0;
+    this.excitedUntil = 0;
+    this.nearbyOrigin = null;
+    this.boostPending = false;
+    this.stepsTaken = 0;
+  }
+  reset() {
+    this.cancel();
+    this.visits = [];
+  }
+  target(area, now, random) {
+    this.prune(now);
+    const nearby = area.mobile || this.stepsTaken > 0 || this.excited(now) || random() < 0.8;
+    const origin = this.nearbyOrigin ?? area.current;
+    const radius = activityRadius(area.height, area.mobile);
+    const minDistance = Math.max(12, Math.min(area.mobile ? 24 : 40, area.height * 0.25));
+    const bounds = nearby ? {
+      x: [Math.max(area.bounds.x[0], origin.x - radius), Math.min(area.bounds.x[1], origin.x + radius)],
+      y: [Math.max(area.bounds.y[0], origin.y - radius), Math.min(area.bounds.y[1], origin.y + radius)]
+    } : { x: [...area.bounds.x], y: [...area.bounds.y] };
+    if (area.span) {
+      if (area.current.x <= area.span[0]) bounds.x[1] = Math.min(bounds.x[1], area.span[0]);
+      else if (area.current.x >= area.span[1]) bounds.x[0] = Math.max(bounds.x[0], area.span[1]);
+    }
+    if (bounds.x[0] > bounds.x[1] || bounds.y[0] > bounds.y[1]) return null;
+    const candidates = [];
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (area.free) {
+        const point = pickFreeTarget(random, area.current, bounds, minDistance);
+        if (point) candidates.push(point);
+      } else {
+        const x = pickWalkTarget(random, area.current.x, bounds.x, area.span, minDistance);
+        if (x !== null) candidates.push({ x, y: area.current.y });
+      }
+    }
+    candidates.push({ x: bounds.x[0], y: area.current.y }, { x: bounds.x[1], y: area.current.y });
+    if (area.free) candidates.push({ x: area.current.x, y: bounds.y[0] }, { x: area.current.x, y: bounds.y[1] });
+    let selected = null;
+    let lowestPenalty = Infinity;
+    const seen = /* @__PURE__ */ new Set();
+    for (const point of candidates) {
+      const signature = `${point.x}:${point.y}`;
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+      if (point.x < bounds.x[0] || point.x > bounds.x[1] || point.y < bounds.y[0] || point.y > bounds.y[1] || Math.hypot(point.x - area.current.x, point.y - area.current.y) < minDistance || isBlocked(point.x, area.span) || !area.allowed(point))
+        continue;
+      const avoidRadius = Math.max(24, area.height * 0.5);
+      const penalty = this.visits.reduce(
+        (sum, visit) => sum + Math.max(0, 1 - Math.hypot(point.x - visit.x, point.y - visit.y) / avoidRadius),
+        0
+      );
+      if (penalty < lowestPenalty) {
+        lowestPenalty = penalty;
+        selected = point;
+      }
+    }
+    return selected;
   }
 }
 
@@ -355,6 +481,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     lookDirections: { type: Boolean },
     artworkReady: { type: Boolean },
     greetingPlayback: {},
+    restAvailable: { type: Boolean },
     previewRoot: { default: null },
     settingsOverride: {},
     previewMaxSize: {},
@@ -450,6 +577,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let press = null;
     const timers = new PausableTimers();
     const interactionMemory = new InteractionMemory();
+    const activityPolicy = new ActivityPolicy();
+    let activityOrigin = null;
     const proximity = new ProximityTracker();
     const gaze = new GazeTracker();
     let nearbyPointer = null;
@@ -514,6 +643,14 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const frameStatus = ref(
       Object.fromEntries(POSES.map((name) => [name, "pending"]))
     );
+    const restAvailable = computed(() => ownFrames ? frameStatus.value.doze === "loaded" : props.restAvailable === true);
+    watch(restAvailable, (supported) => {
+      if (!supported && dozing.value) {
+        cancelRest();
+        scheduleRest();
+        scheduleBehavior();
+      }
+    });
     const frameSrc = ref(
       Object.fromEntries(POSES.map((name) => [name, frameUrl(name)]))
     );
@@ -618,6 +755,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       queueAnchor();
     }
     function resetMotion() {
+      cancelActivity();
       stopLoop();
       for (const name of ["behavior", "peek", "peek-pause", "landing-peek", "sit", "clearance"]) clearTimer(name);
       walkTarget = null;
@@ -760,7 +898,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function stepWalk(dt) {
       if (!walkTarget) {
-        finishWalk();
+        finishWalk(false);
         return;
       }
       const speed = BASE_WALK_SPEED * settings.value.speed * (charHeight.value / BASE_HEIGHT) * (roam() === "free" ? FREE_SPEED_RATIO : 1);
@@ -772,7 +910,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const nextX = arrived ? walkTarget.x : x.value + dx / distance * step;
       const nextY = arrived || walkTarget.y === null ? walkTarget.y ?? y.value : y.value + dy / distance * step;
       if (isBlocked(nextX, panelSpan())) {
-        finishWalk();
+        finishWalk(false);
         return;
       }
       walkDistance += Math.hypot(nextX - x.value, nextY - y.value);
@@ -828,11 +966,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         peekPinned = false;
         motion.value = "idle";
         y.value = onFloor() ? ground() : y.value;
+        finishActivityStep();
         if (fromSide && roam() !== "free" && !onFloor()) startFall();
         else scheduleBehavior();
       }
     }
-    function startWalk(targetX, targetY = null) {
+    function startWalk(targetX, targetY = null, autonomous = false) {
+      if (!autonomous) cancelActivity();
       if (greeting.phase.value) greeting.cancel();
       clearAttention();
       clearReaction();
@@ -842,7 +982,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       motion.value = "walk";
       ensureLoop();
     }
-    function finishWalk() {
+    function finishWalk(arrived = true) {
       walkTarget = null;
       walkPhase.value = 0;
       if (motion.value === "walk") motion.value = "idle";
@@ -850,19 +990,23 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const stepOff = pendingStepOff;
       pendingPeek = null;
       pendingStepOff = false;
+      if (!arrived) cancelActivity();
       if (pendingShelter) {
         pendingShelter = false;
         beginShelter(false);
         return;
       }
       scheduleClearance(0);
-      if (stepOff && surface) stepOffEdge();
-      else if (peek) beginPeek(peek);
-      else scheduleBehavior();
+      if (arrived && stepOff && surface) stepOffEdge();
+      else if (arrived && peek) beginPeek(peek, false, false, activityOrigin !== null);
+      else {
+        finishActivityStep();
+        scheduleBehavior();
+      }
     }
-    function beginPeek(edge = "bottom", pinned = false, instant = false) {
+    function beginPeek(edge = "bottom", pinned = false, instant = false, autonomous = false) {
       if (fixed()) return;
-      cancelInteractionFeedback();
+      cancelInteractionFeedback(autonomous);
       for (const name of ["behavior", "peek", "peek-pause", "landing-peek", "sit", "clearance"]) clearTimer(name);
       detachSurface();
       peekEdge.value = edge;
@@ -901,6 +1045,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       scheduleBehavior();
     }
     function settle() {
+      cancelActivity();
       if (motion.value === "walk") {
         walkTarget = null;
         walkPhase.value = 0;
@@ -914,37 +1059,94 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingShelter = false;
     }
     function calm() {
-      return motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !greeting.active.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
+      return !disposed && ready.value && available.value && hostIdle() && (ownFrames || props.artworkReady !== false) && motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !greeting.active.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
+    }
+    function cancelRest() {
+      clearTimer("rest");
+      dozing.value = false;
+    }
+    function cancelActivity() {
+      const moving = activityOrigin !== null;
+      const resting = dozing.value;
+      activityOrigin = null;
+      activityPolicy.cancel();
+      clearTimer("behavior");
+      clearTimer("activity-end");
+      cancelRest();
+      if (resting) scheduleRest();
+      if (!visible() || !motionAllowed()) clearTimer("doze");
+      if (!moving) return;
+      pendingPeek = null;
+      pendingStepOff = false;
+      if (motion.value === "walk") {
+        walkTarget = null;
+        walkPhase.value = 0;
+        motion.value = "idle";
+      } else if (motion.value === "peek" && !peekPinned && !sheltering && motionAllowed()) endPeek();
+    }
+    function beginActivity() {
+      const now = Date.now();
+      const continuing = activityPolicy.continuing(now);
+      activityPolicy.begin(now, Math.random);
+      if (!continuing)
+        setTimer("activity-end", activityPolicy.remainingTime(now), () => {
+          cancelActivity();
+          scheduleBehavior();
+        });
+      activityOrigin = { x: x.value, y: y.value };
+    }
+    function finishActivityStep() {
+      if (!activityOrigin) return;
+      activityPolicy.arrived(activityOrigin, { x: x.value, y: y.value }, Date.now());
+      activityOrigin = null;
+      if (!activityPolicy.continuing(Date.now())) clearTimer("activity-end");
+    }
+    function activityArea() {
+      const free = roam() === "free";
+      const range = freeBounds(viewport(), ...sizePair());
+      const view = viewport();
+      return {
+        current: { x: x.value, y: y.value },
+        bounds: { x: bounds(), y: free ? range.y : [y.value, y.value] },
+        free,
+        height: charHeight.value,
+        mobile: isMobile.value,
+        span: panelSpan(),
+        allowed: (point) => !intersectionArea(rectAt(point.x, point.y), hostState?.panelRect ?? { x: 0, y: 0, width: 0, height: 0 }) && !coversControlAt(
+          rectAt(point.x, point.y),
+          rootEl.value,
+          view,
+          surface?.el ?? null,
+          charWidth.value * charHeight.value,
+          props.previewRoot
+        )
+      };
     }
     function scheduleBehavior() {
       clearTimer("behavior");
       if (fixed() || !calm()) return;
-      setTimer("behavior", randomBetween(6e3, 14e3), () => {
-        if (!calm()) return;
-        if (roam() === "free") {
-          const target2 = pickFreeTarget(Math.random, { x: x.value, y: y.value }, freeBounds(viewport(), ...sizePair()));
-          if (target2) startWalk(target2.x, target2.y);
-          else scheduleBehavior();
-          return;
-        }
-        const [min, max] = bounds();
-        const roll = Math.random();
-        if (roll < 0.25) {
+      setTimer("behavior", activityPolicy.delay(Date.now(), Math.random), () => {
+        if (fixed() || !calm()) return;
+        const local = activityPolicy.continuing(Date.now()) || activityPolicy.excited(Date.now());
+        const area = activityArea();
+        const [min, max] = area.bounds.x;
+        if (!local && roam() !== "free" && Math.random() < 0.25) {
           const side = Math.random() < 0.5 ? min : max;
-          const span = panelSpan();
-          if (isBlocked(side, span)) {
-            scheduleBehavior();
+          if (!isBlocked(side, area.span) && (!area.mobile || Math.abs(side - x.value) <= activityRadius(area.height, true)) && area.allowed({ x: side, y: y.value })) {
+            if (surface) pendingStepOff = Math.random() < 0.5;
+            else pendingPeek = Math.random() < 0.5 ? "bottom" : side === min ? "left" : "right";
+            beginActivity();
+            if (Math.abs(side - x.value) < 1) finishWalk();
+            else startWalk(side, null, true);
             return;
           }
-          if (surface) pendingStepOff = Math.random() < 0.5;
-          else pendingPeek = Math.random() < 0.5 ? "bottom" : side === min ? "left" : "right";
-          if (Math.abs(side - x.value) < 1) finishWalk();
-          else startWalk(side);
-          return;
         }
-        const target = roll < 0.85 ? pickWalkTarget(Math.random, x.value, [min, max], panelSpan()) : null;
-        if (target === null) scheduleBehavior();
-        else startWalk(target);
+        beginActivity();
+        const target = activityPolicy.target(area, Date.now(), Math.random);
+        if (!target) {
+          cancelActivity();
+          scheduleBehavior();
+        } else startWalk(target.x, roam() === "free" ? target.y : null, true);
       });
     }
     function sizePair() {
@@ -963,6 +1165,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         x.value = nextX;
         facingLeft.value = direction > 0;
         queueAnchor();
+        finishActivityStep();
         scheduleBehavior();
         return;
       }
@@ -976,11 +1179,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         charWidth.value * charHeight.value,
         props.previewRoot
       )) {
+        finishActivityStep();
         scheduleBehavior();
         return;
       }
       x.value = nextX;
-      startFall(left.el);
+      startFall(left.el, activityOrigin !== null);
     }
     function scheduleBlink() {
       setTimer("blink", randomBetween(2500, 6e3), () => {
@@ -993,17 +1197,28 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         scheduleBlink();
       });
     }
-    function markActivity() {
-      if (dozing.value) {
-        dozing.value = false;
-        scheduleBehavior();
-      }
+    function scheduleRest() {
+      clearTimer("doze");
+      if (disposed || props.previewRoot || !visible() || !motionAllowed()) return;
       setTimer("doze", DOZE_AFTER, () => {
-        if (!onGround()) return;
-        settle();
+        if (!calm() || activePeekEdge.value || !restAvailable.value) {
+          scheduleRest();
+          return;
+        }
+        cancelActivity();
         dozing.value = true;
-        clearTimer("behavior");
+        setTimer("rest", randomBetween(3500, 6e3), () => {
+          dozing.value = false;
+          scheduleRest();
+          scheduleBehavior();
+        });
       });
+    }
+    function markActivity() {
+      const resting = dozing.value;
+      cancelRest();
+      scheduleRest();
+      if (resting) scheduleBehavior();
     }
     function playTransient(next, duration) {
       if (!onGround()) return;
@@ -1027,7 +1242,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       reaction.value = null;
       if (active) scheduleBehavior();
     }
-    function cancelInteractionFeedback() {
+    function cancelInteractionFeedback(preserveActivity = false) {
+      if (!preserveActivity) cancelActivity();
       greeting.cancel();
       clearAttention();
       clearTimer("long-press");
@@ -1045,6 +1261,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const next = interactionMemory.respond(interactionKey(), Date.now());
       if (!next) return;
       settle();
+      activityPolicy.interact({ x: x.value, y: y.value }, Date.now());
       clearTimer("behavior");
       reaction.value = next.pose;
       setTimer("reaction", next.duration, () => {
@@ -1086,6 +1303,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         gaze.reset();
         return false;
       }
+      cancelActivity();
       markActivity();
       clearTimer("behavior");
       gazeAction.value = action;
@@ -1132,7 +1350,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       ) : [];
       return computeLanding(roam(), boxes, position, view, size(), dropSnap);
     }
-    function startFall(exclude = null) {
+    function startFall(exclude = null, autonomous = false) {
+      if (!autonomous) cancelActivity();
       if (greeting.phase.value) greeting.cancel();
       clearAttention();
       clearReaction();
@@ -1198,11 +1417,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         setTimer("sit", duration, () => {
           if (motion.value !== "sit") return;
           motion.value = "idle";
+          finishActivityStep();
           finishDropReaction();
           scheduleBehavior();
         });
       } else {
         motion.value = "idle";
+        finishActivityStep();
         scheduleBehavior();
       }
       if (clearPanelOverlap() && !onGround()) return;
@@ -1412,6 +1633,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function moveTo(targetX, targetY, target, instant) {
+      cancelActivity();
       if (greeting.phase.value) greeting.cancel();
       clearAttention();
       clearReaction();
@@ -1568,6 +1790,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       queueAnchor();
     }
     function applySettings(value) {
+      cancelActivity();
       settingsRevision++;
       const before = settings.value.roam;
       const wasFixed = fixed();
@@ -1588,6 +1811,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         return;
       }
       relayout();
+      scheduleBehavior();
     }
     function onHostState(state) {
       if (editorPaused) {
@@ -1600,7 +1824,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
-      if (resized) clearAttention();
+      if (resized) {
+        cancelActivity();
+        clearAttention();
+      }
       if (resized) refreshBottomFloor();
       const nextSustained = phasePose(state.phase);
       if (nextSustained !== sustained.value) {
@@ -1622,6 +1849,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (ready.value) relayout();
     }
     function freezeMotion() {
+      cancelActivity();
       stopLoop();
       clearTimer("behavior");
       clearTimer("peek");
@@ -1676,6 +1904,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       ensureLoop();
       if (motion.value === "idle" && !timers.has("behavior")) scheduleBehavior();
+      if (!dozing.value && !timers.has("doze")) scheduleRest();
     }
     function onHostEvent(event) {
       if (editorPaused) return;
@@ -1683,6 +1912,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       markActivity();
       const next = eventPose(event.name);
       if (next) playTransient(next.pose, next.duration);
+      else scheduleBehavior();
     }
     async function refreshPetSettings() {
       if (props.settingsOverride) return;
@@ -1706,15 +1936,27 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     watch([() => props.pluginId, () => props.pet?.key], () => {
       cancelPointerGesture(false);
       cancelInteractionFeedback();
+      activityPolicy.reset();
+      markActivity();
       ownCalibration.value = builtinDefaultCalibration("ying");
       void refreshPetSettings();
       void refreshOwnCalibration();
+      scheduleBehavior();
     });
+    watch(
+      () => props.artworkReady,
+      (loaded) => {
+        if (ownFrames) return;
+        if (!loaded) cancelActivity();
+        else scheduleBehavior();
+      }
+    );
     watch(
       () => props.previewRoot,
       () => {
         cancelPointerGesture(false);
         cancelInteractionFeedback();
+        scheduleBehavior();
       }
     );
     watch(
@@ -1900,6 +2142,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function onWindowBlur() {
       cancelPointerGesture();
       cancelInteractionFeedback();
+      scheduleBehavior();
     }
     function onActivate(event) {
       const pointerId = event.pointerId;
@@ -1914,6 +2157,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       cancelInteractionFeedback();
       markActivity();
       props.agent?.open?.();
+      scheduleBehavior();
     }
     async function readStoredPosition() {
       try {
@@ -1955,6 +2199,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function onWindowResize() {
       if (!ready.value || props.previewRoot) return;
+      cancelActivity();
       clearAttention();
       if (editorPaused) {
         pendingViewportResize = true;
@@ -1963,6 +2208,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       refreshBottomFloor();
       relayout();
       scheduleClearance(RESIZE_CLEAR_DELAY);
+      scheduleBehavior();
     }
     onMounted(async () => {
       if (!props.previewRoot) greeting.arm();
@@ -2066,6 +2312,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     onBeforeUnmount(() => {
       if (timers.has("save")) writePosition();
       disposed = true;
+      activityPolicy.reset();
       if (press) cancelPointerGesture(false);
       clearAttention();
       clearReaction();
@@ -2166,6 +2413,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-fb2e983a"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-98e33404"]]);
 
-export { AgentPet as default, supportsLookDirections as s };
+export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
