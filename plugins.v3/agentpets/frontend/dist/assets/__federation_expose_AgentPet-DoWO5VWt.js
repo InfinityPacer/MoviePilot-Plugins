@@ -70,18 +70,113 @@ class InteractionMemory {
   }
   respond(key, now) {
     const state = this.active(key, now) ?? { lastAt: now, count: 0 };
-    const repeated = Math.max(0, state.count - 1);
-    const cooldown = Math.min(6e3, 2400 + repeated * 1200);
-    if (state.lastResponseAt !== void 0 && now - state.lastResponseAt < cooldown) return null;
+    const duration = this.duration(state, now);
+    if (duration === null) return null;
     const pose = state.lastPose === "wave" ? "jump" : "wave";
     state.lastResponseAt = now;
     state.lastPose = pose;
     this.remember(key, state);
-    return { pose, duration: Math.max(700, 1200 - repeated * 150) };
+    return { pose, duration };
+  }
+  /** Touch previews reserve nothing until release; attention keeps explicit pose order. */
+  attend(key, now, commit = true) {
+    const prior = this.active(key, now) ?? { lastAt: now, count: 0 };
+    const next = { ...prior, lastAt: now, count: Math.min(INTERACTION_LIMIT, prior.count + 1) };
+    const duration = this.duration(next, now);
+    if (duration === null) return null;
+    if (commit) this.remember(key, { ...next, lastResponseAt: now });
+    return { duration };
+  }
+  duration(state, now) {
+    const repeated = Math.max(0, state.count - 1);
+    const cooldown = Math.min(6e3, 2400 + repeated * 1200);
+    if (state.lastResponseAt !== void 0 && now - state.lastResponseAt < cooldown) return null;
+    return Math.max(700, 1200 - repeated * 150);
   }
   landingDelay(key, now) {
     const count = this.active(key, now)?.count ?? 0;
     return Math.min(1350, 900 + Math.max(0, count - 1) * 150);
+  }
+}
+
+const ATTENTION_DWELL_MS = 350;
+const TOUCH_LOOK_MS = 700;
+const LOOK_DIRECTIONS = [
+  "000",
+  "022-5",
+  "045",
+  "067-5",
+  "090",
+  "112-5",
+  "135",
+  "157-5",
+  "180",
+  "202-5",
+  "225",
+  "247-5",
+  "270",
+  "292-5",
+  "315",
+  "337-5"
+];
+function supportsLookDirections(pack) {
+  return pack.codex_version === "v2" && LOOK_DIRECTIONS.every((direction) => {
+    const action = pack.actions[`look-${direction}`];
+    const index = action?.frames.length === 1 ? pack.frames[action.frames[0]] : void 0;
+    return !!action && !action.loop && Number.isInteger(index) && index >= 0 && index < pack.grid.cols * pack.grid.rows;
+  });
+}
+class ProximityTracker {
+  anchor = null;
+  entered = false;
+  consumed = false;
+  sample(point, rect) {
+    const radius = Math.min(96, Math.max(48, rect.height / 2));
+    const dx = Math.max(rect.x - point.x, 0, point.x - rect.x - rect.width);
+    const dy = Math.max(rect.y - point.y, 0, point.y - rect.y - rect.height);
+    if (!Number.isFinite(point.x + point.y) || Math.hypot(dx, dy) > radius + (this.entered ? 16 : 0)) {
+      this.reset();
+      return "leave";
+    }
+    this.entered = true;
+    if (this.consumed) return "near";
+    if (!this.anchor || Math.hypot(point.x - this.anchor.x, point.y - this.anchor.y) > 8) {
+      this.anchor = point;
+      return "arm";
+    }
+    return "near";
+  }
+  consume() {
+    this.consumed = true;
+  }
+  reset() {
+    this.anchor = null;
+    this.entered = false;
+    this.consumed = false;
+  }
+}
+class GazeTracker {
+  direction = null;
+  changedAt = 0;
+  select(point, origin, now) {
+    const dx = point.x - origin.x, dy = point.y - origin.y;
+    if (!Number.isFinite(dx + dy + now)) return this.action();
+    if (Math.hypot(dx, dy) < 12) return this.action();
+    const degrees = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    if (this.direction !== null) {
+      const delta = Math.abs((degrees - this.direction * 22.5 + 540) % 360 - 180);
+      if (delta <= 17.25 || now - this.changedAt < 120) return this.action();
+    }
+    this.direction = Math.round(degrees / 22.5) % 16;
+    this.changedAt = now;
+    return this.action();
+  }
+  action() {
+    return this.direction === null ? null : `look-${LOOK_DIRECTIONS[this.direction]}`;
+  }
+  reset() {
+    this.direction = null;
+    this.changedAt = 0;
   }
 }
 
@@ -223,7 +318,7 @@ const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {renderSlot:_renderSlot,unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
 
-const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
+const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-attention", "data-gaze", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
 const _hoisted_2 = ["aria-label"];
 const _hoisted_3 = ["data-frame"];
 const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
@@ -257,6 +352,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     characterName: { default: "小映" },
     aspectRatio: { default: 0 },
     peekEye: {},
+    lookDirections: { type: Boolean },
     previewRoot: { default: null },
     settingsOverride: {},
     previewMaxSize: {},
@@ -301,6 +397,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const walkPhase = ref(0);
     const transient = ref(null);
     const reaction = ref(null);
+    const attention = ref(null);
+    const gazeAction = ref(null);
     const sustained = ref(null);
     const dozing = ref(false);
     const blinking = ref(false);
@@ -350,6 +448,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let press = null;
     const timers = new PausableTimers();
     const interactionMemory = new InteractionMemory();
+    const proximity = new ProximityTracker();
+    const gaze = new GazeTracker();
+    let nearbyPointer = null;
     const cleanups = [];
     const startup = new AbortController();
     let settingsRevision = 0;
@@ -368,7 +469,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => activePeekEdge.value ? settledPeek.value && animationActive.value && blinking.value ? "blink" : "alert" : props.previewRoot && props.previewPose ? props.previewPose : resolvePose({
         motion: motion.value,
         walkPhase: walkPhase.value,
-        transient: transient.value ?? reaction.value,
+        transient: transient.value ?? reaction.value ?? (attention.value && !gazeAction.value ? "wave" : null),
         sustained: sustained.value,
         dozing: dozing.value,
         blinking: blinking.value,
@@ -722,6 +823,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function startWalk(targetX, targetY = null) {
+      clearAttention();
       clearReaction();
       walkTarget = { x: targetX, y: targetY };
       walkDistance = 0;
@@ -801,7 +903,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingShelter = false;
     }
     function calm() {
-      return motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
+      return motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
     }
     function scheduleBehavior() {
       clearTimer("behavior");
@@ -915,6 +1017,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (active) scheduleBehavior();
     }
     function cancelInteractionFeedback() {
+      clearAttention();
       clearTimer("long-press");
       if (press) press.longPressCancelled = true;
       pendingDropReaction = null;
@@ -924,6 +1027,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return !disposed && ready.value && !props.previewRoot && available.value && visible() && motionAllowed() && hostIdle() && !transient.value && !sustained.value && !activePeekEdge.value && !sheltering;
     }
     function playInteraction() {
+      clearAttention();
       if (!interactionAllowed() || motion.value !== "idle" && motion.value !== "walk") return;
       const next = interactionMemory.respond(interactionKey(), Date.now());
       if (!next) return;
@@ -940,6 +1044,71 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingDropReaction = null;
       if (key === interactionKey()) playInteraction();
     }
+    function clearAttention(resetProximity = true) {
+      const active = attention.value !== null;
+      clearTimer("attention-dwell");
+      clearTimer("attention");
+      attention.value = null;
+      gazeAction.value = null;
+      gaze.reset();
+      if (resetProximity) {
+        proximity.reset();
+        nearbyPointer = null;
+      }
+      if (active) scheduleBehavior();
+    }
+    function attentionAllowed() {
+      return interactionAllowed() && !reaction.value && motion.value === "idle";
+    }
+    function selectGaze(point) {
+      const rect = currentRect();
+      return gaze.select(point, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, Date.now());
+    }
+    function beginAttention(point, mode) {
+      if (!attentionAllowed() || mode === "touch" && !props.lookDirections) return false;
+      const action = props.lookDirections ? selectGaze(point) : null;
+      if (props.lookDirections && !action) return false;
+      const next = interactionMemory.attend(interactionKey(), Date.now(), mode === "mouse");
+      if (!next) {
+        gaze.reset();
+        return false;
+      }
+      markActivity();
+      clearTimer("behavior");
+      gazeAction.value = action;
+      attention.value = mode;
+      setTimer("attention", mode === "touch" ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false));
+      return true;
+    }
+    function onAttentionPointerMove(event) {
+      if (event.pointerType !== "mouse" || event.isPrimary === false || press) return;
+      if (event.buttons !== 0 || isMobile.value || !attentionAllowed()) {
+        clearAttention();
+        return;
+      }
+      nearbyPointer = { x: event.clientX, y: event.clientY };
+      const state = proximity.sample(nearbyPointer, currentRect());
+      if (state === "leave") {
+        clearAttention();
+        return;
+      }
+      if (attention.value === "mouse") {
+        if (gazeAction.value) gazeAction.value = selectGaze(nearbyPointer);
+      } else if (state === "arm") {
+        setTimer("attention-dwell", ATTENTION_DWELL_MS, () => {
+          if (!nearbyPointer || press || isMobile.value || !attentionAllowed()) return;
+          if (proximity.sample(nearbyPointer, currentRect()) === "leave") return;
+          proximity.consume();
+          beginAttention(nearbyPointer, "mouse");
+        });
+      }
+    }
+    function onAttentionPointerOut(event) {
+      if (event.relatedTarget === null && attention.value !== "touch") clearAttention();
+    }
+    function onPagePointerDown() {
+      if (!press) clearAttention();
+    }
     function landing(exclude = null, dropSnap = 0, position = { x: x.value, y: y.value }) {
       const view = viewport();
       const boxes = roam() === "surfaces" ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, props.previewRoot).filter(
@@ -948,6 +1117,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return computeLanding(roam(), boxes, position, view, size(), dropSnap);
     }
     function startFall(exclude = null) {
+      clearAttention();
       clearReaction();
       clearTimer("landing-peek");
       if (fixed()) {
@@ -1225,6 +1395,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function moveTo(targetX, targetY, target, instant) {
+      clearAttention();
       clearReaction();
       const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null);
       if (instant) {
@@ -1411,6 +1582,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
+      if (resized) clearAttention();
       if (resized) refreshBottomFloor();
       const nextSustained = phasePose(state.phase);
       if (nextSustained !== sustained.value) {
@@ -1527,6 +1699,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         cancelInteractionFeedback();
       }
     );
+    watch(
+      () => props.lookDirections,
+      () => clearAttention()
+    );
     let calibrationRevision = 0;
     async function refreshOwnCalibration() {
       const version = ++calibrationRevision;
@@ -1575,9 +1751,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         dragging: false,
         longPressed: false,
         longPressCancelled: !!props.previewRoot,
+        touchPreview: false,
         owner: props.pet
       };
       const current = press;
+      if (event.pointerType === "touch")
+        current.touchPreview = beginAttention({ x: event.clientX, y: event.clientY }, "touch");
       if (!props.previewRoot)
         setTimer("long-press", LONG_PRESS_MS, () => {
           if (press === current) recognizeLongPress(current);
@@ -1588,6 +1767,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function recognizeLongPress(current) {
       if (current.dragging || current.longPressed || current.longPressCancelled || !visible()) return;
+      clearAttention();
       current.longPressed = true;
       interactionMemory.record(interactionKey(), Date.now());
       playInteraction();
@@ -1669,6 +1849,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       releasePointer();
       clearTimer("long-press");
       const held = current.longPressed || !props.previewRoot && Date.now() - current.startedAt >= LONG_PRESS_MS;
+      if (!current.dragging && !held && current.touchPreview && attention.value === "touch" && attentionAllowed())
+        interactionMemory.attend(interactionKey(), Date.now());
       if (current.dragging || held) suppressCompatibilityClick(current.id);
       if (current.dragging) finishDrag(true, current.owner);
       else scheduleBehavior();
@@ -1755,6 +1937,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function onWindowResize() {
       if (!ready.value || props.previewRoot) return;
+      clearAttention();
       if (editorPaused) {
         pendingViewportResize = true;
         return;
@@ -1819,6 +2002,16 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       cleanups.push(() => document.removeEventListener("visibilitychange", onVisibilityChange));
       cleanups.push(() => window.removeEventListener("resize", onWindowResize));
       cleanups.push(() => window.removeEventListener("blur", onWindowBlur));
+      if (!props.previewRoot) {
+        window.addEventListener("pointermove", onAttentionPointerMove, { passive: true });
+        window.addEventListener("pointerout", onAttentionPointerOut, { passive: true });
+        window.addEventListener("pointerdown", onPagePointerDown, { passive: true });
+        cleanups.push(() => {
+          window.removeEventListener("pointermove", onAttentionPointerMove);
+          window.removeEventListener("pointerout", onAttentionPointerOut);
+          window.removeEventListener("pointerdown", onPagePointerDown);
+        });
+      }
       const visual = window.visualViewport;
       if (visual && !props.previewRoot) {
         visual.addEventListener("resize", onWindowResize);
@@ -1872,6 +2065,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "data-pose": pose.value,
         "data-motion": motion.value,
         "data-reaction": reaction.value ?? void 0,
+        "data-attention": attention.value ?? void 0,
+        "data-gaze": gazeAction.value ?? void 0,
         "data-roam": settings.value.roam,
         "data-movement": settings.value.movement,
         "data-peek-edge": activePeekEdge.value ?? void 0,
@@ -1897,6 +2092,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
             }, [
               _renderSlot(_ctx.$slots, "default", {
                 pose: pose.value,
+                gazeAction: gazeAction.value,
                 facingLeft: facingLeft.value,
                 motionActive: animationActive.value && (!activePeekEdge.value || settledPeek.value),
                 peekEdge: activePeekEdge.value,
@@ -1942,6 +2138,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-47a872bb"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-01215955"]]);
 
-export { AgentPet as default };
+export { AgentPet as default, supportsLookDirections as s };
