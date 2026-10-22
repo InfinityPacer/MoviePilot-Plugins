@@ -139,6 +139,20 @@ describe('startup stage greeting', () => {
     expect(next.root().dataset.greetingRound).toBeUndefined()
   })
 
+  it('lets the restored personal selection greet when the startup placeholder is removed before playback', async () => {
+    Reflect.deleteProperty(document, GREETING_MARKER)
+    const placeholder = await setup({ delayed: true })
+    expect(placeholder.root().dataset.greeting).toBe('pending')
+    placeholder.view.unmount()
+    const selected = await setup({ kind: 'v1' })
+    await advance(GREETING_SETTLE_MS)
+    expect(selected.root().dataset.greetingRound).toBe('1')
+    expect(selected.sprite().dataset.frame).toBe('waving-1')
+    await advance(selected.pack.actions.wave.frames.length * 320)
+    expect(selected.root().dataset.greetingRound).toBe('2')
+    expect(selected.root().dataset.greeting).toBeUndefined()
+  })
+
   it.each(['busy', 'hidden', 'reduced', 'unavailable', 'editor', 'blur', 'done', 'error'] as const)(
     'cancels on %s and never replays on recovery',
     async cause => {
@@ -233,6 +247,10 @@ describe('startup stage greeting', () => {
       pet.host.patch({ phase: 'idle', thinking: false, motionAllowed: true, pageVisible: true })
       await advance(2500)
       expect(pet.root().dataset.greetingRound).toBeUndefined()
+      pet.view.unmount()
+      const restored = await setup()
+      await advance(1000)
+      expect(restored.root().dataset.greetingRound).toBeUndefined()
     },
   )
 })

@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { L as LANDMARKS, c as calibrationPoint, a as suggestedLandmark, b as sameCalibration, m as moveCalibrationPoint, _ as _export_sfc, d as BUILTIN_PACK_ID, e as BUILTIN_PACK, f as builtinAsset, r as resolveAction, p as parseCalibration, g as calibrationForAction, B as BUILTIN_PACKS, h as calibrationEye, i as mirrorFace, j as calibrationLayout, k as framePosition, o as onEditorPresence, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import { u as useStartupGreeting, g as greetingPlayback, Y as YING_PACK, f as frameUrl, l as loadBuiltinCalibration, w as withLoadTimeout, a as loadImage } from './greeting-Do_SurfI.js';
+import { u as useStartupGreeting, g as greetingPlayback, Y as YING_PACK, f as frameUrl, l as loadBuiltinCalibration, w as withLoadTimeout, a as loadImage } from './greeting-B7a9rq7Z.js';
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 

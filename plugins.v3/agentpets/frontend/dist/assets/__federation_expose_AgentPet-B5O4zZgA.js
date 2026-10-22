@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { b as builtinDefaultCalibration, u as useStartupGreeting, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, c as walkFrame } from './greeting-Do_SurfI.js';
+import { b as builtinDefaultCalibration, u as useStartupGreeting, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, c as walkFrame } from './greeting-B7a9rq7Z.js';
 import { p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, o as pickClearX, q as isBlocked, t as surfaceXBounds, u as blockedSpan, v as nearestEdge, w as hopVelocity, y as xToRatio, z as isPeekEdge, A as intersectionArea, B as peekPanelShift, C as computeLanding, E as dropPeekEdge, P as PEEK_TILT_SECONDS, F as PEEK_TUCK, G as PEEK_RISE_SECONDS, H as pickFreeTarget, I as pickWalkTarget } from './settings-DtFgdyvj.js';
 
@@ -1965,6 +1965,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       scheduleClearance(RESIZE_CLEAR_DELAY);
     }
     onMounted(async () => {
+      if (!props.previewRoot) greeting.arm();
       if (!props.previewRoot)
         cleanups.push(
           onEditorPresence((active) => {
@@ -2042,7 +2043,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           visual.removeEventListener("scroll", onWindowResize);
         });
       }
-      if (!props.previewRoot) greeting.arm();
       const revision = settingsRevision;
       const [loaded, stored] = await Promise.all([
         withLoadTimeout(
@@ -2066,8 +2066,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     onBeforeUnmount(() => {
       if (timers.has("save")) writePosition();
       disposed = true;
-      cancelPointerGesture(false);
-      cancelInteractionFeedback();
+      if (press) cancelPointerGesture(false);
+      clearAttention();
+      clearReaction();
+      pendingDropReaction = null;
       startup.abort();
       stopLoop();
       pauseSurfaceWatch();
@@ -2164,6 +2166,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-e584409d"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-fb2e983a"]]);
 
 export { AgentPet as default, supportsLookDirections as s };

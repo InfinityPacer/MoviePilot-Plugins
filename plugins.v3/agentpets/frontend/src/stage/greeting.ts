@@ -15,9 +15,9 @@ export interface GreetingPlayback {
 }
 
 /** A document marker also survives component remounts and federation reimports. */
-export function claimPageGreeting(page: Document): boolean {
+export function claimPageGreeting(page: Document, owner: symbol | boolean = true): boolean {
   if (Reflect.get(page, GREETING_MARKER)) return false
-  Reflect.defineProperty(page, GREETING_MARKER, { value: true, configurable: true })
+  Reflect.defineProperty(page, GREETING_MARKER, { value: owner, configurable: true })
   return true
 }
 
@@ -56,6 +56,13 @@ export function useStartupGreeting(options: GreetingOptions) {
   let timer = 0
   let deadline = 0
   let playback: GreetingPlayback | null = null
+  const owner = Symbol()
+
+  function consumeOpportunity() {
+    if (typeof document === 'undefined') return
+    if (Reflect.get(document, GREETING_MARKER) === owner)
+      Reflect.defineProperty(document, GREETING_MARKER, { value: true, configurable: true })
+  }
 
   function clearTimers() {
     window.clearTimeout(timer)
@@ -64,6 +71,7 @@ export function useStartupGreeting(options: GreetingOptions) {
   }
 
   function finish(notify = true) {
+    consumeOpportunity()
     const wasActive = active.value
     handled = true
     clearTimers()
@@ -74,6 +82,7 @@ export function useStartupGreeting(options: GreetingOptions) {
 
   async function playRound() {
     if (stopped || !options.allowed() || !options.ready() || !playback) return finish()
+    consumeOpportunity()
     pending.value = false
     phase.value = 'wave'
     const current = ++round.value
@@ -112,9 +121,9 @@ export function useStartupGreeting(options: GreetingOptions) {
   }
 
   function arm() {
-    if (typeof document === 'undefined' || !claimPageGreeting(document) || handled) return
+    if (typeof document === 'undefined' || handled || !claimPageGreeting(document, owner)) return
     handled = true
-    if (!options.allowed()) return
+    if (!options.allowed()) return finish()
     pending.value = true
     deadline = window.setTimeout(() => finish(), GREETING_WAIT_MS)
     prepare()
@@ -137,6 +146,8 @@ export function useStartupGreeting(options: GreetingOptions) {
   )
   onBeforeUnmount(() => {
     stopped = true
+    if (pending.value && !round.value && Reflect.get(document, GREETING_MARKER) === owner)
+      Reflect.deleteProperty(document, GREETING_MARKER)
     finish(false)
   })
 
