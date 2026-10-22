@@ -1,14 +1,14 @@
 
-.agent-pet-ying[data-v-01215955] {
+.agent-pet-ying[data-v-e584409d] {
   position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
 }
-.agent-pet-ying--contained[data-v-01215955] {
+.agent-pet-ying--contained[data-v-e584409d] {
   position: absolute;
 }
-.agent-pet-ying__character[data-v-01215955] {
+.agent-pet-ying__character[data-v-e584409d] {
   position: absolute;
   top: 0;
   left: 0;
@@ -22,20 +22,20 @@
   -webkit-tap-highlight-color: transparent;
   will-change: transform;
 }
-.agent-pet-ying[data-motion='drag'] .agent-pet-ying__character[data-v-01215955] {
+.agent-pet-ying[data-motion='drag'] .agent-pet-ying__character[data-v-e584409d] {
   cursor: grabbing;
 }
-.agent-pet-ying__character[data-v-01215955]:focus-visible {
+.agent-pet-ying__character[data-v-e584409d]:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary, 145 85 253));
   outline-offset: 2px;
   border-radius: 12px;
 }
-.agent-pet-ying__clip[data-v-01215955] {
+.agent-pet-ying__clip[data-v-e584409d] {
   position: absolute;
   overflow: hidden;
   pointer-events: none;
 }
-.agent-pet-ying__artwork[data-v-01215955] {
+.agent-pet-ying__artwork[data-v-e584409d] {
   position: absolute;
   display: block;
   transform-origin: center;
@@ -43,18 +43,18 @@
 }
 
 /* 翻转只作用于画面，命中区不随裁切或旋转缩小。 */
-.agent-pet-ying__frames[data-v-01215955] {
+.agent-pet-ying__frames[data-v-e584409d] {
   position: absolute;
   inset: 0;
   display: block;
   pointer-events: none;
   overflow: hidden;
 }
-.agent-pet-ying__frame-crop[data-v-01215955] {
+.agent-pet-ying__frame-crop[data-v-e584409d] {
   position: absolute;
   display: block;
 }
-.agent-pet-ying__eye[data-v-01215955] {
+.agent-pet-ying__eye[data-v-e584409d] {
   position: absolute;
   width: 10px;
   height: 10px;
@@ -62,15 +62,15 @@
   border-radius: 50%;
   transform: translate(-50%, -50%);
 }
-.agent-pet-ying__frames--pending[data-v-01215955] {
+.agent-pet-ying__frames--pending[data-v-e584409d] {
   visibility: hidden;
 }
-.agent-pet-ying__frames--flip[data-v-01215955] {
+.agent-pet-ying__frames--flip[data-v-e584409d] {
   transform: scaleX(-1);
 }
 
 /* 不可见帧用 opacity 0 而不是 display none，保持已解码，切换时不用等待。 */
-.agent-pet-ying__frame[data-v-01215955] {
+.agent-pet-ying__frame[data-v-e584409d] {
   position: absolute;
   inset: 0;
   display: block;
@@ -81,6 +81,6 @@
   opacity: 0;
   pointer-events: none;
 }
-.agent-pet-ying__frame--visible[data-v-01215955] {
+.agent-pet-ying__frame--visible[data-v-e584409d] {
   opacity: 1;
 }

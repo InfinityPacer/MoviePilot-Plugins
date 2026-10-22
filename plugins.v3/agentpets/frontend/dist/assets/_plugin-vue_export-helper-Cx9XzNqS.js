@@ -1,3 +1,5 @@
+import { importShared } from './__federation_fn_import-JrT3xvdd.js';
+
 const LANDMARKS = ["left_eye", "right_eye", "head_top"];
 const DEFAULT_CALIBRATION = {
   left: 0,
@@ -2957,6 +2959,33 @@ function sameMappings(a, b) {
   return Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value);
 }
 
+const {onBeforeUnmount,onMounted} = await importShared('vue');
+
+const editors = /* @__PURE__ */ new Set();
+const listeners = /* @__PURE__ */ new Set();
+function registerEditor() {
+  const token = Symbol();
+  editors.add(token);
+  if (editors.size === 1) for (const listener of listeners) listener(true);
+  return () => {
+    if (editors.delete(token) && !editors.size) for (const listener of listeners) listener(false);
+  };
+}
+function useEditorPresence() {
+  let release;
+  onMounted(() => {
+    release = registerEditor();
+  });
+  onBeforeUnmount(() => release?.());
+}
+function onEditorPresence(listener) {
+  listeners.add(listener);
+  listener(editors.size > 0);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
   for (const [key, val] of props) {
@@ -2965,4 +2994,4 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-export { ACTION_LABELS as A, BUILTIN_PACKS as B, DEFAULT_CALIBRATION as D, HOST_ACTIONS as H, LANDMARKS as L, PACK_UPDATED_EVENT as P, _export_sfc as _, suggestedLandmark as a, sameCalibration as b, calibrationPoint as c, BUILTIN_PACK_ID as d, BUILTIN_PACK as e, builtinAsset as f, calibrationForAction as g, calibrationEye as h, mirrorFace as i, calibrationLayout as j, framePosition as k, sameMappings as l, moveCalibrationPoint as m, buildCodexPetPack as n, mappingRows as o, parseCalibration as p, nativeChoices as q, resolveAction as r, stageAction as s, HOST_INTENTS as t, validatePack as v, withCodexStageActions as w };
+export { ACTION_LABELS as A, BUILTIN_PACKS as B, DEFAULT_CALIBRATION as D, HOST_ACTIONS as H, LANDMARKS as L, PACK_UPDATED_EVENT as P, _export_sfc as _, suggestedLandmark as a, sameCalibration as b, calibrationPoint as c, BUILTIN_PACK_ID as d, BUILTIN_PACK as e, builtinAsset as f, calibrationForAction as g, calibrationEye as h, mirrorFace as i, calibrationLayout as j, framePosition as k, sameMappings as l, moveCalibrationPoint as m, buildCodexPetPack as n, onEditorPresence as o, parseCalibration as p, mappingRows as q, resolveAction as r, stageAction as s, nativeChoices as t, useEditorPresence as u, validatePack as v, withCodexStageActions as w, HOST_INTENTS as x };

@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { L as LANDMARKS, c as calibrationPoint, a as suggestedLandmark, b as sameCalibration, m as moveCalibrationPoint, _ as _export_sfc, d as BUILTIN_PACK_ID, e as BUILTIN_PACK, f as builtinAsset, r as resolveAction, p as parseCalibration, g as calibrationForAction, B as BUILTIN_PACKS, h as calibrationEye, i as mirrorFace, j as calibrationLayout, k as framePosition, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './_plugin-vue_export-helper-DQ595t25.js';
-import { Y as YING_PACK, f as frameUrl, l as loadBuiltinCalibration, w as withLoadTimeout, a as loadImage } from './poses-CIMfpwET.js';
+import { L as LANDMARKS, c as calibrationPoint, a as suggestedLandmark, b as sameCalibration, m as moveCalibrationPoint, _ as _export_sfc, d as BUILTIN_PACK_ID, e as BUILTIN_PACK, f as builtinAsset, r as resolveAction, p as parseCalibration, g as calibrationForAction, B as BUILTIN_PACKS, h as calibrationEye, i as mirrorFace, j as calibrationLayout, k as framePosition, o as onEditorPresence, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import { u as useStartupGreeting, g as greetingPlayback, Y as YING_PACK, f as frameUrl, l as loadBuiltinCalibration, w as withLoadTimeout, a as loadImage } from './greeting-Do_SurfI.js';
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
@@ -162,10 +162,10 @@ const CalibrationMarkers = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,withDirectives:_withDirectives,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass} = await importShared('vue');
+const {unref:_unref,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,withDirectives:_withDirectives,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass} = await importShared('vue');
 
-const _hoisted_1 = ["aria-hidden", "data-pack", "data-action", "data-frame", "data-mirrored"];
-const {computed,onBeforeUnmount,onMounted,ref,watch} = await importShared('vue');
+const _hoisted_1 = ["aria-hidden", "data-pack", "data-action", "data-greeting", "data-greeting-round", "data-frame", "data-mirrored"];
+const {computed,onBeforeUnmount,onMounted,ref,shallowRef,watch} = await importShared('vue');
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "AgentPetSprite",
   props: {
@@ -190,7 +190,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     nativeAction: {},
     replay: {}
   },
-  emits: ["appearance", "calibration-change", "load-state", "pack-ready"],
+  emits: ["appearance", "calibration-change", "load-state", "pack-ready", "cycle-complete"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
@@ -206,13 +206,31 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let loadController = null;
     let sheetRevision = "";
     let unsubscribe;
+    const rendererLoaded = ref(false);
+    const editorPaused = ref(false);
+    const documentVisible = ref(typeof document === "undefined" || document.visibilityState !== "hidden");
+    const hostState = shallowRef(null);
+    const greetingCleanups = [];
+    const greeting = useStartupGreeting({
+      allowed: () => !disposed && props.pet?.mode === "renderer" && !props.strictPreview && !props.editCalibration && !editorPaused.value && props.motionActive && !props.thinking && !props.nativeAction && documentVisible.value && (!props.action || ["idle", "stand", "docked"].includes(props.action)) && props.intent === "idle" && (hostState.value ? hostState.value.available && hostState.value.pageVisible && hostState.value.motionAllowed && hostState.value.phase === "idle" && !hostState.value.thinking : !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
+      ready: () => rendererLoaded.value,
+      stable: () => `${pack.value.id}:${cellRatio.value}:${props.mirrorX}:${JSON.stringify(props.calibrationOverride ?? pack.value.calibration)}`,
+      playback: () => greetingPlayback(pack.value, props.mappingsOverride, false)
+    });
     const resolved = computed(
-      () => resolveAction(pack.value, props.action, props.intent, props.thinking, {
-        mappings: props.mappingsOverride,
-        mappingKey: props.mappingKey,
-        nativeAction: props.nativeAction
-      })
+      () => resolveAction(
+        pack.value,
+        greeting.phase.value === "wave" ? "wave" : greeting.phase.value === "pause" ? "idle" : props.action,
+        props.intent,
+        props.thinking,
+        {
+          mappings: props.mappingsOverride,
+          mappingKey: greeting.phase.value ? void 0 : props.mappingKey,
+          nativeAction: props.nativeAction
+        }
+      )
     );
+    watch([() => props.pluginId, () => props.pet?.key, () => props.pet?.mode], () => greeting.cancel());
     const frame = computed(() => {
       const frames = resolved.value.action.frames;
       return frames[Math.min(frameIndex.value, frames.length - 1)] ?? "idle";
@@ -265,9 +283,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       frameIndex.value = 0;
       if (!props.motionActive || !ready.value || disposed) return;
       const { frames, frame_ms: frameMs, frame_durations: durations, loop } = resolved.value.action;
+      const greetingRound = greeting.round.value;
+      const replay = props.replay ?? 0;
       if (frames.length < 2) return;
       const advance = () => {
         const next = frameIndex.value + 1;
+        if (next >= frames.length) {
+          greeting.frameComplete(greetingRound);
+          emit("cycle-complete", replay);
+        }
         if (next >= frames.length && !loop) {
           timer = 0;
           return;
@@ -278,6 +302,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       timer = window.setTimeout(advance, durations?.[0] ?? frameMs);
     }
     async function loadPack(key) {
+      rendererLoaded.value = false;
       loadController?.abort();
       const controller = new AbortController();
       loadController = controller;
@@ -321,10 +346,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         sheetRevision = nextRevision;
         if (dimensions) cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows);
         ready.value = true;
+        rendererLoaded.value = true;
         emit("pack-ready", nextPack);
         emit("load-state", "ready");
       } catch {
         if (!current()) return;
+        greeting.cancel();
         console.warn(`[AgentPets] pack ${key} unavailable`);
         ready.value = false;
         sheetRevision = "";
@@ -343,7 +370,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     watch(
-      () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay],
+      () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay, greeting.round.value],
       () => play()
     );
     watch(
@@ -355,6 +382,50 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       { immediate: true }
     );
     onMounted(async () => {
+      if (props.pet?.mode === "renderer" && !props.strictPreview && !props.editCalibration) {
+        greetingCleanups.push(
+          onEditorPresence((active) => {
+            editorPaused.value = active;
+          })
+        );
+        if (props.agent?.subscribe)
+          greetingCleanups.push(
+            props.agent.subscribe((state) => {
+              hostState.value = state;
+            })
+          );
+        for (const name of [
+          "agent.panel.open",
+          "agent.panel.close",
+          "agent.thinking.start",
+          "agent.thinking.end",
+          "agent.tool.start",
+          "agent.tool.end",
+          "agent.awaiting",
+          "agent.done",
+          "agent.error",
+          "agent.preview",
+          "agent.bubble"
+        ]) {
+          const release = props.agent?.on(name, () => greeting.cancel());
+          if (release) greetingCleanups.push(release);
+        }
+        const cancel = () => greeting.cancel();
+        const visibility = () => {
+          documentVisible.value = document.visibilityState !== "hidden";
+        };
+        window.addEventListener("pointerdown", cancel, { passive: true });
+        window.addEventListener("keydown", cancel);
+        window.addEventListener("blur", cancel);
+        document.addEventListener("visibilitychange", visibility);
+        greetingCleanups.push(() => {
+          window.removeEventListener("pointerdown", cancel);
+          window.removeEventListener("keydown", cancel);
+          window.removeEventListener("blur", cancel);
+          document.removeEventListener("visibilitychange", visibility);
+        });
+        greeting.arm();
+      }
       if (!props.strictPreview)
         unsubscribe = props.agent?.on(PACK_UPDATED_EVENT, (event) => {
           if (event.source === props.pluginId && event.data.key === packKey) void loadPack(packKey);
@@ -367,6 +438,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       loadVersion++;
       loadController?.abort();
       unsubscribe?.();
+      for (const cleanup of greetingCleanups.splice(0)) cleanup();
       stop();
     });
     return (_ctx, _cache) => {
@@ -375,6 +447,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "aria-hidden": __props.editCalibration ? void 0 : true,
         "data-pack": ready.value ? pack.value.id : void 0,
         "data-action": resolved.value.key,
+        "data-greeting": _unref(greeting).pending.value ? "pending" : _unref(greeting).phase.value ?? void 0,
+        "data-greeting-round": _unref(greeting).round.value || void 0,
         "data-frame": frame.value,
         "data-mirrored": !!__props.mirrorX
       }, [
@@ -419,6 +493,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-8bb9a9c8"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-3fcf2e92"]]);
 
 export { AgentPetSprite as default };
