@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentRect } from '@/host'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import AgentPetCodex from '@/stage/AgentPetCodex.vue'
-import { buildCodexPetPack, validatePack, withCodexStageActions } from '@/sprites/schema'
+import { buildCodexPetPack, BUILTIN_PACK, validatePack, withCodexStageActions } from '@/sprites/schema'
 import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
 
 const hosts: ReturnType<typeof createMockHost>[] = []
@@ -39,6 +39,51 @@ async function setup(motionAllowed = true) {
 }
 
 describe('Codex Pet stage', () => {
+  it.each(['native-sleep', 'mapped-idle', 'standard-v2'] as const)(
+    'uses actual loaded artwork for %s rest and wakes without host input',
+    async kind => {
+      vi.useFakeTimers()
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+      const host = createMockHost('Clone1')
+      hosts.push(host)
+      const pack =
+        kind === 'standard-v2'
+          ? buildCodexPetPack('standard.png', 1536, 2288).pack
+          : {
+              ...BUILTIN_PACK,
+              id: 'rest-fixture',
+              ...(kind === 'mapped-idle' ? { action_mappings: { 'stage.doze': 'idle' } } : {}),
+            }
+      const api = {
+        get: vi.fn().mockResolvedValue({ success: true, data: { pack, sheet_src: 'data:image/png;base64,AAAA' } }),
+        post: vi.fn(),
+      }
+      const view = render(AgentPetCodex, {
+        props: {
+          agent: host,
+          api,
+          pluginId: 'Clone1',
+          pet: createMockPet('stage', pack.id),
+          settingsOverride: { scale: 1, speed: 1, roam: 'free', movement: 'fixed' },
+        },
+      })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(90_032)
+      const stage = view.container.querySelector<HTMLElement>('.agent-pet-ying')!
+      const sprite = view.container.querySelector<HTMLElement>('.agent-pet-sprites')!
+      if (kind === 'native-sleep') {
+        expect(stage.dataset.pose).toBe('doze')
+        expect(sprite.dataset.action).toBe('sleep')
+      } else expect(stage.dataset.pose).not.toBe('doze')
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(stage.dataset.pose).not.toBe('doze')
+      expect(api.get).toHaveBeenCalledOnce()
+      expect(api.post).not.toHaveBeenCalled()
+      view.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
   it.each(['v1', 'v2'] as const)(
     'uses loaded %s capabilities for nearby attention without rewriting the atlas',
     async version => {

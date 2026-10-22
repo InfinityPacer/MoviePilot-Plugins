@@ -2,6 +2,7 @@ import { render } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import AgentPet from '@/stage/AgentPet.vue'
+import { ActivityPolicy } from '@/stage/activity'
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import type { AgentRect } from '@/host'
 
@@ -131,10 +132,12 @@ describe('autonomous edge movement in MP layouts', () => {
       .mockReturnValueOnce(side === 'left' ? 0.1 : 0.9)
       .mockReturnValueOnce(0.1)
     const start = stage.anchors.length
-    await vi.advanceTimersByTimeAsync(4000)
+    // Check the arrival before the next step continues this activity episode.
+    await vi.advanceTimersByTimeAsync(1000)
     expect(Number(stage.button.style.transform.match(/translate3d\(([^,]+)px/)?.[1])).toBeCloseTo(edge)
     expect(stage.button.closest('.agent-pet-ying')?.getAttribute('data-motion')).toBe('idle')
     expect(stage.rect().y + stage.rect().height).toBeCloseTo(400)
+    await vi.advanceTimersByTimeAsync(3000)
     for (const frame of stage.anchors.slice(start)) {
       if (frame) expect(frame.y + frame.height).toBeCloseTo(400)
     }
@@ -258,7 +261,13 @@ describe('eye-anchored mobile Dock clearance', () => {
     try {
       mobileDock()
       await vi.advanceTimersByTimeAsync(2200)
-      vi.mocked(Math.random).mockReturnValue(0.1)
+      // Pin only decision timing; keep the real movement and Dock geometry.
+      vi.spyOn(ActivityPolicy.prototype, 'delay').mockReturnValue(1000)
+      vi.mocked(Math.random)
+        .mockReturnValue(0.1)
+        .mockReturnValueOnce(0.1)
+        .mockReturnValueOnce(0.9)
+        .mockReturnValueOnce(0.1)
       stage.host.patch({ motionAllowed: true })
       const start = stage.anchors.length
       await vi.advanceTimersByTimeAsync(16000)

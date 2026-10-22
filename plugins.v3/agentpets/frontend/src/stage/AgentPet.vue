@@ -4,6 +4,7 @@ import { withLoadTimeout } from '@/loading'
 import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
+import { ActivityPolicy, activityRadius, type ActivityArea, type ActivityPoint } from './activity'
 import { ATTENTION_DWELL_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
 import { GREETING_PAUSE_MS, SINGLE_GREETING_MS, useStartupGreeting, type GreetingPlayback } from './greeting'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
@@ -35,8 +36,6 @@ import {
   freeBounds,
   groundTop,
   isBlocked,
-  pickFreeTarget,
-  pickWalkTarget,
   ratioToX,
   readViewport,
   sameRect,
@@ -99,6 +98,8 @@ const props = withDefaults(
     lookDirections?: boolean
     artworkReady?: boolean
     greetingPlayback?: GreetingPlayback | null
+    /** True only when the loaded sprite has an actual, non-idle sleep sequence. */
+    restAvailable?: boolean
     /** 详情页局部预览边界；缺省仍在整个页面活动。 */
     previewRoot?: HTMLElement | null
     /** 预览草稿直接传入，不读取或写入已保存设置。 */
@@ -278,6 +279,8 @@ let press: {
 
 const timers = new PausableTimers()
 const interactionMemory = new InteractionMemory()
+const activityPolicy = new ActivityPolicy()
+let activityOrigin: ActivityPoint | null = null
 const proximity = new ProximityTracker()
 const gaze = new GazeTracker()
 let nearbyPointer: { x: number; y: number } | null = null
@@ -386,6 +389,14 @@ type FrameStatus = 'pending' | 'loaded' | 'error'
 const frameStatus = ref<Record<Pose, FrameStatus>>(
   Object.fromEntries(POSES.map(name => [name, 'pending'])) as Record<Pose, FrameStatus>,
 )
+const restAvailable = computed(() => (ownFrames ? frameStatus.value.doze === 'loaded' : props.restAvailable === true))
+watch(restAvailable, supported => {
+  if (!supported && dozing.value) {
+    cancelRest()
+    scheduleRest()
+    scheduleBehavior()
+  }
+})
 /** 每帧的地址；失败重试时在该帧地址后追加序号。 */
 const frameSrc = ref<Record<Pose, string>>(
   Object.fromEntries(POSES.map(name => [name, frameUrl(name)])) as Record<Pose, string>,
@@ -512,6 +523,7 @@ function placeFixed() {
 }
 
 function resetMotion() {
+  cancelActivity()
   stopLoop()
   for (const name of ['behavior', 'peek', 'peek-pause', 'landing-peek', 'sit', 'clearance']) clearTimer(name)
   walkTarget = null
@@ -684,7 +696,7 @@ function tick(timestamp: number) {
 
 function stepWalk(dt: number) {
   if (!walkTarget) {
-    finishWalk()
+    finishWalk(false)
     return
   }
   const speed =
@@ -700,7 +712,7 @@ function stepWalk(dt: number) {
   const nextX = arrived ? walkTarget.x : x.value + (dx / distance) * step
   const nextY = arrived || walkTarget.y === null ? (walkTarget.y ?? y.value) : y.value + (dy / distance) * step
   if (isBlocked(nextX, panelSpan())) {
-    finishWalk()
+    finishWalk(false)
     return
   }
   walkDistance += Math.hypot(nextX - x.value, nextY - y.value)
@@ -764,12 +776,14 @@ function stepPeek(dt: number) {
     peekPinned = false
     motion.value = 'idle'
     y.value = onFloor() ? ground() : y.value
+    finishActivityStep()
     if (fromSide && roam() !== 'free' && !onFloor()) startFall()
     else scheduleBehavior()
   }
 }
 
-function startWalk(targetX: number, targetY: number | null = null) {
+function startWalk(targetX: number, targetY: number | null = null, autonomous = false) {
+  if (!autonomous) cancelActivity()
   if (greeting.phase.value) greeting.cancel()
   clearAttention()
   clearReaction()
@@ -780,7 +794,7 @@ function startWalk(targetX: number, targetY: number | null = null) {
   ensureLoop()
 }
 
-function finishWalk() {
+function finishWalk(arrived = true) {
   walkTarget = null
   walkPhase.value = 0
   if (motion.value === 'walk') motion.value = 'idle'
@@ -788,20 +802,24 @@ function finishWalk() {
   const stepOff = pendingStepOff
   pendingPeek = null
   pendingStepOff = false
+  if (!arrived) cancelActivity()
   if (pendingShelter) {
     pendingShelter = false
     beginShelter(false)
     return
   }
   scheduleClearance(0)
-  if (stepOff && surface) stepOffEdge()
-  else if (peek) beginPeek(peek)
-  else scheduleBehavior()
+  if (arrived && stepOff && surface) stepOffEdge()
+  else if (arrived && peek) beginPeek(peek, false, false, activityOrigin !== null)
+  else {
+    finishActivityStep()
+    scheduleBehavior()
+  }
 }
 
-function beginPeek(edge: PeekEdge = 'bottom', pinned = false, instant = false) {
+function beginPeek(edge: PeekEdge = 'bottom', pinned = false, instant = false, autonomous = false) {
   if (fixed()) return
-  cancelInteractionFeedback()
+  cancelInteractionFeedback(autonomous)
   for (const name of ['behavior', 'peek', 'peek-pause', 'landing-peek', 'sit', 'clearance']) clearTimer(name)
   detachSurface()
   peekEdge.value = edge
@@ -844,6 +862,7 @@ function endPeek() {
 
 /** 打断散步与探头，让角色回到站立。 */
 function settle() {
+  cancelActivity()
   if (motion.value === 'walk') {
     walkTarget = null
     walkPhase.value = 0
@@ -860,6 +879,11 @@ function settle() {
 
 function calm(): boolean {
   return (
+    !disposed &&
+    ready.value &&
+    available.value &&
+    hostIdle() &&
+    (ownFrames || props.artworkReady !== false) &&
     motion.value === 'idle' &&
     !sheltering &&
     !transient.value &&
@@ -874,39 +898,105 @@ function calm(): boolean {
   )
 }
 
-/**
- * 空闲行为：底边上偶尔散步或走到下角，从底边或对应侧边探头；元素上偶尔走到边缘跳下去，
- * 自由停放时在视口内慢慢游走。
- */
+function cancelRest() {
+  clearTimer('rest')
+  dozing.value = false
+}
+
+/** Cancel only autonomous ownership, not a fall or move required for safety. */
+function cancelActivity() {
+  const moving = activityOrigin !== null
+  const resting = dozing.value
+  activityOrigin = null
+  activityPolicy.cancel()
+  clearTimer('behavior')
+  clearTimer('activity-end')
+  cancelRest()
+  if (resting) scheduleRest()
+  if (!visible() || !motionAllowed()) clearTimer('doze')
+  if (!moving) return
+  pendingPeek = null
+  pendingStepOff = false
+  if (motion.value === 'walk') {
+    walkTarget = null
+    walkPhase.value = 0
+    motion.value = 'idle'
+  } else if (motion.value === 'peek' && !peekPinned && !sheltering && motionAllowed()) endPeek()
+}
+
+function beginActivity() {
+  const now = Date.now()
+  const continuing = activityPolicy.continuing(now)
+  activityPolicy.begin(now, Math.random)
+  if (!continuing)
+    setTimer('activity-end', activityPolicy.remainingTime(now), () => {
+      cancelActivity()
+      scheduleBehavior()
+    })
+  activityOrigin = { x: x.value, y: y.value }
+}
+
+function finishActivityStep() {
+  if (!activityOrigin) return
+  activityPolicy.arrived(activityOrigin, { x: x.value, y: y.value }, Date.now())
+  activityOrigin = null
+  if (!activityPolicy.continuing(Date.now())) clearTimer('activity-end')
+}
+
+function activityArea(): ActivityArea {
+  const free = roam() === 'free'
+  const range = freeBounds(viewport(), ...sizePair())
+  const view = viewport()
+  return {
+    current: { x: x.value, y: y.value },
+    bounds: { x: bounds(), y: free ? range.y : [y.value, y.value] },
+    free,
+    height: charHeight.value,
+    mobile: isMobile.value,
+    span: panelSpan(),
+    allowed: point =>
+      !intersectionArea(rectAt(point.x, point.y), hostState?.panelRect ?? { x: 0, y: 0, width: 0, height: 0 }) &&
+      !coversControlAt(
+        rectAt(point.x, point.y),
+        rootEl.value,
+        view,
+        surface?.el ?? null,
+        charWidth.value * charHeight.value,
+        props.previewRoot,
+      ),
+  }
+}
+
+/** Short, finite episodes reuse the existing walk, peek and landing machinery. */
 function scheduleBehavior() {
   clearTimer('behavior')
   if (fixed() || !calm()) return
-  setTimer('behavior', randomBetween(6000, 14000), () => {
-    if (!calm()) return
-    if (roam() === 'free') {
-      const target = pickFreeTarget(Math.random, { x: x.value, y: y.value }, freeBounds(viewport(), ...sizePair()))
-      if (target) startWalk(target.x, target.y)
-      else scheduleBehavior()
-      return
-    }
-    const [min, max] = bounds()
-    const roll = Math.random()
-    if (roll < 0.25) {
+  setTimer('behavior', activityPolicy.delay(Date.now(), Math.random), () => {
+    if (fixed() || !calm()) return
+    const local = activityPolicy.continuing(Date.now()) || activityPolicy.excited(Date.now())
+    const area = activityArea()
+    const [min, max] = area.bounds.x
+    if (!local && roam() !== 'free' && Math.random() < 0.25) {
       const side = Math.random() < 0.5 ? min : max
-      const span = panelSpan()
-      if (isBlocked(side, span)) {
-        scheduleBehavior()
+      if (
+        !isBlocked(side, area.span) &&
+        (!area.mobile || Math.abs(side - x.value) <= activityRadius(area.height, true)) &&
+        area.allowed({ x: side, y: y.value })
+      ) {
+        if (surface) pendingStepOff = Math.random() < 0.5
+        else pendingPeek = Math.random() < 0.5 ? 'bottom' : side === min ? 'left' : 'right'
+        beginActivity()
+        if (Math.abs(side - x.value) < 1) finishWalk()
+        else startWalk(side, null, true)
         return
       }
-      if (surface) pendingStepOff = Math.random() < 0.5
-      else pendingPeek = Math.random() < 0.5 ? 'bottom' : side === min ? 'left' : 'right'
-      if (Math.abs(side - x.value) < 1) finishWalk()
-      else startWalk(side)
-      return
     }
-    const target = roll < 0.85 ? pickWalkTarget(Math.random, x.value, [min, max], panelSpan()) : null
-    if (target === null) scheduleBehavior()
-    else startWalk(target)
+    beginActivity()
+    const target = activityPolicy.target(area, Date.now(), Math.random)
+    if (!target) {
+      cancelActivity()
+      scheduleBehavior()
+    } else startWalk(target.x, roam() === 'free' ? target.y : null, true)
   })
 }
 
@@ -929,6 +1019,7 @@ function stepOffEdge() {
     x.value = nextX
     facingLeft.value = direction > 0
     queueAnchor()
+    finishActivityStep()
     scheduleBehavior()
     return
   }
@@ -946,11 +1037,12 @@ function stepOffEdge() {
       props.previewRoot,
     )
   ) {
+    finishActivityStep()
     scheduleBehavior()
     return
   }
   x.value = nextX
-  startFall(left.el)
+  startFall(left.el, activityOrigin !== null)
 }
 
 function scheduleBlink() {
@@ -965,18 +1057,30 @@ function scheduleBlink() {
   })
 }
 
-/** 任何交互或宿主事件都会叫醒小映并重置打盹计时。 */
-function markActivity() {
-  if (dozing.value) {
-    dozing.value = false
-    scheduleBehavior()
-  }
+function scheduleRest() {
+  clearTimer('doze')
+  if (disposed || props.previewRoot || !visible() || !motionAllowed()) return
   setTimer('doze', DOZE_AFTER, () => {
-    if (!onGround()) return
-    settle()
+    if (!calm() || activePeekEdge.value || !restAvailable.value) {
+      scheduleRest()
+      return
+    }
+    cancelActivity()
     dozing.value = true
-    clearTimer('behavior')
+    setTimer('rest', randomBetween(3500, 6000), () => {
+      dozing.value = false
+      scheduleRest()
+      scheduleBehavior()
+    })
   })
+}
+
+/** Real input wakes the pet; a short rest also ends without requiring new input. */
+function markActivity() {
+  const resting = dozing.value
+  cancelRest()
+  scheduleRest()
+  if (resting) scheduleBehavior()
 }
 
 function playTransient(next: Pose, duration: number) {
@@ -1005,7 +1109,8 @@ function clearReaction() {
   if (active) scheduleBehavior()
 }
 
-function cancelInteractionFeedback() {
+function cancelInteractionFeedback(preserveActivity = false) {
+  if (!preserveActivity) cancelActivity()
   greeting.cancel()
   clearAttention()
   clearTimer('long-press')
@@ -1037,6 +1142,7 @@ function playInteraction() {
   const next = interactionMemory.respond(interactionKey(), Date.now())
   if (!next) return
   settle()
+  activityPolicy.interact({ x: x.value, y: y.value }, Date.now())
   clearTimer('behavior')
   reaction.value = next.pose
   setTimer('reaction', next.duration, () => {
@@ -1083,6 +1189,7 @@ function beginAttention(point: { x: number; y: number }, mode: 'mouse' | 'touch'
     gaze.reset()
     return false
   }
+  cancelActivity()
   markActivity()
   clearTimer('behavior')
   gazeAction.value = action
@@ -1147,7 +1254,8 @@ function landing(
  *
  * free 模式没有重力，原地停下；减少动态效果或页面不可见时直接瞬移到落点。
  */
-function startFall(exclude: Element | null = null) {
+function startFall(exclude: Element | null = null, autonomous = false) {
+  if (!autonomous) cancelActivity()
   if (greeting.phase.value) greeting.cancel()
   clearAttention()
   clearReaction()
@@ -1216,11 +1324,13 @@ function land(animated: boolean) {
     setTimer('sit', duration, () => {
       if (motion.value !== 'sit') return
       motion.value = 'idle'
+      finishActivityStep()
       finishDropReaction()
       scheduleBehavior()
     })
   } else {
     motion.value = 'idle'
+    finishActivityStep()
     scheduleBehavior()
   }
   // 避让后仍在下落时，把保存责任留给最终落地，不能提前消耗用户拖放标记。
@@ -1497,6 +1607,7 @@ function recheckShelter() {
  * 同一个面上走过去；换面时沿抛物线跳过去（跳上更高的面也一样）；首次出现或不允许动画时瞬移。
  */
 function moveTo(targetX: number, targetY: number, target: DomSurface | null, instant: boolean) {
+  cancelActivity()
   if (greeting.phase.value) greeting.cancel()
   clearAttention()
   clearReaction()
@@ -1678,6 +1789,7 @@ function relayout() {
 
 /** 设置变化（含设置页实时预览）；活动范围改变时按新模式重新落位。 */
 function applySettings(value: unknown) {
+  cancelActivity()
   settingsRevision++
   const before = settings.value.roam
   const wasFixed = fixed()
@@ -1698,6 +1810,7 @@ function applySettings(value: unknown) {
     return
   }
   relayout()
+  scheduleBehavior()
 }
 
 function onHostState(state: AgentHostState) {
@@ -1716,7 +1829,10 @@ function onHostState(state: AgentHostState) {
       before.viewport.keyboardInset !== state.viewport.keyboardInset ||
       before.isMobile !== state.isMobile)
   isMobile.value = state.isMobile
-  if (resized) clearAttention()
+  if (resized) {
+    cancelActivity()
+    clearAttention()
+  }
   if (resized) refreshBottomFloor()
   const nextSustained = phasePose(state.phase)
   if (nextSustained !== sustained.value) {
@@ -1740,6 +1856,7 @@ function onHostState(state: AgentHostState) {
 
 /** 减少动态效果时立刻停在落点，不播下落和散步。 */
 function freezeMotion() {
+  cancelActivity()
   stopLoop()
   clearTimer('behavior')
   clearTimer('peek')
@@ -1796,6 +1913,7 @@ function syncVisibility() {
   }
   ensureLoop()
   if (motion.value === 'idle' && !timers.has('behavior')) scheduleBehavior()
+  if (!dozing.value && !timers.has('doze')) scheduleRest()
 }
 
 function onHostEvent(event: AgentHostEvent) {
@@ -1804,6 +1922,7 @@ function onHostEvent(event: AgentHostEvent) {
   markActivity()
   const next = eventPose(event.name)
   if (next) playTransient(next.pose, next.duration)
+  else scheduleBehavior()
 }
 
 async function refreshPetSettings() {
@@ -1830,16 +1949,29 @@ function onSettingsEvent(event: AgentHostEvent) {
 watch([() => props.pluginId, () => props.pet?.key], () => {
   cancelPointerGesture(false)
   cancelInteractionFeedback()
+  activityPolicy.reset()
+  markActivity()
   ownCalibration.value = builtinDefaultCalibration('ying')
   void refreshPetSettings()
   void refreshOwnCalibration()
+  scheduleBehavior()
 })
+
+watch(
+  () => props.artworkReady,
+  loaded => {
+    if (ownFrames) return
+    if (!loaded) cancelActivity()
+    else scheduleBehavior()
+  },
+)
 
 watch(
   () => props.previewRoot,
   () => {
     cancelPointerGesture(false)
     cancelInteractionFeedback()
+    scheduleBehavior()
   },
 )
 
@@ -2041,6 +2173,7 @@ function onPointerCancel(event: PointerEvent) {
 function onWindowBlur() {
   cancelPointerGesture()
   cancelInteractionFeedback()
+  scheduleBehavior()
 }
 
 /** 鼠标点击与键盘 Enter/Space 都经按钮的 click 打开原生面板。 */
@@ -2061,6 +2194,7 @@ function onActivate(event: MouseEvent) {
   cancelInteractionFeedback()
   markActivity()
   props.agent?.open?.()
+  scheduleBehavior()
 }
 
 /** 读取上次的落脚点；按当前活动范围重新落位由调用方完成。 */
@@ -2109,6 +2243,7 @@ function onVisibilityChange() {
 
 function onWindowResize() {
   if (!ready.value || props.previewRoot) return
+  cancelActivity()
   clearAttention()
   if (editorPaused) {
     pendingViewportResize = true
@@ -2117,6 +2252,7 @@ function onWindowResize() {
   refreshBottomFloor()
   relayout()
   scheduleClearance(RESIZE_CLEAR_DELAY)
+  scheduleBehavior()
 }
 
 onMounted(async () => {
@@ -2225,6 +2361,7 @@ onBeforeUnmount(() => {
   // 还有推迟的保存时在卸载前写掉（例如切换形象）。
   if (timers.has('save')) writePosition()
   disposed = true
+  activityPolicy.reset()
   if (press) cancelPointerGesture(false)
   clearAttention()
   clearReaction()
