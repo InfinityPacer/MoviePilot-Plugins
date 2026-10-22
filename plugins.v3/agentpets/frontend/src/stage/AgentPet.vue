@@ -5,6 +5,7 @@ import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
 import { ATTENTION_DWELL_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
+import { GREETING_PAUSE_MS, SINGLE_GREETING_MS, useStartupGreeting, type GreetingPlayback } from './greeting'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
   calibrationEye,
@@ -96,6 +97,8 @@ const props = withDefaults(
     peekEye?: PeekEye | null
     /** The loaded sprite supplies native, single-frame Codex v2 directions. */
     lookDirections?: boolean
+    artworkReady?: boolean
+    greetingPlayback?: GreetingPlayback | null
     /** 详情页局部预览边界；缺省仍在整个页面活动。 */
     previewRoot?: HTMLElement | null
     /** 预览草稿直接传入，不读取或写入已保存设置。 */
@@ -293,6 +296,30 @@ const activePeekEdge = computed(() => previewEdge.value ?? peekEdge.value)
 const settledPeek = computed(
   () => !previewEdge.value && motion.value === 'peek' && peekPhase.value === 'look' && peekProgress.value === 1,
 )
+const greeting = useStartupGreeting({
+  allowed: () =>
+    !disposed &&
+    !props.previewRoot &&
+    available.value &&
+    visible() &&
+    motionAllowed() &&
+    hostIdle() &&
+    !transient.value &&
+    !sustained.value &&
+    !press &&
+    !activePeekEdge.value &&
+    !sheltering,
+  ready: () =>
+    ready.value &&
+    motion.value === 'idle' &&
+    (ownFrames
+      ? frameStatus.value.idle === 'loaded' && frameStatus.value.wave === 'loaded'
+      : props.artworkReady === true),
+  stable: () => `${x.value}:${y.value}:${charWidth.value}:${charHeight.value}`,
+  playback: () =>
+    ownFrames ? { duration: SINGLE_GREETING_MS, pause: GREETING_PAUSE_MS } : (props.greetingPlayback ?? null),
+  finished: () => scheduleBehavior(),
+})
 const pose = computed<Pose>(() =>
   activePeekEdge.value
     ? settledPeek.value && animationActive.value && blinking.value
@@ -303,7 +330,16 @@ const pose = computed<Pose>(() =>
       : resolvePose({
           motion: motion.value,
           walkPhase: walkPhase.value,
-          transient: transient.value ?? reaction.value ?? (attention.value && !gazeAction.value ? 'wave' : null),
+          transient:
+            transient.value ??
+            reaction.value ??
+            (greeting.phase.value === 'wave'
+              ? 'wave'
+              : greeting.phase.value === 'pause'
+                ? 'idle'
+                : attention.value && !gazeAction.value
+                  ? 'wave'
+                  : null),
           sustained: sustained.value,
           dozing: dozing.value,
           blinking: blinking.value,
@@ -394,6 +430,7 @@ function onFrameLoad(name: Pose, event: Event) {
 
 /** 服务停掉或网络中断时帧图会加载失败；记下时间，显示上保留上一帧。 */
 function onFrameError(name: Pose) {
+  if (name === 'idle' || name === 'wave') greeting.cancel()
   frameStatus.value[name] = 'error'
   failedAt.set(name, Date.now())
   if (displayed.value === name) displayed.value = null
@@ -733,6 +770,7 @@ function stepPeek(dt: number) {
 }
 
 function startWalk(targetX: number, targetY: number | null = null) {
+  if (greeting.phase.value) greeting.cancel()
   clearAttention()
   clearReaction()
   walkTarget = { x: targetX, y: targetY }
@@ -827,6 +865,7 @@ function calm(): boolean {
     !transient.value &&
     !reaction.value &&
     !attention.value &&
+    !greeting.active.value &&
     !sustained.value &&
     !press &&
     !dozing.value &&
@@ -967,6 +1006,7 @@ function clearReaction() {
 }
 
 function cancelInteractionFeedback() {
+  greeting.cancel()
   clearAttention()
   clearTimer('long-press')
   if (press) press.longPressCancelled = true
@@ -991,6 +1031,7 @@ function interactionAllowed(): boolean {
 }
 
 function playInteraction() {
+  greeting.cancel()
   clearAttention()
   if (!interactionAllowed() || (motion.value !== 'idle' && motion.value !== 'walk')) return
   const next = interactionMemory.respond(interactionKey(), Date.now())
@@ -1025,7 +1066,7 @@ function clearAttention(resetProximity = true) {
 }
 
 function attentionAllowed(): boolean {
-  return interactionAllowed() && !reaction.value && motion.value === 'idle'
+  return interactionAllowed() && !reaction.value && !greeting.active.value && motion.value === 'idle'
 }
 
 function selectGaze(point: { x: number; y: number }): string | null {
@@ -1079,7 +1120,10 @@ function onAttentionPointerOut(event: PointerEvent) {
 }
 
 function onPagePointerDown() {
-  if (!press) clearAttention()
+  if (!press) {
+    greeting.cancel()
+    clearAttention()
+  }
 }
 
 /** 按当前活动范围计算落点；surfaces 模式在这里查询一次可站元素。 */
@@ -1104,6 +1148,7 @@ function landing(
  * free 模式没有重力，原地停下；减少动态效果或页面不可见时直接瞬移到落点。
  */
 function startFall(exclude: Element | null = null) {
+  if (greeting.phase.value) greeting.cancel()
   clearAttention()
   clearReaction()
   clearTimer('landing-peek')
@@ -1452,6 +1497,7 @@ function recheckShelter() {
  * 同一个面上走过去；换面时沿抛物线跳过去（跳上更高的面也一样）；首次出现或不允许动画时瞬移。
  */
 function moveTo(targetX: number, targetY: number, target: DomSurface | null, instant: boolean) {
+  if (greeting.phase.value) greeting.cancel()
   clearAttention()
   clearReaction()
   const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null)
@@ -2134,10 +2180,13 @@ onMounted(async () => {
     window.addEventListener('pointermove', onAttentionPointerMove, { passive: true })
     window.addEventListener('pointerout', onAttentionPointerOut, { passive: true })
     window.addEventListener('pointerdown', onPagePointerDown, { passive: true })
+    const cancelGreeting = () => greeting.cancel()
+    window.addEventListener('keydown', cancelGreeting)
     cleanups.push(() => {
       window.removeEventListener('pointermove', onAttentionPointerMove)
       window.removeEventListener('pointerout', onAttentionPointerOut)
       window.removeEventListener('pointerdown', onPagePointerDown)
+      window.removeEventListener('keydown', cancelGreeting)
     })
   }
   const visual = window.visualViewport
@@ -2150,6 +2199,7 @@ onMounted(async () => {
     })
   }
 
+  if (!props.previewRoot) greeting.arm()
   const revision = settingsRevision
   const [loaded, stored] = await Promise.all([
     withLoadTimeout(
@@ -2198,6 +2248,8 @@ onBeforeUnmount(() => {
     :data-pose="pose"
     :data-motion="motion"
     :data-reaction="reaction ?? undefined"
+    :data-greeting="greeting.pending.value ? 'pending' : (greeting.phase.value ?? undefined)"
+    :data-greeting-round="greeting.round.value || undefined"
     :data-attention="attention ?? undefined"
     :data-gaze="gazeAction ?? undefined"
     :data-roam="settings.roam"
@@ -2220,6 +2272,8 @@ onBeforeUnmount(() => {
           <slot
             :pose="pose"
             :gaze-action="gazeAction"
+            :greeting-round="greeting.round.value"
+            :greeting-complete="greeting.frameComplete"
             :facing-left="facingLeft"
             :motion-active="animationActive && (!activePeekEdge || settledPeek)"
             :peek-edge="activePeekEdge"
