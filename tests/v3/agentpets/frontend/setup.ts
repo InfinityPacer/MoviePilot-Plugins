@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/vue'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { executeArchiveJob, type ArchiveJob } from '@/sprites/archiveCodec'
+import { GREETING_MARKER } from '@/stage/greeting'
 
 // Vuetify 组件依赖这两个浏览器接口，jsdom 没有提供。
 class ResizeObserverStub implements ResizeObserver {
@@ -54,6 +55,8 @@ afterEach(() => {
 
 // jsdom 不解码图片；普通用例模拟成功加载，故障测试按需覆盖 Image。
 beforeEach(() => {
+  // Ordinary behavior tests start after the one-shot greeting; dedicated cases clear this marker.
+  Reflect.defineProperty(document, GREETING_MARKER, { value: true, configurable: true })
   class CodecWorker {
     onmessage: ((event: { data: unknown }) => void) | null = null
     onerror = null

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, type ObjectDirective } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type ObjectDirective } from 'vue'
 import {
   calibrationEye,
   calibrationForAction,
@@ -15,9 +15,11 @@ import CalibrationMarkers from '@/editor/CalibrationMarkers.vue'
 import { loadBuiltinCalibration, YING_PACK } from './builtinCalibration'
 import { frameUrl } from '@/stage/poses'
 import { loadImage, withLoadTimeout } from '@/loading'
+import { greetingPlayback, useStartupGreeting } from '@/stage/greeting'
+import { onEditorPresence } from '@/editor/presence'
 
 import { PACK_UPDATED_EVENT, type ActionMappings } from '@/sprites/mappings'
-import type { AgentPetContext, MoviePilotAgentHost, PluginApi } from '@/host'
+import type { AgentHostState, AgentPetContext, MoviePilotAgentHost, PluginApi } from '@/host'
 import {
   BUILTIN_PACK,
   BUILTIN_PACKS,
@@ -81,6 +83,7 @@ const emit = defineEmits<{
   'calibration-change': [Calibration]
   'load-state': ['loading' | 'ready' | 'error']
   'pack-ready': [SpritePack]
+  'cycle-complete': [replay: number]
 }>()
 
 const packKey = props.pet?.key || BUILTIN_PACK_ID
@@ -100,14 +103,51 @@ let loadVersion = 0
 let loadController: AbortController | null = null
 let sheetRevision = ''
 let unsubscribe: (() => void) | undefined
+const rendererLoaded = ref(false)
+const editorPaused = ref(false)
+const documentVisible = ref(typeof document === 'undefined' || document.visibilityState !== 'hidden')
+const hostState = shallowRef<AgentHostState | null>(null)
+const greetingCleanups: Array<() => void> = []
+const greeting = useStartupGreeting({
+  allowed: () =>
+    !disposed &&
+    props.pet?.mode === 'renderer' &&
+    !props.strictPreview &&
+    !props.editCalibration &&
+    !editorPaused.value &&
+    props.motionActive &&
+    !props.thinking &&
+    !props.nativeAction &&
+    documentVisible.value &&
+    (!props.action || ['idle', 'stand', 'docked'].includes(props.action)) &&
+    props.intent === 'idle' &&
+    (hostState.value
+      ? hostState.value.available &&
+        hostState.value.pageVisible &&
+        hostState.value.motionAllowed &&
+        hostState.value.phase === 'idle' &&
+        !hostState.value.thinking
+      : !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches),
+  ready: () => rendererLoaded.value,
+  stable: () =>
+    `${pack.value.id}:${cellRatio.value}:${props.mirrorX}:${JSON.stringify(props.calibrationOverride ?? pack.value.calibration)}`,
+  playback: () => greetingPlayback(pack.value, props.mappingsOverride, false),
+})
 
 const resolved = computed(() =>
-  resolveAction(pack.value, props.action, props.intent, props.thinking, {
-    mappings: props.mappingsOverride,
-    mappingKey: props.mappingKey,
-    nativeAction: props.nativeAction,
-  }),
+  resolveAction(
+    pack.value,
+    greeting.phase.value === 'wave' ? 'wave' : greeting.phase.value === 'pause' ? 'idle' : props.action,
+    props.intent,
+    props.thinking,
+    {
+      mappings: props.mappingsOverride,
+      mappingKey: greeting.phase.value ? undefined : props.mappingKey,
+      nativeAction: props.nativeAction,
+    },
+  ),
 )
+watch([() => props.pluginId, () => props.pet?.key, () => props.pet?.mode], () => greeting.cancel())
 const frame = computed(() => {
   const frames = resolved.value.action.frames
   return frames[Math.min(frameIndex.value, frames.length - 1)] ?? 'idle'
@@ -164,9 +204,15 @@ function play() {
   frameIndex.value = 0
   if (!props.motionActive || !ready.value || disposed) return
   const { frames, frame_ms: frameMs, frame_durations: durations, loop } = resolved.value.action
+  const greetingRound = greeting.round.value
+  const replay = props.replay ?? 0
   if (frames.length < 2) return
   const advance = () => {
     const next = frameIndex.value + 1
+    if (next >= frames.length) {
+      greeting.frameComplete(greetingRound)
+      emit('cycle-complete', replay)
+    }
     if (next >= frames.length && !loop) {
       timer = 0
       return
@@ -178,6 +224,7 @@ function play() {
 }
 
 async function loadPack(key: string) {
+  rendererLoaded.value = false
   loadController?.abort()
   const controller = new AbortController()
   loadController = controller
@@ -235,10 +282,12 @@ async function loadPack(key: string) {
     sheetRevision = nextRevision
     if (dimensions) cellRatio.value = dimensions.width / nextPack.grid.cols / (dimensions.height / nextPack.grid.rows)
     ready.value = true
+    rendererLoaded.value = true
     emit('pack-ready', nextPack)
     emit('load-state', 'ready')
   } catch {
     if (!current()) return
+    greeting.cancel()
     console.warn(`[AgentPets] pack ${key} unavailable`)
     ready.value = false
     sheetRevision = ''
@@ -259,7 +308,7 @@ async function loadPack(key: string) {
 }
 
 watch(
-  () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay] as const,
+  () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay, greeting.round.value] as const,
   () => play(),
 )
 watch(
@@ -272,6 +321,50 @@ watch(
 )
 
 onMounted(async () => {
+  if (props.pet?.mode === 'renderer' && !props.strictPreview && !props.editCalibration) {
+    greetingCleanups.push(
+      onEditorPresence(active => {
+        editorPaused.value = active
+      }),
+    )
+    if (props.agent?.subscribe)
+      greetingCleanups.push(
+        props.agent.subscribe(state => {
+          hostState.value = state
+        }),
+      )
+    for (const name of [
+      'agent.panel.open',
+      'agent.panel.close',
+      'agent.thinking.start',
+      'agent.thinking.end',
+      'agent.tool.start',
+      'agent.tool.end',
+      'agent.awaiting',
+      'agent.done',
+      'agent.error',
+      'agent.preview',
+      'agent.bubble',
+    ]) {
+      const release = props.agent?.on(name, () => greeting.cancel())
+      if (release) greetingCleanups.push(release)
+    }
+    const cancel = () => greeting.cancel()
+    const visibility = () => {
+      documentVisible.value = document.visibilityState !== 'hidden'
+    }
+    window.addEventListener('pointerdown', cancel, { passive: true })
+    window.addEventListener('keydown', cancel)
+    window.addEventListener('blur', cancel)
+    document.addEventListener('visibilitychange', visibility)
+    greetingCleanups.push(() => {
+      window.removeEventListener('pointerdown', cancel)
+      window.removeEventListener('keydown', cancel)
+      window.removeEventListener('blur', cancel)
+      document.removeEventListener('visibilitychange', visibility)
+    })
+    greeting.arm()
+  }
   if (!props.strictPreview)
     unsubscribe = props.agent?.on(PACK_UPDATED_EVENT, event => {
       if (event.source === props.pluginId && event.data.key === packKey) void loadPack(packKey)
@@ -285,6 +378,7 @@ onBeforeUnmount(() => {
   loadVersion++
   loadController?.abort()
   unsubscribe?.()
+  for (const cleanup of greetingCleanups.splice(0)) cleanup()
   stop()
 })
 </script>
@@ -296,6 +390,8 @@ onBeforeUnmount(() => {
     :aria-hidden="editCalibration ? undefined : true"
     :data-pack="ready ? pack.id : undefined"
     :data-action="resolved.key"
+    :data-greeting="greeting.pending.value ? 'pending' : (greeting.phase.value ?? undefined)"
+    :data-greeting-round="greeting.round.value || undefined"
     :data-frame="frame"
     :data-mirrored="!!mirrorX"
   >
