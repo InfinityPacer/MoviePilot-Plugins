@@ -151,9 +151,9 @@ const GREETING_SETTLE_MS = 300;
 const GREETING_WAIT_MS = 5e3;
 const SINGLE_GREETING_MS = 600;
 const GREETING_PAUSE_MS = 220;
-function claimPageGreeting(page) {
+function claimPageGreeting(page, owner = true) {
   if (Reflect.get(page, GREETING_MARKER)) return false;
-  Reflect.defineProperty(page, GREETING_MARKER, { value: true, configurable: true });
+  Reflect.defineProperty(page, GREETING_MARKER, { value: owner, configurable: true });
   return true;
 }
 function greetingPlayback(pack, mappings, stage = true) {
@@ -181,12 +181,19 @@ function useStartupGreeting(options) {
   let timer = 0;
   let deadline = 0;
   let playback = null;
+  const owner = Symbol();
+  function consumeOpportunity() {
+    if (typeof document === "undefined") return;
+    if (Reflect.get(document, GREETING_MARKER) === owner)
+      Reflect.defineProperty(document, GREETING_MARKER, { value: true, configurable: true });
+  }
   function clearTimers() {
     window.clearTimeout(timer);
     window.clearTimeout(deadline);
     timer = deadline = 0;
   }
   function finish(notify = true) {
+    consumeOpportunity();
     const wasActive = active.value;
     handled = true;
     clearTimers();
@@ -196,6 +203,7 @@ function useStartupGreeting(options) {
   }
   async function playRound() {
     if (stopped || !options.allowed() || !options.ready() || !playback) return finish();
+    consumeOpportunity();
     pending.value = false;
     phase.value = "wave";
     const current = ++round.value;
@@ -229,9 +237,9 @@ function useStartupGreeting(options) {
     }, GREETING_SETTLE_MS);
   }
   function arm() {
-    if (typeof document === "undefined" || !claimPageGreeting(document) || handled) return;
+    if (typeof document === "undefined" || handled || !claimPageGreeting(document, owner)) return;
     handled = true;
-    if (!options.allowed()) return;
+    if (!options.allowed()) return finish();
     pending.value = true;
     deadline = window.setTimeout(() => finish(), GREETING_WAIT_MS);
     prepare();
@@ -253,6 +261,8 @@ function useStartupGreeting(options) {
   );
   onBeforeUnmount(() => {
     stopped = true;
+    if (pending.value && !round.value && Reflect.get(document, GREETING_MARKER) === owner)
+      Reflect.deleteProperty(document, GREETING_MARKER);
     finish(false);
   });
   return { pending, phase, round, active, arm, frameComplete, cancel: finish };

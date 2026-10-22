@@ -2120,6 +2120,7 @@ function onWindowResize() {
 }
 
 onMounted(async () => {
+  if (!props.previewRoot) greeting.arm()
   if (!props.previewRoot)
     cleanups.push(
       onEditorPresence(active => {
@@ -2199,7 +2200,6 @@ onMounted(async () => {
     })
   }
 
-  if (!props.previewRoot) greeting.arm()
   const revision = settingsRevision
   const [loaded, stored] = await Promise.all([
     withLoadTimeout(
@@ -2225,8 +2225,10 @@ onBeforeUnmount(() => {
   // 还有推迟的保存时在卸载前写掉（例如切换形象）。
   if (timers.has('save')) writePosition()
   disposed = true
-  cancelPointerGesture(false)
-  cancelInteractionFeedback()
+  if (press) cancelPointerGesture(false)
+  clearAttention()
+  clearReaction()
+  pendingDropReaction = null
   startup.abort()
   stopLoop()
   pauseSurfaceWatch()
