@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { b as builtinDefaultCalibration, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, c as walkFrame } from './poses-CIMfpwET.js';
-import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, o as onEditorPresence, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, q as pickClearX, t as isBlocked, u as surfaceXBounds, v as blockedSpan, w as nearestEdge, y as hopVelocity, z as xToRatio, A as isPeekEdge, B as intersectionArea, C as peekPanelShift, E as computeLanding, F as dropPeekEdge, P as PEEK_TILT_SECONDS, G as PEEK_TUCK, H as PEEK_RISE_SECONDS, I as pickFreeTarget, J as pickWalkTarget } from './presence-DexdRolI.js';
-import { p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-DQ595t25.js';
+import { b as builtinDefaultCalibration, u as useStartupGreeting, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, c as walkFrame } from './greeting-Do_SurfI.js';
+import { p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import { f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, p as peekHome, a as peekLayout, n as normalizePeekAngles, r as readViewport, b as freeBounds, d as clamp, S as SETTINGS_EVENT, l as loadSettings, g as normalizeSettings, h as ratioToX, i as avoidPanel, j as groundTop, x as xBounds, k as sameRect, m as checkSupport, o as pickClearX, q as isBlocked, t as surfaceXBounds, u as blockedSpan, v as nearestEdge, w as hopVelocity, y as xToRatio, z as isPeekEdge, A as intersectionArea, B as peekPanelShift, C as computeLanding, E as dropPeekEdge, P as PEEK_TILT_SECONDS, F as PEEK_TUCK, G as PEEK_RISE_SECONDS, H as pickFreeTarget, I as pickWalkTarget } from './settings-DtFgdyvj.js';
 
 class PausableTimers {
   paused = false;
@@ -316,9 +316,9 @@ function* eachControlUnder(rect, layer, viewport, standingOn, scope = null) {
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
-const {renderSlot:_renderSlot,unref:_unref,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
+const {unref:_unref,renderSlot:_renderSlot,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
 
-const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-attention", "data-gaze", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
+const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-greeting", "data-greeting-round", "data-attention", "data-gaze", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
 const _hoisted_2 = ["aria-label"];
 const _hoisted_3 = ["data-frame"];
 const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
@@ -353,6 +353,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     aspectRatio: { default: 0 },
     peekEye: {},
     lookDirections: { type: Boolean },
+    artworkReady: { type: Boolean },
+    greetingPlayback: {},
     previewRoot: { default: null },
     settingsOverride: {},
     previewMaxSize: {},
@@ -465,11 +467,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const settledPeek = computed(
       () => !previewEdge.value && motion.value === "peek" && peekPhase.value === "look" && peekProgress.value === 1
     );
+    const greeting = useStartupGreeting({
+      allowed: () => !disposed && !props.previewRoot && available.value && visible() && motionAllowed() && hostIdle() && !transient.value && !sustained.value && !press && !activePeekEdge.value && !sheltering,
+      ready: () => ready.value && motion.value === "idle" && (ownFrames ? frameStatus.value.idle === "loaded" && frameStatus.value.wave === "loaded" : props.artworkReady === true),
+      stable: () => `${x.value}:${y.value}:${charWidth.value}:${charHeight.value}`,
+      playback: () => ownFrames ? { duration: SINGLE_GREETING_MS, pause: GREETING_PAUSE_MS } : props.greetingPlayback ?? null,
+      finished: () => scheduleBehavior()
+    });
     const pose = computed(
       () => activePeekEdge.value ? settledPeek.value && animationActive.value && blinking.value ? "blink" : "alert" : props.previewRoot && props.previewPose ? props.previewPose : resolvePose({
         motion: motion.value,
         walkPhase: walkPhase.value,
-        transient: transient.value ?? reaction.value ?? (attention.value && !gazeAction.value ? "wave" : null),
+        transient: transient.value ?? reaction.value ?? (greeting.phase.value === "wave" ? "wave" : greeting.phase.value === "pause" ? "idle" : attention.value && !gazeAction.value ? "wave" : null),
         sustained: sustained.value,
         dozing: dozing.value,
         blinking: blinking.value,
@@ -541,6 +550,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (name === pose.value) displayed.value = name;
     }
     function onFrameError(name) {
+      if (name === "idle" || name === "wave") greeting.cancel();
       frameStatus.value[name] = "error";
       failedAt.set(name, Date.now());
       if (displayed.value === name) displayed.value = null;
@@ -823,6 +833,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function startWalk(targetX, targetY = null) {
+      if (greeting.phase.value) greeting.cancel();
       clearAttention();
       clearReaction();
       walkTarget = { x: targetX, y: targetY };
@@ -903,7 +914,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingShelter = false;
     }
     function calm() {
-      return motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
+      return motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !greeting.active.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
     }
     function scheduleBehavior() {
       clearTimer("behavior");
@@ -1017,6 +1028,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (active) scheduleBehavior();
     }
     function cancelInteractionFeedback() {
+      greeting.cancel();
       clearAttention();
       clearTimer("long-press");
       if (press) press.longPressCancelled = true;
@@ -1027,6 +1039,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return !disposed && ready.value && !props.previewRoot && available.value && visible() && motionAllowed() && hostIdle() && !transient.value && !sustained.value && !activePeekEdge.value && !sheltering;
     }
     function playInteraction() {
+      greeting.cancel();
       clearAttention();
       if (!interactionAllowed() || motion.value !== "idle" && motion.value !== "walk") return;
       const next = interactionMemory.respond(interactionKey(), Date.now());
@@ -1058,7 +1071,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (active) scheduleBehavior();
     }
     function attentionAllowed() {
-      return interactionAllowed() && !reaction.value && motion.value === "idle";
+      return interactionAllowed() && !reaction.value && !greeting.active.value && motion.value === "idle";
     }
     function selectGaze(point) {
       const rect = currentRect();
@@ -1107,7 +1120,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (event.relatedTarget === null && attention.value !== "touch") clearAttention();
     }
     function onPagePointerDown() {
-      if (!press) clearAttention();
+      if (!press) {
+        greeting.cancel();
+        clearAttention();
+      }
     }
     function landing(exclude = null, dropSnap = 0, position = { x: x.value, y: y.value }) {
       const view = viewport();
@@ -1117,6 +1133,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       return computeLanding(roam(), boxes, position, view, size(), dropSnap);
     }
     function startFall(exclude = null) {
+      if (greeting.phase.value) greeting.cancel();
       clearAttention();
       clearReaction();
       clearTimer("landing-peek");
@@ -1395,6 +1412,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function moveTo(targetX, targetY, target, instant) {
+      if (greeting.phase.value) greeting.cancel();
       clearAttention();
       clearReaction();
       const sameLevel = Math.abs(targetY - y.value) < 1 && (target?.el ?? null) === (surface?.el ?? null);
@@ -2006,10 +2024,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         window.addEventListener("pointermove", onAttentionPointerMove, { passive: true });
         window.addEventListener("pointerout", onAttentionPointerOut, { passive: true });
         window.addEventListener("pointerdown", onPagePointerDown, { passive: true });
+        const cancelGreeting = () => greeting.cancel();
+        window.addEventListener("keydown", cancelGreeting);
         cleanups.push(() => {
           window.removeEventListener("pointermove", onAttentionPointerMove);
           window.removeEventListener("pointerout", onAttentionPointerOut);
           window.removeEventListener("pointerdown", onPagePointerDown);
+          window.removeEventListener("keydown", cancelGreeting);
         });
       }
       const visual = window.visualViewport;
@@ -2021,6 +2042,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           visual.removeEventListener("scroll", onWindowResize);
         });
       }
+      if (!props.previewRoot) greeting.arm();
       const revision = settingsRevision;
       const [loaded, stored] = await Promise.all([
         withLoadTimeout(
@@ -2065,6 +2087,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "data-pose": pose.value,
         "data-motion": motion.value,
         "data-reaction": reaction.value ?? void 0,
+        "data-greeting": _unref(greeting).pending.value ? "pending" : _unref(greeting).phase.value ?? void 0,
+        "data-greeting-round": _unref(greeting).round.value || void 0,
         "data-attention": attention.value ?? void 0,
         "data-gaze": gazeAction.value ?? void 0,
         "data-roam": settings.value.roam,
@@ -2093,6 +2117,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               _renderSlot(_ctx.$slots, "default", {
                 pose: pose.value,
                 gazeAction: gazeAction.value,
+                greetingRound: _unref(greeting).round.value,
+                greetingComplete: _unref(greeting).frameComplete,
                 facingLeft: facingLeft.value,
                 motionActive: animationActive.value && (!activePeekEdge.value || settledPeek.value),
                 peekEdge: activePeekEdge.value,
@@ -2138,6 +2164,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-01215955"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-e584409d"]]);
 
 export { AgentPet as default, supportsLookDirections as s };

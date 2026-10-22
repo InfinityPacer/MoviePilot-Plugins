@@ -1,13 +1,14 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { s as stageAction } from './_plugin-vue_export-helper-DQ595t25.js';
-import AgentPetSprite from './__federation_expose_AgentPetSprite-DFMVwLR5.js';
-import AgentPet, { s as supportsLookDirections } from './__federation_expose_AgentPet-DoWO5VWt.js';
+import { s as stageAction } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-DnmKIYPO.js';
+import AgentPet, { s as supportsLookDirections } from './__federation_expose_AgentPet-B80iCLWv.js';
+import { g as greetingPlayback } from './greeting-Do_SurfI.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {unref:_unref,mergeProps:_mergeProps,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock} = await importShared('vue');
 
-const {ref} = await importShared('vue');
+const {computed,ref,shallowRef} = await importShared('vue');
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "AgentPetCodex",
   props: {
@@ -38,11 +39,18 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       eye: null
     });
     const lookDirections = ref(false);
+    const artworkReady = ref(false);
+    const loadedPack = shallowRef(null);
+    const startupPlayback = computed(
+      () => loadedPack.value ? greetingPlayback(loadedPack.value, props.mappingsOverride) : null
+    );
     function onPackReady(pack) {
+      loadedPack.value = pack;
       lookDirections.value = supportsLookDirections(pack);
       emit("pack-ready", pack);
     }
     function onLoadState(state) {
+      artworkReady.value = state === "ready";
       if (state !== "ready") lookDirections.value = false;
       emit("load-state", state);
     }
@@ -51,23 +59,27 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "character-name": appearance.value.name,
         "aspect-ratio": appearance.value.aspectRatio,
         "peek-eye": appearance.value.eye,
-        "look-directions": lookDirections.value
+        "look-directions": lookDirections.value,
+        "artwork-ready": artworkReady.value,
+        "greeting-playback": startupPlayback.value
       }), {
-        default: _withCtx(({ pose, facingLeft, motionActive, peekEdge, peekFromLeft, gazeAction }) => [
+        default: _withCtx(({ pose, facingLeft, motionActive, peekEdge, peekFromLeft, gazeAction, greetingRound, greetingComplete }) => [
           _createVNode(AgentPetSprite, _mergeProps(props, {
             action: _unref(stageAction)(pose, facingLeft, !!peekEdge).action,
             "mapping-key": _unref(stageAction)(pose, facingLeft, !!peekEdge).key,
             "native-action": peekEdge ? void 0 : gazeAction ?? props.nativeAction,
             "motion-active": motionActive,
+            replay: (props.replay ?? 0) + greetingRound,
             "mirror-x": __props.pet?.key === "builtin-chibiterasu" && !!peekEdge && peekFromLeft,
             "strict-preview": !!props.previewRoot,
             onLoadState,
             onPackReady,
-            onAppearance: _cache[0] || (_cache[0] = ($event) => appearance.value = $event)
-          }), null, 16, ["action", "mapping-key", "native-action", "motion-active", "mirror-x", "strict-preview"])
+            onAppearance: _cache[0] || (_cache[0] = ($event) => appearance.value = $event),
+            onCycleComplete: ($event) => greetingComplete($event - (props.replay ?? 0))
+          }), null, 16, ["action", "mapping-key", "native-action", "motion-active", "replay", "mirror-x", "strict-preview", "onCycleComplete"])
         ]),
         _: 1
-      }, 16, ["character-name", "aspect-ratio", "peek-eye", "look-directions"]);
+      }, 16, ["character-name", "aspect-ratio", "peek-eye", "look-directions", "artwork-ready", "greeting-playback"]);
     };
   }
 });
