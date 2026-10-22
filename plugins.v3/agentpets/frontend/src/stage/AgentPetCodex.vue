@@ -10,6 +10,7 @@ import type { Pose } from '@/stage/poses'
 import type { PeekEdge, PeekEye } from '@/stage/peek'
 import type { YingSettings } from '@/stage/settings'
 import AgentPet from './AgentPet.vue'
+import { supportsLookDirections } from './attention'
 
 /** Codex 精灵图复用小映的运动、设置、交互与气泡锚点。 */
 const props = withDefaults(
@@ -41,6 +42,17 @@ const appearance = ref<{ name: string; aspectRatio: number; eye: PeekEye | null 
   aspectRatio: 192 / 208,
   eye: null,
 })
+const lookDirections = ref(false)
+
+function onPackReady(pack: SpritePack) {
+  lookDirections.value = supportsLookDirections(pack)
+  emit('pack-ready', pack)
+}
+
+function onLoadState(state: 'loading' | 'ready' | 'error') {
+  if (state !== 'ready') lookDirections.value = false
+  emit('load-state', state)
+}
 </script>
 
 <template>
@@ -49,18 +61,19 @@ const appearance = ref<{ name: string; aspectRatio: number; eye: PeekEye | null 
     :character-name="appearance.name"
     :aspect-ratio="appearance.aspectRatio"
     :peek-eye="appearance.eye"
+    :look-directions="lookDirections"
   >
-    <template #default="{ pose, facingLeft, motionActive, peekEdge, peekFromLeft }">
+    <template #default="{ pose, facingLeft, motionActive, peekEdge, peekFromLeft, gazeAction }">
       <AgentPetSprite
         v-bind="props"
         :action="stageAction(pose, facingLeft, !!peekEdge).action"
         :mapping-key="stageAction(pose, facingLeft, !!peekEdge).key"
-        :native-action="peekEdge ? undefined : props.nativeAction"
+        :native-action="peekEdge ? undefined : (gazeAction ?? props.nativeAction)"
         :motion-active="motionActive"
         :mirror-x="pet?.key === 'builtin-chibiterasu' && !!peekEdge && peekFromLeft"
         :strict-preview="!!props.previewRoot"
-        @load-state="emit('load-state', $event)"
-        @pack-ready="emit('pack-ready', $event)"
+        @load-state="onLoadState"
+        @pack-ready="onPackReady"
         @appearance="appearance = $event"
       />
     </template>
