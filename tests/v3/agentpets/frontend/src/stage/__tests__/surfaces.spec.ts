@@ -5,6 +5,7 @@ import {
   controlsUnder,
   bottomFixedFloor,
   coversControlAt,
+  hostDockFloor,
   NEARBY_SURFACE_ROWS,
   surfacesNear,
   querySurfaces,
@@ -66,6 +67,25 @@ describe('mobile bottom navigation', () => {
     bar.style.visibility = 'visible'
     withRect(bar, { left: 0, top: 0, width: 1000, height: 800 })
     expect(bottomFixedFloor(null, viewport)).toBe(800)
+  })
+})
+
+describe('host-published Dock', () => {
+  const dockState = (dock: unknown) => ({ dock }) as Parameters<typeof hostDockFloor>[0]
+
+  it('stands the pet above the Dock the host reports, without hit testing', () => {
+    const hits = stubHits(() => [])
+    const rect = { x: 12, y: 700, width: 600, height: 66 }
+    expect(hostDockFloor(dockState({ bounds: rect, items: [rect] }), viewport)).toBe(692)
+    expect(hits).not.toHaveBeenCalled()
+  })
+
+  it('leaves older hosts and a hidden Dock to the hit-test fallback', () => {
+    expect(hostDockFloor(dockState(undefined), viewport)).toBeNull()
+    expect(hostDockFloor(dockState(null), viewport)).toBeNull()
+    expect(hostDockFloor(null, viewport)).toBeNull()
+    const empty = { x: 0, y: 800, width: 0, height: 0 }
+    expect(hostDockFloor(dockState({ bounds: empty, items: [] }), viewport)).toBeNull()
   })
 })
 

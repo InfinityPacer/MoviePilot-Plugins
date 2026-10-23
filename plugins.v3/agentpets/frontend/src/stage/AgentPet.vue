@@ -65,6 +65,7 @@ import { normalizePeekAngles } from '@/stage/peek'
 import {
   coversControlAt,
   bottomFixedFloor,
+  hostDockFloor,
   BOTTOM_FLOOR_GAP,
   measureSurface,
   querySurfaces,
@@ -578,7 +579,8 @@ function viewport() {
 
 /** 只在布局变化和低频避让检查中测量固定底栏。 */
 function refreshBottomFloor(): boolean {
-  const next = !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null
+  const view = readViewport(hostState)
+  const next = !props.previewRoot ? (hostDockFloor(hostState, view) ?? bottomFixedFloor(rootEl.value, view)) : null
   const changed = next !== bottomFloor
   bottomFloor = next
   return changed
@@ -1971,6 +1973,12 @@ function applySettings(value: unknown) {
   scheduleBehavior()
 }
 
+/** 比较 Dock 外框是否变化用的键；旧版主程序没有 dock 字段时恒为空串。 */
+function dockKey(state: AgentHostState | null): string {
+  const bounds = state?.dock?.bounds
+  return bounds ? `${bounds.x},${bounds.y},${bounds.width},${bounds.height}` : ''
+}
+
 function onHostState(state: AgentHostState) {
   if (editorPaused) {
     pendingHostState = state
@@ -1993,6 +2001,8 @@ function onHostState(state: AgentHostState) {
     clearAttention()
   }
   if (resized) refreshBottomFloor()
+  // Dock 伸缩或显隐时立即换落脚线；面板打开会盖住 Dock，此时不跟着变，避免角色在面板后上下跳。
+  else if (before && !state.panelOpen && dockKey(before) !== dockKey(state) && refreshBottomFloor()) relayout()
   const nextSustained = phasePose(state.phase)
   if (nextSustained !== sustained.value) {
     sustained.value = nextSustained

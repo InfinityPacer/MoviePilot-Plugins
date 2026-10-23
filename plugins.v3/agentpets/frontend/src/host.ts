@@ -47,6 +47,11 @@ export interface AgentHostState {
   }
   /** 面板打开时占据的视口矩形，关闭时为 null。 */
   panelRect: AgentRect | null
+  /**
+   * 底部导航 Dock 的可见区域，未显示时为 null。旧版主程序没有这个字段（undefined），
+   * 此时回退到命中测试找固定底栏。
+   */
+  dock?: { bounds: AgentRect; items: AgentRect[] } | null
 }
 
 /** 宿主或其他插件广播的事件。 */
