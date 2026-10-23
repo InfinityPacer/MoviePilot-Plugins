@@ -627,7 +627,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => !previewEdge.value && motion.value === "peek" && peekPhase.value === "look" && peekProgress.value === 1
     );
     const greeting = useStartupGreeting({
-      allowed: () => !disposed && !props.previewRoot && available.value && visible() && motionAllowed() && hostIdle() && !transient.value && !sustained.value && !press && !activePeekEdge.value && !sheltering,
+      allowed: () => !disposed && !props.previewRoot && available.value && visible() && motionAllowed() && hostAllowsIdleBehavior() && !transient.value && !sustained.value && !press && !activePeekEdge.value && !sheltering,
       ready: () => ready.value && motion.value === "idle" && (ownFrames ? frameStatus.value.idle === "loaded" && frameStatus.value.wave === "loaded" : props.artworkReady === true),
       stable: () => `${x.value}:${y.value}:${charWidth.value}:${charHeight.value}`,
       playback: () => ownFrames ? { duration: SINGLE_GREETING_MS, pause: GREETING_PAUSE_MS } : props.greetingPlayback ?? null,
@@ -1097,7 +1097,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingShelter = false;
     }
     function calm() {
-      return !disposed && ready.value && available.value && hostIdle() && (ownFrames || props.artworkReady !== false) && motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !greeting.active.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
+      return !disposed && ready.value && available.value && hostAllowsIdleBehavior() && (ownFrames || props.artworkReady !== false) && motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !greeting.active.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
     }
     function cancelRest() {
       clearTimer("rest");
@@ -1321,8 +1321,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function interactionKey() {
       return JSON.stringify([props.pluginId, props.pet?.key || "ying"]);
     }
-    function hostIdle() {
-      return !hostState || hostState.phase === "idle" && !hostState.thinking;
+    function hostAllowsIdleBehavior() {
+      return !hostState || !hostState.thinking && ["idle", "done", "error"].includes(hostState.phase);
     }
     function clearReaction() {
       const active = reaction.value !== null;
@@ -1340,7 +1340,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       clearReaction();
     }
     function interactionAllowed() {
-      return !disposed && ready.value && !props.previewRoot && available.value && visible() && motionAllowed() && hostIdle() && !transient.value && !sustained.value && !activePeekEdge.value && !sheltering;
+      return !disposed && ready.value && !props.previewRoot && available.value && visible() && motionAllowed() && hostAllowsIdleBehavior() && !transient.value && !sustained.value && !activePeekEdge.value && !sheltering;
     }
     function playInteraction() {
       greeting.cancel();
@@ -1941,7 +1941,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       const before = hostState;
       hostState = state;
-      if (!hostIdle() || !state.available || !state.motionAllowed || !state.pageVisible) cancelInteractionFeedback();
+      if (!hostAllowsIdleBehavior() || !state.available || !state.motionAllowed || !state.pageVisible)
+        cancelInteractionFeedback();
       available.value = state.available;
       const resized = !!before && (before.viewport.width !== state.viewport.width || before.viewport.height !== state.viewport.height || before.viewport.keyboardInset !== state.viewport.keyboardInset || before.isMobile !== state.isMobile);
       isMobile.value = state.isMobile;
@@ -2122,7 +2123,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       suppressedPointer = null;
       cancelInteractionFeedback();
       markActivity();
-      if (!activePeekEdge.value && hostIdle()) settle();
+      if (!activePeekEdge.value && hostAllowsIdleBehavior()) settle();
       clearTimer("behavior");
       press = {
         id: event.pointerId,
@@ -2536,6 +2537,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-6da1158e"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-7b22509a"]]);
 
 export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
