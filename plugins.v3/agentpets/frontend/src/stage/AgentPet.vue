@@ -39,6 +39,7 @@ import {
   ratioToX,
   readViewport,
   sameRect,
+  standable,
   surfaceXBounds,
   xBounds,
   xToRatio,
@@ -67,6 +68,7 @@ import {
   measureSurface,
   querySurfaces,
   surfacesNear,
+  surfaceUnobstructed,
   surfaceVisible,
   type DomSurface,
 } from '@/stage/surfaces'
@@ -239,6 +241,7 @@ let pendingShelter = false
 /** 跳向另一个面时的水平速度与落点 x。 */
 let hopVx = 0
 let hopTargetX: number | null = null
+let activityHop = false
 let fixedPosition: { xRatio: number; yRatio: number } | null = null
 let lastSaved = ''
 let lastSaveAt = 0
@@ -734,6 +737,12 @@ function stepFall(dt: number) {
   rising.value = velocity < 0
   // 跳上更高的面时起点在落点下方，上升段不能判定着地。
   if (velocity < 0 || y.value < target) return
+  if (activityHop && fallTarget?.surface && !validHopLanding(fallTarget.surface, hopTargetX ?? x.value)) {
+    const rejected = fallTarget.surface.el
+    activityHop = false
+    startFall(rejected)
+    return
+  }
   y.value = target
   // 第一次着地按速度做一次小回弹，之后直接坐下。
   if (!bounced && velocity > 500) {
@@ -906,6 +915,8 @@ function cancelRest() {
 /** Cancel only autonomous ownership, not a fall or move required for safety. */
 function cancelActivity() {
   const moving = activityOrigin !== null
+  const hopping = activityHop
+  activityHop = false
   const resting = dozing.value
   activityOrigin = null
   activityPolicy.cancel()
@@ -921,7 +932,8 @@ function cancelActivity() {
     walkTarget = null
     walkPhase.value = 0
     motion.value = 'idle'
-  } else if (motion.value === 'peek' && !peekPinned && !sheltering && motionAllowed()) endPeek()
+  } else if (motion.value === 'fall' && hopping && !disposed) startFall()
+  else if (motion.value === 'peek' && !peekPinned && !sheltering && motionAllowed()) endPeek()
 }
 
 function beginActivity() {
@@ -976,6 +988,7 @@ function scheduleBehavior() {
     const local = activityPolicy.continuing(Date.now()) || activityPolicy.excited(Date.now())
     const area = activityArea()
     const [min, max] = area.bounds.x
+    if (roam() === 'surfaces' && Math.random() < 0.2 && tryActivityHop(area)) return
     if (!local && roam() !== 'free' && Math.random() < 0.25) {
       const side = Math.random() < 0.5 ? min : max
       if (
@@ -998,6 +1011,68 @@ function scheduleBehavior() {
       scheduleBehavior()
     } else startWalk(target.x, roam() === 'free' ? target.y : null, true)
   })
+}
+
+function validHopLanding(target: DomSurface, left: number): boolean {
+  const box = measureSurface(target.el, props.previewRoot)
+  const view = viewport()
+  if (
+    !box ||
+    !surfaceVisible(target.el) ||
+    !standable(box, view, charHeight.value, hostState?.panelRect ?? null) ||
+    Math.abs(box.top - target.top) > 1 ||
+    left < box.left ||
+    left + charWidth.value > box.right ||
+    !surfaceUnobstructed(target.el, box, rootEl.value, view.width, props.previewRoot)
+  )
+    return false
+  const rect = rectAt(left, box.top - charHeight.value)
+  return (
+    !intersectionArea(rect, hostState?.panelRect ?? { x: 0, y: 0, width: 0, height: 0 }) &&
+    !coversControlAt(rect, rootEl.value, view, target.el, charWidth.value * charHeight.value, props.previewRoot)
+  )
+}
+
+/** Sample nearby cards only at activity decisions; never scan the page on animation frames. */
+function tryActivityHop(area: ActivityArea): boolean {
+  const view = viewport()
+  const radius = activityRadius(charHeight.value, isMobile.value)
+  const center = x.value + charWidth.value / 2
+  const candidates: Array<ActivityPoint & { surface: DomSurface }> = []
+  const boxes = surfacesNear(
+    rootEl.value,
+    view,
+    charHeight.value,
+    hostState?.panelRect ?? null,
+    [center, center - radius, center + radius],
+    props.previewRoot,
+  )
+    .filter(box => box.el !== surface?.el && box.top < y.value + charHeight.value - 12)
+    .sort((a, b) => Math.abs(a.top - y.value - charHeight.value) - Math.abs(b.top - y.value - charHeight.value))
+  for (const box of boxes.slice(0, MAX_OTHER_SURFACES)) {
+    const range = xBounds(view, charWidth.value)
+    const min = Math.max(range[0], box.left)
+    const max = Math.min(range[1], box.right - charWidth.value)
+    if (min > max) continue
+    const top = box.top - charHeight.value
+    const lift = Math.min(charHeight.value * HOP_LIFT_RATIO, Math.max(0, Math.min(y.value, top) - view.safeArea.top))
+    for (const left of new Set([clamp(x.value, min, max), (min + max) / 2, min, max])) {
+      const corridor = {
+        x: Math.min(x.value, left),
+        y: top - lift,
+        width: Math.abs(left - x.value) + charWidth.value,
+        height: y.value + charHeight.value - top + lift,
+      }
+      if (hostState?.panelRect && intersectionArea(corridor, hostState.panelRect)) continue
+      if (validHopLanding(box, left)) candidates.push({ x: left, y: top, surface: box })
+    }
+  }
+  const target = activityPolicy.upwardTarget(area, candidates, Date.now())
+  if (!target) return false
+  beginActivity()
+  activityHop = true
+  startHop(target.x, target.y, target.surface)
+  return true
 }
 
 function sizePair(): [number, number] {
@@ -1295,6 +1370,7 @@ function startFall(exclude: Element | null = null, autonomous = false) {
 }
 
 function land(animated: boolean) {
+  activityHop = false
   velocity = 0
   rising.value = false
   peekProgress.value = 0
@@ -1626,6 +1702,10 @@ function moveTo(targetX: number, targetY: number, target: DomSurface | null, ins
     else startWalk(targetX, roam() === 'free' ? targetY : null)
     return
   }
+  startHop(targetX, targetY, target)
+}
+
+function startHop(targetX: number, targetY: number, target: DomSurface | null) {
   detachSurface()
   const { vx, vy } = hopVelocity(
     { x: x.value, y: y.value },
