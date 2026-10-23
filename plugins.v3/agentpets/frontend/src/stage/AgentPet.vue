@@ -8,6 +8,7 @@ import { ActivityPolicy, activityRadius, type ActivityArea, type ActivityPoint }
 import { ATTENTION_DWELL_MS, ATTENTION_LEAVE_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
 import { PageTapTracker } from './pageTouch'
 import { GREETING_PAUSE_MS, SINGLE_GREETING_MS, useStartupGreeting, type GreetingPlayback } from './greeting'
+import { LineSpeaker } from './lines'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
   calibrationEye,
@@ -283,6 +284,8 @@ let press: {
 
 const timers = new PausableTimers()
 const interactionMemory = new InteractionMemory()
+/** 台词只属于小映本人（无插槽）；套用舞台的其他形象各有人设，预览区也不说话。 */
+const lines = new LineSpeaker(() => (ownFrames && !props.previewRoot ? props.pet : null))
 const activityPolicy = new ActivityPolicy()
 let activityOrigin: ActivityPoint | null = null
 const proximity = new ProximityTracker()
@@ -430,6 +433,10 @@ function syncDisplayed() {
 }
 
 watch(pose, syncDisplayed)
+// 开场招手第一下时按时段问好；每页只有一次招手机会，台词随之最多一次。
+watch(greeting.round, round => {
+  if (round === 1 && greeting.phase.value === 'wave') lines.greet()
+})
 
 function onFrameLoad(name: Pose, event: Event) {
   frameStatus.value[name] = 'loaded'
@@ -1216,7 +1223,7 @@ function interactionAllowed(): boolean {
   )
 }
 
-function playInteraction() {
+function playInteraction(cause: 'poke' | 'drop' = 'poke') {
   greeting.cancel()
   clearAttention()
   if (!interactionAllowed() || (motion.value !== 'idle' && motion.value !== 'walk')) return
@@ -1230,12 +1237,15 @@ function playInteraction() {
     reaction.value = null
     scheduleBehavior()
   })
+  // 台词跟着动作说；冷却中没有动作时也不说。连续被戳（30 秒内第 3 次起）换成抗议台词。
+  if (cause === 'drop') lines.say('drop')
+  else lines.say(interactionMemory.count(interactionKey(), Date.now()) >= 3 ? 'tease' : 'poke')
 }
 
 function finishDropReaction() {
   const key = pendingDropReaction
   pendingDropReaction = null
-  if (key === interactionKey()) playInteraction()
+  if (key === interactionKey()) playInteraction('drop')
 }
 
 function clearAttention(resetProximity = true) {
@@ -1279,9 +1289,11 @@ function beginAttention(point: { x: number; y: number }, mode: 'mouse' | 'touch'
     gaze.reset()
     return false
   }
+  const woke = dozing.value
   if (mode === 'touch') settle()
   else cancelActivity()
   markActivity()
+  if (woke) lines.say('wake')
   clearTimer('behavior')
   gazeAction.value = action
   attention.value = mode
@@ -2188,8 +2200,11 @@ watch(
 function onPointerDown(event: PointerEvent) {
   if (event.button !== 0 || event.isPrimary === false || press || disposed || !ready.value || !visible()) return
   suppressedPointer = null
+  // 只有用户亲手叫醒才嘟囔一句；会话状态变化唤醒时宿主气泡另有内容。
+  const woke = dozing.value
   cancelInteractionFeedback()
   markActivity()
+  if (woke) lines.say('wake')
   if (!activePeekEdge.value && hostAllowsIdleBehavior()) settle()
   clearTimer('behavior')
   press = {

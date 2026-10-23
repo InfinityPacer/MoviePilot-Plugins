@@ -89,6 +89,11 @@ export interface AgentPetContext {
   setBubbleAnchor(rect: AgentRect | null): void
   /** 声明角色是否正在被拖拽，宿主据此不弹预览。 */
   setInteracting(value: boolean): void
+  /**
+   * 请宿主用原生气泡在角色旁显示一句短台词，同步返回是否显示。旧版主程序没有这个方法。
+   * 宿主负责截断、限流、去重，并在通知、toast、回复预览在场时拒绝（不排队）。
+   */
+  say?(text: string, options?: { duration?: number }): { shown: true } | { shown: false; reason: string }
   /** 每用户每形象的小块持久数据，序列化后不超过 16KB。 */
   storage: { get<T = unknown>(): Promise<T | null>; set(value: unknown): Promise<void> }
 }
