@@ -309,7 +309,7 @@ const greeting = useStartupGreeting({
     available.value &&
     visible() &&
     motionAllowed() &&
-    hostIdle() &&
+    hostAllowsIdleBehavior() &&
     !transient.value &&
     !sustained.value &&
     !press &&
@@ -893,7 +893,7 @@ function calm(): boolean {
     !disposed &&
     ready.value &&
     available.value &&
-    hostIdle() &&
+    hostAllowsIdleBehavior() &&
     (ownFrames || props.artworkReady !== false) &&
     motion.value === 'idle' &&
     !sheltering &&
@@ -1175,8 +1175,9 @@ function interactionKey(): string {
   return JSON.stringify([props.pluginId, props.pet?.key || 'ying'])
 }
 
-function hostIdle(): boolean {
-  return !hostState || (hostState.phase === 'idle' && !hostState.thinking)
+function hostAllowsIdleBehavior(): boolean {
+  // The host retains done/error until the next turn; transient feedback still takes priority.
+  return !hostState || (!hostState.thinking && ['idle', 'done', 'error'].includes(hostState.phase))
 }
 
 function clearReaction() {
@@ -1204,7 +1205,7 @@ function interactionAllowed(): boolean {
     available.value &&
     visible() &&
     motionAllowed() &&
-    hostIdle() &&
+    hostAllowsIdleBehavior() &&
     !transient.value &&
     !sustained.value &&
     !activePeekEdge.value &&
@@ -1940,7 +1941,8 @@ function onHostState(state: AgentHostState) {
   }
   const before = hostState
   hostState = state
-  if (!hostIdle() || !state.available || !state.motionAllowed || !state.pageVisible) cancelInteractionFeedback()
+  if (!hostAllowsIdleBehavior() || !state.available || !state.motionAllowed || !state.pageVisible)
+    cancelInteractionFeedback()
   available.value = state.available
   const resized =
     !!before &&
@@ -2141,7 +2143,7 @@ function onPointerDown(event: PointerEvent) {
   suppressedPointer = null
   cancelInteractionFeedback()
   markActivity()
-  if (!activePeekEdge.value && hostIdle()) settle()
+  if (!activePeekEdge.value && hostAllowsIdleBehavior()) settle()
   clearTimer('behavior')
   press = {
     id: event.pointerId,
