@@ -42,7 +42,7 @@ async function until(predicate: () => boolean, limit = 14000) {
 async function setup(options: { fixed?: boolean; mobile?: boolean; roam?: 'surfaces' | 'floor' | 'free' } = {}) {
   vi.useFakeTimers()
   vi.spyOn(Math, 'random').mockReturnValue(0.1)
-  vi.stubGlobal('innerWidth', 1000)
+  vi.stubGlobal('innerWidth', options.mobile ? 390 : 1000)
   vi.stubGlobal('innerHeight', 800)
   Object.defineProperty(document, 'elementsFromPoint', {
     configurable: true,
@@ -79,7 +79,7 @@ async function setup(options: { fixed?: boolean; mobile?: boolean; roam?: 'surfa
   await advance(64)
   const root = view.container.querySelector<HTMLElement>('.agent-pet-ying')!
   const rect = () => anchors.at(-1)!
-  const card = box(new DOMRect(350, 600, 300, 160))
+  const card = box(new DOMRect(options.mobile ? 80 : 350, 600, options.mobile ? 230 : 300, 160))
   return { host, pet, save, view, root, rect, anchors, card }
 }
 
@@ -128,18 +128,29 @@ describe('autonomous upward card exploration', () => {
 
   it('uses the shorter mobile upward reach', async () => {
     const stage = await setup({ mobile: true })
-    stage.card.getBoundingClientRect = () => new DOMRect(350, 600, 300, 160)
     await until(() => stage.root.dataset.motion === 'walk')
     expect(stage.rect().y + stage.rect().height).toBe(800)
   })
 
   it('can hop onto a reachable mobile card and keep all reported frames visible', async () => {
     const stage = await setup({ mobile: true })
-    stage.card.getBoundingClientRect = () => new DOMRect(350, 660, 300, 100)
+    stage.card.getBoundingClientRect = () => new DOMRect(80, 660, 230, 100)
     await until(() => stage.root.dataset.motion === 'fall')
     await until(() => stage.root.dataset.motion === 'idle' && stage.rect().y + stage.rect().height === 660, 3000)
     expect(stage.save).not.toHaveBeenCalled()
-    expect(stage.anchors.every(r => !r || (r.y >= 0 && r.y + r.height <= 800))).toBe(true)
+    expect(
+      stage.anchors.every(r => !r || (r.x >= 0 && r.x + r.width <= 390 && r.y >= 0 && r.y + r.height <= 800)),
+    ).toBe(true)
+  })
+
+  it('still steps down naturally after an autonomous upward visit', async () => {
+    const stage = await setup()
+    await until(() => stage.root.dataset.motion === 'fall')
+    await until(() => stage.root.dataset.motion === 'idle' && stage.rect().y + stage.rect().height === 600, 3000)
+    // Edge exits are selected after the current finite exploration episode, not every continuation.
+    await until(() => stage.root.dataset.motion === 'fall', 30000)
+    await until(() => stage.root.dataset.motion === 'idle' && stage.rect().y + stage.rect().height === 800, 3000)
+    expect(stage.save).not.toHaveBeenCalled()
   })
 
   it('rejects a hop whose endpoints are clear but flight corridor crosses the conversation panel', async () => {
