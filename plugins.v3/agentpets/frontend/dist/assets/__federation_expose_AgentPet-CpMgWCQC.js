@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { b as builtinDefaultCalibration, u as useStartupGreeting, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, c as walkFrame } from './greeting-B7a9rq7Z.js';
 import { r as resolveAction, p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import { p as pickFreeTarget, a as pickWalkTarget, i as isBlocked, f as floorLine, s as standable, c as coversAny, D as DEFAULT_SETTINGS, e as effectiveScale, b as peekHome, d as peekLayout, n as normalizePeekAngles, r as readViewport, g as freeBounds, h as clamp, S as SETTINGS_EVENT, l as loadSettings, j as normalizeSettings, k as ratioToX, m as avoidPanel, o as groundTop, x as xBounds, q as sameRect, t as checkSupport, u as pickClearX, v as surfaceXBounds, w as blockedSpan, y as nearestEdge, z as hopVelocity, A as xToRatio, B as isPeekEdge, C as intersectionArea, E as peekPanelShift, F as computeLanding, G as dropPeekEdge, P as PEEK_TILT_SECONDS, H as PEEK_TUCK, I as PEEK_RISE_SECONDS } from './settings-DI0CwwAz.js';
+import { p as pickFreeTarget, e as pickWalkTarget, i as isBlocked, f as floorLine, g as standable, h as coversAny, D as DEFAULT_SETTINGS, j as effectiveScale, k as peekHome, l as peekLayout, c as normalizePeekAngles, r as readViewport, m as freeBounds, o as clamp, S as SETTINGS_EVENT, q as loadSettings, n as normalizeSettings, t as ratioToX, u as avoidPanel, v as groundTop, x as xBounds, w as sameRect, y as checkSupport, z as pickClearX, A as surfaceXBounds, B as blockedSpan, C as nearestEdge, E as hopVelocity, F as xToRatio, G as isPeekEdge, H as intersectionArea, I as peekPanelShift, J as computeLanding, K as dropPeekEdge, P as PEEK_TILT_SECONDS, L as PEEK_TUCK, M as PEEK_RISE_SECONDS } from './settings-CRB55Tpw.js';
 
 class PausableTimers {
   paused = false;
@@ -67,6 +67,10 @@ class InteractionMemory {
     state.lastAt = now;
     state.count = Math.min(INTERACTION_LIMIT, state.count + 1);
     this.remember(key, state);
+  }
+  /** 30 秒窗口内记录到的互动次数（封顶 4），用于区分连续被戳。 */
+  count(key, now) {
+    return this.active(key, now)?.count ?? 0;
   }
   respond(key, now) {
     const state = this.active(key, now) ?? { lastAt: now, count: 0 };
@@ -520,6 +524,56 @@ class PageTapTracker {
   }
 }
 
+const GREETINGS = [
+  { from: 5, to: 11, lines: ["早上好～今天想看点什么？", "早呀，昨晚的剧追完了吗？"] },
+  { from: 11, to: 14, lines: ["中午好，吃饭配一集刚刚好～", "午安！找部片子下饭吧"] },
+  { from: 14, to: 18, lines: ["下午好，我在这儿陪你～", "下午好，有新的更新吗？"] },
+  { from: 18, to: 23, lines: ["晚上好！今晚看什么呢？", "晚上好，片单准备好了吗？"] }
+];
+const LATE_NIGHT = ["这么晚还没睡呀？", "夜深了，看完这集就休息吧"];
+const LINES = {
+  poke: ["在呢～", "找我有事吗？", "点我一下就能聊天哦", "嘿嘿，有点痒", "今天也一起追剧吧！", "要我帮你找片子吗？"],
+  tease: ["再戳要生气了哦！", "好啦好啦，我在听～", "你是不是很闲呀？"],
+  drop: ["哇，换个地方～", "这里视野不错！", "轻一点嘛…", "到啦！"],
+  wake: ["唔…我没睡着！", "啊，被发现了…", "嗯？刚刚眯了一下"]
+};
+function greetingLines(date) {
+  const hour = date.getHours();
+  return GREETINGS.find((slot) => hour >= slot.from && hour < slot.to)?.lines ?? LATE_NIGHT;
+}
+class LineSpeaker {
+  last = /* @__PURE__ */ new Map();
+  pet;
+  random;
+  /** `pet` 每次说话时读取，返回 null 表示当前不该说（预览、非小映等）。 */
+  constructor(pet, random = Math.random) {
+    this.pet = pet;
+    this.random = random;
+  }
+  say(scene) {
+    return this.speak(scene, LINES[scene]);
+  }
+  greet(now = /* @__PURE__ */ new Date()) {
+    return this.speak("greeting", greetingLines(now));
+  }
+  speak(scene, pool) {
+    const pet = this.pet();
+    if (typeof pet?.say !== "function" || !pool.length) return false;
+    const first = this.pick(scene, pool);
+    const result = pet.say(first);
+    if (result.shown) return true;
+    if (result.reason !== "duplicate" || pool.length < 2) return false;
+    return pet.say(this.pick(scene, pool)).shown;
+  }
+  pick(scene, pool) {
+    const previous = this.last.get(scene);
+    const choices = pool.length > 1 ? pool.filter((line2) => line2 !== previous) : pool;
+    const line = choices[Math.min(choices.length - 1, Math.floor(this.random() * choices.length))];
+    this.last.set(scene, line);
+    return line;
+  }
+}
+
 const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {unref:_unref,renderSlot:_renderSlot,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
@@ -658,6 +712,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let press = null;
     const timers = new PausableTimers();
     const interactionMemory = new InteractionMemory();
+    const lines = new LineSpeaker(() => ownFrames && !props.previewRoot ? props.pet : null);
     const activityPolicy = new ActivityPolicy();
     let activityOrigin = null;
     const proximity = new ProximityTracker();
@@ -756,6 +811,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (displayed.value && frameStatus.value[displayed.value] !== "loaded") displayed.value = null;
     }
     watch(pose, syncDisplayed);
+    watch(greeting.round, (round) => {
+      if (round === 1 && greeting.phase.value === "wave") lines.greet();
+    });
     function onFrameLoad(name, event) {
       frameStatus.value[name] = "loaded";
       failedAt.delete(name);
@@ -1395,7 +1453,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function interactionAllowed() {
       return !disposed && ready.value && !props.previewRoot && available.value && visible() && motionAllowed() && hostAllowsIdleBehavior() && !transient.value && !sustained.value && !activePeekEdge.value && !sheltering;
     }
-    function playInteraction() {
+    function playInteraction(cause = "poke") {
       greeting.cancel();
       clearAttention();
       if (!interactionAllowed() || motion.value !== "idle" && motion.value !== "walk") return;
@@ -1409,11 +1467,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         reaction.value = null;
         scheduleBehavior();
       });
+      if (cause === "drop") lines.say("drop");
+      else lines.say(interactionMemory.count(interactionKey(), Date.now()) >= 3 ? "tease" : "poke");
     }
     function finishDropReaction() {
       const key = pendingDropReaction;
       pendingDropReaction = null;
-      if (key === interactionKey()) playInteraction();
+      if (key === interactionKey()) playInteraction("drop");
     }
     function clearAttention(resetProximity = true) {
       pageTap.reset();
@@ -1447,9 +1507,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         gaze.reset();
         return false;
       }
+      const woke = dozing.value;
       if (mode === "touch") settle();
       else cancelActivity();
       markActivity();
+      if (woke) lines.say("wake");
       clearTimer("behavior");
       gazeAction.value = action;
       attention.value = mode;
@@ -2204,8 +2266,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function onPointerDown(event) {
       if (event.button !== 0 || event.isPrimary === false || press || disposed || !ready.value || !visible()) return;
       suppressedPointer = null;
+      const woke = dozing.value;
       cancelInteractionFeedback();
       markActivity();
+      if (woke) lines.say("wake");
       if (!activePeekEdge.value && hostAllowsIdleBehavior()) settle();
       clearTimer("behavior");
       press = {
@@ -2627,6 +2691,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-9d537b79"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-585971cf"]]);
 
 export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
