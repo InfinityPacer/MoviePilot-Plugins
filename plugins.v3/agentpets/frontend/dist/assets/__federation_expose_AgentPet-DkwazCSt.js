@@ -377,6 +377,11 @@ function querySurfaces(layer, viewport, charHeight, panel, scope = null) {
   );
 }
 const BOTTOM_FLOOR_GAP = 8;
+function hostDockFloor(state, viewport) {
+  const dock = state?.dock;
+  if (!dock || dock.bounds.width <= 0 || dock.bounds.height <= 0) return null;
+  return Math.min(floorLine(viewport), dock.bounds.y - BOTTOM_FLOOR_GAP);
+}
 function bottomFixedFloor(layer, viewport) {
   const floor = floorLine(viewport);
   if (typeof document.elementsFromPoint !== "function") return floor;
@@ -878,7 +883,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       };
     }
     function refreshBottomFloor() {
-      const next = !props.previewRoot ? bottomFixedFloor(rootEl.value, readViewport(hostState)) : null;
+      const view = readViewport(hostState);
+      const next = !props.previewRoot ? hostDockFloor(hostState, view) ?? bottomFixedFloor(rootEl.value, view) : null;
       const changed = next !== bottomFloor;
       bottomFloor = next;
       return changed;
@@ -2006,6 +2012,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       relayout();
       scheduleBehavior();
     }
+    function dockKey(state) {
+      const bounds2 = state?.dock?.bounds;
+      return bounds2 ? `${bounds2.x},${bounds2.y},${bounds2.width},${bounds2.height}` : "";
+    }
     function onHostState(state) {
       if (editorPaused) {
         pendingHostState = state;
@@ -2023,6 +2033,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         clearAttention();
       }
       if (resized) refreshBottomFloor();
+      else if (before && !state.panelOpen && dockKey(before) !== dockKey(state) && refreshBottomFloor()) relayout();
       const nextSustained = phasePose(state.phase);
       if (nextSustained !== sustained.value) {
         sustained.value = nextSustained;
@@ -2616,6 +2627,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-25cc5baf"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-9d537b79"]]);
 
 export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
