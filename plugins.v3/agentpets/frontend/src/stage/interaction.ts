@@ -33,6 +33,11 @@ export class InteractionMemory {
     this.remember(key, state)
   }
 
+  /** 30 秒窗口内记录到的互动次数（封顶 4），用于区分连续被戳。 */
+  count(key: string, now: number): number {
+    return this.active(key, now)?.count ?? 0
+  }
+
   respond(key: string, now: number): { pose: 'wave' | 'jump'; duration: number } | null {
     const state = this.active(key, now) ?? { lastAt: now, count: 0 }
     const duration = this.duration(state, now)
