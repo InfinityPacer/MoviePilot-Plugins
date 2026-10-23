@@ -106,6 +106,29 @@ afterEach(() => {
   document.querySelectorAll('[data-layout-fixture], .footer-nav-container').forEach(el => el.remove())
 })
 
+describe('host-published Dock', () => {
+  it('moves the floor with the Dock area the host reports, and back when it hides', async () => {
+    const stage = await setup(390, true, true)
+    try {
+      const feet = () => stage.rect().y + stage.rect().height
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(feet()).toBeCloseTo(800)
+
+      const bounds = { x: 20, y: 704, width: 350, height: 64 }
+      // 只等一帧多：落脚线随宿主快照即时更新，不靠低频避让复查。
+      stage.host.patch({ dock: { bounds, items: [bounds] } })
+      await vi.advanceTimersByTimeAsync(64)
+      expect(feet()).toBeCloseTo(696)
+
+      stage.host.patch({ dock: null })
+      await vi.advanceTimersByTimeAsync(2200)
+      expect(feet()).toBeCloseTo(800)
+    } finally {
+      stage.unmount()
+    }
+  })
+})
+
 describe('autonomous edge movement in MP layouts', () => {
   // Wide content cards with the host's 260px/80px/0px sidebars and 16px gutters.
   it.each([

@@ -1,4 +1,4 @@
-import type { AgentRect } from '@/host'
+import type { AgentHostState, AgentRect } from '@/host'
 import { coversAny, floorLine, standable, type StageViewport, type SurfaceBox } from '@/stage/geometry'
 
 /**
@@ -99,6 +99,17 @@ export function querySurfaces(
  * 忽略普通内容、全屏弹层及宠物图层，给底部导航留出 8px 间隔。
  */
 export const BOTTOM_FLOOR_GAP = 8
+
+/**
+ * 宿主公布了可见的 Dock 时直接按它算底栏上缘，省去命中测试，并随 Dock 伸缩即时更新。
+ * 字段缺失（旧版主程序）或 Dock 不可见时返回 null，由调用方回退到 `bottomFixedFloor`，
+ * 这样插件快捷栏等其他固定底栏仍能被命中测试发现。
+ */
+export function hostDockFloor(state: AgentHostState | null, viewport: StageViewport): number | null {
+  const dock = state?.dock
+  if (!dock || dock.bounds.width <= 0 || dock.bounds.height <= 0) return null
+  return Math.min(floorLine(viewport), dock.bounds.y - BOTTOM_FLOOR_GAP)
+}
 
 export function bottomFixedFloor(layer: Element | null, viewport: StageViewport): number {
   const floor = floorLine(viewport)
