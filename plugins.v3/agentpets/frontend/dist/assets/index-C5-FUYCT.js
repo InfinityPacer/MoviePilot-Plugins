@@ -1,4 +1,4 @@
-import './__federation_expose_AgentPet-CnDcBMIp.js';
+import './__federation_expose_AgentPet-CZJrGlef.js';
 import './__federation_expose_AgentPetSprite-B9dYQXAG.js';
 import './Config.vue_vue_type_script_setup_true_lang-DqKB1zG8.js';
-import './Page.vue_vue_type_script_setup_true_lang-0rSej3ru.js';
+import './Page.vue_vue_type_script_setup_true_lang-Nr5uRqsS.js';
