@@ -24,6 +24,15 @@ describe('nearby pointer dwell', () => {
     expect(tracker.sample({ x: 230, y: 160 }, box)).toBe('arm')
   })
 
+  it('can dwell on proximity alone while retaining stationary dwell for fallback responses', () => {
+    const tracker = new ProximityTracker()
+    expect(tracker.sample({ x: 200, y: 160 }, box, false)).toBe('arm')
+    expect(tracker.sample({ x: 220, y: 180 }, box, false)).toBe('near')
+    expect(tracker.sample({ x: 230, y: 140 }, box, false)).toBe('near')
+    expect(tracker.sample({ x: 400, y: 160 }, box, false)).toBe('leave')
+    expect(tracker.sample({ x: 200, y: 160 }, box, false)).toBe('arm')
+  })
+
   it('bounds the radius for very small and large characters', () => {
     const tiny = { x: 100, y: 100, width: 10, height: 10 }
     const huge = { x: 100, y: 100, width: 400, height: 400 }
@@ -69,9 +78,14 @@ describe('clockwise Codex v2 gaze', () => {
 
   it('changes direction only at or after the 120ms interval', () => {
     const tracker = new GazeTracker()
+    expect(tracker.remainingDelay(0)).toBe(0)
     expect(tracker.select({ x: 100, y: 0 }, origin, 0)).toBe('look-000')
     expect(tracker.select({ x: 200, y: 100 }, origin, 119)).toBe('look-000')
+    expect(tracker.remainingDelay(119)).toBe(1)
     expect(tracker.select({ x: 200, y: 100 }, origin, 120)).toBe('look-090')
+    expect(tracker.remainingDelay(240)).toBe(0)
+    tracker.reset()
+    expect(tracker.remainingDelay(240)).toBe(0)
   })
 
   it('adds angular hysteresis including the 337.5 to 000 seam', () => {
