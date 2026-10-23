@@ -1,7 +1,9 @@
 import type { SpritePack } from '@/sprites/schema'
 
 export const ATTENTION_DWELL_MS = 350
+export const ATTENTION_LEAVE_MS = 300
 export const TOUCH_LOOK_MS = 700
+const GAZE_INTERVAL_MS = 120
 
 interface Point {
   x: number
@@ -46,13 +48,13 @@ export function supportsLookDirections(pack: SpritePack): boolean {
   )
 }
 
-/** One response per entry, with distance and motion hysteresis but no polling. */
+/** Distance hysteresis with optional stillness for brief fallback responses. */
 export class ProximityTracker {
   private anchor: Point | null = null
   private entered = false
   private consumed = false
 
-  sample(point: Point, rect: Rect): 'arm' | 'near' | 'leave' {
+  sample(point: Point, rect: Rect, requireStillness = true): 'arm' | 'near' | 'leave' {
     const radius = Math.min(96, Math.max(48, rect.height / 2))
     const dx = Math.max(rect.x - point.x, 0, point.x - rect.x - rect.width)
     const dy = Math.max(rect.y - point.y, 0, point.y - rect.y - rect.height)
@@ -62,7 +64,7 @@ export class ProximityTracker {
     }
     this.entered = true
     if (this.consumed) return 'near'
-    if (!this.anchor || Math.hypot(point.x - this.anchor.x, point.y - this.anchor.y) > 8) {
+    if (!this.anchor || (requireStillness && Math.hypot(point.x - this.anchor.x, point.y - this.anchor.y) > 8)) {
       this.anchor = point
       return 'arm'
     }
@@ -93,7 +95,7 @@ export class GazeTracker {
     const degrees = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360
     if (this.direction !== null) {
       const delta = Math.abs(((degrees - this.direction * 22.5 + 540) % 360) - 180)
-      if (delta <= 17.25 || now - this.changedAt < 120) return this.action()
+      if (delta <= 17.25 || this.remainingDelay(now) > 0) return this.action()
     }
     this.direction = Math.round(degrees / 22.5) % 16
     this.changedAt = now
@@ -102,6 +104,10 @@ export class GazeTracker {
 
   private action(): string | null {
     return this.direction === null ? null : `look-${LOOK_DIRECTIONS[this.direction]}`
+  }
+
+  remainingDelay(now: number): number {
+    return this.direction === null ? 0 : Math.max(0, GAZE_INTERVAL_MS - (now - this.changedAt))
   }
 
   reset(): void {

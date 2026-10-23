@@ -5,7 +5,7 @@ import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
 import { ActivityPolicy, activityRadius, type ActivityArea, type ActivityPoint } from './activity'
-import { ATTENTION_DWELL_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
+import { ATTENTION_DWELL_MS, ATTENTION_LEAVE_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
 import { GREETING_PAUSE_MS, SINGLE_GREETING_MS, useStartupGreeting, type GreetingPlayback } from './greeting'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
@@ -527,6 +527,7 @@ function placeFixed() {
 
 function resetMotion() {
   cancelActivity()
+  clearAttention()
   stopLoop()
   for (const name of ['behavior', 'peek', 'peek-pause', 'landing-peek', 'sit', 'clearance']) clearTimer(name)
   walkTarget = null
@@ -656,6 +657,7 @@ function reportAnchor() {
   const rect = currentRect()
   if (sameRect(rect, lastAnchor)) return
   lastAnchor = rect
+  if (attention.value === 'mouse') updateNearbyAttention()
   props.pet?.setBubbleAnchor?.(rect)
 }
 
@@ -1236,6 +1238,8 @@ function clearAttention(resetProximity = true) {
   const active = attention.value !== null
   clearTimer('attention-dwell')
   clearTimer('attention')
+  clearTimer('attention-leave')
+  clearTimer('attention-gaze')
   attention.value = null
   gazeAction.value = null
   gaze.reset()
@@ -1247,7 +1251,13 @@ function clearAttention(resetProximity = true) {
 }
 
 function attentionAllowed(): boolean {
-  return interactionAllowed() && !reaction.value && !greeting.active.value && motion.value === 'idle'
+  return (
+    interactionAllowed() &&
+    (ownFrames || props.artworkReady !== false) &&
+    !reaction.value &&
+    !greeting.active.value &&
+    motion.value === 'idle'
+  )
 }
 
 function selectGaze(point: { x: number; y: number }): string | null {
@@ -1259,8 +1269,9 @@ function beginAttention(point: { x: number; y: number }, mode: 'mouse' | 'touch'
   if (!attentionAllowed() || (mode === 'touch' && !props.lookDirections)) return false
   const action = props.lookDirections ? selectGaze(point) : null
   if (props.lookDirections && !action) return false
-  const next = interactionMemory.attend(interactionKey(), Date.now(), mode === 'mouse')
-  if (!next) {
+  const persistent = mode === 'mouse' && props.lookDirections
+  const next = persistent ? null : interactionMemory.attend(interactionKey(), Date.now(), mode === 'mouse')
+  if (!persistent && !next) {
     gaze.reset()
     return false
   }
@@ -1269,32 +1280,60 @@ function beginAttention(point: { x: number; y: number }, mode: 'mouse' | 'touch'
   clearTimer('behavior')
   gazeAction.value = action
   attention.value = mode
-  setTimer('attention', mode === 'touch' ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false))
+  if (next) setTimer('attention', mode === 'touch' ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false))
   return true
+}
+
+function updateMouseGaze() {
+  if (!nearbyPointer || !gazeAction.value) return
+  clearTimer('attention-gaze')
+  const before = gazeAction.value
+  gazeAction.value = selectGaze(nearbyPointer)
+  const delay = gaze.remainingDelay(Date.now())
+  // Flush a rate-limited final move once; a stationary pointer needs no polling.
+  if (before === gazeAction.value && delay > 0)
+    setTimer('attention-gaze', delay, () => {
+      if (nearbyPointer && attention.value === 'mouse' && attentionAllowed() && !timers.has('attention-leave'))
+        gazeAction.value = selectGaze(nearbyPointer)
+    })
+}
+
+function updateNearbyAttention() {
+  if (!nearbyPointer) return
+  if (press || isMobile.value || !attentionAllowed() || !Number.isFinite(nearbyPointer.x + nearbyPointer.y)) {
+    clearAttention()
+    return
+  }
+  const state = proximity.sample(nearbyPointer, currentRect(), !props.lookDirections)
+  if (state === 'leave') {
+    clearTimer('attention-dwell')
+    clearTimer('attention-gaze')
+    if (attention.value === 'mouse' && gazeAction.value) {
+      if (!timers.has('attention-leave')) setTimer('attention-leave', ATTENTION_LEAVE_MS, () => clearAttention())
+    } else clearAttention()
+    return
+  }
+  clearTimer('attention-leave')
+  if (attention.value === 'mouse') {
+    updateMouseGaze()
+  } else if (state === 'arm') {
+    setTimer('attention-dwell', ATTENTION_DWELL_MS, () => {
+      if (!nearbyPointer || press || isMobile.value || !attentionAllowed()) return
+      if (proximity.sample(nearbyPointer, currentRect(), !props.lookDirections) === 'leave') return
+      if (beginAttention(nearbyPointer, 'mouse') || !props.lookDirections) proximity.consume()
+      else proximity.reset()
+    })
+  }
 }
 
 function onAttentionPointerMove(event: PointerEvent) {
   if (event.pointerType !== 'mouse' || event.isPrimary === false || press) return
-  if (event.buttons !== 0 || isMobile.value || !attentionAllowed()) {
+  if (event.buttons !== 0) {
     clearAttention()
     return
   }
   nearbyPointer = { x: event.clientX, y: event.clientY }
-  const state = proximity.sample(nearbyPointer, currentRect())
-  if (state === 'leave') {
-    clearAttention()
-    return
-  }
-  if (attention.value === 'mouse') {
-    if (gazeAction.value) gazeAction.value = selectGaze(nearbyPointer)
-  } else if (state === 'arm') {
-    setTimer('attention-dwell', ATTENTION_DWELL_MS, () => {
-      if (!nearbyPointer || press || isMobile.value || !attentionAllowed()) return
-      if (proximity.sample(nearbyPointer, currentRect()) === 'leave') return
-      proximity.consume()
-      beginAttention(nearbyPointer, 'mouse')
-    })
-  }
+  updateNearbyAttention()
 }
 
 function onAttentionPointerOut(event: PointerEvent) {
@@ -1870,6 +1909,7 @@ function relayout() {
 /** 设置变化（含设置页实时预览）；活动范围改变时按新模式重新落位。 */
 function applySettings(value: unknown) {
   cancelActivity()
+  clearAttention()
   settingsRevision++
   const before = settings.value.roam
   const wasFixed = fixed()
@@ -2041,8 +2081,10 @@ watch(
   () => props.artworkReady,
   loaded => {
     if (ownFrames) return
-    if (!loaded) cancelActivity()
-    else scheduleBehavior()
+    if (!loaded) {
+      cancelActivity()
+      clearAttention()
+    } else scheduleBehavior()
   },
 )
 
