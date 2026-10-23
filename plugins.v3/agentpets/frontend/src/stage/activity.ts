@@ -118,6 +118,36 @@ export class ActivityPolicy {
     this.visits = []
   }
 
+  upwardTarget<T extends ActivityPoint>(area: ActivityArea, candidates: readonly T[], now: number): T | null {
+    this.prune(now)
+    if (area.free) return null
+    const radius = activityRadius(area.height, area.mobile)
+    const riseLimit = Math.min(area.mobile ? 240 : 360, area.height * (area.mobile ? 1.6 : 2))
+    let selected: T | null = null
+    let lowestPenalty = Infinity
+    for (const point of candidates) {
+      const rise = area.current.y - point.y
+      if (rise < 12 || rise > riseLimit || Math.abs(point.x - area.current.x) > radius) continue
+      if (
+        this.nearbyOrigin &&
+        (Math.abs(point.x - this.nearbyOrigin.x) > radius || Math.abs(point.y - this.nearbyOrigin.y) > radius)
+      )
+        continue
+      const avoidRadius = Math.max(24, area.height * 0.5)
+      const penalty =
+        this.visits.reduce(
+          (sum, visit) => sum + Math.max(0, 1 - Math.hypot(point.x - visit.x, point.y - visit.y) / avoidRadius),
+          0,
+        ) +
+        Math.hypot(point.x - area.current.x, rise) / 100_000
+      if (penalty < lowestPenalty) {
+        lowestPenalty = penalty
+        selected = point
+      }
+    }
+    return selected
+  }
+
   target(area: ActivityArea, now: number, random: () => number): ActivityPoint | null {
     this.prune(now)
     const nearby = area.mobile || this.stepsTaken > 0 || this.excited(now) || random() < 0.8

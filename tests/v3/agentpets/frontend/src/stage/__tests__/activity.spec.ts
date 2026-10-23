@@ -114,6 +114,35 @@ describe('finite autonomous activity', () => {
     expect(allowed.mock.calls.length).toBeLessThanOrEqual(8)
   })
 
+  it('picks only nearby higher surfaces with a shorter mobile rise limit', () => {
+    const policy = new ActivityPolicy()
+    const close = { x: 400, y: 200, surface: 'nearby' }
+    const tooHigh = { x: 400, y: 120, surface: 'high' }
+    const tooFar = { x: 700, y: 300, surface: 'far' }
+    const sameLevel = { x: 400, y: 400, surface: 'same-level' }
+    expect(policy.upwardTarget(area(), [tooHigh, tooFar, sameLevel, close], 0)).toBe(close)
+    expect(policy.upwardTarget(area({ mobile: true }), [close], 0)).toBeNull()
+    expect(policy.upwardTarget(area({ free: true }), [close], 0)).toBeNull()
+    expect(policy.upwardTarget(area(), [], 0)).toBeNull()
+  })
+
+  it('reuses bounded route preferences for hops and forgets expired destinations', () => {
+    const policy = new ActivityPolicy()
+    const first = { x: 400, y: 300, surface: 'visited' }
+    const alternative = { x: 500, y: 300, surface: 'new' }
+    policy.arrived({ x: 400, y: 400 }, first, 0)
+    expect(policy.upwardTarget(area(), [first, alternative], 100)).toBe(alternative)
+    expect(policy.upwardTarget(area(), [first, alternative], 45_001)).toBe(first)
+  })
+
+  it('does not let a hop escape the accepted interaction neighborhood', () => {
+    const policy = new ActivityPolicy()
+    policy.interact({ x: 400, y: 400 }, 0)
+    const escaped = { x: 650, y: 300 }
+    const local = { x: 500, y: 300 }
+    expect(policy.upwardTarget(area({ current: { x: 550, y: 400 } }), [escaped, local], 100)).toBe(local)
+  })
+
   it('stays on the same side of a panel and respects narrow mobile bounds', () => {
     const policy = new ActivityPolicy()
     const target = policy.target(
