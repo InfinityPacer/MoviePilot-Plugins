@@ -2,7 +2,7 @@ import type { SpritePack } from '@/sprites/schema'
 
 export const ATTENTION_DWELL_MS = 350
 export const ATTENTION_LEAVE_MS = 300
-export const TOUCH_LOOK_MS = 700
+export const TOUCH_LOOK_MS = 2000
 const GAZE_INTERVAL_MS = 120
 
 interface Point {

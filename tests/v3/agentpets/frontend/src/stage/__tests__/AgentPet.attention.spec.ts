@@ -73,6 +73,7 @@ async function setup(
       ...Object.fromEntries(Object.entries(extra).map(([key, value]) => [key, { value }])),
     })
     await fireEvent(target, event)
+    return event
   }
   async function advance(ms: number) {
     await vi.advanceTimersByTimeAsync(ms)
@@ -449,71 +450,265 @@ describe('stage nearby attention', () => {
   })
 })
 
-describe('stage touch attention', () => {
-  it('briefly looks at a touch point without swallowing the original short click', async () => {
-    const pet = await setup()
-    const open = vi.spyOn(pet.host, 'open')
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    expect(pet.gaze()).toBe('look-090')
-    expect(pet.attention()).toBe('touch')
-    await pet.advance(100)
-    await pet.pointer('pointerup', pet.inside(), 'touch')
-    await fireEvent.click(pet.button, { detail: 1 })
-    expect(open).toHaveBeenCalledTimes(1)
-    expect(pet.gaze()).toBeUndefined()
+async function setupTouch(directions = true, fixed = true, previewRoot: HTMLElement | null = null) {
+  const pet = await setup(directions, previewRoot, fixed)
+  pet.host.patch({
+    isMobile: true,
+    viewport: { width: 390, height: 768, keyboardInset: 0, safeArea: { top: 0, right: 0, bottom: 0, left: 0 } },
   })
+  await pet.advance(32)
+  const background = document.createElement('div')
+  document.body.append(background)
+  surfaces.push(background)
+  const point = () => ({ x: pet.rect().x + pet.rect().width / 2, y: 20 })
+  const tap = async (p = point(), target: Element = background, duration = 80) => {
+    const down = await pet.pointer('pointerdown', p, 'touch', target)
+    await pet.advance(duration)
+    const up = await pet.pointer('pointerup', p, 'touch', target)
+    return { down, up }
+  }
+  return { ...pet, background, farPoint: point, tap }
+}
 
-  it('lets a 450ms touch hold replace the uncommitted gaze with the first wave', async () => {
-    const pet = await setup()
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    expect(pet.gaze()).toBe('look-090')
-    await pet.advance(450)
+describe('stage page touch attention', () => {
+  it('looks at a distant background tap for two seconds after release without consuming page input', async () => {
+    const pet = await setupTouch()
+    const open = vi.spyOn(pet.host, 'open')
+    const pageClick = vi.fn()
+    pet.background.addEventListener('click', pageClick)
+    const p = pet.farPoint()
+    const position = pet.button.style.transform
+    const down = await pet.pointer('pointerdown', p, 'touch', pet.background)
+    await pet.advance(300)
     expect(pet.gaze()).toBeUndefined()
-    expect(pet.root.dataset.reaction).toBe('wave')
-    await pet.pointer('pointerup', pet.inside(), 'touch')
+    const up = await pet.pointer('pointerup', p, 'touch', pet.background)
+    expect(pet.gaze()).toBe('look-000')
+    expect(pet.attention()).toBe('touch')
+    expect(down.defaultPrevented).toBe(false)
+    expect(up.defaultPrevented).toBe(false)
+    await fireEvent.click(pet.background)
+    expect(pageClick).toHaveBeenCalledTimes(1)
+    expect(open).not.toHaveBeenCalled()
+    await pet.advance(1999)
+    expect(pet.gaze()).toBe('look-000')
+    await pet.advance(1)
+    expect(pet.gaze()).toBeUndefined()
+    expect(pet.button.style.transform).toBe(position)
     expect(pet.save).not.toHaveBeenCalled()
   })
 
-  it('does not consume a cancelled touch preview or retain it when a drag starts', async () => {
-    const pet = await setup()
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    await pet.pointer('pointercancel', pet.inside(), 'touch')
+  it('updates every completed tap immediately and renews the deadline without shared cooldown', async () => {
+    const pet = await setupTouch()
+    await pet.tap()
+    await pet.tap(pet.point('left'), pet.background, 10)
+    expect(pet.gaze()).toBe('look-270')
+    for (let i = 0; i < 12; i++) {
+      await pet.tap(pet.farPoint(), pet.background, 10)
+      expect(pet.gaze()).toBe('look-000')
+      await pet.tap(pet.point('left'), pet.background, 10)
+      expect(pet.gaze()).toBe('look-270')
+    }
+    await pet.advance(1999)
+    expect(pet.gaze()).toBe('look-270')
+    await pet.advance(1)
     expect(pet.gaze()).toBeUndefined()
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    expect(pet.gaze()).toBe('look-090')
-    const point = pet.inside()
-    await pet.pointer('pointermove', { x: point.x + 6, y: point.y }, 'touch')
-    expect(pet.gaze()).toBeUndefined()
-    expect(pet.root.dataset.motion).toBe('drag')
-    await pet.pointer('pointercancel', point, 'touch')
-  })
-
-  it('does not invent touch gaze for v1 or let a second pointer replace an active gesture', async () => {
-    const pet = await setup(false)
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    expect(pet.gaze()).toBeUndefined()
-    await pet.pointer('pointercancel', pet.inside(), 'touch')
-    await pet.view.rerender({ lookDirections: true })
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    await pet.pointer('pointerdown', pet.point('left'), 'touch', pet.button, { pointerId: 2, isPrimary: false })
-    expect(pet.gaze()).toBe('look-090')
-    await pet.pointer('pointercancel', pet.inside(), 'touch')
-  })
-
-  it('commits only a released short touch and preserves the next explicit wave', async () => {
-    const pet = await setup()
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    await pet.advance(100)
-    await pet.pointer('pointerup', pet.inside(), 'touch')
-    expect(pet.gaze()).toBe('look-090')
-    await pet.advance(700)
-    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
-    expect(pet.gaze()).toBeUndefined()
-    await pet.pointer('pointercancel', pet.inside(), 'touch')
-    await pet.advance(6000)
     await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
     await pet.advance(450)
     expect(pet.root.dataset.reaction).toBe('wave')
-    await pet.pointer('pointerup', pet.inside(), 'touch')
+    await pet.pointer('pointerup', pet.inside(), 'touch', pet.button)
+  })
+
+  it('tolerates small finger jitter without requiring a precise hold duration', async () => {
+    const pet = await setupTouch()
+    const p = pet.farPoint()
+    await pet.pointer('pointerdown', p, 'touch', pet.background)
+    await pet.pointer('pointermove', { x: p.x + 9, y: p.y }, 'touch', pet.background)
+    await pet.advance(400)
+    await pet.pointer('pointerup', p, 'touch', pet.background)
+    expect(pet.gaze()).toBe('look-000')
+  })
+
+  it.each(['drag', 'release-moved', 'hold', 'cancel', 'scroll', 'contextmenu', 'multitouch'] as const)(
+    'does not mistake %s for a background tap or replay it later',
+    async cause => {
+      const pet = await setupTouch()
+      const p = pet.farPoint()
+      await pet.pointer('pointerdown', p, 'touch', pet.background)
+      if (cause === 'drag') {
+        await pet.pointer('pointermove', { x: p.x + 10, y: p.y }, 'touch', pet.background)
+        await pet.pointer('pointermove', p, 'touch', pet.background)
+      }
+      if (cause === 'hold') await pet.advance(450)
+      if (cause === 'cancel') await pet.pointer('pointercancel', p, 'touch', pet.background)
+      if (cause === 'scroll') await fireEvent(pet.background, new Event('scroll'))
+      if (cause === 'contextmenu') await fireEvent.contextMenu(pet.background)
+      if (cause === 'multitouch')
+        await pet.pointer('pointerdown', p, 'touch', pet.background, { pointerId: 2, isPrimary: false })
+      await pet.pointer('pointerup', cause === 'release-moved' ? { x: p.x + 10, y: p.y } : p, 'touch', pet.background)
+      expect(pet.gaze()).toBeUndefined()
+      await pet.advance(2100)
+      expect(pet.gaze()).toBeUndefined()
+      await pet.tap()
+      expect(pet.gaze()).toBe('look-000')
+    },
+  )
+
+  it.each([
+    '<button><span>button</span></button>',
+    '<a href="#"><span>link</span></a>',
+    '<input>',
+    '<textarea></textarea>',
+    '<select><option>option</option></select>',
+    '<label><span>label</span></label>',
+    '<summary><span>summary</span></summary>',
+    '<div contenteditable="true"><span>editor</span></div>',
+    '<div tabindex="0"><span>focusable</span></div>',
+    '<div role="switch"><span>switch</span></div>',
+    '<div role="slider"><span>slider</span></div>',
+    '<div role="tab"><span>tab</span></div>',
+    '<div class="v-card--link"><span>card</span></div>',
+    '<div class="v-list-item"><span>item</span></div>',
+    '<div class="v-field"><span>field</span></div>',
+    '<div class="v-overlay__scrim"></div>',
+    '<div role="dialog"><span>dialog</span></div>',
+    '<div draggable="true"><span>drag</span></div>',
+  ])('ignores controls and their descendants: %s', async html => {
+    const pet = await setupTouch()
+    pet.background.innerHTML = html
+    const target = pet.background.querySelector('span') ?? pet.background.firstElementChild!
+    await pet.tap(pet.farPoint(), target)
+    expect(pet.gaze()).toBeUndefined()
+  })
+
+  it('honors cancelled page input, detached targets and controls introduced during a gesture', async () => {
+    const pet = await setupTouch()
+    pet.background.addEventListener('pointerdown', event => event.preventDefault(), { once: true })
+    const { down } = await pet.tap()
+    expect(down.defaultPrevented).toBe(true)
+    expect(pet.gaze()).toBeUndefined()
+    pet.background.addEventListener('pointerup', event => event.preventDefault(), { once: true })
+    const { up } = await pet.tap()
+    expect(up.defaultPrevented).toBe(true)
+    expect(pet.gaze()).toBeUndefined()
+    await pet.pointer('pointerdown', pet.farPoint(), 'touch', pet.background)
+    pet.background.remove()
+    await pet.pointer('pointerup', pet.farPoint(), 'touch', document.body)
+    expect(pet.gaze()).toBeUndefined()
+    document.body.append(pet.background)
+    await pet.pointer('pointerdown', pet.farPoint(), 'touch', pet.background)
+    pet.background.setAttribute('role', 'button')
+    await pet.pointer('pointerup', pet.farPoint(), 'touch', pet.background)
+    expect(pet.gaze()).toBeUndefined()
+  })
+
+  it('clears active touch gaze for scroll and controls even when a control stops propagation', async () => {
+    const pet = await setupTouch()
+    await pet.tap()
+    await fireEvent(pet.background, new Event('scroll'))
+    expect(pet.gaze()).toBeUndefined()
+    await pet.tap()
+    const control = document.createElement('button')
+    pet.background.append(control)
+    control.addEventListener('pointerdown', event => event.stopPropagation())
+    await pet.tap(pet.farPoint(), control)
+    expect(pet.gaze()).toBeUndefined()
+  })
+
+  it.each(['busy', 'hidden', 'reduced', 'editor', 'blur', 'resize', 'artwork', 'switch'] as const)(
+    'discards an unfinished tap when %s interrupts',
+    async cause => {
+      const pet = await setupTouch()
+      await pet.pointer('pointerdown', pet.farPoint(), 'touch', pet.background)
+      if (cause === 'busy') pet.host.patch({ phase: 'thinking', thinking: true })
+      if (cause === 'hidden') pet.host.patch({ pageVisible: false })
+      if (cause === 'reduced') pet.host.patch({ motionAllowed: false, reducedMotion: true })
+      if (cause === 'editor') editors.push(registerEditor())
+      if (cause === 'blur') await fireEvent(window, new Event('blur'))
+      if (cause === 'resize') await fireEvent(window, new Event('resize'))
+      if (cause === 'artwork') await pet.view.rerender({ lookDirections: false })
+      if (cause === 'switch') await pet.view.rerender({ pluginId: 'Clone2', pet: createMockPet('stage', 'another') })
+      await pet.advance(1)
+      if (cause === 'busy') pet.host.patch({ phase: 'idle', thinking: false })
+      if (cause === 'hidden') pet.host.patch({ pageVisible: true })
+      if (cause === 'reduced') pet.host.patch({ motionAllowed: true, reducedMotion: false })
+      if (cause === 'editor') editors.pop()!()
+      if (cause === 'artwork') await pet.view.rerender({ lookDirections: true })
+      await pet.pointer('pointerup', pet.farPoint(), 'touch', pet.background)
+      expect(pet.gaze()).toBeUndefined()
+      await pet.advance(2100)
+      expect(pet.gaze()).toBeUndefined()
+    },
+  )
+
+  it('does not steal working feedback or touch gestures inside the assistant panel', async () => {
+    const pet = await setupTouch()
+    pet.host.patch({ panelRect: { x: 0, y: 0, width: 390, height: 300 } })
+    await pet.tap()
+    expect(pet.gaze()).toBeUndefined()
+    pet.host.patch({ panelRect: null })
+    await pet.tap()
+    expect(pet.gaze()).toBe('look-000')
+    pet.host.fire('agent.done')
+    await flushPromises()
+    expect(pet.gaze()).toBeUndefined()
+    expect(pet.pose()).toBe('victory')
+    await pet.tap()
+    expect(pet.gaze()).toBeUndefined()
+  })
+
+  it('pauses autonomous walking for a tap and resumes after its gaze expires', async () => {
+    const pet = await setupTouch(true, false)
+    for (let elapsed = 0; elapsed < 14000 && pet.root.dataset.motion !== 'walk'; elapsed += 50) await pet.advance(50)
+    expect(pet.root.dataset.motion).toBe('walk')
+    await pet.tap()
+    expect(pet.attention()).toBe('touch')
+    expect(pet.root.dataset.motion).toBe('idle')
+    await pet.advance(2000)
+    expect(pet.gaze()).toBeUndefined()
+    for (let elapsed = 0; elapsed < 14000 && pet.root.dataset.motion !== 'walk'; elapsed += 50) await pet.advance(50)
+    expect(pet.root.dataset.motion).toBe('walk')
+    expect(pet.save).not.toHaveBeenCalled()
+  })
+
+  it('keeps character taps, holds and drags on their original paths without a touch preview', async () => {
+    const pet = await setupTouch()
+    const open = vi.spyOn(pet.host, 'open')
+    await pet.tap(pet.inside(), pet.button)
+    expect(pet.gaze()).toBeUndefined()
+    await fireEvent.click(pet.button, { detail: 1 })
+    expect(open).toHaveBeenCalledTimes(1)
+    pet.host.close()
+    await pet.advance(2000)
+    await pet.pointer('pointerdown', pet.inside(), 'touch', pet.button)
+    await pet.advance(450)
+    expect(pet.root.dataset.reaction).toBe('wave')
+    await pet.pointer('pointerup', pet.inside(), 'touch', pet.button)
+    await fireEvent.click(pet.button, { detail: 1 })
+    expect(open).toHaveBeenCalledTimes(1)
+    await pet.advance(6000)
+    const p = pet.inside()
+    await pet.pointer('pointerdown', p, 'touch', pet.button)
+    await pet.pointer('pointermove', { x: p.x + 6, y: p.y }, 'touch')
+    expect(pet.root.dataset.motion).toBe('drag')
+    await pet.pointer('pointerup', p, 'touch')
+    expect(pet.gaze()).toBeUndefined()
+  })
+
+  it('requires directional art, excludes previews and releases global listeners on unmount', async () => {
+    const legacy = await setupTouch(false)
+    await legacy.tap()
+    expect(legacy.gaze()).toBeUndefined()
+    legacy.view.unmount()
+    const preview = await setupTouch(true, true, document.createElement('div'))
+    await preview.tap({ x: 200, y: 20 })
+    expect(preview.gaze()).toBeUndefined()
+    preview.view.unmount()
+    const pet = await setupTouch()
+    await pet.tap()
+    const point = pet.farPoint()
+    pet.view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    await pet.tap(point)
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

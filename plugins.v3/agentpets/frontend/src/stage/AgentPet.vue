@@ -6,6 +6,7 @@ import { PausableTimers } from './timers'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
 import { ActivityPolicy, activityRadius, type ActivityArea, type ActivityPoint } from './activity'
 import { ATTENTION_DWELL_MS, ATTENTION_LEAVE_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
+import { PageTapTracker } from './pageTouch'
 import { GREETING_PAUSE_MS, SINGLE_GREETING_MS, useStartupGreeting, type GreetingPlayback } from './greeting'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
@@ -276,7 +277,6 @@ let press: {
   dragging: boolean
   longPressed: boolean
   longPressCancelled: boolean
-  touchPreview: boolean
   owner: AgentPetContext | null
 } | null = null
 
@@ -286,6 +286,7 @@ const activityPolicy = new ActivityPolicy()
 let activityOrigin: ActivityPoint | null = null
 const proximity = new ProximityTracker()
 const gaze = new GazeTracker()
+const pageTap = new PageTapTracker()
 let nearbyPointer: { x: number; y: number } | null = null
 const cleanups: Array<() => void> = []
 const startup = new AbortController()
@@ -1236,6 +1237,7 @@ function finishDropReaction() {
 }
 
 function clearAttention(resetProximity = true) {
+  pageTap.reset()
   const active = attention.value !== null
   clearTimer('attention-dwell')
   clearTimer('attention')
@@ -1251,13 +1253,13 @@ function clearAttention(resetProximity = true) {
   if (active) scheduleBehavior()
 }
 
-function attentionAllowed(): boolean {
+function attentionAllowed(mode: 'mouse' | 'touch' = 'mouse'): boolean {
   return (
     interactionAllowed() &&
     (ownFrames || props.artworkReady !== false) &&
     !reaction.value &&
     !greeting.active.value &&
-    motion.value === 'idle'
+    (motion.value === 'idle' || (mode === 'touch' && motion.value === 'walk'))
   )
 }
 
@@ -1267,21 +1269,22 @@ function selectGaze(point: { x: number; y: number }): string | null {
 }
 
 function beginAttention(point: { x: number; y: number }, mode: 'mouse' | 'touch'): boolean {
-  if (!attentionAllowed() || (mode === 'touch' && !props.lookDirections)) return false
+  if (!attentionAllowed(mode) || (mode === 'touch' && !props.lookDirections)) return false
   const action = props.lookDirections ? selectGaze(point) : null
   if (props.lookDirections && !action) return false
-  const persistent = mode === 'mouse' && props.lookDirections
-  const next = persistent ? null : interactionMemory.attend(interactionKey(), Date.now(), mode === 'mouse')
-  if (!persistent && !next) {
+  const next = props.lookDirections ? null : interactionMemory.attend(interactionKey(), Date.now())
+  if (!props.lookDirections && !next) {
     gaze.reset()
     return false
   }
-  cancelActivity()
+  if (mode === 'touch') settle()
+  else cancelActivity()
   markActivity()
   clearTimer('behavior')
   gazeAction.value = action
   attention.value = mode
-  if (next) setTimer('attention', mode === 'touch' ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false))
+  if (mode === 'touch' || next)
+    setTimer('attention', mode === 'touch' ? TOUCH_LOOK_MS : next!.duration, () => clearAttention(false))
   return true
 }
 
@@ -1341,11 +1344,45 @@ function onAttentionPointerOut(event: PointerEvent) {
   if (event.relatedTarget === null && attention.value !== 'touch') clearAttention()
 }
 
-function onPagePointerDown() {
+function onPagePointerDown(event: PointerEvent) {
+  if (event.pointerType === 'touch') return
   if (!press) {
     greeting.cancel()
     clearAttention()
   }
+}
+
+function insideAssistantPanel(event: PointerEvent): boolean {
+  const panel = hostState?.panelRect
+  return (
+    !!panel &&
+    event.clientX >= panel.x &&
+    event.clientX <= panel.x + panel.width &&
+    event.clientY >= panel.y &&
+    event.clientY <= panel.y + panel.height
+  )
+}
+
+function onPageTouchDown(event: PointerEvent) {
+  if (event.pointerType !== 'touch') return
+  greeting.cancel()
+  clearAttention()
+  if (!press && props.lookDirections && attentionAllowed('touch') && !insideAssistantPanel(event))
+    pageTap.start(event, Date.now())
+}
+
+function onPageTouchMove(event: PointerEvent) {
+  pageTap.move(event)
+}
+
+function onPageTouchUp(event: PointerEvent) {
+  const point = pageTap.finish(event, Date.now())
+  if (point && !press && !insideAssistantPanel(event)) beginAttention(point, 'touch')
+}
+
+function cancelPageTouch() {
+  pageTap.reset()
+  if (attention.value === 'touch') clearAttention()
 }
 
 /** 按当前活动范围计算落点；surfaces 模式在这里查询一次可站元素。 */
@@ -2155,12 +2192,9 @@ function onPointerDown(event: PointerEvent) {
     dragging: false,
     longPressed: false,
     longPressCancelled: !!props.previewRoot,
-    touchPreview: false,
     owner: props.pet,
   }
   const current = press
-  if (event.pointerType === 'touch')
-    current.touchPreview = beginAttention({ x: event.clientX, y: event.clientY }, 'touch')
   if (!props.previewRoot)
     setTimer('long-press', LONG_PRESS_MS, () => {
       if (press === current) recognizeLongPress(current)
@@ -2260,8 +2294,6 @@ function onPointerUp(event: PointerEvent) {
   releasePointer()
   clearTimer('long-press')
   const held = current.longPressed || (!props.previewRoot && Date.now() - current.startedAt >= LONG_PRESS_MS)
-  if (!current.dragging && !held && current.touchPreview && attention.value === 'touch' && attentionAllowed())
-    interactionMemory.attend(interactionKey(), Date.now())
   if (current.dragging || held) suppressCompatibilityClick(current.id)
   if (current.dragging) finishDrag(true, current.owner)
   else scheduleBehavior()
@@ -2441,12 +2473,24 @@ onMounted(async () => {
     window.addEventListener('pointermove', onAttentionPointerMove, { passive: true })
     window.addEventListener('pointerout', onAttentionPointerOut, { passive: true })
     window.addEventListener('pointerdown', onPagePointerDown, { passive: true })
+    window.addEventListener('pointerdown', onPageTouchDown, { passive: true, capture: true })
+    window.addEventListener('pointermove', onPageTouchMove, { passive: true, capture: true })
+    window.addEventListener('pointerup', onPageTouchUp, { passive: true })
+    window.addEventListener('pointercancel', cancelPageTouch, { passive: true, capture: true })
+    window.addEventListener('scroll', cancelPageTouch, { passive: true, capture: true })
+    window.addEventListener('contextmenu', cancelPageTouch, { passive: true, capture: true })
     const cancelGreeting = () => greeting.cancel()
     window.addEventListener('keydown', cancelGreeting)
     cleanups.push(() => {
       window.removeEventListener('pointermove', onAttentionPointerMove)
       window.removeEventListener('pointerout', onAttentionPointerOut)
       window.removeEventListener('pointerdown', onPagePointerDown)
+      window.removeEventListener('pointerdown', onPageTouchDown, true)
+      window.removeEventListener('pointermove', onPageTouchMove, true)
+      window.removeEventListener('pointerup', onPageTouchUp)
+      window.removeEventListener('pointercancel', cancelPageTouch, true)
+      window.removeEventListener('scroll', cancelPageTouch, true)
+      window.removeEventListener('contextmenu', cancelPageTouch, true)
       window.removeEventListener('keydown', cancelGreeting)
     })
   }
