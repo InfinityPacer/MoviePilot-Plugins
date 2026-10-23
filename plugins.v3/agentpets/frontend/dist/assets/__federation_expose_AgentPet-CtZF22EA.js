@@ -251,7 +251,7 @@ class ActivityPolicy {
 
 const ATTENTION_DWELL_MS = 350;
 const ATTENTION_LEAVE_MS = 300;
-const TOUCH_LOOK_MS = 700;
+const TOUCH_LOOK_MS = 2e3;
 const GAZE_INTERVAL_MS = 120;
 const LOOK_DIRECTIONS = [
   "000",
@@ -469,6 +469,52 @@ function* eachControlUnder(rect, layer, viewport, standingOn, scope = null) {
   }
 }
 
+const TAP_SLOP = 10;
+const EXCLUDED_TARGETS = [
+  CONTROL_SELECTOR,
+  'label, summary, [contenteditable]:not([contenteditable="false"]), [draggable="true"]',
+  '[role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"]',
+  '[role="menuitem"], [role="option"], [role="combobox"], [role="slider"], [role="spinbutton"]',
+  '[role="textbox"], [role="searchbox"], [role="treeitem"], dialog, [role="dialog"]',
+  ".v-field, .v-input, .v-slider, .v-overlay__scrim, .agent-pet-ying"
+].join(", ");
+function backgroundTarget(event) {
+  const path = event.composedPath().filter((item) => item instanceof Element);
+  if (!path.length || path.some((element) => element.matches(EXCLUDED_TARGETS))) return null;
+  return path[0].isConnected ? path[0] : null;
+}
+function finitePoint(event) {
+  return Number.isFinite(event.clientX + event.clientY) && event.clientX >= 0 && event.clientY >= 0;
+}
+class PageTapTracker {
+  pending = null;
+  start(event, now) {
+    this.reset();
+    if (event.pointerType !== "touch" || event.isPrimary === false || event.button !== 0 || event.defaultPrevented)
+      return;
+    const target = backgroundTarget(event);
+    if (target && finitePoint(event))
+      this.pending = { id: event.pointerId, x: event.clientX, y: event.clientY, at: now, target, down: event };
+  }
+  move(event) {
+    const tap = this.pending;
+    if (!tap || tap.id !== event.pointerId) return;
+    if (!finitePoint(event) || Math.hypot(event.clientX - tap.x, event.clientY - tap.y) >= TAP_SLOP) this.reset();
+  }
+  finish(event, now) {
+    this.move(event);
+    const tap = this.pending;
+    if (!tap || tap.id !== event.pointerId) return null;
+    this.reset();
+    if (event.pointerType !== "touch" || event.isPrimary === false || event.defaultPrevented || tap.down.defaultPrevented || now < tap.at || now - tap.at >= LONG_PRESS_MS || !tap.target.isConnected || tap.target.closest(EXCLUDED_TARGETS) || !backgroundTarget(event))
+      return null;
+    return { x: event.clientX, y: event.clientY };
+  }
+  reset() {
+    this.pending = null;
+  }
+}
+
 const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {unref:_unref,renderSlot:_renderSlot,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
@@ -611,6 +657,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let activityOrigin = null;
     const proximity = new ProximityTracker();
     const gaze = new GazeTracker();
+    const pageTap = new PageTapTracker();
     let nearbyPointer = null;
     const cleanups = [];
     const startup = new AbortController();
@@ -1363,6 +1410,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (key === interactionKey()) playInteraction();
     }
     function clearAttention(resetProximity = true) {
+      pageTap.reset();
       const active = attention.value !== null;
       clearTimer("attention-dwell");
       clearTimer("attention");
@@ -1377,29 +1425,30 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       if (active) scheduleBehavior();
     }
-    function attentionAllowed() {
-      return interactionAllowed() && (ownFrames || props.artworkReady !== false) && !reaction.value && !greeting.active.value && motion.value === "idle";
+    function attentionAllowed(mode = "mouse") {
+      return interactionAllowed() && (ownFrames || props.artworkReady !== false) && !reaction.value && !greeting.active.value && (motion.value === "idle" || mode === "touch" && motion.value === "walk");
     }
     function selectGaze(point) {
       const rect = currentRect();
       return gaze.select(point, { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, Date.now());
     }
     function beginAttention(point, mode) {
-      if (!attentionAllowed() || mode === "touch" && !props.lookDirections) return false;
+      if (!attentionAllowed(mode) || mode === "touch" && !props.lookDirections) return false;
       const action = props.lookDirections ? selectGaze(point) : null;
       if (props.lookDirections && !action) return false;
-      const persistent = mode === "mouse" && props.lookDirections;
-      const next = persistent ? null : interactionMemory.attend(interactionKey(), Date.now(), mode === "mouse");
-      if (!persistent && !next) {
+      const next = props.lookDirections ? null : interactionMemory.attend(interactionKey(), Date.now());
+      if (!props.lookDirections && !next) {
         gaze.reset();
         return false;
       }
-      cancelActivity();
+      if (mode === "touch") settle();
+      else cancelActivity();
       markActivity();
       clearTimer("behavior");
       gazeAction.value = action;
       attention.value = mode;
-      if (next) setTimer("attention", mode === "touch" ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false));
+      if (mode === "touch" || next)
+        setTimer("attention", mode === "touch" ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false));
       return true;
     }
     function updateMouseGaze() {
@@ -1453,11 +1502,34 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function onAttentionPointerOut(event) {
       if (event.relatedTarget === null && attention.value !== "touch") clearAttention();
     }
-    function onPagePointerDown() {
+    function onPagePointerDown(event) {
+      if (event.pointerType === "touch") return;
       if (!press) {
         greeting.cancel();
         clearAttention();
       }
+    }
+    function insideAssistantPanel(event) {
+      const panel = hostState?.panelRect;
+      return !!panel && event.clientX >= panel.x && event.clientX <= panel.x + panel.width && event.clientY >= panel.y && event.clientY <= panel.y + panel.height;
+    }
+    function onPageTouchDown(event) {
+      if (event.pointerType !== "touch") return;
+      greeting.cancel();
+      clearAttention();
+      if (!press && props.lookDirections && attentionAllowed("touch") && !insideAssistantPanel(event))
+        pageTap.start(event, Date.now());
+    }
+    function onPageTouchMove(event) {
+      pageTap.move(event);
+    }
+    function onPageTouchUp(event) {
+      const point = pageTap.finish(event, Date.now());
+      if (point && !press && !insideAssistantPanel(event)) beginAttention(point, "touch");
+    }
+    function cancelPageTouch() {
+      pageTap.reset();
+      if (attention.value === "touch") clearAttention();
     }
     function landing(exclude = null, dropSnap = 0, position = { x: x.value, y: y.value }) {
       const view = viewport();
@@ -2135,12 +2207,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         dragging: false,
         longPressed: false,
         longPressCancelled: !!props.previewRoot,
-        touchPreview: false,
         owner: props.pet
       };
       const current = press;
-      if (event.pointerType === "touch")
-        current.touchPreview = beginAttention({ x: event.clientX, y: event.clientY }, "touch");
       if (!props.previewRoot)
         setTimer("long-press", LONG_PRESS_MS, () => {
           if (press === current) recognizeLongPress(current);
@@ -2233,8 +2302,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       releasePointer();
       clearTimer("long-press");
       const held = current.longPressed || !props.previewRoot && Date.now() - current.startedAt >= LONG_PRESS_MS;
-      if (!current.dragging && !held && current.touchPreview && attention.value === "touch" && attentionAllowed())
-        interactionMemory.attend(interactionKey(), Date.now());
       if (current.dragging || held) suppressCompatibilityClick(current.id);
       if (current.dragging) finishDrag(true, current.owner);
       else scheduleBehavior();
@@ -2395,12 +2462,24 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         window.addEventListener("pointermove", onAttentionPointerMove, { passive: true });
         window.addEventListener("pointerout", onAttentionPointerOut, { passive: true });
         window.addEventListener("pointerdown", onPagePointerDown, { passive: true });
+        window.addEventListener("pointerdown", onPageTouchDown, { passive: true, capture: true });
+        window.addEventListener("pointermove", onPageTouchMove, { passive: true, capture: true });
+        window.addEventListener("pointerup", onPageTouchUp, { passive: true });
+        window.addEventListener("pointercancel", cancelPageTouch, { passive: true, capture: true });
+        window.addEventListener("scroll", cancelPageTouch, { passive: true, capture: true });
+        window.addEventListener("contextmenu", cancelPageTouch, { passive: true, capture: true });
         const cancelGreeting = () => greeting.cancel();
         window.addEventListener("keydown", cancelGreeting);
         cleanups.push(() => {
           window.removeEventListener("pointermove", onAttentionPointerMove);
           window.removeEventListener("pointerout", onAttentionPointerOut);
           window.removeEventListener("pointerdown", onPagePointerDown);
+          window.removeEventListener("pointerdown", onPageTouchDown, true);
+          window.removeEventListener("pointermove", onPageTouchMove, true);
+          window.removeEventListener("pointerup", onPageTouchUp);
+          window.removeEventListener("pointercancel", cancelPageTouch, true);
+          window.removeEventListener("scroll", cancelPageTouch, true);
+          window.removeEventListener("contextmenu", cancelPageTouch, true);
           window.removeEventListener("keydown", cancelGreeting);
         });
       }
@@ -2537,6 +2616,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-7b22509a"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-25cc5baf"]]);
 
 export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
