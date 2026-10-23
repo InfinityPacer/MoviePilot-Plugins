@@ -250,7 +250,9 @@ class ActivityPolicy {
 }
 
 const ATTENTION_DWELL_MS = 350;
+const ATTENTION_LEAVE_MS = 300;
 const TOUCH_LOOK_MS = 700;
+const GAZE_INTERVAL_MS = 120;
 const LOOK_DIRECTIONS = [
   "000",
   "022-5",
@@ -280,7 +282,7 @@ class ProximityTracker {
   anchor = null;
   entered = false;
   consumed = false;
-  sample(point, rect) {
+  sample(point, rect, requireStillness = true) {
     const radius = Math.min(96, Math.max(48, rect.height / 2));
     const dx = Math.max(rect.x - point.x, 0, point.x - rect.x - rect.width);
     const dy = Math.max(rect.y - point.y, 0, point.y - rect.y - rect.height);
@@ -290,7 +292,7 @@ class ProximityTracker {
     }
     this.entered = true;
     if (this.consumed) return "near";
-    if (!this.anchor || Math.hypot(point.x - this.anchor.x, point.y - this.anchor.y) > 8) {
+    if (!this.anchor || requireStillness && Math.hypot(point.x - this.anchor.x, point.y - this.anchor.y) > 8) {
       this.anchor = point;
       return "arm";
     }
@@ -315,7 +317,7 @@ class GazeTracker {
     const degrees = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
     if (this.direction !== null) {
       const delta = Math.abs((degrees - this.direction * 22.5 + 540) % 360 - 180);
-      if (delta <= 17.25 || now - this.changedAt < 120) return this.action();
+      if (delta <= 17.25 || this.remainingDelay(now) > 0) return this.action();
     }
     this.direction = Math.round(degrees / 22.5) % 16;
     this.changedAt = now;
@@ -323,6 +325,9 @@ class GazeTracker {
   }
   action() {
     return this.direction === null ? null : `look-${LOOK_DIRECTIONS[this.direction]}`;
+  }
+  remainingDelay(now) {
+    return this.direction === null ? 0 : Math.max(0, GAZE_INTERVAL_MS - (now - this.changedAt));
   }
   reset() {
     this.direction = null;
@@ -781,6 +786,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function resetMotion() {
       cancelActivity();
+      clearAttention();
       stopLoop();
       for (const name of ["behavior", "peek", "peek-pause", "landing-peek", "sit", "clearance"]) clearTimer(name);
       walkTarget = null;
@@ -887,6 +893,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const rect = currentRect();
       if (sameRect(rect, lastAnchor)) return;
       lastAnchor = rect;
+      if (attention.value === "mouse") updateNearbyAttention();
       props.pet?.setBubbleAnchor?.(rect);
     }
     function queueAnchor() {
@@ -1359,6 +1366,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       const active = attention.value !== null;
       clearTimer("attention-dwell");
       clearTimer("attention");
+      clearTimer("attention-leave");
+      clearTimer("attention-gaze");
       attention.value = null;
       gazeAction.value = null;
       gaze.reset();
@@ -1369,7 +1378,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (active) scheduleBehavior();
     }
     function attentionAllowed() {
-      return interactionAllowed() && !reaction.value && !greeting.active.value && motion.value === "idle";
+      return interactionAllowed() && (ownFrames || props.artworkReady !== false) && !reaction.value && !greeting.active.value && motion.value === "idle";
     }
     function selectGaze(point) {
       const rect = currentRect();
@@ -1379,8 +1388,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!attentionAllowed() || mode === "touch" && !props.lookDirections) return false;
       const action = props.lookDirections ? selectGaze(point) : null;
       if (props.lookDirections && !action) return false;
-      const next = interactionMemory.attend(interactionKey(), Date.now(), mode === "mouse");
-      if (!next) {
+      const persistent = mode === "mouse" && props.lookDirections;
+      const next = persistent ? null : interactionMemory.attend(interactionKey(), Date.now(), mode === "mouse");
+      if (!persistent && !next) {
         gaze.reset();
         return false;
       }
@@ -1389,31 +1399,56 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       clearTimer("behavior");
       gazeAction.value = action;
       attention.value = mode;
-      setTimer("attention", mode === "touch" ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false));
+      if (next) setTimer("attention", mode === "touch" ? TOUCH_LOOK_MS : next.duration, () => clearAttention(false));
       return true;
+    }
+    function updateMouseGaze() {
+      if (!nearbyPointer || !gazeAction.value) return;
+      clearTimer("attention-gaze");
+      const before = gazeAction.value;
+      gazeAction.value = selectGaze(nearbyPointer);
+      const delay = gaze.remainingDelay(Date.now());
+      if (before === gazeAction.value && delay > 0)
+        setTimer("attention-gaze", delay, () => {
+          if (nearbyPointer && attention.value === "mouse" && attentionAllowed() && !timers.has("attention-leave"))
+            gazeAction.value = selectGaze(nearbyPointer);
+        });
+    }
+    function updateNearbyAttention() {
+      if (!nearbyPointer) return;
+      if (press || isMobile.value || !attentionAllowed() || !Number.isFinite(nearbyPointer.x + nearbyPointer.y)) {
+        clearAttention();
+        return;
+      }
+      const state = proximity.sample(nearbyPointer, currentRect(), !props.lookDirections);
+      if (state === "leave") {
+        clearTimer("attention-dwell");
+        clearTimer("attention-gaze");
+        if (attention.value === "mouse" && gazeAction.value) {
+          if (!timers.has("attention-leave")) setTimer("attention-leave", ATTENTION_LEAVE_MS, () => clearAttention());
+        } else clearAttention();
+        return;
+      }
+      clearTimer("attention-leave");
+      if (attention.value === "mouse") {
+        updateMouseGaze();
+      } else if (state === "arm") {
+        setTimer("attention-dwell", ATTENTION_DWELL_MS, () => {
+          if (!nearbyPointer || press || isMobile.value || !attentionAllowed()) return;
+          if (proximity.sample(nearbyPointer, currentRect(), !props.lookDirections) === "leave") return;
+          if (beginAttention(nearbyPointer, "mouse") || !props.lookDirections) proximity.consume();
+          else proximity.reset();
+        });
+      }
     }
     function onAttentionPointerMove(event) {
       if (event.pointerType !== "mouse" || event.isPrimary === false || press) return;
-      if (event.buttons !== 0 || isMobile.value || !attentionAllowed()) {
+      if (event.buttons !== 0) {
         clearAttention();
         return;
       }
       nearbyPointer = { x: event.clientX, y: event.clientY };
-      const state = proximity.sample(nearbyPointer, currentRect());
-      if (state === "leave") {
-        clearAttention();
-        return;
-      }
-      if (attention.value === "mouse") {
-        if (gazeAction.value) gazeAction.value = selectGaze(nearbyPointer);
-      } else if (state === "arm") {
-        setTimer("attention-dwell", ATTENTION_DWELL_MS, () => {
-          if (!nearbyPointer || press || isMobile.value || !attentionAllowed()) return;
-          if (proximity.sample(nearbyPointer, currentRect()) === "leave") return;
-          proximity.consume();
-          beginAttention(nearbyPointer, "mouse");
-        });
-      }
+      updateNearbyAttention();
     }
     function onAttentionPointerOut(event) {
       if (event.relatedTarget === null && attention.value !== "touch") clearAttention();
@@ -1876,6 +1911,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function applySettings(value) {
       cancelActivity();
+      clearAttention();
       settingsRevision++;
       const before = settings.value.roam;
       const wasFixed = fixed();
@@ -2032,8 +2068,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => props.artworkReady,
       (loaded) => {
         if (ownFrames) return;
-        if (!loaded) cancelActivity();
-        else scheduleBehavior();
+        if (!loaded) {
+          cancelActivity();
+          clearAttention();
+        } else scheduleBehavior();
       }
     );
     watch(
@@ -2498,6 +2536,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-23c39ac1"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-6da1158e"]]);
 
 export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
