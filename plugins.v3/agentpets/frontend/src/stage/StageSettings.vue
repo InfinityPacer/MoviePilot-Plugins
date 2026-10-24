@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { RoamMode } from '@/stage/geometry'
 import { DEFAULT_SETTINGS, SCALE_RANGE, SPEED_RANGE, type YingSettings } from '@/stage/settings'
-import { defaultDialogue, type DialogueSettings } from './dialogue'
+import { defaultDialogue, DIALOGUE_VOICE_OPTIONS, dialogueVoiceForDisplay, type DialogueSettings } from './dialogue'
 
 /** 全屏角色的外观与活动范围设置；值的保存和实时预览由配置页统一处理。 */
 const props = defineProps<{
@@ -126,13 +126,8 @@ function reset() {
         @update:model-value="(mode: DialogueSettings['mode']) => update({ dialogue: { ...dialogue, mode } })"
       />
       <v-select
-        :model-value="dialogue.voice"
-        :items="[
-          { title: props.petKey === 'ying' ? '原有小映台词' : '默认自然语气', value: 'default' },
-          { title: '自然', value: 'neutral' },
-          { title: '活泼', value: 'lively' },
-          { title: '轻微嘴硬', value: 'wry' },
-        ]"
+        :model-value="dialogueVoiceForDisplay(props.petKey, dialogue.voice)"
+        :items="DIALOGUE_VOICE_OPTIONS"
         label="语气"
         variant="outlined"
         density="compact"

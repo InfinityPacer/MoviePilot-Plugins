@@ -63,6 +63,30 @@ describe('optional dialogue preferences', () => {
     expect(parseDialogue(settings)).not.toBe(settings)
   })
 
+  it('accepts an explicit Ying voice without removing old default compatibility', () => {
+    expect(parseDialogue({ mode: 'interaction', voice: 'ying' })).toEqual({ mode: 'interaction', voice: 'ying' })
+    expect(parseDialogue({ mode: 'interaction', voice: 'default' })).toEqual({ mode: 'interaction', voice: 'default' })
+  })
+
+  it('uses exactly the approved soft-cute and tsundere wording under stable stored identifiers', () => {
+    expect(DIALOGUE_LINES.lively).toEqual({
+      greeting: ['你来啦，我在这里呢～', '又见面啦，今天也陪着你。', '一起待一会儿，好不好呀？'],
+      poke: ['唔，我在呢～轻一点嘛。', '嘿嘿，有点痒，被你找到啦。', '是在叫我吗？我听着呢。'],
+      tease: ['呜，听见啦，不许一直戳嘛～', '好啦好啦，让我缓一小下。', '这下真的有点痒啦，轻轻的嘛～'],
+      drop: ['呼，站稳啦，这里也不错呢。', '到啦！下次也轻轻放我哦～', '换个地方，继续陪着你呀。'],
+      wake: ['唔，醒啦，刚刚眯了一小会儿。', '休息好啦，继续陪你～', '嗯？我在呢，刚才有点困困的。'],
+      hop: ['嘿咻，跳上来啦～', '这里高一点，能看得更远呢。', '稳稳站好啦，夸我一下嘛～'],
+    })
+    expect(DIALOGUE_LINES.wry).toEqual({
+      greeting: ['来了？才没有特意等你呢。', '今天也陪你一会儿，顺便而已。', '哼，既然来了，就别急着走。'],
+      poke: ['我在呢，笨蛋，轻一点。', '听见啦，才不是没理你。', '有事就说，我又没说不帮你。'],
+      tease: ['别一直戳啦……会痒的！', '知道了知道了，真拿你没办法。', '再闹就不理你……一小会儿。'],
+      drop: ['站稳了，下次轻一点啦。', '这个位置还不错……算你会挑。', '这里挺好的，不过我可没夸你哦。'],
+      wake: ['只是眯了一下，才没有偷懒。', '醒啦……有事叫我就好了。', '休息够了，继续陪你。别多想！'],
+      hop: ['这点高度，当然难不倒我。', '站高一点看看，才不是想显摆。', '跳上来了……夸一句也不是不行。'],
+    })
+  })
+
   it('keeps all selectable lines short and free of task-result claims', () => {
     for (const line of Object.values(DIALOGUE_LINES).flatMap(scenes => Object.values(scenes).flat())) {
       expect(Array.from(line).length).toBeLessThanOrEqual(20)
@@ -107,6 +131,29 @@ describe('contextual LineSpeaker', () => {
     context.dialogue!.voice = 'default'
     speaker.say('poke')
     expect(key === 'ying' ? LINES.poke : DIALOGUE_LINES.neutral.poke).toContain(say.mock.calls[0][0])
+  })
+
+  it.each(['ying', 'builtin-kurisu', 'imported-pet'])(
+    'uses the original Ying greeting and interaction pools when explicitly selected for %s',
+    key => {
+      const { speaker, say, context } = setup()
+      context.key = key
+      context.dialogue!.voice = 'ying'
+      expect(speaker.greet()).toBe(true)
+      expect(greetingLines(new Date())).toContain(say.mock.calls.at(-1)![0])
+      for (const scene of ['poke', 'tease', 'drop', 'wake'] as const) {
+        vi.advanceTimersByTime(DIALOGUE_INTERVAL_MS)
+        expect(speaker.say(scene)).toBe(true)
+        expect(LINES[scene]).toContain(say.mock.calls.at(-1)![0])
+      }
+    },
+  )
+
+  it('preserves the natural hop fallback for an explicitly selected Ying voice', () => {
+    const { speaker, say, context } = setup()
+    context.dialogue = { mode: 'occasional', voice: 'ying' }
+    expect(speaker.say('hop')).toBe(true)
+    expect(DIALOGUE_LINES.neutral.hop).toContain(say.mock.calls[0][0])
   })
 
   it.each(['off', 'interaction', 'occasional'] as const)('separates %s mode from autonomous speech', mode => {

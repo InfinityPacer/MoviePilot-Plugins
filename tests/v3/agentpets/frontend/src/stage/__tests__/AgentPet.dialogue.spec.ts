@@ -223,7 +223,12 @@ describe('per-Pet contextual dialogue', () => {
     },
   )
 
-  it('does not interrupt a live walk when only dialogue is turned off', async () => {
+  it.each([
+    { mode: 'off', voice: 'neutral' },
+    { mode: 'interaction', voice: 'ying' },
+    { mode: 'interaction', voice: 'lively' },
+    { mode: 'interaction', voice: 'wry' },
+  ] as const)('does not interrupt a live walk when only dialogue changes to $mode/$voice', async dialogue => {
     const pet = await setup({ fixed: false })
     await until(() => pet.stage.dataset.motion === 'walk')
     await advance(96)
@@ -234,7 +239,7 @@ describe('per-Pet contextual dialogue', () => {
         speed: 1,
         roam: 'free',
         movement: 'auto',
-        dialogue: { mode: 'off', voice: 'neutral' },
+        dialogue,
       },
     })
     expect(pet.stage.dataset.motion).toBe('walk')

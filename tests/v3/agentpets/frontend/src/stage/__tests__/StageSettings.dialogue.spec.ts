@@ -28,11 +28,43 @@ describe('per-Pet dialogue controls', () => {
       const value = { ...DEFAULT_SETTINGS }
       const { view, select } = setup(value, key)
       expect(select('话量').props('modelValue')).toBe(key === 'ying' ? 'interaction' : 'off')
-      expect(select('语气').props('modelValue')).toBe(key === 'ying' ? 'default' : 'neutral')
+      expect(select('语气').props('modelValue')).toBe(key === 'ying' ? 'ying' : 'neutral')
       expect(value).not.toHaveProperty('dialogue')
       expect(view.emitted('update:modelValue')).toBeUndefined()
     },
   )
+
+  it.each(['ying', 'builtin-kurisu', 'imported-pet'])('offers the same four named voices for %s', key => {
+    const { select } = setup({ ...DEFAULT_SETTINGS }, key)
+    expect(select('语气').props('items')).toEqual([
+      { title: '小映', value: 'ying' },
+      { title: '自然', value: 'neutral' },
+      { title: '软萌', value: 'lively' },
+      { title: '傲娇', value: 'wry' },
+    ])
+  })
+
+  it.each(['ying', 'builtin-kurisu'])(
+    'displays the old default for %s by its effective voice without migrating it',
+    key => {
+      const value: YingSettings = { ...DEFAULT_SETTINGS, dialogue: { mode: 'interaction', voice: 'default' } }
+      const { view, select } = setup(value, key)
+      expect(select('语气').props('modelValue')).toBe(key === 'ying' ? 'ying' : 'neutral')
+      expect(value.dialogue).toEqual({ mode: 'interaction', voice: 'default' })
+      expect(view.emitted('update:modelValue')).toBeUndefined()
+    },
+  )
+
+  it('emits the explicit Ying voice for another Pet without changing activity settings', () => {
+    const value: YingSettings = { ...DEFAULT_SETTINGS, dialogue: { mode: 'interaction', voice: 'neutral' } }
+    const { view, select } = setup(value)
+    select('语气').vm.$emit('update:modelValue', 'ying')
+    expect(view.emitted<[YingSettings]>('update:modelValue')![0][0]).toEqual({
+      ...value,
+      dialogue: { mode: 'interaction', voice: 'ying' },
+    })
+    expect(value.dialogue!.voice).toBe('neutral')
+  })
 
   it('updates only dialogue through compact controls and keeps activity independent', async () => {
     const value: YingSettings = {

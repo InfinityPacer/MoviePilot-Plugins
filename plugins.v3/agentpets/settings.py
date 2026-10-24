@@ -8,7 +8,7 @@ PEEK_EDGES = ("bottom", "left", "right")
 ROAM_MODES = ("surfaces", "floor", "free")
 DEFAULT_SETTINGS = {"scale": 1.0, "speed": 1.0, "roam": "surfaces", "movement": "auto"}
 DIALOGUE_MODES = ("off", "interaction", "occasional")
-DIALOGUE_VOICES = ("default", "neutral", "lively", "wry")
+DIALOGUE_VOICES = ("default", "ying", "neutral", "lively", "wry")
 
 
 def default_dialogue(key: str) -> dict[str, str]:
