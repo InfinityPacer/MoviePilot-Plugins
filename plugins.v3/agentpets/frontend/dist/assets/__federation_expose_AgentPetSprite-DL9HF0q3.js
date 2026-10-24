@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { L as LANDMARKS, c as calibrationPoint, a as suggestedLandmark, b as sameCalibration, m as moveCalibrationPoint, _ as _export_sfc, d as BUILTIN_PACK_ID, e as BUILTIN_PACK, f as builtinAsset, r as resolveAction, p as parseCalibration, g as calibrationForAction, B as BUILTIN_PACKS, h as calibrationEye, i as mirrorFace, j as calibrationLayout, k as framePosition, o as onEditorPresence, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import { L as LANDMARKS, c as calibrationPoint, a as suggestedLandmark, b as sameCalibration, m as moveCalibrationPoint, _ as _export_sfc, s as stageAction, r as resolveAction, d as BUILTIN_PACK_ID, e as BUILTIN_PACK, f as builtinAsset, p as parseCalibration, g as calibrationForAction, B as BUILTIN_PACKS, h as calibrationEye, i as mirrorFace, j as calibrationLayout, k as framePosition, o as onEditorPresence, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import { u as useStartupGreeting, g as greetingPlayback, Y as YING_PACK, f as frameUrl, l as loadBuiltinCalibration, w as withLoadTimeout, a as loadImage } from './greeting-B7a9rq7Z.js';
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
@@ -160,6 +160,45 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
 
 const CalibrationMarkers = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-0a765626"]]);
 
+const NOMINAL_WALK_HEIGHTS_PER_SECOND = 70 / 120;
+const MAX_ACTION_CYCLE_MS = 6e3;
+function actionDuration(action) {
+  return action.frames.reduce((total, _, index) => total + (action.frame_durations?.[index] ?? action.frame_ms), 0);
+}
+function travelFrame(action, traveledHeights) {
+  const duration = actionDuration(action);
+  if (!Number.isFinite(traveledHeights) || traveledHeights < 0 || !Number.isFinite(duration) || duration <= 0) return 0;
+  let elapsed = traveledHeights / NOMINAL_WALK_HEIGHTS_PER_SECOND * 1e3 % duration;
+  for (let index = 0; index < action.frames.length; index += 1) {
+    const frameMs = action.frame_durations?.[index] ?? action.frame_ms;
+    if (elapsed < frameMs) return index;
+    elapsed -= frameMs;
+  }
+  return 0;
+}
+function phaseFrame(action, phase) {
+  if (!Number.isFinite(phase)) return 0;
+  return Math.min(action.frames.length - 1, Math.floor(Math.max(0, Math.min(1, phase)) * action.frames.length));
+}
+function resolveStageAction(pack, pose, facingLeft = false, peeking = false, mappings) {
+  const stage = stageAction(pose, facingLeft, peeking);
+  const configured = mappings ?? pack.action_mappings ?? {};
+  const physical = pose === "sit" ? "land" : pose === "jump" || pose === "fall" ? pose : void 0;
+  const action = !peeking && !configured[stage.key] && physical && pack.actions[physical] ? physical : stage.action;
+  return { ...resolveAction(pack, action, void 0, false, { mappings, mappingKey: stage.key }), requested: action };
+}
+function stageCycleDuration(pack, pose, mappings) {
+  const resolved = resolveStageAction(pack, pose, false, false, mappings);
+  if (resolved.key === "idle" || resolved.action.frames.length < 2) return void 0;
+  const duration = actionDuration(resolved.action);
+  return Number.isFinite(duration) && duration > 0 && duration <= MAX_ACTION_CYCLE_MS ? duration : void 0;
+}
+function airborneFramePhase(action, pose, progress) {
+  if (pose !== "jump" && pose !== "fall" || progress === void 0 || !Number.isFinite(progress)) return void 0;
+  if (action === "jumping") return (pose === "jump" ? 0 : 0.5) + Math.max(0, Math.min(1, progress)) * 0.5;
+  return action === pose ? progress : void 0;
+}
+
 const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {unref:_unref,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,withDirectives:_withDirectives,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass} = await importShared('vue');
@@ -188,9 +227,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     mappingsOverride: {},
     mappingKey: {},
     nativeAction: {},
-    replay: {}
+    replay: {},
+    walkTravel: {},
+    framePhase: {},
+    playbackRound: {},
+    singleCycle: { type: Boolean }
   },
-  emits: ["appearance", "calibration-change", "load-state", "pack-ready", "cycle-complete"],
+  emits: ["appearance", "calibration-change", "load-state", "pack-ready", "cycle-complete", "action-complete"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
@@ -231,9 +274,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       )
     );
     watch([() => props.pluginId, () => props.pet?.key, () => props.pet?.mode], () => greeting.cancel());
+    const externallyDriven = computed(() => Number.isFinite(props.walkTravel) || Number.isFinite(props.framePhase));
     const frame = computed(() => {
       const frames = resolved.value.action.frames;
-      return frames[Math.min(frameIndex.value, frames.length - 1)] ?? "idle";
+      const index = !props.motionActive ? 0 : Number.isFinite(props.walkTravel) ? travelFrame(resolved.value.action, props.walkTravel) : Number.isFinite(props.framePhase) ? phaseFrame(resolved.value.action, props.framePhase) : frameIndex.value;
+      return frames[Math.min(index, frames.length - 1)] ?? "idle";
     });
     const baseCalibration = computed(() => parseCalibration(props.calibrationOverride ?? pack.value.calibration));
     const calibration = computed(
@@ -281,18 +326,21 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function play() {
       stop();
       frameIndex.value = 0;
-      if (!props.motionActive || !ready.value || disposed) return;
+      if (!props.motionActive || !ready.value || disposed || externallyDriven.value) return;
       const { frames, frame_ms: frameMs, frame_durations: durations, loop } = resolved.value.action;
       const greetingRound = greeting.round.value;
       const replay = props.replay ?? 0;
+      const playbackRound = props.playbackRound ?? 0;
+      const singleCycle = props.singleCycle || playbackRound > 0;
       if (frames.length < 2) return;
       const advance = () => {
         const next = frameIndex.value + 1;
         if (next >= frames.length) {
           greeting.frameComplete(greetingRound);
           emit("cycle-complete", replay);
+          if (playbackRound) emit("action-complete", playbackRound);
         }
-        if (next >= frames.length && !loop) {
+        if (next >= frames.length && (!loop || singleCycle)) {
           timer = 0;
           return;
         }
@@ -370,7 +418,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     watch(
-      () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay, greeting.round.value],
+      () => [
+        resolved.value.key,
+        props.motionActive,
+        ready.value,
+        pack.value,
+        props.replay,
+        greeting.round.value,
+        props.playbackRound,
+        props.singleCycle,
+        externallyDriven.value
+      ],
       () => play()
     );
     watch(
@@ -493,6 +551,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-3fcf2e92"]]);
+const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-02495848"]]);
 
-export { AgentPetSprite as default };
+export { airborneFramePhase as a, AgentPetSprite as default, resolveStageAction as r, stageCycleDuration as s };
