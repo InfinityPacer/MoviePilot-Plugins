@@ -2256,17 +2256,26 @@ function onHostEvent(event: AgentHostEvent) {
   else scheduleBehavior()
 }
 
+/** A timed-out read cannot later confirm the fallback value and unmute a Pet. */
+async function readPetSettings() {
+  let confirmed = false
+  const value = await loadSettings(props.api, props.pluginId, props.pet?.key || 'ying', () => {
+    confirmed = true
+  })
+  return { value, confirmed }
+}
+
 async function refreshPetSettings() {
   if (props.settingsOverride) return
   const revision = ++settingsRevision
   const scope = interactionKey()
-  const loaded = await withLoadTimeout(
-    loadSettings(props.api, props.pluginId, props.pet?.key || 'ying'),
-    startup.signal,
-  ).catch(() => settings.value)
+  const loaded = await withLoadTimeout(readPetSettings(), startup.signal).catch(() => ({
+    value: settings.value,
+    confirmed: false,
+  }))
   if (!disposed && revision === settingsRevision && scope === interactionKey()) {
-    settingsScope = scope
-    applySettings(loaded)
+    settingsScope = loaded.confirmed ? scope : ''
+    if (loaded.confirmed) applySettings(loaded.value)
   }
 }
 
@@ -2701,15 +2710,15 @@ onMounted(async () => {
   const scope = interactionKey()
   const [loaded, stored] = await Promise.all([
     withLoadTimeout(
-      Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId, props.pet?.key || 'ying')),
+      Promise.resolve(props.settingsOverride ? { value: props.settingsOverride, confirmed: true } : readPetSettings()),
       startup.signal,
-    ).catch(() => DEFAULT_SETTINGS),
+    ).catch(() => ({ value: DEFAULT_SETTINGS, confirmed: false })),
     withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null),
   ])
   if (disposed) return
   if (revision === settingsRevision && scope === interactionKey()) {
-    settings.value = normalizeSettings(props.settingsOverride ?? loaded)
-    settingsScope = scope
+    settings.value = normalizeSettings(props.settingsOverride ?? loaded.value)
+    settingsScope = loaded.confirmed ? scope : ''
   }
   refreshBottomFloor()
   restorePosition(stored)
