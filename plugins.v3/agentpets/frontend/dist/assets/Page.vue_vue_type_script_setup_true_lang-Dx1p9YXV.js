@@ -1,11 +1,11 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-BIGKh7o3.js';
+import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-DqRh--bK.js';
 import { L as LANDMARKS, c as calibrationPoint, D as DEFAULT_CALIBRATION, m as moveCalibrationPoint, a as suggestedLandmark, p as parseCalibration, _ as _export_sfc, q as mappingRows, A as ACTION_LABELS, t as nativeChoices, H as HOST_ACTIONS, x as HOST_INTENTS, s as stageAction, u as useEditorPresence, b as sameCalibration, l as sameMappings, P as PACK_UPDATED_EVENT } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import { P as POSES, d as builtinDefaultCalibration } from './playback-Ct5mtRW-.js';
-import { N as DEFAULT_PEEK_ANGLES, O as normalizePeekAngle, c as normalizePeekAngles, Q as MIN_SURFACE_WIDTH, R as PEEK_PREVIEW_MAX_ANGLE, D as DEFAULT_SETTINGS, s as sharedOf, d as sameAppearance, a as sameShared, n as normalizeSettings, b as appearanceOf, T as SCALE_RANGE, U as SPEED_RANGE, S as SETTINGS_EVENT } from './settings-CRB55Tpw.js';
+import { U as DEFAULT_PEEK_ANGLES, V as normalizePeekAngle, c as normalizePeekAngles, W as MIN_SURFACE_WIDTH, X as PEEK_PREVIEW_MAX_ANGLE, m as DEFAULT_SETTINGS, s as sharedOf, e as sameAppearance, a as sameShared, n as normalizeSettings, b as appearanceOf, d as defaultDialogue, Y as SCALE_RANGE, Z as SPEED_RANGE, S as SETTINGS_EVENT } from './settings-D97uobFu.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-DP-pjhDu.js';
-import AgentPet from './__federation_expose_AgentPet-DQwkuR7z.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BOQvDBMW.js';
+import AgentPet from './__federation_expose_AgentPet-DT0mQ5n6.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BOE5M7oq.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
 
@@ -24,7 +24,7 @@ const _hoisted_5$3 = {
 };
 const _hoisted_6$2 = { class: "d-flex align-center ga-2 mt-3" };
 const _hoisted_7$2 = { class: "ap-calibration__fields" };
-const {computed: computed$4,onBeforeUnmount: onBeforeUnmount$2,ref: ref$3} = await importShared('vue');
+const {computed: computed$5,onBeforeUnmount: onBeforeUnmount$2,ref: ref$3} = await importShared('vue');
 const _sfc_main$4 = /* @__PURE__ */ _defineComponent$4({
   __name: "CalibrationControls",
   props: {
@@ -55,8 +55,8 @@ const _sfc_main$4 = /* @__PURE__ */ _defineComponent$4({
       { key: "offset_x", title: "水平偏移", min: -25, max: 25 },
       { key: "offset_y", title: "垂直偏移", min: -25, max: 25 }
     ];
-    const disabled = computed$4(() => props.disabled || busy.value);
-    const eyeEnabled = computed$4(() => props.modelValue.eye_x != null && props.modelValue.eye_y != null);
+    const disabled = computed$5(() => props.disabled || busy.value);
+    const eyeEnabled = computed$5(() => props.modelValue.eye_x != null && props.modelValue.eye_y != null);
     const eyeFields = [
       { key: "eye_x", title: "双眼中心横坐标" },
       { key: "eye_y", title: "眼线纵坐标" }
@@ -70,7 +70,7 @@ const _sfc_main$4 = /* @__PURE__ */ _defineComponent$4({
         title: `${landmarkLabels[point]}${axis === "x" ? "横" : "纵"}坐标`
       }))
     );
-    const placed = computed$4(() => LANDMARKS.filter((key) => calibrationPoint(props.modelValue, key)).length);
+    const placed = computed$5(() => LANDMARKS.filter((key) => calibrationPoint(props.modelValue, key)).length);
     function updateLandmark(key, axis, percent) {
       try {
         const current = calibrationPoint(props.modelValue, key) ? props.modelValue : moveCalibrationPoint(props.modelValue, key, suggestedLandmark(props.modelValue, key));
@@ -287,7 +287,7 @@ const {toDisplayString:_toDisplayString$3,createElementVNode:_createElementVNode
 const _hoisted_1$3 = { class: "ap-mappings" };
 const _hoisted_2$3 = { class: "ap-inline mb-2" };
 const _hoisted_3$3 = { class: "ap-section-title mb-0" };
-const {computed: computed$3} = await importShared('vue');
+const {computed: computed$4} = await importShared('vue');
 const _sfc_main$3 = /* @__PURE__ */ _defineComponent$3({
   __name: "ActionMappings",
   props: {
@@ -300,9 +300,9 @@ const _sfc_main$3 = /* @__PURE__ */ _defineComponent$3({
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
-    const rows = computed$3(() => mappingRows(props.mode));
-    const groups = computed$3(() => [...new Set(rows.value.map((row) => row.group))]);
-    const animations = computed$3(
+    const rows = computed$4(() => mappingRows(props.mode));
+    const groups = computed$4(() => [...new Set(rows.value.map((row) => row.group))]);
+    const animations = computed$4(
       () => Object.keys(props.pack.actions).map((value) => ({
         value,
         title: ACTION_LABELS[value] ? `${ACTION_LABELS[value]} · ${value}` : value
@@ -557,7 +557,7 @@ const _hoisted_23$1 = {
   key: 1,
   class: "ap-preview__panel ap-muted"
 };
-const {computed: computed$2,onBeforeUnmount: onBeforeUnmount$1,onMounted,ref: ref$2,shallowRef,watch: watch$1} = await importShared('vue');
+const {computed: computed$3,onBeforeUnmount: onBeforeUnmount$1,onMounted,ref: ref$2,shallowRef,watch: watch$1} = await importShared('vue');
 const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
   __name: "PetPreview",
   props: {
@@ -580,8 +580,8 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     const editorTab = ref$2(props.initialTab);
     const calibrationEdge = ref$2(null);
     const showGuides = ref$2(true);
-    const defaultCalibrationAngle = computed$2(() => DEFAULT_PEEK_ANGLES[calibrationEdge.value ?? "bottom"]);
-    const calibrationAngle = computed$2({
+    const defaultCalibrationAngle = computed$3(() => DEFAULT_PEEK_ANGLES[calibrationEdge.value ?? "bottom"]);
+    const calibrationAngle = computed$3({
       get: () => normalizePeekAngles(props.settings.peek_angles)[calibrationEdge.value ?? "bottom"],
       set: (value) => {
         if (!calibrationEdge.value || props.disabled) return;
@@ -595,26 +595,26 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       }
     });
     const calibrationZoom = ref$2(1);
-    const calibrating = computed$2(
+    const calibrating = computed$3(
       () => editorTab.value === "calibration" && props.pet.mode === "stage" && !!loadedPack.value && !!props.calibration
     );
-    const editingLandmarks = computed$2(() => calibrating.value && !calibrationEdge.value && !!props.calibration);
+    const editingLandmarks = computed$3(() => calibrating.value && !calibrationEdge.value && !!props.calibration);
     const peekChoices = [
       { title: "完整形象", value: null },
       { title: "底边偷看试览", value: "bottom" },
       { title: "左下侧边试览", value: "left" },
       { title: "右下侧边试览", value: "right" }
     ];
-    const activePeekEdge = computed$2(
+    const activePeekEdge = computed$3(
       () => props.pet.mode === "stage" && editorTab.value === "calibration" ? calibrationEdge.value : null
     );
     const expanded = ref$2(false);
     const previewMode = ref$2("debug");
-    const testingPlatforms = computed$2(
+    const testingPlatforms = computed$3(
       () => !calibrating.value && props.pet.mode === "stage" && previewMode.value === "movement" && props.settings.roam === "surfaces"
     );
     const platformsAvailable = ref$2(true);
-    const previewSettings = computed$2(
+    const previewSettings = computed$3(
       () => previewMode.value === "debug" || calibrating.value ? { ...props.settings, movement: "fixed", roam: "free" } : props.settings
     );
     const previewMaxSize = ref$2({ width: 280, height: 220 });
@@ -632,7 +632,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     const canvas = ref$2(null);
     const mounted = ref$2(false);
     const paused = ref$2(false);
-    const playbackStatus = computed$2(() => {
+    const playbackStatus = computed$3(() => {
       if (activePeekEdge.value) {
         const label = peekChoices.find((choice) => choice.value === activePeekEdge.value).title;
         return `${label} · 锁定偷看首帧`;
@@ -648,7 +648,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       return pet;
     }
     const context = shallowRef(newContext());
-    const comparisonContext = computed$2(() => createMockPet("renderer", props.pet.key));
+    const comparisonContext = computed$3(() => createMockPet("renderer", props.pet.key));
     const poseLabels = {
       idle: "待机",
       blink: "眨眼",
@@ -669,8 +669,8 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       victory: "开心",
       busy: "执行工具"
     };
-    const animations = computed$2(() => loadedPack.value ? nativeChoices(loadedPack.value) : []);
-    const choices = computed$2(() => {
+    const animations = computed$3(() => loadedPack.value ? nativeChoices(loadedPack.value) : []);
+    const choices = computed$3(() => {
       if (previewGroup.value === "poses") return POSES.map((value) => ({ value: `pose:${value}`, title: poseLabels[value] }));
       if (previewGroup.value === "actions")
         return HOST_ACTIONS.map((value) => ({ value: `action:${value}`, title: ACTION_LABELS[value] }));
@@ -680,10 +680,10 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
         return Object.keys(loadedPack.value?.actions ?? {}).filter((key) => key.startsWith("look-")).map((key) => ({ value: `native:${key}`, title: key.slice(5).replace("-", ".") + "°" }));
       return animations.value.map((item) => ({ value: `native:${item.value}`, title: item.title }));
     });
-    const nativeAction = computed$2(() => action.value.startsWith("native:") ? action.value.slice(7) : void 0);
-    const rendererAction = computed$2(() => action.value.startsWith("action:") ? action.value.slice(7) : null);
-    const rendererIntent = computed$2(() => action.value.startsWith("intent:") ? action.value.slice(7) : "idle");
-    const previewPose = computed$2(
+    const nativeAction = computed$3(() => action.value.startsWith("native:") ? action.value.slice(7) : void 0);
+    const rendererAction = computed$3(() => action.value.startsWith("action:") ? action.value.slice(7) : null);
+    const rendererIntent = computed$3(() => action.value.startsWith("intent:") ? action.value.slice(7) : "idle");
+    const previewPose = computed$3(
       () => nativeAction.value ? "idle" : action.value.startsWith("pose:") ? action.value.slice(5) : void 0
     );
     const events = [
@@ -717,7 +717,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       host.patch({ phase, thinking: phase === "thinking", panelOpen: name === "panel.open" });
       host.fire(`agent.${name}`, { name: "preview_tool", text: "预览消息" });
     }
-    const stageComponent = computed$2(() => props.pet.key === "ying" ? AgentPet : _sfc_main$5);
+    const stageComponent = computed$3(() => props.pet.key === "ying" ? AgentPet : _sfc_main$5);
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedMotion = ref$2(mediaQuery.matches);
     let observer;
@@ -1286,7 +1286,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
 
 const PetPreview = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-804ae9f3"]]);
 
-const {computed: computed$1,ref: ref$1} = await importShared('vue');
+const {computed: computed$2,ref: ref$1} = await importShared('vue');
 function usePetSettings(selectedKey) {
   const defaults = ref$1({ ...DEFAULT_SETTINGS });
   const drafts = ref$1({});
@@ -1295,14 +1295,14 @@ function usePetSettings(selectedKey) {
   const sharedDraft = ref$1(sharedOf(DEFAULT_SETTINGS));
   const sharedSaved = ref$1(sharedOf(DEFAULT_SETTINGS));
   const sharedConflict = ref$1(null);
-  const dirtyKeys = computed$1(
+  const dirtyKeys = computed$2(
     () => Object.keys(drafts.value).filter((key) => !sameAppearance(drafts.value[key], saved.value[key]))
   );
-  const sharedDirty = computed$1(() => !sameShared(sharedDraft.value, sharedSaved.value));
-  const dirty = computed$1(() => sharedDirty.value || dirtyKeys.value.length > 0);
-  const conflictKeys = computed$1(() => Object.keys(conflicts.value));
-  const hasConflict = computed$1(() => !!sharedConflict.value || conflictKeys.value.length > 0);
-  const draft = computed$1({
+  const sharedDirty = computed$2(() => !sameShared(sharedDraft.value, sharedSaved.value));
+  const dirty = computed$2(() => sharedDirty.value || dirtyKeys.value.length > 0);
+  const conflictKeys = computed$2(() => Object.keys(conflicts.value));
+  const hasConflict = computed$2(() => !!sharedConflict.value || conflictKeys.value.length > 0);
+  const draft = computed$2({
     get: () => ({ ...defaults.value, ...sharedDraft.value, ...drafts.value[selectedKey.value] }),
     set: (value) => {
       const normalized = normalizeSettings(value);
@@ -1383,18 +1383,21 @@ const _hoisted_5$1 = {
   key: 0,
   class: "text-caption text-medium-emphasis"
 };
+const {computed: computed$1} = await importShared('vue');
 const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   __name: "StageSettings",
   props: {
     modelValue: {},
     livePreview: { type: Boolean },
     disabled: { type: Boolean },
-    previewOnly: { type: Boolean }
+    previewOnly: { type: Boolean },
+    petKey: {}
   },
   emits: ["update:modelValue"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit = __emit;
+    const dialogue = computed$1(() => props.modelValue.dialogue ?? defaultDialogue(props.petKey ?? "ying"));
     const ROAM_OPTIONS = [
       { value: "surfaces", title: "站在页面元素上", hint: "落到卡片、对话框等元素的上边，元素移动或消失时跟着走或掉下来" },
       { value: "floor", title: "只在底边", hint: "始终站在屏幕底边" },
@@ -1406,7 +1409,8 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     function reset() {
       emit("update:modelValue", {
         ...DEFAULT_SETTINGS,
-        ...props.modelValue.peek_angles ? { peek_angles: props.modelValue.peek_angles } : {}
+        ...props.modelValue.peek_angles ? { peek_angles: props.modelValue.peek_angles } : {},
+        ...props.modelValue.dialogue ? { dialogue: { ...props.modelValue.dialogue } } : {}
       });
     }
     return (_ctx, _cache) => {
@@ -1430,7 +1434,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           class: "mb-4",
           "onUpdate:modelValue": _cache[0] || (_cache[0] = (value) => update({ movement: value }))
         }, null, 8, ["model-value", "disabled", "hint"]),
-        _cache[6] || (_cache[6] = _createElementVNode$1("div", { class: "text-subtitle-2 mb-1" }, "角色大小", -1)),
+        _cache[9] || (_cache[9] = _createElementVNode$1("div", { class: "text-subtitle-2 mb-1" }, "角色大小", -1)),
         _createVNode$1(_component_v_slider, {
           "model-value": props.modelValue.scale,
           min: _unref$1(SCALE_RANGE)[0],
@@ -1449,7 +1453,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
           _: 1
         }, 8, ["model-value", "min", "max", "disabled"]),
         props.modelValue.movement !== "fixed" ? (_openBlock$1(), _createElementBlock$1(_Fragment, { key: 0 }, [
-          _cache[4] || (_cache[4] = _createElementVNode$1("div", { class: "text-subtitle-2 mt-4 mb-1" }, "移动速度", -1)),
+          _cache[6] || (_cache[6] = _createElementVNode$1("div", { class: "text-subtitle-2 mt-4 mb-1" }, "移动速度", -1)),
           _createVNode$1(_component_v_slider, {
             "model-value": props.modelValue.speed,
             min: _unref$1(SPEED_RANGE)[0],
@@ -1482,16 +1486,52 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
             "onUpdate:modelValue": _cache[3] || (_cache[3] = (value) => update({ roam: value }))
           }, null, 8, ["model-value", "disabled", "hint"])
         ], 64)) : _createCommentVNode$1("", true),
+        props.petKey ? (_openBlock$1(), _createElementBlock$1(_Fragment, { key: 1 }, [
+          _cache[7] || (_cache[7] = _createElementVNode$1("div", { class: "text-subtitle-2 mt-5 mb-2" }, "角色台词", -1)),
+          _createVNode$1(_component_v_select, {
+            "model-value": dialogue.value.mode,
+            items: [
+              { title: "关闭", value: "off" },
+              { title: "仅互动与问候", value: "interaction" },
+              { title: "互动与偶尔感叹", value: "occasional" }
+            ],
+            label: "话量",
+            variant: "outlined",
+            density: "compact",
+            disabled: props.disabled,
+            hint: "只控制角色短句，不影响自主活动或系统通知。",
+            "persistent-hint": "",
+            class: "mb-4",
+            "onUpdate:modelValue": _cache[4] || (_cache[4] = (mode) => update({ dialogue: { ...dialogue.value, mode } }))
+          }, null, 8, ["model-value", "disabled"]),
+          _createVNode$1(_component_v_select, {
+            "model-value": dialogue.value.voice,
+            items: [
+              { title: props.petKey === "ying" ? "原有小映台词" : "默认自然语气", value: "default" },
+              { title: "自然", value: "neutral" },
+              { title: "活泼", value: "lively" },
+              { title: "轻微嘴硬", value: "wry" }
+            ],
+            label: "语气",
+            variant: "outlined",
+            density: "compact",
+            disabled: props.disabled || dialogue.value.mode === "off",
+            hint: "按当前 Pet 独立保存；需主程序支持原生角色台词。预览区不说话。",
+            "persistent-hint": "",
+            "onUpdate:modelValue": _cache[5] || (_cache[5] = (voice) => update({ dialogue: { ...dialogue.value, voice } }))
+          }, null, 8, ["model-value", "items", "disabled"])
+        ], 64)) : _createCommentVNode$1("", true),
         _createElementVNode$1("div", _hoisted_4$1, [
-          props.livePreview ? (_openBlock$1(), _createElementBlock$1("span", _hoisted_5$1, _toDisplayString$1(props.previewOnly ? "仅在预览区试调。大小与速度按当前 Pet 独立保存；活动方式与范围仍共享，对所有用户生效。" : "大小与速度属于当前 Pet；活动方式与范围共享，保存后对所有用户生效。"), 1)) : _createCommentVNode$1("", true),
+          props.livePreview ? (_openBlock$1(), _createElementBlock$1("span", _hoisted_5$1, _toDisplayString$1(props.previewOnly ? "仅在预览区试调。大小、速度与台词按当前 Pet 独立保存；活动方式与范围仍共享。" : "大小、速度与台词属于当前 Pet；活动方式与范围共享，保存后对所有用户生效。"), 1)) : _createCommentVNode$1("", true),
           _createVNode$1(_component_v_spacer),
           _createVNode$1(_component_v_btn, {
             variant: "text",
             size: "small",
             disabled: props.disabled,
+            title: "只恢复活动参数，保留台词与偷看角度",
             onClick: reset
           }, {
-            default: _withCtx$1(() => [..._cache[5] || (_cache[5] = [
+            default: _withCtx$1(() => [..._cache[8] || (_cache[8] = [
               _createTextVNode$1("恢复默认", -1)
             ])]),
             _: 1
@@ -1502,7 +1542,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-d8af671a"]]);
+const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-c74d0fde"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -1985,10 +2025,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     key: 0,
                     modelValue: _unref(draft),
                     "onUpdate:modelValue": _cache[5] || (_cache[5] = ($event) => _isRef(draft) ? draft.value = $event : null),
+                    "pet-key": currentPet.value.key,
                     "live-preview": true,
                     disabled: blocked.value,
                     "preview-only": true
-                  }, null, 8, ["modelValue", "disabled"])) : (_openBlock(), _createElementBlock("p", _hoisted_16, " 此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。 "))
+                  }, null, 8, ["modelValue", "pet-key", "disabled"])) : (_openBlock(), _createElementBlock("p", _hoisted_16, " 此 Pet 显示在助手入口，位置与拖拽由 MP 控制。可在预览区切换动作，在 MP 设置中选择使用。 "))
                 ]),
                 _createElementVNode("section", _hoisted_17, [
                   _cache[14] || (_cache[14] = _createElementVNode("h2", { class: "ap-section-title" }, "在 MP 中使用", -1)),

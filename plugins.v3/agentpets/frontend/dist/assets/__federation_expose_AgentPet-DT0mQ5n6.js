@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { c as actionDuration, M as MAX_ACTION_CYCLE_MS, d as builtinDefaultCalibration, u as useStartupGreeting, e as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, h as phasePose, i as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, j as walkFrame } from './playback-Ct5mtRW-.js';
 import { r as resolveAction, B as BUILTIN_PACKS, s as stageAction, p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import { p as pickFreeTarget, e as pickWalkTarget, i as isBlocked, f as floorLine, g as standable, h as coversAny, D as DEFAULT_SETTINGS, j as effectiveScale, k as peekHome, l as peekLayout, c as normalizePeekAngles, r as readViewport, m as freeBounds, o as clamp, S as SETTINGS_EVENT, q as loadSettings, n as normalizeSettings, t as ratioToX, u as avoidPanel, v as groundTop, x as xBounds, w as sameRect, y as checkSupport, z as pickClearX, A as surfaceXBounds, B as blockedSpan, C as nearestEdge, E as hopVelocity, F as xToRatio, G as isPeekEdge, H as intersectionArea, I as peekPanelShift, J as computeLanding, K as dropPeekEdge, P as PEEK_TILT_SECONDS, L as PEEK_TUCK, M as PEEK_RISE_SECONDS } from './settings-CRB55Tpw.js';
+import { p as pickFreeTarget, f as pickWalkTarget, i as isBlocked, g as floorLine, h as standable, j as coversAny, d as defaultDialogue, D as DIALOGUE_INTERVAL_MS, A as AUTONOMOUS_DIALOGUE_INTERVAL_MS, k as DIALOGUE_LINES, l as DIALOGUE_DURATION_MS, m as DEFAULT_SETTINGS, o as effectiveScale, q as peekHome, r as peekLayout, c as normalizePeekAngles, t as readViewport, u as freeBounds, v as clamp, S as SETTINGS_EVENT, n as normalizeSettings, w as ratioToX, x as avoidPanel, y as groundTop, z as xBounds, B as sameRect, C as checkSupport, E as pickClearX, F as surfaceXBounds, G as blockedSpan, H as nearestEdge, I as hopVelocity, J as xToRatio, e as sameAppearance, K as loadSettings, L as isPeekEdge, M as intersectionArea, N as peekPanelShift, O as computeLanding, P as dropPeekEdge, Q as PEEK_TILT_SECONDS, R as PEEK_TUCK, T as PEEK_RISE_SECONDS } from './settings-D97uobFu.js';
 
 class PausableTimers {
   paused = false;
@@ -651,25 +651,77 @@ class LineSpeaker {
   last = /* @__PURE__ */ new Map();
   pet;
   random;
-  /** `pet` 每次说话时读取，返回 null 表示当前不该说（预览、非小映等）。 */
-  constructor(pet, random = Math.random) {
+  context;
+  contextKey = "";
+  recent = [];
+  nextLineAt = 0;
+  nextAutonomousAt = 0;
+  sending = false;
+  /** `pet` 每次说话时读取，返回 null 表示当前不该说（预览、工作中等）。 */
+  constructor(pet, random = Math.random, context) {
     this.pet = pet;
     this.random = random;
+    this.context = context;
   }
-  say(scene) {
-    return this.speak(scene, LINES[scene]);
+  get speaking() {
+    return this.sending;
+  }
+  reset() {
+    this.last.clear();
+    this.recent = [];
+    this.nextLineAt = 0;
+    this.nextAutonomousAt = 0;
+  }
+  say(scene, autonomous = false) {
+    return this.request(scene, Date.now(), autonomous || scene === "hop");
   }
   greet(now = /* @__PURE__ */ new Date()) {
-    return this.speak("greeting", greetingLines(now));
+    return this.request("greeting", now.getTime(), false);
   }
-  speak(scene, pool) {
+  request(scene, now, autonomous) {
     const pet = this.pet();
+    if (typeof pet?.say !== "function" || this.sending) return false;
+    const context = this.context?.();
+    const signature = JSON.stringify(context);
+    if (signature !== this.contextKey) {
+      this.reset();
+      this.contextKey = signature;
+    }
+    const legacy = !context || context.key === "ying" && !context.dialogue;
+    if (legacy) {
+      if (autonomous || scene === "hop") return false;
+      return this.speak(scene, scene === "greeting" ? greetingLines(new Date(now)) : LINES[scene], pet);
+    }
+    const settings = context.dialogue ?? defaultDialogue(context.key);
+    if (settings.mode === "off" || autonomous && settings.mode !== "occasional") return false;
+    if (now < this.nextLineAt || autonomous && now < this.nextAutonomousAt) return false;
+    if (autonomous && this.random() >= 0.25) return false;
+    this.nextLineAt = now + DIALOGUE_INTERVAL_MS;
+    if (autonomous) this.nextAutonomousAt = now + AUTONOMOUS_DIALOGUE_INTERVAL_MS;
+    const pool = settings.voice === "default" && context.key === "ying" && scene !== "hop" ? scene === "greeting" ? greetingLines(new Date(now)) : LINES[scene] : DIALOGUE_LINES[settings.voice === "default" ? "neutral" : settings.voice][scene];
+    this.recent = this.recent.filter((item) => now >= item.at && now - item.at < 12e4).slice(-6);
+    const fresh = pool.filter((line) => !this.recent.some((item) => item.line === line));
+    return this.speak(scene, fresh.length ? fresh : pool, pet, now);
+  }
+  speak(scene, pool, pet, now) {
     if (typeof pet?.say !== "function" || !pool.length) return false;
     const first = this.pick(scene, pool);
-    const result = pet.say(first);
-    if (result.shown) return true;
-    if (result.reason !== "duplicate" || pool.length < 2) return false;
-    return pet.say(this.pick(scene, pool)).shown;
+    this.sending = true;
+    try {
+      const send = (line) => {
+        if (now !== void 0) this.recent = [...this.recent, { line, at: now }].slice(-6);
+        return now === void 0 ? pet.say(line) : pet.say(line, { duration: DIALOGUE_DURATION_MS });
+      };
+      const result = send(first);
+      if (result.shown) return true;
+      if (result.reason !== "duplicate" || pool.length < 2) return false;
+      return send(this.pick(scene, pool)).shown;
+    } catch {
+      console.warn("[AgentPets] role dialogue unavailable");
+      return false;
+    } finally {
+      this.sending = false;
+    }
   }
   pick(scene, pool) {
     const previous = this.last.get(scene);
@@ -740,6 +792,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const ownFrames = !useSlots().default;
     const rootEl = ref(null);
     const settings = ref({ ...DEFAULT_SETTINGS });
+    let settingsScope = "";
     const imageAspect = ref(198 / 240);
     const ownCalibration = ref(builtinDefaultCalibration("ying"));
     const effectiveCalibration = computed(() => parseCalibration(props.calibrationOverride ?? ownCalibration.value));
@@ -810,6 +863,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let hopVx = 0;
     let hopTargetX = null;
     let activityHop = false;
+    let pendingHopLine = null;
     let fixedPosition = null;
     let lastSaved = "";
     let lastSaveAt = 0;
@@ -830,7 +884,11 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let press = null;
     const timers = new PausableTimers();
     const interactionMemory = new InteractionMemory();
-    const lines = new LineSpeaker(() => ownFrames && !props.previewRoot ? props.pet : null);
+    const lines = new LineSpeaker(
+      () => !disposed && ready.value && !props.previewRoot && (!!props.settingsOverride || settingsScope === interactionKey()) && (ownFrames || props.artworkReady !== false) && available.value && visible() && motionAllowed() && hostAllowsIdleBehavior() ? props.pet : null,
+      () => Math.random(),
+      () => ({ scope: interactionKey(), key: props.pet?.key || "ying", dialogue: settings.value.dialogue })
+    );
     const activityPolicy = new ActivityPolicy();
     const rhythmPolicy = new RhythmPolicy();
     let activityOrigin = null;
@@ -1372,6 +1430,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       dozing.value = false;
     }
     function cancelActivity() {
+      pendingHopLine = null;
       clearTimer("rhythm");
       rhythmAction.value = null;
       const moving = activityOrigin !== null;
@@ -1588,6 +1647,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           dozing.value = false;
           scheduleRest();
           scheduleBehavior();
+          lines.say("wake", true);
         });
       });
     }
@@ -1828,6 +1888,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       ensureLoop();
     }
     function land(animated) {
+      const hoppedTo = animated && activityHop ? fallTarget?.surface : null;
+      pendingHopLine = hoppedTo ? { el: hoppedTo.el, top: hoppedTo.top } : null;
       activityHop = false;
       velocity = 0;
       rising.value = false;
@@ -1861,6 +1923,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           motion.value = "idle";
           finishActivityStep();
           finishDropReaction();
+          const hopped = pendingHopLine && surface?.el === pendingHopLine.el && Math.abs(surface.top - pendingHopLine.top) <= 1 && validHopLanding(surface, x.value);
+          pendingHopLine = null;
+          if (hopped) lines.say("hop", true);
           scheduleBehavior();
         });
       } else {
@@ -2239,12 +2304,17 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       queueAnchor();
     }
     function applySettings(value) {
+      const next = normalizeSettings(value);
+      settingsRevision++;
+      if (ready.value && next.roam === settings.value.roam && next.movement === settings.value.movement && sameAppearance({ ...next, dialogue: void 0 }, { ...settings.value, dialogue: void 0 })) {
+        settings.value = next;
+        return;
+      }
       cancelActivity();
       clearAttention();
-      settingsRevision++;
       const before = settings.value.roam;
       const wasFixed = fixed();
-      settings.value = normalizeSettings(value);
+      settings.value = next;
       if (ready.value && wasFixed !== fixed() && motion.value !== "drag") {
         saveOnLand = true;
         if (fixed()) pinHere();
@@ -2369,36 +2439,50 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function onHostEvent(event) {
       if (editorPaused) return;
+      if (event.name === "agent.bubble" && lines.speaking) return;
       cancelInteractionFeedback();
       markActivity();
       const next = eventPose(event.name);
       if (next) playTransient(next.pose, next.duration);
       else scheduleBehavior();
     }
+    async function readPetSettings() {
+      let confirmed = false;
+      const value = await loadSettings(props.api, props.pluginId, props.pet?.key || "ying", () => {
+        confirmed = true;
+      });
+      return { value, confirmed };
+    }
     async function refreshPetSettings() {
       if (props.settingsOverride) return;
       const revision = ++settingsRevision;
-      const loaded = await withLoadTimeout(
-        loadSettings(props.api, props.pluginId, props.pet?.key || "ying"),
-        startup.signal
-      ).catch(() => settings.value);
-      if (!disposed && revision === settingsRevision) applySettings(loaded);
+      const scope = interactionKey();
+      const loaded = await withLoadTimeout(readPetSettings(), startup.signal).catch(() => ({
+        value: settings.value,
+        confirmed: false
+      }));
+      if (!disposed && revision === settingsRevision && scope === interactionKey()) {
+        settingsScope = loaded.confirmed ? scope : "";
+        if (loaded.confirmed) applySettings(loaded.value);
+      }
     }
     function onSettingsEvent(event) {
       if (props.pluginId && event.source !== props.pluginId) return;
       const data = event.data;
       if (!data || typeof data !== "object" || data.key && data.key !== (props.pet?.key || "ying")) return;
-      if (!ready.value && props.api && !props.settingsOverride) {
+      if ((!ready.value || settingsScope !== interactionKey()) && props.api && !props.settingsOverride) {
         void refreshPetSettings();
         return;
       }
       applySettings({ ...settings.value, ...data });
     }
     watch([() => props.pluginId, () => props.pet?.key], () => {
+      settingsScope = "";
       cancelPointerGesture(false);
       cancelInteractionFeedback();
       activityPolicy.reset();
       rhythmPolicy.reset();
+      lines.reset();
       markActivity();
       ownCalibration.value = builtinDefaultCalibration("ying");
       void refreshPetSettings();
@@ -2772,15 +2856,19 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         });
       }
       const revision = settingsRevision;
+      const scope = interactionKey();
       const [loaded, stored] = await Promise.all([
         withLoadTimeout(
-          Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId, props.pet?.key || "ying")),
+          Promise.resolve(props.settingsOverride ? { value: props.settingsOverride, confirmed: true } : readPetSettings()),
           startup.signal
-        ).catch(() => DEFAULT_SETTINGS),
+        ).catch(() => ({ value: DEFAULT_SETTINGS, confirmed: false })),
         withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null)
       ]);
       if (disposed) return;
-      if (revision === settingsRevision) settings.value = normalizeSettings(props.settingsOverride ?? loaded);
+      if (revision === settingsRevision && scope === interactionKey()) {
+        settings.value = normalizeSettings(props.settingsOverride ?? loaded.value);
+        settingsScope = loaded.confirmed ? scope : "";
+      }
       refreshBottomFloor();
       restorePosition(stored);
       ready.value = true;
@@ -2906,6 +2994,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b3546346"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-70f8b892"]]);
 
 export { supportsLookDirections as a, builtinRhythm as b, AgentPet as default, supportsRest as s };

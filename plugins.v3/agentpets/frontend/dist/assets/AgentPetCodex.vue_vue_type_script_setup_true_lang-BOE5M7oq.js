@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { s as stageAction } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-DP-pjhDu.js';
-import AgentPet, { b as builtinRhythm, s as supportsRest, a as supportsLookDirections } from './__federation_expose_AgentPet-DQwkuR7z.js';
+import AgentPet, { b as builtinRhythm, s as supportsRest, a as supportsLookDirections } from './__federation_expose_AgentPet-DT0mQ5n6.js';
 import { g as greetingPlayback, s as stageCycleDuration, a as airborneFramePhase, r as resolveStageAction } from './playback-Ct5mtRW-.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
