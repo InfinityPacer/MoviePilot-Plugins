@@ -5,6 +5,7 @@ import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
 import { ActivityPolicy, activityRadius, type ActivityArea, type ActivityPoint } from './activity'
+import { RhythmPolicy, type CharacterRhythm, type RhythmAction } from './rhythm'
 import { ATTENTION_DWELL_MS, ATTENTION_LEAVE_MS, GazeTracker, ProximityTracker, TOUCH_LOOK_MS } from './attention'
 import { PageTapTracker } from './pageTouch'
 import { GREETING_PAUSE_MS, SINGLE_GREETING_MS, useStartupGreeting, type GreetingPlayback } from './greeting'
@@ -104,6 +105,7 @@ const props = withDefaults(
     artworkReady?: boolean
     greetingPlayback?: GreetingPlayback | null
     actionPlayback?: Partial<Record<Pose, number>>
+    rhythm?: CharacterRhythm | null
     /** True only when the loaded sprite has an actual, non-idle sleep sequence. */
     restAvailable?: boolean
     /** 详情页局部预览边界；缺省仍在整个页面活动。 */
@@ -211,6 +213,7 @@ const walkTravel = ref(0)
 const airProgress = ref(0)
 const playbackRound = ref(0)
 const transient = ref<Pose | null>(null)
+const rhythmAction = ref<RhythmAction | null>(null)
 const reaction = ref<'wave' | 'jump' | null>(null)
 const attention = ref<'mouse' | 'touch' | null>(null)
 const gazeAction = ref<string | null>(null)
@@ -240,7 +243,7 @@ let velocity = 0
 let riseVelocity = 0
 let fallStartY = 0
 let playbackSequence = 0
-let playbackOwner: 'reaction' | 'transient' | null = null
+let playbackOwner: 'reaction' | 'transient' | 'rhythm' | null = null
 let playbackFinish: (() => void) | null = null
 let playbackTimeout = 0
 let bounced = false
@@ -297,6 +300,7 @@ const interactionMemory = new InteractionMemory()
 /** 台词只属于小映本人（无插槽）；套用舞台的其他形象各有人设，预览区也不说话。 */
 const lines = new LineSpeaker(() => (ownFrames && !props.previewRoot ? props.pet : null))
 const activityPolicy = new ActivityPolicy()
+const rhythmPolicy = new RhythmPolicy()
 let activityOrigin: ActivityPoint | null = null
 const proximity = new ProximityTracker()
 const gaze = new GazeTracker()
@@ -326,6 +330,7 @@ const greeting = useStartupGreeting({
     motionAllowed() &&
     hostAllowsIdleBehavior() &&
     !transient.value &&
+    !rhythmAction.value &&
     !sustained.value &&
     !press &&
     !activePeekEdge.value &&
@@ -354,6 +359,7 @@ const pose = computed<Pose>(() =>
           transient:
             transient.value ??
             reaction.value ??
+            rhythmAction.value?.pose ??
             (greeting.phase.value === 'wave'
               ? 'wave'
               : greeting.phase.value === 'pause'
@@ -527,10 +533,16 @@ function clearTimer(name: string) {
 }
 
 /** Actual frame completion wins; the bounded timer only recovers an unavailable renderer. */
-function playOnce(name: 'reaction' | 'transient', next: Pose, duration: number, completed: () => void) {
+function playOnce(
+  name: 'reaction' | 'transient' | 'rhythm',
+  next: Pose,
+  duration: number,
+  completed: () => void,
+  cycleOverride?: number | null,
+) {
   clearTimer(name)
   const round = ++playbackSequence
-  const cycle = props.actionPlayback?.[next]
+  const cycle = cycleOverride === undefined ? props.actionPlayback?.[next] : cycleOverride
   const frameDriven = !ownFrames && !!cycle && animationActive.value
   playbackOwner = name
   playbackRound.value = frameDriven ? round : 0
@@ -962,6 +974,7 @@ function calm(): boolean {
     motion.value === 'idle' &&
     !sheltering &&
     !transient.value &&
+    !rhythmAction.value &&
     !reaction.value &&
     !attention.value &&
     !greeting.active.value &&
@@ -980,6 +993,8 @@ function cancelRest() {
 
 /** Cancel only autonomous ownership, not a fall or move required for safety. */
 function cancelActivity() {
+  clearTimer('rhythm')
+  rhythmAction.value = null
   const moving = activityOrigin !== null
   const hopping = activityHop
   activityHop = false
@@ -1017,6 +1032,7 @@ function beginActivity() {
 
 function finishActivityStep() {
   if (!activityOrigin) return
+  if (Math.hypot(x.value - activityOrigin.x, y.value - activityOrigin.y) > 1) rhythmPolicy.walked()
   activityPolicy.arrived(activityOrigin, { x: x.value, y: y.value }, Date.now())
   activityOrigin = null
   if (!activityPolicy.continuing(Date.now())) clearTimer('activity-end')
@@ -1032,6 +1048,7 @@ function activityArea(): ActivityArea {
     free,
     height: charHeight.value,
     mobile: isMobile.value,
+    radiusScale: props.rhythm?.radiusScale,
     span: panelSpan(),
     allowed: point =>
       !intersectionArea(rectAt(point.x, point.y), hostState?.panelRect ?? { x: 0, y: 0, width: 0, height: 0 }) &&
@@ -1050,17 +1067,34 @@ function activityArea(): ActivityArea {
 function scheduleBehavior() {
   clearTimer('behavior')
   if (fixed() || !calm()) return
-  setTimer('behavior', activityPolicy.delay(Date.now(), Math.random), () => {
+  setTimer('behavior', activityPolicy.delay(Date.now(), Math.random, props.rhythm?.interval), () => {
     if (fixed() || !calm()) return
     const local = activityPolicy.continuing(Date.now()) || activityPolicy.excited(Date.now())
+    const rhythm = props.rhythm
+    const action = !local && rhythm ? rhythmPolicy.pick(rhythm, Date.now(), Math.random) : null
+    if (action) {
+      rhythmAction.value = action
+      playOnce(
+        'rhythm',
+        action.pose,
+        action.duration,
+        () => {
+          rhythmAction.value = null
+          scheduleBehavior()
+        },
+        action.cycle,
+      )
+      return
+    }
     const area = activityArea()
     const [min, max] = area.bounds.x
-    if (roam() === 'surfaces' && Math.random() < 0.2 && tryActivityHop(area)) return
-    if (!local && roam() !== 'free' && Math.random() < 0.25) {
+    if (roam() === 'surfaces' && Math.random() < (rhythm?.hopChance ?? 0.2) && tryActivityHop(area)) return
+    if (!local && roam() !== 'free' && Math.random() < (rhythm?.edgeChance ?? 0.25)) {
       const side = Math.random() < 0.5 ? min : max
       if (
         !isBlocked(side, area.span) &&
-        (!area.mobile || Math.abs(side - x.value) <= activityRadius(area.height, true)) &&
+        ((!area.mobile && (area.radiusScale ?? 1) >= 1) ||
+          Math.abs(side - x.value) <= activityRadius(area.height, area.mobile, area.radiusScale)) &&
         area.allowed({ x: side, y: y.value })
       ) {
         if (surface) pendingStepOff = Math.random() < 0.5
@@ -1103,7 +1137,7 @@ function validHopLanding(target: DomSurface, left: number): boolean {
 /** Sample nearby cards only at activity decisions; never scan the page on animation frames. */
 function tryActivityHop(area: ActivityArea): boolean {
   const view = viewport()
-  const radius = activityRadius(charHeight.value, isMobile.value)
+  const radius = activityRadius(charHeight.value, isMobile.value, props.rhythm?.radiusScale)
   const center = x.value + charWidth.value / 2
   const candidates: Array<ActivityPoint & { surface: DomSurface }> = []
   const boxes = surfacesNear(
@@ -2200,12 +2234,22 @@ watch([() => props.pluginId, () => props.pet?.key], () => {
   cancelPointerGesture(false)
   cancelInteractionFeedback()
   activityPolicy.reset()
+  rhythmPolicy.reset()
   markActivity()
   ownCalibration.value = builtinDefaultCalibration('ying')
   void refreshPetSettings()
   void refreshOwnCalibration()
   scheduleBehavior()
 })
+
+watch(
+  () => props.rhythm,
+  () => {
+    cancelActivity()
+    rhythmPolicy.reset()
+    scheduleBehavior()
+  },
+)
 
 watch(
   () => props.artworkReady,
@@ -2625,6 +2669,9 @@ onBeforeUnmount(() => {
   if (timers.has('save')) writePosition()
   disposed = true
   activityPolicy.reset()
+  rhythmPolicy.reset()
+  clearTimer('rhythm')
+  rhythmAction.value = null
   if (press) cancelPointerGesture(false)
   clearAttention()
   clearReaction()
@@ -2650,6 +2697,7 @@ onBeforeUnmount(() => {
     :data-pose="pose"
     :data-motion="motion"
     :data-reaction="reaction ?? undefined"
+    :data-rhythm="rhythmAction?.key"
     :data-greeting="greeting.pending.value ? 'pending' : (greeting.phase.value ?? undefined)"
     :data-greeting-round="greeting.round.value || undefined"
     :data-attention="attention ?? undefined"
@@ -2676,9 +2724,14 @@ onBeforeUnmount(() => {
           <slot
             :pose="pose"
             :gaze-action="gazeAction"
+            :rhythm-action="rhythmAction?.key"
             :greeting-round="greeting.round.value"
             :greeting-complete="greeting.frameComplete"
-            :playback-round="!activePeekEdge && (transient === pose || reaction === pose) ? playbackRound : 0"
+            :playback-round="
+              !activePeekEdge && (transient === pose || reaction === pose || rhythmAction?.pose === pose)
+                ? playbackRound
+                : 0
+            "
             :playback-complete="completePlayback"
             :walk-travel="motion === 'walk' ? walkTravel : undefined"
             :air-progress="motion === 'fall' ? airProgress : undefined"

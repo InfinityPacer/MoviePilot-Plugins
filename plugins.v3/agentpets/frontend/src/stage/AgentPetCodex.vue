@@ -14,6 +14,7 @@ import { supportsLookDirections } from './attention'
 import { greetingPlayback } from './greeting'
 import { supportsRest } from './activity'
 import { airborneFramePhase, resolveStageAction, stageCycleDuration } from './playback'
+import { builtinRhythm } from './rhythm'
 
 /** Codex 精灵图复用小映的运动、设置、交互与气泡锚点。 */
 const props = withDefaults(
@@ -48,6 +49,11 @@ const appearance = ref<{ name: string; aspectRatio: number; eye: PeekEye | null 
 const lookDirections = ref(false)
 const artworkReady = ref(false)
 const loadedPack = shallowRef<SpritePack | null>(null)
+const rhythm = computed(() =>
+  loadedPack.value && !props.previewRoot && !props.nativeAction
+    ? builtinRhythm(loadedPack.value, props.mappingsOverride)
+    : null,
+)
 const startupPlayback = computed(() =>
   loadedPack.value ? greetingPlayback(loadedPack.value, props.mappingsOverride) : null,
 )
@@ -95,6 +101,7 @@ function onLoadState(state: 'loading' | 'ready' | 'error') {
     :greeting-playback="startupPlayback"
     :rest-available="restAvailable"
     :action-playback="actionPlayback"
+    :rhythm="rhythm"
   >
     <template
       #default="{
@@ -104,6 +111,7 @@ function onLoadState(state: 'loading' | 'ready' | 'error') {
         peekEdge,
         peekFromLeft,
         gazeAction,
+        rhythmAction,
         greetingRound,
         greetingComplete,
         walkTravel,
@@ -116,7 +124,7 @@ function onLoadState(state: 'loading' | 'ready' | 'error') {
         v-bind="props"
         :action="spriteAction(pose, facingLeft, !!peekEdge).requested"
         :mapping-key="stageAction(pose, facingLeft, !!peekEdge).key"
-        :native-action="peekEdge ? undefined : (gazeAction ?? props.nativeAction)"
+        :native-action="peekEdge ? undefined : (gazeAction ?? props.nativeAction ?? rhythmAction)"
         :motion-active="motionActive"
         :replay="(props.replay ?? 0) + greetingRound"
         :walk-travel="!peekEdge && !props.nativeAction && pose.startsWith('walk') ? walkTravel : undefined"
