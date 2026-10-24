@@ -96,7 +96,7 @@ class DialoguePreferences(BaseModel):
     """Explicit per-Pet role lines, independent from autonomous movement."""
     model_config = ConfigDict(extra="forbid")
     mode: Literal["off", "interaction", "occasional"]
-    voice: Literal["default", "neutral", "lively", "wry"]
+    voice: Literal["default", "ying", "neutral", "lively", "wry"]
 
 
 class PetAppearance(BaseModel):

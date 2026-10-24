@@ -139,6 +139,27 @@ async function setup(props: { show_switch?: boolean } = {}, builtinKey = 'ying')
 }
 
 describe('Pet workspace', () => {
+  it('saves and refreshes an explicit Ying voice for another Pet with the same four choices', async () => {
+    const { view, api, click, profiles } = await setup()
+    view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    const control = view.findComponent(StageSettings)
+    control.vm.$emit('update:modelValue', {
+      ...control.props('modelValue'),
+      dialogue: { mode: 'interaction', voice: 'ying' },
+    })
+    await flushPromises()
+    await click('保存调整')
+    expect(profiles.kurisu.dialogue).toEqual({ mode: 'interaction', voice: 'ying' })
+    expect(profiles.ying).toBeUndefined()
+    expect(api.post.mock.calls.map(([path]) => path)).toEqual(['plugin/AgentPets/settings/pet'])
+    await view.get('[aria-label="刷新形象列表"]').trigger('click')
+    await flushPromises()
+    const voice = view.findAllComponents({ name: 'VSelect' }).find(select => select.props('label') === '语气')!
+    expect(voice.props('modelValue')).toBe('ying')
+    expect(voice.props('items').map((item: { title: string }) => item.title)).toEqual(['小映', '自然', '软萌', '傲娇'])
+  })
+
   it('keeps mode and voice per Pet across selection, save and refresh without rewriting shared settings', async () => {
     const { view, api, click, profiles, broadcast } = await setup()
     const selector = view.findComponent({ name: 'VSelect' })

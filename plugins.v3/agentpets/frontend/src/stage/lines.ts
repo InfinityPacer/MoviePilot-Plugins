@@ -113,12 +113,14 @@ export class LineSpeaker {
     if (autonomous && this.random() >= 0.25) return false
     this.nextLineAt = now + DIALOGUE_INTERVAL_MS
     if (autonomous) this.nextAutonomousAt = now + AUTONOMOUS_DIALOGUE_INTERVAL_MS
+    const yingVoice = settings.voice === 'ying' || (settings.voice === 'default' && context.key === 'ying')
+    const voice = settings.voice === 'default' || settings.voice === 'ying' ? 'neutral' : settings.voice
     const pool =
-      settings.voice === 'default' && context.key === 'ying' && scene !== 'hop'
+      yingVoice && scene !== 'hop'
         ? scene === 'greeting'
           ? greetingLines(new Date(now))
           : LINES[scene]
-        : DIALOGUE_LINES[settings.voice === 'default' ? 'neutral' : settings.voice][scene]
+        : DIALOGUE_LINES[voice][scene]
     this.recent = this.recent.filter(item => now >= item.at && now - item.at < 120_000).slice(-6)
     const fresh = pool.filter(line => !this.recent.some(item => item.line === line))
     return this.speak(scene, fresh.length ? fresh : pool, pet, now)

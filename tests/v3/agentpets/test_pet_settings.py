@@ -311,6 +311,36 @@ def test_dialogue_round_trip_is_per_pet_and_preserves_all_other_data(key):
     assert "dialogue" not in plugin.api_settings("beta").data
 
 
+@pytest.mark.parametrize("key", ["ying", "alpha", "builtin-kurisu"])
+def test_explicit_ying_voice_round_trips_for_every_stage_pet_without_changing_other_data(key):
+    """统一的小映选项使用独立值，任意 Pet 可选且不改共享配置"""
+    plugin, stored, _ = setup_editor()
+    before = deepcopy(stored)
+    dialogue = {"mode": "interaction", "voice": "ying"}
+    response = plugin.api_save_pet_settings(SavePetSettingsRequest(
+        key=key, scale=1.5, speed=1, dialogue=dialogue,
+        expected={"scale": 1.5, "speed": 1, "dialogue": default_dialogue(key)}))
+    assert response.success
+    assert plugin.api_settings(key).data["dialogue"] == dialogue
+    assert plugin.api_editor().data["pet_settings"][key]["dialogue"] == dialogue
+    assert stored == {**before, "pet_settings": {key: {"scale": 1.5, "speed": 1, "dialogue": dialogue}}}
+    plugin.init_plugin(deepcopy(stored))
+    assert plugin.settings(key)["dialogue"] == dialogue
+
+
+@pytest.mark.parametrize("key", ["ying", "alpha", "builtin-kurisu"])
+def test_legacy_default_voice_is_not_migrated_by_read_or_reload(key):
+    """旧 default 值保留原义，读取与重载不改写成新的小映选项"""
+    dialogue = {"mode": "interaction", "voice": "default"}
+    config = {"scale": 1.5, "speed": 1, "pet_settings": {
+        key: {"scale": 1.5, "speed": 1, "dialogue": dialogue, "future_pet": "keep"}}}
+    plugin, stored, _ = setup_editor(config)
+    assert plugin.api_settings(key).data["dialogue"] == dialogue
+    plugin.init_plugin(deepcopy(stored))
+    assert plugin.api_editor().data["pet_settings"][key]["dialogue"] == dialogue
+    assert stored == config
+
+
 def test_new_dialogue_write_rejects_a_stale_voice_or_mode_without_changing_config():
     """新版台词保存必须核对有效旧值，不能覆盖另一个页面的修改"""
     dialogue = {"mode": "interaction", "voice": "lively"}
@@ -324,9 +354,10 @@ def test_new_dialogue_write_rejects_a_stale_voice_or_mode_without_changing_confi
     assert stored == before
 
 
-def test_old_pet_default_and_shared_clients_preserve_explicit_dialogue():
+@pytest.mark.parametrize("voice", ["wry", "ying"])
+def test_old_pet_default_and_shared_clients_preserve_explicit_dialogue(voice):
     """旧客户端更新大小、默认值或活动方式，不能清空已存台词偏好"""
-    dialogue = {"mode": "off", "voice": "wry"}
+    dialogue = {"mode": "off", "voice": voice}
     plugin, stored, _ = setup_editor({"scale": 1.5, "speed": 1, "pet_settings": {
         "alpha": {"scale": 1.5, "speed": 1, "dialogue": dialogue, "future_pet": "keep"}}})
     assert plugin.api_save_pet_settings(request()).success
