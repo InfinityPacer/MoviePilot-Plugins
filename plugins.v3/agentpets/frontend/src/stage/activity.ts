@@ -29,12 +29,13 @@ export interface ActivityArea {
   free: boolean
   height: number
   mobile: boolean
+  radiusScale?: number
   span: [number, number] | null
   allowed: (point: ActivityPoint) => boolean
 }
 
-export function activityRadius(height: number, mobile: boolean): number {
-  return Math.max(48, Math.min(260, height * (mobile ? 0.9 : 1.8)))
+export function activityRadius(height: number, mobile: boolean, scale = 1): number {
+  return Math.max(48, Math.min(260, height * (mobile ? 0.9 : 1.8) * scale))
 }
 
 const VISIT_LIMIT = 6
@@ -71,9 +72,9 @@ export class ActivityPolicy {
     return this.nearbyOrigin !== null
   }
 
-  delay(now: number, random: () => number): number {
+  delay(now: number, random: () => number, interval: readonly [number, number] = [6000, 14_000]): number {
     const short = this.continuing(now) || (this.excited(now) && this.boostPending)
-    return short ? 800 + random() * 1000 : 6000 + random() * 8000
+    return short ? 800 + random() * 1000 : interval[0] + random() * (interval[1] - interval[0])
   }
 
   begin(now: number, random: () => number) {
@@ -121,7 +122,7 @@ export class ActivityPolicy {
   upwardTarget<T extends ActivityPoint>(area: ActivityArea, candidates: readonly T[], now: number): T | null {
     this.prune(now)
     if (area.free) return null
-    const radius = activityRadius(area.height, area.mobile)
+    const radius = activityRadius(area.height, area.mobile, area.radiusScale)
     const riseLimit = Math.min(area.mobile ? 240 : 360, area.height * (area.mobile ? 1.6 : 2))
     let selected: T | null = null
     let lowestPenalty = Infinity
@@ -150,9 +151,10 @@ export class ActivityPolicy {
 
   target(area: ActivityArea, now: number, random: () => number): ActivityPoint | null {
     this.prune(now)
-    const nearby = area.mobile || this.stepsTaken > 0 || this.excited(now) || random() < 0.8
+    const nearby =
+      area.mobile || (area.radiusScale ?? 1) < 1 || this.stepsTaken > 0 || this.excited(now) || random() < 0.8
     const origin = this.nearbyOrigin ?? area.current
-    const radius = activityRadius(area.height, area.mobile)
+    const radius = activityRadius(area.height, area.mobile, area.radiusScale)
     const minDistance = Math.max(12, Math.min(area.mobile ? 24 : 40, area.height * 0.25))
     const bounds = nearby
       ? {
