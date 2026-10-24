@@ -1,8 +1,8 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { s as stageAction } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import AgentPetSprite, { s as stageCycleDuration, a as airborneFramePhase, r as resolveStageAction } from './__federation_expose_AgentPetSprite-DL9HF0q3.js';
-import AgentPet, { s as supportsRest, a as supportsLookDirections } from './__federation_expose_AgentPet-CMaobsk1.js';
-import { g as greetingPlayback } from './greeting-B7a9rq7Z.js';
+import AgentPetSprite from './__federation_expose_AgentPetSprite-DP-pjhDu.js';
+import AgentPet, { b as builtinRhythm, s as supportsRest, a as supportsLookDirections } from './__federation_expose_AgentPet-DQwkuR7z.js';
+import { g as greetingPlayback, s as stageCycleDuration, a as airborneFramePhase, r as resolveStageAction } from './playback-Ct5mtRW-.js';
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -41,6 +41,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const lookDirections = ref(false);
     const artworkReady = ref(false);
     const loadedPack = shallowRef(null);
+    const rhythm = computed(
+      () => loadedPack.value && !props.previewRoot && !props.nativeAction ? builtinRhythm(loadedPack.value, props.mappingsOverride) : null
+    );
     const startupPlayback = computed(
       () => loadedPack.value ? greetingPlayback(loadedPack.value, props.mappingsOverride) : null
     );
@@ -77,7 +80,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "artwork-ready": artworkReady.value,
         "greeting-playback": startupPlayback.value,
         "rest-available": restAvailable.value,
-        "action-playback": actionPlayback.value
+        "action-playback": actionPlayback.value,
+        rhythm: rhythm.value
       }), {
         default: _withCtx(({
           pose,
@@ -86,6 +90,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           peekEdge,
           peekFromLeft,
           gazeAction,
+          rhythmAction,
           greetingRound,
           greetingComplete,
           walkTravel,
@@ -96,7 +101,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           _createVNode(AgentPetSprite, _mergeProps(props, {
             action: spriteAction(pose, facingLeft, !!peekEdge).requested,
             "mapping-key": _unref(stageAction)(pose, facingLeft, !!peekEdge).key,
-            "native-action": peekEdge ? void 0 : gazeAction ?? props.nativeAction,
+            "native-action": peekEdge ? void 0 : gazeAction ?? props.nativeAction ?? rhythmAction,
             "motion-active": motionActive,
             replay: (props.replay ?? 0) + greetingRound,
             "walk-travel": !peekEdge && !props.nativeAction && pose.startsWith("walk") ? walkTravel : void 0,
@@ -113,7 +118,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           }), null, 16, ["action", "mapping-key", "native-action", "motion-active", "replay", "walk-travel", "frame-phase", "playback-round", "single-cycle", "mirror-x", "strict-preview", "onCycleComplete", "onActionComplete"])
         ]),
         _: 1
-      }, 16, ["character-name", "aspect-ratio", "peek-eye", "look-directions", "artwork-ready", "greeting-playback", "rest-available", "action-playback"]);
+      }, 16, ["character-name", "aspect-ratio", "peek-eye", "look-directions", "artwork-ready", "greeting-playback", "rest-available", "action-playback", "rhythm"]);
     };
   }
 });

@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { b as builtinDefaultCalibration, u as useStartupGreeting, r as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, p as phasePose, e as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, c as walkFrame } from './greeting-B7a9rq7Z.js';
-import { r as resolveAction, p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import { c as actionDuration, M as MAX_ACTION_CYCLE_MS, d as builtinDefaultCalibration, u as useStartupGreeting, e as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, h as phasePose, i as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, j as walkFrame } from './playback-Ct5mtRW-.js';
+import { r as resolveAction, B as BUILTIN_PACKS, s as stageAction, p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import { p as pickFreeTarget, e as pickWalkTarget, i as isBlocked, f as floorLine, g as standable, h as coversAny, D as DEFAULT_SETTINGS, j as effectiveScale, k as peekHome, l as peekLayout, c as normalizePeekAngles, r as readViewport, m as freeBounds, o as clamp, S as SETTINGS_EVENT, q as loadSettings, n as normalizeSettings, t as ratioToX, u as avoidPanel, v as groundTop, x as xBounds, w as sameRect, y as checkSupport, z as pickClearX, A as surfaceXBounds, B as blockedSpan, C as nearestEdge, E as hopVelocity, F as xToRatio, G as isPeekEdge, H as intersectionArea, I as peekPanelShift, J as computeLanding, K as dropPeekEdge, P as PEEK_TILT_SECONDS, L as PEEK_TUCK, M as PEEK_RISE_SECONDS } from './settings-CRB55Tpw.js';
 
 class PausableTimers {
@@ -109,8 +109,8 @@ function supportsRest(pack, mappings) {
   const idle = pack.actions.idle?.frames.map((frame) => pack.frames[frame]) ?? [pack.frames.idle];
   return resolved.key !== "idle" && indices.length > 0 && indices.every((index) => Number.isInteger(index) && index >= 0 && index < pack.grid.cols * pack.grid.rows) && indices.some((index) => !idle.includes(index));
 }
-function activityRadius(height, mobile) {
-  return Math.max(48, Math.min(260, height * (mobile ? 0.9 : 1.8)));
+function activityRadius(height, mobile, scale = 1) {
+  return Math.max(48, Math.min(260, height * (mobile ? 0.9 : 1.8) * scale));
 }
 const VISIT_WINDOW = 45e3;
 const EPISODE_WINDOW = 25e3;
@@ -139,9 +139,9 @@ class ActivityPolicy {
     this.prune(now);
     return this.nearbyOrigin !== null;
   }
-  delay(now, random) {
+  delay(now, random, interval = [6e3, 14e3]) {
     const short = this.continuing(now) || this.excited(now) && this.boostPending;
-    return short ? 800 + random() * 1e3 : 6e3 + random() * 8e3;
+    return short ? 800 + random() * 1e3 : interval[0] + random() * (interval[1] - interval[0]);
   }
   begin(now, random) {
     if (this.continuing(now)) return;
@@ -182,7 +182,7 @@ class ActivityPolicy {
   upwardTarget(area, candidates, now) {
     this.prune(now);
     if (area.free) return null;
-    const radius = activityRadius(area.height, area.mobile);
+    const radius = activityRadius(area.height, area.mobile, area.radiusScale);
     const riseLimit = Math.min(area.mobile ? 240 : 360, area.height * (area.mobile ? 1.6 : 2));
     let selected = null;
     let lowestPenalty = Infinity;
@@ -205,9 +205,9 @@ class ActivityPolicy {
   }
   target(area, now, random) {
     this.prune(now);
-    const nearby = area.mobile || this.stepsTaken > 0 || this.excited(now) || random() < 0.8;
+    const nearby = area.mobile || (area.radiusScale ?? 1) < 1 || this.stepsTaken > 0 || this.excited(now) || random() < 0.8;
     const origin = this.nearbyOrigin ?? area.current;
-    const radius = activityRadius(area.height, area.mobile);
+    const radius = activityRadius(area.height, area.mobile, area.radiusScale);
     const minDistance = Math.max(12, Math.min(area.mobile ? 24 : 40, area.height * 0.25));
     const bounds = nearby ? {
       x: [Math.max(area.bounds.x[0], origin.x - radius), Math.min(area.bounds.x[1], origin.x + radius)],
@@ -250,6 +250,112 @@ class ActivityPolicy {
       }
     }
     return selected;
+  }
+}
+
+const PROFILES = {
+  "builtin-nailong": {
+    interval: [6500, 11500],
+    radiusScale: 1,
+    hopChance: 0.28,
+    edgeChance: 0.15,
+    walkWeight: 8,
+    actions: [{ key: "cheer", pose: "victory", weight: 3, cooldown: 36e3 }]
+  },
+  "builtin-chibiterasu": {
+    interval: [7e3, 12e3],
+    radiusScale: 0.7,
+    hopChance: 0.18,
+    edgeChance: 0.1,
+    walkWeight: 8,
+    actions: [
+      { key: "relaxed-sit", pose: "sit", weight: 2, cooldown: 28e3, hold: 2200 },
+      { key: "lie", pose: "doze", weight: 1, cooldown: 4e4, hold: 2800 }
+    ]
+  },
+  "builtin-kurisu": {
+    interval: [9e3, 15e3],
+    radiusScale: 0.85,
+    hopChance: 0.1,
+    edgeChance: 0.1,
+    walkWeight: 6,
+    actions: [
+      { key: "look-up", pose: "think", weight: 3, cooldown: 3e4 },
+      { key: "relaxed-sit", pose: "sit", weight: 2, cooldown: 28e3, hold: 2400 }
+    ]
+  },
+  ["builtin-kurisu-z256"]: {
+    interval: [8500, 14500],
+    radiusScale: 0.7,
+    hopChance: 0.1,
+    edgeChance: 0.1,
+    walkWeight: 8,
+    actions: [
+      { key: "wave", pose: "wave", weight: 2, cooldown: 36e3 },
+      { key: "scan", pose: "think", weight: 2, cooldown: 28e3 }
+    ]
+  }
+};
+function cells(pack, action) {
+  return action.frames.map((frame) => pack.frames[frame]).filter((cell, index, all) => index === 0 || cell !== all[index - 1]);
+}
+function builtinRhythm(pack, mappings) {
+  const profile = PROFILES[pack.id];
+  if (!profile) return null;
+  const defaults = BUILTIN_PACKS[pack.id]?.action_mappings ?? {};
+  const configured = mappings ?? Object.fromEntries(Object.entries(pack.action_mappings ?? {}).filter(([key, value]) => defaults[key] !== value));
+  const idle = pack.actions.idle ? cells(pack, pack.actions.idle) : [pack.frames.idle];
+  const seen = /* @__PURE__ */ new Set([idle.join(",")]);
+  const actions = [];
+  for (const choice of profile.actions) {
+    const resolved = resolveAction(pack, choice.key, void 0, false, {
+      mappings: configured,
+      mappingKey: stageAction(choice.pose, false).key
+    });
+    const sequence = cells(pack, resolved.action);
+    const signature = sequence.join(",");
+    if (resolved.key === "idle" || seen.has(signature) || !sequence.length || sequence.some((cell) => !Number.isInteger(cell) || cell < 0 || cell >= pack.grid.cols * pack.grid.rows) || sequence.length === 1 && idle.includes(sequence[0]))
+      continue;
+    const cycle = sequence.length > 1 ? actionDuration(resolved.action) : null;
+    const duration = cycle ?? choice.hold ?? 2200;
+    if (!Number.isFinite(duration) || duration <= 0 || duration > MAX_ACTION_CYCLE_MS) continue;
+    seen.add(signature);
+    actions.push({ ...choice, key: resolved.key, cycle, duration });
+  }
+  return { ...profile, id: pack.id, actions };
+}
+class RhythmPolicy {
+  played = /* @__PURE__ */ new Map();
+  last = null;
+  needsWalk = false;
+  pick(profile, now, random) {
+    if (this.needsWalk) return null;
+    let eligible = profile.actions.filter((action) => {
+      const at = this.played.get(action.key);
+      return at === void 0 || now - at >= action.cooldown;
+    });
+    if (eligible.length > 1) eligible = eligible.filter((action) => action.key !== this.last);
+    let sample = random() * (profile.walkWeight + eligible.reduce((sum, action) => sum + action.weight, 0));
+    if (sample < profile.walkWeight) return null;
+    sample -= profile.walkWeight;
+    for (const action of eligible) {
+      if (sample < action.weight) {
+        this.played.set(action.key, now);
+        this.last = action.key;
+        this.needsWalk = true;
+        return action;
+      }
+      sample -= action.weight;
+    }
+    return null;
+  }
+  walked() {
+    this.needsWalk = false;
+  }
+  reset() {
+    this.played.clear();
+    this.last = null;
+    this.needsWalk = false;
   }
 }
 
@@ -578,7 +684,7 @@ const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {unref:_unref,renderSlot:_renderSlot,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
 
-const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-greeting", "data-greeting-round", "data-attention", "data-gaze", "data-walk-travel", "data-air-progress", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
+const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-rhythm", "data-greeting", "data-greeting-round", "data-attention", "data-gaze", "data-walk-travel", "data-air-progress", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
 const _hoisted_2 = ["aria-label"];
 const _hoisted_3 = ["data-frame"];
 const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
@@ -616,6 +722,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     artworkReady: { type: Boolean },
     greetingPlayback: {},
     actionPlayback: {},
+    rhythm: {},
     restAvailable: { type: Boolean },
     previewRoot: { default: null },
     settingsOverride: {},
@@ -663,6 +770,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const airProgress = ref(0);
     const playbackRound = ref(0);
     const transient = ref(null);
+    const rhythmAction = ref(null);
     const reaction = ref(null);
     const attention = ref(null);
     const gazeAction = ref(null);
@@ -724,6 +832,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     const interactionMemory = new InteractionMemory();
     const lines = new LineSpeaker(() => ownFrames && !props.previewRoot ? props.pet : null);
     const activityPolicy = new ActivityPolicy();
+    const rhythmPolicy = new RhythmPolicy();
     let activityOrigin = null;
     const proximity = new ProximityTracker();
     const gaze = new GazeTracker();
@@ -744,7 +853,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => !previewEdge.value && motion.value === "peek" && peekPhase.value === "look" && peekProgress.value === 1
     );
     const greeting = useStartupGreeting({
-      allowed: () => !disposed && !props.previewRoot && available.value && visible() && motionAllowed() && hostAllowsIdleBehavior() && !transient.value && !sustained.value && !press && !activePeekEdge.value && !sheltering,
+      allowed: () => !disposed && !props.previewRoot && available.value && visible() && motionAllowed() && hostAllowsIdleBehavior() && !transient.value && !rhythmAction.value && !sustained.value && !press && !activePeekEdge.value && !sheltering,
       ready: () => ready.value && motion.value === "idle" && (ownFrames ? frameStatus.value.idle === "loaded" && frameStatus.value.wave === "loaded" : props.artworkReady === true),
       stable: () => `${x.value}:${y.value}:${charWidth.value}:${charHeight.value}`,
       playback: () => ownFrames ? { duration: SINGLE_GREETING_MS, pause: GREETING_PAUSE_MS } : props.greetingPlayback ?? null,
@@ -754,7 +863,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       () => activePeekEdge.value ? settledPeek.value && animationActive.value && blinking.value ? "blink" : "alert" : props.previewRoot && props.previewPose ? props.previewPose : resolvePose({
         motion: motion.value,
         walkPhase: walkPhase.value,
-        transient: transient.value ?? reaction.value ?? (greeting.phase.value === "wave" ? "wave" : greeting.phase.value === "pause" ? "idle" : attention.value && !gazeAction.value ? "wave" : null),
+        transient: transient.value ?? reaction.value ?? rhythmAction.value?.pose ?? (greeting.phase.value === "wave" ? "wave" : greeting.phase.value === "pause" ? "idle" : attention.value && !gazeAction.value ? "wave" : null),
         sustained: sustained.value,
         dozing: dozing.value,
         blinking: blinking.value,
@@ -891,10 +1000,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         playbackRound.value = 0;
       }
     }
-    function playOnce(name, next, duration, completed) {
+    function playOnce(name, next, duration, completed, cycleOverride) {
       clearTimer(name);
       const round = ++playbackSequence;
-      const cycle = props.actionPlayback?.[next];
+      const cycle = cycleOverride === void 0 ? props.actionPlayback?.[next] : cycleOverride;
       const frameDriven = !ownFrames && !!cycle && animationActive.value;
       playbackOwner = name;
       playbackRound.value = frameDriven ? round : 0;
@@ -1256,13 +1365,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingShelter = false;
     }
     function calm() {
-      return !disposed && ready.value && available.value && hostAllowsIdleBehavior() && (ownFrames || props.artworkReady !== false) && motion.value === "idle" && !sheltering && !transient.value && !reaction.value && !attention.value && !greeting.active.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
+      return !disposed && ready.value && available.value && hostAllowsIdleBehavior() && (ownFrames || props.artworkReady !== false) && motion.value === "idle" && !sheltering && !transient.value && !rhythmAction.value && !reaction.value && !attention.value && !greeting.active.value && !sustained.value && !press && !dozing.value && motionAllowed() && visible();
     }
     function cancelRest() {
       clearTimer("rest");
       dozing.value = false;
     }
     function cancelActivity() {
+      clearTimer("rhythm");
+      rhythmAction.value = null;
       const moving = activityOrigin !== null;
       const hopping = activityHop;
       activityHop = false;
@@ -1298,6 +1409,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function finishActivityStep() {
       if (!activityOrigin) return;
+      if (Math.hypot(x.value - activityOrigin.x, y.value - activityOrigin.y) > 1) rhythmPolicy.walked();
       activityPolicy.arrived(activityOrigin, { x: x.value, y: y.value }, Date.now());
       activityOrigin = null;
       if (!activityPolicy.continuing(Date.now())) clearTimer("activity-end");
@@ -1312,6 +1424,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         free,
         height: charHeight.value,
         mobile: isMobile.value,
+        radiusScale: props.rhythm?.radiusScale,
         span: panelSpan(),
         allowed: (point) => !intersectionArea(rectAt(point.x, point.y), hostState?.panelRect ?? { x: 0, y: 0, width: 0, height: 0 }) && !coversControlAt(
           rectAt(point.x, point.y),
@@ -1326,15 +1439,31 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function scheduleBehavior() {
       clearTimer("behavior");
       if (fixed() || !calm()) return;
-      setTimer("behavior", activityPolicy.delay(Date.now(), Math.random), () => {
+      setTimer("behavior", activityPolicy.delay(Date.now(), Math.random, props.rhythm?.interval), () => {
         if (fixed() || !calm()) return;
         const local = activityPolicy.continuing(Date.now()) || activityPolicy.excited(Date.now());
+        const rhythm = props.rhythm;
+        const action = !local && rhythm ? rhythmPolicy.pick(rhythm, Date.now(), Math.random) : null;
+        if (action) {
+          rhythmAction.value = action;
+          playOnce(
+            "rhythm",
+            action.pose,
+            action.duration,
+            () => {
+              rhythmAction.value = null;
+              scheduleBehavior();
+            },
+            action.cycle
+          );
+          return;
+        }
         const area = activityArea();
         const [min, max] = area.bounds.x;
-        if (roam() === "surfaces" && Math.random() < 0.2 && tryActivityHop(area)) return;
-        if (!local && roam() !== "free" && Math.random() < 0.25) {
+        if (roam() === "surfaces" && Math.random() < (rhythm?.hopChance ?? 0.2) && tryActivityHop(area)) return;
+        if (!local && roam() !== "free" && Math.random() < (rhythm?.edgeChance ?? 0.25)) {
           const side = Math.random() < 0.5 ? min : max;
-          if (!isBlocked(side, area.span) && (!area.mobile || Math.abs(side - x.value) <= activityRadius(area.height, true)) && area.allowed({ x: side, y: y.value })) {
+          if (!isBlocked(side, area.span) && (!area.mobile && (area.radiusScale ?? 1) >= 1 || Math.abs(side - x.value) <= activityRadius(area.height, area.mobile, area.radiusScale)) && area.allowed({ x: side, y: y.value })) {
             if (surface) pendingStepOff = Math.random() < 0.5;
             else pendingPeek = Math.random() < 0.5 ? "bottom" : side === min ? "left" : "right";
             beginActivity();
@@ -1361,7 +1490,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function tryActivityHop(area) {
       const view = viewport();
-      const radius = activityRadius(charHeight.value, isMobile.value);
+      const radius = activityRadius(charHeight.value, isMobile.value, props.rhythm?.radiusScale);
       const center = x.value + charWidth.value / 2;
       const candidates = [];
       const boxes = surfacesNear(
@@ -2269,12 +2398,21 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       cancelPointerGesture(false);
       cancelInteractionFeedback();
       activityPolicy.reset();
+      rhythmPolicy.reset();
       markActivity();
       ownCalibration.value = builtinDefaultCalibration("ying");
       void refreshPetSettings();
       void refreshOwnCalibration();
       scheduleBehavior();
     });
+    watch(
+      () => props.rhythm,
+      () => {
+        cancelActivity();
+        rhythmPolicy.reset();
+        scheduleBehavior();
+      }
+    );
     watch(
       () => props.artworkReady,
       (loaded) => {
@@ -2657,6 +2795,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (timers.has("save")) writePosition();
       disposed = true;
       activityPolicy.reset();
+      rhythmPolicy.reset();
+      clearTimer("rhythm");
+      rhythmAction.value = null;
       if (press) cancelPointerGesture(false);
       clearAttention();
       clearReaction();
@@ -2680,6 +2821,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "data-pose": pose.value,
         "data-motion": motion.value,
         "data-reaction": reaction.value ?? void 0,
+        "data-rhythm": rhythmAction.value?.key,
         "data-greeting": _unref(greeting).pending.value ? "pending" : _unref(greeting).phase.value ?? void 0,
         "data-greeting-round": _unref(greeting).round.value || void 0,
         "data-attention": attention.value ?? void 0,
@@ -2712,9 +2854,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               _renderSlot(_ctx.$slots, "default", {
                 pose: pose.value,
                 gazeAction: gazeAction.value,
+                rhythmAction: rhythmAction.value?.key,
                 greetingRound: _unref(greeting).round.value,
                 greetingComplete: _unref(greeting).frameComplete,
-                playbackRound: !activePeekEdge.value && (transient.value === pose.value || reaction.value === pose.value) ? playbackRound.value : 0,
+                playbackRound: !activePeekEdge.value && (transient.value === pose.value || reaction.value === pose.value || rhythmAction.value?.pose === pose.value) ? playbackRound.value : 0,
                 playbackComplete: completePlayback,
                 walkTravel: motion.value === "walk" ? walkTravel.value : void 0,
                 airProgress: motion.value === "fall" ? airProgress.value : void 0,
@@ -2763,6 +2906,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b5dcd491"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b3546346"]]);
 
-export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
+export { supportsLookDirections as a, builtinRhythm as b, AgentPet as default, supportsRest as s };

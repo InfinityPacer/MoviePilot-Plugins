@@ -1,4 +1,4 @@
-import { p as parseCalibration, B as BUILTIN_PACKS, r as resolveAction } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import { p as parseCalibration, B as BUILTIN_PACKS, r as resolveAction, s as stageAction } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 
 function withLoadTimeout(operation, signal, timeout = 5e3) {
@@ -268,4 +268,43 @@ function useStartupGreeting(options) {
   return { pending, phase, round, active, arm, frameComplete, cancel: finish };
 }
 
-export { GREETING_PAUSE_MS as G, POSES as P, SINGLE_GREETING_MS as S, YING_PACK as Y, loadImage as a, builtinDefaultCalibration as b, walkFrame as c, eventPose as e, frameUrl as f, greetingPlayback as g, loadBuiltinCalibration as l, phasePose as p, resolvePose as r, useStartupGreeting as u, withLoadTimeout as w };
+const NOMINAL_WALK_HEIGHTS_PER_SECOND = 70 / 120;
+const MAX_ACTION_CYCLE_MS = 6e3;
+function actionDuration(action) {
+  return action.frames.reduce((total, _, index) => total + (action.frame_durations?.[index] ?? action.frame_ms), 0);
+}
+function travelFrame(action, traveledHeights) {
+  const duration = actionDuration(action);
+  if (!Number.isFinite(traveledHeights) || traveledHeights < 0 || !Number.isFinite(duration) || duration <= 0) return 0;
+  let elapsed = traveledHeights / NOMINAL_WALK_HEIGHTS_PER_SECOND * 1e3 % duration;
+  for (let index = 0; index < action.frames.length; index += 1) {
+    const frameMs = action.frame_durations?.[index] ?? action.frame_ms;
+    if (elapsed < frameMs) return index;
+    elapsed -= frameMs;
+  }
+  return 0;
+}
+function phaseFrame(action, phase) {
+  if (!Number.isFinite(phase)) return 0;
+  return Math.min(action.frames.length - 1, Math.floor(Math.max(0, Math.min(1, phase)) * action.frames.length));
+}
+function resolveStageAction(pack, pose, facingLeft = false, peeking = false, mappings) {
+  const stage = stageAction(pose, facingLeft, peeking);
+  const configured = mappings ?? pack.action_mappings ?? {};
+  const physical = pose === "sit" ? "land" : pose === "jump" || pose === "fall" ? pose : void 0;
+  const action = !peeking && !configured[stage.key] && physical && pack.actions[physical] ? physical : stage.action;
+  return { ...resolveAction(pack, action, void 0, false, { mappings, mappingKey: stage.key }), requested: action };
+}
+function stageCycleDuration(pack, pose, mappings) {
+  const resolved = resolveStageAction(pack, pose, false, false, mappings);
+  if (resolved.key === "idle" || resolved.action.frames.length < 2) return void 0;
+  const duration = actionDuration(resolved.action);
+  return Number.isFinite(duration) && duration > 0 && duration <= MAX_ACTION_CYCLE_MS ? duration : void 0;
+}
+function airborneFramePhase(action, pose, progress) {
+  if (pose !== "jump" && pose !== "fall" || progress === void 0 || !Number.isFinite(progress)) return void 0;
+  if (action === "jumping") return (pose === "jump" ? 0 : 0.5) + Math.max(0, Math.min(1, progress)) * 0.5;
+  return action === pose ? progress : void 0;
+}
+
+export { GREETING_PAUSE_MS as G, MAX_ACTION_CYCLE_MS as M, POSES as P, SINGLE_GREETING_MS as S, YING_PACK as Y, airborneFramePhase as a, loadImage as b, actionDuration as c, builtinDefaultCalibration as d, resolvePose as e, frameUrl as f, greetingPlayback as g, phasePose as h, eventPose as i, walkFrame as j, loadBuiltinCalibration as l, phaseFrame as p, resolveStageAction as r, stageCycleDuration as s, travelFrame as t, useStartupGreeting as u, withLoadTimeout as w };

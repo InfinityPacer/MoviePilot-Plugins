@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { L as LANDMARKS, c as calibrationPoint, a as suggestedLandmark, b as sameCalibration, m as moveCalibrationPoint, _ as _export_sfc, s as stageAction, r as resolveAction, d as BUILTIN_PACK_ID, e as BUILTIN_PACK, f as builtinAsset, p as parseCalibration, g as calibrationForAction, B as BUILTIN_PACKS, h as calibrationEye, i as mirrorFace, j as calibrationLayout, k as framePosition, o as onEditorPresence, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import { u as useStartupGreeting, g as greetingPlayback, Y as YING_PACK, f as frameUrl, l as loadBuiltinCalibration, w as withLoadTimeout, a as loadImage } from './greeting-B7a9rq7Z.js';
+import { L as LANDMARKS, c as calibrationPoint, a as suggestedLandmark, b as sameCalibration, m as moveCalibrationPoint, _ as _export_sfc, d as BUILTIN_PACK_ID, e as BUILTIN_PACK, f as builtinAsset, r as resolveAction, p as parseCalibration, g as calibrationForAction, B as BUILTIN_PACKS, h as calibrationEye, i as mirrorFace, j as calibrationLayout, k as framePosition, o as onEditorPresence, P as PACK_UPDATED_EVENT, v as validatePack, w as withCodexStageActions } from './_plugin-vue_export-helper-Cx9XzNqS.js';
+import { u as useStartupGreeting, t as travelFrame, p as phaseFrame, g as greetingPlayback, Y as YING_PACK, f as frameUrl, l as loadBuiltinCalibration, w as withLoadTimeout, b as loadImage } from './playback-Ct5mtRW-.js';
 
 const {defineComponent:_defineComponent$1} = await importShared('vue');
 
@@ -159,45 +159,6 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
 });
 
 const CalibrationMarkers = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-0a765626"]]);
-
-const NOMINAL_WALK_HEIGHTS_PER_SECOND = 70 / 120;
-const MAX_ACTION_CYCLE_MS = 6e3;
-function actionDuration(action) {
-  return action.frames.reduce((total, _, index) => total + (action.frame_durations?.[index] ?? action.frame_ms), 0);
-}
-function travelFrame(action, traveledHeights) {
-  const duration = actionDuration(action);
-  if (!Number.isFinite(traveledHeights) || traveledHeights < 0 || !Number.isFinite(duration) || duration <= 0) return 0;
-  let elapsed = traveledHeights / NOMINAL_WALK_HEIGHTS_PER_SECOND * 1e3 % duration;
-  for (let index = 0; index < action.frames.length; index += 1) {
-    const frameMs = action.frame_durations?.[index] ?? action.frame_ms;
-    if (elapsed < frameMs) return index;
-    elapsed -= frameMs;
-  }
-  return 0;
-}
-function phaseFrame(action, phase) {
-  if (!Number.isFinite(phase)) return 0;
-  return Math.min(action.frames.length - 1, Math.floor(Math.max(0, Math.min(1, phase)) * action.frames.length));
-}
-function resolveStageAction(pack, pose, facingLeft = false, peeking = false, mappings) {
-  const stage = stageAction(pose, facingLeft, peeking);
-  const configured = mappings ?? pack.action_mappings ?? {};
-  const physical = pose === "sit" ? "land" : pose === "jump" || pose === "fall" ? pose : void 0;
-  const action = !peeking && !configured[stage.key] && physical && pack.actions[physical] ? physical : stage.action;
-  return { ...resolveAction(pack, action, void 0, false, { mappings, mappingKey: stage.key }), requested: action };
-}
-function stageCycleDuration(pack, pose, mappings) {
-  const resolved = resolveStageAction(pack, pose, false, false, mappings);
-  if (resolved.key === "idle" || resolved.action.frames.length < 2) return void 0;
-  const duration = actionDuration(resolved.action);
-  return Number.isFinite(duration) && duration > 0 && duration <= MAX_ACTION_CYCLE_MS ? duration : void 0;
-}
-function airborneFramePhase(action, pose, progress) {
-  if (pose !== "jump" && pose !== "fall" || progress === void 0 || !Number.isFinite(progress)) return void 0;
-  if (action === "jumping") return (pose === "jump" ? 0 : 0.5) + Math.max(0, Math.min(1, progress)) * 0.5;
-  return action === pose ? progress : void 0;
-}
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
@@ -553,4 +514,4 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
 
 const AgentPetSprite = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-02495848"]]);
 
-export { airborneFramePhase as a, AgentPetSprite as default, resolveStageAction as r, stageCycleDuration as s };
+export { AgentPetSprite as default };
