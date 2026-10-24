@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { c as actionDuration, M as MAX_ACTION_CYCLE_MS, d as builtinDefaultCalibration, u as useStartupGreeting, e as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, h as phasePose, i as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, j as walkFrame } from './playback-Ct5mtRW-.js';
 import { r as resolveAction, B as BUILTIN_PACKS, s as stageAction, p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import { p as pickFreeTarget, f as pickWalkTarget, i as isBlocked, g as floorLine, h as standable, j as coversAny, d as defaultDialogue, D as DIALOGUE_INTERVAL_MS, A as AUTONOMOUS_DIALOGUE_INTERVAL_MS, k as DIALOGUE_LINES, l as DIALOGUE_DURATION_MS, m as DEFAULT_SETTINGS, o as effectiveScale, q as peekHome, r as peekLayout, c as normalizePeekAngles, t as readViewport, u as freeBounds, v as clamp, S as SETTINGS_EVENT, n as normalizeSettings, w as ratioToX, x as avoidPanel, y as groundTop, z as xBounds, B as sameRect, C as checkSupport, E as pickClearX, F as surfaceXBounds, G as blockedSpan, H as nearestEdge, I as hopVelocity, J as xToRatio, e as sameAppearance, K as loadSettings, L as isPeekEdge, M as intersectionArea, N as peekPanelShift, O as computeLanding, P as dropPeekEdge, Q as PEEK_TILT_SECONDS, R as PEEK_TUCK, T as PEEK_RISE_SECONDS } from './settings-D97uobFu.js';
+import { p as pickFreeTarget, f as pickWalkTarget, i as isBlocked, g as floorLine, h as standable, j as coversAny, d as defaultDialogue, D as DIALOGUE_INTERVAL_MS, A as AUTONOMOUS_DIALOGUE_INTERVAL_MS, k as DIALOGUE_LINES, l as DIALOGUE_DURATION_MS, m as DEFAULT_SETTINGS, o as effectiveScale, q as peekHome, r as peekLayout, c as normalizePeekAngles, t as readViewport, u as freeBounds, v as clamp, S as SETTINGS_EVENT, n as normalizeSettings, w as ratioToX, x as avoidPanel, y as groundTop, z as xBounds, B as sameRect, C as checkSupport, E as pickClearX, F as surfaceXBounds, G as blockedSpan, H as nearestEdge, I as hopVelocity, J as xToRatio, e as sameAppearance, K as loadSettings, L as isPeekEdge, M as intersectionArea, N as peekPanelShift, O as computeLanding, P as dropPeekEdge, Q as PEEK_TILT_SECONDS, R as PEEK_TUCK, T as PEEK_RISE_SECONDS } from './settings-CBRdqLDu.js';
 
 class PausableTimers {
   paused = false;
@@ -698,7 +698,9 @@ class LineSpeaker {
     if (autonomous && this.random() >= 0.25) return false;
     this.nextLineAt = now + DIALOGUE_INTERVAL_MS;
     if (autonomous) this.nextAutonomousAt = now + AUTONOMOUS_DIALOGUE_INTERVAL_MS;
-    const pool = settings.voice === "default" && context.key === "ying" && scene !== "hop" ? scene === "greeting" ? greetingLines(new Date(now)) : LINES[scene] : DIALOGUE_LINES[settings.voice === "default" ? "neutral" : settings.voice][scene];
+    const yingVoice = settings.voice === "ying" || settings.voice === "default" && context.key === "ying";
+    const voice = settings.voice === "default" || settings.voice === "ying" ? "neutral" : settings.voice;
+    const pool = yingVoice && scene !== "hop" ? scene === "greeting" ? greetingLines(new Date(now)) : LINES[scene] : DIALOGUE_LINES[voice][scene];
     this.recent = this.recent.filter((item) => now >= item.at && now - item.at < 12e4).slice(-6);
     const fresh = pool.filter((line) => !this.recent.some((item) => item.line === line));
     return this.speak(scene, fresh.length ? fresh : pool, pet, now);
