@@ -1,11 +1,11 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-DqRh--bK.js';
+import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-BaWvaOrx.js';
 import { L as LANDMARKS, c as calibrationPoint, D as DEFAULT_CALIBRATION, m as moveCalibrationPoint, a as suggestedLandmark, p as parseCalibration, _ as _export_sfc, q as mappingRows, A as ACTION_LABELS, t as nativeChoices, H as HOST_ACTIONS, x as HOST_INTENTS, s as stageAction, u as useEditorPresence, b as sameCalibration, l as sameMappings, P as PACK_UPDATED_EVENT } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import { P as POSES, d as builtinDefaultCalibration } from './playback-Ct5mtRW-.js';
-import { U as DEFAULT_PEEK_ANGLES, V as normalizePeekAngle, c as normalizePeekAngles, W as MIN_SURFACE_WIDTH, X as PEEK_PREVIEW_MAX_ANGLE, m as DEFAULT_SETTINGS, s as sharedOf, e as sameAppearance, a as sameShared, n as normalizeSettings, b as appearanceOf, d as defaultDialogue, Y as SCALE_RANGE, Z as SPEED_RANGE, S as SETTINGS_EVENT } from './settings-D97uobFu.js';
+import { U as DEFAULT_PEEK_ANGLES, V as normalizePeekAngle, c as normalizePeekAngles, W as MIN_SURFACE_WIDTH, X as PEEK_PREVIEW_MAX_ANGLE, m as DEFAULT_SETTINGS, s as sharedOf, e as sameAppearance, a as sameShared, n as normalizeSettings, b as appearanceOf, d as defaultDialogue, Y as SCALE_RANGE, Z as SPEED_RANGE, _ as DIALOGUE_VOICE_OPTIONS, $ as dialogueVoiceForDisplay, S as SETTINGS_EVENT } from './settings-CBRdqLDu.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-DP-pjhDu.js';
-import AgentPet from './__federation_expose_AgentPet-DT0mQ5n6.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-BOE5M7oq.js';
+import AgentPet from './__federation_expose_AgentPet-CbkhgEbI.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-DG5F_bib.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
 
@@ -1505,13 +1505,8 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
             "onUpdate:modelValue": _cache[4] || (_cache[4] = (mode) => update({ dialogue: { ...dialogue.value, mode } }))
           }, null, 8, ["model-value", "disabled"]),
           _createVNode$1(_component_v_select, {
-            "model-value": dialogue.value.voice,
-            items: [
-              { title: props.petKey === "ying" ? "原有小映台词" : "默认自然语气", value: "default" },
-              { title: "自然", value: "neutral" },
-              { title: "活泼", value: "lively" },
-              { title: "轻微嘴硬", value: "wry" }
-            ],
+            "model-value": _unref$1(dialogueVoiceForDisplay)(props.petKey, dialogue.value.voice),
+            items: _unref$1(DIALOGUE_VOICE_OPTIONS),
             label: "语气",
             variant: "outlined",
             density: "compact",
@@ -1542,7 +1537,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-c74d0fde"]]);
+const StageSettings = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-414e446e"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 
