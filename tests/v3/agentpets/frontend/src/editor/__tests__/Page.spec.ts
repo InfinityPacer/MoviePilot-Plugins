@@ -139,6 +139,70 @@ async function setup(props: { show_switch?: boolean } = {}, builtinKey = 'ying')
 }
 
 describe('Pet workspace', () => {
+  it('keeps mode and voice per Pet across selection, save and refresh without rewriting shared settings', async () => {
+    const { view, api, click, profiles, broadcast } = await setup()
+    const selector = view.findComponent({ name: 'VSelect' })
+    const update = async (mode: 'interaction' | 'occasional', voice: 'neutral' | 'wry') => {
+      const control = view.findComponent(StageSettings)
+      control.vm.$emit('update:modelValue', { ...control.props('modelValue'), dialogue: { mode, voice } })
+      await flushPromises()
+    }
+    expect(view.findComponent(StageSettings).props('petKey')).toBe('ying')
+    await update('interaction', 'wry')
+    selector.vm.$emit('update:modelValue', 'kurisu')
+    await flushPromises()
+    expect(view.findComponent(StageSettings).props('petKey')).toBe('kurisu')
+    expect(view.findComponent(StageSettings).props('modelValue').dialogue).toBeUndefined()
+    await update('occasional', 'neutral')
+    selector.vm.$emit('update:modelValue', 'ying')
+    await flushPromises()
+    expect(view.findComponent(StageSettings).props('modelValue').dialogue).toEqual({
+      mode: 'interaction',
+      voice: 'wry',
+    })
+    expect(api.post).not.toHaveBeenCalled()
+    expect(broadcast).not.toHaveBeenCalled()
+    await click('保存调整')
+    expect(api.post.mock.calls.map(([path]) => path)).toEqual([
+      'plugin/AgentPets/settings/pet',
+      'plugin/AgentPets/settings/pet',
+    ])
+    expect(profiles.ying.dialogue).toEqual({ mode: 'interaction', voice: 'wry' })
+    expect(profiles.kurisu.dialogue).toEqual({ mode: 'occasional', voice: 'neutral' })
+    expect(broadcast).toHaveBeenCalledWith(
+      'agentpets.settings',
+      expect.objectContaining({ key: 'ying', dialogue: profiles.ying.dialogue }),
+    )
+    await view.get('[aria-label="刷新形象列表"]').trigger('click')
+    await flushPromises()
+    expect(view.findComponent(StageSettings).props('modelValue').dialogue).toEqual(profiles.ying.dialogue)
+    expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({
+      scale: 1,
+      speed: 1,
+      roam: 'floor',
+      movement: 'auto',
+    })
+  })
+
+  it('never broadcasts a failed or mismatched dialogue save to the real stage', async () => {
+    const { view, api, click, profiles, broadcast } = await setup()
+    const control = view.findComponent(StageSettings)
+    control.vm.$emit('update:modelValue', {
+      ...control.props('modelValue'),
+      dialogue: { mode: 'off', voice: 'neutral' },
+    })
+    await flushPromises()
+    api.post.mockResolvedValue({ success: false, message: '保存失败' })
+    await click('保存调整')
+    expect(broadcast).not.toHaveBeenCalled()
+    expect(profiles.ying).toBeUndefined()
+    api.post.mockResolvedValue({ success: true, data: { key: 'ying', scale: 1, speed: 1 } })
+    await click('保存调整')
+    expect(broadcast).not.toHaveBeenCalled()
+    expect(view.text()).toContain('回读不一致')
+    expect(view.text()).toContain('未保存')
+  })
+
   it('saves angle-only edits, refreshes them, and restores defaults without leaking to another pet', async () => {
     const { view, api, click, profiles, broadcast } = await setup()
     const angles = { bottom: 20, left: 15, right: 35 }

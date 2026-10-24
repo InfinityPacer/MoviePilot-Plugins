@@ -50,6 +50,7 @@ from .requests import (
 from .settings import (
     DEFAULT_PEEK_ANGLES, DEFAULT_SETTINGS, PEEK_ANGLE_RANGE, PEEK_EDGES,
     ROAM_MODES, SCALE_RANGE, SPEED_RANGE,
+    default_dialogue, parse_dialogue,
 )
 
 PLUGIN_DIR = Path(__file__).resolve().parent
@@ -132,7 +133,7 @@ class AgentPets(_PluginBase):
         logger.info(f"助手形象配置加载完成：enabled={self._enabled} settings={self._settings}")
 
     def _load_settings(self, config: dict):
-        """读取默认值与按 Pet ID 保存的大小、速度和角度，不回写旧数据"""
+        """读取默认值与按 Pet ID 保存的独立参数，不回写旧数据"""
         roam = config.get("roam")
         self._settings = {
             "scale": _clamp(config.get("scale"), SCALE_RANGE, DEFAULT_SETTINGS["scale"]),
@@ -148,7 +149,7 @@ class AgentPets(_PluginBase):
 
     @staticmethod
     def _appearance(value: dict, defaults: dict) -> dict[str, Any]:
-        """规整独立大小、速度与角度；默认角度不增加旧配置字段"""
+        """规整独立参数；缺省角度和台词不增加旧配置字段"""
         result = {name: _clamp(value.get(name), bounds, defaults[name])
                   for name, bounds in (("scale", SCALE_RANGE), ("speed", SPEED_RANGE))}
         raw = value.get("peek_angles")
@@ -156,6 +157,9 @@ class AgentPets(_PluginBase):
         angles = {edge: _clamp(raw.get(edge), PEEK_ANGLE_RANGE, DEFAULT_PEEK_ANGLES[edge]) for edge in PEEK_EDGES}
         if any(angle != DEFAULT_PEEK_ANGLES[edge] for edge, angle in angles.items()):
             result["peek_angles"] = angles
+        dialogue = parse_dialogue(value.get("dialogue"))
+        if dialogue is not None:
+            result["dialogue"] = dialogue
         return result
 
     def _is_stage_pet(self, key: str) -> bool:
@@ -302,7 +306,7 @@ class AgentPets(_PluginBase):
                 return schemas.Response(success=False, message="活动设置保存失败，请刷新后核对")
 
     def api_save_pet_settings(self, request: SavePetSettingsRequest):
-        """核对单只 Pet 的旧值后保存独立参数，旧客户端不覆盖角度"""
+        """核对单只 Pet 的旧值后保存独立参数，旧客户端不覆盖角度或台词"""
         with self._settings_lock:
             try:
                 if not self._is_stage_pet(request.key):
@@ -314,15 +318,22 @@ class AgentPets(_PluginBase):
                 existing = overrides.get(request.key)
                 current = self._appearance(existing if isinstance(existing, dict) else {}, defaults)
                 expected = self._appearance(request.expected.model_dump(exclude_none=True), defaults)
-                compared = current if request.peek_angles is not None else {k: v for k, v in current.items() if k != "peek_angles"}
-                if request.peek_angles is None:
-                    expected.pop("peek_angles", None)
+                compared = dict(current)
+                for field in ("peek_angles", "dialogue"):
+                    if getattr(request, field) is None:
+                        compared.pop(field, None)
+                        expected.pop(field, None)
+                if request.dialogue is not None:
+                    compared.setdefault("dialogue", default_dialogue(request.key))
                 if compared != expected:
-                    return schemas.Response(success=False, message="此 Pet 的大小、速度或偷看角度已在其他页面更改，请刷新后核对")
+                    return schemas.Response(success=False, message="此 Pet 的大小、速度、偷看角度或台词已在其他页面更改，请刷新后核对")
                 values = self._appearance(request.model_dump(exclude_none=True), defaults)
-                if request.peek_angles is None and "peek_angles" in current:
-                    values["peek_angles"] = current["peek_angles"]
-                overrides[request.key] = values
+                for field in ("peek_angles", "dialogue"):
+                    if getattr(request, field) is None and field in current:
+                        values[field] = current[field]
+                opaque = {k: v for k, v in existing.items()
+                          if k not in ("scale", "speed", "peek_angles", "dialogue")} if isinstance(existing, dict) else {}
+                overrides[request.key] = {**opaque, **values}
                 failure = self._persist_settings(config, {"pet_settings": overrides})
                 return failure if failure is not None else schemas.Response(
                     success=True, data={"key": request.key, **values})

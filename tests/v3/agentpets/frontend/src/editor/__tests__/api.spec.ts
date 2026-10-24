@@ -82,8 +82,45 @@ describe('Pet editor API', () => {
 
   it('does not send per-pet angles through the legacy shared defaults endpoint', async () => {
     const api = mockHost()
-    await saveSettings(api, 'Clone1', { ...settings, peek_angles: { bottom: 20, left: 35, right: 35 } })
+    await saveSettings(api, 'Clone1', {
+      ...settings,
+      peek_angles: { bottom: 20, left: 35, right: 35 },
+      dialogue: { mode: 'occasional', voice: 'wry' },
+    })
     expect(api.post).toHaveBeenCalledWith('plugin/Clone1/settings', { ...settings, movement: 'auto' })
+  })
+
+  it.each(['ying', 'builtin-kurisu'] as const)(
+    'sends an effective old dialogue value only when writing preferences for %s',
+    async key => {
+      const api = mockHost()
+      const dialogue = { mode: 'interaction' as const, voice: 'wry' as const }
+      const values = { scale: 1, speed: 1, dialogue }
+      api.post.mockResolvedValue({ success: true, data: { key, ...values } })
+      expect(await savePetSettings(api, 'Clone1', key, values, { scale: 1, speed: 1 })).toEqual(values)
+      expect(api.post).toHaveBeenCalledWith('plugin/Clone1/settings/pet', {
+        key,
+        ...values,
+        peek_angles: normalizePeekAngles(undefined),
+        expected: {
+          scale: 1,
+          speed: 1,
+          peek_angles: normalizePeekAngles(undefined),
+          dialogue: { mode: key === 'ying' ? 'interaction' : 'off', voice: key === 'ying' ? 'default' : 'neutral' },
+        },
+      })
+    },
+  )
+
+  it('requires matching dialogue readback and retains explicit old mode and voice', async () => {
+    const api = mockHost()
+    const expected = { scale: 1, speed: 1, dialogue: { mode: 'interaction' as const, voice: 'neutral' as const } }
+    const values = { ...expected, dialogue: { mode: 'off' as const, voice: 'wry' as const } }
+    api.post.mockResolvedValue({ success: true, data: { key: 'alpha', ...expected } })
+    await expect(savePetSettings(api, 'Clone1', 'alpha', values, expected)).rejects.toThrow('回读不一致')
+    expect(api.post.mock.calls[0][1]).toMatchObject({ expected })
+    api.post.mockResolvedValue({ success: true, data: { key: 'alpha', ...values } })
+    expect(await savePetSettings(api, 'Clone1', 'alpha', values, expected)).toEqual(values)
   })
 
   it('uses bundled builtin avatars and keeps uploaded previews intact', () => {

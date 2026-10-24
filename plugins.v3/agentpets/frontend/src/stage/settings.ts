@@ -1,6 +1,7 @@
 import type { PluginApi } from '@/host'
 import type { RoamMode } from '@/stage/geometry'
 import { DEFAULT_PEEK_ANGLES, normalizePeekAngles, PEEK_EDGES, type PeekAngles } from './peek'
+import { parseDialogue, type DialogueSettings } from './dialogue'
 
 /** 角色外观设置；边界与后端 `SCALE_RANGE`、`SPEED_RANGE` 一致。 */
 export interface YingSettings {
@@ -13,17 +14,21 @@ export interface YingSettings {
   roam: RoamMode
   /** 当前 Pet 的偷看角度；底边默认 0 度，左右侧边默认 35 度。 */
   peek_angles?: PeekAngles
+  /** Optional per-Pet role lines; omitted values do not migrate legacy settings. */
+  dialogue?: DialogueSettings
 }
 
-export type PetAppearance = Pick<YingSettings, 'scale' | 'speed' | 'peek_angles'>
+export type PetAppearance = Pick<YingSettings, 'scale' | 'speed' | 'peek_angles' | 'dialogue'>
 export type SharedActivity = Required<Pick<YingSettings, 'roam' | 'movement'>>
 
 export function appearanceOf(value: PetAppearance): PetAppearance {
   const angles = normalizePeekAngles(value.peek_angles)
+  const dialogue = parseDialogue(value.dialogue)
   return {
     scale: value.scale,
     speed: value.speed,
     ...(PEEK_EDGES.some(edge => angles[edge] !== DEFAULT_PEEK_ANGLES[edge]) ? { peek_angles: angles } : {}),
+    ...(dialogue ? { dialogue } : {}),
   }
 }
 
@@ -34,7 +39,12 @@ export function sharedOf(value: YingSettings): SharedActivity {
 export function sameAppearance(a: PetAppearance, b: PetAppearance): boolean {
   const left = normalizePeekAngles(a.peek_angles)
   const right = normalizePeekAngles(b.peek_angles)
-  return a.scale === b.scale && a.speed === b.speed && PEEK_EDGES.every(edge => left[edge] === right[edge])
+  return (
+    a.scale === b.scale &&
+    a.speed === b.speed &&
+    PEEK_EDGES.every(edge => left[edge] === right[edge]) &&
+    JSON.stringify(parseDialogue(a.dialogue)) === JSON.stringify(parseDialogue(b.dialogue))
+  )
 }
 
 export function sameShared(a: SharedActivity, b: SharedActivity): boolean {
@@ -69,6 +79,7 @@ export function normalizeSettings(value: unknown): YingSettings {
       scale: bounded(source.scale, SCALE_RANGE, DEFAULT_SETTINGS.scale),
       speed: bounded(source.speed, SPEED_RANGE, DEFAULT_SETTINGS.speed),
       peek_angles: normalizePeekAngles(source.peek_angles),
+      dialogue: parseDialogue(source.dialogue),
     }),
     roam: ROAM_MODES.includes(source.roam as RoamMode) ? (source.roam as RoamMode) : DEFAULT_SETTINGS.roam,
   }

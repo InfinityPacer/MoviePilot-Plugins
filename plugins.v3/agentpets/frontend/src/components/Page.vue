@@ -388,6 +388,7 @@ async function save() {
               <StageSettings
                 v-if="currentPet.mode === 'stage'"
                 v-model="draft"
+                :pet-key="currentPet.key"
                 :live-preview="true"
                 :disabled="blocked"
                 :preview-only="true"
