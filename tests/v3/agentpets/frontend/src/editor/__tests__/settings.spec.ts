@@ -22,6 +22,40 @@ function snapshot(): EditorSnapshot {
 }
 
 describe('independent appearance drafts', () => {
+  it('keeps omitted dialogue implicit and copies saved preferences into only the matching draft', () => {
+    const selected = ref('alpha')
+    const state = usePetSettings(selected)
+    const initial = snapshot()
+    initial.pet_settings!.alpha.dialogue = { mode: 'occasional', voice: 'lively' }
+    state.receive(initial)
+    state.draft.value = { ...state.draft.value, scale: 0.6, dialogue: { ...state.draft.value.dialogue!, voice: 'wry' } }
+    expect(state.saved.value.alpha.dialogue).toEqual({ mode: 'occasional', voice: 'lively' })
+    selected.value = 'beta'
+    expect(state.draft.value.dialogue).toBeUndefined()
+    selected.value = 'alpha'
+    expect(state.draft.value.dialogue).toEqual({ mode: 'occasional', voice: 'wry' })
+    expect(state.dirtyKeys.value).toEqual(['alpha'])
+    state.restore()
+    expect(state.draft.value.dialogue).toEqual({ mode: 'occasional', voice: 'lively' })
+    expect(state.dirty.value).toBe(false)
+  })
+
+  it('protects a concurrent dialogue-only change and discards preferences when the instance clears', () => {
+    const state = usePetSettings(ref('alpha'))
+    state.receive(snapshot())
+    state.draft.value = { ...state.draft.value, dialogue: { mode: 'interaction', voice: 'neutral' } }
+    const latest = snapshot()
+    latest.pet_settings!.alpha.dialogue = { mode: 'off', voice: 'wry' }
+    state.receive(latest)
+    expect(state.draft.value.dialogue).toEqual({ mode: 'interaction', voice: 'neutral' })
+    expect(state.conflictKeys.value).toEqual(['alpha'])
+    state.restore()
+    expect(state.draft.value.dialogue).toEqual({ mode: 'off', voice: 'wry' })
+    state.clear()
+    expect(state.draft.value.dialogue).toBeUndefined()
+    expect(state.dirty.value).toBe(false)
+  })
+
   it('defaults bottom to zero but retains explicitly saved 35-degree profiles', () => {
     expect(normalizePeekAngles(undefined)).toEqual({ bottom: 0, left: 35, right: 35 })
     const explicit = { scale: 1, speed: 1, peek_angles: { bottom: 35, left: 35, right: 35 } }

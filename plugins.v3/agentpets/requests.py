@@ -92,12 +92,20 @@ class PeekAngles(BaseModel):
     right: float = Field(default=DEFAULT_PEEK_ANGLES["right"], ge=PEEK_ANGLE_RANGE[0], le=PEEK_ANGLE_RANGE[1], allow_inf_nan=False)
 
 
+class DialoguePreferences(BaseModel):
+    """Explicit per-Pet role lines, independent from autonomous movement."""
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["off", "interaction", "occasional"]
+    voice: Literal["default", "neutral", "lively", "wry"]
+
+
 class PetAppearance(BaseModel):
-    """单只舞台形象的大小、速度与角度，不允许夹带共享设置"""
+    """单只舞台形象的大小、速度、角度与可选台词，不允许夹带共享设置"""
     model_config = ConfigDict(extra="forbid")
     scale: float = Field(ge=SCALE_RANGE[0], le=SCALE_RANGE[1], allow_inf_nan=False)
     speed: float = Field(ge=SPEED_RANGE[0], le=SPEED_RANGE[1], allow_inf_nan=False)
     peek_angles: PeekAngles | None = None
+    dialogue: DialoguePreferences | None = None
 
 
 class SavePetSettingsRequest(PetAppearance):
@@ -106,10 +114,12 @@ class SavePetSettingsRequest(PetAppearance):
     expected: PetAppearance
 
     @model_validator(mode="after")
-    def require_angle_baseline(self):
-        """写角度的新客户端必须提供角度旧值；旧客户端只更新大小速度"""
+    def require_optional_baselines(self):
+        """修改角度或台词须提交旧值；缺省字段仍兼容旧客户端"""
         if self.peek_angles is not None and self.expected.peek_angles is None:
             raise ValueError("修改偷看角度必须提供读取时的角度")
+        if self.dialogue is not None and self.expected.dialogue is None:
+            raise ValueError("修改角色台词必须提供读取时的台词设置")
         return self
 
 

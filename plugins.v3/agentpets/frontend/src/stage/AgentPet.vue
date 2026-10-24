@@ -62,7 +62,14 @@ import {
   type PeekEye,
 } from '@/stage/peek'
 import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
-import { DEFAULT_SETTINGS, loadSettings, normalizeSettings, SETTINGS_EVENT, type YingSettings } from '@/stage/settings'
+import {
+  DEFAULT_SETTINGS,
+  loadSettings,
+  normalizeSettings,
+  sameAppearance,
+  SETTINGS_EVENT,
+  type YingSettings,
+} from '@/stage/settings'
 import { normalizePeekAngles } from '@/stage/peek'
 import {
   coversControlAt,
@@ -183,6 +190,7 @@ interface StoredPosition {
 
 const rootEl = ref<HTMLElement | null>(null)
 const settings = ref<YingSettings>({ ...DEFAULT_SETTINGS })
+let settingsScope = ''
 const imageAspect = ref(198 / 240)
 const ownCalibration = ref(builtinDefaultCalibration('ying'))
 const effectiveCalibration = computed(() => parseCalibration(props.calibrationOverride ?? ownCalibration.value))
@@ -258,6 +266,7 @@ let pendingShelter = false
 let hopVx = 0
 let hopTargetX: number | null = null
 let activityHop = false
+let pendingHopLine: { el: Element; top: number } | null = null
 let fixedPosition: { xRatio: number; yRatio: number } | null = null
 let lastSaved = ''
 let lastSaveAt = 0
@@ -297,8 +306,23 @@ let press: {
 
 const timers = new PausableTimers()
 const interactionMemory = new InteractionMemory()
-/** 台词只属于小映本人（无插槽）；套用舞台的其他形象各有人设，预览区也不说话。 */
-const lines = new LineSpeaker(() => (ownFrames && !props.previewRoot ? props.pet : null))
+/** Role lines remain optional, never own movement or borrow a character's personality. */
+const lines = new LineSpeaker(
+  () =>
+    !disposed &&
+    ready.value &&
+    !props.previewRoot &&
+    (!!props.settingsOverride || settingsScope === interactionKey()) &&
+    (ownFrames || props.artworkReady !== false) &&
+    available.value &&
+    visible() &&
+    motionAllowed() &&
+    hostAllowsIdleBehavior()
+      ? props.pet
+      : null,
+  () => Math.random(),
+  () => ({ scope: interactionKey(), key: props.pet?.key || 'ying', dialogue: settings.value.dialogue }),
+)
 const activityPolicy = new ActivityPolicy()
 const rhythmPolicy = new RhythmPolicy()
 let activityOrigin: ActivityPoint | null = null
@@ -993,6 +1017,7 @@ function cancelRest() {
 
 /** Cancel only autonomous ownership, not a fall or move required for safety. */
 function cancelActivity() {
+  pendingHopLine = null
   clearTimer('rhythm')
   rhythmAction.value = null
   const moving = activityOrigin !== null
@@ -1247,6 +1272,7 @@ function scheduleRest() {
       dozing.value = false
       scheduleRest()
       scheduleBehavior()
+      lines.say('wake', true)
     })
   })
 }
@@ -1554,6 +1580,8 @@ function startFall(exclude: Element | null = null, autonomous = false) {
 }
 
 function land(animated: boolean) {
+  const hoppedTo = animated && activityHop ? fallTarget?.surface : null
+  pendingHopLine = hoppedTo ? { el: hoppedTo.el, top: hoppedTo.top } : null
   activityHop = false
   velocity = 0
   rising.value = false
@@ -1587,6 +1615,13 @@ function land(animated: boolean) {
       motion.value = 'idle'
       finishActivityStep()
       finishDropReaction()
+      const hopped =
+        pendingHopLine &&
+        surface?.el === pendingHopLine.el &&
+        Math.abs(surface.top - pendingHopLine.top) <= 1 &&
+        validHopLanding(surface, x.value)
+      pendingHopLine = null
+      if (hopped) lines.say('hop', true)
       scheduleBehavior()
     })
   } else {
@@ -2058,12 +2093,23 @@ function relayout() {
 
 /** 设置变化（含设置页实时预览）；活动范围改变时按新模式重新落位。 */
 function applySettings(value: unknown) {
+  const next = normalizeSettings(value)
+  settingsRevision++
+  // Speech preferences never cancel an ongoing walk, hop or rest.
+  if (
+    ready.value &&
+    next.roam === settings.value.roam &&
+    next.movement === settings.value.movement &&
+    sameAppearance({ ...next, dialogue: undefined }, { ...settings.value, dialogue: undefined })
+  ) {
+    settings.value = next
+    return
+  }
   cancelActivity()
   clearAttention()
-  settingsRevision++
   const before = settings.value.roam
   const wasFixed = fixed()
-  settings.value = normalizeSettings(value)
+  settings.value = next
   if (ready.value && wasFixed !== fixed() && motion.value !== 'drag') {
     saveOnLand = true
     if (fixed()) pinHere()
@@ -2202,6 +2248,7 @@ function syncVisibility() {
 
 function onHostEvent(event: AgentHostEvent) {
   if (editorPaused) return
+  if (event.name === 'agent.bubble' && lines.speaking) return
   cancelInteractionFeedback()
   markActivity()
   const next = eventPose(event.name)
@@ -2212,18 +2259,22 @@ function onHostEvent(event: AgentHostEvent) {
 async function refreshPetSettings() {
   if (props.settingsOverride) return
   const revision = ++settingsRevision
+  const scope = interactionKey()
   const loaded = await withLoadTimeout(
     loadSettings(props.api, props.pluginId, props.pet?.key || 'ying'),
     startup.signal,
   ).catch(() => settings.value)
-  if (!disposed && revision === settingsRevision) applySettings(loaded)
+  if (!disposed && revision === settingsRevision && scope === interactionKey()) {
+    settingsScope = scope
+    applySettings(loaded)
+  }
 }
 
 function onSettingsEvent(event: AgentHostEvent) {
   if (props.pluginId && event.source !== props.pluginId) return
   const data = event.data as (Partial<YingSettings> & { key?: string }) | null
   if (!data || typeof data !== 'object' || (data.key && data.key !== (props.pet?.key || 'ying'))) return
-  if (!ready.value && props.api && !props.settingsOverride) {
+  if ((!ready.value || settingsScope !== interactionKey()) && props.api && !props.settingsOverride) {
     void refreshPetSettings()
     return
   }
@@ -2231,10 +2282,13 @@ function onSettingsEvent(event: AgentHostEvent) {
 }
 
 watch([() => props.pluginId, () => props.pet?.key], () => {
+  // A new Pet must not borrow the previous Pet's lines while its settings load.
+  settingsScope = ''
   cancelPointerGesture(false)
   cancelInteractionFeedback()
   activityPolicy.reset()
   rhythmPolicy.reset()
+  lines.reset()
   markActivity()
   ownCalibration.value = builtinDefaultCalibration('ying')
   void refreshPetSettings()
@@ -2644,6 +2698,7 @@ onMounted(async () => {
   }
 
   const revision = settingsRevision
+  const scope = interactionKey()
   const [loaded, stored] = await Promise.all([
     withLoadTimeout(
       Promise.resolve(props.settingsOverride ?? loadSettings(props.api, props.pluginId, props.pet?.key || 'ying')),
@@ -2652,7 +2707,10 @@ onMounted(async () => {
     withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null),
   ])
   if (disposed) return
-  if (revision === settingsRevision) settings.value = normalizeSettings(props.settingsOverride ?? loaded)
+  if (revision === settingsRevision && scope === interactionKey()) {
+    settings.value = normalizeSettings(props.settingsOverride ?? loaded)
+    settingsScope = scope
+  }
   refreshBottomFloor()
   restorePosition(stored)
   ready.value = true

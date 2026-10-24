@@ -3,6 +3,7 @@ import { sameMappings, type ActionMappings } from '@/sprites/mappings'
 import type { PluginApi } from '@/host'
 import { builtinAvatar } from './avatars'
 import { normalizePeekAngles } from '@/stage/peek'
+import { defaultDialogue } from '@/stage/dialogue'
 import {
   appearanceOf,
   normalizeSettings,
@@ -90,6 +91,7 @@ export function sameSettings(a: YingSettings, b: YingSettings): boolean {
 export async function saveSettings(api: PluginApi, pluginId: string, settings: YingSettings): Promise<YingSettings> {
   const values = normalizeSettings(settings)
   delete values.peek_angles
+  delete values.dialogue
   const saved = unwrap<YingSettings>(await api.post(`plugin/${pluginId}/settings`, values))
   if (!saved || !sameSettings(saved, values)) throw new Error('活动设置回读不一致，请刷新后核对')
   return { ...saved }
@@ -108,7 +110,11 @@ export async function savePetSettings(
       key,
       ...values,
       peek_angles: normalizePeekAngles(values.peek_angles),
-      expected: { ...expected, peek_angles: normalizePeekAngles(expected.peek_angles) },
+      expected: {
+        ...expected,
+        peek_angles: normalizePeekAngles(expected.peek_angles),
+        ...(values.dialogue ? { dialogue: expected.dialogue ?? defaultDialogue(key) } : {}),
+      },
     }),
   )
   if (result?.key !== key || !sameAppearance(result, values)) throw new Error('Pet 活动设置回读不一致，请刷新后核对')

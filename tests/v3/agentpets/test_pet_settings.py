@@ -9,6 +9,7 @@ from app.plugins.agentpets import AgentPets, require_admin
 from app.plugins.agentpets.requests import (
     PeekAngles, SavePetSettingsRequest, SaveSettingsRequest, SaveSharedSettingsRequest,
 )
+from app.plugins.agentpets.settings import default_dialogue
 
 
 def setup_editor(config=None):
@@ -267,4 +268,105 @@ def test_upright_default_preserves_explicit_saved_angles_without_migrating_confi
     plugin, stored, _ = setup_editor(config)
     assert plugin.api_settings("alpha").data["peek_angles"] == angles
     assert "peek_angles" not in plugin.api_settings("beta").data
+    assert stored == config
+
+
+@pytest.mark.parametrize("key", ["ying", "alpha", "builtin-kurisu"])
+def test_dialogue_defaults_remain_implicit_and_do_not_migrate_existing_data(key):
+    """未配置小映沿用旧台词，其他 Pet 静默；读取与重载不回写配置"""
+    plugin, stored, _ = setup_editor()
+    before = deepcopy(stored)
+    assert "dialogue" not in plugin.api_settings(key).data
+    assert "dialogue" not in plugin.api_editor().data["pet_settings"][key]
+    expected = {"mode": "interaction", "voice": "default"} if key == "ying" else {"mode": "off", "voice": "neutral"}
+    assert default_dialogue(key) == expected
+    plugin.init_plugin(deepcopy(stored))
+    assert stored == before
+
+
+@pytest.mark.parametrize("key", ["ying", "alpha", "builtin-kurisu"])
+def test_dialogue_round_trip_is_per_pet_and_preserves_all_other_data(key):
+    """按 Pet 保存语气与话量，保留活动、角度、其他形象和未知配置"""
+    angles = {"bottom": 20, "left": 30, "right": 35}
+    config = {"enabled": True, "scale": 1.5, "speed": 1, "movement": "auto", "future": {"keep": 1},
+              "pet_settings": {key: {"scale": 1.5, "speed": 1, "peek_angles": angles, "future_pet": {"keep": 2}},
+                               "beta": {"scale": 1.2, "speed": 0.8}}}
+    plugin, stored, records = setup_editor(config)
+    before = deepcopy(stored)
+    dialogue = {"mode": "occasional", "voice": "wry"}
+    response = plugin.api_save_pet_settings(SavePetSettingsRequest(
+        key=key, scale=1.5, speed=1, dialogue=dialogue,
+        expected={"scale": 1.5, "speed": 1, "dialogue": default_dialogue(key)}))
+    assert response.success
+    before["pet_settings"][key]["dialogue"] = dialogue
+    assert stored == before
+    plugin.init_plugin(deepcopy(stored))
+    if key in records:
+        records[key]["name"] = "Renamed"
+    result = plugin.api_settings(key).data
+    assert result["dialogue"] == dialogue and result["peek_angles"] == angles
+    result["dialogue"]["voice"] = "neutral"
+    assert plugin.api_settings(key).data["dialogue"] == dialogue
+    assert plugin.api_editor().data["pet_settings"][key]["dialogue"] == dialogue
+    assert "dialogue" not in plugin.api_settings("beta").data
+
+
+def test_new_dialogue_write_rejects_a_stale_voice_or_mode_without_changing_config():
+    """新版台词保存必须核对有效旧值，不能覆盖另一个页面的修改"""
+    dialogue = {"mode": "interaction", "voice": "lively"}
+    plugin, stored, _ = setup_editor({"scale": 1.5, "speed": 1, "pet_settings": {
+        "alpha": {"scale": 1.5, "speed": 1, "dialogue": dialogue}}})
+    before = deepcopy(stored)
+    response = plugin.api_save_pet_settings(SavePetSettingsRequest(
+        key="alpha", scale=1.5, speed=1, dialogue={"mode": "off", "voice": "neutral"},
+        expected={"scale": 1.5, "speed": 1, "dialogue": default_dialogue("alpha")}))
+    assert not response.success and "台词" in response.message
+    assert stored == before
+
+
+def test_old_pet_default_and_shared_clients_preserve_explicit_dialogue():
+    """旧客户端更新大小、默认值或活动方式，不能清空已存台词偏好"""
+    dialogue = {"mode": "off", "voice": "wry"}
+    plugin, stored, _ = setup_editor({"scale": 1.5, "speed": 1, "pet_settings": {
+        "alpha": {"scale": 1.5, "speed": 1, "dialogue": dialogue, "future_pet": "keep"}}})
+    assert plugin.api_save_pet_settings(request()).success
+    assert stored["pet_settings"]["alpha"]["dialogue"] == dialogue
+    assert stored["pet_settings"]["alpha"]["future_pet"] == "keep"
+    assert plugin.api_save_settings(SaveSettingsRequest(scale=1, speed=1, roam="floor")).success
+    assert plugin.api_save_shared_settings(SaveSharedSettingsRequest(
+        roam="free", movement="auto", expected={"roam": "floor", "movement": "auto"})).success
+    assert plugin.settings("alpha")["dialogue"] == dialogue
+    assert "dialogue" not in plugin.settings("beta")
+    assert "dialogue" not in stored
+
+
+@pytest.mark.parametrize("dialogue", [
+    {"mode": "unknown", "voice": "neutral"}, {"mode": "off", "voice": "unknown"},
+    {"mode": "interaction"}, {"voice": "wry"}, [], "off",
+    {"mode": "off", "voice": "wry", "future": True},
+])
+def test_invalid_dialogue_requests_are_rejected_before_writing(dialogue):
+    """台词枚举、字段与结构严格校验，不接受任意人设或附加数据"""
+    with pytest.raises(ValidationError):
+        SavePetSettingsRequest(key="alpha", scale=1, speed=1, dialogue=dialogue,
+                               expected={"scale": 1, "speed": 1, "dialogue": default_dialogue("alpha")})
+
+
+def test_dialogue_writes_require_explicit_old_values_and_cannot_use_global_defaults_endpoint():
+    """新台词请求不可缺失旧值，也不能从旧全局设置入口写入"""
+    dialogue = {"mode": "interaction", "voice": "neutral"}
+    with pytest.raises(ValidationError):
+        SavePetSettingsRequest(key="alpha", scale=1, speed=1, dialogue=dialogue,
+                               expected={"scale": 1, "speed": 1})
+    with pytest.raises(ValidationError):
+        SaveSettingsRequest(scale=1, speed=1, roam="floor", dialogue=dialogue)
+
+
+@pytest.mark.parametrize("raw", [None, [], "off", {"mode": "unknown", "voice": "unknown"},
+                                 {"mode": "interaction", "voice": "unknown"}, {"mode": "interaction"}])
+def test_invalid_saved_dialogue_is_read_conservatively_without_rewriting_user_config(raw):
+    """损坏旧偏好只保守规整为静默，不自动迁移原用户数据"""
+    config = {"scale": 1, "speed": 1, "pet_settings": {"alpha": {"scale": 1, "speed": 1, "dialogue": raw}}}
+    plugin, stored, _ = setup_editor(config)
+    assert plugin.settings("alpha").get("dialogue", default_dialogue("alpha")) == {"mode": "off", "voice": "neutral"}
     assert stored == config

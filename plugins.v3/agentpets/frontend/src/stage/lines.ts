@@ -1,4 +1,13 @@
 import type { AgentPetContext } from '@/host'
+import {
+  AUTONOMOUS_DIALOGUE_INTERVAL_MS,
+  defaultDialogue,
+  DIALOGUE_DURATION_MS,
+  DIALOGUE_INTERVAL_MS,
+  DIALOGUE_LINES,
+  type DialogueScene,
+  type DialogueSettings,
+} from './dialogue'
 
 /**
  * 小映的台词场景。每句都跟在已有动作之后说出，不额外制造主动搭话：
@@ -9,6 +18,11 @@ import type { AgentPetContext } from '@/host'
  * - `wake` 打盹时被指针或点击叫醒
  */
 export type LineScene = 'poke' | 'tease' | 'drop' | 'wake'
+export interface DialogueContext {
+  scope: string
+  key: string
+  dialogue?: DialogueSettings
+}
 
 /** 按小时划分的问候时段，区间为 [开始, 结束)。 */
 const GREETINGS: Array<{ from: number; to: number; lines: string[] }> = [
@@ -42,29 +56,93 @@ export class LineSpeaker {
   private last = new Map<string, string>()
   private readonly pet: () => AgentPetContext | null | undefined
   private readonly random: () => number
+  private readonly context?: () => DialogueContext
+  private contextKey = ''
+  private recent: Array<{ line: string; at: number }> = []
+  private nextLineAt = 0
+  private nextAutonomousAt = 0
+  private sending = false
 
-  /** `pet` 每次说话时读取，返回 null 表示当前不该说（预览、非小映等）。 */
-  constructor(pet: () => AgentPetContext | null | undefined, random: () => number = Math.random) {
+  /** `pet` 每次说话时读取，返回 null 表示当前不该说（预览、工作中等）。 */
+  constructor(
+    pet: () => AgentPetContext | null | undefined,
+    random: () => number = Math.random,
+    context?: () => DialogueContext,
+  ) {
     this.pet = pet
     this.random = random
+    this.context = context
   }
 
-  say(scene: LineScene): boolean {
-    return this.speak(scene, LINES[scene])
+  get speaking(): boolean {
+    return this.sending
+  }
+
+  reset() {
+    this.last.clear()
+    this.recent = []
+    this.nextLineAt = 0
+    this.nextAutonomousAt = 0
+  }
+
+  say(scene: LineScene | 'hop', autonomous = false): boolean {
+    return this.request(scene, Date.now(), autonomous || scene === 'hop')
   }
 
   greet(now = new Date()): boolean {
-    return this.speak('greeting', greetingLines(now))
+    return this.request('greeting', now.getTime(), false)
   }
 
-  private speak(scene: string, pool: string[]): boolean {
+  private request(scene: DialogueScene, now: number, autonomous: boolean): boolean {
     const pet = this.pet()
+    if (typeof pet?.say !== 'function' || this.sending) return false
+    const context = this.context?.()
+    const signature = JSON.stringify(context)
+    if (signature !== this.contextKey) {
+      this.reset()
+      this.contextKey = signature
+    }
+    const legacy = !context || (context.key === 'ying' && !context.dialogue)
+    if (legacy) {
+      if (autonomous || scene === 'hop') return false
+      return this.speak(scene, scene === 'greeting' ? greetingLines(new Date(now)) : LINES[scene], pet)
+    }
+    const settings = context.dialogue ?? defaultDialogue(context.key)
+    if (settings.mode === 'off' || (autonomous && settings.mode !== 'occasional')) return false
+    if (now < this.nextLineAt || (autonomous && now < this.nextAutonomousAt)) return false
+    if (autonomous && this.random() >= 0.25) return false
+    this.nextLineAt = now + DIALOGUE_INTERVAL_MS
+    if (autonomous) this.nextAutonomousAt = now + AUTONOMOUS_DIALOGUE_INTERVAL_MS
+    const pool =
+      settings.voice === 'default' && context.key === 'ying' && scene !== 'hop'
+        ? scene === 'greeting'
+          ? greetingLines(new Date(now))
+          : LINES[scene]
+        : DIALOGUE_LINES[settings.voice === 'default' ? 'neutral' : settings.voice][scene]
+    this.recent = this.recent.filter(item => now >= item.at && now - item.at < 120_000).slice(-6)
+    const fresh = pool.filter(line => !this.recent.some(item => item.line === line))
+    return this.speak(scene, fresh.length ? fresh : pool, pet, now)
+  }
+
+  private speak(scene: string, pool: string[], pet: AgentPetContext, now?: number): boolean {
     if (typeof pet?.say !== 'function' || !pool.length) return false
     const first = this.pick(scene, pool)
-    const result = pet.say(first)
-    if (result.shown) return true
-    if (result.reason !== 'duplicate' || pool.length < 2) return false
-    return pet.say(this.pick(scene, pool)).shown
+    this.sending = true
+    try {
+      const send = (line: string) => {
+        if (now !== undefined) this.recent = [...this.recent, { line, at: now }].slice(-6)
+        return now === undefined ? pet.say!(line) : pet.say!(line, { duration: DIALOGUE_DURATION_MS })
+      }
+      const result = send(first)
+      if (result.shown) return true
+      if (result.reason !== 'duplicate' || pool.length < 2) return false
+      return send(this.pick(scene, pool)).shown
+    } catch {
+      console.warn('[AgentPets] role dialogue unavailable')
+      return false
+    } finally {
+      this.sending = false
+    }
   }
 
   private pick(scene: string, pool: string[]): string {
