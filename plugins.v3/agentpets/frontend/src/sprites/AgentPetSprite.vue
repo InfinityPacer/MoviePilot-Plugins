@@ -16,6 +16,7 @@ import { loadBuiltinCalibration, YING_PACK } from './builtinCalibration'
 import { frameUrl } from '@/stage/poses'
 import { loadImage, withLoadTimeout } from '@/loading'
 import { greetingPlayback, useStartupGreeting } from '@/stage/greeting'
+import { phaseFrame, travelFrame } from '@/stage/playback'
 import { onEditorPresence } from '@/editor/presence'
 
 import { PACK_UPDATED_EVENT, type ActionMappings } from '@/sprites/mappings'
@@ -64,6 +65,10 @@ const props = withDefaults(
     mappingKey?: string
     nativeAction?: string
     replay?: number
+    walkTravel?: number
+    framePhase?: number
+    playbackRound?: number
+    singleCycle?: boolean
   }>(),
   {
     agent: null,
@@ -84,6 +89,7 @@ const emit = defineEmits<{
   'load-state': ['loading' | 'ready' | 'error']
   'pack-ready': [SpritePack]
   'cycle-complete': [replay: number]
+  'action-complete': [round: number]
 }>()
 
 const packKey = props.pet?.key || BUILTIN_PACK_ID
@@ -148,9 +154,17 @@ const resolved = computed(() =>
   ),
 )
 watch([() => props.pluginId, () => props.pet?.key, () => props.pet?.mode], () => greeting.cancel())
+const externallyDriven = computed(() => Number.isFinite(props.walkTravel) || Number.isFinite(props.framePhase))
 const frame = computed(() => {
   const frames = resolved.value.action.frames
-  return frames[Math.min(frameIndex.value, frames.length - 1)] ?? 'idle'
+  const index = !props.motionActive
+    ? 0
+    : Number.isFinite(props.walkTravel)
+      ? travelFrame(resolved.value.action, props.walkTravel!)
+      : Number.isFinite(props.framePhase)
+        ? phaseFrame(resolved.value.action, props.framePhase!)
+        : frameIndex.value
+  return frames[Math.min(index, frames.length - 1)] ?? 'idle'
 })
 const baseCalibration = computed(() => parseCalibration(props.calibrationOverride ?? pack.value.calibration))
 const calibration = computed(() =>
@@ -202,18 +216,21 @@ function stop() {
 function play() {
   stop()
   frameIndex.value = 0
-  if (!props.motionActive || !ready.value || disposed) return
+  if (!props.motionActive || !ready.value || disposed || externallyDriven.value) return
   const { frames, frame_ms: frameMs, frame_durations: durations, loop } = resolved.value.action
   const greetingRound = greeting.round.value
   const replay = props.replay ?? 0
+  const playbackRound = props.playbackRound ?? 0
+  const singleCycle = props.singleCycle || playbackRound > 0
   if (frames.length < 2) return
   const advance = () => {
     const next = frameIndex.value + 1
     if (next >= frames.length) {
       greeting.frameComplete(greetingRound)
       emit('cycle-complete', replay)
+      if (playbackRound) emit('action-complete', playbackRound)
     }
-    if (next >= frames.length && !loop) {
+    if (next >= frames.length && (!loop || singleCycle)) {
       timer = 0
       return
     }
@@ -308,7 +325,18 @@ async function loadPack(key: string) {
 }
 
 watch(
-  () => [resolved.value.key, props.motionActive, ready.value, pack.value, props.replay, greeting.round.value] as const,
+  () =>
+    [
+      resolved.value.key,
+      props.motionActive,
+      ready.value,
+      pack.value,
+      props.replay,
+      greeting.round.value,
+      props.playbackRound,
+      props.singleCycle,
+      externallyDriven.value,
+    ] as const,
   () => play(),
 )
 watch(

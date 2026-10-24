@@ -13,6 +13,7 @@ import AgentPet from './AgentPet.vue'
 import { supportsLookDirections } from './attention'
 import { greetingPlayback } from './greeting'
 import { supportsRest } from './activity'
+import { airborneFramePhase, resolveStageAction, stageCycleDuration } from './playback'
 
 /** Codex 精灵图复用小映的运动、设置、交互与气泡锚点。 */
 const props = withDefaults(
@@ -53,6 +54,22 @@ const startupPlayback = computed(() =>
 const restAvailable = computed(
   () => artworkReady.value && !!loadedPack.value && supportsRest(loadedPack.value, props.mappingsOverride),
 )
+const actionPlayback = computed<Partial<Record<Pose, number>>>(() =>
+  loadedPack.value
+    ? Object.fromEntries(
+        (['wave', 'jump', 'talk', 'victory', 'confused', 'sit'] as const).map(pose => [
+          pose,
+          stageCycleDuration(loadedPack.value!, pose, props.mappingsOverride),
+        ]),
+      )
+    : {},
+)
+
+function spriteAction(pose: Pose, facingLeft: boolean, peeking: boolean) {
+  return loadedPack.value
+    ? resolveStageAction(loadedPack.value, pose, facingLeft, peeking, props.mappingsOverride)
+    : { key: stageAction(pose, facingLeft, peeking).action, requested: stageAction(pose, facingLeft, peeking).action }
+}
 
 function onPackReady(pack: SpritePack) {
   loadedPack.value = pack
@@ -77,23 +94,46 @@ function onLoadState(state: 'loading' | 'ready' | 'error') {
     :artwork-ready="artworkReady"
     :greeting-playback="startupPlayback"
     :rest-available="restAvailable"
+    :action-playback="actionPlayback"
   >
     <template
-      #default="{ pose, facingLeft, motionActive, peekEdge, peekFromLeft, gazeAction, greetingRound, greetingComplete }"
+      #default="{
+        pose,
+        facingLeft,
+        motionActive,
+        peekEdge,
+        peekFromLeft,
+        gazeAction,
+        greetingRound,
+        greetingComplete,
+        walkTravel,
+        airProgress,
+        playbackRound,
+        playbackComplete,
+      }"
     >
       <AgentPetSprite
         v-bind="props"
-        :action="stageAction(pose, facingLeft, !!peekEdge).action"
+        :action="spriteAction(pose, facingLeft, !!peekEdge).requested"
         :mapping-key="stageAction(pose, facingLeft, !!peekEdge).key"
         :native-action="peekEdge ? undefined : (gazeAction ?? props.nativeAction)"
         :motion-active="motionActive"
         :replay="(props.replay ?? 0) + greetingRound"
+        :walk-travel="!peekEdge && !props.nativeAction && pose.startsWith('walk') ? walkTravel : undefined"
+        :frame-phase="
+          !peekEdge && !props.nativeAction
+            ? airborneFramePhase(spriteAction(pose, facingLeft, false).key, pose, airProgress)
+            : undefined
+        "
+        :playback-round="playbackRound"
+        :single-cycle="pose === 'sit' && !!actionPlayback.sit"
         :mirror-x="pet?.key === 'builtin-chibiterasu' && !!peekEdge && peekFromLeft"
         :strict-preview="!!props.previewRoot"
         @load-state="onLoadState"
         @pack-ready="onPackReady"
         @appearance="appearance = $event"
         @cycle-complete="greetingComplete($event - (props.replay ?? 0))"
+        @action-complete="playbackComplete($event)"
       />
     </template>
   </AgentPet>

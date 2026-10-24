@@ -103,6 +103,7 @@ const props = withDefaults(
     lookDirections?: boolean
     artworkReady?: boolean
     greetingPlayback?: GreetingPlayback | null
+    actionPlayback?: Partial<Record<Pose, number>>
     /** True only when the loaded sprite has an actual, non-idle sleep sequence. */
     restAvailable?: boolean
     /** 详情页局部预览边界；缺省仍在整个页面活动。 */
@@ -206,6 +207,9 @@ const ownEye = computed(() => {
 })
 const motion = ref<Motion>('idle')
 const walkPhase = ref(0)
+const walkTravel = ref(0)
+const airProgress = ref(0)
+const playbackRound = ref(0)
 const transient = ref<Pose | null>(null)
 const reaction = ref<'wave' | 'jump' | null>(null)
 const attention = ref<'mouse' | 'touch' | null>(null)
@@ -233,6 +237,12 @@ let lastAnchor: AgentRect | null = null
 let walkTarget: { x: number; y: number | null } | null = null
 let walkDistance = 0
 let velocity = 0
+let riseVelocity = 0
+let fallStartY = 0
+let playbackSequence = 0
+let playbackOwner: 'reaction' | 'transient' | null = null
+let playbackFinish: (() => void) | null = null
+let playbackTimeout = 0
 let bounced = false
 let fallTarget: Landing<DomSurface> | null = null
 let peekTarget = 0
@@ -508,7 +518,39 @@ function setTimer(name: string, delay: number, callback: () => void) {
 
 function clearTimer(name: string) {
   timers.clear(name)
+  if (name === playbackOwner) {
+    playbackSequence += 1
+    playbackOwner = null
+    playbackFinish = null
+    playbackRound.value = 0
+  }
 }
+
+/** Actual frame completion wins; the bounded timer only recovers an unavailable renderer. */
+function playOnce(name: 'reaction' | 'transient', next: Pose, duration: number, completed: () => void) {
+  clearTimer(name)
+  const round = ++playbackSequence
+  const cycle = props.actionPlayback?.[next]
+  const frameDriven = !ownFrames && !!cycle && animationActive.value
+  playbackOwner = name
+  playbackRound.value = frameDriven ? round : 0
+  const finish = () => {
+    if (round !== playbackSequence || playbackOwner !== name) return
+    clearTimer(name)
+    completed()
+  }
+  playbackTimeout = frameDriven ? Math.max(duration, cycle!) + 1000 : duration
+  playbackFinish = frameDriven ? finish : null
+  setTimer(name, playbackTimeout, finish)
+}
+
+function completePlayback(round: number) {
+  if (round === playbackRound.value) playbackFinish?.()
+}
+
+watch(animationActive, active => {
+  if (active && playbackOwner && playbackFinish) setTimer(playbackOwner, playbackTimeout, playbackFinish)
+})
 
 function randomBetween(min: number, max: number): number {
   return min + Math.random() * (max - min)
@@ -541,6 +583,7 @@ function resetMotion() {
   for (const name of ['behavior', 'peek', 'peek-pause', 'landing-peek', 'sit', 'clearance']) clearTimer(name)
   walkTarget = null
   walkPhase.value = 0
+  walkTravel.value = 0
   fallTarget = null
   hopVx = 0
   hopTargetX = null
@@ -731,6 +774,7 @@ function stepWalk(dt: number) {
     return
   }
   walkDistance += Math.hypot(nextX - x.value, nextY - y.value)
+  walkTravel.value += Math.hypot(nextX - x.value, nextY - y.value) / Math.max(1, charHeight.value)
   walkPhase.value = walkFrame(walkDistance, charHeight.value)
   if (Math.abs(nextX - x.value) > 0.01) facingLeft.value = nextX < x.value
   x.value = nextX
@@ -747,6 +791,9 @@ function stepFall(dt: number) {
   y.value = clamp(y.value + velocity * dt, ...range.y)
   x.value = clamp(x.value + hopVx * dt, ...range.x)
   rising.value = velocity < 0
+  airProgress.value = rising.value
+    ? clamp(1 - velocity / Math.min(-1, riseVelocity), 0, 1)
+    : clamp((y.value - fallStartY) / Math.max(1, target - fallStartY), 0, 1)
   // 跳上更高的面时起点在落点下方，上升段不能判定着地。
   if (velocity < 0 || y.value < target) return
   if (activityHop && fallTarget?.surface && !validHopLanding(fallTarget.surface, hopTargetX ?? x.value)) {
@@ -760,6 +807,10 @@ function stepFall(dt: number) {
   if (!bounced && velocity > 500) {
     bounced = true
     velocity = -velocity * 0.22
+    riseVelocity = velocity
+    fallStartY = y.value - (velocity * velocity) / (2 * GRAVITY)
+    rising.value = true
+    airProgress.value = 0
     return
   }
   land(true)
@@ -810,6 +861,7 @@ function startWalk(targetX: number, targetY: number | null = null, autonomous = 
   clearReaction()
   walkTarget = { x: targetX, y: targetY }
   walkDistance = 0
+  walkTravel.value = 0
   facingLeft.value = targetX < x.value
   motion.value = 'walk'
   ensureLoop()
@@ -818,6 +870,7 @@ function startWalk(targetX: number, targetY: number | null = null, autonomous = 
 function finishWalk(arrived = true) {
   walkTarget = null
   walkPhase.value = 0
+  walkTravel.value = 0
   if (motion.value === 'walk') motion.value = 'idle'
   const peek = pendingPeek
   const stepOff = pendingStepOff
@@ -887,6 +940,7 @@ function settle() {
   if (motion.value === 'walk') {
     walkTarget = null
     walkPhase.value = 0
+    walkTravel.value = 0
     motion.value = 'idle'
   }
   if (motion.value === 'peek' && !sheltering) {
@@ -943,6 +997,7 @@ function cancelActivity() {
   if (motion.value === 'walk') {
     walkTarget = null
     walkPhase.value = 0
+    walkTravel.value = 0
     motion.value = 'idle'
   } else if (motion.value === 'fall' && hopping && !disposed) startFall()
   else if (motion.value === 'peek' && !peekPinned && !sheltering && motionAllowed()) endPeek()
@@ -1175,7 +1230,7 @@ function playTransient(next: Pose, duration: number) {
   settle()
   clearTimer('behavior')
   transient.value = next
-  setTimer('transient', duration, () => {
+  playOnce('transient', next, duration, () => {
     transient.value = null
     scheduleBehavior()
   })
@@ -1233,7 +1288,7 @@ function playInteraction(cause: 'poke' | 'drop' = 'poke') {
   activityPolicy.interact({ x: x.value, y: y.value }, Date.now())
   clearTimer('behavior')
   reaction.value = next.pose
-  setTimer('reaction', next.duration, () => {
+  playOnce('reaction', next.pose, next.duration, () => {
     reaction.value = null
     scheduleBehavior()
   })
@@ -1456,6 +1511,10 @@ function startFall(exclude: Element | null = null, autonomous = false) {
   }
   motion.value = 'fall'
   velocity = 0
+  riseVelocity = 0
+  fallStartY = y.value
+  rising.value = false
+  airProgress.value = 0
   bounced = false
   ensureLoop()
 }
@@ -1483,12 +1542,13 @@ function land(animated: boolean) {
     if (!target) surface = null
   }
   if (droppedByUser) manualSurface = surface?.el ?? null
+  const settleDuration = Math.max(
+    pendingDropReaction ? interactionMemory.landingDelay(pendingDropReaction, Date.now()) : SIT_DURATION,
+    props.actionPlayback?.sit ?? 0,
+  )
   if (animated) {
     motion.value = 'sit'
-    const duration = pendingDropReaction
-      ? interactionMemory.landingDelay(pendingDropReaction, Date.now())
-      : SIT_DURATION
-    setTimer('sit', duration, () => {
+    setTimer('sit', settleDuration, () => {
       if (motion.value !== 'sit') return
       motion.value = 'idle'
       finishActivityStep()
@@ -1516,7 +1576,7 @@ function land(animated: boolean) {
   }
   if (!animated) finishDropReaction()
   const delay = animated
-    ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, SIT_DURATION + 50)
+    ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, settleDuration + 50)
     : droppedByUser
       ? DROP_CLEAR_DELAY
       : 0
@@ -1808,6 +1868,10 @@ function startHop(targetX: number, targetY: number, target: DomSurface | null) {
   hopVx = vx
   hopTargetX = targetX
   velocity = vy
+  riseVelocity = vy
+  fallStartY = y.value - (vy * vy) / (2 * GRAVITY)
+  rising.value = vy < 0
+  airProgress.value = 0
   bounced = true
   fallTarget = { y: targetY, surface: target }
   motion.value = 'fall'
@@ -1998,6 +2062,10 @@ function onHostState(state: AgentHostState) {
   }
   const before = hostState
   hostState = state
+  if ((phasePose(state.phase) && before?.phase !== state.phase) || (state.thinking && !before?.thinking)) {
+    clearTimer('transient')
+    transient.value = null
+  }
   if (!hostAllowsIdleBehavior() || !state.available || !state.motionAllowed || !state.pageVisible)
     cancelInteractionFeedback()
   available.value = state.available
@@ -2044,6 +2112,7 @@ function freezeMotion() {
   clearTimer('peek-pause')
   walkTarget = null
   walkPhase.value = 0
+  walkTravel.value = 0
   pendingPeek = null
   pendingStepOff = false
   pendingShelter = false
@@ -2252,6 +2321,7 @@ function onPointerMove(event: PointerEvent) {
     clearTimer('peek')
     clearTimer('peek-pause')
     clearTimer('landing-peek')
+    clearTimer('transient')
     transient.value = null
     peekProgress.value = 0
     peekEdge.value = null
@@ -2584,6 +2654,8 @@ onBeforeUnmount(() => {
     :data-greeting-round="greeting.round.value || undefined"
     :data-attention="attention ?? undefined"
     :data-gaze="gazeAction ?? undefined"
+    :data-walk-travel="motion === 'walk' ? walkTravel : undefined"
+    :data-air-progress="motion === 'fall' ? airProgress : undefined"
     :data-roam="settings.roam"
     :data-movement="settings.movement"
     :data-peek-edge="activePeekEdge ?? undefined"
@@ -2606,6 +2678,10 @@ onBeforeUnmount(() => {
             :gaze-action="gazeAction"
             :greeting-round="greeting.round.value"
             :greeting-complete="greeting.frameComplete"
+            :playback-round="!activePeekEdge && (transient === pose || reaction === pose) ? playbackRound : 0"
+            :playback-complete="completePlayback"
+            :walk-travel="motion === 'walk' ? walkTravel : undefined"
+            :air-progress="motion === 'fall' ? airProgress : undefined"
             :facing-left="facingLeft"
             :motion-active="animationActive && (!activePeekEdge || settledPeek)"
             :peek-edge="activePeekEdge"
