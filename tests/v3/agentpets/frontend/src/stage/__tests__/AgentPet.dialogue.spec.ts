@@ -7,6 +7,7 @@ import { registerEditor } from '@/editor/presence'
 import type { AgentHostState, AgentRect } from '@/host'
 import { builtinDefaultCalibration } from '@/sprites/builtinCalibration'
 import { BUILTIN_PACK, BUILTIN_PACKS } from '@/sprites/schema'
+import AgentPet from '@/stage/AgentPet.vue'
 import AgentPetCodex from '@/stage/AgentPetCodex.vue'
 import { ActivityPolicy } from '@/stage/activity'
 import { DIALOGUE_LINES, type DialogueSettings } from '@/stage/dialogue'
@@ -160,6 +161,38 @@ async function setupHop() {
 }
 
 describe('per-Pet contextual dialogue', () => {
+  it.each(['failure', 'exception'] as const)(
+    'does not infer unconfigured Ying speech from a settings read %s',
+    async reason => {
+      vi.useFakeTimers()
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const host = createMockHost('AgentPets')
+      hosts.push(host)
+      const pet = createMockPet('stage', 'ying')
+      const say = vi.fn().mockReturnValue({ shown: true })
+      Object.assign(pet, { say })
+      const api = {
+        get: vi.fn().mockImplementation(async (path: string) => {
+          if (path.includes('/settings?')) {
+            if (reason === 'exception') throw new Error('settings unavailable')
+            return { success: false }
+          }
+          return { success: true, data: { id: 'ying', calibration: builtinDefaultCalibration('ying') } }
+        }),
+        post: vi.fn(),
+      }
+      const view = render(AgentPet, { props: { agent: host, pet, api, pluginId: 'AgentPets' } })
+      await flushPromises()
+      for (const image of Array.from(view.container.querySelectorAll('img'))) await fireEvent.load(image)
+      await advance(32)
+      await longPress(view.getByRole('button'))
+      expect(view.container.querySelector<HTMLElement>('.agent-pet-ying')!.dataset.reaction).toBe('wave')
+      expect(say).not.toHaveBeenCalled()
+      expect(api.post).not.toHaveBeenCalled()
+    },
+  )
+
   it('lets a user-selected neutral voice answer a built-in long press without an AI call', async () => {
     const pet = await setup()
     await longPress(pet.button)

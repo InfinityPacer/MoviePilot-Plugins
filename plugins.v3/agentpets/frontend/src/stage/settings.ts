@@ -90,11 +90,16 @@ export async function loadSettings(
   api: Pick<PluginApi, 'get'> | null | undefined,
   pluginId: string,
   key = 'ying',
+  confirmed?: () => void,
 ): Promise<YingSettings> {
   if (!api?.get || !pluginId) return { ...DEFAULT_SETTINGS }
   try {
     const response = await api.get<YingSettings>(`plugin/${pluginId}/settings?key=${encodeURIComponent(key)}`)
-    if (response?.success && response.data) return normalizeSettings(response.data)
+    if (response?.success && response.data && typeof response.data === 'object' && !Array.isArray(response.data)) {
+      const value = normalizeSettings(response.data)
+      confirmed?.()
+      return value
+    }
   } catch {
     console.warn('[AgentPets] settings unavailable')
   }

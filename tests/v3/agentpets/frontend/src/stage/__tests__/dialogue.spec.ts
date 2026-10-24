@@ -10,6 +10,7 @@ import {
   parseDialogue,
 } from '@/stage/dialogue'
 import { greetingLines, LineSpeaker, LINES, type DialogueContext } from '@/stage/lines'
+import { loadSettings } from '@/stage/settings'
 
 function setup(random: () => number = () => 0) {
   vi.useFakeTimers()
@@ -31,6 +32,18 @@ function setup(random: () => number = () => 0) {
 }
 
 describe('optional dialogue preferences', () => {
+  it('marks only a verified settings object, never a fallback, as a confirmed preference read', async () => {
+    const confirmed = vi.fn()
+    const api = { get: vi.fn().mockResolvedValue({ success: false }) }
+    await loadSettings(api, 'AgentPets', 'ying', confirmed)
+    await loadSettings(null, 'AgentPets', 'ying', confirmed)
+    expect(confirmed).not.toHaveBeenCalled()
+    const value = { scale: 1, speed: 1, roam: 'floor', dialogue: { mode: 'off', voice: 'neutral' } }
+    api.get.mockResolvedValue({ success: true, data: value })
+    expect(await loadSettings(api, 'AgentPets', 'ying', confirmed)).toMatchObject(value)
+    expect(confirmed).toHaveBeenCalledOnce()
+  })
+
   it('preserves legacy Ying behavior without assigning voices from other character names', () => {
     expect(defaultDialogue('ying')).toEqual({ mode: 'interaction', voice: 'default' })
     for (const key of ['builtin-kurisu', 'builtin-nailong', 'imported-pet', 'renamed-pet'])
