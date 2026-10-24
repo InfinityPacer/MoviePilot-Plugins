@@ -578,7 +578,7 @@ const {defineComponent:_defineComponent} = await importShared('vue');
 
 const {unref:_unref,renderSlot:_renderSlot,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,createElementVNode:_createElementVNode,createCommentVNode:_createCommentVNode,vShow:_vShow,withModifiers:_withModifiers,withDirectives:_withDirectives} = await importShared('vue');
 
-const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-greeting", "data-greeting-round", "data-attention", "data-gaze", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
+const _hoisted_1 = ["data-pose", "data-motion", "data-reaction", "data-greeting", "data-greeting-round", "data-attention", "data-gaze", "data-walk-travel", "data-air-progress", "data-roam", "data-movement", "data-peek-edge", "data-peek-phase"];
 const _hoisted_2 = ["aria-label"];
 const _hoisted_3 = ["data-frame"];
 const _hoisted_4 = ["src", "data-pose", "onLoad", "onError"];
@@ -615,6 +615,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     lookDirections: { type: Boolean },
     artworkReady: { type: Boolean },
     greetingPlayback: {},
+    actionPlayback: {},
     restAvailable: { type: Boolean },
     previewRoot: { default: null },
     settingsOverride: {},
@@ -658,6 +659,9 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     });
     const motion = ref("idle");
     const walkPhase = ref(0);
+    const walkTravel = ref(0);
+    const airProgress = ref(0);
+    const playbackRound = ref(0);
     const transient = ref(null);
     const reaction = ref(null);
     const attention = ref(null);
@@ -683,6 +687,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let walkTarget = null;
     let walkDistance = 0;
     let velocity = 0;
+    let riseVelocity = 0;
+    let fallStartY = 0;
+    let playbackSequence = 0;
+    let playbackOwner = null;
+    let playbackFinish = null;
+    let playbackTimeout = 0;
     let bounced = false;
     let fallTarget = null;
     let peekTarget = 0;
@@ -874,7 +884,35 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function clearTimer(name) {
       timers.clear(name);
+      if (name === playbackOwner) {
+        playbackSequence += 1;
+        playbackOwner = null;
+        playbackFinish = null;
+        playbackRound.value = 0;
+      }
     }
+    function playOnce(name, next, duration, completed) {
+      clearTimer(name);
+      const round = ++playbackSequence;
+      const cycle = props.actionPlayback?.[next];
+      const frameDriven = !ownFrames && !!cycle && animationActive.value;
+      playbackOwner = name;
+      playbackRound.value = frameDriven ? round : 0;
+      const finish = () => {
+        if (round !== playbackSequence || playbackOwner !== name) return;
+        clearTimer(name);
+        completed();
+      };
+      playbackTimeout = frameDriven ? Math.max(duration, cycle) + 1e3 : duration;
+      playbackFinish = frameDriven ? finish : null;
+      setTimer(name, playbackTimeout, finish);
+    }
+    function completePlayback(round) {
+      if (round === playbackRound.value) playbackFinish?.();
+    }
+    watch(animationActive, (active) => {
+      if (active && playbackOwner && playbackFinish) setTimer(playbackOwner, playbackTimeout, playbackFinish);
+    });
     function randomBetween(min, max) {
       return min + Math.random() * (max - min);
     }
@@ -901,6 +939,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       for (const name of ["behavior", "peek", "peek-pause", "landing-peek", "sit", "clearance"]) clearTimer(name);
       walkTarget = null;
       walkPhase.value = 0;
+      walkTravel.value = 0;
       fallTarget = null;
       hopVx = 0;
       hopTargetX = null;
@@ -1057,6 +1096,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         return;
       }
       walkDistance += Math.hypot(nextX - x.value, nextY - y.value);
+      walkTravel.value += Math.hypot(nextX - x.value, nextY - y.value) / Math.max(1, charHeight.value);
       walkPhase.value = walkFrame(walkDistance, charHeight.value);
       if (Math.abs(nextX - x.value) > 0.01) facingLeft.value = nextX < x.value;
       x.value = nextX;
@@ -1072,6 +1112,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       y.value = clamp(y.value + velocity * dt, ...range.y);
       x.value = clamp(x.value + hopVx * dt, ...range.x);
       rising.value = velocity < 0;
+      airProgress.value = rising.value ? clamp(1 - velocity / Math.min(-1, riseVelocity), 0, 1) : clamp((y.value - fallStartY) / Math.max(1, target - fallStartY), 0, 1);
       if (velocity < 0 || y.value < target) return;
       if (activityHop && fallTarget?.surface && !validHopLanding(fallTarget.surface, hopTargetX ?? x.value)) {
         const rejected = fallTarget.surface.el;
@@ -1083,6 +1124,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (!bounced && velocity > 500) {
         bounced = true;
         velocity = -velocity * 0.22;
+        riseVelocity = velocity;
+        fallStartY = y.value - velocity * velocity / (2 * GRAVITY);
+        rising.value = true;
+        airProgress.value = 0;
         return;
       }
       land(true);
@@ -1127,6 +1172,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       clearReaction();
       walkTarget = { x: targetX, y: targetY };
       walkDistance = 0;
+      walkTravel.value = 0;
       facingLeft.value = targetX < x.value;
       motion.value = "walk";
       ensureLoop();
@@ -1134,6 +1180,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function finishWalk(arrived = true) {
       walkTarget = null;
       walkPhase.value = 0;
+      walkTravel.value = 0;
       if (motion.value === "walk") motion.value = "idle";
       const peek = pendingPeek;
       const stepOff = pendingStepOff;
@@ -1198,6 +1245,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (motion.value === "walk") {
         walkTarget = null;
         walkPhase.value = 0;
+        walkTravel.value = 0;
         motion.value = "idle";
       }
       if (motion.value === "peek" && !sheltering) {
@@ -1232,6 +1280,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       if (motion.value === "walk") {
         walkTarget = null;
         walkPhase.value = 0;
+        walkTravel.value = 0;
         motion.value = "idle";
       } else if (motion.value === "fall" && hopping && !disposed) startFall();
       else if (motion.value === "peek" && !peekPinned && !sheltering && motionAllowed()) endPeek();
@@ -1424,7 +1473,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       settle();
       clearTimer("behavior");
       transient.value = next;
-      setTimer("transient", duration, () => {
+      playOnce("transient", next, duration, () => {
         transient.value = null;
         scheduleBehavior();
       });
@@ -1463,7 +1512,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       activityPolicy.interact({ x: x.value, y: y.value }, Date.now());
       clearTimer("behavior");
       reaction.value = next.pose;
-      setTimer("reaction", next.duration, () => {
+      playOnce("reaction", next.pose, next.duration, () => {
         reaction.value = null;
         scheduleBehavior();
       });
@@ -1642,6 +1691,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       motion.value = "fall";
       velocity = 0;
+      riseVelocity = 0;
+      fallStartY = y.value;
+      rising.value = false;
+      airProgress.value = 0;
       bounced = false;
       ensureLoop();
     }
@@ -1668,10 +1721,13 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         if (!target) surface = null;
       }
       if (droppedByUser) manualSurface = surface?.el ?? null;
+      const settleDuration = Math.max(
+        pendingDropReaction ? interactionMemory.landingDelay(pendingDropReaction, Date.now()) : SIT_DURATION,
+        props.actionPlayback?.sit ?? 0
+      );
       if (animated) {
         motion.value = "sit";
-        const duration = pendingDropReaction ? interactionMemory.landingDelay(pendingDropReaction, Date.now()) : SIT_DURATION;
-        setTimer("sit", duration, () => {
+        setTimer("sit", settleDuration, () => {
           if (motion.value !== "sit") return;
           motion.value = "idle";
           finishActivityStep();
@@ -1697,7 +1753,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         return;
       }
       if (!animated) finishDropReaction();
-      const delay = animated ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, SIT_DURATION + 50) : droppedByUser ? DROP_CLEAR_DELAY : 0;
+      const delay = animated ? Math.max(droppedByUser ? DROP_CLEAR_DELAY : 0, settleDuration + 50) : droppedByUser ? DROP_CLEAR_DELAY : 0;
       droppedByUser = false;
       scheduleClearance(delay);
     }
@@ -1923,6 +1979,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       hopVx = vx;
       hopTargetX = targetX;
       velocity = vy;
+      riseVelocity = vy;
+      fallStartY = y.value - vy * vy / (2 * GRAVITY);
+      rising.value = vy < 0;
+      airProgress.value = 0;
       bounced = true;
       fallTarget = { y: targetY, surface: target };
       motion.value = "fall";
@@ -2085,6 +2145,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       const before = hostState;
       hostState = state;
+      if (phasePose(state.phase) && before?.phase !== state.phase || state.thinking && !before?.thinking) {
+        clearTimer("transient");
+        transient.value = null;
+      }
       if (!hostAllowsIdleBehavior() || !state.available || !state.motionAllowed || !state.pageVisible)
         cancelInteractionFeedback();
       available.value = state.available;
@@ -2123,6 +2187,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       clearTimer("peek-pause");
       walkTarget = null;
       walkPhase.value = 0;
+      walkTravel.value = 0;
       pendingPeek = null;
       pendingStepOff = false;
       pendingShelter = false;
@@ -2315,6 +2380,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         clearTimer("peek");
         clearTimer("peek-pause");
         clearTimer("landing-peek");
+        clearTimer("transient");
         transient.value = null;
         peekProgress.value = 0;
         peekEdge.value = null;
@@ -2618,6 +2684,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         "data-greeting-round": _unref(greeting).round.value || void 0,
         "data-attention": attention.value ?? void 0,
         "data-gaze": gazeAction.value ?? void 0,
+        "data-walk-travel": motion.value === "walk" ? walkTravel.value : void 0,
+        "data-air-progress": motion.value === "fall" ? airProgress.value : void 0,
         "data-roam": settings.value.roam,
         "data-movement": settings.value.movement,
         "data-peek-edge": activePeekEdge.value ?? void 0,
@@ -2646,6 +2714,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                 gazeAction: gazeAction.value,
                 greetingRound: _unref(greeting).round.value,
                 greetingComplete: _unref(greeting).frameComplete,
+                playbackRound: !activePeekEdge.value && (transient.value === pose.value || reaction.value === pose.value) ? playbackRound.value : 0,
+                playbackComplete: completePlayback,
+                walkTravel: motion.value === "walk" ? walkTravel.value : void 0,
+                airProgress: motion.value === "fall" ? airProgress.value : void 0,
                 facingLeft: facingLeft.value,
                 motionActive: animationActive.value && (!activePeekEdge.value || settledPeek.value),
                 peekEdge: activePeekEdge.value,
@@ -2691,6 +2763,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-585971cf"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b5dcd491"]]);
 
 export { supportsLookDirections as a, AgentPet as default, supportsRest as s };
