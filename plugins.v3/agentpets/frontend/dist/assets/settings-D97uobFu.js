@@ -360,12 +360,58 @@ function peekLayout(position, size, view, edge, progress, eye, revealing = true,
   };
 }
 
+const DIALOGUE_MODES = ["off", "interaction", "occasional"];
+const DIALOGUE_VOICES = ["default", "neutral", "lively", "wry"];
+const DIALOGUE_INTERVAL_MS = 15e3;
+const AUTONOMOUS_DIALOGUE_INTERVAL_MS = 75e3;
+const DIALOGUE_DURATION_MS = 4e3;
+function defaultDialogue(key) {
+  return { mode: key === "ying" ? "interaction" : "off", voice: key === "ying" ? "default" : "neutral" };
+}
+function parseDialogue(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const source = value;
+  const validVoice = DIALOGUE_VOICES.includes(source.voice);
+  return {
+    mode: DIALOGUE_MODES.includes(source.mode) && validVoice ? source.mode : "off",
+    voice: validVoice ? source.voice : "neutral"
+  };
+}
+const DIALOGUE_LINES = {
+  neutral: {
+    greeting: ["你好，我在这里。", "来了，又见面了。", "今天也请多关照。"],
+    poke: ["在呢，我听见了。", "嗯，找我有事吗？", "收到，慢慢来。"],
+    tease: ["知道啦，不用再提醒。", "我还在这里呢。", "好啦，我在听。"],
+    drop: ["落稳了，换个地方看看。", "这里也不错。", "好了，就在这里。"],
+    wake: ["刚刚歇了一会儿。", "醒了，继续啦。", "嗯，我回来了。"],
+    hop: ["上来了，歇一下。", "站高一点看看。", "这里也能站稳。"]
+  },
+  lively: {
+    greeting: ["来啦，今天也一起玩！", "嘿，又见面啦！", "你好呀，我在这里！"],
+    poke: ["嘿嘿，被你找到啦！", "我在呢，什么事呀？", "收到，精神满满！"],
+    tease: ["好啦好啦，有点痒！", "听见啦，不用连着戳！", "嘿嘿，我还在呢！"],
+    drop: ["到啦，这里不错！", "换个地方，出发！", "稳稳落地啦！"],
+    wake: ["醒啦，继续玩！", "小憩结束，精神回来啦！", "刚刚眯了一下！"],
+    hop: ["跳上来啦！", "这个高度刚刚好！", "稳稳站住啦！"]
+  },
+  wry: {
+    greeting: ["来了？我可没在等你。", "今天也在，顺便而已。", "你好，别闹就行。"],
+    poke: ["知道了，别连着戳。", "我在，不用确认这么多次。", "听见了，有事直说。"],
+    tease: ["再戳也不会变出第二个我。", "好啦，已经收到。", "这点耐心我还是有的。"],
+    drop: ["站稳了，这次还不错。", "行吧，就在这里。", "换好了，轻一点就更好了。"],
+    wake: ["只是歇一下，别想太多。", "醒了，没耽误事。", "休息结束，继续。"],
+    hop: ["上来了，这点高度而已。", "站得住，问题不大。", "换个位置罢了。"]
+  }
+};
+
 function appearanceOf(value) {
   const angles = normalizePeekAngles(value.peek_angles);
+  const dialogue = parseDialogue(value.dialogue);
   return {
     scale: value.scale,
     speed: value.speed,
-    ...PEEK_EDGES.some((edge) => angles[edge] !== DEFAULT_PEEK_ANGLES[edge]) ? { peek_angles: angles } : {}
+    ...PEEK_EDGES.some((edge) => angles[edge] !== DEFAULT_PEEK_ANGLES[edge]) ? { peek_angles: angles } : {},
+    ...dialogue ? { dialogue } : {}
   };
 }
 function sharedOf(value) {
@@ -374,7 +420,7 @@ function sharedOf(value) {
 function sameAppearance(a, b) {
   const left = normalizePeekAngles(a.peek_angles);
   const right = normalizePeekAngles(b.peek_angles);
-  return a.scale === b.scale && a.speed === b.speed && PEEK_EDGES.every((edge) => left[edge] === right[edge]);
+  return a.scale === b.scale && a.speed === b.speed && PEEK_EDGES.every((edge) => left[edge] === right[edge]) && JSON.stringify(parseDialogue(a.dialogue)) === JSON.stringify(parseDialogue(b.dialogue));
 }
 function sameShared(a, b) {
   return a.roam === b.roam && a.movement === b.movement;
@@ -396,20 +442,25 @@ function normalizeSettings(value) {
     ...appearanceOf({
       scale: bounded(source.scale, SCALE_RANGE, DEFAULT_SETTINGS.scale),
       speed: bounded(source.speed, SPEED_RANGE, DEFAULT_SETTINGS.speed),
-      peek_angles: normalizePeekAngles(source.peek_angles)
+      peek_angles: normalizePeekAngles(source.peek_angles),
+      dialogue: parseDialogue(source.dialogue)
     }),
     roam: ROAM_MODES.includes(source.roam) ? source.roam : DEFAULT_SETTINGS.roam
   };
 }
-async function loadSettings(api, pluginId, key = "ying") {
+async function loadSettings(api, pluginId, key = "ying", confirmed) {
   if (!api?.get || !pluginId) return { ...DEFAULT_SETTINGS };
   try {
     const response = await api.get(`plugin/${pluginId}/settings?key=${encodeURIComponent(key)}`);
-    if (response?.success && response.data) return normalizeSettings(response.data);
+    if (response?.success && response.data && typeof response.data === "object" && !Array.isArray(response.data)) {
+      const value = normalizeSettings(response.data);
+      confirmed?.();
+      return value;
+    }
   } catch {
     console.warn("[AgentPets] settings unavailable");
   }
   return { ...DEFAULT_SETTINGS };
 }
 
-export { surfaceXBounds as A, blockedSpan as B, nearestEdge as C, DEFAULT_SETTINGS as D, hopVelocity as E, xToRatio as F, isPeekEdge as G, intersectionArea as H, peekPanelShift as I, computeLanding as J, dropPeekEdge as K, PEEK_TUCK as L, PEEK_RISE_SECONDS as M, DEFAULT_PEEK_ANGLES as N, normalizePeekAngle as O, PEEK_TILT_SECONDS as P, MIN_SURFACE_WIDTH as Q, PEEK_PREVIEW_MAX_ANGLE as R, SETTINGS_EVENT as S, SCALE_RANGE as T, SPEED_RANGE as U, sameShared as a, appearanceOf as b, normalizePeekAngles as c, sameAppearance as d, pickWalkTarget as e, floorLine as f, standable as g, coversAny as h, isBlocked as i, effectiveScale as j, peekHome as k, peekLayout as l, freeBounds as m, normalizeSettings as n, clamp as o, pickFreeTarget as p, loadSettings as q, readViewport as r, sharedOf as s, ratioToX as t, avoidPanel as u, groundTop as v, sameRect as w, xBounds as x, checkSupport as y, pickClearX as z };
+export { AUTONOMOUS_DIALOGUE_INTERVAL_MS as A, sameRect as B, checkSupport as C, DIALOGUE_INTERVAL_MS as D, pickClearX as E, surfaceXBounds as F, blockedSpan as G, nearestEdge as H, hopVelocity as I, xToRatio as J, loadSettings as K, isPeekEdge as L, intersectionArea as M, peekPanelShift as N, computeLanding as O, dropPeekEdge as P, PEEK_TILT_SECONDS as Q, PEEK_TUCK as R, SETTINGS_EVENT as S, PEEK_RISE_SECONDS as T, DEFAULT_PEEK_ANGLES as U, normalizePeekAngle as V, MIN_SURFACE_WIDTH as W, PEEK_PREVIEW_MAX_ANGLE as X, SCALE_RANGE as Y, SPEED_RANGE as Z, sameShared as a, appearanceOf as b, normalizePeekAngles as c, defaultDialogue as d, sameAppearance as e, pickWalkTarget as f, floorLine as g, standable as h, isBlocked as i, coversAny as j, DIALOGUE_LINES as k, DIALOGUE_DURATION_MS as l, DEFAULT_SETTINGS as m, normalizeSettings as n, effectiveScale as o, pickFreeTarget as p, peekHome as q, peekLayout as r, sharedOf as s, readViewport as t, freeBounds as u, clamp as v, ratioToX as w, avoidPanel as x, groundTop as y, xBounds as z };
