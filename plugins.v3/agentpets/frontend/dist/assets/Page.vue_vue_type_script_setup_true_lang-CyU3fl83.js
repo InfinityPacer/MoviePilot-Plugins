@@ -1945,7 +1945,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
               class: "ap-result"
             }, {
               default: _withCtx(() => [..._cache[11] || (_cache[11] = [
-                _createTextVNode(" 大小、速度、偷看角度或共享活动设置已在其他页面更改。已保留草稿；请点击「撤销」载入最新值后重新调整。 ", -1)
+                _createTextVNode(" 大小、速度、偷看角度、台词或共享活动设置已在其他页面更改。已保留草稿；请点击「撤销」载入最新值后重新调整。 ", -1)
               ])]),
               _: 1
             })) : _createCommentVNode("", true),
