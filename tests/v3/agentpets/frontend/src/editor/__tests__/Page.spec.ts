@@ -357,6 +357,54 @@ describe('Pet workspace', () => {
     expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({ scale: 1.4, speed: 1.3 })
   })
 
+  it.each(['voice', 'mode'] as const)(
+    'identifies a dialogue-only %s conflict and preserves the draft until undo',
+    async field => {
+      const { view, api, broadcast, click, profiles } = await setup()
+      profiles.ying = { scale: 1, speed: 1, dialogue: { mode: 'interaction', voice: 'neutral' } }
+      await view.get('[aria-label="刷新形象列表"]').trigger('click')
+      await flushPromises()
+      const draft =
+        field === 'voice'
+          ? ({ mode: 'interaction', voice: 'wry' } as const)
+          : ({ mode: 'off', voice: 'neutral' } as const)
+      const latest =
+        field === 'voice'
+          ? ({ mode: 'interaction', voice: 'lively' } as const)
+          : ({ mode: 'occasional', voice: 'neutral' } as const)
+      const control = view.findComponent(StageSettings)
+      control.vm.$emit('update:modelValue', { ...control.props('modelValue'), dialogue: draft })
+      await flushPromises()
+      profiles.ying = { scale: 1, speed: 1, dialogue: latest }
+      await view.get('[aria-label="刷新形象列表"]').trigger('click')
+      await flushPromises()
+      const warning = view.findAllComponents({ name: 'VAlert' }).find(alert => alert.text().includes('已保留草稿'))!
+      expect(warning.text()).toContain('台词')
+      expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({
+        scale: 1,
+        speed: 1,
+        dialogue: draft,
+      })
+      expect(
+        view
+          .findAll('button')
+          .find(button => button.text() === '保存调整')!
+          .attributes('disabled'),
+      ).toBeDefined()
+      expect(api.post).not.toHaveBeenCalled()
+      expect(broadcast).not.toHaveBeenCalled()
+      await click('撤销')
+      expect(view.findComponent(StageSettings).props('modelValue')).toMatchObject({
+        scale: 1,
+        speed: 1,
+        dialogue: latest,
+      })
+      expect(view.text()).not.toContain('已保留草稿')
+      expect(api.post).not.toHaveBeenCalled()
+      expect(broadcast).not.toHaveBeenCalled()
+    },
+  )
+
   it('keeps calibration drafts isolated, saves verified values and detects external changes', async () => {
     const { view, api, broadcast, click } = await setup()
     view.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', 'kurisu')
