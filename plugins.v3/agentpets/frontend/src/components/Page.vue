@@ -329,7 +329,7 @@ async function save() {
           hostError
         }}</v-alert>
         <v-alert v-if="settingsConflict" type="warning" variant="tonal" density="compact" class="ap-result">
-          大小、速度、偷看角度或共享活动设置已在其他页面更改。已保留草稿；请点击「撤销」载入最新值后重新调整。
+          大小、速度、偷看角度、台词或共享活动设置已在其他页面更改。已保留草稿；请点击「撤销」载入最新值后重新调整。
         </v-alert>
         <v-alert v-if="conflictingNames.length" type="warning" variant="tonal" density="compact" class="ap-result">
           {{ conflictingNames.join('、') }}
