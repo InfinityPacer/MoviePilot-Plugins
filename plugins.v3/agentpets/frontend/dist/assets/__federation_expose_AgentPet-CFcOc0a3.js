@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { c as actionDuration, M as MAX_ACTION_CYCLE_MS, d as builtinDefaultCalibration, u as useStartupGreeting, e as resolvePose, P as POSES, f as frameUrl, l as loadBuiltinCalibration, Y as YING_PACK, w as withLoadTimeout, h as phasePose, i as eventPose, G as GREETING_PAUSE_MS, S as SINGLE_GREETING_MS, j as walkFrame } from './playback-Ct5mtRW-.js';
 import { r as resolveAction, B as BUILTIN_PACKS, s as stageAction, p as parseCalibration, j as calibrationLayout, L as LANDMARKS, c as calibrationPoint, h as calibrationEye, i as mirrorFace, o as onEditorPresence, P as PACK_UPDATED_EVENT, _ as _export_sfc } from './_plugin-vue_export-helper-Cx9XzNqS.js';
-import { p as pickFreeTarget, f as pickWalkTarget, i as isBlocked, g as floorLine, h as standable, j as coversAny, d as defaultDialogue, D as DIALOGUE_INTERVAL_MS, A as AUTONOMOUS_DIALOGUE_INTERVAL_MS, k as DIALOGUE_LINES, l as DIALOGUE_DURATION_MS, m as DEFAULT_SETTINGS, o as effectiveScale, q as peekHome, r as peekLayout, c as normalizePeekAngles, t as readViewport, u as freeBounds, v as clamp, S as SETTINGS_EVENT, n as normalizeSettings, w as ratioToX, x as avoidPanel, y as groundTop, z as xBounds, B as sameRect, C as checkSupport, E as pickClearX, F as surfaceXBounds, G as blockedSpan, H as nearestEdge, I as hopVelocity, J as xToRatio, e as sameAppearance, K as loadSettings, L as isPeekEdge, M as intersectionArea, N as peekPanelShift, O as computeLanding, P as dropPeekEdge, Q as PEEK_TILT_SECONDS, R as PEEK_TUCK, T as PEEK_RISE_SECONDS } from './settings-CBRdqLDu.js';
+import { p as pickFreeTarget, f as pickWalkTarget, i as isBlocked, g as floorLine, h as standable, j as coversAny, d as defaultDialogue, D as DIALOGUE_INTERVAL_MS, A as AUTONOMOUS_DIALOGUE_INTERVAL_MS, k as DIALOGUE_LINES, l as DIALOGUE_DURATION_MS, m as DEFAULT_SETTINGS, o as effectiveScale, q as peekHome, r as peekLayout, c as normalizePeekAngles, t as readViewport, u as freeBounds, v as clamp, S as SETTINGS_EVENT, n as normalizeSettings, w as ratioToX, x as avoidPanel, y as groundTop, z as xBounds, B as sameRect, I as IDLE_DIALOGUE_DELAY_MS, C as IDLE_DIALOGUE_JITTER_MS, E as checkSupport, F as pickClearX, G as surfaceXBounds, H as blockedSpan, J as nearestEdge, K as hopVelocity, L as xToRatio, e as sameAppearance, M as loadSettings, N as isPeekEdge, O as intersectionArea, P as peekPanelShift, Q as computeLanding, R as dropPeekEdge, T as PEEK_TILT_SECONDS, U as PEEK_TUCK, V as PEEK_RISE_SECONDS } from './settings-DUwAR1zW.js';
 
 class PausableTimers {
   paused = false;
@@ -673,7 +673,7 @@ class LineSpeaker {
     this.nextAutonomousAt = 0;
   }
   say(scene, autonomous = false) {
-    return this.request(scene, Date.now(), autonomous || scene === "hop");
+    return this.request(scene, Date.now(), autonomous || scene === "hop" || scene === "idle");
   }
   greet(now = /* @__PURE__ */ new Date()) {
     return this.request("greeting", now.getTime(), false);
@@ -689,18 +689,18 @@ class LineSpeaker {
     }
     const legacy = !context || context.key === "ying" && !context.dialogue;
     if (legacy) {
-      if (autonomous || scene === "hop") return false;
+      if (autonomous || scene === "hop" || scene === "idle") return false;
       return this.speak(scene, scene === "greeting" ? greetingLines(new Date(now)) : LINES[scene], pet);
     }
     const settings = context.dialogue ?? defaultDialogue(context.key);
     if (settings.mode === "off" || autonomous && settings.mode !== "occasional") return false;
     if (now < this.nextLineAt || autonomous && now < this.nextAutonomousAt) return false;
-    if (autonomous && this.random() >= 0.25) return false;
+    if (autonomous && scene !== "idle" && this.random() >= 0.25) return false;
     this.nextLineAt = now + DIALOGUE_INTERVAL_MS;
     if (autonomous) this.nextAutonomousAt = now + AUTONOMOUS_DIALOGUE_INTERVAL_MS;
     const yingVoice = settings.voice === "ying" || settings.voice === "default" && context.key === "ying";
     const voice = settings.voice === "default" || settings.voice === "ying" ? "neutral" : settings.voice;
-    const pool = yingVoice && scene !== "hop" ? scene === "greeting" ? greetingLines(new Date(now)) : LINES[scene] : DIALOGUE_LINES[voice][scene];
+    const pool = yingVoice && scene !== "hop" && scene !== "idle" ? scene === "greeting" ? greetingLines(new Date(now)) : LINES[scene] : DIALOGUE_LINES[voice][scene];
     this.recent = this.recent.filter((item) => now >= item.at && now - item.at < 12e4).slice(-6);
     const fresh = pool.filter((line) => !this.recent.some((item) => item.line === line));
     return this.speak(scene, fresh.length ? fresh : pool, pet, now);
@@ -760,6 +760,7 @@ const DROP_CLEAR_DELAY = 1500;
 const RESIZE_CLEAR_DELAY = 300;
 const SAVE_THROTTLE = 3e4;
 const CLEARANCE_POLL_EVERY = 4;
+const SHELTER_SEARCH_INTERVAL = 6e3;
 const FRAME_RETRY_AFTER = 5e3;
 const _sfc_main = /* @__PURE__ */ _defineComponent({
   __name: "AgentPet",
@@ -861,6 +862,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let peekTarget = 0;
     let peekPinned = false;
     let sheltering = false;
+    let nextShelterSearchAt = 0;
     let pendingShelter = false;
     let hopVx = 0;
     let hopTargetX = null;
@@ -893,6 +895,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     );
     const activityPolicy = new ActivityPolicy();
     const rhythmPolicy = new RhythmPolicy();
+    let nextIdleDialogueAt = 0;
+    let idleDialogueVisible = false;
     let activityOrigin = null;
     const proximity = new ProximityTracker();
     const gaze = new GazeTracker();
@@ -1118,6 +1122,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       pendingStepOff = false;
       pendingShelter = false;
       sheltering = false;
+      nextShelterSearchAt = 0;
       peekProgress.value = 0;
       peekTiltProgress.value = 0;
       peekEdge.value = null;
@@ -1654,11 +1659,26 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       });
     }
     function markActivity() {
+      resetIdleDialogue();
       const resting = dozing.value;
       cancelRest();
       scheduleRest();
       if (resting) scheduleBehavior();
     }
+    function resetIdleDialogue() {
+      nextIdleDialogueAt = settings.value.dialogue?.mode === "occasional" ? Date.now() + IDLE_DIALOGUE_DELAY_MS + Math.random() * IDLE_DIALOGUE_JITTER_MS : Number.POSITIVE_INFINITY;
+    }
+    function tryIdleDialogue() {
+      if (Date.now() < nextIdleDialogueAt) return;
+      resetIdleDialogue();
+      if (settings.value.dialogue?.mode !== "occasional" || motion.value !== "idle" && !settledPeek.value || press || transient.value || rhythmAction.value || reaction.value || attention.value || greeting.active.value || sustained.value || dozing.value)
+        return;
+      lines.say("idle");
+    }
+    watch(
+      [() => interactionKey(), () => settings.value.dialogue?.mode, () => settings.value.dialogue?.voice],
+      resetIdleDialogue
+    );
     function playTransient(next, duration) {
       if (!onGround()) return;
       settle();
@@ -1979,6 +1999,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       standPollTicks += 1;
       if (surface && surfaceObserver) checkSurface();
       if (standPollTicks % CLEARANCE_POLL_EVERY === 0 && !timers.has("clearance")) checkClearance();
+      if (standPollTicks % CLEARANCE_POLL_EVERY === 0) tryIdleDialogue();
     }
     function detachSurface() {
       surface = null;
@@ -2131,15 +2152,33 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     }
     function beginShelter(instant) {
       sheltering = true;
+      nextShelterSearchAt = Date.now() + SHELTER_SEARCH_INTERVAL;
       beginPeek("bottom", false, instant);
     }
     function recheckShelter() {
       const view = viewport();
       const body = charWidth.value * charHeight.value;
-      if (!coversControlAt(rectAt(x.value, ground()), rootEl.value, view, null, body, props.previewRoot)) {
+      const floorY = ground();
+      const covers = (rect, standingOn) => coversControlAt(rect, rootEl.value, view, standingOn, body, props.previewRoot);
+      if (!covers(rectAt(x.value, floorY), null)) {
         sheltering = false;
         endPeek();
+        return;
       }
+      if (Date.now() < nextShelterSearchAt || !settledPeek.value || !hostAllowsIdleBehavior() || press || transient.value || reaction.value || sustained.value)
+        return;
+      nextShelterSearchAt = Date.now() + SHELTER_SEARCH_INTERVAL;
+      const span = blockedSpan(hostState?.panelRect ?? null, floorY, charWidth.value, charHeight.value);
+      const left = pickClearX(
+        x.value,
+        xBounds(view, charWidth.value),
+        (candidate) => !isBlocked(candidate, span) && !covers(rectAt(candidate, floorY), null),
+        charWidth.value / 2
+      );
+      const target = left !== null ? { x: left, y: floorY, surface: null } : roam() === "free" ? findFreeSpot(covers) : findOtherSurface(covers);
+      if (!target) return;
+      resetMotion();
+      moveTo(target.x, target.y, target.surface, !motionAllowed());
     }
     function moveTo(targetX, targetY, target, instant) {
       cancelActivity();
@@ -2346,6 +2385,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       const before = hostState;
       hostState = state;
+      if (before && (before.phase !== state.phase || before.thinking !== state.thinking || before.available !== state.available || before.motionAllowed !== state.motionAllowed))
+        resetIdleDialogue();
       if (phasePose(state.phase) && before?.phase !== state.phase || state.thinking && !before?.thinking) {
         clearTimer("transient");
         transient.value = null;
@@ -2411,6 +2452,10 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
     }
     function syncVisibility() {
+      if (idleDialogueVisible !== visible()) {
+        idleDialogueVisible = visible();
+        resetIdleDialogue();
+      }
       animationActive.value = motionAllowed() && visible();
       if (!visible()) {
         cancelPointerGesture(!editorPaused);
@@ -2996,6 +3041,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-70f8b892"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a6d5c99a"]]);
 
 export { supportsLookDirections as a, builtinRhythm as b, AgentPet as default, supportsRest as s };
