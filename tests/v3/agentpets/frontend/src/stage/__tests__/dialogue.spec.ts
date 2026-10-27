@@ -76,6 +76,7 @@ describe('optional dialogue preferences', () => {
       drop: ['呼，站稳啦，这里也不错呢。', '到啦！下次也轻轻放我哦～', '换个地方，继续陪着你呀。'],
       wake: ['唔，醒啦，刚刚眯了一小会儿。', '休息好啦，继续陪你～', '嗯？我在呢，刚才有点困困的。'],
       hop: ['嘿咻，跳上来啦～', '这里高一点，能看得更远呢。', '稳稳站好啦，夸我一下嘛～'],
+      idle: ['嘿嘿，安静陪着你呀。', '偶尔发会儿呆，也很舒服呢。', '不用找我，我就在这里哦～'],
     })
     expect(DIALOGUE_LINES.wry).toEqual({
       greeting: ['来了？才没有特意等你呢。', '今天也陪你一会儿，顺便而已。', '哼，既然来了，就别急着走。'],
@@ -84,6 +85,7 @@ describe('optional dialogue preferences', () => {
       drop: ['站稳了，下次轻一点啦。', '这个位置还不错……算你会挑。', '这里挺好的，不过我可没夸你哦。'],
       wake: ['只是眯了一下，才没有偷懒。', '醒啦……有事叫我就好了。', '休息够了，继续陪你。别多想！'],
       hop: ['这点高度，当然难不倒我。', '站高一点看看，才不是想显摆。', '跳上来了……夸一句也不是不行。'],
+      idle: ['我就在这儿，又没有要走。', '只是发会儿呆，才没偷懒。', '安静陪一会儿，也不是不行。'],
     })
   })
 
@@ -200,6 +202,28 @@ describe('contextual LineSpeaker', () => {
     expect(say).toHaveBeenCalledOnce()
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('uses the infrequent idle opportunity without a second probability gate and shares autonomous cooldowns', () => {
+    const { speaker, say, context } = setup(() => 0.9)
+    context.dialogue = { mode: 'occasional', voice: 'wry' }
+    expect(speaker.say('idle')).toBe(true)
+    expect(DIALOGUE_LINES.wry.idle).toContain(say.mock.calls[0][0])
+    vi.advanceTimersByTime(AUTONOMOUS_DIALOGUE_INTERVAL_MS - 1)
+    expect(speaker.say('idle')).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(speaker.say('idle')).toBe(true)
+    expect(say).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['off', 'interaction'] as const)(
+    'rejects idle chatter in %s mode even without an explicit autonomous flag',
+    mode => {
+      const { speaker, say, context } = setup()
+      context.dialogue!.mode = mode
+      expect(speaker.say('idle')).toBe(false)
+      expect(say).not.toHaveBeenCalled()
+    },
+  )
 
   it('does not repeat adjacent contextual lines even after a small pool is exhausted', () => {
     const { speaker, say } = setup()

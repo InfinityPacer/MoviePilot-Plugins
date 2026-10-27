@@ -53,6 +53,7 @@ async function setup(
     random?: number
     hostState?: Partial<AgentHostState>
     longLanding?: boolean
+    noRest?: boolean
     storedSettings?: boolean
   } = {},
 ) {
@@ -66,17 +67,19 @@ async function setup(
   hosts.push(host)
   host.patch({ isMobile: false, ...options.hostState })
   const anchors: Array<AgentRect | null> = []
-  const pack = options.longLanding
-    ? {
-        ...BUILTIN_PACK,
-        id: 'dialogue-landing-fixture',
-        frames: { ...BUILTIN_PACK.frames, a: 0, b: 1, c: 2 },
-        actions: {
-          ...BUILTIN_PACK.actions,
-          land: { frames: ['a', 'b', 'c'], frame_ms: 600, loop: true },
-        },
-      }
-    : BUILTIN_PACKS['builtin-kurisu']
+  const pack = options.noRest
+    ? { ...BUILTIN_PACK, id: 'dialogue-no-rest', actions: { idle: BUILTIN_PACK.actions.idle } }
+    : options.longLanding
+      ? {
+          ...BUILTIN_PACK,
+          id: 'dialogue-landing-fixture',
+          frames: { ...BUILTIN_PACK.frames, a: 0, b: 1, c: 2 },
+          actions: {
+            ...BUILTIN_PACK.actions,
+            land: { frames: ['a', 'b', 'c'], frame_ms: 600, loop: true },
+          },
+        }
+      : BUILTIN_PACKS['builtin-kurisu']
   const pet = createMockPet('stage', pack.id, { onAnchor: rect => anchors.push(rect) })
   await pet.storage.set({ xRatio: 0.5, yRatio: 1 })
   const save = vi.spyOn(pet.storage, 'set')
@@ -379,6 +382,63 @@ describe('per-Pet contextual dialogue', () => {
     await advance(30_000)
     expect(pet.say).not.toHaveBeenCalled()
     expect(pet.api.post).not.toHaveBeenCalled()
+  })
+
+  it('occasionally speaks while idle without sleep artwork or a successful hop', async () => {
+    const pet = await setup({ noRest: true, dialogue: { mode: 'occasional', voice: 'wry' } })
+    await advance(149_000)
+    expect(pet.say).not.toHaveBeenCalled()
+    await advance(3000)
+    expect(pet.say).toHaveBeenCalledOnce()
+    expect(DIALOGUE_LINES.wry.idle).toContain(pet.spoken()[0])
+    expect(pet.stage.dataset.pose).not.toBe('doze')
+    expect(pet.save).not.toHaveBeenCalled()
+    expect(pet.api.post).not.toHaveBeenCalled()
+    pet.view.unmount()
+    pet.host.dispose()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each([null, { mode: 'off', voice: 'wry' }, { mode: 'interaction', voice: 'neutral' }] as const)(
+    'never schedules idle chatter for %o',
+    async dialogue => {
+      const pet = await setup({ noRest: true, dialogue })
+      await advance(200_000)
+      expect(pet.say).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { phase: 'thinking', thinking: true },
+    { phase: 'tool' },
+    { phase: 'awaiting' },
+    { pageVisible: false },
+    { motionAllowed: false, reducedMotion: true },
+    { available: false },
+  ] as const)('drops idle chatter under host priority %o without replaying on resume', async hostState => {
+    const pet = await setup({ noRest: true, hostState, dialogue: { mode: 'occasional', voice: 'neutral' } })
+    await advance(200_000)
+    expect(pet.say).not.toHaveBeenCalled()
+    pet.host.patch({ phase: 'idle', thinking: false, pageVisible: true, motionAllowed: true, available: true })
+    await advance(3000)
+    expect(pet.say).not.toHaveBeenCalled()
+  })
+
+  it.each(['preview', 'editor'] as const)('keeps idle chatter out of %s and does not queue it', async reason => {
+    const pet = await setup({
+      noRest: true,
+      preview: reason === 'preview',
+      dialogue: { mode: 'occasional', voice: 'lively' },
+    })
+    const close = reason === 'editor' ? registerEditor() : () => {}
+    try {
+      await advance(200_000)
+      expect(pet.say).not.toHaveBeenCalled()
+    } finally {
+      close()
+    }
+    await advance(3000)
+    expect(pet.say).not.toHaveBeenCalled()
   })
 
   it('ignores synchronous own bubble feedback but still lets subsequent host feedback preempt the reaction', async () => {
