@@ -1,11 +1,11 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-BaWvaOrx.js';
+import { u as unwrap, A as AGENT_HOST_KEY, H as HOST_UNSUPPORTED_MESSAGE, b as builtinAvatar, l as loadEditor, a as loadHostSelection, s as saveSharedSettings, c as savePetSettings, d as saveMappings, e as saveCalibration } from './host-CRgCWhDm.js';
 import { L as LANDMARKS, c as calibrationPoint, D as DEFAULT_CALIBRATION, m as moveCalibrationPoint, a as suggestedLandmark, p as parseCalibration, _ as _export_sfc, q as mappingRows, A as ACTION_LABELS, t as nativeChoices, H as HOST_ACTIONS, x as HOST_INTENTS, s as stageAction, u as useEditorPresence, b as sameCalibration, l as sameMappings, P as PACK_UPDATED_EVENT } from './_plugin-vue_export-helper-Cx9XzNqS.js';
 import { P as POSES, d as builtinDefaultCalibration } from './playback-Ct5mtRW-.js';
-import { U as DEFAULT_PEEK_ANGLES, V as normalizePeekAngle, c as normalizePeekAngles, W as MIN_SURFACE_WIDTH, X as PEEK_PREVIEW_MAX_ANGLE, m as DEFAULT_SETTINGS, s as sharedOf, e as sameAppearance, a as sameShared, n as normalizeSettings, b as appearanceOf, d as defaultDialogue, Y as SCALE_RANGE, Z as SPEED_RANGE, _ as DIALOGUE_VOICE_OPTIONS, $ as dialogueVoiceForDisplay, S as SETTINGS_EVENT } from './settings-CBRdqLDu.js';
+import { W as DEFAULT_PEEK_ANGLES, X as normalizePeekAngle, c as normalizePeekAngles, Y as MIN_SURFACE_WIDTH, Z as PEEK_PREVIEW_MAX_ANGLE, m as DEFAULT_SETTINGS, s as sharedOf, e as sameAppearance, a as sameShared, n as normalizeSettings, b as appearanceOf, d as defaultDialogue, _ as SCALE_RANGE, $ as SPEED_RANGE, a0 as DIALOGUE_VOICE_OPTIONS, a1 as dialogueVoiceForDisplay, S as SETTINGS_EVENT } from './settings-DUwAR1zW.js';
 import AgentPetSprite from './__federation_expose_AgentPetSprite-DP-pjhDu.js';
-import AgentPet from './__federation_expose_AgentPet-CbkhgEbI.js';
-import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-DG5F_bib.js';
+import AgentPet from './__federation_expose_AgentPet-CFcOc0a3.js';
+import { _ as _sfc_main$5 } from './AgentPetCodex.vue_vue_type_script_setup_true_lang-Ccn2j-4h.js';
 
 const {defineComponent:_defineComponent$4} = await importShared('vue');
 

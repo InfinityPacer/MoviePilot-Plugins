@@ -373,6 +373,8 @@ function dialogueVoiceForDisplay(key, voice) {
 }
 const DIALOGUE_INTERVAL_MS = 15e3;
 const AUTONOMOUS_DIALOGUE_INTERVAL_MS = 75e3;
+const IDLE_DIALOGUE_DELAY_MS = 12e4;
+const IDLE_DIALOGUE_JITTER_MS = 6e4;
 const DIALOGUE_DURATION_MS = 4e3;
 function defaultDialogue(key) {
   return { mode: key === "ying" ? "interaction" : "off", voice: key === "ying" ? "default" : "neutral" };
@@ -393,7 +395,8 @@ const DIALOGUE_LINES = {
     tease: ["知道啦，不用再提醒。", "我还在这里呢。", "好啦，我在听。"],
     drop: ["落稳了，换个地方看看。", "这里也不错。", "好了，就在这里。"],
     wake: ["刚刚歇了一会儿。", "醒了，继续啦。", "嗯，我回来了。"],
-    hop: ["上来了，歇一下。", "站高一点看看。", "这里也能站稳。"]
+    hop: ["上来了，歇一下。", "站高一点看看。", "这里也能站稳。"],
+    idle: ["不着急，我在这里。", "偶尔发会儿呆也不错。", "安静待一会儿吧。"]
   },
   lively: {
     greeting: ["你来啦，我在这里呢～", "又见面啦，今天也陪着你。", "一起待一会儿，好不好呀？"],
@@ -401,7 +404,8 @@ const DIALOGUE_LINES = {
     tease: ["呜，听见啦，不许一直戳嘛～", "好啦好啦，让我缓一小下。", "这下真的有点痒啦，轻轻的嘛～"],
     drop: ["呼，站稳啦，这里也不错呢。", "到啦！下次也轻轻放我哦～", "换个地方，继续陪着你呀。"],
     wake: ["唔，醒啦，刚刚眯了一小会儿。", "休息好啦，继续陪你～", "嗯？我在呢，刚才有点困困的。"],
-    hop: ["嘿咻，跳上来啦～", "这里高一点，能看得更远呢。", "稳稳站好啦，夸我一下嘛～"]
+    hop: ["嘿咻，跳上来啦～", "这里高一点，能看得更远呢。", "稳稳站好啦，夸我一下嘛～"],
+    idle: ["嘿嘿，安静陪着你呀。", "偶尔发会儿呆，也很舒服呢。", "不用找我，我就在这里哦～"]
   },
   wry: {
     greeting: ["来了？才没有特意等你呢。", "今天也陪你一会儿，顺便而已。", "哼，既然来了，就别急着走。"],
@@ -409,7 +413,8 @@ const DIALOGUE_LINES = {
     tease: ["别一直戳啦……会痒的！", "知道了知道了，真拿你没办法。", "再闹就不理你……一小会儿。"],
     drop: ["站稳了，下次轻一点啦。", "这个位置还不错……算你会挑。", "这里挺好的，不过我可没夸你哦。"],
     wake: ["只是眯了一下，才没有偷懒。", "醒啦……有事叫我就好了。", "休息够了，继续陪你。别多想！"],
-    hop: ["这点高度，当然难不倒我。", "站高一点看看，才不是想显摆。", "跳上来了……夸一句也不是不行。"]
+    hop: ["这点高度，当然难不倒我。", "站高一点看看，才不是想显摆。", "跳上来了……夸一句也不是不行。"],
+    idle: ["我就在这儿，又没有要走。", "只是发会儿呆，才没偷懒。", "安静陪一会儿，也不是不行。"]
   }
 };
 
@@ -472,4 +477,4 @@ async function loadSettings(api, pluginId, key = "ying", confirmed) {
   return { ...DEFAULT_SETTINGS };
 }
 
-export { dialogueVoiceForDisplay as $, AUTONOMOUS_DIALOGUE_INTERVAL_MS as A, sameRect as B, checkSupport as C, DIALOGUE_INTERVAL_MS as D, pickClearX as E, surfaceXBounds as F, blockedSpan as G, nearestEdge as H, hopVelocity as I, xToRatio as J, loadSettings as K, isPeekEdge as L, intersectionArea as M, peekPanelShift as N, computeLanding as O, dropPeekEdge as P, PEEK_TILT_SECONDS as Q, PEEK_TUCK as R, SETTINGS_EVENT as S, PEEK_RISE_SECONDS as T, DEFAULT_PEEK_ANGLES as U, normalizePeekAngle as V, MIN_SURFACE_WIDTH as W, PEEK_PREVIEW_MAX_ANGLE as X, SCALE_RANGE as Y, SPEED_RANGE as Z, DIALOGUE_VOICE_OPTIONS as _, sameShared as a, appearanceOf as b, normalizePeekAngles as c, defaultDialogue as d, sameAppearance as e, pickWalkTarget as f, floorLine as g, standable as h, isBlocked as i, coversAny as j, DIALOGUE_LINES as k, DIALOGUE_DURATION_MS as l, DEFAULT_SETTINGS as m, normalizeSettings as n, effectiveScale as o, pickFreeTarget as p, peekHome as q, peekLayout as r, sharedOf as s, readViewport as t, freeBounds as u, clamp as v, ratioToX as w, avoidPanel as x, groundTop as y, xBounds as z };
+export { SPEED_RANGE as $, AUTONOMOUS_DIALOGUE_INTERVAL_MS as A, sameRect as B, IDLE_DIALOGUE_JITTER_MS as C, DIALOGUE_INTERVAL_MS as D, checkSupport as E, pickClearX as F, surfaceXBounds as G, blockedSpan as H, IDLE_DIALOGUE_DELAY_MS as I, nearestEdge as J, hopVelocity as K, xToRatio as L, loadSettings as M, isPeekEdge as N, intersectionArea as O, peekPanelShift as P, computeLanding as Q, dropPeekEdge as R, SETTINGS_EVENT as S, PEEK_TILT_SECONDS as T, PEEK_TUCK as U, PEEK_RISE_SECONDS as V, DEFAULT_PEEK_ANGLES as W, normalizePeekAngle as X, MIN_SURFACE_WIDTH as Y, PEEK_PREVIEW_MAX_ANGLE as Z, SCALE_RANGE as _, sameShared as a, DIALOGUE_VOICE_OPTIONS as a0, dialogueVoiceForDisplay as a1, appearanceOf as b, normalizePeekAngles as c, defaultDialogue as d, sameAppearance as e, pickWalkTarget as f, floorLine as g, standable as h, isBlocked as i, coversAny as j, DIALOGUE_LINES as k, DIALOGUE_DURATION_MS as l, DEFAULT_SETTINGS as m, normalizeSettings as n, effectiveScale as o, pickFreeTarget as p, peekHome as q, peekLayout as r, sharedOf as s, readViewport as t, freeBounds as u, clamp as v, ratioToX as w, avoidPanel as x, groundTop as y, xBounds as z };
