@@ -10,6 +10,7 @@ import { ATTENTION_DWELL_MS, ATTENTION_LEAVE_MS, GazeTracker, ProximityTracker, 
 import { PageTapTracker } from './pageTouch'
 import { GREETING_PAUSE_MS, SINGLE_GREETING_MS, useStartupGreeting, type GreetingPlayback } from './greeting'
 import { LineSpeaker } from './lines'
+import { IDLE_DIALOGUE_DELAY_MS, IDLE_DIALOGUE_JITTER_MS } from './dialogue'
 import { builtinDefaultCalibration, loadBuiltinCalibration, YING_PACK } from '@/sprites/builtinCalibration'
 import {
   calibrationEye,
@@ -174,6 +175,7 @@ const RESIZE_CLEAR_DELAY = 300
 const SAVE_THROTTLE = 30_000
 /** 站立时每隔几拍（每拍 500ms）复查一次是否挡住控件。 */
 const CLEARANCE_POLL_EVERY = 4
+const SHELTER_SEARCH_INTERVAL = 6000
 /** 同一帧加载失败后，至少隔这么久（毫秒）才再次请求。 */
 const FRAME_RETRY_AFTER = 5000
 
@@ -260,6 +262,7 @@ let peekTarget = 0
 let peekPinned = false
 /** 无处可站时在底边一侧下沉躲开控件；与随机探头不同，没有结束计时，由复查决定何时站起来。 */
 let sheltering = false
+let nextShelterSearchAt = 0
 /** 到达目的地后进入稳定眼位，不再逐次加深。 */
 let pendingShelter = false
 /** 跳向另一个面时的水平速度与落点 x。 */
@@ -325,6 +328,8 @@ const lines = new LineSpeaker(
 )
 const activityPolicy = new ActivityPolicy()
 const rhythmPolicy = new RhythmPolicy()
+let nextIdleDialogueAt = 0
+let idleDialogueVisible = false
 let activityOrigin: ActivityPoint | null = null
 const proximity = new ProximityTracker()
 const gaze = new GazeTracker()
@@ -629,6 +634,7 @@ function resetMotion() {
   pendingStepOff = false
   pendingShelter = false
   sheltering = false
+  nextShelterSearchAt = 0
   peekProgress.value = 0
   peekTiltProgress.value = 0
   peekEdge.value = null
@@ -1279,11 +1285,44 @@ function scheduleRest() {
 
 /** Real input wakes the pet; a short rest also ends without requiring new input. */
 function markActivity() {
+  resetIdleDialogue()
   const resting = dozing.value
   cancelRest()
   scheduleRest()
   if (resting) scheduleBehavior()
 }
+
+function resetIdleDialogue() {
+  nextIdleDialogueAt =
+    settings.value.dialogue?.mode === 'occasional'
+      ? Date.now() + IDLE_DIALOGUE_DELAY_MS + Math.random() * IDLE_DIALOGUE_JITTER_MS
+      : Number.POSITIVE_INFINITY
+}
+
+/** Reuse the visible-stage poll; missed opportunities are discarded rather than replayed. */
+function tryIdleDialogue() {
+  if (Date.now() < nextIdleDialogueAt) return
+  resetIdleDialogue()
+  if (
+    settings.value.dialogue?.mode !== 'occasional' ||
+    (motion.value !== 'idle' && !settledPeek.value) ||
+    press ||
+    transient.value ||
+    rhythmAction.value ||
+    reaction.value ||
+    attention.value ||
+    greeting.active.value ||
+    sustained.value ||
+    dozing.value
+  )
+    return
+  lines.say('idle')
+}
+
+watch(
+  [() => interactionKey(), () => settings.value.dialogue?.mode, () => settings.value.dialogue?.voice],
+  resetIdleDialogue,
+)
 
 function playTransient(next: Pose, duration: number) {
   if (!onGround()) return
@@ -1695,6 +1734,7 @@ function onStandPoll() {
   if (surface && surfaceObserver) checkSurface()
   // 用户刚放下时等它自己的延迟检查，复查不抢先。
   if (standPollTicks % CLEARANCE_POLL_EVERY === 0 && !timers.has('clearance')) checkClearance()
+  if (standPollTicks % CLEARANCE_POLL_EVERY === 0) tryIdleDialogue()
 }
 
 function detachSurface() {
@@ -1884,17 +1924,49 @@ function goShelter(instant: boolean) {
 /** 进入边缘躲避，保持眼位直到完整站起已不会挡住控件。 */
 function beginShelter(instant: boolean) {
   sheltering = true
+  nextShelterSearchAt = Date.now() + SHELTER_SEARCH_INTERVAL
   beginPeek('bottom', false, instant)
 }
 
-/** 躲避中只检查能否恢复，不以持续遮挡为由反复下沉。 */
+/** Keep the original recovery fast; search other safe landings infrequently while sheltered. */
 function recheckShelter() {
   const view = viewport()
   const body = charWidth.value * charHeight.value
-  if (!coversControlAt(rectAt(x.value, ground()), rootEl.value, view, null, body, props.previewRoot)) {
+  const floorY = ground()
+  const covers = (rect: AgentRect, standingOn: Element | null) =>
+    coversControlAt(rect, rootEl.value, view, standingOn, body, props.previewRoot)
+  if (!covers(rectAt(x.value, floorY), null)) {
     sheltering = false
     endPeek()
+    return
   }
+  if (
+    Date.now() < nextShelterSearchAt ||
+    !settledPeek.value ||
+    !hostAllowsIdleBehavior() ||
+    press ||
+    transient.value ||
+    reaction.value ||
+    sustained.value
+  )
+    return
+  nextShelterSearchAt = Date.now() + SHELTER_SEARCH_INTERVAL
+  const span = blockedSpan(hostState?.panelRect ?? null, floorY, charWidth.value, charHeight.value)
+  const left = pickClearX(
+    x.value,
+    xBounds(view, charWidth.value),
+    candidate => !isBlocked(candidate, span) && !covers(rectAt(candidate, floorY), null),
+    charWidth.value / 2,
+  )
+  const target =
+    left !== null
+      ? { x: left, y: floorY, surface: null }
+      : roam() === 'free'
+        ? findFreeSpot(covers)
+        : findOtherSurface(covers)
+  if (!target) return
+  resetMotion()
+  moveTo(target.x, target.y, target.surface, !motionAllowed())
 }
 
 /**
@@ -2142,6 +2214,14 @@ function onHostState(state: AgentHostState) {
   }
   const before = hostState
   hostState = state
+  if (
+    before &&
+    (before.phase !== state.phase ||
+      before.thinking !== state.thinking ||
+      before.available !== state.available ||
+      before.motionAllowed !== state.motionAllowed)
+  )
+    resetIdleDialogue()
   if ((phasePose(state.phase) && before?.phase !== state.phase) || (state.thinking && !before?.thinking)) {
     clearTimer('transient')
     transient.value = null
@@ -2217,6 +2297,10 @@ function freezeMotion() {
 
 /** 页面不可见时停掉 rAF、行为计时与元素观察；回到可见后继续并重新校验脚下。 */
 function syncVisibility() {
+  if (idleDialogueVisible !== visible()) {
+    idleDialogueVisible = visible()
+    resetIdleDialogue()
+  }
   animationActive.value = motionAllowed() && visible()
   if (!visible()) {
     cancelPointerGesture(!editorPaused)

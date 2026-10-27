@@ -10,7 +10,7 @@ import {
 } from './dialogue'
 
 /**
- * 小映的台词场景。每句都跟在已有动作之后说出，不额外制造主动搭话：
+ * 小映的旧版互动场景；显式 occasional 偏好另允许低频闲聊：
  * - `greeting` 页面首次招手，按当地时段问好，每页一次
  * - `poke` 长按戳一下
  * - `tease` 30 秒内被连续戳到第 3 次及以后
@@ -85,8 +85,8 @@ export class LineSpeaker {
     this.nextAutonomousAt = 0
   }
 
-  say(scene: LineScene | 'hop', autonomous = false): boolean {
-    return this.request(scene, Date.now(), autonomous || scene === 'hop')
+  say(scene: LineScene | 'hop' | 'idle', autonomous = false): boolean {
+    return this.request(scene, Date.now(), autonomous || scene === 'hop' || scene === 'idle')
   }
 
   greet(now = new Date()): boolean {
@@ -104,19 +104,19 @@ export class LineSpeaker {
     }
     const legacy = !context || (context.key === 'ying' && !context.dialogue)
     if (legacy) {
-      if (autonomous || scene === 'hop') return false
+      if (autonomous || scene === 'hop' || scene === 'idle') return false
       return this.speak(scene, scene === 'greeting' ? greetingLines(new Date(now)) : LINES[scene], pet)
     }
     const settings = context.dialogue ?? defaultDialogue(context.key)
     if (settings.mode === 'off' || (autonomous && settings.mode !== 'occasional')) return false
     if (now < this.nextLineAt || (autonomous && now < this.nextAutonomousAt)) return false
-    if (autonomous && this.random() >= 0.25) return false
+    if (autonomous && scene !== 'idle' && this.random() >= 0.25) return false
     this.nextLineAt = now + DIALOGUE_INTERVAL_MS
     if (autonomous) this.nextAutonomousAt = now + AUTONOMOUS_DIALOGUE_INTERVAL_MS
     const yingVoice = settings.voice === 'ying' || (settings.voice === 'default' && context.key === 'ying')
     const voice = settings.voice === 'default' || settings.voice === 'ying' ? 'neutral' : settings.voice
     const pool =
-      yingVoice && scene !== 'hop'
+      yingVoice && scene !== 'hop' && scene !== 'idle'
         ? scene === 'greeting'
           ? greetingLines(new Date(now))
           : LINES[scene]
