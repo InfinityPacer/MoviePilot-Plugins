@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .markets.contracts import MarketModel
+from .responses import CalibrationValues
 from .settings import DEFAULT_PEEK_ANGLES, PEEK_ANGLE_RANGE, SCALE_RANGE, SPEED_RANGE
 
 
@@ -81,7 +82,7 @@ class CalibrationData(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     id: str
-    calibration: dict[str, float | None]
+    calibration: CalibrationValues
 
 
 class PeekAngles(BaseModel):
