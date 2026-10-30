@@ -32,6 +32,10 @@ from .packs.constants import BUILTIN_PACK_ID, BUILTIN_PACK_IDS, BUILTIN_STAGE_PA
 from .packs.images import sniff_image, suggest_calibration
 from .packs.schema import codex_pet_version, pack_revision, parse_calibration
 from .packs.store import PackStore, load_builtin_pack
+from .responses import (
+    ActivityData, CalibrationValues, EditorData, MappingsData, MarketInfoData,
+    MarketItemsData, PackPayload, PackSummaryData, PetSettingsData, SettingsData,
+)
 from .requests import (
     AddPackRequest,
     CalibrationData,
@@ -107,7 +111,7 @@ class AgentPets(_PluginBase):
     plugin_name = "助手形象"
     plugin_desc = "为 Agent 助手换上小映或自定义精灵图形象。"
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/agentpets.png"
-    plugin_version = "0.1.8"
+    plugin_version = "0.1.9"
     plugin_author = "InfinityPacer,Kurisu"
     author_url = "https://github.com/z2561221"
     plugin_config_prefix = "agentpets_"
@@ -254,13 +258,13 @@ class AgentPets(_PluginBase):
         with self._settings_lock:
             return {**self._settings, **self._appearance(self._pet_settings.get(key, {}), self._settings)}
 
-    def api_settings(self, key: str | None = None):
+    def api_settings(self, key: str | None = None) -> schemas.Response[SettingsData]:
         """读取指定 Pet 的有效设置；不支持的入口形象和失效 ID 明确失败"""
         if key is not None and not self._is_stage_pet(key):
-            return schemas.Response(success=False, message="此 Pet 不支持独立活动设置或已不存在")
-        return schemas.Response(success=True, data=self.settings(key))
+            return schemas.Response[SettingsData](success=False, message="此 Pet 不支持独立活动设置或已不存在")
+        return schemas.Response[SettingsData](success=True, data=self.settings(key))
 
-    def api_editor(self):
+    def api_editor(self) -> schemas.Response[EditorData]:
         """编辑页只取得必要的状态与形象，不暴露其他配置。"""
         pets = [
             {
@@ -273,7 +277,7 @@ class AgentPets(_PluginBase):
             }
             for pet in self.get_agent_pets()
         ]
-        return schemas.Response(success=True, data={
+        return schemas.Response[EditorData](success=True, data={
             "enabled": self._enabled, "settings": self.settings(), "pets": pets,
             "pet_settings": {pet["key"]: self._appearance(self.settings(pet["key"]), self._settings)
                              for pet in pets if pet["mode"] == "stage"},
@@ -290,7 +294,7 @@ class AgentPets(_PluginBase):
         self._load_settings(persisted)
         return None
 
-    def api_save_settings(self, request: SaveSettingsRequest):
+    def api_save_settings(self, request: SaveSettingsRequest) -> schemas.Response[SettingsData]:
         """兼容旧客户端的默认设置保存；保留每只 Pet 的独立值。"""
         with self._settings_lock:
             try:
@@ -300,17 +304,19 @@ class AgentPets(_PluginBase):
                 if "movement" not in request.model_fields_set:
                     values["movement"] = "fixed" if config.get("movement") == "fixed" else "auto"
                 failure = self._persist_settings(config, values)
-                return failure if failure is not None else schemas.Response(success=True, data=self.settings())
+                if failure is not None:
+                    return schemas.Response[SettingsData](success=False, message=failure.message)
+                return schemas.Response[SettingsData](success=True, data=self.settings())
             except (OSError, RuntimeError, ValueError):
                 logger.error("助手形象：保存默认活动设置失败")
-                return schemas.Response(success=False, message="活动设置保存失败，请刷新后核对")
+                return schemas.Response[SettingsData](success=False, message="活动设置保存失败，请刷新后核对")
 
-    def api_save_pet_settings(self, request: SavePetSettingsRequest):
+    def api_save_pet_settings(self, request: SavePetSettingsRequest) -> schemas.Response[PetSettingsData]:
         """核对单只 Pet 的旧值后保存独立参数，旧客户端不覆盖角度或台词"""
         with self._settings_lock:
             try:
                 if not self._is_stage_pet(request.key):
-                    return schemas.Response(success=False, message="此 Pet 不支持独立活动设置或已不存在")
+                    return schemas.Response[PetSettingsData](success=False, message="此 Pet 不支持独立活动设置或已不存在")
                 config = dict(self.get_config() or {})
                 defaults = self._appearance(config, DEFAULT_SETTINGS)
                 raw = config.get("pet_settings")
@@ -326,7 +332,7 @@ class AgentPets(_PluginBase):
                 if request.dialogue is not None:
                     compared.setdefault("dialogue", default_dialogue(request.key))
                 if compared != expected:
-                    return schemas.Response(success=False, message="此 Pet 的大小、速度、偷看角度或台词已在其他页面更改，请刷新后核对")
+                    return schemas.Response[PetSettingsData](success=False, message="此 Pet 的大小、速度、偷看角度或台词已在其他页面更改，请刷新后核对")
                 values = self._appearance(request.model_dump(exclude_none=True), defaults)
                 for field in ("peek_angles", "dialogue"):
                     if getattr(request, field) is None and field in current:
@@ -335,13 +341,14 @@ class AgentPets(_PluginBase):
                           if k not in ("scale", "speed", "peek_angles", "dialogue")} if isinstance(existing, dict) else {}
                 overrides[request.key] = {**opaque, **values}
                 failure = self._persist_settings(config, {"pet_settings": overrides})
-                return failure if failure is not None else schemas.Response(
-                    success=True, data={"key": request.key, **values})
+                if failure is not None:
+                    return schemas.Response[PetSettingsData](success=False, message=failure.message)
+                return schemas.Response[PetSettingsData](success=True, data={"key": request.key, **values})
             except (OSError, RuntimeError, ValueError):
                 logger.error("助手形象：保存 Pet 独立活动设置失败")
-                return schemas.Response(success=False, message="Pet 活动设置保存失败，请刷新后核对")
+                return schemas.Response[PetSettingsData](success=False, message="Pet 活动设置保存失败，请刷新后核对")
 
-    def api_save_shared_settings(self, request: SaveSharedSettingsRequest):
+    def api_save_shared_settings(self, request: SaveSharedSettingsRequest) -> schemas.Response[ActivityData]:
         """核对旧值后仅更新共享活动方式与范围，保留独立大小和速度"""
         with self._settings_lock:
             try:
@@ -351,13 +358,15 @@ class AgentPets(_PluginBase):
                     "movement": "fixed" if config.get("movement") == "fixed" else "auto",
                 }
                 if current != request.expected.model_dump():
-                    return schemas.Response(success=False, message="共享活动方式或范围已在其他页面更改，请刷新后核对")
+                    return schemas.Response[ActivityData](success=False, message="共享活动方式或范围已在其他页面更改，请刷新后核对")
                 values = request.model_dump(exclude={"expected"})
                 failure = self._persist_settings(config, values)
-                return failure if failure is not None else schemas.Response(success=True, data=values)
+                if failure is not None:
+                    return schemas.Response[ActivityData](success=False, message=failure.message)
+                return schemas.Response[ActivityData](success=True, data=values)
             except (OSError, RuntimeError, ValueError):
                 logger.error("助手形象：保存共享活动设置失败")
-                return schemas.Response(success=False, message="共享活动设置保存失败，请刷新后核对")
+                return schemas.Response[ActivityData](success=False, message="共享活动设置保存失败，请刷新后核对")
 
     @staticmethod
     def _summary(record: dict[str, Any], builtin: bool = False) -> dict[str, Any]:
@@ -378,29 +387,29 @@ class AgentPets(_PluginBase):
             "calibrated": parse_calibration(record.get("calibration")) != parse_calibration(),
         }
 
-    def api_packs(self):
+    def api_packs(self) -> schemas.Response[list[PackSummaryData]]:
         """素材包列表，内置在前。"""
         packs = [self._summary(self.builtin_pack(key), builtin=True) for key in BUILTIN_PACK_IDS]
         packs += [self._summary(record) for record in self._store().list()]
-        return schemas.Response(success=True, data=packs)
+        return schemas.Response[list[PackSummaryData]](success=True, data=packs)
 
-    def api_pack(self, key: str = BUILTIN_PACK_ID, known_sheet: str | None = None):
+    def api_pack(self, key: str = BUILTIN_PACK_ID, known_sheet: str | None = None) -> schemas.Response[PackPayload]:
         """素材包组件读取的完整素材包；内置素材包的精灵图由前端从联邦产物加载。"""
         if key in BUILTIN_PACK_IDS:
             calibration = self.api_builtin_calibration(key)
             if not calibration.success:
-                return calibration
+                return schemas.Response[PackPayload](success=False, message=calibration.message)
             pack = {**self.builtin_pack(key), "calibration": calibration.data.calibration}
-            return schemas.Response(success=True, data={"pack": pack, "builtin": True, "sheet_src": ""})
+            return schemas.Response[PackPayload](success=True, data={"pack": pack, "builtin": True, "sheet_src": ""})
         store = self._store()
         record = store.get(key)
         if not record:
-            return schemas.Response(success=False, message=f"素材包 {key} 不存在")
+            return schemas.Response[PackPayload](success=False, message=f"素材包 {key} 不存在")
         try:
             sheet_revision = store.sheet_revision(record)
             sheet_src = "" if known_sheet and known_sheet == sheet_revision else store.sheet_src(record)
         except PackError as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[PackPayload](success=False, message=str(exc))
         pack = {name: record.get(name) for name in ("id", "name", "description", "grid", "frames", "actions", "random_actions")}
         pack["preview"] = record.get("preview", "")
         pack["avatar"] = record.get("avatar", "")
@@ -409,32 +418,32 @@ class AgentPets(_PluginBase):
         version = codex_pet_version(record)
         if version:
             pack["codex_version"] = version
-        return schemas.Response(success=True, data={"pack": pack, "builtin": False, "sheet_src": sheet_src,
+        return schemas.Response[PackPayload](success=True, data={"pack": pack, "builtin": False, "sheet_src": sheet_src,
                                                    "sheet_revision": sheet_revision})
 
-    def api_add_pack(self, request: AddPackRequest):
+    def api_add_pack(self, request: AddPackRequest) -> schemas.Response[PackSummaryData]:
         """校验并新增素材包，持久化失败返回失败且保全被引用图片"""
         try:
             record = self._store().add(request.pack, request.image)
         except PackError as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[PackSummaryData](success=False, message=str(exc))
         except (OSError, RuntimeError):
             logger.error("助手形象：添加素材包失败")
-            return schemas.Response(success=False, message="添加素材包失败，请刷新核对后重试")
+            return schemas.Response[PackSummaryData](success=False, message="添加素材包失败，请刷新核对后重试")
         logger.info(f"助手形象：已添加素材包 {record['id']}（{record['source']}）")
-        return schemas.Response(success=True, data=self._summary(record))
+        return schemas.Response[PackSummaryData](success=True, data=self._summary(record))
 
-    def api_import_pack(self, request: ImportPackRequest):
+    def api_import_pack(self, request: ImportPackRequest) -> schemas.Response[PackSummaryData]:
         """导入新增、副本或核对修订号后的覆盖素材，返回本地摘要"""
         try:
             record = self._store().import_pack(request.pack, request.image, request.mode, request.expected_revision)
-            return schemas.Response(success=True, data=self._summary(record))
+            return schemas.Response[PackSummaryData](success=True, data=self._summary(record))
         except (PackError, OSError, RuntimeError) as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[PackSummaryData](success=False, message=str(exc))
 
-    def api_markets(self) -> schemas.Response:
+    def api_markets(self) -> schemas.Response[list[MarketInfoData]]:
         """列出已接入的在线市场；未注册适配器时返回空列表"""
-        return schemas.Response(success=True, data=[info.model_dump(mode="json") for info in self._markets.list()])
+        return schemas.Response[list[MarketInfoData]](success=True, data=[info.model_dump(mode="json") for info in self._markets.list()])
 
     def api_market_items(
         self,
@@ -442,7 +451,7 @@ class AgentPets(_PluginBase):
         keyword: Annotated[str, Query(max_length=200)] = "",
         page: Annotated[int, Query(ge=1, le=10000)] = 1,
         page_size: Annotated[int, Query(ge=1, le=50)] = 20,
-    ) -> schemas.Response:
+    ) -> schemas.Response[MarketItemsData]:
         """分页浏览或搜索单个已注册市场；适配器负责把上游分页转换为统一结果"""
         try:
             adapter = self._markets.get(market_id)
@@ -450,17 +459,17 @@ class AgentPets(_PluginBase):
             result = MarketPage.model_validate(adapter.search(query))
             if len(result.items) > query.page_size:
                 raise MarketError("市场返回的形象数量超过请求上限")
-            return schemas.Response(success=True, data={
+            return schemas.Response[MarketItemsData](success=True, data={
                 "market_id": market_id, "page": query.page, "page_size": query.page_size,
                 **result.model_dump(mode="json"),
             })
         except MarketError as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[MarketItemsData](success=False, message=str(exc))
         except (OSError, RuntimeError, ValueError):
             logger.error("助手形象：形象市场查询失败", exc_info=True)
-            return schemas.Response(success=False, message="形象市场查询失败，请稍后重试或查看插件日志")
+            return schemas.Response[MarketItemsData](success=False, message="形象市场查询失败，请稍后重试或查看插件日志")
 
-    def api_import_market_pack(self, request: ImportMarketPackRequest) -> schemas.Response:
+    def api_import_market_pack(self, request: ImportMarketPackRequest) -> schemas.Response[PackSummaryData]:
         """获取市场素材并复用完整包导入校验；请求不能指定任意下载 URL 或本地路径"""
         try:
             adapter = self._markets.get(request.market_id)
@@ -469,27 +478,27 @@ class AgentPets(_PluginBase):
             image = f"data:{mime};base64," + base64.b64encode(material.image).decode("ascii")
             return self.api_import_pack(ImportPackRequest(pack=material.pack, image=image, mode=request.mode))
         except (MarketError, PackError) as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[PackSummaryData](success=False, message=str(exc))
         except (OSError, RuntimeError, ValueError):
             logger.error("助手形象：市场素材导入失败", exc_info=True)
-            return schemas.Response(success=False, message="市场素材导入失败，请稍后重试或查看插件日志")
+            return schemas.Response[PackSummaryData](success=False, message="市场素材导入失败，请稍后重试或查看插件日志")
 
-    def api_rename_pack(self, request: RenamePackRequest):
+    def api_rename_pack(self, request: RenamePackRequest) -> schemas.Response[PackSummaryData]:
         """核对原名称后改名并返回最新摘要，冲突时拒绝覆盖"""
         try:
             record = self._store().update(request.id, name=request.name, expected_name=request.expected_name)
         except (PackError, OSError, RuntimeError) as exc:
-            return schemas.Response(success=False, message=str(exc))
-        return schemas.Response(success=True, data=self._summary(record))
+            return schemas.Response[PackSummaryData](success=False, message=str(exc))
+        return schemas.Response[PackSummaryData](success=True, data=self._summary(record))
 
-    def api_save_mappings(self, request: SaveMappingsRequest):
+    def api_save_mappings(self, request: SaveMappingsRequest) -> schemas.Response[MappingsData]:
         """核对旧映射后保存并回读，空映射恢复素材默认动作"""
         try:
             record = self._store().update(request.id, mappings=request.mappings,
                                          expected_mappings=request.expected_mappings)
         except (PackError, OSError, RuntimeError) as exc:
-            return schemas.Response(success=False, message=str(exc))
-        return schemas.Response(success=True, data={"id": record["id"], "mappings": record.get("action_mappings", {})})
+            return schemas.Response[MappingsData](success=False, message=str(exc))
+        return schemas.Response[MappingsData](success=True, data={"id": record["id"], "mappings": record.get("action_mappings", {})})
 
     def api_save_description(self, request: SaveDescriptionRequest):
         """核对旧备注后局部保存，失败不报告成功或覆盖其他素材字段"""
@@ -559,7 +568,7 @@ class AgentPets(_PluginBase):
         except (PackError, OSError, RuntimeError) as exc:
             return schemas.Response[CalibrationData](success=False, message=str(exc))
 
-    def api_suggest_calibration(self, key: str):
+    def api_suggest_calibration(self, key: str) -> schemas.Response[CalibrationValues]:
         """读取已上传图片生成校准建议，不保存草稿或下载 URL 素材"""
         try:
             store = self._store()
@@ -567,24 +576,24 @@ class AgentPets(_PluginBase):
             path = store.image_path(record) if record else None
             if not record or not path:
                 raise PackError("自动识别需要已上传的图片；此素材仍可手动校准")
-            return schemas.Response(success=True, data=suggest_calibration(path.read_bytes(), record))
+            return schemas.Response[CalibrationValues](success=True, data=suggest_calibration(path.read_bytes(), record))
         except (PackError, OSError, RuntimeError) as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[CalibrationValues](success=False, message=str(exc))
 
-    def api_delete_pack(self, request: DeletePackRequest):
+    def api_delete_pack(self, request: DeletePackRequest) -> schemas.Response[None]:
         """拒绝删除内置素材，先确认记录移除再回收图片并返回操作结果"""
         if request.id in BUILTIN_PACK_IDS:
-            return schemas.Response(success=False, message="内置素材包不能删除")
+            return schemas.Response[None](success=False, message="内置素材包不能删除")
         try:
             if not self._store().remove(request.id):
-                return schemas.Response(success=False, message=f"素材包 {request.id} 不存在")
+                return schemas.Response[None](success=False, message=f"素材包 {request.id} 不存在")
         except PackError as exc:
-            return schemas.Response(success=False, message=str(exc))
+            return schemas.Response[None](success=False, message=str(exc))
         except (OSError, RuntimeError):
             logger.error("助手形象：删除素材包失败")
-            return schemas.Response(success=False, message="删除素材包失败，请刷新核对后重试")
+            return schemas.Response[None](success=False, message="删除素材包失败，请刷新核对后重试")
         logger.info(f"助手形象：已删除素材包 {request.id}")
-        return schemas.Response(success=True)
+        return schemas.Response[None](success=True)
 
     def get_api(self) -> list[dict[str, Any]]:
         """形象对所有登录用户显示，读取接口只要求登录；素材包写接口额外要求管理员。"""
@@ -593,32 +602,32 @@ class AgentPets(_PluginBase):
             {
                 "path": "/settings/pet", "endpoint": self.api_save_pet_settings, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "保存单只 Pet 的大小和速度",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[PetSettingsData],
             },
             {
                 "path": "/settings/shared", "endpoint": self.api_save_shared_settings, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "保存共享活动方式和范围",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[ActivityData],
             },
             {
                 "path": "/markets", "endpoint": self.api_markets, "methods": ["GET"],
                 "auth": "bear", "summary": "已接入的在线形象市场",
-                "response_model": schemas.Response[list],
+                "response_model": schemas.Response[list[MarketInfoData]],
             },
             {
                 "path": "/markets/items", "endpoint": self.api_market_items, "methods": ["GET"],
                 "auth": "bear", "summary": "分页搜索市场形象",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[MarketItemsData],
             },
             {
                 "path": "/markets/import", "endpoint": self.api_import_market_pack, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "导入在线市场形象",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[PackSummaryData],
             },
             {
                 "path": "/packs/import", "endpoint": self.api_import_pack, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "导入或更新完整素材包",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[PackSummaryData],
             },
             {
                 "path": "/packs/calibration", "endpoint": self.api_builtin_calibration, "methods": ["GET"],
@@ -633,17 +642,17 @@ class AgentPets(_PluginBase):
             {
                 "path": "/packs/calibration/suggest", "endpoint": self.api_suggest_calibration, "methods": ["GET"],
                 "auth": "bear", "summary": "读取显示校准建议",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[CalibrationValues],
             },
             {
                 "path": "/packs/rename", "endpoint": self.api_rename_pack, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "重命名导入的 Codex Pet",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[PackSummaryData],
             },
             {
                 "path": "/packs/mappings", "endpoint": self.api_save_mappings, "methods": ["POST"],
                 "auth": "bear", "dependencies": list(admin), "summary": "保存 Codex Pet 动作映射",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[MappingsData],
             },
             {
                 "path": "/packs/description", "endpoint": self.api_save_description, "methods": ["POST"],
@@ -656,7 +665,7 @@ class AgentPets(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "读取形象编辑页",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[EditorData],
             },
             {
                 "path": "/settings",
@@ -665,7 +674,7 @@ class AgentPets(_PluginBase):
                 "auth": "bear",
                 "dependencies": list(admin),
                 "summary": "保存全屏角色活动设置",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[SettingsData],
             },
             {
                 "path": "/settings",
@@ -673,7 +682,7 @@ class AgentPets(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "读取全屏角色设置",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[SettingsData],
             },
             {
                 "path": "/packs",
@@ -681,7 +690,7 @@ class AgentPets(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "素材包列表",
-                "response_model": schemas.Response[list],
+                "response_model": schemas.Response[list[PackSummaryData]],
             },
             {
                 "path": "/pack",
@@ -689,7 +698,7 @@ class AgentPets(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "读取素材包与精灵图",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[PackPayload],
             },
             {
                 "path": "/packs",
@@ -698,7 +707,7 @@ class AgentPets(_PluginBase):
                 "auth": "bear",
                 "dependencies": list(admin),
                 "summary": "添加素材包",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[PackSummaryData],
             },
             {
                 "path": "/packs/delete",
@@ -707,7 +716,7 @@ class AgentPets(_PluginBase):
                 "auth": "bear",
                 "dependencies": list(admin),
                 "summary": "删除素材包",
-                "response_model": schemas.Response[dict],
+                "response_model": schemas.Response[None],
             },
         ]
 
