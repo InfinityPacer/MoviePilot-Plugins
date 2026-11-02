@@ -3,7 +3,7 @@ import re
 from datetime import date, timedelta
 from typing import Callable, Optional
 
-from app.schemas.types import MediaType
+from app.schemas.types import MediaSource, MediaType
 
 from ..engine.types import CompletionSignal, PauseRecord
 from ..shared.log import detail
@@ -75,6 +75,8 @@ class AiringPauseChecker:
         ))
         if air_date is None:
             air_date = first_available_scope_episode_air_date(subscribe, episodes or [])
+        if air_date is None and mediainfo.media_source == MediaSource.Douban:
+            air_date = parse_date(mediainfo.release_date)
         if air_date is None:
             # 剧集没有任何可用排期时保持暂停，避免未知开播窗口被集数待定提前接管。
             return PauseRecord(

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from datetime import date, timedelta
 from unittest.mock import MagicMock
 
-from app.schemas.types import MediaType
+from app.schemas.types import MediaSource, MediaType
 
 from app.plugins.subscribeassistantenhanced.pause.airing import AiringPauseChecker
 from app.plugins.subscribeassistantenhanced.pause.manager import PauseManager
@@ -234,7 +234,10 @@ class TestAiringPause:
         )
         subscribe = _sub()
         subscribe.season = 2
-        mediainfo = SimpleNamespace(season_info=[], first_air_date="2020-07-25")
+        mediainfo = SimpleNamespace(
+            season_info=[], first_air_date="2020-07-25",
+            media_source=MediaSource.TMDB, release_date=None,
+        )
 
         result = checker.check_pre_air(
             subscribe,
@@ -278,7 +281,104 @@ class TestAiringPause:
             movie_air_days=0,
             tv_air_days=5,
         )
-        mediainfo = SimpleNamespace(season_info=[], first_air_date=None)
+        mediainfo = SimpleNamespace(
+            season_info=[], first_air_date=None,
+            media_source=MediaSource.TMDB, release_date=None,
+        )
+
+        result = checker.check_pre_air(
+            _sub(),
+            mediainfo,
+            as_of=date(2026, 1, 1),
+            episodes=[_ep(None, episode_number=1)],
+        )
+
+        assert result is not None
+        assert result.reason == "pre_air"
+        assert result.detail == "开播日期未知"
+
+    def test_pre_air_tv_douban_uses_release_date_when_season_and_episode_dates_missing(self):
+        """豆瓣来源缺少季和分集开播日期时，使用豆瓣上映日期判断开播窗口（#474）。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evidence_pipeline=_pipeline(),
+            movie_air_days=0,
+            tv_air_days=5,
+        )
+        mediainfo = SimpleNamespace(
+            season_info=[], first_air_date=None,
+            media_source=MediaSource.Douban, release_date="2026-02-01",
+        )
+
+        result = checker.check_pre_air(
+            _sub(),
+            mediainfo,
+            as_of=date(2026, 1, 1),
+            episodes=[_ep(None, episode_number=1)],
+        )
+
+        assert result is not None
+        assert result.reason == "pre_air"
+        assert result.detail == "开播日期：2026-02-01，距今 31 天，暂未到订阅窗口"
+
+    def test_pre_air_tv_douban_release_date_within_window_returns_none(self):
+        """豆瓣上映日期已进入订阅窗口时不暂停（#474）。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evidence_pipeline=_pipeline(),
+            movie_air_days=0,
+            tv_air_days=5,
+        )
+        mediainfo = SimpleNamespace(
+            season_info=[], first_air_date=None,
+            media_source=MediaSource.Douban, release_date="2026-01-04",
+        )
+
+        result = checker.check_pre_air(
+            _sub(),
+            mediainfo,
+            as_of=date(2026, 1, 1),
+            episodes=[_ep(None, episode_number=1)],
+        )
+
+        assert result is None
+
+    def test_pre_air_tv_non_douban_with_release_date_still_pauses_on_unknown_schedule(self):
+        """非豆瓣来源即使有上映日期，季和分集开播日期缺失时仍按未知暂停（#474）。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evidence_pipeline=_pipeline(),
+            movie_air_days=0,
+            tv_air_days=5,
+        )
+        mediainfo = SimpleNamespace(
+            season_info=[], first_air_date=None,
+            media_source=MediaSource.TMDB, release_date="2026-02-01",
+        )
+
+        result = checker.check_pre_air(
+            _sub(),
+            mediainfo,
+            as_of=date(2026, 1, 1),
+            episodes=[_ep(None, episode_number=1)],
+        )
+
+        assert result is not None
+        assert result.reason == "pre_air"
+        assert result.detail == "开播日期未知"
+
+    def test_pre_air_tv_douban_without_release_date_pauses_on_unknown_schedule(self):
+        """豆瓣来源也没有上映日期时仍按未知暂停（#474）。"""
+        checker = AiringPauseChecker(
+            pause_days=14,
+            evidence_pipeline=_pipeline(),
+            movie_air_days=0,
+            tv_air_days=5,
+        )
+        mediainfo = SimpleNamespace(
+            season_info=[], first_air_date=None,
+            media_source=MediaSource.Douban, release_date=None,
+        )
 
         result = checker.check_pre_air(
             _sub(),
