@@ -131,7 +131,7 @@ const sectionDefinitions: Record<GroupKey, SectionDefinition[]> = {
     },
     {
       titleKey: 'section.airing',
-      keys: ['airing_pause_days', 'movie_air_pause_days', 'tv_air_pause_days'],
+      keys: ['airing_pause_days', 'airing_pause_delay_days', 'movie_air_pause_days', 'tv_air_pause_days'],
     },
     {
       titleKey: 'section.noDownload',

@@ -4,12 +4,6 @@ from app.application.subscription.mutation import SubscriptionActor
 from app.sdk.logging import logger
 
 
-DROP_REBUILT_FIELDS = {
-    "id", "name", "year", "type", "tmdbid", "imdbid", "tvdbid", "doubanid", "bangumiid",
-    "poster", "backdrop", "vote", "description", "date", "last_update",
-}
-
-
 class BestVersionConverter:
     """分集洗版升级为全集洗版。
 
@@ -42,7 +36,7 @@ class BestVersionConverter:
 
         subscribe_dict = subscribe.to_dict()
         subscribe_desc = self._format_subscribe_desc(subscribe, mediainfo)
-        full_payload = self._build_full_payload(subscribe_dict, current_priority=current_priority)
+        full_payload = self._build_full_payload(current_priority=current_priority)
 
         try:
             if self._snapshot:
@@ -86,16 +80,19 @@ class BestVersionConverter:
         self._notify_success(subscribe, subscribe_desc, mediainfo)
         return True
 
-    def _build_full_payload(self, subscribe_dict: dict, current_priority=None) -> dict:
-        """从订阅快照构造全集洗版 payload，并保留订阅范围字段。"""
-        payload = dict(subscribe_dict or {})
-        for field in DROP_REBUILT_FIELDS:
-            payload.pop(field, None)
-        payload["best_version"] = 1
-        payload["best_version_full"] = 1
-        payload["username"] = self._plugin_name
-        payload["state"] = "N"
-        payload["manual_total_episode"] = 0
+    def _build_full_payload(self, current_priority=None) -> dict:
+        """构造全集洗版补丁。
+
+        宿主按补丁语义原地更新，只提交需要切换的字段；范围、进度等其余字段保持原值。
+        不回写整份快照，因为快照含宿主派生的只读字段（如 activity_key），会被写入白名单拒绝。
+        """
+        payload = {
+            "best_version": 1,
+            "best_version_full": 1,
+            "username": self._plugin_name,
+            "state": "N",
+            "manual_total_episode": 0,
+        }
         if current_priority is not None:
             payload["current_priority"] = current_priority
         return payload

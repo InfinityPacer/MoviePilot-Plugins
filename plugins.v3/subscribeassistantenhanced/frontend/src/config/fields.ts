@@ -518,6 +518,13 @@ export const fields: FieldMeta[] = [
     "hint": "已存在最新播出集，且下集距当前日期大于N天，则视为暂停，为0时不处理"
   },
   {
+    "key": "airing_pause_delay_days",
+    "label": "播出间隔暂停延迟天数",
+    "group": "pause",
+    "kind": "number",
+    "hint": "最近一次下载后N天内暂不因播出间隔暂停，订阅继续搜索，为0时不延迟"
+  },
+  {
     "key": "movie_air_pause_days",
     "label": "电影上映暂停天数",
     "group": "pause",

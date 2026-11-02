@@ -72,6 +72,8 @@ export interface SaeConfig {
   auto_pause_users: string
   /** 即将播出暂停天数 */
   airing_pause_days: number
+  /** 播出间隔暂停延迟天数 */
+  airing_pause_delay_days: number
   /** 电影上映暂停天数 */
   movie_air_pause_days: number
   /** 剧集上映暂停天数 */
@@ -185,6 +187,7 @@ export const configDefaults: SaeConfig = {
   "pause_enhanced_enabled": false,
   "auto_pause_users": "",
   "airing_pause_days": 30,
+  "airing_pause_delay_days": 0,
   "movie_air_pause_days": 7,
   "tv_air_pause_days": 14,
   "movie_no_download_days": 365,

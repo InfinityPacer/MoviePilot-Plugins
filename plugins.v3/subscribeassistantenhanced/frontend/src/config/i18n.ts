@@ -375,6 +375,10 @@ const englishFields: Record<ConfigKey, EnglishFieldText> = {
     'Upcoming episode pause days',
     'Pause when the next episode is more than N days away; 0 disables this rule',
   ],
+  airing_pause_delay_days: [
+    'Airing gap pause delay days',
+    'Keep searching for N days after the latest download before an airing gap pause; 0 disables the delay',
+  ],
   movie_air_pause_days: [
     'Movie release pause days',
     'Pause until N days before the movie release date; 0 disables this rule',

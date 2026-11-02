@@ -349,6 +349,68 @@ class TestAiringPause:
         assert result.reason == "airing_gap"
         assert result.detail == "下一集日期：2026-07-01，距今 30 天"
 
+    def test_zero_pause_days_disables_airing_gap(self):
+        """即将播出暂停天数为 0 时不处理播出间隔，也不读取完结证据。"""
+        pipeline = _pipeline()
+        checker = AiringPauseChecker(pause_days=0, evidence_pipeline=pipeline)
+        result = checker.check(_sub(), None, next_episode=_ep("2026-06-02"), latest_episode=None,
+                               as_of=date(2026, 6, 1))
+        assert result is None
+        pipeline.evaluate.assert_not_called()
+
+    def test_zero_pause_days_releases_existing_airing_gap(self):
+        """规则关闭后，遗留的播出间隔暂停应可恢复。"""
+        checker = AiringPauseChecker(pause_days=0, evidence_pipeline=_pipeline())
+        record = PauseRecord(reason="airing_gap", detail="下一集日期：2026-07-01，距今 30 天")
+        assert checker.should_resume_airing_gap(
+            _sub(), None, next_episode=_ep("2026-07-01"), current_record=record, as_of=date(2026, 6, 1)
+        ) is True
+
+    def test_pause_delay_keeps_recent_download_running(self):
+        """最近下载仍在延迟期内时推迟播出间隔暂停，期满当天按原规则暂停。"""
+        last_download = MagicMock(return_value=date(2026, 6, 1))
+        checker = AiringPauseChecker(
+            pause_days=3,
+            evidence_pipeline=_pipeline(),
+            pause_delay_days=2,
+            last_download_date_fn=last_download,
+        )
+        subscribe = _sub()
+
+        for as_of in (date(2026, 6, 1), date(2026, 6, 2)):
+            assert checker.check(subscribe, None, next_episode=_ep("2026-06-08"), latest_episode=None,
+                                 as_of=as_of) is None
+        result = checker.check(subscribe, None, next_episode=_ep("2026-06-08"), latest_episode=None,
+                               as_of=date(2026, 6, 3))
+        assert result is not None
+        assert result.reason == "airing_gap"
+        last_download.assert_called_with(subscribe)
+
+    def test_pause_delay_without_download_history_pauses(self):
+        """没有下载记录时没有延迟起点，按原规则暂停。"""
+        checker = AiringPauseChecker(
+            pause_days=3,
+            evidence_pipeline=_pipeline(),
+            pause_delay_days=2,
+            last_download_date_fn=MagicMock(return_value=None),
+        )
+        result = checker.check(_sub(), None, next_episode=_ep("2026-06-08"), latest_episode=None,
+                               as_of=date(2026, 6, 1))
+        assert result is not None
+
+    def test_pause_delay_not_queried_when_gap_within_window(self):
+        """下一集已在播出窗口内时无需暂停，不读取下载历史。"""
+        last_download = MagicMock(return_value=date(2026, 6, 1))
+        checker = AiringPauseChecker(
+            pause_days=3,
+            evidence_pipeline=_pipeline(),
+            pause_delay_days=2,
+            last_download_date_fn=last_download,
+        )
+        assert checker.check(_sub(), None, next_episode=_ep("2026-06-03"), latest_episode=None,
+                             as_of=date(2026, 6, 1)) is None
+        last_download.assert_not_called()
+
     def test_next_episode_dict_far_away_pauses(self):
         """下一集为 TMDB dict 形态时，仍按 air_date 判断播出间隔。"""
         evaluate = MagicMock(return_value=CompletionSignal())
