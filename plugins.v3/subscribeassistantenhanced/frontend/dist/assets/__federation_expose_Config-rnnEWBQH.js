@@ -51,6 +51,7 @@ const configDefaults = {
   "pause_enhanced_enabled": false,
   "auto_pause_users": "",
   "airing_pause_days": 30,
+  "airing_pause_delay_days": 0,
   "movie_air_pause_days": 7,
   "tv_air_pause_days": 14,
   "movie_no_download_days": 365,
@@ -615,6 +616,13 @@ const fields = [
     "group": "pause",
     "kind": "number",
     "hint": "已存在最新播出集，且下集距当前日期大于N天，则视为暂停，为0时不处理"
+  },
+  {
+    "key": "airing_pause_delay_days",
+    "label": "播出间隔暂停延迟天数",
+    "group": "pause",
+    "kind": "number",
+    "hint": "最近一次下载后N天内暂不因播出间隔暂停，订阅继续搜索，为0时不延迟"
   },
   {
     "key": "movie_air_pause_days",
@@ -1310,6 +1318,10 @@ const englishFields = {
     "Upcoming episode pause days",
     "Pause when the next episode is more than N days away; 0 disables this rule"
   ],
+  airing_pause_delay_days: [
+    "Airing gap pause delay days",
+    "Keep searching for N days after the latest download before an airing gap pause; 0 disables the delay"
+  ],
   movie_air_pause_days: [
     "Movie release pause days",
     "Pause until N days before the movie release date; 0 disables this rule"
@@ -1961,7 +1973,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
         },
         {
           titleKey: "section.airing",
-          keys: ["airing_pause_days", "movie_air_pause_days", "tv_air_pause_days"]
+          keys: ["airing_pause_days", "airing_pause_delay_days", "movie_air_pause_days", "tv_air_pause_days"]
         },
         {
           titleKey: "section.noDownload",
@@ -2876,6 +2888,6 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-e6b593a5"]]);
+const Config = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-19273c3f"]]);
 
 export { Config as default };

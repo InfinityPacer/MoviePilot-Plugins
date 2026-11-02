@@ -102,7 +102,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.7.11"
+    plugin_version = "0.7.12"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -373,6 +373,8 @@ class SubscribeAssistantEnhanced(_PluginBase):
             evidence_pipeline=completion_pipeline,
             movie_air_days=cfg.movie_air_pause_days,
             tv_air_days=cfg.tv_air_pause_days,
+            pause_delay_days=cfg.airing_pause_delay_days,
+            last_download_date_fn=self._last_download_date,
         )
 
         pending_judge = PendingJudge(

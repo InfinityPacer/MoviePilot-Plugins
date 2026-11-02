@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.application.subscription.contract import SubscriptionPatch
 from app.db.oper.subscribehistory import SubscribeHistoryOper
 from app.plugins.subscribeassistantenhanced.best_version.converter import BestVersionConverter
 
@@ -98,16 +99,15 @@ class TestConvertToFull:
         assert update_args[2].name == "订阅助手（增强版）"
         assert update_args[2].is_superuser is True
         assert mutation.update.call_args.kwargs["scene"] == "best_version_full"
-        assert add_payload["best_version"] == 1
-        assert add_payload["best_version_full"] == 1
-        assert add_payload["episode_group"] == "eg-1"
-        assert add_payload["state"] == "N"
-        assert add_payload["username"] == "订阅助手（增强版）"
-        assert add_payload["manual_total_episode"] == 0
-        assert add_payload["note"] == [1, 2]
-        assert add_payload["current_priority"] == 0
-        assert add_payload["episode_priority"] == {"1": 100, "2": 50}
-        assert "id" not in add_payload
+        # 原地补丁只切换洗版形态与准入基线，范围和进度字段由宿主保留原值。
+        assert add_payload == {
+            "best_version": 1,
+            "best_version_full": 1,
+            "username": "订阅助手（增强版）",
+            "state": "N",
+            "manual_total_episode": 0,
+            "current_priority": 0,
+        }
         snapshot.assert_called_once_with(subscribe=sub, mediainfo=media, scope=None)
         assert call_order == ["snapshot", "update", "clear_tasks"]
         notify.assert_called_once()
@@ -134,6 +134,23 @@ class TestConvertToFull:
         mutation.update.assert_called_once()
         assert mutation.update.call_args.args[0] == 1
         assert mutation.update.call_args.args[1]["best_version_full"] == 1
+
+    def test_payload_passes_host_patch_whitelist_with_derived_snapshot_fields(self):
+        """快照含宿主派生字段（activity_key 等）时，转换补丁仍须通过宿主写入白名单。"""
+        history_oper = MagicMock(spec=SubscribeHistoryOper)
+        scope, mutation = _mutation_scope()
+        conv = BestVersionConverter(
+            subscribe_oper=MagicMock(),
+            subscribe_history_oper=history_oper,
+            subscription_mutation_scope=scope,
+        )
+        sub = _SubscribeSnapshot(id=1, name="测试剧", season=1, activity_key="a" * 32)
+
+        assert conv.convert_to_full(sub, _mediainfo(), current_priority=50) is True
+
+        SubscriptionPatch(mutation.update.call_args.args[1])
+        # 历史归档仍保留完整快照，activity_key 属于历史白名单。
+        assert history_oper.add.call_args.args[0]["activity_key"] == "a" * 32
 
     def test_mutation_failure_keeps_original(self):
         """原地更新失败时保留活动订阅，不清理旧任务。"""

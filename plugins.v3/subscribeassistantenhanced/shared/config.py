@@ -396,6 +396,11 @@ class PluginConfig:
         return self.get_int("airing_pause_days", 30)
 
     @property
+    def airing_pause_delay_days(self) -> int:
+        """播出间隔暂停延迟天数：最近一次下载后 N 天内不因播出间隔暂停；0=不延迟。"""
+        return self.get_int("airing_pause_delay_days", 0)
+
+    @property
     def movie_air_pause_days(self) -> int:
         """电影上映暂停天数：当前日期早于上映日期减 N 天则暂停；0=不处理。"""
         return self.get_int("movie_air_pause_days", 7)

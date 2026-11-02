@@ -2756,6 +2756,52 @@ class TestEventDelegation:
         assert record.reason == "airing_gap"
         assert next_air.isoformat() in record.detail
 
+    def test_transfer_complete_event_delays_airing_pause_after_recent_download(self):
+        """配置播出间隔暂停延迟后，刚下载过的订阅在整理完成时保持启用，继续搜索后续版本。"""
+        next_air = date.today() + timedelta(days=7)
+        sub = _sub(id=7, state="R", best_version=0, total_episode=12, lack_episode=5, note=list(range(1, 8)))
+        plugin = SubscribeAssistantEnhanced()
+        plugin.init_plugin({
+            "pause_enhanced_enabled": True,
+            "airing_pause_days": 1,
+            "airing_pause_delay_days": 2,
+        })
+        oper = MagicMock()
+        oper.get.return_value = sub
+        plugin._subscribe_oper = oper
+        plugin._event_proxy._modules["subscribe_oper"] = oper
+        plugin._downloadhistory_oper = MagicMock()
+        plugin._downloadhistory_oper.get_last_by.return_value = [
+            SimpleNamespace(date=f"{date.today().isoformat()} 08:00:00"),
+        ]
+        plugin._task_manager.update("torrents", lambda _data: {"abc": {"subscribe_id": 7}})
+        mediainfo = _mediainfo(next_episode_to_air=SimpleNamespace(
+            air_date=next_air.isoformat(),
+            episode_number=8,
+            season_number=1,
+        ), type=MediaType.TV)
+        plugin._recognize_mediainfo = MagicMock(return_value=mediainfo)
+        plugin._tmdb_episodes = MagicMock(return_value=[
+            SimpleNamespace(air_date=date.today().isoformat(), episode_number=7, season_number=1),
+            SimpleNamespace(air_date=next_air.isoformat(), episode_number=8, season_number=1),
+        ])
+        plugin._event_proxy._modules["recognize_mediainfo_fn"] = plugin._recognize_mediainfo
+        plugin._event_proxy._modules["tmdb_episodes_fn"] = plugin._tmdb_episodes
+        plugin._modules["airing_checker"]._evidence_pipeline = SimpleNamespace(
+            evaluate=MagicMock(return_value=CompletionEvidence(primary_signal=CompletionSignal()))
+        )
+        pause_manager = plugin._modules["pause_manager"]
+        pause_manager.pause = MagicMock()
+        plugin._modules["lifecycle"]._subscribe_oper = oper
+
+        plugin.on_transfer_complete(SimpleNamespace(event_data={
+            "download_hash": "abc",
+            "transferinfo": None,
+        }))
+
+        plugin._downloadhistory_oper.get_last_by.assert_called()
+        pause_manager.pause.assert_not_called()
+
     def test_stop_service_clears_state(self):
         plugin = SubscribeAssistantEnhanced()
         plugin.init_plugin({})
