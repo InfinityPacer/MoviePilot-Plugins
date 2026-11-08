@@ -4,6 +4,7 @@
 ResourceSelection 链式事件在这里接入候选准入、洗版串行和删除指纹过滤，保持入口只做编排。
 """
 import datetime
+import inspect
 import json
 import random
 import re
@@ -102,7 +103,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.7.13"
+    plugin_version = "0.7.14"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -1676,9 +1677,13 @@ class SubscribeAssistantEnhanced(_PluginBase):
                 media_source=media_source, media_id=media_id,
                 mtype=mtype, season=season,
             ) or []
-        return self._transferhistory_oper.get_by(
-            media_source=media_source, media_id=media_id, mtype=mtype,
-        ) or []
+        # 无季号只出现在电影订阅清理：订阅洗版的语义就是替换该媒体身份下的全部旧版本。
+        # 主程序 3.1.6 起电影无目标路径默认返回空，需显式声明全量版本匹配；更早版本没有该参数，
+        # 但无目标路径时本就返回全部版本，因此按宿主签名决定是否传入。
+        query = dict(media_source=media_source, media_id=media_id, mtype=mtype)
+        if "match_all_versions" in inspect.signature(self._transferhistory_oper.get_by).parameters:
+            query["match_all_versions"] = True
+        return self._transferhistory_oper.get_by(**query) or []
 
     def _delete_media_file(self, fileitem_dict):
         """删除媒体文件（旧源文件或旧媒体库文件）；fileitem_dict 为整理记录的 src/dest_fileitem 序列化形态。

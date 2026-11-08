@@ -2604,6 +2604,54 @@ def test_get_transfer_histories_passes_episode_when_provided():
     )
 
 
+def test_get_transfer_histories_returns_all_movie_versions_from_database():
+    """电影订阅清理无季号，必须拿到同一媒体身份的全部旧版本整理记录（#480）。"""
+    from app.db.oper.transferhistory import TransferHistoryOper
+
+    oper = TransferHistoryOper()
+    for dest in ("/library/movie/A-1080p.mkv", "/library/movie/A-2160p.mkv"):
+        oper.add(
+            src=dest.replace("/library", "/downloads"), dest=dest, type="电影",
+            title="八仙！", year="2026", media_source="themoviedb", media_id="480001",
+            status=True,
+        )
+    oper.add(
+        src="/downloads/movie/B.mkv", dest="/library/movie/B.mkv", type="电影",
+        title="八仙！", year="2026", media_source="themoviedb", media_id="480002",
+        status=True,
+    )
+    plugin = SubscribeAssistantEnhanced()
+    plugin._transferhistory_oper = oper
+
+    histories = plugin._get_transfer_histories(
+        media_source="themoviedb", media_id="480001", mtype="电影",
+    )
+
+    assert sorted(history.dest for history in histories) == [
+        "/library/movie/A-1080p.mkv",
+        "/library/movie/A-2160p.mkv",
+    ]
+
+
+def test_get_transfer_histories_movie_query_supports_hosts_before_match_all_versions():
+    """主程序 3.1.6 之前的 get_by 没有 match_all_versions，电影查询不能因多传参数而失败。"""
+    calls = []
+
+    class LegacyTransferHistoryOper:
+        def get_by(self, title=None, year=None, mtype=None, season=None, episode=None,
+                   media_source=None, media_id=None, dest=None):
+            calls.append(dict(mtype=mtype, media_source=media_source, media_id=media_id))
+            return ["legacy"]
+
+    plugin = SubscribeAssistantEnhanced()
+    plugin._transferhistory_oper = LegacyTransferHistoryOper()
+
+    assert plugin._get_transfer_histories(
+        media_source="themoviedb", media_id="480001", mtype="电影",
+    ) == ["legacy"]
+    assert calls == [dict(mtype="电影", media_source="themoviedb", media_id="480001")]
+
+
 class TestPluginWiring:
     """init_plugin 后各域模块、事件代理依赖、扩展点均就位。"""
 
