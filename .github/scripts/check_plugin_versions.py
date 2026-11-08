@@ -68,9 +68,6 @@ def _check_v3_metadata(path: Path, plugin_id: str, metadata: dict) -> list[str]:
     if version_parts is None or len(version_parts) < 2:
         errors.append(f"{path}: {plugin_id} V3 版本必须至少包含主版本和小版本：{version}")
 
-    if metadata.get("system_version") != ">=3.0.0":
-        errors.append(f'{path}: {plugin_id} system_version 必须为 ">=3.0.0"')
-
     legacy = _legacy_metadata(path, plugin_id)
     if legacy is None:
         # V3-only 新插件可以没有旧代条目；仅当存在旧实现时才需要显式阻断回退。

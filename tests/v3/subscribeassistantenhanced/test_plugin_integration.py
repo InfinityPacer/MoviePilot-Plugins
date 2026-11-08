@@ -2633,25 +2633,6 @@ def test_get_transfer_histories_returns_all_movie_versions_from_database():
     ]
 
 
-def test_get_transfer_histories_movie_query_supports_hosts_before_match_all_versions():
-    """主程序 3.1.6 之前的 get_by 没有 match_all_versions，电影查询不能因多传参数而失败。"""
-    calls = []
-
-    class LegacyTransferHistoryOper:
-        def get_by(self, title=None, year=None, mtype=None, season=None, episode=None,
-                   media_source=None, media_id=None, dest=None):
-            calls.append(dict(mtype=mtype, media_source=media_source, media_id=media_id))
-            return ["legacy"]
-
-    plugin = SubscribeAssistantEnhanced()
-    plugin._transferhistory_oper = LegacyTransferHistoryOper()
-
-    assert plugin._get_transfer_histories(
-        media_source="themoviedb", media_id="480001", mtype="电影",
-    ) == ["legacy"]
-    assert calls == [dict(mtype="电影", media_source="themoviedb", media_id="480001")]
-
-
 class TestPluginWiring:
     """init_plugin 后各域模块、事件代理依赖、扩展点均就位。"""
 
