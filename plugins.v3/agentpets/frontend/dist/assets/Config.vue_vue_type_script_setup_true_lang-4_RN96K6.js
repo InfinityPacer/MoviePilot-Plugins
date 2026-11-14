@@ -1461,6 +1461,9 @@ function marketUrl(value) {
     return "";
   }
 }
+function isRequestCancellation(reason) {
+  return record(reason) && (reason.__CANCEL__ === true || reason.code === "ERR_CANCELED" || reason.name === "AbortError" || reason.name === "CanceledError");
+}
 function marketError(reason, fallback) {
   const response = reason?.response;
   if (response?.status === 403) return "仅管理员可以导入市场形象";
@@ -1587,6 +1590,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     const result = ref$1(null);
     const page = ref$1(1);
     const listLoading = ref$1(false);
+    const listReady = ref$1(false);
     const loading = ref$1(false);
     const listError = ref$1("");
     const error = ref$1("");
@@ -1596,6 +1600,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     const mode = ref$1("new");
     const importing = ref$1(false);
     const importError = ref$1("");
+    const importNotice = ref$1("");
     const importedIds = ref$1(/* @__PURE__ */ new Set());
     const market = computed$1(() => markets.value.find((item) => item.id === marketId.value));
     const pageCount = computed$1(
@@ -1634,6 +1639,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
         if (!alive || scope !== scopeVersion || version !== queryVersion) return;
         result.value = data;
       } catch (reason) {
+        if (isRequestCancellation(reason)) return;
         if (alive && scope === scopeVersion && version === queryVersion)
           error.value = marketError(reason, "市场暂时无法读取，请重试");
       } finally {
@@ -1657,15 +1663,19 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       error.value = "";
       notice.value = "";
       importError.value = "";
+      importNotice.value = "";
       importedIds.value = /* @__PURE__ */ new Set();
+      listReady.value = false;
       listLoading.value = true;
       try {
         const data = await loadMarkets(props.api, props.pluginId);
         if (!alive || scope !== scopeVersion) return;
+        listReady.value = true;
         markets.value = data;
         marketId.value = data[0]?.id ?? "";
         if (marketId.value) void fetchPage();
       } catch (reason) {
+        if (isRequestCancellation(reason)) return;
         if (alive && scope === scopeVersion) listError.value = marketError(reason, "市场列表读取失败，请重试");
       } finally {
         if (alive && scope === scopeVersion) listLoading.value = false;
@@ -1693,6 +1703,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       selected.value = item;
       mode.value = importedIds.value.has(`${marketId.value}:${item.id}`) ? "copy" : "new";
       importError.value = "";
+      importNotice.value = "";
     }
     function closeReview(value) {
       if (!value && !importing.value) selected.value = null;
@@ -1705,6 +1716,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
       const id = props.pluginId;
       importing.value = true;
       importError.value = "";
+      importNotice.value = "";
       try {
         const saved = await importMarketPack(props.api, id, target, item.id, mode.value);
         if (!alive || scope !== scopeVersion) return;
@@ -1714,6 +1726,11 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
         toast?.success?.(notice.value);
         emit("imported");
       } catch (reason) {
+        if (isRequestCancellation(reason)) {
+          if (alive && scope === scopeVersion)
+            importNotice.value = "导入结果尚未确认，请刷新“我的素材”核对后再决定是否重试。";
+          return;
+        }
         if (alive && scope === scopeVersion) importError.value = marketError(reason, "导入未完成，请刷新我的素材核对后重试");
       } finally {
         if (alive && scope === scopeVersion) importing.value = false;
@@ -1861,7 +1878,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
               _createVNode$1(_component_v_skeleton_loader, { type: "image, list-item-two-line" })
             ]);
           }), 64))
-        ])) : !listError.value && !markets.value.length ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_5$1, [
+        ])) : listReady.value && !listError.value && !markets.value.length ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_5$1, [
           _createVNode$1(_component_v_icon, {
             icon: "mdi-storefront-outline",
             size: "36"
@@ -2076,8 +2093,21 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                       ]),
                       _: 1
                     }, 8, ["modelValue", "disabled"]),
-                    importError.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+                    importNotice.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
                       key: 2,
+                      role: "status",
+                      type: "info",
+                      variant: "tonal",
+                      density: "compact",
+                      class: "mt-3"
+                    }, {
+                      default: _withCtx$1(() => [
+                        _createTextVNode$1(_toDisplayString$1(importNotice.value), 1)
+                      ]),
+                      _: 1
+                    })) : _createCommentVNode$1("", true),
+                    importError.value ? (_openBlock$1(), _createBlock$1(_component_v_alert, {
+                      key: 3,
                       role: "alert",
                       type: "error",
                       variant: "tonal",
@@ -2131,7 +2161,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
   }
 });
 
-const MarketBrowser = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-80be5f46"]]);
+const MarketBrowser = /* @__PURE__ */ _export_sfc(_sfc_main$1, [["__scopeId", "data-v-21771710"]]);
 
 const {defineComponent:_defineComponent} = await importShared('vue');
 

@@ -49,6 +49,17 @@ export function marketUrl(value: string | null | undefined): string {
   }
 }
 
+/** 宿主请求中止属于正常控制流，不应当显示故障或重复提交。 */
+export function isRequestCancellation(reason: unknown): boolean {
+  return (
+    record(reason) &&
+    (reason.__CANCEL__ === true ||
+      reason.code === 'ERR_CANCELED' ||
+      reason.name === 'AbortError' ||
+      reason.name === 'CanceledError')
+  )
+}
+
 /** 返回错误说明，权限失败使用明确的管理员提示，不泄露 HTTP 客户端实现。 */
 export function marketError(reason: unknown, fallback: string): string {
   const response = (reason as { response?: { status?: number; data?: { detail?: unknown; message?: unknown } } })

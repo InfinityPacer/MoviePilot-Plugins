@@ -372,3 +372,103 @@ describe('market browsing and import', () => {
     expect(view.queryByText(/图片由浏览器直接加载/)).toBeNull()
   })
 })
+
+const cancellations = [
+  { name: 'AbortError' },
+  { name: 'CanceledError' },
+  { code: 'ERR_CANCELED' },
+  { __CANCEL__: true },
+]
+describe('market request cancellation', () => {
+  it.each(cancellations)('stops cancelled searches without a failure or retry action: %j', async marker => {
+    const { api, view } = await setup()
+    const before = api.get.mock.calls.length
+    api.get.mockRejectedValueOnce(Object.assign(new Error('cancelled'), marker))
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await flushPromises()
+    expect(view.queryByRole('alert')).toBeNull()
+    expect(view.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(view.queryByLabelText('正在加载市场形象')).toBeNull()
+    expect(api.get.mock.calls.length - before).toBe(1)
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await waitFor(() => expect(view.getByRole('button', { name: '导入 Test Pet' })).toBeInTheDocument())
+  })
+
+  it.each(cancellations)('does not report a cancelled initialization as a failed or empty market: %j', async marker => {
+    const { api, view } = await setup()
+    api.get.mockRejectedValueOnce(Object.assign(new Error('cancelled'), marker))
+    await view.rerender({ pluginId: 'Clone2' })
+    await flushPromises()
+    expect(view.queryByRole('alert')).toBeNull()
+    expect(view.queryByText('暂未接入形象市场')).toBeNull()
+    expect(view.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(view.queryByLabelText('正在加载市场形象')).toBeNull()
+  })
+
+  it.each(cancellations)(
+    'keeps the import review, asks for local verification and never resubmits on cancellation: %j',
+    async marker => {
+      const { api, view } = await setup()
+      api.post.mockRejectedValueOnce(Object.assign(new Error('cancelled'), marker))
+      await fireEvent.click(view.getByRole('button', { name: '导入 Test Pet' }))
+      await fireEvent.click(view.getByRole('radio', { name: '导入副本' }))
+      await fireEvent.click(view.getByRole('button', { name: '确认导入' }))
+      await flushPromises()
+      expect(view.queryByRole('alert')).toBeNull()
+      expect(view.getByText('导入结果尚未确认，请刷新“我的素材”核对后再决定是否重试。')).toBeInTheDocument()
+      expect(view.getByRole('radio', { name: '导入副本' })).toBeChecked()
+      expect(view.getByRole('button', { name: '确认导入' })).toBeEnabled()
+      expect(view.queryByText('已导入 Test Pet')).toBeNull()
+      expect(view.emitted('imported')).toBeUndefined()
+      expect(api.post).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('keeps the newer search loading when an older request is cancelled', async () => {
+    const { api, view } = await setup()
+    const original = api.get.getMockImplementation()!
+    let cancel!: (reason: Error) => void
+    let finish!: (value: unknown) => void
+    api.get
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            cancel = reject
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finish = resolve
+          }),
+      )
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    await fireEvent.update(view.getByRole('textbox', { name: '搜索形象' }), 'new')
+    await fireEvent.click(view.getByRole('button', { name: '搜索市场形象' }))
+    cancel(Object.assign(new Error('cancelled'), { name: 'AbortError' }))
+    await flushPromises()
+    expect(view.getByLabelText('正在加载市场形象')).toBeInTheDocument()
+    expect(view.queryByText('cancelled')).toBeNull()
+    expect(view.queryByRole('button', { name: '重试' })).toBeNull()
+    finish(await original('plugin/Clone1/markets/items?market_id=codex-pets&keyword=new&page=1'))
+    await waitFor(() => expect(view.getByRole('button', { name: '导入 Test Pet' })).toBeInTheDocument())
+  })
+
+  it('does not emit or retry an import cancelled after unmount', async () => {
+    const { api, view } = await setup()
+    let cancel!: (reason: Error) => void
+    api.post.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          cancel = reject
+        }),
+    )
+    await fireEvent.click(view.getByRole('button', { name: '导入 Test Pet' }))
+    await fireEvent.click(view.getByRole('button', { name: '确认导入' }))
+    view.unmount()
+    cancel(Object.assign(new Error('cancelled'), { code: 'ERR_CANCELED' }))
+    await flushPromises()
+    expect(api.post).toHaveBeenCalledTimes(1)
+    expect(view.emitted('imported')).toBeUndefined()
+  })
+})

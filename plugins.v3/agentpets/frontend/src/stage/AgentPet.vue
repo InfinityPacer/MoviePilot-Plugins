@@ -273,6 +273,8 @@ let pendingHopLine: { el: Element; top: number } | null = null
 let fixedPosition: { xRatio: number; yRatio: number } | null = null
 let lastSaved = ''
 let lastSaveAt = 0
+let positionGeneration = 0
+let positionWrite: { repeat: boolean; immediate: boolean } | null = null
 /** 下一次落地后保存落脚点：用户拖拽放下或活动范围改变时置位。 */
 let saveOnLand = false
 let suppressedPointer: { id: number; until: number } | null = null
@@ -2033,7 +2035,7 @@ function scheduleClearance(delay: number) {
 function requestSave(immediate = false) {
   if (immediate) {
     clearTimer('save')
-    writePosition()
+    writePosition(true)
     return
   }
   const wait = lastSaveAt + SAVE_THROTTLE - Date.now()
@@ -2041,8 +2043,8 @@ function requestSave(immediate = false) {
   else if (!timers.has('save')) setTimer('save', wait, writePosition)
 }
 
-function writePosition() {
-  if (!ready.value || motion.value === 'drag' || motion.value === 'fall') return
+function writePosition(immediate = false) {
+  if (disposed || !ready.value || motion.value === 'drag' || motion.value === 'fall') return
   const view = viewport()
   const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1000) / 1000
   const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1000) / 1000
@@ -2058,11 +2060,43 @@ function writePosition() {
         }
       : {}),
   }
+  void persistPosition(value, immediate)
+}
+
+/** 成功回执才更新已保存位置；等待中的新位置串行结算，失败保留下一次保存机会。 */
+async function persistPosition(value: StoredPosition, immediate: boolean) {
+  const owner = props.pet
+  if (!owner?.storage?.set) return
+  if (positionWrite) {
+    positionWrite.repeat = true
+    positionWrite.immediate ||= immediate
+    return
+  }
   const key = JSON.stringify(value)
   if (key === lastSaved) return
-  lastSaved = key
+  const generation = positionGeneration
+  const pluginId = props.pluginId
+  const petKey = owner.key
+  const current = () =>
+    !disposed &&
+    generation === positionGeneration &&
+    owner === props.pet &&
+    pluginId === props.pluginId &&
+    petKey === props.pet?.key
+  const write = { repeat: false, immediate: false }
+  positionWrite = write
   lastSaveAt = Date.now()
-  props.pet?.storage?.set?.(value)?.catch?.(() => console.warn('[AgentPets] position not saved'))
+  try {
+    await owner.storage.set(value)
+    if (current()) lastSaved = key
+  } catch {
+    if (current()) console.warn('[AgentPets] position not saved')
+  } finally {
+    if (positionWrite === write) {
+      positionWrite = null
+      if (write.repeat && current()) requestSave(write.immediate)
+    }
+  }
 }
 
 /** 已经被面板盖住时直接移到空位，不能让“禁止走进面板”的规则把退出路径也封住。 */
@@ -2374,7 +2408,12 @@ function onSettingsEvent(event: AgentHostEvent) {
   applySettings({ ...settings.value, ...data })
 }
 
-watch([() => props.pluginId, () => props.pet?.key], () => {
+watch([() => props.pluginId, () => props.pet?.key, () => props.pet], () => {
+  positionGeneration++
+  positionWrite = null
+  lastSaved = ''
+  lastSaveAt = 0
+  clearTimer('save')
   // A new Pet must not borrow the previous Pet's lines while its settings load.
   settingsScope = ''
   cancelPointerGesture(false)
