@@ -871,6 +871,8 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     let fixedPosition = null;
     let lastSaved = "";
     let lastSaveAt = 0;
+    let positionGeneration = 0;
+    let positionWrite = null;
     let saveOnLand = false;
     let suppressedPointer = null;
     let pendingDropReaction = null;
@@ -2229,15 +2231,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
     function requestSave(immediate = false) {
       if (immediate) {
         clearTimer("save");
-        writePosition();
+        writePosition(true);
         return;
       }
       const wait = lastSaveAt + SAVE_THROTTLE - Date.now();
       if (wait <= 0) writePosition();
       else if (!timers.has("save")) setTimer("save", wait, writePosition);
     }
-    function writePosition() {
-      if (!ready.value || motion.value === "drag" || motion.value === "fall") return;
+    function writePosition(immediate = false) {
+      if (disposed || !ready.value || motion.value === "drag" || motion.value === "fall") return;
       const view = viewport();
       const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1e3) / 1e3;
       const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1e3) / 1e3;
@@ -2251,11 +2253,36 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           yRatio: Math.round(fixedPosition.yRatio * 1e3) / 1e3
         } : {}
       };
+      void persistPosition(value, immediate);
+    }
+    async function persistPosition(value, immediate) {
+      const owner = props.pet;
+      if (!owner?.storage?.set) return;
+      if (positionWrite) {
+        positionWrite.repeat = true;
+        positionWrite.immediate ||= immediate;
+        return;
+      }
       const key = JSON.stringify(value);
       if (key === lastSaved) return;
-      lastSaved = key;
+      const generation = positionGeneration;
+      const pluginId = props.pluginId;
+      const petKey = owner.key;
+      const current = () => !disposed && generation === positionGeneration && owner === props.pet && pluginId === props.pluginId && petKey === props.pet?.key;
+      const write = { repeat: false, immediate: false };
+      positionWrite = write;
       lastSaveAt = Date.now();
-      props.pet?.storage?.set?.(value)?.catch?.(() => console.warn("[AgentPets] position not saved"));
+      try {
+        await owner.storage.set(value);
+        if (current()) lastSaved = key;
+      } catch {
+        if (current()) console.warn("[AgentPets] position not saved");
+      } finally {
+        if (positionWrite === write) {
+          positionWrite = null;
+          if (write.repeat && current()) requestSave(write.immediate);
+        }
+      }
     }
     function clearPanelOverlap() {
       if (motion.value === "drag") return false;
@@ -2523,7 +2550,12 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       }
       applySettings({ ...settings.value, ...data });
     }
-    watch([() => props.pluginId, () => props.pet?.key], () => {
+    watch([() => props.pluginId, () => props.pet?.key, () => props.pet], () => {
+      positionGeneration++;
+      positionWrite = null;
+      lastSaved = "";
+      lastSaveAt = 0;
+      clearTimer("save");
       settingsScope = "";
       cancelPointerGesture(false);
       cancelInteractionFeedback();
@@ -3041,6 +3073,6 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
   }
 });
 
-const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a6d5c99a"]]);
+const AgentPet = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-4aa8d51c"]]);
 
 export { supportsLookDirections as a, builtinRhythm as b, AgentPet as default, supportsRest as s };

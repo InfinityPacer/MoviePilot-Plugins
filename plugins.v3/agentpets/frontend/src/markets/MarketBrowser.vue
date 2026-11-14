@@ -4,6 +4,7 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import type { PluginApi } from '@/host'
 import {
   importMarketPack,
+  isRequestCancellation,
   loadMarkets,
   marketError,
   marketUrl,
@@ -24,6 +25,7 @@ const submittedKeyword = ref('')
 const result = ref<MarketPage | null>(null)
 const page = ref(1)
 const listLoading = ref(false)
+const listReady = ref(false)
 const loading = ref(false)
 const listError = ref('')
 const error = ref('')
@@ -33,6 +35,7 @@ const selected = ref<MarketItem | null>(null)
 const mode = ref<MarketImportMode>('new')
 const importing = ref(false)
 const importError = ref('')
+const importNotice = ref('')
 const importedIds = ref(new Set<string>())
 const market = computed(() => markets.value.find(item => item.id === marketId.value))
 const pageCount = computed(() =>
@@ -76,6 +79,7 @@ async function fetchPage(nextPage = 1) {
     if (!alive || scope !== scopeVersion || version !== queryVersion) return
     result.value = data
   } catch (reason) {
+    if (isRequestCancellation(reason)) return
     if (alive && scope === scopeVersion && version === queryVersion)
       error.value = marketError(reason, '市场暂时无法读取，请重试')
   } finally {
@@ -101,15 +105,19 @@ async function initialize() {
   error.value = ''
   notice.value = ''
   importError.value = ''
+  importNotice.value = ''
   importedIds.value = new Set()
+  listReady.value = false
   listLoading.value = true
   try {
     const data = await loadMarkets(props.api, props.pluginId)
     if (!alive || scope !== scopeVersion) return
+    listReady.value = true
     markets.value = data
     marketId.value = data[0]?.id ?? ''
     if (marketId.value) void fetchPage()
   } catch (reason) {
+    if (isRequestCancellation(reason)) return
     if (alive && scope === scopeVersion) listError.value = marketError(reason, '市场列表读取失败，请重试')
   } finally {
     if (alive && scope === scopeVersion) listLoading.value = false
@@ -141,6 +149,7 @@ function choose(item: MarketItem) {
   selected.value = item
   mode.value = importedIds.value.has(`${marketId.value}:${item.id}`) ? 'copy' : 'new'
   importError.value = ''
+  importNotice.value = ''
 }
 
 function closeReview(value: boolean) {
@@ -156,6 +165,7 @@ async function importSelected() {
   const id = props.pluginId
   importing.value = true
   importError.value = ''
+  importNotice.value = ''
   try {
     const saved = await importMarketPack(props.api, id, target, item.id, mode.value)
     if (!alive || scope !== scopeVersion) return
@@ -165,6 +175,11 @@ async function importSelected() {
     toast?.success?.(notice.value)
     emit('imported')
   } catch (reason) {
+    if (isRequestCancellation(reason)) {
+      if (alive && scope === scopeVersion)
+        importNotice.value = '导入结果尚未确认，请刷新“我的素材”核对后再决定是否重试。'
+      return
+    }
     if (alive && scope === scopeVersion) importError.value = marketError(reason, '导入未完成，请刷新我的素材核对后重试')
   } finally {
     if (alive && scope === scopeVersion) importing.value = false
@@ -255,7 +270,7 @@ onBeforeUnmount(() => {
         <v-skeleton-loader type="image, list-item-two-line" />
       </div>
     </div>
-    <div v-else-if="!listError && !markets.length" class="ap-market__empty" role="status">
+    <div v-else-if="listReady && !listError && !markets.length" class="ap-market__empty" role="status">
       <v-icon icon="mdi-storefront-outline" size="36" />
       <p>暂未接入形象市场</p>
     </div>
@@ -398,6 +413,9 @@ onBeforeUnmount(() => {
           <v-radio-group v-model="mode" label="导入方式" :disabled="importing" hide-details>
             <v-radio label="新增素材" value="new" /><v-radio label="导入副本" value="copy" />
           </v-radio-group>
+          <v-alert v-if="importNotice" role="status" type="info" variant="tonal" density="compact" class="mt-3">{{
+            importNotice
+          }}</v-alert>
           <v-alert v-if="importError" role="alert" type="error" variant="tonal" density="compact" class="mt-3">{{
             importError
           }}</v-alert>
