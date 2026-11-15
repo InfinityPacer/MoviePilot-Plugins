@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { withLoadTimeout } from '@/loading'
 import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
+import { SurfaceTracking } from './surfaceTracking'
 import { PositionStorage, type StoredPosition } from './positionStorage'
 import { usePoseFrames } from './poseFrames'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
@@ -167,8 +168,6 @@ const MAX_OTHER_SURFACES = 3
 /** 在其他站立面上最多试探的候选位置数。 */
 const OTHER_SURFACE_CANDIDATES = 4
 const DEFAULT_RATIO = 0.88
-/** DOM 变化后重新校验脚下元素的节流间隔（毫秒）。 */
-const SURFACE_CHECK_INTERVAL = 500
 /** 用户放下后过多久自己走开，让用户看得出是她主动挪开的（毫秒）。 */
 const DROP_CLEAR_DELAY = 1500
 /** 窗口尺寸变化后合并多久再检查是否挡住控件（毫秒）。 */
@@ -269,9 +268,6 @@ let pendingStepOff = false
 let surface: DomSurface | null = null
 /** 手动选中的站立面优先于控件避让，离开或支撑失效后解除。 */
 let manualSurface: Element | null = null
-let surfaceFrame = 0
-let surfaceObserver: MutationObserver | null = null
-let surfacePoll = 0
 let standPollTicks = 0
 let disposed = false
 /** 最近一次落地来自用户拖拽放下。 */
@@ -292,6 +288,7 @@ let press: {
 } | null = null
 
 const timers = new PausableTimers()
+const surfaceTracking = new SurfaceTracking(timers, () => rootEl.value, checkSurface, onStandPoll)
 const positionStorage = new PositionStorage(
   () => ({ pet: props.pet, pluginId: props.pluginId }),
   positionSnapshot,
@@ -1634,15 +1631,7 @@ function attachSurface(next: DomSurface) {
   detachSurface()
   surface = next
   if (!visible()) return
-  window.addEventListener('scroll', onSurfaceScroll, { capture: true, passive: true })
-  if (typeof MutationObserver !== 'undefined') {
-    surfaceObserver = new MutationObserver(records => {
-      // 小映自己走路时每帧改 transform，这类变化不影响脚下元素。
-      if (records.every(record => rootEl.value?.contains(record.target))) return
-      if (!timers.has('surface')) setTimer('surface', SURFACE_CHECK_INTERVAL, checkSurface)
-    })
-    surfaceObserver.observe(props.previewRoot ?? document.body, { subtree: true, childList: true, attributes: true })
-  }
+  surfaceTracking.observe(props.previewRoot ?? document.body)
   syncSurfacePoll()
 }
 
@@ -1659,16 +1648,12 @@ function attachSurface(next: DomSurface) {
  */
 function syncSurfacePoll() {
   const wanted = ready.value && !disposed && visible() && motion.value !== 'drag'
-  if (wanted && !surfacePoll) surfacePoll = window.setInterval(onStandPoll, SURFACE_CHECK_INTERVAL)
-  if (!wanted && surfacePoll) {
-    window.clearInterval(surfacePoll)
-    surfacePoll = 0
-  }
+  surfaceTracking.syncPolling(wanted)
 }
 
 function onStandPoll() {
   standPollTicks += 1
-  if (surface && surfaceObserver) checkSurface()
+  if (surface && surfaceTracking.observing) checkSurface()
   // 用户刚放下时等它自己的延迟检查，复查不抢先。
   if (standPollTicks % CLEARANCE_POLL_EVERY === 0 && !timers.has('clearance')) checkClearance()
   if (standPollTicks % CLEARANCE_POLL_EVERY === 0) tryIdleDialogue()
@@ -1681,22 +1666,8 @@ function detachSurface() {
 }
 
 function pauseSurfaceWatch() {
-  window.removeEventListener('scroll', onSurfaceScroll, { capture: true })
-  surfaceObserver?.disconnect()
-  surfaceObserver = null
+  surfaceTracking.pause()
   syncSurfacePoll()
-  clearTimer('surface')
-  if (surfaceFrame) window.cancelAnimationFrame(surfaceFrame)
-  surfaceFrame = 0
-}
-
-/** 滚动时元素位置每帧都可能变化，按帧合并校验，只读一个元素的位置。 */
-function onSurfaceScroll() {
-  if (surfaceFrame) return
-  surfaceFrame = window.requestAnimationFrame(() => {
-    surfaceFrame = 0
-    checkSurface()
-  })
 }
 
 /** 重新校验脚下的元素：跟着它移动，或在它消失、缩小、滚出视口时下落。 */
@@ -2247,7 +2218,7 @@ function syncVisibility() {
     requestSave(true)
     return
   }
-  if (surface && !surfaceObserver) {
+  if (surface && !surfaceTracking.observing) {
     attachSurface(surface)
     checkSurface()
   }
@@ -2745,7 +2716,7 @@ onBeforeUnmount(() => {
   pendingDropReaction = null
   startup.abort()
   stopLoop()
-  pauseSurfaceWatch()
+  surfaceTracking.dispose()
   if (anchorFrame) window.cancelAnimationFrame(anchorFrame)
   anchorFrame = 0
   timers.dispose()
