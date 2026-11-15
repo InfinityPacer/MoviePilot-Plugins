@@ -24,7 +24,8 @@
       "vue/compiler-sfc": ["node_modules/@vue/compiler-sfc"],
       "vuetify": ["node_modules/vuetify"],
       "vuetify/components": ["node_modules/vuetify/lib/components/index.d.mts"],
-      "vuetify/directives": ["node_modules/vuetify/lib/directives/index.d.mts"]
+      "vuetify/directives": ["node_modules/vuetify/lib/directives/index.d.mts"],
+      "typescript": ["node_modules/typescript"]
     },
     "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },

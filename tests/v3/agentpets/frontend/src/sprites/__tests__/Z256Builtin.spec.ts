@@ -21,7 +21,7 @@ describe('Z256 Kurisu packaged Codex Pet', () => {
       expect(pack.actions[key].frames.length).toBeGreaterThan(0)
     }
     expect(withCodexStageActions(pack)).toEqual(pack)
-    expect(builtinAvatar(KEY)).toContain(`/packs/${KEY}/avatar.png`)
+    expect(builtinAvatar(KEY)).toContain(`/packs/${KEY}/avatar.ui.webp`)
   })
 
   it('loads the lossless WebP render and reads only instance-scoped calibration', async () => {
