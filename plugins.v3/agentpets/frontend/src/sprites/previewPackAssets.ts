@@ -1,6 +1,6 @@
 import { inject, onBeforeUnmount, provide, type InjectionKey } from 'vue'
 
-import type { PluginApi } from '@/host'
+import type { ApiResponse, PluginApi } from '@/host'
 import { loadImage } from '@/loading'
 import { validatePack, type SpritePack } from '@/sprites/schema'
 
@@ -41,6 +41,30 @@ interface PendingPack extends ScopeKey {
 const MAX_PENDING_PACKS = 4
 const MAX_CACHED_IMAGES = 4
 const MAX_CACHED_IMAGE_CHARS = 16 * 1024 * 1024
+const MAX_HOST_READS_PER_INSTANCE = 4
+const MAX_TOTAL_HOST_READS = 16
+const hostReads = new WeakMap<PluginApi, Map<string, number>>()
+let activeHostReads = 0
+
+/** Share only the live-request budget, never an editor's images or metadata. */
+function reserveHostRead(api: PluginApi, instanceId: string): (() => void) | null {
+  const instances = hostReads.get(api) ?? new Map<string, number>()
+  const count = instances.get(instanceId) ?? 0
+  if (count >= MAX_HOST_READS_PER_INSTANCE || activeHostReads >= MAX_TOTAL_HOST_READS) return null
+  instances.set(instanceId, count + 1)
+  hostReads.set(api, instances)
+  activeHostReads++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const remaining = (instances.get(instanceId) ?? 1) - 1
+    if (remaining) instances.set(instanceId, remaining)
+    else instances.delete(instanceId)
+    if (!instances.size) hostReads.delete(api)
+    activeHostReads--
+  }
+}
 
 function sameKey(left: ScopeKey, right: ScopeKey): boolean {
   return left.api === right.api && left.instanceId === right.instanceId && left.key === right.key
@@ -87,7 +111,15 @@ export class PreviewPackAssets {
       encodeURIComponent(scope.key) +
       (known ? '&known_sheet=' + encodeURIComponent(known) : '')
     // Each consumer applies its own timeout/abort; none can cancel a sibling's shared read.
-    const response = await scope.api.get<PackPayload>(path)
+    const releaseHostRead = reserveHostRead(scope.api, scope.instanceId)
+    if (!releaseHostRead) throw new Error('preview reads busy')
+    let response: ApiResponse<PackPayload> | null | undefined
+    try {
+      response = await scope.api.get<PackPayload>(path)
+    } finally {
+      // Scope disposal and consumer timeout do not settle the exposed host promise.
+      releaseHostRead()
+    }
     if (this.disposed) throw new Error('preview closed')
     const { pack } = validatePack(response?.data?.pack)
     const revision = typeof response?.data?.sheet_revision === 'string' ? response.data.sheet_revision : ''
