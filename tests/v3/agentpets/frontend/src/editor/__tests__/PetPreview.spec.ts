@@ -12,7 +12,10 @@ import legacyJson from '@tests/../fixtures/legacy-codex-v2.json'
 import { parseCalibration } from '@/sprites/calibration'
 import { builtinDefaultCalibration } from '@/sprites/builtinCalibration'
 
-async function setup(size: { width: number; height: number; mobile?: boolean } = { width: 500, height: 400 }) {
+async function setup(
+  size: { width: number; height: number; mobile?: boolean } = { width: 500, height: 400 },
+  sheetRevision = '',
+) {
   vi.stubGlobal('innerWidth', size.mobile ? 390 : 1024)
   vi.useFakeTimers()
   vi.spyOn(Math, 'random').mockReturnValue(0.5)
@@ -71,7 +74,8 @@ async function setup(size: { width: number; height: number; mobile?: boolean } =
         success: true,
         data: {
           pack: { ...legacyJson, codex_version: 'v2' },
-          sheet_src: 'data:image/png;base64,AAAA',
+          sheet_src: sheetRevision && path.includes('known_sheet=' + sheetRevision) ? '' : 'data:image/png;base64,AAAA',
+          sheet_revision: sheetRevision,
         },
       }
     }),
@@ -498,4 +502,34 @@ describe('contained live Pet preview', () => {
     await vi.advanceTimersByTimeAsync(48)
     expect(vi.getTimerCount()).toBe(0)
   })
+})
+
+it('reuses the uploaded sheet across original comparison, movement and landmark previews', async () => {
+  const sources: string[] = []
+  class PreviewImage {
+    naturalWidth = 1536
+    naturalHeight = 2288
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    set src(source: string) {
+      sources.push(source)
+      void Promise.resolve().then(() => this.onload?.())
+    }
+  }
+  vi.stubGlobal('Image', PreviewImage)
+  const { view, api } = await setup(undefined, 'same-sheet')
+  await fireEvent.click(view.getByLabelText('对照原始显示'))
+  await vi.advanceTimersByTimeAsync(64)
+  expect(view.getByLabelText('原始显示对照').querySelector('[data-pack="' + legacyJson.id + '"]')).not.toBeNull()
+  await fireEvent.click(view.getByRole('button', { name: '运动测试' }))
+  await vi.advanceTimersByTimeAsync(64)
+  await view.rerender({ calibration: parseCalibration({}) })
+  await fireEvent.click(view.getByRole('tab', { name: '校准' }))
+  await vi.advanceTimersByTimeAsync(64)
+  expect(view.getByRole('group', { name: '双眼与头顶拖拽校准' })).toBeTruthy()
+  const requests = api.get.mock.calls.map(([path]) => String(path)).filter(path => path.includes('/pack?'))
+  expect(requests.filter(path => !path.includes('known_sheet='))).toHaveLength(1)
+  expect(requests.filter(path => path.includes('known_sheet=same-sheet')).length).toBeGreaterThanOrEqual(3)
+  expect(sources).toEqual(['data:image/png;base64,AAAA'])
+  expect(api.post).not.toHaveBeenCalled()
 })

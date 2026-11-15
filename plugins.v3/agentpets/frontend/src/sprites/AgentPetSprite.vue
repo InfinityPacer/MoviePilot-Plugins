@@ -15,6 +15,7 @@ import CalibrationMarkers from '@/editor/CalibrationMarkers.vue'
 import { loadBuiltinCalibration, YING_PACK } from './builtinCalibration'
 import { frameUrl } from '@/stage/poses'
 import { loadImage, withLoadTimeout } from '@/loading'
+import { usePreviewPackAssets } from '@/sprites/previewPackAssets'
 import { greetingPlayback, useStartupGreeting } from '@/stage/greeting'
 import { phaseFrame, travelFrame } from '@/stage/playback'
 import { onEditorPresence } from '@/editor/presence'
@@ -92,6 +93,7 @@ const emit = defineEmits<{
   'action-complete': [round: number]
 }>()
 
+const previewPackAssets = usePreviewPackAssets()
 const packKey = props.pet?.key || BUILTIN_PACK_ID
 const pack = ref<SpritePack>(BUILTIN_PACK)
 const sheetSrc = ref(builtinAsset('sheet.webp'))
@@ -257,6 +259,7 @@ async function loadPack(key: string) {
         ? frameUrl('idle')
         : builtinAsset(nextPack.sheet || 'sheet.webp', undefined, builtin ? key : BUILTIN_PACK_ID)
     let nextRevision = ''
+    let loadedDimensions: { width: number; height: number } | null = null
     if (builtin) {
       try {
         nextPack = { ...nextPack, calibration: await loadBuiltinCalibration(props.api, props.pluginId, key, signal) }
@@ -264,6 +267,15 @@ async function loadPack(key: string) {
         if (props.strictPreview && props.api?.get) throw new Error('内置校准读取失败')
         // Keep bundled art available when the service is temporarily unreachable.
       }
+    } else if (previewPackAssets && props.api?.get) {
+      const loaded = await withLoadTimeout(
+        previewPackAssets.load(props.api, props.pluginId || 'AgentPets', key),
+        signal,
+      )
+      nextPack = props.pet?.mode === 'stage' ? withCodexStageActions(loaded.pack) : loaded.pack
+      nextSheet = loaded.sheetSrc
+      nextRevision = loaded.sheetRevision
+      loadedDimensions = loaded.dimensions
     } else {
       if (!props.api?.get) throw new Error('pack API unavailable')
       const instanceId = props.pluginId || 'AgentPets'
@@ -292,7 +304,7 @@ async function loadPack(key: string) {
       nextSheet === sheetSrc.value &&
       nextPack.grid.cols === pack.value.grid.cols &&
       nextPack.grid.rows === pack.value.grid.rows
-    const dimensions = reuseImage ? null : await loadImage(nextSheet, signal)
+    const dimensions = loadedDimensions ?? (reuseImage ? null : await loadImage(nextSheet, signal))
     if (!current()) return
     pack.value = nextPack
     sheetSrc.value = nextSheet

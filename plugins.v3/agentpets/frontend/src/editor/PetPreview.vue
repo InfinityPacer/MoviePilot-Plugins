@@ -19,6 +19,7 @@ import {
 import { createMockHost, createMockPet } from '@/dev/mockHost'
 import type { PluginApi } from '@/host'
 import AgentPetSprite from '@/sprites/AgentPetSprite.vue'
+import { providePreviewPackAssets } from '@/sprites/previewPackAssets'
 import AgentPet from '@/stage/AgentPet.vue'
 import AgentPetCodex from '@/stage/AgentPetCodex.vue'
 import type { YingSettings } from '@/stage/settings'
@@ -38,6 +39,8 @@ const props = withDefaults(
   }>(),
   { initialTab: 'animations' },
 )
+
+providePreviewPackAssets()
 
 const emit = defineEmits<{
   error: [boolean]
