@@ -74,7 +74,7 @@ describe('offline built-in frame mascots', () => {
     expect(pack.codex_version).toBeUndefined()
     expect(validatePack(pack).errors).toEqual([])
     expect(Object.keys(pack.actions)).toHaveLength(36)
-    expect(builtinAvatar(key)).toContain(`/packs/${key}/avatar.png`)
+    expect(builtinAvatar(key)).toContain(`/packs/${key}/avatar.ui.webp`)
     expect(builtinAsset('sheet.webp', 'https://example.test/assets/remoteEntry.js', key)).toBe(
       `https://example.test/assets/packs/${key}/sheet.webp`,
     )

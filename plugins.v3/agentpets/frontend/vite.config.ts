@@ -14,12 +14,12 @@ const STATIC_DIRS = ['ying', 'packs']
 // 小头像随组件内联，避免独立静态图片请求失败；动画帧和精灵图仍按原路径提供。
 const UI_AVATAR_FILES = new Set(
   [
-    'ying/avatar.png',
-    'packs/projector-cat/avatar.png',
-    'packs/builtin-chibiterasu/avatar.png',
-    'packs/builtin-nailong/avatar.png',
-    'packs/builtin-kurisu/avatar.png',
-    'packs/builtin-kurisu-z256/avatar.png',
+    'ying/avatar.ui.webp',
+    'packs/projector-cat/avatar.ui.webp',
+    'packs/builtin-chibiterasu/avatar.ui.webp',
+    'packs/builtin-nailong/avatar.ui.webp',
+    'packs/builtin-kurisu/avatar.ui.webp',
+    'packs/builtin-kurisu-z256/avatar.ui.webp',
   ].map(file => normalizePath(`${ASSET_DIR}/${file}`)),
 )
 
@@ -66,7 +66,8 @@ function copyStaticAssets(): Plugin {
     generateBundle() {
       for (const dir of STATIC_DIRS) {
         for (const file of listFiles(`${ASSET_DIR}/${dir}`)) {
-          if (!/\.(json|png|webp)$/.test(file)) continue
+          if (!/\.(json|png|webp)$/.test(file) || UI_AVATAR_FILES.has(normalizePath(`${ASSET_DIR}/${dir}/${file}`)))
+            continue
           this.emitFile({
             type: 'asset',
             fileName: `assets/${dir}/${file}`,
@@ -118,6 +119,7 @@ export default defineConfig(({ mode }) => {
         '@testing-library/vue',
         '@vue/test-utils',
         'fflate',
+        'typescript',
         'vitest',
         'vue',
         'vuetify',
@@ -126,7 +128,7 @@ export default defineConfig(({ mode }) => {
     build: {
       assetsInlineLimit: file => (UI_AVATAR_FILES.has(normalizePath(file)) ? true : undefined),
       target: 'esnext',
-      minify: false,
+      minify: 'esbuild',
       cssCodeSplit: true,
       outDir: 'dist',
       emptyOutDir: true,

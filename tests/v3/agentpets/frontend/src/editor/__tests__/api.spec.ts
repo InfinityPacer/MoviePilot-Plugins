@@ -132,7 +132,7 @@ describe('Pet editor API', () => {
       preview: 'ying/avatar.png',
       builtin: true,
     }
-    expect(petImage(pet)).toMatch(/\/ying\/avatar\.png$/)
+    expect(petImage(pet)).toMatch(/\/ying\/avatar\.ui\.webp$/)
     expect(petImage({ ...pet, builtin: false, preview: 'data:image/png;base64,AAAA' })).toBe(
       'data:image/png;base64,AAAA',
     )

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Script } from 'node:vm'
+import ts from 'typescript'
 
 import { describe, expect, it } from 'vitest'
 
@@ -16,10 +17,33 @@ function captureRemote(remoteUrl: string) {
   const imports: string[] = []
   const styles: string[] = []
   // Execute the built loader without fetching modules or opening a browser.
-  const source = REMOTE_SOURCE.replaceAll('import.meta.url', JSON.stringify(remoteUrl))
-    .replace(/\bimport\(name\)/g, '__captureImport(name)')
-    .replace(/^export \{[^}]+\};?\s*$/m, '')
-  const remote = new Script(`${source}\n({ get });`).runInNewContext({
+  const ast = ts.createSourceFile('remoteEntry.js', REMOTE_SOURCE, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const edits: Array<{ start: number; end: number; replacement: string }> = []
+  let getName = ''
+  for (const statement of ast.statements) {
+    if (!ts.isExportDeclaration(statement)) continue
+    if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      const getter = statement.exportClause.elements.find(item => item.name.text === 'get')
+      if (getter) getName = (getter.propertyName ?? getter.name).text
+    }
+    edits.push({ start: statement.getStart(ast), end: statement.end, replacement: '' })
+  }
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)
+      edits.push({
+        start: node.getStart(ast),
+        end: node.end,
+        replacement: '__captureImport(' + node.arguments.map(argument => argument.getText(ast)).join(', ') + ')',
+      })
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  if (!getName) throw new Error('Built remote does not export get')
+  let source = REMOTE_SOURCE
+  for (const edit of edits.sort((left, right) => right.start - left.start))
+    source = source.slice(0, edit.start) + edit.replacement + source.slice(edit.end)
+  source = source.replaceAll('import.meta.url', JSON.stringify(remoteUrl))
+  const remote = new Script(`${source}\n({ get: ${getName} });`).runInNewContext({
     document: {
       createElement: () => ({ href: '', rel: '' }),
       head: { appendChild: (link: { href: string }) => styles.push(link.href) },
@@ -41,17 +65,15 @@ describe('built federation asset URLs', () => {
         name => name.startsWith(`__federation_expose_${expose}-`) && name.endsWith('.js'),
       )
       expect(chunks).toHaveLength(1)
-      const cssCall = REMOTE_SOURCE.match(
-        new RegExp(String.raw`dynamicLoadingCss\((\[[^\]]*\]), false, '\./${expose}'\)`),
-      )
-      expect(cssCall).not.toBeNull()
-      const cssFiles = JSON.parse(cssCall![1]) as string[]
-      expect(cssFiles.length).toBeGreaterThan(0)
-      for (const name of cssFiles) expect(existsSync(join(ASSETS_DIR, name))).toBe(true)
-
       const { remote, imports, styles } = captureRemote(remoteUrl)
       expect(await remote.get(`./${expose}`)).toBeTypeOf('function')
-      expect(styles).toEqual(cssFiles.map(name => new URL(name, remoteUrl).href))
+      expect(styles.length).toBeGreaterThan(0)
+      const base = new URL('.', remoteUrl)
+      for (const href of styles) {
+        expect(href.startsWith(base.href)).toBe(true)
+        const path = decodeURIComponent(new URL(href).pathname.slice(base.pathname.length))
+        expect(existsSync(join(ASSETS_DIR, path))).toBe(true)
+      }
       expect(imports).toEqual([new URL(chunks[0], remoteUrl).href])
     },
   )
@@ -60,7 +82,7 @@ describe('built federation asset URLs', () => {
     const chunks = readdirSync(ASSETS_DIR).filter(name => name.startsWith('Config.vue') && name.endsWith('.js'))
     expect(chunks).toHaveLength(1)
     const source = readFileSync(join(ASSETS_DIR, chunks[0]), 'utf8')
-    const reference = source.match(/new URL\(['"]([^'"]*archive\.worker-[^'"]+\.js)['"], import\.meta\.url\)/)
+    const reference = source.match(/new URL\(['"]([^'"]*archive\.worker-[^'"]+\.js)['"]\s*,\s*import\.meta\.url\)/)
     expect(reference).not.toBeNull()
     const workers = readdirSync(ASSETS_DIR).filter(name => /^archive\.worker-.+\.js$/.test(name))
     expect(workers).toHaveLength(1)
