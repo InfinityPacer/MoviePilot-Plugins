@@ -26,6 +26,7 @@ from app.plugins import _PluginBase
 from app.sdk.logging import logger
 from app.sdk.security import verify_token
 
+from .frontend_assets import frontend_asset_directory
 from .markets.contracts import MarketError, MarketPack, MarketPage, MarketQuery
 from .markets.registry import create_market_registry
 from .packs.constants import BUILTIN_PACK_ID, BUILTIN_PACK_IDS, BUILTIN_STAGE_PACKS, PackError
@@ -179,8 +180,8 @@ class AgentPets(_PluginBase):
 
     @staticmethod
     def get_render_mode():
-        """声明 Vue 联邦渲染方式与相对资源目录"""
-        return "vue", DIST_PATH
+        """所有页面与三类形象共用内容寻址的联邦资源目录。"""
+        return "vue", frontend_asset_directory(PLUGIN_DIR)
 
     @staticmethod
     def get_command() -> list[dict[str, Any]]:
