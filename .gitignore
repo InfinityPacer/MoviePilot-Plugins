@@ -15,6 +15,7 @@ dist/
 plugins.v[23]/*/frontend/dist/*
 !plugins.v[23]/*/frontend/dist/assets/
 !plugins.v[23]/*/frontend/dist/assets/**
+!plugins.v3/agentpets/frontend/dist/asset-manifest.json
 downloads/
 eggs/
 .eggs/
