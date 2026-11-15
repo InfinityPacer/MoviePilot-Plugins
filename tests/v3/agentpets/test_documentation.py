@@ -1,6 +1,7 @@
 """后端生产与测试定义均需说明契约，避免目录重构后遗漏私有或嵌套函数"""
 
 import ast
+import json
 import re
 from pathlib import Path
 from urllib.parse import urljoin
@@ -30,12 +31,14 @@ def test_all_backend_and_test_definitions_have_docstrings(path):
 
 def test_built_archive_worker_stays_inside_the_plugin_asset_directory():
     """The production worker URL must resolve beside the federated Config chunk."""
-    assets = PLUGIN_ROOT / "frontend" / "dist" / "assets"
+    dist = PLUGIN_ROOT / "frontend" / "dist"
+    manifest = json.loads((dist / "asset-manifest.json").read_text(encoding="utf-8"))
+    assets = dist / manifest["asset_directory"]
     chunks = list(assets.glob("Config.vue*.js"))
     assert len(chunks) == 1
     source = chunks[0].read_text(encoding="utf-8")
-    match = re.search(r"new URL\(['\"]([^'\"]*archive\.worker-[^'\"]+\.js)['\"], import\.meta\.url\)", source)
+    match = re.search(r"new URL\(['\"]([^'\"]*archive\.worker-[^'\"]+\.js)['\"]\s*,\s*import\.meta\.url\)", source)
     assert match, "Built worker must use a relative URL, not the host's /assets path"
-    base = "https://mp.test/api/v1/plugin/file/AgentPets/frontend/dist/assets/"
+    base = f"https://mp.test/api/v1/plugin/file/AgentPets/frontend/dist/{manifest['asset_directory']}/"
     assert urljoin(base + chunks[0].name, match[1]) == base + Path(match[1]).name
     assert (assets / match[1]).is_file()

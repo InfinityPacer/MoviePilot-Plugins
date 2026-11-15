@@ -1,16 +1,29 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { Buffer } from 'node:buffer'
+import { contentIdentity } from '../../../../../../../plugins.v3/agentpets/frontend/contentAssets'
+import { frameUrl, POSES } from '@/stage/poses'
+import { builtinAsset, BUILTIN_PACKS } from '@/sprites/schema'
 import { join, resolve } from 'node:path'
 import { Script } from 'node:vm'
 import ts from 'typescript'
 
 import { describe, expect, it } from 'vitest'
 
-const ASSETS_DIR = resolve('dist/assets')
+const MANIFEST = JSON.parse(readFileSync(resolve('dist/asset-manifest.json'), 'utf8')) as {
+  build_id: string
+  asset_directory: string
+  files: Array<{ path: string; bytes: number; sha256: string }>
+}
+const ASSETS_DIR = resolve('dist', MANIFEST.asset_directory)
 const REMOTE_SOURCE = readFileSync(join(ASSETS_DIR, 'remoteEntry.js'), 'utf8')
 const EXPOSES = ['AgentPet', 'AgentPetSprite', 'AgentPetCodex', 'Config', 'Page'] as const
 const REMOTE_URLS = ['https://mp.test', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://[::1]:3000'].flatMap(
   origin =>
-    ['', '/mp'].map(prefix => `${origin}${prefix}/api/v1/plugin/file/AgentPets/frontend/dist/assets/remoteEntry.js`),
+    ['', '/mp'].map(
+      prefix =>
+        `${origin}${prefix}/api/v1/plugin/file/AgentPets/frontend/dist/${MANIFEST.asset_directory}/remoteEntry.js`,
+    ),
 )
 
 function captureRemote(remoteUrl: string) {
@@ -106,6 +119,68 @@ describe('built federation asset URLs', () => {
           true,
         )
       }
+    }
+  })
+})
+
+describe('content-addressed complete asset graph', () => {
+  it('uses the final file names and bytes for the build identity and verifies every manifest entry', () => {
+    expect(MANIFEST.build_id).toMatch(/^[0-9a-f]{64}$/)
+    expect(MANIFEST.asset_directory).toBe('assets/build-' + MANIFEST.build_id)
+    const files = MANIFEST.files.map(file => {
+      const content = readFileSync(join(ASSETS_DIR, file.path))
+      expect(content.byteLength).toBe(file.bytes)
+      expect(createHash('sha256').update(content).digest('hex')).toBe(file.sha256)
+      return { path: file.path, content }
+    })
+    expect(contentIdentity(files)).toBe(MANIFEST.build_id)
+    expect(contentIdentity([...files].reverse())).toBe(MANIFEST.build_id)
+    for (const name of [
+      'remoteEntry.js',
+      MANIFEST.files.find(file => /archive\.worker-.+\.js$/.test(file.path))!.path,
+      'ying/idle.webp',
+    ]) {
+      expect(
+        contentIdentity(
+          files.map(file =>
+            file.path === name ? { ...file, content: Buffer.concat([file.content, Buffer.from('changed')]) } : file,
+          ),
+        ),
+      ).not.toBe(MANIFEST.build_id)
+    }
+  })
+
+  it('keeps the legacy entry as a forwarding module to this exact content directory', () => {
+    const source = readFileSync(resolve('dist/assets/remoteEntry.js'), 'utf8')
+    expect(source).toBe(
+      'export { get, init, dynamicLoadingCss } from ' +
+        JSON.stringify('./build-' + MANIFEST.build_id + '/remoteEntry.js') +
+        ';\n',
+    )
+    expect(readdirSync(resolve('dist/assets')).filter(name => /\.(js|css)$/.test(name))).toEqual(['remoteEntry.js'])
+  })
+
+  it.each(REMOTE_URLS)('keeps every Ying frame and every builtin pack inside %s', remoteUrl => {
+    const base = new URL('.', remoteUrl)
+    for (const pose of POSES) {
+      const url = new URL(frameUrl(pose, remoteUrl))
+      expect(url.href.startsWith(base.href)).toBe(true)
+      expect(existsSync(join(ASSETS_DIR, url.pathname.slice(base.pathname.length)))).toBe(true)
+    }
+    for (const key of Object.keys(BUILTIN_PACKS)) {
+      for (const name of ['pack.json', 'preview.png', 'avatar.png', BUILTIN_PACKS[key].sheet ?? 'sheet.webp']) {
+        const url = new URL(builtinAsset(name, remoteUrl, key))
+        expect(url.href.startsWith(base.href)).toBe(true)
+        expect(existsSync(join(ASSETS_DIR, url.pathname.slice(base.pathname.length)))).toBe(true)
+      }
+    }
+  })
+
+  it('preserves the original public image and pack bytes as compatibility paths', () => {
+    for (const file of MANIFEST.files.filter(file => /\.(png|webp|json)$/.test(file.path))) {
+      expect(readFileSync(resolve('dist/assets', file.path)).equals(readFileSync(join(ASSETS_DIR, file.path)))).toBe(
+        true,
+      )
     }
   })
 })

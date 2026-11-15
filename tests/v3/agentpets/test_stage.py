@@ -131,7 +131,7 @@ def test_every_pose_frame_is_shipped() -> None:
 
 def test_registered_components_are_exposed() -> None:
     """小映、普通素材包与 Codex Pet 的组件都由联邦入口暴露。"""
-    remote_entry = (DIST / "remoteEntry.js").read_text(encoding="utf-8")
+    remote_entry = (PLUGIN_ROOT / AgentPets.get_render_mode()[1] / "remoteEntry.js").read_text(encoding="utf-8")
     for name in ("./AgentPet", "./AgentPetSprite", "./AgentPetCodex", "./Config", "./Page"):
         assert f'"{name}"' in remote_entry
 
