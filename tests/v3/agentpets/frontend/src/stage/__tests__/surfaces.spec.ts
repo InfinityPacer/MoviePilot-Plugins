@@ -211,7 +211,7 @@ describe('surface query on long pages', () => {
     const surfaces = querySurfaces(null, viewport, 120, null)
     expect(surfaces.length).toBeGreaterThan(0)
     expect(surfaces.every(surface => surface.top >= 120)).toBe(true)
-    // 样式读取只发生在视口内的候选上，耗时与页面长度无关。
+    // 样式读取次数只与视口内的候选有关；这不测量整个查询耗时。
     expect(styleSpy.mock.calls.length).toBeLessThanOrEqual(10)
   })
 })
