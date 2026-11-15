@@ -91,7 +91,7 @@ function surfaceUnobstructedAt(
 /**
  * 查询当前视口里所有可站表面。
  *
- * 只在开始下落或开始走动时调用一次，不在动画帧里调用；排除小映自己的图层及其祖先，
+ * 在落点决策、活动及必要重定位时调用，不随每个运动帧持续扫描；排除小映自己的图层及其祖先，
  * 以及上边缘被其他元素盖住的元素（遮挡判断只在这里做，站立后的重新校验不再做）。
  */
 export function querySurfaces(
@@ -203,11 +203,11 @@ export function bottomFixedFloor(layer: Element | null, viewport: StageViewport)
 export const NEARBY_SURFACE_ROWS = 4
 
 /**
- * 用命中测试在几列竖线上找可站面，耗时只与取样点数有关，与页面大小无关。
+ * 用命中测试在几列竖线上找可站面，取样次数由列数与行数决定，不遍历整个页面。
  *
  * 只用于避让控件时的兜底换面：在给定的几个 x 上，从上到下取若干行，命中元素的
  * `closest(SURFACE_SELECTOR)` 就是该处露在最上层的容器，再按可站规则过滤。
- * 比 `querySurfaces` 的全页扫描便宜，代价是比列间距还窄的面可能找不到。
+ * 避免 `querySurfaces` 的全页扫描，代价是比列间距还窄的面可能找不到。
  */
 export function surfacesNear(
   layer: Element | null,
@@ -269,7 +269,7 @@ export function samplePoints(rect: AgentRect, cols = SAMPLE_COLS, rows = SAMPLE_
  *
  * 在 12 个取样点调用 `elementsFromPoint`，跳过小映自己的图层，取第一个命中元素，再用
  * `closest(CONTROL_SELECTOR)` 找到所属控件。只看命中结果，所以遮罩底下、被溢出裁掉的控件
- * 不会算进来，耗时也只与取样点数有关，与页面大小无关。
+ * 不会算进来；取样点数量固定，不按页面元素数遍历。
  *
  * - 她正站着的元素以及包住它的控件不算：她脚底在那张卡片上沿，本来就不算挡住它。
  * - 超过视口一半面积的可聚焦容器视为页面布局，不当作控件，否则她在哪里都算挡住。
