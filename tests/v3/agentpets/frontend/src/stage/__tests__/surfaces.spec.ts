@@ -374,3 +374,61 @@ describe('contained Pet previews', () => {
     expect(calls.every(([x, y]) => x >= 240 && y >= 150)).toBe(true)
   })
 })
+
+describe('geometry snapshots within one query', () => {
+  it('reads the preview origin once for measuring and occlusion, then remeasures on the next query', () => {
+    const scope = withRect(document.createElement('section'), { left: 200, top: 100, width: 1000, height: 800 })
+    const platforms = Array.from({ length: 30 }, (_, index) => {
+      const el = withRect(document.createElement('div'), { left: 220, top: 300 + index * 10, width: 600, height: 30 })
+      el.className = 'v-sheet'
+      scope.appendChild(el)
+      return el
+    })
+    document.body.appendChild(scope)
+    const origin = vi.spyOn(scope, 'getBoundingClientRect')
+    stubHits(({ y }) => [platforms[Math.round((y - 302) / 10)]])
+    const first = querySurfaces(null, viewport, 120, null, scope)
+    expect(first).toHaveLength(30)
+    expect(origin).toHaveBeenCalledTimes(1)
+    expect(first[0]).toMatchObject({ left: 20, top: 200 })
+    origin.mockReturnValue({ left: 180, top: 80 } as DOMRect)
+    const second = querySurfaces(null, viewport, 120, null, scope)
+    expect(origin).toHaveBeenCalledTimes(2)
+    expect(second[0]).toMatchObject({ left: 40, top: 220 })
+  })
+
+  it('does not read an empty preview origin and keeps the candidate cap before style and hit testing', () => {
+    const scope = withRect(document.createElement('section'), { left: 0, top: 0, width: 1000, height: 800 })
+    document.body.appendChild(scope)
+    const origin = vi.spyOn(scope, 'getBoundingClientRect')
+    expect(querySurfaces(null, viewport, 120, null, scope)).toEqual([])
+    expect(origin).not.toHaveBeenCalled()
+    for (let index = 0; index < 500; index++) {
+      const el = withRect(document.createElement('div'), { left: 100, top: 200, width: 600, height: 30 })
+      el.className = 'v-sheet'
+      scope.appendChild(el)
+    }
+    const style = vi.spyOn(window, 'getComputedStyle')
+    querySurfaces(null, viewport, 120, null, scope)
+    expect(style).toHaveBeenCalledTimes(400)
+    expect(origin).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads a repeated Dock hit style once per scan and sees subsequent visibility/position changes', () => {
+    const bar = withRect(document.createElement('nav'), { left: 0, top: 724, width: 1000, height: 76 })
+    bar.style.position = 'fixed'
+    document.body.appendChild(bar)
+    const hit = stubHits(() => [bar])
+    const style = vi.spyOn(window, 'getComputedStyle')
+    expect(bottomFixedFloor(null, viewport)).toBe(716)
+    expect(hit).toHaveBeenCalledTimes(15)
+    expect(style).toHaveBeenCalledTimes(1)
+    bar.style.visibility = 'hidden'
+    expect(bottomFixedFloor(null, viewport)).toBe(800)
+    expect(style).toHaveBeenCalledTimes(2)
+    bar.style.visibility = 'visible'
+    bar.style.position = 'static'
+    expect(bottomFixedFloor(null, viewport)).toBe(800)
+    expect(style.mock.calls.filter(([element]) => element === bar)).toHaveLength(3)
+  })
+})

@@ -12,7 +12,7 @@ export const SURFACE_SELECTOR = '.v-card, .v-sheet, .v-overlay__content, [role="
  * 一次查询最多做样式与遮挡判断的候选数。
  *
  * 上限只计视口内、几何上可站的元素：长页面滚到下方时，排在文档前面的大量元素已在视口外，
- * 若先截取再判断会一个可站面都找不到。矩形读取很便宜，样式和命中测试才是主要耗时。
+ * 若先截取再判断会一个可站面都找不到。仍需读取前面的矩形；实际耗时由页面布局和浏览器决定。
  */
 export const MAX_SURFACE_CANDIDATES = 400
 
@@ -21,16 +21,30 @@ export interface DomSurface extends SurfaceBox {
   el: Element
 }
 
+type SurfaceOrigin = { left: number; top: number }
+const PAGE_ORIGIN: SurfaceOrigin = { left: 0, top: 0 }
+
+/** Read coordinates as numbers so no live DOM object survives the synchronous query. */
+function readOrigin(scope: Element | null): SurfaceOrigin {
+  if (!scope) return PAGE_ORIGIN
+  const { left, top } = scope.getBoundingClientRect()
+  return { left, top }
+}
+
 /** 读取元素当前的上边缘；元素已脱离文档或没有尺寸时返回 null。 */
 export function measureSurface(el: Element, scope: Element | null = null): SurfaceBox | null {
+  return measureSurfaceAt(el, () => readOrigin(scope))
+}
+
+function measureSurfaceAt(el: Element, origin: () => SurfaceOrigin): SurfaceBox | null {
   if (!el.isConnected) return null
   const rect = el.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return null
-  const origin = scope?.getBoundingClientRect()
+  const offset = origin()
   return {
-    left: rect.left - (origin?.left ?? 0),
-    top: rect.top - (origin?.top ?? 0),
-    right: rect.right - (origin?.left ?? 0),
+    left: rect.left - offset.left,
+    top: rect.top - offset.top,
+    right: rect.right - offset.left,
   }
 }
 
@@ -53,13 +67,23 @@ export function surfaceUnobstructed(
   viewportWidth: number,
   scope: Element | null = null,
 ): boolean {
+  return surfaceUnobstructedAt(el, box, layer, viewportWidth, () => readOrigin(scope))
+}
+
+function surfaceUnobstructedAt(
+  el: Element,
+  box: SurfaceBox,
+  layer: Element | null,
+  viewportWidth: number,
+  origin: () => SurfaceOrigin,
+): boolean {
   if (typeof document.elementsFromPoint !== 'function') return true
   const left = Math.max(box.left, 0)
   const right = Math.min(box.right, viewportWidth)
   if (right <= left) return false
-  const origin = scope?.getBoundingClientRect()
+  const offset = origin()
   const hit = document
-    .elementsFromPoint((left + right) / 2 + (origin?.left ?? 0), box.top + 2 + (origin?.top ?? 0))
+    .elementsFromPoint((left + right) / 2 + offset.left, box.top + 2 + offset.top)
     .find(item => !layer?.contains(item))
   return !!hit && (hit === el || el.contains(hit))
 }
@@ -77,10 +101,13 @@ export function querySurfaces(
   panel: AgentRect | null,
   scope: Element | null = null,
 ): DomSurface[] {
+  // Only this synchronous query shares the scope origin; the next query must remeasure it.
+  let offset: SurfaceOrigin | undefined
+  const origin = () => (offset ??= readOrigin(scope))
   const floor = floorLine(viewport)
   const candidates: DomSurface[] = []
   for (const el of Array.from((scope ?? document).querySelectorAll(SURFACE_SELECTOR))) {
-    const box = measureSurface(el, scope)
+    const box = measureSurfaceAt(el, origin)
     // 先按矩形筛掉视口外和几何上不可站的元素，它们不计入上限。
     if (!box || box.right <= 0 || box.left >= viewport.width || box.top >= floor) continue
     if (!standable(box, viewport, charHeight, panel)) continue
@@ -90,7 +117,7 @@ export function querySurfaces(
   }
   return candidates.filter(
     candidate =>
-      surfaceVisible(candidate.el) && surfaceUnobstructed(candidate.el, candidate, layer, viewport.width, scope),
+      surfaceVisible(candidate.el) && surfaceUnobstructedAt(candidate.el, candidate, layer, viewport.width, origin),
   )
 }
 
@@ -116,6 +143,22 @@ export function bottomFixedFloor(layer: Element | null, viewport: StageViewport)
   if (typeof document.elementsFromPoint !== 'function') return floor
   const left = viewport.safeArea.left
   const width = viewport.width - viewport.safeArea.right - left
+  // Cache scalar style values for these 15 hit tests only, including repeated hidden hits.
+  const styles = new Map<Element, Pick<CSSStyleDeclaration, 'pointerEvents' | 'visibility' | 'display' | 'position'>>()
+  const styleOf = (el: Element) => {
+    let value = styles.get(el)
+    if (!value) {
+      const style = window.getComputedStyle(el)
+      value = {
+        pointerEvents: style.pointerEvents,
+        visibility: style.visibility,
+        display: style.display,
+        position: style.position,
+      }
+      styles.set(el, value)
+    }
+    return value
+  }
   const seen = new Set<Element>()
   let result = floor
   for (const ratio of [0.1, 0.5, 0.9]) {
@@ -123,7 +166,9 @@ export function bottomFixedFloor(layer: Element | null, viewport: StageViewport)
       const y = floor - depth
       if (y <= viewport.safeArea.top) continue
       const hit = document.elementsFromPoint(left + width * ratio, y).find(item => !layer?.contains(item))
-      if (!hit || !surfaceVisible(hit)) continue
+      if (!hit) continue
+      const hitStyle = styleOf(hit)
+      if (hitStyle.pointerEvents === 'none' || hitStyle.visibility === 'hidden' || hitStyle.display === 'none') continue
       let el: Element | null = hit
       for (let level = 0; el && level < 8; level += 1, el = el.parentElement) {
         if (seen.has(el)) break
@@ -139,7 +184,7 @@ export function bottomFixedFloor(layer: Element | null, viewport: StageViewport)
           rect.top <= viewport.safeArea.top
         )
           continue
-        const style = window.getComputedStyle(el)
+        const style = styleOf(el)
         // MP 的固定外层不接收指针，可点击 Dock 在相对定位的内层；可见性以命中子项和外层共同判定。
         if (
           (style.position === 'fixed' || style.position === 'sticky') &&
