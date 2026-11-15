@@ -217,3 +217,99 @@ it('bounds retained image data even when fewer than five Pets are visited', asyn
   expect(client.get).toHaveBeenLastCalledWith('plugin/Clone1/pack?key=one')
   expect(loadImage).toHaveBeenCalledTimes(5)
 })
+
+it('bounds unresolved host requests across sequential editor scopes', async () => {
+  const client = api()
+  const responses: Array<{ key: string; pending: ReturnType<typeof deferred<ReturnType<typeof payload>>> }> = []
+  client.get.mockImplementation((path: string) => {
+    const key = new URL(path, 'https://mp.test/').searchParams.get('key')!
+    const pending = deferred<ReturnType<typeof payload>>()
+    responses.push({ key, pending })
+    return pending.promise
+  })
+  const waiters: Promise<unknown>[] = []
+  for (let editor = 0; editor < 5; editor++) {
+    const assets = scope()
+    for (let pet = 0; pet < 4; pet++)
+      waiters.push(assets.load(client, 'Clone1', 'pet-' + editor + '-' + pet).catch(() => null))
+    assets.dispose()
+  }
+  const pendingHostRequests = client.get.mock.calls.length
+  for (const response of responses) response.pending.resolve(payload(response.key))
+  await Promise.all(waiters)
+  expect(pendingHostRequests).toBe(4)
+})
+
+it('releases the shared budget only after closed-scope host promises settle', async () => {
+  const client = api()
+  const responses = Array.from({ length: 4 }, () => deferred<ReturnType<typeof payload>>())
+  for (const response of responses) client.get.mockReturnValueOnce(response.promise)
+  const first = scope()
+  const old = ['one', 'two', 'three', 'four'].map(key => first.load(client, 'Clone1', key).catch(() => null))
+  first.dispose()
+  const next = scope()
+  await expect(next.load(client, 'Clone1', 'mine')).rejects.toThrow('busy')
+  expect(client.get).toHaveBeenCalledTimes(4)
+  responses.forEach((response, index) => response.resolve(payload(['one', 'two', 'three', 'four'][index])))
+  await Promise.all(old)
+  const loaded = await next.load(client, 'Clone1', 'mine')
+  expect(loaded.sheetSrc).toBe('data:image/png;base64,AAAA')
+  expect(client.get).toHaveBeenCalledTimes(5)
+  expect(client.get).toHaveBeenLastCalledWith('plugin/Clone1/pack?key=mine')
+})
+
+it('bounds pending host reads even when each reopened editor receives a new API object', async () => {
+  const clients: ReturnType<typeof api>[] = []
+  const responses: ReturnType<typeof deferred<ReturnType<typeof payload>>>[] = []
+  const waiters: Promise<unknown>[] = []
+  for (let editor = 0; editor < 24; editor++) {
+    const client = api()
+    const response = deferred<ReturnType<typeof payload>>()
+    client.get.mockReturnValue(response.promise)
+    const assets = scope()
+    waiters.push(assets.load(client, 'Clone1', 'mine').catch(() => null))
+    assets.dispose()
+    clients.push(client)
+    responses.push(response)
+  }
+  const pendingHostRequests = clients.reduce((count, client) => count + client.get.mock.calls.length, 0)
+  responses.forEach(response => response.resolve(payload()))
+  await Promise.all(waiters)
+  expect(pendingHostRequests).toBe(16)
+})
+
+it('keeps image state isolated between reopened editors and releases synchronous failures', async () => {
+  const client = api()
+  const first = scope()
+  await first.load(client, 'Clone1', 'mine')
+  first.dispose()
+  await scope().load(client, 'Clone1', 'mine')
+  expect(client.get.mock.calls.every(([path]) => !String(path).includes('known_sheet'))).toBe(true)
+  expect(loadImage).toHaveBeenCalledTimes(2)
+  client.get.mockImplementation(() => {
+    throw new Error('offline')
+  })
+  for (let attempt = 0; attempt < 5; attempt++)
+    await expect(scope().load(client, 'Clone1', 'mine')).rejects.toThrow('offline')
+  expect(client.get).toHaveBeenCalledTimes(7)
+})
+
+it('keeps separate plugin-instance budgets while sharing the total host-read ceiling', async () => {
+  const client = api()
+  const responses: Array<{ key: string; pending: ReturnType<typeof deferred<ReturnType<typeof payload>>> }> = []
+  client.get.mockImplementation((path: string) => {
+    const key = new URL(path, 'https://mp.test/').searchParams.get('key')!
+    const pending = deferred<ReturnType<typeof payload>>()
+    responses.push({ key, pending })
+    return pending.promise
+  })
+  const waiters: Promise<unknown>[] = []
+  for (const instance of ['Clone1', 'Clone2']) {
+    const assets = scope()
+    for (let pet = 0; pet < 4; pet++) waiters.push(assets.load(client, instance, 'pet-' + pet).catch(() => null))
+    assets.dispose()
+  }
+  expect(client.get).toHaveBeenCalledTimes(8)
+  for (const response of responses) response.pending.resolve(payload(response.key))
+  await Promise.all(waiters)
+})
