@@ -1,0 +1,46 @@
+{
+  "source": "user-provided installed Pet",
+  "source_pet_id": "kurisu-v2",
+  "source_name": "克里斯蒂娜",
+  "description": "z256专属",
+  "format": "Codex Pet v2",
+  "grid": {
+    "cols": 8,
+    "rows": 11
+  },
+  "image_sha256": "b09ee371efb0b51cdb5a88346389f01d29251c692a5448fe463b1b258ba67af7",
+  "original_actions": [
+    "idle",
+    "thinking",
+    "wave",
+    "happy-jump",
+    "success",
+    "confused",
+    "warning",
+    "error",
+    "sleep",
+    "scan"
+  ],
+  "calibration": {
+    "left": 0.1042,
+    "top": 0.0192,
+    "right": 0.8958,
+    "bottom": 0.9808,
+    "baseline": 0.9808,
+    "offset_x": 0.0,
+    "offset_y": 0.0,
+    "eye_x": 0.51,
+    "eye_y": 0.205,
+    "left_eye_x": 0.4158,
+    "left_eye_y": 0.2355,
+    "right_eye_x": 0.5211,
+    "right_eye_y": 0.218,
+    "head_top_x": 0.4769,
+    "head_top_y": 0.0192
+  },
+  "redistribution": "Local integration requested by the user; no additional public artwork license is asserted.",
+  "derived_actions": ["peek"],
+  "render_image": "sheet.webp",
+  "render_image_sha256": "f2c4e2de18e3b73883962646a21d32f4dae8b16e697122811ed854e8a8750f8e",
+  "render_pixels": "Exact RGBA match to the retained original PNG; lossless WebP."
+}
