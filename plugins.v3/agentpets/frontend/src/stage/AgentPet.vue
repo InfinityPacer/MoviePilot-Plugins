@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { withLoadTimeout } from '@/loading'
 import { onEditorPresence } from '@/editor/presence'
 import { PausableTimers } from './timers'
+import { PositionStorage, type StoredPosition } from './positionStorage'
+import { usePoseFrames } from './poseFrames'
 import { InteractionMemory, LONG_PRESS_MS } from './interaction'
 import { ActivityPolicy, activityRadius, type ActivityArea, type ActivityPoint } from './activity'
 import { RhythmPolicy, type CharacterRhythm, type RhythmAction } from './rhythm'
@@ -62,7 +64,7 @@ import {
   type PeekEdge,
   type PeekEye,
 } from '@/stage/peek'
-import { eventPose, frameUrl, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
+import { eventPose, phasePose, POSES, resolvePose, walkFrame, type Motion, type Pose } from '@/stage/poses'
 import {
   DEFAULT_SETTINGS,
   loadSettings,
@@ -171,25 +173,9 @@ const SURFACE_CHECK_INTERVAL = 500
 const DROP_CLEAR_DELAY = 1500
 /** 窗口尺寸变化后合并多久再检查是否挡住控件（毫秒）。 */
 const RESIZE_CLEAR_DELAY = 300
-/** 写回落脚点的最短间隔（毫秒），避免频繁写服务端。 */
-const SAVE_THROTTLE = 30_000
 /** 站立时每隔几拍（每拍 500ms）复查一次是否挡住控件。 */
 const CLEARANCE_POLL_EVERY = 4
 const SHELTER_SEARCH_INTERVAL = 6000
-/** 同一帧加载失败后，至少隔这么久（毫秒）才再次请求。 */
-const FRAME_RETRY_AFTER = 5000
-
-/** `pet.storage` 中保存的每用户数据。 */
-interface StoredPosition {
-  /** 保存时的活动范围。 */
-  roam?: RoamMode
-  /** 落脚点在可活动范围内的水平比例，0 为最左，1 为最右。 */
-  xRatio: number
-  /** 顶边在视口可用高度内的比例，0 为最上，1 为底边；只用于恢复站在元素上或自由停放的位置。 */
-  yRatio?: number
-  peekEdge?: PeekEdge
-}
-
 const rootEl = ref<HTMLElement | null>(null)
 const settings = ref<YingSettings>({ ...DEFAULT_SETTINGS })
 let settingsScope = ''
@@ -271,10 +257,6 @@ let hopTargetX: number | null = null
 let activityHop = false
 let pendingHopLine: { el: Element; top: number } | null = null
 let fixedPosition: { xRatio: number; yRatio: number } | null = null
-let lastSaved = ''
-let lastSaveAt = 0
-let positionGeneration = 0
-let positionWrite: { repeat: boolean; immediate: boolean } | null = null
 /** 下一次落地后保存落脚点：用户拖拽放下或活动范围改变时置位。 */
 let saveOnLand = false
 let suppressedPointer: { id: number; until: number } | null = null
@@ -310,6 +292,11 @@ let press: {
 } | null = null
 
 const timers = new PausableTimers()
+const positionStorage = new PositionStorage(
+  () => ({ pet: props.pet, pluginId: props.pluginId }),
+  positionSnapshot,
+  timers,
+)
 const interactionMemory = new InteractionMemory()
 /** Role lines remain optional, never own movement or borrow a character's personality. */
 const lines = new LineSpeaker(
@@ -432,18 +419,16 @@ watch(
   { deep: true },
 )
 
-/** 单帧图片的加载状态。 */
-type FrameStatus = 'pending' | 'loaded' | 'error'
-
-/**
- * 所有姿态帧同时渲染成叠放的 img，换帧只切换哪一张可见。
- *
- * 宿主的插件静态文件接口不返回缓存头，若换帧时改 img 的 src，每次都会重新请求并等待解码，
- * 走路时会闪；叠放后换帧不发请求，也不等解码。只有加载失败的帧在重试时才改它自己的 src。
- */
-const frameStatus = ref<Record<Pose, FrameStatus>>(
-  Object.fromEntries(POSES.map(name => [name, 'pending'])) as Record<Pose, FrameStatus>,
-)
+/** 帧加载与重试独立管理，舞台只决定姿态及布局。 */
+const { frameStatus, frameSrc, displayed, onFrameLoad, onFrameError } = usePoseFrames(pose, {
+  aspectRatio: ratio => {
+    imageAspect.value = ratio
+    relayout()
+  },
+  failed: name => {
+    if (name === 'idle' || name === 'wave') greeting.cancel()
+  },
+})
 const restAvailable = computed(() => (ownFrames ? frameStatus.value.doze === 'loaded' : props.restAvailable === true))
 watch(restAvailable, supported => {
   if (!supported && dozing.value) {
@@ -452,60 +437,10 @@ watch(restAvailable, supported => {
     scheduleBehavior()
   }
 })
-/** 每帧的地址；失败重试时在该帧地址后追加序号。 */
-const frameSrc = ref<Record<Pose, string>>(
-  Object.fromEntries(POSES.map(name => [name, frameUrl(name)])) as Record<Pose, string>,
-)
-/** 当前可见的帧；目标帧未就绪时停在上一帧成功显示的图上，一帧都没有时为 null。 */
-const displayed = ref<Pose | null>(null)
-const failedAt = new Map<Pose, number>()
-const retries = new Map<Pose, number>()
-
-/** 目标帧就绪就显示它；还没加载好或加载失败时保留上一帧，失败满重试间隔后重新请求该帧。 */
-function syncDisplayed() {
-  const target = pose.value
-  if (frameStatus.value[target] === 'loaded') {
-    displayed.value = target
-    return
-  }
-  const failed = failedAt.get(target)
-  if (frameStatus.value[target] === 'error' && failed !== undefined && Date.now() - failed >= FRAME_RETRY_AFTER) {
-    const attempt = (retries.get(target) ?? 0) + 1
-    retries.set(target, attempt)
-    failedAt.delete(target)
-    frameStatus.value[target] = 'pending'
-    frameSrc.value[target] = `${frameUrl(target)}?retry=${attempt}`
-  }
-  if (displayed.value && frameStatus.value[displayed.value] !== 'loaded') displayed.value = null
-}
-
-watch(pose, syncDisplayed)
 // 开场招手第一下时按时段问好；每页只有一次招手机会，台词随之最多一次。
 watch(greeting.round, round => {
   if (round === 1 && greeting.phase.value === 'wave') lines.greet()
 })
-
-function onFrameLoad(name: Pose, event: Event) {
-  frameStatus.value[name] = 'loaded'
-  failedAt.delete(name)
-  if (name === 'idle') {
-    const image = event.target as HTMLImageElement
-    if (image.naturalWidth && image.naturalHeight) {
-      imageAspect.value = image.naturalWidth / image.naturalHeight
-      relayout()
-    }
-  }
-  if (name === pose.value) displayed.value = name
-}
-
-/** 服务停掉或网络中断时帧图会加载失败；记下时间，显示上保留上一帧。 */
-function onFrameError(name: Pose) {
-  if (name === 'idle' || name === 'wave') greeting.cancel()
-  frameStatus.value[name] = 'error'
-  failedAt.set(name, Date.now())
-  if (displayed.value === name) displayed.value = null
-  syncDisplayed()
-}
 
 const drawing = computed(() => {
   // 宿主快照不是响应式对象，布局事件需要使裁切边界重新计算。
@@ -2033,18 +1968,11 @@ function scheduleClearance(delay: number) {
  * 页面隐藏时立即写，因为这可能是最后的机会。
  */
 function requestSave(immediate = false) {
-  if (immediate) {
-    clearTimer('save')
-    writePosition(true)
-    return
-  }
-  const wait = lastSaveAt + SAVE_THROTTLE - Date.now()
-  if (wait <= 0) writePosition()
-  else if (!timers.has('save')) setTimer('save', wait, writePosition)
+  positionStorage.request(immediate)
 }
 
-function writePosition(immediate = false) {
-  if (disposed || !ready.value || motion.value === 'drag' || motion.value === 'fall') return
+function positionSnapshot(): StoredPosition | null {
+  if (disposed || !ready.value || motion.value === 'drag' || motion.value === 'fall') return null
   const view = viewport()
   const xRatio = Math.round(xToRatio(x.value, xBounds(view, charWidth.value)) * 1000) / 1000
   const yRatio = Math.round(xToRatio(y.value, [view.safeArea.top, ground()]) * 1000) / 1000
@@ -2060,43 +1988,7 @@ function writePosition(immediate = false) {
         }
       : {}),
   }
-  void persistPosition(value, immediate)
-}
-
-/** 成功回执才更新已保存位置；等待中的新位置串行结算，失败保留下一次保存机会。 */
-async function persistPosition(value: StoredPosition, immediate: boolean) {
-  const owner = props.pet
-  if (!owner?.storage?.set) return
-  if (positionWrite) {
-    positionWrite.repeat = true
-    positionWrite.immediate ||= immediate
-    return
-  }
-  const key = JSON.stringify(value)
-  if (key === lastSaved) return
-  const generation = positionGeneration
-  const pluginId = props.pluginId
-  const petKey = owner.key
-  const current = () =>
-    !disposed &&
-    generation === positionGeneration &&
-    owner === props.pet &&
-    pluginId === props.pluginId &&
-    petKey === props.pet?.key
-  const write = { repeat: false, immediate: false }
-  positionWrite = write
-  lastSaveAt = Date.now()
-  try {
-    await owner.storage.set(value)
-    if (current()) lastSaved = key
-  } catch {
-    if (current()) console.warn('[AgentPets] position not saved')
-  } finally {
-    if (positionWrite === write) {
-      positionWrite = null
-      if (write.repeat && current()) requestSave(write.immediate)
-    }
-  }
+  return value
 }
 
 /** 已经被面板盖住时直接移到空位，不能让“禁止走进面板”的规则把退出路径也封住。 */
@@ -2409,11 +2301,7 @@ function onSettingsEvent(event: AgentHostEvent) {
 }
 
 watch([() => props.pluginId, () => props.pet?.key, () => props.pet], () => {
-  positionGeneration++
-  positionWrite = null
-  lastSaved = ''
-  lastSaveAt = 0
-  clearTimer('save')
+  positionStorage.reset()
   // A new Pet must not borrow the previous Pet's lines while its settings load.
   settingsScope = ''
   cancelPointerGesture(false)
@@ -2678,17 +2566,6 @@ function onActivate(event: MouseEvent) {
   scheduleBehavior()
 }
 
-/** 读取上次的落脚点；按当前活动范围重新落位由调用方完成。 */
-async function readStoredPosition(): Promise<StoredPosition | null> {
-  try {
-    const stored = await props.pet?.storage?.get?.<StoredPosition>()
-    if (stored && typeof stored.xRatio === 'number' && Number.isFinite(stored.xRatio)) return stored
-  } catch {
-    console.warn('[AgentPets] position unavailable')
-  }
-  return null
-}
-
 /** 按记住的比例放回原处，再按当前活动范围瞬移落位（启动时不播下落）。 */
 function restorePosition(stored: StoredPosition | null) {
   const view = viewport()
@@ -2836,7 +2713,7 @@ onMounted(async () => {
       Promise.resolve(props.settingsOverride ? { value: props.settingsOverride, confirmed: true } : readPetSettings()),
       startup.signal,
     ).catch(() => ({ value: DEFAULT_SETTINGS, confirmed: false })),
-    withLoadTimeout(readStoredPosition(), startup.signal).catch(() => null),
+    withLoadTimeout(positionStorage.read(), startup.signal).catch(() => null),
   ])
   if (disposed) return
   if (revision === settingsRevision && scope === interactionKey()) {
@@ -2856,7 +2733,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   // 还有推迟的保存时在卸载前写掉（例如切换形象）。
-  if (timers.has('save')) writePosition()
+  positionStorage.dispose()
   disposed = true
   activityPolicy.reset()
   rhythmPolicy.reset()
