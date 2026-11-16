@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Buffer } from 'node:buffer'
-import type { Plugin } from 'vite'
+import { normalizePath, type Plugin } from 'vite'
 
 export interface ContentFile {
   path: string
@@ -14,6 +14,38 @@ export function contentIdentity(files: readonly ContentFile[]): string {
     hash.update(file.path).update('\0').update(String(file.content.byteLength)).update('\0').update(file.content)
   }
   return hash.digest('hex')
+}
+
+/** Keep OriginJS's temporary absolute CSS paths out of identifier minification. */
+export function stableFederationEntry(): Plugin {
+  const entryId = '\0virtual:__remoteEntryHelper__remoteEntry.js'
+  const marker = '__AGENTPETS_FRONTEND_ROOT__'
+  let frontendRoot = ''
+  return {
+    name: 'agentpets-stable-federation-entry',
+    configResolved(config) {
+      frontendRoot = normalizePath(config.root)
+    },
+    renderChunk: {
+      order: 'pre',
+      handler(code, chunk) {
+        if (chunk.facadeModuleId !== entryId) return null
+        if (!frontendRoot || !code.includes(frontendRoot) || code.includes(marker))
+          throw new Error('Unexpected OriginJS federation CSS placeholders')
+        return { code: code.replaceAll(frontendRoot, marker), map: null }
+      },
+    },
+    generateBundle: {
+      order: 'pre',
+      handler(_options, bundle) {
+        for (const entry of Object.values(bundle)) {
+          if (entry.type !== 'chunk' || entry.facadeModuleId !== entryId) continue
+          if (!entry.code.includes(marker)) throw new Error('Missing stable federation CSS placeholder')
+          entry.code = entry.code.replaceAll(marker, frontendRoot)
+        }
+      },
+    },
+  }
 }
 
 /** Publish the entire relative resource graph under one content identity. */

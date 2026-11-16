@@ -5,7 +5,7 @@ import vue from '@vitejs/plugin-vue'
 import federation from '@originjs/vite-plugin-federation'
 import { defineConfig, normalizePath, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
-import { contentAssets } from './contentAssets'
+import { contentAssets, stableFederationEntry } from './contentAssets'
 
 const TEST_ROOT = normalizePath(fileURLToPath(new URL('../../../tests/v3/agentpets/frontend', import.meta.url)))
 const REPOSITORY_ROOT = normalizePath(fileURLToPath(new URL('../../..', import.meta.url)))
@@ -84,6 +84,7 @@ export default defineConfig(({ mode }) => {
   const plugins: Plugin[] = [vue()]
   if (!isTestMode(mode)) {
     plugins.push(
+      stableFederationEntry(),
       federation({
         name: 'AgentPets',
         filename: 'remoteEntry.js',
