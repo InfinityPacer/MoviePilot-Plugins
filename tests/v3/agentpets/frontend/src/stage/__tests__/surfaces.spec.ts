@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MAX_CLEAR_CANDIDATES, pickClearX } from '@/stage/geometry'
+import { computeLanding, isLandingCandidate, MAX_CLEAR_CANDIDATES, pickClearX } from '@/stage/geometry'
 import {
   controlsUnder,
   bottomFixedFloor,
@@ -122,6 +122,41 @@ describe('MP floating Dock', () => {
 })
 
 describe('surface occlusion', () => {
+  it.each([0, 20])('filters unrelated surfaces before style and hit reads while preserving a %spx snap', snap => {
+    const cards = [
+      { left: 0, top: 410, width: 200, height: 100 },
+      { left: 300, top: 390, width: 300, height: 100 },
+      { left: 300, top: 500, width: 300, height: 100 },
+    ].map(rect => {
+      const el = withRect(document.createElement('div'), rect)
+      el.className = 'v-card'
+      document.body.appendChild(el)
+      return el
+    })
+    const hits = stubHits(({ y }) => [cards[y < 450 ? 1 : 2]])
+    const position = { x: 350, y: 280 }
+    const size = { width: 100, height: 120 }
+    const all = querySurfaces(null, viewport, size.height, null)
+    const expected = computeLanding('surfaces', all, position, viewport, size, snap)
+    const styles = vi.spyOn(window, 'getComputedStyle')
+    hits.mockClear()
+    const selected = querySurfaces(null, viewport, size.height, null, null, surface =>
+      isLandingCandidate(surface, 400, 400, snap),
+    )
+    expect(computeLanding('surfaces', selected, position, viewport, size, snap)).toEqual(expected)
+    expect(styles).toHaveBeenCalledTimes(snap ? 2 : 1)
+    expect(hits).toHaveBeenCalledTimes(snap ? 2 : 1)
+  })
+
+  it('keeps the original candidate cap even when every early candidate is rejected', () => {
+    const cards = Array.from({ length: 401 }, () => card())
+    const hits = stubHits(() => [cards[400]])
+    const styles = vi.spyOn(window, 'getComputedStyle')
+    expect(querySurfaces(null, viewport, 120, null, null, surface => surface.el === cards[400])).toEqual([])
+    expect(styles).not.toHaveBeenCalled()
+    expect(hits).not.toHaveBeenCalled()
+  })
+
   it('probes 2px below the middle of the visible top edge', () => {
     const el = card()
     const spy = stubHits(() => [el])

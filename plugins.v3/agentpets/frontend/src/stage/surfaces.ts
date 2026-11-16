@@ -100,6 +100,7 @@ export function querySurfaces(
   charHeight: number,
   panel: AgentRect | null,
   scope: Element | null = null,
+  accepts?: (surface: DomSurface) => boolean,
 ): DomSurface[] {
   // Only this synchronous query shares the scope origin; the next query must remeasure it.
   let offset: SurfaceOrigin | undefined
@@ -117,7 +118,9 @@ export function querySurfaces(
   }
   return candidates.filter(
     candidate =>
-      surfaceVisible(candidate.el) && surfaceUnobstructedAt(candidate.el, candidate, layer, viewport.width, origin),
+      (!accepts || accepts(candidate)) &&
+      surfaceVisible(candidate.el) &&
+      surfaceUnobstructedAt(candidate.el, candidate, layer, viewport.width, origin),
   )
 }
 
