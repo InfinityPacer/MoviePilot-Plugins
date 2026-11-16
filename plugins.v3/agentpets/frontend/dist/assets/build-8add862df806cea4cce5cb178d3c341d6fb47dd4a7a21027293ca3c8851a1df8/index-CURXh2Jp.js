@@ -1,0 +1,1 @@
+import"./__federation_expose_AgentPet-CVVUzCqE.js";import"./__federation_expose_AgentPetSprite-Bku-K-jK.js";import"./Config.vue_vue_type_script_setup_true_lang-DI9Hh-XK.js";import"./Page.vue_vue_type_script_setup_true_lang-B6R9bF9R.js";

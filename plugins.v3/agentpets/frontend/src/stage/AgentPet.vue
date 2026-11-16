@@ -34,6 +34,7 @@ import {
   checkSupport,
   clamp,
   computeLanding,
+  isLandingCandidate,
   effectiveScale,
   floorLine,
   hopVelocity,
@@ -52,6 +53,8 @@ import {
   xToRatio,
   type Landing,
   type RoamMode,
+  type StageViewport,
+  type SurfaceBox,
 } from '@/stage/geometry'
 import {
   dropPeekEdge,
@@ -1079,24 +1082,35 @@ function scheduleBehavior() {
   })
 }
 
-function validHopLanding(target: DomSurface, left: number): boolean {
+/** 一次选点共用卡片级读取；真正落地时重新调用，不跨帧保留。 */
+function readHopSurface(target: DomSurface, view: StageViewport): SurfaceBox | null {
   const box = measureSurface(target.el, props.previewRoot)
-  const view = viewport()
   if (
     !box ||
     !surfaceVisible(target.el) ||
     !standable(box, view, charHeight.value, hostState?.panelRect ?? null) ||
     Math.abs(box.top - target.top) > 1 ||
-    left < box.left ||
-    left + charWidth.value > box.right ||
     !surfaceUnobstructed(target.el, box, rootEl.value, view.width, props.previewRoot)
   )
-    return false
+    return null
+  return box
+}
+
+/** 每个横向落点仍独立判断边界、助手面板和背后的控件。 */
+function validHopPosition(box: SurfaceBox, el: Element, left: number, view: StageViewport): boolean {
+  if (left < box.left || left + charWidth.value > box.right) return false
   const rect = rectAt(left, box.top - charHeight.value)
   return (
     !intersectionArea(rect, hostState?.panelRect ?? { x: 0, y: 0, width: 0, height: 0 }) &&
-    !coversControlAt(rect, rootEl.value, view, target.el, charWidth.value * charHeight.value, props.previewRoot)
+    !coversControlAt(rect, rootEl.value, view, el, charWidth.value * charHeight.value, props.previewRoot)
   )
+}
+
+/** 落地前读取当前卡片状态，避免使用起跳时的旧几何信息。 */
+function validHopLanding(target: DomSurface, left: number): boolean {
+  const view = viewport()
+  const box = readHopSurface(target, view)
+  return !!box && validHopPosition(box, target.el, left, view)
 }
 
 /** Sample nearby cards only at activity decisions; never scan the page on animation frames. */
@@ -1116,6 +1130,8 @@ function tryActivityHop(area: ActivityArea): boolean {
     .filter(box => box.el !== surface?.el && box.top < y.value + charHeight.value - 12)
     .sort((a, b) => Math.abs(a.top - y.value - charHeight.value) - Math.abs(b.top - y.value - charHeight.value))
   for (const box of boxes.slice(0, MAX_OTHER_SURFACES)) {
+    const landingBox = readHopSurface(box, view)
+    if (!landingBox) continue
     const range = xBounds(view, charWidth.value)
     const min = Math.max(range[0], box.left)
     const max = Math.min(range[1], box.right - charWidth.value)
@@ -1130,7 +1146,7 @@ function tryActivityHop(area: ActivityArea): boolean {
         height: y.value + charHeight.value - top + lift,
       }
       if (hostState?.panelRect && intersectionArea(corridor, hostState.panelRect)) continue
-      if (validHopLanding(box, left)) candidates.push({ x: left, y: top, surface: box })
+      if (validHopPosition(landingBox, box.el, left, view)) candidates.push({ x: left, y: top, surface: box })
     }
   }
   const target = activityPolicy.upwardTarget(area, candidates, Date.now())
@@ -1496,8 +1512,15 @@ function landing(
   const view = viewport()
   const boxes =
     roam() === 'surfaces'
-      ? querySurfaces(rootEl.value, view, charHeight.value, hostState?.panelRect ?? null, props.previewRoot).filter(
-          box => box.el !== exclude,
+      ? querySurfaces(
+          rootEl.value,
+          view,
+          charHeight.value,
+          hostState?.panelRect ?? null,
+          props.previewRoot,
+          box =>
+            box.el !== exclude &&
+            isLandingCandidate(box, position.x + charWidth.value / 2, position.y + charHeight.value, dropSnap),
         )
       : []
   return computeLanding(roam(), boxes, position, view, size(), dropSnap)

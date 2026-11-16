@@ -196,11 +196,20 @@ export function standable(
   return true
 }
 
+/** 几何上可能接住角色的表面，包含手动松手时附近顶沿的吸附范围。 */
+export function isLandingCandidate(box: SurfaceBox, centerX: number, feetY: number, dropSnap = 0): boolean {
+  return (
+    centerX >= box.left &&
+    centerX <= box.right &&
+    (box.top >= feetY - 2 || (dropSnap > 0 && Math.abs(box.top - feetY) <= dropSnap))
+  )
+}
+
 /** 正下方最近的表面：中心 x 落在表面上，上边缘不高于脚底。 */
 export function findLanding<T extends SurfaceBox>(boxes: readonly T[], centerX: number, feetY: number): T | null {
   let best: T | null = null
   for (const box of boxes) {
-    if (centerX < box.left || centerX > box.right || box.top < feetY - 2) continue
+    if (!isLandingCandidate(box, centerX, feetY)) continue
     if (!best || box.top < best.top) best = box
   }
   return best
