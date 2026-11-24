@@ -46,7 +46,7 @@ def test_v3_metadata_and_empty_capabilities_are_explicit():
     package_v3 = json.loads((REPO_ROOT / "package.v3.json").read_text(encoding="utf-8"))
     package_v2 = json.loads((REPO_ROOT / "package.v2.json").read_text(encoding="utf-8"))
 
-    assert HitAndRun.plugin_version == "2.0.0"
+    assert HitAndRun.plugin_version == "2.0.1"
     assert package_v3["HitAndRun"]["version"] == HitAndRun.plugin_version
     assert package_v3["HitAndRun"]["system_version"] == ">=3.0.0"
     assert package_v2["HitAndRun"]["v3"] is False
@@ -69,3 +69,68 @@ def test_transmission_hash_prefers_current_rpc_field():
     torrent = SimpleNamespace(hash_string="new-hash", hashString="legacy-hash")
 
     assert TorrentHelper._get_transmission_hash(torrent) == "new-hash"
+
+
+class _FakeDownloader:
+    """最小下载器替身，仅提供属性绑定判断所需的成员。"""
+
+    def __init__(self):
+        self.qbc = object()
+
+    def is_inactive(self) -> bool:
+        return False
+
+    def get_torrents(self, ids=None):
+        return [], None
+
+
+def _patch_service(plugin: HitAndRun, state: dict):
+    """把下载器服务查询替换为可控替身，便于模拟下载器就绪/重连。"""
+    plugin._hnr_config = SimpleNamespace(downloader="QB", enabled=True)
+    plugin.downloader_helper = SimpleNamespace(get_service=lambda **_kwargs: state["service"])
+
+
+def test_torrent_helper_binds_and_rebinds_to_current_downloader():
+    """加载时下载器未就绪不应固化空引用；下载器重连后 helper 自动重新绑定。"""
+    plugin = HitAndRun()
+    state = {"service": None}
+    _patch_service(plugin, state)
+
+    # 插件加载阶段下载器尚未就绪
+    assert plugin.torrent_helper is None
+
+    first = _FakeDownloader()
+    state["service"] = SimpleNamespace(name="QB", instance=first)
+    helper = plugin.torrent_helper
+    assert helper is not None
+    assert helper.downloader is first
+    assert helper.dl_type == "qbittorrent"
+
+    # 同一实例继续复用，不重复创建
+    assert plugin.torrent_helper is helper
+
+    # 下载器重连后被替换为新实例，helper 需跟随
+    second = _FakeDownloader()
+    state["service"] = SimpleNamespace(name="QB", instance=second)
+    assert plugin.torrent_helper is not helper
+    assert plugin.torrent_helper.downloader is second
+
+
+def test_torrent_helper_keeps_cache_when_downloader_goes_offline():
+    """下载器掉线时返回缓存 helper，由调用方判空决定是否跳过本轮。"""
+    plugin = HitAndRun()
+    state = {"service": None}
+    _patch_service(plugin, state)
+
+    downloader = _FakeDownloader()
+    state["service"] = SimpleNamespace(name="QB", instance=downloader)
+    helper = plugin.torrent_helper
+
+    # 服务查询失败（下载器未连接）时 service_info 为 None
+    state["service"] = None
+    assert plugin.torrent_helper is helper
+
+
+def test_torrent_helper_get_torrents_without_downloader_returns_none():
+    """下载器缺失时 get_torrents 安静返回 None，不再抛 AttributeError。"""
+    assert TorrentHelper(None).get_torrents() is None

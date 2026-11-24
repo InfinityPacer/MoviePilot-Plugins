@@ -279,6 +279,10 @@ class TorrentHelper:
         if isinstance(torrent_hashes, str):
             torrent_hashes = [torrent_hashes]
 
+        if not self.downloader:
+            logger.warning("下载器实例不可用，跳过获取种子信息")
+            return None
+
         torrents, error = self.downloader.get_torrents(ids=torrent_hashes)
         if error:
             logger.warning("连接下载器出错，将在下个时间周期重试")
