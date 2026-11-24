@@ -38,7 +38,7 @@ class HitAndRun(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/hitandrun.png"
     # 插件版本
-    plugin_version = "2.0.0"
+    plugin_version = "2.0.1"
     # 插件作者
     plugin_author = "InfinityPacer"
     # 作者主页
@@ -54,7 +54,8 @@ class HitAndRun(_PluginBase):
     plugin_manager = None
     sites_helper = None
     site_oper = None
-    torrent_helper = None
+    # TorrentHelper 缓存，统一通过 torrent_helper 属性访问，避免持有失效的下载器引用
+    _torrent_helper: Optional[TorrentHelper] = None
     downloader_helper = None
     # H&R助手配置
     _hnr_config = None
@@ -81,7 +82,8 @@ class HitAndRun(_PluginBase):
 
         self.stop_service()
 
-        self.torrent_helper = TorrentHelper(self.downloader)
+        # 下载器此时可能尚未就绪，清空缓存，由 torrent_helper 属性在首次访问时按需创建
+        self._torrent_helper = None
 
         if self._hnr_config.onlyonce:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -139,6 +141,31 @@ class HitAndRun(_PluginBase):
         下载器实例
         """
         return self.service_info.instance if self.service_info else None
+
+    @property
+    def torrent_helper(self) -> Optional[TorrentHelper]:
+        """
+        当前下载器对应的 TorrentHelper 实例
+
+        插件加载时下载器可能尚未就绪（此时为 None），运行中下载器也可能因重连被替换，
+        因此每次访问时校验并重建，避免长期持有一个已失效的下载器引用。
+        """
+        downloader = self.downloader
+        if not downloader:
+            # 下载器不可用时返回缓存值（可能为 None），由调用方判空后跳过本轮
+            return self._torrent_helper
+
+        if self._torrent_helper is None or self._torrent_helper.downloader is not downloader:
+            self._torrent_helper = TorrentHelper(downloader)
+
+        return self._torrent_helper
+
+    @torrent_helper.setter
+    def torrent_helper(self, value: Optional[TorrentHelper]) -> None:
+        """
+        兼容旧代码中 self.torrent_helper = ... 的赋值写法
+        """
+        self._torrent_helper = value
 
     def get_state(self) -> bool:
         return self._hnr_config and self._hnr_config.enabled
@@ -1032,14 +1059,24 @@ class HitAndRun(_PluginBase):
         if not self.downloader:
             return
 
+        torrent_helper = self.torrent_helper
+        if not torrent_helper:
+            return
+
         with lock:
             logger.info("开始检查H&R下载任务 ...")
             torrent_tasks = self.__get_and_parse_data(key="torrents", model=TorrentTask)
             histories = self.__get_and_parse_data(key="downloads", model=TorrentHistory)
 
-            seeding_torrents = self.torrent_helper.get_torrents()
+            seeding_torrents = torrent_helper.get_torrents()
+            if seeding_torrents is None:
+                # 下载器连接抖动时 get_torrents 返回 None，此时不能当作「没有种子」处理，
+                # 否则会把所有H&R任务误判为已删除，直接跳过本轮等待下个周期重试
+                logger.warning("获取下载器种子信息失败，跳过本次H&R检查")
+                return
+
             seeding_torrents_dict = {
-                self.torrent_helper.get_torrent_hashes(torrents=torrent):
+                torrent_helper.get_torrent_hashes(torrents=torrent):
                     torrent for torrent in seeding_torrents}
 
             # 检查种子标签变更情况
@@ -1382,7 +1419,12 @@ class HitAndRun(_PluginBase):
                 logger.info("没有获取到有效的种子任务信息，跳过处理")
                 return
 
-            torrent = self.torrent_helper.get_torrents(torrent_hashes=torrent_hash)
+            torrent_helper = self.torrent_helper
+            if not torrent_helper:
+                logger.warning("下载器实例不可用，跳过本次H&R事件处理")
+                return
+
+            torrent = torrent_helper.get_torrents(torrent_hashes=torrent_hash)
             if not torrent:
                 logger.warning(f"下载器中没有获取到 torrent_hash: {torrent_hash} 的种子信息，跳过处理")
                 return
@@ -1547,22 +1589,27 @@ class HitAndRun(_PluginBase):
         if not torrent_task.hit_and_run:
             return
 
-        torrent = self.torrent_helper.get_torrents(torrent_hashes=torrent_task.hash)
+        torrent_helper = self.torrent_helper
+        if not torrent_helper:
+            logger.warning("下载器实例不可用，跳过H&R标签更新")
+            return
+
+        torrent = torrent_helper.get_torrents(torrent_hashes=torrent_task.hash)
         if not torrent:
             logger.warning(f"下载器中没有获取到 torrent_hash: {torrent_task.hash} 的种子信息")
             return
 
         try:
-            tags = self.torrent_helper.get_torrent_tags(torrent=torrent)
+            tags = torrent_helper.get_torrent_tags(torrent=torrent)
             hnr_tag = self._hnr_config.hit_and_run_tag
             if add:
                 if hnr_tag not in tags:
                     tags.append(hnr_tag)
-                    self.torrent_helper.set_torrent_tag(torrent_hash=torrent_task.hash, tags=tags)
+                    torrent_helper.set_torrent_tag(torrent_hash=torrent_task.hash, tags=tags)
             else:
                 if hnr_tag in tags:
                     tags.remove(hnr_tag)
-                    self.torrent_helper.remove_torrent_tag(torrent_hash=torrent_task.hash, tags=[hnr_tag])
+                    torrent_helper.remove_torrent_tag(torrent_hash=torrent_task.hash, tags=[hnr_tag])
         except Exception as e:
             action = "添加" if add else "移除"
             logger.error(f"{action}标签时出错：{str(e)}")

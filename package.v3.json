@@ -289,12 +289,13 @@
         "name": "H&R助手",
         "description": "监听下载、订阅、刷流等行为，对H&R种子进行自动标签管理。",
         "labels": "站点,H&R",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "icon": "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/hitandrun.png",
         "author": "InfinityPacer",
         "level": 2,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.0.1": "修复插件加载时下载器未就绪会永久缓存空下载器引用、导致「H&R助手检查服务」每轮报 'NoneType' object has no attribute 'get_torrents' 且无法自愈的问题；下载器重连后自动重新绑定，获取种子失败时跳过本轮而不误判任务已删除。",
             "v2.0.0": "迁移至 MoviePilot V3 稳定接口，保持 H&R 种子标签管理流程。"
         },
         "release": true
