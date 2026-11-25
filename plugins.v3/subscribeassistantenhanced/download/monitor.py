@@ -130,6 +130,44 @@ class DownloadMonitor:
             if subscribe:
                 self._state.clear_active(subscribe, source="download_pending", reason="下载待定已清除")
 
+    def clear_hashless_download_pending(
+        self,
+        subscribe_id: int,
+        *,
+        enclosure: Optional[str] = None,
+        page_url: Optional[str] = None,
+        title: Optional[str] = None,
+    ):
+        """清除 ResourceDownload 阶段写入、但后续在提交下载器前被取消的无 hash 待定记录。"""
+        sid = str(subscribe_id)
+        result = {"had_pending": False, "active": False}
+        fallback_key = self._pending_key(enclosure=enclosure, page_url=page_url, title=title) if (
+            enclosure or page_url or title
+        ) else None
+
+        def updater(data: dict) -> dict:
+            task = data.get(sid, {})
+            pending = task.get("download_pending", {})
+            matched_key = self._find_hashless_pending_key(pending, enclosure=enclosure, page_url=page_url)
+            if matched_key is None and fallback_key and fallback_key in pending and not pending[fallback_key].get("hash"):
+                matched_key = fallback_key
+            result["had_pending"] = matched_key is not None
+            if matched_key is not None:
+                pending.pop(matched_key, None)
+            if not pending:
+                task.pop("download_pending", None)
+            else:
+                task["download_pending"] = pending
+                result["active"] = True
+            data[sid] = task
+            return data
+
+        self._update("subscribes", updater)
+        if result["had_pending"] and not result["active"] and self._state:
+            subscribe = self._resolve_subscribe(subscribe_id)
+            if subscribe:
+                self._state.clear_active(subscribe, source="download_pending", reason="下载提交已取消")
+
     def has_active_downloads(self, subscribe_id: int) -> bool:
         """检查订阅是否还有下载未整理完成。"""
         sid = str(subscribe_id)
@@ -140,10 +178,12 @@ class DownloadMonitor:
     def on_download(self, subscribe_id, torrent_hash: str, episodes=None,
                     downloader: Optional[str] = None, progress: float = 0.0,
                     enclosure: Optional[str] = None, page_url: Optional[str] = None,
-                    title: Optional[str] = None, description: Optional[str] = None):
+                    title: Optional[str] = None, description: Optional[str] = None,
+                    site=None, site_name: Optional[str] = None,
+                    resource_identities: Optional[list] = None):
         """DownloadAdded 阶段按 hash 登记种子监控与归属信息。
 
-        enclosure 用于洗版按集基线回滚，enclosure/page_url 用于删除指纹防重；
+        enclosure 用于洗版按集基线回滚，site/enclosure/page_url/resource_identities 用于删除指纹防重；
         此阶段 hash 已确定，同时补齐 ResourceDownload 建立的无 hash 待定。
         """
         if not torrent_hash:
@@ -151,7 +191,7 @@ class DownloadMonitor:
         now = time.time()
 
         def updater(data: dict) -> dict:
-            data[torrent_hash] = {
+            record = {
                 "hash": torrent_hash,
                 "subscribe_id": subscribe_id,
                 "episodes": list(episodes or []),
@@ -168,6 +208,13 @@ class DownloadMonitor:
                 "manual_review_count": 0,
                 "time": now,
             }
+            if site is not None:
+                record["site"] = site
+            if site_name:
+                record["site_name"] = site_name
+            if resource_identities:
+                record["resource_identities"] = list(resource_identities)
+            data[torrent_hash] = record
             return data
 
         self._update("torrents", updater)

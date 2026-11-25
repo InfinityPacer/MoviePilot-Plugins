@@ -102,7 +102,7 @@ class SubscribeAssistantEnhanced(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/InfinityPacer/MoviePilot-Plugins/main/icons/subscribeassistantenhanced.png"
     # 插件版本
-    plugin_version = "0.7.14"
+    plugin_version = "0.7.15"
     _site_cache_candidate_helper_warned = False
     # 插件作者
     plugin_author = "InfinityPacer"
@@ -1349,6 +1349,12 @@ class SubscribeAssistantEnhanced(_PluginBase):
         """ResourceDownload → 订阅清理 + 无 hash 下载待定 + 洗版优先级基线。"""
         if self._event_proxy:
             self._event_proxy.on_resource_download(event)
+
+    @eventmanager.register(ChainEventType.ResourceSubmit)
+    def on_resource_submit(self, event):
+        """ResourceSubmit → 提交下载器前按真实 info_hash 二次校验删除指纹。"""
+        if self._event_proxy:
+            self._event_proxy.on_resource_submit(event)
 
     @eventmanager.register(ChainEventType.TransferIntercept, priority=9999)
     def on_transfer_intercept(self, event):
