@@ -90,6 +90,16 @@ def test_release_metadata_requires_supported_main_program_version():
     assert Version("2.14.6") in specifier
 
 
+def test_v3_release_metadata_requires_resource_submit_main_program_version():
+    """V3 插件要求具备 ResourceSubmit 事件与资源身份 SDK 的主程序版本。"""
+    package = json.loads(Path("package.v3.json").read_text(encoding="utf-8"))
+    specifier = SpecifierSet(package["SubscribeAssistantEnhanced"]["system_version"])
+
+    assert package["SubscribeAssistantEnhanced"]["system_version"] == ">=3.2.14"
+    assert Version("3.2.13") not in specifier
+    assert Version("3.2.14") in specifier
+
+
 def test_converter_is_wired():
     plugin = SubscribeAssistantEnhanced()
     plugin.init_plugin({})

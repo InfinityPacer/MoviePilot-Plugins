@@ -17,12 +17,12 @@ from app.plugins.subscribeassistantenhanced.lifecycle import LifecycleResult
 from app.plugins.subscribeassistantenhanced.shared.config import PluginConfig
 from app.plugins.subscribeassistantenhanced.shared.subscribe import subscribe_from_source
 
-# 12 个事件处理器必须定义在插件类上（主程序按 __qualname__ 首段解析运行实例分发）
+# 13 个事件处理器必须定义在插件类上（主程序按 __qualname__ 首段解析运行实例分发）
 _EVENT_HANDLERS = (
     "on_completion_check", "on_episodes_refresh", "on_subscribe_added",
     "on_subscribe_deleted", "on_subscribe_modified", "on_subscribe_complete",
     "on_download_added", "on_transfer_complete", "on_resource_selection",
-    "on_resource_download", "on_transfer_intercept", "on_plugin_action",
+    "on_resource_download", "on_resource_submit", "on_transfer_intercept", "on_plugin_action",
     "on_plugin_data_reset",
 )
 
@@ -313,7 +313,8 @@ class TestEventRegistration:
         """装饰器在导入期把 handler 注册进 eventmanager（按 module.Class.method 标识）。"""
         identifiers = {h["handler_identifier"] for h in eventmanager.visualize_handlers()}
         for name in ("on_subscribe_added", "on_episodes_refresh", "on_resource_download",
-                     "on_transfer_intercept", "on_plugin_action", "on_plugin_data_reset"):
+                     "on_resource_submit", "on_transfer_intercept", "on_plugin_action",
+                     "on_plugin_data_reset"):
             assert any(f"SubscribeAssistantEnhanced.{name}" in ident for ident in identifiers), \
                 f"事件处理器 {name} 未注册到 eventmanager"
 
@@ -322,8 +323,8 @@ class TestEventRegistration:
         handlers = (
             "on_completion_check", "on_episodes_refresh", "on_subscribe_added",
             "on_subscribe_modified", "on_subscribe_complete", "on_download_added",
-            "on_resource_selection", "on_resource_download", "on_transfer_intercept",
-            "on_plugin_action",
+            "on_resource_selection", "on_resource_download", "on_resource_submit",
+            "on_transfer_intercept", "on_plugin_action",
         )
         plugin = SubscribeAssistantEnhanced()
         plugin._event_proxy = MagicMock()

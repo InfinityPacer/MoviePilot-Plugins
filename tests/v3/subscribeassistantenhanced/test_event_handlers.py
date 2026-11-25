@@ -64,6 +64,209 @@ def test_skip_deletion_controls_deleted_resource_filtering():
     assert filtered_data.updated_contexts == []
 
 
+def test_resource_submit_cancels_deleted_hash_and_clears_hashless_pending():
+    """ResourceSubmit 命中删除指纹时取消提交下载器，并清理 ResourceDownload 写下的无 hash 待定。"""
+    subscribe = _sub(id=7, type="电影", season=None)
+    subscribe_oper = MagicMock()
+    subscribe_oper.get.return_value = subscribe
+    deletes_store = MagicMock()
+    deletes_store.match.return_value = True
+    monitor = MagicMock()
+    torrent_info = SimpleNamespace(
+        enclosure="https://totheglory.im/dl/395931/8067",
+        page_url="https://totheglory.im/t/395931/",
+        title="Forgotten Island 2026 2160p-RiKKi",
+    )
+    submit_data = SimpleNamespace(
+        origin='Subscribe|{"id": 7}',
+        context=SimpleNamespace(torrent_info=torrent_info),
+        hashes=["3db38150daf7c83acf17bb413d9e29c3c8a90efd"],
+        user_specified=False,
+        cancel=False,
+        source="",
+        reason="",
+    )
+
+    EventProxy(
+        subscribe_oper=subscribe_oper,
+        deletes_store=deletes_store,
+        download_monitor=monitor,
+        skip_deletion=True,
+        pending_download_enabled=True,
+    ).on_resource_submit(SimpleNamespace(event_data=submit_data))
+
+    assert submit_data.cancel is True
+    assert submit_data.source == "订阅助手（增强版）"
+    assert "删除" in submit_data.reason
+    deletes_store.match.assert_called_once_with(
+        torrent_info=torrent_info,
+        enclosure="https://totheglory.im/dl/395931/8067",
+        page_url="https://totheglory.im/t/395931/",
+        hashes=["3db38150daf7c83acf17bb413d9e29c3c8a90efd"],
+    )
+    monitor.clear_hashless_download_pending.assert_called_once_with(
+        7,
+        enclosure="https://totheglory.im/dl/395931/8067",
+        page_url="https://totheglory.im/t/395931/",
+        title="Forgotten Island 2026 2160p-RiKKi",
+    )
+
+
+def test_resource_submit_respects_user_specified_and_skip_deletion_switch():
+    """用户手动指定下载或关闭跳过近期删除资源时，ResourceSubmit 不得拦截提交。"""
+    subscribe = _sub(id=7, type="电影", season=None)
+    subscribe_oper = MagicMock()
+    subscribe_oper.get.return_value = subscribe
+    deletes_store = MagicMock()
+    deletes_store.match.return_value = True
+
+    manual_data = SimpleNamespace(
+        origin='Subscribe|{"id": 7}',
+        context=SimpleNamespace(torrent_info=SimpleNamespace(enclosure="x", page_url="y")),
+        hashes=["3db38150daf7c83acf17bb413d9e29c3c8a90efd"],
+        user_specified=True,
+        cancel=False,
+        source="",
+        reason="",
+    )
+    EventProxy(
+        subscribe_oper=subscribe_oper,
+        deletes_store=deletes_store,
+        skip_deletion=True,
+    ).on_resource_submit(SimpleNamespace(event_data=manual_data))
+    assert manual_data.cancel is False
+
+    disabled_data = SimpleNamespace(
+        origin='Subscribe|{"id": 7}',
+        context=SimpleNamespace(torrent_info=SimpleNamespace(enclosure="x", page_url="y")),
+        hashes=["3db38150daf7c83acf17bb413d9e29c3c8a90efd"],
+        user_specified=False,
+        cancel=False,
+        source="",
+        reason="",
+    )
+    EventProxy(
+        subscribe_oper=subscribe_oper,
+        deletes_store=deletes_store,
+        skip_deletion=False,
+    ).on_resource_submit(SimpleNamespace(event_data=disabled_data))
+    assert disabled_data.cancel is False
+    deletes_store.match.assert_not_called()
+
+
+def test_resource_submit_handles_noop_guards_and_real_monitor_pending_cleanup():
+    """已取消、非订阅、未命中时安全放行；取消提交时真实清理无 hash 下载待定并通知状态协调器。"""
+    from app.plugins.subscribeassistantenhanced.download.monitor import DownloadMonitor
+
+    store = {"subscribes": {}, "torrents": {}}
+    read = lambda key: store.get(key, {})
+    update = lambda key, fn: store.__setitem__(key, fn(dict(store.get(key, {}))))
+
+    subscribe = _sub(id=7, type="电影", season=None)
+    subscribe_oper = MagicMock()
+    subscribe_oper.get.return_value = subscribe
+    state_coordinator = MagicMock()
+    monitor = DownloadMonitor(
+        read,
+        update,
+        subscribe_oper=subscribe_oper,
+        state_coordinator=state_coordinator,
+        pending_download_enabled=True,
+    )
+    monitor.mark_download_started(
+        subscribe,
+        episodes=[],
+        downloader="qb",
+        enclosure="https://totheglory.im/dl/395931/8067",
+        page_url="https://totheglory.im/t/395931/",
+        title="Forgotten Island 2026",
+    )
+    assert "7" in store["subscribes"]
+
+    # 取消前先验证未命中、已取消、非订阅与缺 deletes_store 分支均不误拦
+    EventProxy(subscribe_oper=subscribe_oper, skip_deletion=True).on_resource_submit(
+        SimpleNamespace(event_data=SimpleNamespace(cancel=False, user_specified=False, origin='Subscribe|{"id": 7}'))
+    )
+    deletes_store = MagicMock()
+    deletes_store.match.return_value = False
+    proxy = EventProxy(
+        subscribe_oper=subscribe_oper,
+        deletes_store=deletes_store,
+        download_monitor=monitor,
+        skip_deletion=True,
+        pending_download_enabled=True,
+    )
+    already_cancelled = SimpleNamespace(cancel=True)
+    proxy.on_resource_submit(SimpleNamespace(event_data=already_cancelled))
+    non_sub = SimpleNamespace(
+        origin="Manual",
+        context=SimpleNamespace(torrent_info=None),
+        hashes=["h1"],
+        user_specified=False,
+        cancel=False,
+    )
+    proxy.on_resource_submit(SimpleNamespace(event_data=non_sub))
+    not_matched = SimpleNamespace(
+        origin='Subscribe|{"id": 7}',
+        context=SimpleNamespace(torrent_info=SimpleNamespace(enclosure="https://other/a", page_url=None, title="Other")),
+        hashes=["h-other"],
+        user_specified=False,
+        cancel=False,
+    )
+    proxy.on_resource_submit(SimpleNamespace(event_data=not_matched))
+    assert not_matched.cancel is False
+
+    # 命中后取消并清理无 hash 下载待定
+    deletes_store.match.return_value = True
+    matched = SimpleNamespace(
+        origin='Subscribe|{"id": 7}',
+        context=SimpleNamespace(
+            torrent_info=SimpleNamespace(
+                enclosure="https://totheglory.im/dl/395931/8067",
+                page_url="https://totheglory.im/t/395931/",
+                title="Forgotten Island 2026",
+            )
+        ),
+        hashes=["3db38150daf7c83acf17bb413d9e29c3c8a90efd"],
+        user_specified=False,
+        cancel=False,
+        source="",
+        reason="",
+    )
+    proxy.on_resource_submit(SimpleNamespace(event_data=matched))
+    assert matched.cancel is True
+    assert "download_pending" not in store["subscribes"].get("7", {})
+    state_coordinator.clear_active.assert_called_once()
+
+    # 另有一条待定时只删除取消的那条，不误清其他待定；并验证 DownloadAdded 持久化站点与规范化身份
+    monitor.mark_download_started(subscribe, title="OnlyTitleA")
+    monitor.mark_download_started(subscribe, title="OnlyTitleB")
+    monitor.clear_hashless_download_pending(7, title="OnlyTitleA")
+    assert len(store["subscribes"]["7"]["download_pending"]) == 1
+
+    deletes_store.resolve_identities.return_value = ["site:2|id=395931", "host:totheglory.im|id=395931"]
+    proxy.on_download_added(SimpleNamespace(event_data={
+        "source": 'Subscribe|{"id": 7}',
+        "hash": "3db38150daf7c83acf17bb413d9e29c3c8a90efd",
+        "episodes": [],
+        "downloader": "qb",
+        "context": SimpleNamespace(
+            torrent_info=SimpleNamespace(
+                site=2,
+                site_name="听听歌",
+                enclosure="https://totheglory.im/dl/395931/8067",
+                page_url="https://totheglory.im/t/395931/",
+                title="Forgotten Island 2026",
+                description="Remux",
+            )
+        ),
+    }))
+    saved = store["torrents"]["3db38150daf7c83acf17bb413d9e29c3c8a90efd"]
+    assert saved["site"] == 2
+    assert saved["site_name"] == "听听歌"
+    assert saved["resource_identities"] == ["site:2|id=395931", "host:totheglory.im|id=395931"]
+
+
 def test_on_subscribe_added_delegates_lifecycle_with_mediainfo():
     """SubscribeAdded 只负责取订阅和媒体信息，状态流转交给 lifecycle。"""
     subscribe = _sub(season=0, type="电影")

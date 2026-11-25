@@ -1,6 +1,6 @@
 """事件薄代理——按域 enabled 开关按需注册，委托到对应模块。
 
-12 个事件处理器：
+13 个事件处理器：
 - SubscribeCompletionCheck → guard
 - SubscribeEpisodesRefresh → volatility.record (先) + site refresh consumer + pending observer (后)
 - SubscribeAdded → best_version + priority.backfill + pause.auto_pause_user
@@ -10,6 +10,7 @@
 - TransferIntercept → subscription_cleanup.history_clear
 - ResourceSelection → 洗版串行 + 识别增强 + 删除指纹过滤
 - ResourceDownload → subscription_cleanup + monitor.mark_pending
+- ResourceSubmit → 按真实 info_hash 与规范化身份二次校验删除指纹
 - DownloadAdded → monitor.on_download + 暂停订阅下载命中恢复
 - TransferComplete → 清下载待定 + 移动模式清理 + 分集转全集补偿
 - PluginAction → toggle_subscribe_state
@@ -458,14 +459,63 @@ class EventProxy:
         return kept
 
     @staticmethod
-    def _is_deleted_resource(ctx, deletes_store) -> bool:
-        """判断候选资源是否命中删除指纹（enclosure/page_url）。"""
+    def _is_deleted_resource(ctx, deletes_store, hashes=None) -> bool:
+        """判断候选资源是否命中删除指纹（真实 hash、规范化资源身份或 enclosure/page_url）。"""
         torrent_info = getattr(ctx, "torrent_info", None)
-        if not torrent_info:
+        if not torrent_info and not hashes:
             return False
-        return deletes_store.match(
-            enclosure=getattr(torrent_info, "enclosure", None),
-            page_url=getattr(torrent_info, "page_url", None))
+        match_kwargs = {
+            "enclosure": getattr(torrent_info, "enclosure", None) if torrent_info else None,
+            "page_url": getattr(torrent_info, "page_url", None) if torrent_info else None,
+        }
+        if hashes:
+            match_kwargs["hashes"] = hashes
+        if torrent_info is not None:
+            try:
+                return deletes_store.match(torrent_info=torrent_info, **match_kwargs)
+            except TypeError:
+                pass
+        return deletes_store.match(**match_kwargs)
+
+    def on_resource_submit(self, event):
+        """ResourceSubmit → 提交下载器前按真实 info_hash 二次校验删除指纹，命中则取消提交。
+
+        用户手动明确指定的种子（user_specified=True）不拦截，仅对自动订阅提交生效；
+        取消提交时同步清理 ResourceDownload 阶段建立的无 hash 下载待定。
+        """
+        data = _event_data(event)
+        if not data or data.cancel:
+            return
+        if getattr(data, "user_specified", False):
+            return
+        if not self.get("skip_deletion"):
+            return
+        deletes_store = self.get("deletes_store")
+        if not deletes_store:
+            return
+        subscribe_oper = self.get("subscribe_oper")
+        _, subscribe = subscribe_from_source(getattr(data, "origin", None), subscribe_oper)
+        if not subscribe or not self._supports_subscribe(subscribe):
+            return
+        hashes = list(getattr(data, "hashes", None) or [])
+        if not self._is_deleted_resource(data.context, deletes_store, hashes=hashes):
+            return
+        data.cancel = True
+        data.source = self.get("plugin_name") or "订阅助手（增强版）"
+        data.reason = "命中近期删除资源指纹"
+        torrent_info = getattr(data.context, "torrent_info", None)
+        monitor = self.get("download_monitor")
+        if monitor and self.get("pending_download_enabled") and hasattr(monitor, "clear_hashless_download_pending"):
+            monitor.clear_hashless_download_pending(
+                subscribe.id,
+                enclosure=getattr(torrent_info, "enclosure", None),
+                page_url=getattr(torrent_info, "page_url", None),
+                title=getattr(torrent_info, "title", None),
+            )
+        detail(
+            f"ResourceSubmit：{format_subscribe(subscribe)} 命中近期删除资源指纹，"
+            f"已取消提交下载器 hashes={hashes}"
+        )
 
     def on_resource_download(self, event):
         """ResourceDownload → 订阅清理 + 下载待定 + 按种子记录优先级基线。
@@ -536,6 +586,18 @@ class EventProxy:
         if monitor and (self.get("pending_download_enabled") or self.get("download_monitor_enabled")):
             detail(f"DownloadAdded：{format_subscribe(subscribe)} 登记种子监控 hash={data.get('hash')}")
             torrent_info = getattr(data.get("context"), "torrent_info", None)
+            deletes_store = self.get("deletes_store")
+            extra_identity = {}
+            site = getattr(torrent_info, "site", None) if torrent_info else None
+            site_name = getattr(torrent_info, "site_name", None) if torrent_info else None
+            if site is not None:
+                extra_identity["site"] = site
+            if site_name:
+                extra_identity["site_name"] = site_name
+            if torrent_info and deletes_store and hasattr(deletes_store, "resolve_identities"):
+                identities = deletes_store.resolve_identities(torrent_info)
+                if identities:
+                    extra_identity["resource_identities"] = identities
             monitor.on_download(
                 subscribe.id,
                 data.get("hash"),
@@ -545,6 +607,7 @@ class EventProxy:
                 page_url=getattr(torrent_info, "page_url", None),
                 title=getattr(torrent_info, "title", None),
                 description=getattr(torrent_info, "description", None),
+                **extra_identity,
             )
         lifecycle = self.get("lifecycle")
         result = lifecycle.handle_download_added_for_subscribe(subscribe) if lifecycle else None
