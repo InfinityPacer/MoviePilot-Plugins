@@ -22,7 +22,7 @@ class Commands(_PluginBase):
         "https://raw.githubusercontent.com/InfinityPacer/"
         "MoviePilot-Plugins/main/icons/commands.png"
     )
-    plugin_version = "2.0.0"
+    plugin_version = "2.0.1"
     plugin_author = "InfinityPacer"
     author_url = "https://github.com/InfinityPacer"
     plugin_config_prefix = "commands_"
@@ -332,6 +332,8 @@ class Commands(_PluginBase):
                 ensure_ascii=False,
             )
             self.update_config(config=config)
+            # 回写插件标识，供主程序在仅修改渠道自定义菜单时命中强制刷新判断。
+            event_data.source = "Commands"
             return
 
         if event_data.origin not in ["WeChat", "Telegram"]:

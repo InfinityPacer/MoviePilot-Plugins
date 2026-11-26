@@ -106,8 +106,8 @@ def test_service_infos_filters_selected_notification_clients():
     )
 
 
-def test_command_chain_origin_persists_preset_commands_without_intercepting():
-    """CommandChain 来源只更新预置命令快照，不拦截事件。"""
+def test_command_chain_origin_persists_preset_commands_and_marks_force_refresh_source():
+    """CommandChain 来源更新预置命令快照并回写插件标识，触发主程序强制刷新。"""
     plugin = _plugin(notify_clients=[])
     plugin.get_config = MagicMock(return_value={"enabled": True})
     plugin.update_config = MagicMock()
@@ -124,6 +124,78 @@ def test_command_chain_origin_persists_preset_commands_without_intercepting():
         }
     )
     assert event.event_data.cancel is False
+    assert event.event_data.source == "Commands"
+
+
+def test_saving_commands_config_forces_broadcast_even_when_global_commands_unchanged(
+    monkeypatch,
+):
+    """全局命令未变化时，以 Commands 标识触发刷新仍应向渠道广播自定义菜单。"""
+    import threading
+    from app.command import Command
+
+    plugin = _plugin(
+        notify_clients=["Telegram"],
+        services={"Telegram": object()},
+        custom_commands={
+            "Telegram": {
+                "/sites": {"category": "自定义站点", "description": "自定义查询站点"},
+            }
+        },
+    )
+    plugin.get_config = MagicMock(return_value={"enabled": True})
+    plugin.update_config = MagicMock()
+
+    command_service = object.__new__(Command)
+    command_service._rlock = threading.RLock()
+    command_service._preset_commands = {
+        "/sites": {"description": "查询站点", "category": "站点"},
+        "/version": {"description": "当前版本", "category": "管理"},
+    }
+    command_service._plugin_commands = {}
+    command_service._other_commands = {}
+    command_service._commands = dict(command_service._preset_commands)
+    command_service._registered_commands = {
+        "/sites": {"type": "preset", "description": "查询站点", "category": "站点"},
+        "/version": {"type": "preset", "description": "当前版本", "category": "管理"},
+    }
+    command_service.pluginmanager = MagicMock()
+    command_service.pluginmanager.get_plugin_commands.return_value = []
+
+    def fake_send_event(event_type, event_data):
+        event = Event(event_type, event_data)
+        plugin.handle_command_register(event)
+        return event
+
+    broadcast_calls = []
+
+    class FakeCommandChain:
+        def register_commands(self, *, commands):
+            broadcast_calls.append(commands)
+
+    monkeypatch.setattr("app.command.eventmanager.send_event", fake_send_event)
+    monkeypatch.setattr("app.command.CommandChain", FakeCommandChain)
+
+    command_service._Command__init_commands_background(pid="Commands")
+
+    assert len(broadcast_calls) == 1
+    assert set(broadcast_calls[0]) == {"/sites", "/version"}
+
+    telegram_event = _event(
+        origin="Telegram",
+        service="Telegram",
+        commands={key: dict(value) for key, value in broadcast_calls[0].items()},
+    )
+    plugin.handle_command_register(telegram_event)
+
+    assert telegram_event.event_data.cancel is False
+    assert telegram_event.event_data.commands == {
+        "/sites": {
+            "type": "preset",
+            "description": "自定义查询站点",
+            "category": "自定义站点",
+        }
+    }
 
 
 def test_unsupported_origin_is_passed_through():
